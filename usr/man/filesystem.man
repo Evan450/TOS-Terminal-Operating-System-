@@ -1,0 +1,32 @@
+NAME
+    filesystem - paths, permissions, trash, and encryption
+
+DESCRIPTION
+    Every user-level filesystem operation goes through securefs, which enforces
+    per-user access control. Paths are normalized first (., .., backslashes, and
+    NUL bytes are all handled; a tainted path fails closed), so ACL checks can't
+    be tricked by clever path strings.
+
+LAYOUT & PERMISSIONS
+    /public        everyone reads; USER+ writes
+    /home/<user>   the owner (or an admin) only
+    /root          root only
+    /tmp           everyone read/write
+    /tos /etc /var /usr   system: users read, ADMIN+ writes (with a protected
+                          core that even admins can't overwrite via securefs)
+
+TRASH & RECOVERY
+    rm moves a file to your per-user trash (use 'rm --hard' to skip it).
+      trash            list / empty your trash
+      restore <file>   undelete from trash
+
+ENCRYPTION AT REST
+    vault encrypt/decrypt <path>   passphrase-based file/tape/in-place encryption
+    keychain                       per-user passphrase stash (login-unlocked)
+
+INTEGRITY
+    Critical state files are written atomically (temp then replace), so a power
+    cut mid-save cannot truncate them; interrupted writes are repaired at boot.
+
+SEE ALSO
+    man vault, ls, cp, rm, MANUAL.md (Chapter 5)

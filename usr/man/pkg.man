@@ -1,0 +1,68 @@
+NAME
+    pkg - package manager (install, remove, and run TOS packages)
+
+SYNOPSIS
+    pkg list
+    pkg search
+    pkg info <name>
+    pkg install [<name> [--key <licenseKey>] | <dir>]
+    pkg make-disk <mount> [name ...]
+    pkg uninstall <name>
+
+    install <name>          shortcut for 'pkg install <name>'
+    uninstall <name>        shortcut for 'pkg uninstall <name>'
+
+DESCRIPTION
+    pkg is the single package system in TOS (the legacy "module manager" was
+    retired in v1.3.1; 'mod' is now an alias for pkg). It installs add-ons,
+    resolves their dependencies, verifies integrity, and dispatches the shell
+    commands they provide.
+
+    Sources: a package is a directory containing a package.lua manifest plus its
+    files. pkg reads native package.lua, OPPM-style package.oppm.lua, and bundled
+    Optional Utilities disks. install/uninstall/enable require an ADMIN session.
+
+    Security:
+      * Writes are confined to /usr and /var/pkg. A kind="service" package may
+        also install ONE /etc/rc.d/<file>.lua and ONE /etc/<name>.cfg — nothing
+        else under /etc, and never /tos or /init.lua.
+      * When a manifest declares hashes, every file is SHA-256 verified
+        (constant-time) before it is written.
+      * A package command runs in a capability sandbox built from the manifest's
+        declared, ALLOWLISTED capabilities. The "legacy" capability (raw os/io)
+        can never be requested by a manifest.
+
+SUBCOMMANDS
+    list           Installed packages and their enabled state.
+    search         Packages available in any repo or mounted disk.
+    info <name>    Manifest details: version, kind, deps, capabilities.
+    install [arg]  One smart verb. A bare NAME resolves dependencies and
+                   installs from any known source. A PATH (anything with a
+                   "/") installs that single package directory explicitly.
+                   NO argument scans every mounted disk and prompts before
+                   installing each package it finds. (The old 'install-dir'
+                   and 'from-floppy' still work as hidden aliases.)
+    make-disk <mount> [name ...]
+                   Build an Optional Utilities disk from your INSTALLED add-ons
+                   (parity with `deploy`, which builds a whole-OS image). Emits
+                   one package dir per add-on plus a self-contained picker
+                   install.lua, so the disk installs on any TOS machine with no
+                   dev box. Name args limit the export; omit for all add-ons.
+                   Targets removable media only (system paths are refused).
+    uninstall <name>   Remove an installed package.
+
+EXAMPLES
+    pkg search
+    pkg install tetris          (by name)   or:  install tetris
+    pkg install                 (scan the inserted Optional Utilities disk)
+    pkg info tape
+
+ERRORS
+    "Insufficient privileges: admin required"   You are not ADMIN+.
+    "already installed (uninstall first): X"     Remove X before reinstalling.
+    "hash mismatch on <file>"                    The package failed integrity
+                                                 verification; install aborted.
+    "package not found in any repo: X"           No source provides X.
+
+SEE ALSO
+    man packages, mod, MANUAL.md (Chapter 7)

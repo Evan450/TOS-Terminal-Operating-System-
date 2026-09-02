@@ -1,0 +1,40 @@
+NAME
+    compress, decompress - shrink files with the data card
+
+SYNOPSIS
+    compress   <file> [out] [-k]
+    decompress <file.tcz> [out] [-k]
+
+DESCRIPTION
+    compress deflates a file into a self-describing .tcz container using the
+    data card's hardware deflate (available on every data-card tier).
+    decompress reverses it. By default the source file is replaced by the
+    output; pass -k (--keep) to keep the original.
+
+    With no second argument, compress writes <file>.tcz and decompress writes
+    the name with the .tcz suffix stripped.
+
+    These commands require a data card. Without one they refuse rather than
+    "compress" something that would save nothing — a .tcz that was merely
+    STORED (because the data didn't shrink, e.g. already-compressed images)
+    still reads back without a card, but freshly compressing needs one.
+
+OPTIONS
+    -k, --keep   Keep the source file instead of replacing it.
+
+NOTES
+    A data-card call draws from a per-tick budget and can briefly pause the
+    computer on very large files, so this is best for cold, occasional data,
+    not files you rewrite constantly. Tiny or incompressible files are stored
+    verbatim (you'll see "stored uncompressed").
+
+    Disk swap (/var/swap) compresses its spilled data automatically when a
+    data card is present — see 'man swap'.
+
+EXAMPLES
+    compress /home/me/log.txt              (-> log.txt.tcz, original removed)
+    compress /home/me/log.txt -k           (keep the original too)
+    decompress /home/me/log.txt.tcz        (-> log.txt)
+
+SEE ALSO
+    man swap, man memory, MANUAL.md (Chapter 14: compress / decompress)

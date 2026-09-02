@@ -1,0 +1,58 @@
+-- FEAT-5 — operator-extensible component allowlist.
+-- Copy to /etc/component_caps.cfg and edit to taste.
+--
+-- TOS's sandbox ships with a fixed list of allowed component types
+-- (the BASE / GATED sets in kernel/sandbox.lua). This config lets you
+-- ADD types from third-party mods (HBM Nuclear Tech, OpenSecurity,
+-- Computronics, AE2, etc.) at runtime without modifying TOS source.
+--
+-- Two buckets:
+--   * `base`  — granted by the generic `component` cap. Use for
+--               read-only-ish / low-impact peripherals: sensors,
+--               meters, indicators. Anything granted here is reachable
+--               from EVERY module that gets `component`, so be
+--               conservative.
+--   * `gated` — { ctype = "peripheral.<name>" } — requires the
+--               module to declare the matching peripheral cap in its
+--               module.cfg. Use for anything with actuation, network
+--               reach, persistent state, or real-world side effects.
+--
+-- After editing the file, run `component reload-caps` from an admin
+-- shell (or reboot) to pick up the changes.
+--
+-- Cap names follow the convention `peripheral.<category>`. Each
+-- module's manifest then declares the same string in its `caps` list.
+
+return {
+  base = {
+    -- Add types here that should be reachable with the plain
+    -- `component` cap. Examples (uncomment if these mods are present):
+    -- "geiger_counter",
+    -- "reactor_logic_adapter",
+    -- "energy_meter",
+  },
+
+  gated = {
+    -- Add types here that need a per-type cap. The string on the
+    -- right is the cap a module must declare in its module.cfg.
+    -- Examples (uncomment if these mods are present):
+
+    -- HBM Nuclear Tech:
+    -- reactor_control = "peripheral.reactor",
+    -- waste_chamber   = "peripheral.reactor",
+
+    -- OpenSecurity:
+    -- rfid_writer     = "peripheral.security",
+    -- alarm           = "peripheral.security",
+    -- biometric_scanner = "peripheral.security",
+    -- magcard_writer  = "peripheral.security",
+
+    -- Applied Energistics 2:
+    -- me_interface    = "peripheral.ae2",
+    -- me_controller   = "peripheral.ae2",
+
+    -- Computronics:
+    -- chat_box        = "peripheral.chat",
+    -- cipher          = "peripheral.cipher",
+  },
+}

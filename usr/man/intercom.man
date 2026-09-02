@@ -1,0 +1,130 @@
+NAME
+    intercom - facility announcement system (tape voice + network text)
+
+SYNOPSIS
+    intercom
+    intercom status
+    intercom cues
+    intercom say "<text>" [--severity <level>] [--to <peer>]
+    intercom play <cue> [--drive <addr>] [--to <peer>]
+    intercom test <cue>
+    intercom log [N]
+    intercom set <popuplevel|minlevel|cooldown|echotape> <value>
+
+DESCRIPTION
+    The Intercom says whatever you want it to say — that the reactor has
+    just gone offline, that you are low on iron, that the shift is over. It
+    is a general-purpose announcement system with two channels that carry
+    the same announcement at the same time:
+
+      AUDIO   a Computronics tape drive, seeked to the recording and played
+      TEXT    the same words, sent to every machine willing to hear them
+
+    An add-on: pkg install intercom
+
+    THE CATALOG
+    A tape drive cannot tell you what is recorded on it. There is no index —
+    it is audio. So you tell the Intercom once, in the notation you would
+    write down anyway while recording the tape. /etc/intercom.cues holds one
+    line per announcement:
+
+      <name>  [<start>] "<what the recording says>" [<end>]  <severity>
+
+    For example:
+
+      fuel-low  [0001] "Warning: Reactor fuel low." [0005]  warn
+      offline   [0006] "Warning: Reactor offline. Facility on backup power generation." [0010]  alert
+      evac      [0011] "Evacuate the facility." [0020]  critical
+
+    Positions are absolute tape byte offsets. Leading zeros are optional —
+    [0001] and [1] both work, because the padded form is how a person writes
+    a cue list and the short form is how a person types one. Blank lines and
+    #-comments are ignored, and a line with a typo in it is reported by
+    number without taking the rest of the catalog down with it.
+
+    From that single line the Intercom knows all four things it needs: where
+    to seek, when to stop, what words to broadcast, and how urgently to
+    interrupt people.
+
+    CHECKING A CUE
+    Positions written down by hand are easy to get wrong, so check them
+    before you trust them:
+
+      intercom test fuel-low
+
+    That seeks the tape, plays it, stops at the end position, and tells
+    nobody at all. If what you hear is not what the catalog claims it says,
+    fix the numbers before anyone is relying on the announcement.
+
+    SEVERITY
+    Five levels, quietest first:
+
+      info  notice  warn  alert  critical
+
+    Severity decides how hard an announcement interrupts the people who
+    receive it. Below the receiver's popup level it goes to the chat tab and
+    the log. At or above it, a message box appears on their screen.
+
+    THE COOLDOWN
+    A failing reactor can emit an announcement every few seconds. A message
+    box for each one would make the computer unusable at exactly the moment
+    an operator most needs to type on it, so popups are rate-limited: after
+    one appears, no further popup is raised for `cooldown` seconds (default
+    60). Announcements are never dropped by this — only the interruption is
+    suppressed; every one still reaches the chat tab and `intercom log`.
+
+    RECEIVING
+    Hearing announcements needs the service running:
+
+      service start intercom
+
+    It ships disabled, because accepting messages that can raise a modal on
+    your screen is an operator decision, not a default. A machine without it
+    still RELAYS announcements for its trusted neighbours — relaying is the
+    mesh transport's job — it just doesn't listen to them itself.
+
+    Announcements ride the same mesh transport as mail and chat, so they are
+    flooded to trusted peers with store-and-forward retry. A broadcast
+    ("*", the default) is public by definition and goes unsealed; a
+    --to <peer> announcement is sealed end to end.
+
+SUBCOMMANDS
+    (no args)   Open the Intercom tab: cue list, heard log, Enter to
+                announce, T to test.
+    status      Drive, tape, catalog size, service state, popup policy.
+    cues        What is catalogued on the tape.
+    say         Announce text right now. Needs no tape drive at all.
+    play        Play a cue on the tape AND announce its words.
+    test        Play a cue locally. Sends nothing.
+    log [N]     The last N announcements this machine has heard.
+    set         Receive policy (ADMIN):
+                  popuplevel <sev>   interrupt at this severity and above
+                  minlevel   <sev>   ignore anything quieter than this
+                  cooldown   <secs>  minimum quiet between message boxes
+                  echotape   on|off  also play received cues on this box's
+                                     tape (needs the same catalog; positions
+                                     are per-tape, so a cue name from another
+                                     machine only means something if you have
+                                     the same recording)
+
+FILES
+    /etc/intercom.cues     the catalog (plain text, edit it with `edit`)
+    /etc/intercom.cfg      receive policy
+    /var/intercom/log.dat  what this machine has heard
+
+EXAMPLES
+    intercom say "Shift change in five minutes."
+    intercom say "Reactor scrammed." --severity critical
+    intercom test evac                  Hear it before anyone else does.
+    intercom play evac                  Tape plays; everyone is told.
+    intercom set popuplevel warn        Interrupt me for warnings too.
+    intercom set cooldown 120           Two minutes of quiet after an alarm.
+
+NOTES
+    Announcements also appear in the chat tab, where they read as one more
+    thing that was said. Chat is multi-operator: `peer:message` to one
+    machine, `@group:message` to a named group (`/group` to manage them),
+    or a bare message to every trusted peer.
+
+SEE ALSO
+    man networking, chat, mail, tape, service

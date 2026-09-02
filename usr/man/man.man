@@ -1,0 +1,28 @@
+NAME
+    man - display the detailed manual page for a command or topic
+
+SYNOPSIS
+    man <topic>
+    man
+
+DESCRIPTION
+    man shows the in-system manual page for a TOS command or concept. It sits
+    between 'help' and the external Manual in depth:
+
+        help    quick, get-you-going, and shows only what's installed here
+        man     detailed per-topic pages (this command)
+        MANUAL  the full external book (MANUAL.md), for the deepest reference
+
+    With no argument, man lists the pages available on this machine. Pages live
+    under /usr/man/ as plain text; packages may install their own.
+
+    Under the panels TUI a page opens in a scrollable view tab; in the CLI shell
+    it prints to the screen.
+
+EXAMPLES
+    man             List every installed manual page.
+    man pkg         Read the package-manager page.
+    man networking  Read the networking concepts page.
+
+SEE ALSO
+    help, help <command>, MANUAL.md

@@ -1,0 +1,123 @@
+NAME
+    srm - System Repair & Maintenance: diagnose, verify and repair TOS
+
+SYNOPSIS
+    srm
+    srm status
+    srm scan
+    srm health
+    srm verify
+    srm full
+    srm baseline [--full]
+    srm repair   [--restore] [--source <mount>] [--unverified]
+    srm restore  [--source <mount>] [--unverified] [path...]
+
+DESCRIPTION
+    srm is the front door to every maintenance tool in TOS. The individual
+    commands it wraps still work on their own — 'doctor' for runtime health,
+    'verify' for file integrity — but srm runs them together, adds the two
+    things neither could do alone, and reports everything with one severity
+    scale.
+
+    SRM HAS TWO HALVES.
+
+    SRM Basic lives in the EEPROM, inside the BIOS. It runs at POST and
+    catches the faults that stop a boot before anything on disk can run: a
+    CPU that can't execute the kernel, no boot device, a kernel that isn't
+    there, an /init.lua that won't load. When it hits one it names the fault
+    on screen, beeps it (one long tone, then a number of short ones equal to
+    the code's digit — so a machine with a dead screen is still diagnosable),
+    and PARKS the code in the EEPROM. That is the only storage that survives
+    a machine whose disk is the problem.
+
+    SRM Advanced is this command. It has a disk and megabytes of room, so it
+    covers everything the EEPROM has no space for: memory headroom, disk
+    usage, services, accounts, the log, security posture, every file in the
+    manifest, and drift from a known-good baseline. On the first successful
+    boot after a POST failure it reads the parked code, explains it in
+    English, and clears it — so a fault that killed a boot last night is
+    still waiting to be explained this morning.
+
+    FAULT CODES (parked by SRM Basic)
+      C1  CPU architecture too old — TOS needs a Lua 5.3+ CPU
+      D2  no boot device — no /init.lua disk and no TBFS drive found
+      B3  the TBFS boot blob would not compile
+      K4  the kernel was missing (/tos/kernel/init.lua)
+      I5  /init.lua could not be opened
+      I6  /init.lua would not compile
+
+    THE KNOWN-GOOD BASELINE
+    'verify' compares files against the manifest, which says what SHOULD be
+    installed. It cannot tell you a file was quietly changed. 'srm baseline'
+    records a SHA-256 of every boot-critical file as it stands right now, and
+    'srm scan' reports anything that has since gone missing or changed.
+
+    With --full it also stores a verified copy of each file under
+    /var/srm/store, which makes local repair possible: 'srm repair --restore'
+    puts the damaged file back. Without --full only hashes are kept (a few
+    hundred bytes instead of a couple of hundred KB), drift is still detected,
+    and repair needs an external source — an install floppy, say — passed
+    with --source.
+
+    A restore NEVER writes a copy it has not checked. Both the local store and
+    an external source must hash-match the baseline, or the file is refused
+    and left alone. Without a baseline there is nothing to check against, so
+    the operation refuses unless you accept that explicitly with
+    --unverified. Restores are written atomically: the target is replaced by
+    rename, never truncated, so a failure mid-repair cannot leave a
+    zero-length system file.
+
+    Capturing a baseline is a claim about what "good" means on this machine.
+    Take one on a system you trust — a fresh install, or one that has just
+    passed 'srm verify'. A baseline taken on a damaged system certifies the
+    damage.
+
+SUBCOMMANDS
+    status      What SRM knows right now: any parked POST fault, whether the
+                last shutdown was clean, whether a baseline exists and what
+                the store costs. Hashes nothing, so it is instant. (Default.)
+    scan        Hash every baselined file and report drift, deletion, and
+                store rot.
+    health      Runtime health. Identical to 'doctor'.
+    verify      File integrity against the manifest. Identical to 'verify'.
+    full        status, health, verify and scan in one report.
+    baseline    Record the current system as known-good. --full also stores
+                verified copies for local repair.
+    repair      Run the fixer pass: finish interrupted writes, sweep orphaned
+                temp files, rewrite a corrupt boot.cfg, clear stale runtime
+                state, trim oversized logs. With --restore, also put back
+                files that are missing or have drifted.
+    restore     Restore specific files (or everything scan flags) from the
+                store or from --source.
+
+    status, scan, health, verify and full are open to any logged-in user.
+    baseline, repair and restore require an ADMIN session.
+
+FILES
+    /var/srm/index.dat    the baseline: a hash and size per file
+    /var/srm/store/...    verified copies, mirroring their real paths
+    /etc/critical.bak     the boot-critical file LIST (written by pkg)
+
+EXAMPLES
+    srm                          Did anything go wrong? Instant answer.
+    srm baseline --full          Record this system as good, with copies.
+                                 Do this right after a clean install.
+    srm scan                     Has anything changed since then?
+    srm repair                   Fix what is mechanically safe to fix.
+    srm repair --restore         ...and put drifted system files back.
+    srm restore --source /mnt/fd0 /tos/kernel/fs.lua
+                                 Restore one file from the install floppy,
+                                 checked against the baseline first.
+    srm full                     Everything, for a bug report.
+
+NOTES
+    Some repairs only work at boot, before the files they fix are read.
+    'bootsettings repair on' schedules the fixer pass for the next boot; it
+    runs once and clears its own flag, so a repair that crashes can never
+    loop. That boot-time pass is this same code — the report is identical.
+
+    The boot-time pass never restores files. Overwriting a system file is a
+    decision an operator makes, not a fix that is safe to apply unattended.
+
+SEE ALSO
+    man boot, man bootsettings, doctor, verify, backup, MANUAL.md

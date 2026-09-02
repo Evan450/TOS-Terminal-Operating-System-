@@ -1,0 +1,34 @@
+NAME
+    net - network status and trust management
+
+SYNOPSIS
+    net
+    net scan | discover | peers
+    net trust <addr> [full]
+    net block <addr>
+    net revoke <addr>
+    net send <addr> <message>
+
+DESCRIPTION
+    net is the front end to TOS's zero-trust networking. With no argument it
+    shows status (address, hostname, port, peer counts). Trust changes require an
+    ADMIN session and are always a deliberate local action.
+
+SUBCOMMANDS
+    (none)              Show network status.
+    scan / discover     Broadcast a ping and collect responding peers.
+    peers / list        List known peers with their trust level.
+    trust <addr>        Raise a peer to KNOWN.
+    trust <addr> full   Raise a peer to TRUSTED (enables encrypted messaging,
+                        file transfer, and remote execution with that peer).
+    block <addr>        Drop all packets from a peer.
+    revoke <addr>       Reset a peer to UNKNOWN.
+    send <addr> <msg>   Send an encrypted message to a TRUSTED peer.
+
+EXAMPLES
+    net scan
+    net trust 3f8a1c2d full
+    net send 3f8a1c2d "build complete"
+
+SEE ALSO
+    man networking, ping, chat, rsh, scp, MANUAL.md (Chapter 8)
