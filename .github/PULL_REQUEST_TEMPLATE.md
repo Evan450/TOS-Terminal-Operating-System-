@@ -1,11 +1,12 @@
-<!-- Opening this against `main`? Please retarget it to `dev`. -->
+<!-- Check the base branch shown at the top of this page. It must be `dev`. -->
 
 ## Targeting
 
-- [ ] This PR targets **`dev`**, not `main`.
+- [ ] The base branch above is **`dev`** (not `main`).
 
-`main` is a build artifact generated from `dev` by `build/strip.lua`.
-A commit made against `main` is overwritten by the next release build.
+`main` is a build artifact generated from `dev` by `build/strip.lua`, so a
+commit landing on `main` is overwritten by the next release build. If the base
+says `main`, change it before opening this.
 
 ## What this changes
 
