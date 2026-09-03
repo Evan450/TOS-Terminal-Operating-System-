@@ -7,6 +7,35 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### The Optional Utilities pack installs over the wire
+
+The add-on pack is published as a third branch, `optional-utilities`, laid out
+as a `pkg` repository: `pkg repo add` it and `pkg fetch calc` installs over an
+internet card with no floppy involved. Nothing new had to be invented on the
+machine side — `pkgremote` already fetches into a staging tree and hands it to
+the ordinary local installer, so hash verification, write-root confinement and
+the unverified-package gate are the same code they always were.
+
+Two build-side pieces make that safe. `make-repo-index.lua` generates the
+`programs.cfg` index from the package manifests' own `hashes` tables rather
+than by walking the disk, so the index cannot advertise a file the installer
+would then reject — one source of truth instead of two that agree until they
+don't. And it writes with sorted keys: `serialize.encode` walks with `pairs()`,
+and Lua randomizes its string-hash seed per process, so the same table encoded
+in a different order every run — fine for a wire format, useless for a file
+under version control. The format is still proven, by round-tripping the result
+through the real decoder before writing.
+
+Packages below 1.0.0 are held back from the public pack (`cluster-storage`,
+`rbmk-control` — both still have an open spec draft beside them). The rule is
+the version, not an opinion. That also answers the reported symptom: those
+packages used to appear in the picker as "not on any installed disk", which
+reads as a missing floppy rather than as a deliberate omission; now they are
+not advertised at all. `test_build_disk.lua` gained the inverse assertion so a
+half-finished package cannot silently rejoin the disk either, and
+`test_repo_index.lua` checks that every advertised file actually exists in the
+published tree.
+
 ### TOS is public, and the repo now has a source branch
 
 TOS is released. The public repo carries two branches with different trees:
