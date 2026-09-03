@@ -11,12 +11,13 @@ TOS is public and installable. v1.4.0 "Iris" is the current release — install 
 
 [`ROADMAP.md`](ROADMAP.md) is what is actually open — 61 items, including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
 
-## Two branches
+## Three branches
 
 | Branch | What it is | Edit it? |
 |---|---|---|
 | **`main`** | The **release build** — what installers download. Comments stripped, dev tests and build tooling removed, blank-line runs collapsed. | **No.** Generated. |
 | **`dev`** | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, notes. | **Yes** — all work happens here. |
+| **`optional-utilities`** | The **add-on pack**, laid out as a `pkg` repository so a machine with an internet card installs from it directly. | **No.** Generated from `TOS-Extras/` on `dev`. |
 
 **`main` is a build artifact, not a source tree.** Every file on it is generated from `dev` by `build/strip.lua`, so a change committed to `main` is silently destroyed by the next release build. Open pull requests against **`dev`**.
 
@@ -536,6 +537,24 @@ bootstrap.lua <owner>/<repo> <branch> <subdir>
 No Internet Card on the target machine? Craft one (Tier 1 is enough) or
 fall back to the From Install Disk method above — a physical disk has no
 network dependency at all.
+
+### Optional Utilities (add-ons)
+
+Add-ons that run on TOS but aren't TOS itself — a spreadsheet, mail, games, a printer driver, TBFS, the cluster control plane. They ship separately from the OS and install two ways.
+
+**Over the network**, on a machine with an internet card, as an admin:
+
+```
+pkg repo add utils https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/optional-utilities
+pkg search
+pkg fetch calc
+```
+
+A fetch downloads into a staging directory and then runs the **ordinary local install** against it, so hash verification, write-root confinement and the unverified-package gate are the same code as installing from a floppy. The configured repo list *is* the allowlist: there is no default repo and no discovery, so a machine reaches only hosts an admin wrote down.
+
+**From a floppy**, the MS-DOS Supplemental-Utilities way: build the disks with `TOS-Extras/build/build-disk.lua`, copy each `diskN/`'s contents onto its own floppy, insert one, and run `pkg install` to pick add-ons from a menu. The set manifest describes the whole set, so a machine with one disk in the drive still lists everything and can name the disk to ask for.
+
+Packages below version 1.0.0 are deliberately excluded from the published pack — an unfinished add-on that installs cleanly is worse than one you cannot reach. `cluster-storage` and `rbmk-control` are held back on that rule today.
 
 ### Install-path fallbacks
 
