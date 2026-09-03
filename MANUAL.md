@@ -2083,7 +2083,7 @@ pair`); `*` bulletins are plaintext by definition and labelled as such.
 **man** — `man <topic>`
 Open the manual page for a command or concept (`/usr/man/<topic>`). The middle
 help depth, between `help` and this Manual. *Error:* `no manual entry for <topic>`
-- try `help <topic>` or this Manual. *See also:* `help`.
+— try `help <topic>` or this Manual. *See also:* `help`.
 
 **mem** — `mem`
 The memory report: RAM used/total with a usage bar, the RAM tier, swap usage, and

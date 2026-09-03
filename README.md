@@ -5,6 +5,30 @@ A Norton Commander-inspired OS with a tile Desktop, zero-trust networking, OpenO
 
 > **Operators:** the full reference is [`MANUAL.md`](MANUAL.md) — *The Book of TOS*, in two halves: **The Operator's Guide** (tutorial chapters) and **The Reference** (alphabetical command listing + appendices). Three depths of help: `help` gets you moving (install-aware), `man <topic>` is the in-system page, and the Manual is the long story.
 
+## Released
+
+TOS is public and installable. v1.4.0 "Iris" is the current release — install it with the [network bootstrap](#over-the-network-no-disk-no-floppy), from an install disk, or from source. Bug reports and contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+[`ROADMAP.md`](ROADMAP.md) is what is actually open — 61 items, including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
+
+## Two branches
+
+| Branch | What it is | Edit it? |
+|---|---|---|
+| **`main`** | The **release build** — what installers download. Comments stripped, dev tests and build tooling removed, blank-line runs collapsed. | **No.** Generated. |
+| **`dev`** | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, notes. | **Yes** — all work happens here. |
+
+**`main` is a build artifact, not a source tree.** Every file on it is generated from `dev` by `build/strip.lua`, so a change committed to `main` is silently destroyed by the next release build. Open pull requests against **`dev`**.
+
+The split exists because comments cost real memory on a machine that has 192 KB of it, and the BIOS is fighting a hard 4 KiB EEPROM budget — roughly a third of `bios.lua` is comments that must not ship, and must not be lost either. `strip.lua` keeps every `--!`-marked comment (security notes, cross-file invariants, license headers) and drops the rest.
+
+Installing from either branch works, since both carry the same tree shape and the same `tos/system_manifest.lua`:
+
+```
+bootstrap.lua                                            # main (release)
+bootstrap.lua Evan450/TOS-Terminal-Operating-System- dev  # dev (source)
+```
+
 ## What's New in v1.4.0 "Iris"
 
 A UI release: TOS gets a face that isn't a prompt — without moving the prompt.
@@ -386,7 +410,7 @@ Overridable keys: `bg`, `fg`, `border`, `title`, `highlight`, `dim`, `selected_b
 
 ### OpenOS Compatibility
 
-- Shim layer for eleven OpenOS standard libraries: `sides`, `colors`, `keyboard`, `text`, `serialization`, `buffer`, `term`, `filesystem`, `event`, `shell`, `io`
+- Shim layer for twelve OpenOS standard libraries: `sides`, `colors`, `keyboard`, `text`, `serialization`, `buffer`, `term`, `filesystem`, `event`, `shell`, `io`, `internet`
 - `require("term")`, `require("filesystem")`, `require("event")`, etc. all work
 - **OPPM-packaged programs install and run**, from a local repo or a disk:
   `pkg` reads all four manifest forms including a real OPPM `programs.cfg` repo
@@ -458,7 +482,7 @@ is an **explicit** spill-to-disk layer for cold data, backed by `/var/swap`:
   clear any crash debris). Size-capped via `swapMaxKB` in `/etc/tos.cfg`
   (default 4 MB), auto-clamped so swap can't fill the disk; over-budget writes
   fail loudly rather than corrupt.
-- Inspect/maintain from the shell: `swap` (status), `swap keys`, `swap clear`.
+- Inspect/maintain from the shell: `optimize swap` (status), `optimize swap keys`, `optimize swap clear`.
 - Caveat: values round-trip through `kernel.serialize`, so functions/userdata
   inside a stored value are dropped — use it for data, not closures.
 
@@ -579,7 +603,7 @@ disk [list|info|install|export|eject] [args]
 
 ```
 env [KEY=VAL]    service [start|stop <name>]    cron [list|add|rm]
-swap [keys|clear]                    Disk-swap status / maintenance
+optimize swap [status|keys|now|clear|on|off|auto]   Disk-swap status / maintenance
 doctor    diag                       System health check (incl. power/swap)
 ```
 
@@ -595,7 +619,7 @@ component <type> [method] [args...]
 ### Network
 
 ```
-net    ping <addr>    hostname [name]    device    config    battery
+net    ping <addr>    hostname [name]    config    battery
 chat    rsh <addr> <cmd>    scp <addr>:<path> <local>    screen [list|next|N]
 ```
 
@@ -623,6 +647,7 @@ tos/kernel/
   bootcfg.lua                     Boot spectrum config (/etc/boot.cfg): profile + verbosity
   bootsettings.lua                Boot Settings editor (DEL-to-setup UI); edits /etc/boot.cfg
   bootsteps.lua                   Maps raw boot-log lines to splash-bar step narration
+  clipboard.lua                   One per-seat clipboard shared by prompt, editor and output
   compress.lua                    Data-card deflate/inflate framing (.tcz containers)
   config.lua                      System configuration store
   crypto.lua                      Crypto (AES/data card + software fallback)
@@ -630,27 +655,38 @@ tos/kernel/
   datacard.lua                    Shared data-card detection/capability probe
   diag.lua                        Health-check unit powering `doctor`
   display.lua                     TUI engine (tier-aware themes, drawing)
+  ed25519.lua                     Signature verification for package manifests
   env.lua                         Per-process environment variables
   event.lua                       Event system (listeners, timers, intervals)
   fs.lua                          Virtual filesystem (mount, normalize, R/W)
   hal.lua                         Hardware abstraction layer
   i18n.lua                        Language catalogs (community-translatable UI text)
   init.lua                        Kernel orchestrator (boot, login, shutdown)
+  internet.lua                    Internet-card transport (HTTP/TCP) + its bounds and kill switch
   jbod.lua                        Disk pooling (JBOD), opt-in
   keychain.lua                    Per-user passphrase stash
   log.lua                         Rotating file logger
   logo.lua                        Shared ASCII wordmark (splash/POST/login)
   monitor.lua                     System Monitor helpers (pure) backing Ctrl+T
+  netfs.lua                       Mount a directory exported by another TOS machine
+  notify.lua                      Unified notification surface (toasts, beeps, log lines)
   pipe.lua                        Shell pipe/redirect parsing & streams
   pkg.lua                         Package manager — install/enable/uninstall + dependency/hash verification
+  pkgremote.lua                   Fetching packages over an internet card (repo → staging dir)
+  pkgsign.lua                     Publisher trust store + manifest signature gate
   power.lua                       Battery monitoring (tablets)
   process.lua                     Cooperative process scheduler
   profile.lua                     Per-user profile (theme, env, startup cmds, cwd)
   rc.lua                          /etc/rc.d/ startup service manager
+  repair.lua                      One-shot self-repair pass ("Self-repair next boot")
   sandbox.lua                     Capability-based program sandbox
   screen.lua                      Multi-screen GPU+Screen manager + displayProxy
   securefs.lua                    Filesystem ACLs
+  selftest.lua                    On-box self-test battery (runs inside a booted TOS)
   serialize.lua                   Shared serialization (encode/decode/compact)
+  sha256.lua                      SHA-256, split out so it works without a data card
+  sha512.lua                      SHA-512 (RFC 8032 requires it for ed25519)
+  srm.lua                         One front door over the four maintenance subsystems
   swap.lua                        Disk-backed "slow RAM" spill-over store
   sysinfo.lua                     Hardware inventory + tiering (System Configuration POST screen)
   theme.lua                       Named color themes + per-user persistence
@@ -682,6 +718,7 @@ tos/compat/
   term.lua                        Terminal API (cursor, read, write)
   filesystem.lua                  Wraps kernel.fs for OpenOS API (metadata-only get)
   event.lua                       Wraps kernel.event for OpenOS API
+  internet.lua                    `require("internet")` as OpenOS programs expect it
   shell_api.lua                   Shell path resolution & execution
   io.lua                          Standard Lua io library replacement
 
@@ -699,28 +736,49 @@ tos/shell/
   ext.lua                         Extended commands (net, ping, etc.)
   syntax.lua                      Syntax highlighting definitions
   chat.lua                        Peer-to-peer chat TUI
+  clustersetup.lua                Guided cluster stand-up (Manager + workers)
+  colophon.lua                    Easter egg (the second one)
+  keys.lua                        One keybinding table every first-party surface reads
+  kiosk.lua                       Locked-down single-app mode
+  launcher.lua                    Full-screen clickable action menu (~/.launcher.cfg)
+  pkgpicker.lua                   Pick-and-choose installer (MS-DOS Supplemental style)
   tutorial.lua                    First-boot role-aware tutorial
 
 tos/shell/panels/
   init.lua                        Orchestrator — wires submodules together
   state.lua                       Shared state table for all panels
   helpers.lua                     Path, file, text, permission helpers
+  apps.lua                        Tab-type registry (replaced a hardcoded type chain)
   tabs.lua                        Tab create/close/cycle/find
+  home.lua                        One tab, two views — F2 flips tiles ⇄ files
+  desktop.lua                     The tile grid of what this machine can do
+  settingsapp.lua                 The Settings app (appearance, status bar, system)
+  chatapp.lua                     Chat as a persistent panels tab
+  monitorapp.lua                  Full-screen System Monitor (the grown-up Ctrl+T)
+  ui.lua                          Shared widget toolkit (tiles, setting rows, grid math)
   widgets.lua                     Syntax highlighting + status bar widgets
   dialogs.lua                     Inline input prompts + search dialogs
   draw.lua                        All TUI rendering (tabs, menus, file list, editor)
   filebrowser.lua                 Navigate, copy, move, delete, rename, mkdir
   editor.lua                      View/edit tab opening
+  selection.lua                   Text selection for prompt, editor and output
+  mouse.lua                       Click/scroll handling via the optional mouse driver
   context.lua                     Right-click context menu
-  commands.lua                    Built-in shell commands (incl. theme/date/tree)
+  commands.lua                    Command registry front end
+  commands/core.lua               Core commands (files, navigation, session)
+  commands/admin.lua              Admin/root commands (users, deploy, flash)
+  commands/extras.lua             Everything else (net, pkg, disk, peripherals)
   executor.lua                    Command executor + pipe/redirect handler
   menus.lua                       Menu bar action handler
   events.lua                      Main event loop + signal dispatch
   keymap.lua                      OC scancode table
+  takeover.lua                    Administrative-handover cinematic
 
-etc/rc.d/                         Boot services (discoveryd, chatrelay, fileshare, rshd)
+etc/rc.d/                         Boot services (discoveryd, chatrelay, fileshare, netfsd, rshd)
 usr/bin/                          User tools (share, ssh) — `servers` folded into `net servers` (v1.4.0)
-usr/lib/tests/                    Regression tests (path boundary, manifest, multi-seat)
+usr/lang/                         Language catalogs (community-translatable UI text)
+usr/man/                          Manual pages served by `man`
+usr/lib/tests/                    Regression tests (dev tree only; not in a Release build)
 ```
 
 ## Boot Sequence

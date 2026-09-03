@@ -7,6 +7,31 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### TOS is public, and the repo now has a source branch
+
+TOS is released. The public repo carries two branches with different trees:
+`main` is the release build that installers download, and `dev` is the source
+— full comments (including the `--!` security and invariant notes the release
+strips), the off-box test suite, and the build tooling. `main` is generated
+from `dev` by `build/strip.lua`, so a commit made against `main` is destroyed
+by the next release build; `CONTRIBUTING.md` and a pull-request template say
+so in the two places a contributor will actually look.
+
+Installing works from either branch — both carry the same tree shape and the
+same `tos/system_manifest.lua` — so a contributor can test a change on a real
+machine with `bootstrap.lua <owner>/<repo> dev` before opening the PR.
+
+`ROADMAP.md` is the public view of the open queue: 61 items, grouped by status,
+generated from `TODO.txt` by `build/make_roadmap.py`. `TODO.txt` itself stays
+private — it interleaves the open work with a long done-history and names local
+paths on the author's machine — so the generator extracts only the open entries
+and scrubs anything machine-local. Entry bodies are emitted fenced, because
+they are indentation-significant and full of `<addr>`-style placeholders and
+leading dashes that GitHub would otherwise eat as HTML tags and stray bullets.
+`test_roadmap.lua` pins it: the roadmap must match the markers in `TODO.txt`,
+and must not leak a drive path, a home directory or an email. It skips cleanly
+on a dev-branch clone, where the generator and its input are deliberately absent.
+
 ### A disk-free install path, and the assumption it exposed in the old one
 
 `bootstrap.lua` is a new root-level script for a bare OpenOS machine that
@@ -53,8 +78,8 @@ Running the expanded battery for the first time surfaced a real bug, and not
 in the new checks: `kernel.selftest`'s `shutdown=true` option called a raw
 `computer.shutdown()`, which skips `kernel.shutdown`'s own last act — stamping
 `/var/run/pwrstate` "C" for clean. Every armed round was powering the machine
-off "successfully" and then reporting *that exact shutdown* as unsafe (warning
-+ two beeps) on the next boot. A battery whose own exit path corrupts the
+off "successfully" and then reporting *that exact shutdown* as unsafe (a
+warning plus two beeps) on the next boot. A battery whose own exit path corrupts the
 signal it exists to keep trustworthy is worse than one that doesn't shut down
 at all. Fixed to prefer the real `kernel.shutdown` when it's reachable —
 which, by construction, is always, except from the off-box harness that has
@@ -2487,6 +2512,7 @@ trusted neighbours; relays never could read the sealed payload anyway.
 
 Two review holdovers landed with the move, both now enforced at the layer that
 should own them:
+
 - **Refuse plaintext.** A unicast send with no shared secret is an *error*
   (`pair first`), not a silent plaintext flood through third-party relays.
   `*` bulletins can't be sealed by definition, so they require an explicit
@@ -2636,6 +2662,7 @@ editing all three. Now an app registers once in **`shell/panels/apps.lua`**
 the shell dispatches to the active tab's app. Desktop and Settings moved onto
 the registry unchanged; lazy loading is preserved (nothing is parsed until a
 tab is first shown). (`test_app_registry`)
+
 - **The System Monitor is now a full-screen app tab** — the payoff. The old
   Ctrl+T switcher was a centred 66-wide modal that TRUNCATED process names and
   had no room to grow. **Ctrl+T (and `monitor`/`top`) now open one roomy,
@@ -2676,6 +2703,7 @@ tab is first shown). (`test_app_registry`)
 
 ### Round-4 polish — the easter egg grows a personality
 Operator review notes, all landed (still pure theatre, all text original):
+
 - **The eye acts like an eye.** It opens from a closed lid, looks around
   the room, and only then finds the operator and goes red; it glances
   away while "reconsidering" and closes shut at wind-down.
@@ -2735,6 +2763,7 @@ active elevation on **every** exit from its event loop.
 ### Security review pass — sandbox, package integrity, safer defaults
 A second external review drove a security batch (each claim verified against the
 tree first — several earlier findings were already fixed):
+
 - **Sandbox `pullSignal` no longer bypasses the scheduler.** A sandboxed program
   was handed raw `computer.pullSignal`, which drains the global hardware queue —
   it could steal another seat's keystrokes, sniff every modem packet, or block
@@ -2834,6 +2863,7 @@ JBOD re-homed as opt-in, the mouse add-on).
 A pass to merge overlapping commands into one obvious door each, so `help`
 lists fewer names without losing any capability. Nothing was released yet,
 so the old names are simply gone (not deprecated).
+
 - **Aliases collapse in help.** A dozen second names (`dir`=ls, `type`=cat,
   `time`=date, `clear`=cls, `top`=monitor, `diag`=doctor, `colors`=theme,
   `rs`=redstone, `inv`=inventory, `set`=export) still dispatch, but `help`
@@ -2925,6 +2955,7 @@ TOS can now use **unmanaged** OpenComputers drives (raw `drive` components —
 An external failure-point review (verified claim-by-claim before acting)
 drove a resilience pass over the boot chain, scheduler, shutdown path, and
 event pump. In rough order of impact:
+
 - **Lua 5.3 architecture guard.** Eight kernel modules use 5.3 bitwise
   *syntax* (and the boot chain uses `string.pack`), so a CPU switched to the
   Lua 5.2 architecture used to die with a raw syntax-error panic from a
@@ -2982,6 +3013,7 @@ The items parked "for later" from the review and the June perf playbook,
 now done (the playbook's big pieces — dirty-cell shadow buffer, colour-state
 cache, `gpu.copy` scroll — were already in; VRAM bitblt stays deferred until
 it can be emulator-verified on a real T3 GPU):
+
 - **Per-process signal-type interests (review finding #9).** Every broadcast
   signal used to resume EVERY live process — a modem flood cost one resume
   per process per packet. A process may now declare interests at spawn
@@ -3014,6 +3046,7 @@ the ability to tell TOS what it has — within reason. The rule that shaped the
 (CPU/Data Card tier heuristics, RAM *headroom* judgement); reliably-detected
 hardware (GPU, screen, modem) deliberately has none — TOS trusts what it can
 see.
+
 - **Safe Mode (`profile safe`).** Kernel + shell only: no rc.d services, no
   cron jobs, no package-provided commands, no net, no themes — nothing
   third-party runs — but the `pkg` ADMIN verbs still work, so the broken
@@ -3058,6 +3091,7 @@ commands ran to completion in one resume, and the System Monitor (Ctrl+T) ran
 *modally inside the kernel loop*, so while any seat had it open `proc.tick`
 never ran and the whole machine stalled. The shared-CPU ceiling is a mod limit,
 but the *freezing* was ours to fix:
+
 - **`proc.yieldCooperative()` — a throttled mid-work yield.** A no-op until the
   current resume has run one slice (~50 ms), then it yields; the scheduler
   resumes the process with **nothing** and leaves its signal queue untouched,
@@ -3092,6 +3126,7 @@ applied across the shell, Desktop, Settings, dialogs, and launcher — the
 fix for "a mismatch of ideas that could work together". Keybindings and
 commands unchanged; T2 80x25 is the design target, T1 mono degrades
 cleanly (ramps become plain fills, inverse still reads).
+
 - **Rule 1 — frames rank attention.** Dialogs (modal) now wear
   double-line ╔╗ frames + the ▓ shadow; passive containers (tiles,
   panes) keep single-line. (`panels/dialogs.lua`)
@@ -3222,7 +3257,7 @@ cleanly (ramps become plain fills, inverse still reads).
   `test_theme_snap`)
 - **`help <cmd>` no longer advertises manual pages that don't exist.**
   The registry-driven help footer told every command's reader to "run
-  'man <cmd>' for the manual" — and `man launcher` answered "No manual
+  `man <cmd>` for the manual" — and `man launcher` answered "No manual
   page", a dead-end referral loop. The tip now checks
   `/usr/man/<cmd>.man` first and only mentions `man` when the page is
   really there. (`commands/core.lua`)
@@ -3277,6 +3312,7 @@ add-on.
 
 ### Operator tooling — why / screendump / crash recorder / live monitor
 Four operator quality-of-life tools, prompted by an in-emulator test round.
+
 - **`why` — explain a "permission denied".** `why` (no args) explains the last
   command this seat was blocked on, in plain English, with the fix; `why <cmd>`
   explains what any command requires (tier) and whether you can run it. Turns an
@@ -3359,6 +3395,7 @@ Four operator quality-of-life tools, prompted by an in-emulator test round.
 ### Boot verbosity — each option now does what it says
 Audited all four; two didn't match their label, and the mapping had no single
 source of truth. (`test_verbosity.lua` now pins the whole matrix.)
+
 - **`silent` leaked text.** Two boot lines ("Loading kernel modules…",
   "Boot complete: …s") were direct `earlyPrint` calls that bypassed the
   verbosity muter, so a "silent" (and "splash") boot still printed them. They
@@ -3608,7 +3645,7 @@ source of truth. (`test_verbosity.lua` now pins the whole matrix.)
   Base Memory Size : …" grid with retro labels (Numeric Processor, Ext. Memory,
   Max Text Mode, EEPROM BIOS, BIOS ID), a storage table with pseudo PC drive
   names (Primary Master/Slave, Floppy Drive A, Used/Size, Tier, Boot), and the
-  classic "<n>KB SYSTEM MEMORY · GPU T2 TEXT MODE 80x25" footer — TOS's actual
+  classic `<n>KB SYSTEM MEMORY · GPU T2 TEXT MODE 80x25` footer — TOS's actual
   OpenComputers facts dressed as an American Megatrends POST. Boot Settings stays
   the place for TOS-specific config. Narrow (T1) screens fall back to a single
   column. `sysinfo.rows` (the Boot Settings hardware view) is unchanged.
@@ -3998,6 +4035,7 @@ source of truth. (`test_verbosity.lua` now pins the whole matrix.)
 ### Release-accuracy fixes (external review)
 A static review compared the shipped 1.3.2 image + Optional Utilities disk to
 the docs and found drift. Corrected here:
+
 - **Installer version was stale.** `install.lua` reported `1.3.0`; now `1.3.2`,
   and the header no longer carries a second literal version to drift from.
   `env.lua`'s `TOS_VERSION` fallback `1.3.1` → `1.3.2`.
@@ -4046,6 +4084,7 @@ the docs and found drift. Corrected here:
 
 ### Emulator-testing fixes (in-OC)
 A round of fixes from running the build in OpenComputers (Ocelot):
+
 - **Bundled Optional Utilities wouldn't install** despite `pkg list` showing
   them. Install used `pkg.findInRepos`, which scanned only `/mnt/<label>` (one
   level), while listing used the nested-aware `mountedRepoRoots`. So a disk with
@@ -4084,6 +4123,7 @@ A round of fixes from running the build in OpenComputers (Ocelot):
 
 ### Operator experience — visibility + a leaner command set
 Making "what TOS is doing" visible and the command surface easier to understand.
+
 - **Live System Monitor.** Ctrl+T's task switcher grew into a full System Monitor
   (also `monitor`, alias `top`): one auto-refreshing screen with every process —
   kernel AND user, each given a plain-English label (e.g. `login@2` → "Login
