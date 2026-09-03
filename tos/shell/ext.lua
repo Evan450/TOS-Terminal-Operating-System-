@@ -1,6 +1,9 @@
+-- TOS Shell Extensions (lazy-loaded)
+-- Commands here are loaded on-demand by panels.lua for: net, ping, hostname, config, battery, audio
 local computer=require("computer")
 local X={}
 
+-- Helper: get current username and tier from session token
 local function getActor(ctx)
   local U = ctx.U
   if U and ctx.st then
@@ -10,6 +13,8 @@ local function getActor(ctx)
   return "unknown", 0
 end
 
+-- (v1.4.0 consolidation: `device` folded in — one identity command.
+-- No args: show device type + hostname; with an arg: set the hostname.)
 function X.hostname(a,ctx)
   local SC=ctx.K.getConfig() if not SC then ctx.o("No config",0xFF0000) return end
   if a[1] then SC.set("hostname",a[1]) SC.save() end
@@ -21,6 +26,12 @@ function X.config(a,ctx)
   for k,v in pairs(SC.getAll()) do ctx.o(" "..k.." = "..tostring(v),0xC0C0C0) end
 end
 
+-- kernel.power loads on EVERY machine, not just tablets, but statusString()
+-- deliberately returns nil off a battery ("don't show it on computers" — see
+-- kernel/power.lua). Handing that nil straight to ctx.o printed the literal
+-- word "nil" as the answer to `battery` on every desktop, which is the common
+-- case. kernel/diag.lua already branches on the nil; this now agrees with it.
+-- (test_ext_battery.lua)
 function X.battery(a,ctx)
   local pm=ctx.K.getPower()
   if not pm then ctx.o("N/A") return end
@@ -28,8 +39,13 @@ function X.battery(a,ctx)
   if s then ctx.o(s) else ctx.o("AC power (no battery on this device)") end
 end
 
-local _lastScan = nil
+-- #NET-3 — remember the last `net scan` result so subsequent
+-- commands can refer to a peer by its index in that list rather
+-- than its 36-char UUID. Shared across all X.net invocations in
+-- this process.
+local _lastScan = nil  -- array of { addr, hostname, device, trust }
 
+-- Pretty-print a peer addr: prefer alias, fall back to short UUID.
 local function fmtAddr(addr)
   local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
   if A and A.format then return A.format(addr) end
@@ -37,9 +53,12 @@ local function fmtAddr(addr)
   return addr:sub(1, 8) .. "..."
 end
 
+-- Resolve a user-supplied identifier (alias / full uuid / scan-index)
+-- to a full address. Falls through to the raw string when no helper
+-- resolves it, so the existing trust APIs can still reject it.
 local function resolvePeer(s)
   if type(s) ~= "string" or s == "" then return s end
-
+  -- Scan-index form: a bare integer references the last scan's nth peer.
   local n = tonumber(s)
   if n and _lastScan and _lastScan[n] then return _lastScan[n].addr end
   local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
@@ -79,7 +98,7 @@ function X.net(a,ctx)
   end
   local s=a[1]
   if s=="servers" then
-
+    -- (v1.4.0 consolidation: was the standalone /usr/bin/servers tool.)
     local peers=NM.peers and NM.peers() or {}
     if #peers==0 then
       ctx.o("No peers discovered yet.",0xAAAAAA)
@@ -117,7 +136,8 @@ function X.net(a,ctx)
     ctx.o("Scanning...", 0xFFFF00)
     if NM.scan then
       local found = NM.scan(3)
-
+      -- #NET-3 — sort + index + cache the result so the operator can
+      -- refer to peers as `trust 2 full` instead of typing the UUID.
       table.sort(found, function(a2, b2)
         return tostring(a2.addr or "") < tostring(b2.addr or "")
       end)
@@ -144,10 +164,11 @@ function X.net(a,ctx)
       ctx.o("Discovery broadcast sent.", 0x00FF00)
     end
   elseif s=="peers" or s=="list" then
-
+    -- Show discovered peers (phase 8) merged with trust data
     local peers = NM.peers and NM.peers() or {}
     if #peers > 0 then
-
+      -- Cache for index-based reference (mirrors `scan` so `peers` is
+      -- also a valid source of indices).
       _lastScan = peers
       ctx.o(string.format(" %-3s %-20s %-4s %-8s %s",
         "#", "Peer", "Trst", "Device", "Host"), 0xAAAAAA)
@@ -163,7 +184,7 @@ function X.net(a,ctx)
           color)
       end
     else
-
+      -- Fallback to trust manager listing
       local tm = NM.getTrust()
       for _, p in ipairs(tm.listPeers()) do
         ctx.o(string.format(" %-20s T%d %s",
@@ -175,7 +196,10 @@ function X.net(a,ctx)
     local tm=NM.getTrust()
     local actor, tier = getActor(ctx)
     local sub2 = a[2]
-
+    -- New form: `net trust <subcommand> <addr> [...]`
+    --   net trust gen <addr>          # generate + provision a shared secret
+    --   net trust setSecret <addr> <hex|empty>
+    --   net trust <addr> [full]       # legacy: elevate to KNOWN/TRUSTED
     if sub2 == "gen" or sub2 == "generate" then
       local addr = resolvePeer(a[3])
       if not addr then ctx.o("Usage: net trust gen <peer>",0xFFFF00) return end
@@ -185,7 +209,7 @@ function X.net(a,ctx)
         ctx.o("Easier: run 'net pair start' on the peer and 'net pair " ..
               fmtAddr(addr) .. " <code>' here.",0xAAAAAA)
         ctx.o("Or copy: run `net trust setSecret <our-addr> <hex>` on the peer.",0xAAAAAA)
-
+        -- Print as hex so the operator can copy it to the other side.
         local hex = {}
         for i = 1, #secret do hex[i] = string.format("%02x", secret:byte(i)) end
         ctx.o("Secret (hex): " .. table.concat(hex), 0xFFFF55)
@@ -204,7 +228,8 @@ function X.net(a,ctx)
       if not hex or hex == "" or hex == "-" then
         secret = nil
       else
-
+        -- Decode hex pairs to bytes. Reject malformed input rather than
+        -- silently store half a secret.
         if #hex % 2 ~= 0 or hex:match("[^%x]") then
           ctx.o("Bad hex string (need pairs of 0-9 a-f).",0xFF0000); return
         end
@@ -221,7 +246,8 @@ function X.net(a,ctx)
         ctx.o("Failed: " .. tostring(err2 or "unknown"),0xFF0000)
       end
     elseif sub2 == "showSecret" then
-
+      -- Diagnostic: print the secret we have (if any). Audit-logged
+      -- by trust.getSecret since the actor goes through the gate.
       local addr = resolvePeer(a[3])
       if not addr then ctx.o("Usage: net trust showSecret <peer>",0xFFFF00) return end
       local secret, gerr = tm.getSecret(actor, addr, tier)
@@ -232,7 +258,7 @@ function X.net(a,ctx)
       for i = 1, #secret do hex[i] = string.format("%02x", secret:byte(i)) end
       ctx.o(table.concat(hex),0xFFFF55)
     elseif sub2 then
-
+      -- Legacy: `net trust <peer>` or `net trust <peer> full` — elevate.
       local addr = resolvePeer(sub2)
       local ok2, err2
       if a[3]=="full" then ok2, err2 = tm.trustFull(actor, addr, tier)
@@ -289,14 +315,16 @@ function X.net(a,ctx)
     local ok2, err2 = NM.sendMessage(addr, table.concat(a, " ", 3))
     if ok2 then ctx.o("Sent.",0x00FF00)
     else ctx.o("Send failed: "..tostring(err2 or "unknown"),0xFF0000) end
-
+  -- ════════════════════════════════════════════════════════════
+  -- #NET-1: alias subcommand surface
+  -- ════════════════════════════════════════════════════════════
   elseif s == "alias" then
     local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
     if not A then ctx.o("aliases module unavailable",0xFF0000) return end
     local sub2 = a[2]
     if sub2 == "add" or sub2 == "set" then
       local name = a[3]
-      local addr = resolvePeer(a[4])
+      local addr = resolvePeer(a[4])  -- accept "alias add foo 3" if scan was run
       if not name or not addr then
         ctx.o("Usage: net alias add <name> <peer>",0xFFFF00); return
       end
@@ -328,7 +356,9 @@ function X.net(a,ctx)
     else
       ctx.o("Usage: net alias <add|rm|list|show>",0xFFFF00)
     end
-
+  -- ════════════════════════════════════════════════════════════
+  -- #NET-2: pair subcommand surface
+  -- ════════════════════════════════════════════════════════════
   elseif s == "pair" then
     local CP = NM.getChatPair and NM.getChatPair() or nil
     if not CP then ctx.o("chat-pair unavailable",0xFF0000) return end

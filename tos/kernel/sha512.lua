@@ -1,5 +1,32 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - Software SHA-512 (pure Lua 5.3)             ║
+-- ║                                                            ║
+-- ║  Sibling of sha256.lua, and here for one reason: RFC 8032  ║
+-- ║  specifies Ed25519 over SHA-512, and TOS had only          ║
+-- ║  SHA-256. A signature scheme with the wrong hash is not a  ║
+-- ║  variant of the scheme, it is a different scheme that no   ║
+-- ║  other implementation will verify — so this exists rather  ║
+-- ║  than substituting what we already had.                    ║
+-- ║                                                            ║
+-- ║  A data card cannot help here: OpenComputers' data card    ║
+-- ║  offers md5 and sha256 and nothing wider. That is fine —   ║
+-- ║  see kernel.crypto's #PERF note on why a component call     ║
+-- ║  per hash round would be slower than pure Lua anyway.      ║
+-- ║                                                            ║
+-- ║  Lua 5.3 makes this NATURAL rather than painful: its       ║
+-- ║  integers are 64-bit and wrap on overflow, which is        ║
+-- ║  exactly SHA-512's word arithmetic, and `>>` is a LOGICAL  ║
+-- ║  shift. So unlike sha256.lua there is no masking to do —   ║
+-- ║  the machine word IS the algorithm's word.                 ║
+-- ║                                                            ║
+-- ║  Pure: no require of component/computer/fs, so the         ║
+-- ║  off-box signer in build/ can load it under plain Lua.     ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local sha512 = {}
 
+-- Rotate right. n is always 1..63 here; `x << 64` would be 0 in Lua 5.3,
+-- so a zero rotation would silently return zero — never call this with 0.
 local function rrot(x, n) return (x >> n) | (x << (64 - n)) end
 
 local K = {
@@ -25,15 +52,25 @@ local K = {
   0x4cc5d4becb3e42b6, 0x597f299cfc657e2a, 0x5fcb6fab3ad6faec, 0x6c44198c4a475817,
 }
 
+--- SHA-512 of a string → 128-char lowercase hex.
 function sha512.hex(msg)
   return (sha512.raw(msg):gsub(".", function(c)
     return string.format("%02x", c:byte())
   end))
 end
 
+--- SHA-512 of a string → 64 RAW bytes. Ed25519 wants the bytes, not the
+--- hex; going through hex and back would double the allocation on a box
+--- where that is the scarce resource.
 function sha512.raw(msg)
   local bitLen = #msg * 8
 
+  -- The padded message is built as a STRING and indexed in place, rather
+  -- than exploded into a byte table the way sha256.lua does it.
+  -- `msg:byte(1, #msg)` returns one Lua value per byte, and past a few
+  -- hundred thousand bytes that is a "string slice too long" stack
+  -- overflow — a limit no manifest will reach, but this hash also has to
+  -- survive being pointed at a file.
   local padLen = 112 - ((#msg + 1) % 128)
   if padLen < 0 then padLen = padLen + 128 end
   local lenBytes = {}

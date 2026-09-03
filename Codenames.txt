@@ -1,0 +1,24 @@
+Current:
+1.4.0: "Iris" (UI focus — the Desktop tile home screen, the Settings app,
+        and file-browser type glyphs. Iris: Greek goddess of the rainbow
+        and messenger of the gods — fitting for a colour/visual release —
+        and the mythology + astronomy streak holds (7 Iris is one of the
+        brightest asteroids). Also the part of the eye you LOOK with,
+        which is the whole point of this release.)
+Future:
+N/A (so far)
+Previous:
+0.1.0 to 0.2.0: "Genesis" (I forgot to change it, whoops.)
+0.3.0: "Bastion" (Security focus on this one. Didn't change it like I said I would, got to remember better, lol.)
+1.2.5: "Atlas" (Mythology, also secretly hides my like for astronomy! 'Cause Atlas is the Greek god of astronomy. Also don't mind the massive gap in versions/Codenames, that's just me being a goldfish and forgetting to update both the Codenames and the version until I passed 1.0.0 and was already working on 1.2.4, which was when it hit me (yay for natural amnesia!))
+1.2.6: "Beacon" (I had no other ideas.)
+1.3.0: "Aegis" (Security focus — a full Critical/High/Medium/Low audit pass.
+        The shield of Athena/Zeus, so it keeps the mythology + astronomy
+        streak going from "Atlas". And yes, "Bastion" was my old security
+        codename (0.3.0), but you can't reuse one — them's the rules.)
+1.3.1: "Polaris" (Fitting I guess.)
+1.3.2: "Argus" (Security focus — gated process control, killed an input-injection
+        path, and made file-serving fail-closed. Argus Panoptes, the all-seeing
+        hundred-eyed guardian of myth: fitting for a "watch everything" security
+        pass, and it keeps the mythology + astronomy streak (there's an Argus
+        constellation too). Continues the security-codename line after Aegis.)

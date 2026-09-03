@@ -1,9 +1,55 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - Theme Manager                              ║
+-- ║                                                          ║
+-- ║  Named color themes + per-user persistence. The display  ║
+-- ║  module owns the live THEME table; this module owns the  ║
+-- ║  presets, the per-user save/load dance, and the policy   ║
+-- ║  that "set this theme" should mean on each GPU tier.     ║
+-- ║                                                          ║
+-- ║  Customization rules by tier:                            ║
+-- ║    T1 (1-bit / monochrome) — colour overrides are        ║
+-- ║      ignored and apply() returns false. There is no      ║
+-- ║      "blue title" on a black-and-white screen.           ║
+-- ║    T2 (4-bit / 16 dye colours) — full customization,     ║
+-- ║      but RGB values not on the palette will snap to      ║
+-- ║      their nearest neighbour. We don't pretend           ║
+-- ║      otherwise; users see the snapped result live.       ║
+-- ║    T3 (8-bit / 256 colours) — full RGB freedom.          ║
+-- ║                                                          ║
+-- ║  Persistence path is each user's home directory          ║
+-- ║  (/root/.theme.cfg for root, /home/<user>/.theme.cfg     ║
+-- ║  for everyone else). securefs handles the ACL — if a     ║
+-- ║  user can't write their own home, themes don't save      ║
+-- ║  but the live appearance still updates for the session.  ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local theme = {}
 
 local SAVE_NAME = ".theme.cfg"
 
+-- Module references (set during init)
 local display, securefs, log, serialize
 
+-- ============================================================
+-- Built-in presets — 2026 palette refresh
+-- ============================================================
+-- Design rules every preset follows (the old set broke most of them,
+-- which is why they read as garish or flat):
+--   * Bars (menubar/statusbar) are TINTED, not solid accent blocks —
+--     the old solid white/amber/green bars dominated the screen.
+--   * title, warning, and error are three DIFFERENT colors so the
+--     severity ladder reads at a glance (the old presets collapsed
+--     two or three of them into one yellow).
+--   * Body text is soft (not full 0xFFFFFF glare) and `dim` keeps
+--     enough contrast against bg to stay legible.
+--   * Every preset carries the FULL overridable key set, including
+--     syntax + file-type colors. display.setTheme only writes the
+--     keys it's given, so a partial preset would leave the previous
+--     theme's syntax colors behind when switching.
+--
+-- Colors are 24-bit RGB; OC snaps to the nearest palette entry on
+-- T2 (16 dye colors) and to the 6x8x5 cube on T3. Palettes are tuned
+-- for T3 and chosen to snap sanely on T2.
 local PRESETS = {
   default = {
     description  = "TOS classic — teal frames, gold titles on black",
@@ -38,7 +84,9 @@ local PRESETS = {
     bg           = 0x0A0500, fg           = 0xFFB000,
     border       = 0xCC8400, title        = 0xFFD75A,
     highlight    = 0xFFE599, dim          = 0x8F5E00,
-
+    -- Selection keeps the inverted-phosphor look (it's the one place
+    -- a solid amber block belongs), but the bars are now dark with
+    -- amber text instead of wall-to-wall amber.
     selected_bg  = 0xFFB000, selected_fg  = 0x1A0D00,
     menubar_bg   = 0x241200, menubar_fg   = 0xFFB000, menubar_hot  = 0xFFE599,
     statusbar_bg = 0x241200, statusbar_fg = 0xCC8400,
@@ -64,7 +112,13 @@ local PRESETS = {
   },
   plasma = {
     description  = "Plasma display — neon red-orange on black (night-vision friendly)",
-
+    -- Early monochrome plasma panels (PLATO terminals, the first
+    -- "luggable" PCs) glowed a characteristic neon red-orange. Every
+    -- color here stays in the red-orange band — no blue or green
+    -- light — and the background is pure black (gas off), so an
+    -- operator working in the dark keeps their dark adaptation.
+    -- Severity still reads: title pale orange, warning vivid orange,
+    -- error pure red (the "hottest" tone in the family).
     bg           = 0x000000, fg           = 0xFF6A33,
     border       = 0xCC4A1F, title        = 0xFFA64D,
     highlight    = 0xFFC78F, dim          = 0x8F2E14,
@@ -79,7 +133,10 @@ local PRESETS = {
   },
   classic = {
     description  = "Norton-style — white on blue, cyan bars",
-
+    -- True to the NC look this time: CGA blue field, cyan menu/status
+    -- bars with black text (the old silver bars were a DOS-edit
+    -- mashup), yellow titles + hotkeys, cyan double-line borders.
+    -- title (yellow) / warning (orange) / error (red) stay distinct.
     bg           = 0x0000A8, fg           = 0xFFFFFF,
     border       = 0x55FFFF, title        = 0xFFFF55,
     highlight    = 0x55FF55, dim          = 0xA8B8D8,
@@ -94,7 +151,12 @@ local PRESETS = {
   },
   contrast = {
     description  = "High contrast — readability first",
-
+    -- Stark by design. Yellow joins white as the main accents (both
+    -- at or near maximum contrast on black); the selection bar is
+    -- yellow-on-black inverted for maximum visibility; the menubar
+    -- hotkey red is darkened to keep ~8:1 contrast on the white bar;
+    -- warning is a bright orange (~9:1 on black) so the title /
+    -- warning / error ladder stays distinct even here.
     bg           = 0x000000, fg           = 0xFFFFFF,
     border       = 0xFFFFFF, title        = 0xFFFF00,
     highlight    = 0xFFFFFF, dim          = 0xD0D0D0,
@@ -137,6 +199,9 @@ local PRESETS = {
   },
 }
 
+-- The keys a user is allowed to override individually via
+-- `theme color <key> <value>`. We keep this list explicit so a
+-- typo doesn't silently insert a junk key into the live THEME.
 local OVERRIDABLE_KEYS = {
   bg = true, fg = true, border = true, title = true, highlight = true, dim = true,
   selected_bg = true, selected_fg = true,
@@ -144,13 +209,22 @@ local OVERRIDABLE_KEYS = {
   statusbar_bg = true, statusbar_fg = true,
   error = true, warning = true,
   panel_bg = true, input_bg = true, input_fg = true,
-
+  -- Syntax + file-type colors: presets carry these now (palette
+  -- refresh), so per-key override and save/load round-tripping must
+  -- accept them too. display.setTheme validates them like any key.
   syn_keyword = true, syn_string = true, syn_comment = true,
   syn_number = true, syn_func = true,
   file_lua = true, dir_color = true,
 }
 
+-- Live state. `current` is what's actually applied right now; it
+-- exists so `theme show` can describe what the user is looking at
+-- without re-deriving it from the THEME table.
 local current = { preset = "default", overrides = {} }
+
+-- ============================================================
+-- Init
+-- ============================================================
 
 function theme.init(modules)
   display   = modules.display
@@ -158,6 +232,10 @@ function theme.init(modules)
   log       = modules.log
   serialize = modules.serialize or require("kernel.serialize")
 end
+
+-- ============================================================
+-- Introspection
+-- ============================================================
 
 function theme.list()
   local names = {}
@@ -178,7 +256,7 @@ end
 function theme.current()
   return {
     preset    = current.preset,
-    overrides = current.overrides,
+    overrides = current.overrides,  -- shared reference; readers shouldn't mutate
   }
 end
 
@@ -193,6 +271,13 @@ function theme.overridableKeys()
   return keys
 end
 
+-- ============================================================
+-- Apply
+-- ============================================================
+
+-- Returns (ok, err). On T1 GPUs apply() refuses to clobber the
+-- monochrome theme that display.init() picked, since RGB values
+-- collapse to white-or-black and the result would be unreadable.
 local function applyToDisplay(presetTable, overrides)
   if not display then return false, "display module not available" end
 
@@ -214,6 +299,9 @@ local function applyToDisplay(presetTable, overrides)
   return true
 end
 
+-- Apply a preset by name, with optional ad-hoc overrides on top.
+-- Updates the in-memory `current` so subsequent `theme show` is
+-- accurate. Does NOT persist; that's saveForUser's job.
 function theme.apply(name, overrides)
   local p = PRESETS[name]
   if not p then return false, "Unknown theme: " .. tostring(name) end
@@ -225,6 +313,8 @@ function theme.apply(name, overrides)
   return true
 end
 
+-- Set a single color override on top of the current preset.
+-- value must already be a number (decoded by the caller).
 function theme.setColor(key, value)
   if not OVERRIDABLE_KEYS[key] then
     return false, "Not an overridable color: " .. tostring(key)
@@ -239,16 +329,25 @@ function theme.setColor(key, value)
   return theme.apply(current.preset, current.overrides)
 end
 
+-- Drop all overrides and re-apply the base preset.
 function theme.resetOverrides()
   current.overrides = {}
   return theme.apply(current.preset, current.overrides)
 end
+
+-- ============================================================
+-- Persistence
+-- ============================================================
 
 local function configPathFor(session)
   if not session or not session.home then return nil end
   return session.home:gsub("/$", "") .. "/" .. SAVE_NAME
 end
 
+--- True if `session` has an explicit saved theme (~/.theme.cfg).
+-- kernel.profile consults this: a saved `theme set` choice (which can
+-- carry per-key color overrides) outranks the profile's coarse preset
+-- name, so the profile theme only applies when nothing is saved.
 function theme.hasSavedTheme(session)
   local path = configPathFor(session)
   if not path or not securefs then return false end
@@ -256,6 +355,9 @@ function theme.hasSavedTheme(session)
   return ok and exists == true
 end
 
+-- Write the user's theme choice to their home directory. We go
+-- through securefs deliberately: a guest with no writable home
+-- gets a clean "couldn't save" rather than a kernel-level write.
 function theme.saveForUser(session)
   local path = configPathFor(session)
   if not path then return false, "no session / no home" end
@@ -274,6 +376,9 @@ function theme.saveForUser(session)
   return true
 end
 
+-- Load + apply the user's saved theme, if any. Silently no-ops
+-- when there's nothing on disk so a brand-new account just sees
+-- the default. Returns (ok, name_or_err).
 function theme.applyForUser(session)
   local path = configPathFor(session)
   if not path or not securefs then return false, "no session" end
@@ -282,6 +387,10 @@ function theme.applyForUser(session)
   local data, err = securefs.readFile(path, session)
   if not data then return false, err or "read failed" end
 
+  -- #SEC H24 — a few KB is more than enough for a theme file (preset name
+  -- plus a handful of color overrides). Reject anything larger before
+  -- handing it to the serializer; a multi-megabyte theme file otherwise
+  -- crashes the kernel main loop at every login.
   if #data > 8192 then
     if log then log.warn("theme", "Theme file too large at " .. path .. " (" .. #data .. " bytes)") end
     return false, "theme file too large"
@@ -299,6 +408,8 @@ function theme.applyForUser(session)
     presetName = "default"
   end
 
+  -- Filter overrides to known keys with valid numbers — guard against
+  -- a tampered file injecting arbitrary keys into the THEME table.
   local cleanOverrides = {}
   if type(parsed.overrides) == "table" then
     for k, v in pairs(parsed.overrides) do
@@ -314,6 +425,7 @@ function theme.applyForUser(session)
   return true, presetName
 end
 
+-- Drop the saved theme file (if any) and revert to default.
 function theme.clearForUser(session)
   local path = configPathFor(session)
   if not path or not securefs then return false, "no session" end

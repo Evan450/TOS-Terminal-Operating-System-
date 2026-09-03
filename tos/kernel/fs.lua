@@ -1,28 +1,49 @@
+-- ╔══════════════════════════════════════╗
+-- ║  TOS Kernel - Filesystem Layer       ║
+-- ╚══════════════════════════════════════╝
+
 local component = require("component")
 
 local fs = {}
 
+-- Mount table: mountPoint -> filesystem proxy
 local mounts = {}
-
+-- Boot filesystem (set during init)
 local bootFS = nil
 
 function fs.init(bfs)
   bootFS = bfs
-
+  -- Mount boot drive as root
   mounts["/"] = bootFS
 end
 
+-- ============================================================
+-- Path utilities
+-- ============================================================
+
+--- Normalize a path (resolve . and .., remove double slashes).
+-- #SEC H28: also folds backslashes into forward slashes and rejects NUL
+-- bytes outright. A path containing `\0` or backslashes used to slip
+-- through every comparison-based ACL gate ("/etc\..\..\tos" would be a
+-- single segment so the protected-set prefix check missed it). Returning
+-- "/" on a tainted input fails closed — every downstream op then either
+-- rejects or operates on root, which itself is protected.
 function fs.normalize(path)
-
+  -- nil / "" are a LEGITIMATE "no path given" → default to root. (Many
+  -- callers rely on this, e.g. fs.join() of empty parts.)
   if path == nil or path == "" then return "/" end
-
+  -- #SEC M-1 — TAINTED input must FAIL CLOSED, not collapse to "/" (the
+  -- most-privileged boot-FS root). A wrong-typed path or one carrying a
+  -- NUL byte (OC's filesystem proxy treats NUL as a truncator) now returns
+  -- nil — an error sentinel that resolve() and every fs op reject — rather
+  -- than silently routing the operation at the root filesystem.
   if type(path) ~= "string" then return nil end
   if path:find("\0", 1, true) then return nil end
-
+  -- Fold backslashes to forward slashes BEFORE segmenting.
   path = path:gsub("\\", "/")
-
+  -- Ensure leading slash
   if path:sub(1, 1) ~= "/" then path = "/" .. path end
-
+  -- Split and resolve
   local parts = {}
   for segment in path:gmatch("[^/]+") do
     if segment == ".." then
@@ -35,22 +56,34 @@ function fs.normalize(path)
   return result
 end
 
+--- Split path into directory and filename
 function fs.split(path)
   path = fs.normalize(path)
-  if not path then return nil, nil end
+  if not path then return nil, nil end  -- #SEC M-1 — tainted path
   local dir, name = path:match("^(.-)([^/]+)$")
   if not dir or dir == "" then dir = "/" end
   return dir, name or ""
 end
 
+--- Join path segments
 function fs.join(...)
   local parts = {...}
   return fs.normalize(table.concat(parts, "/"))
 end
 
+-- ============================================================
+-- Mount management
+-- ============================================================
+
+--- Mount a filesystem at a path.
+-- #SEC H27 — refuse to mount over a non-empty directory on the underlying
+-- filesystem (would hide its contents from every caller). The kernel boot
+-- code mounts "/" before any other path exists, so we explicitly allow
+-- "/" itself (it is always the first mount). Other paths must be empty
+-- or missing on the existing tree before the new proxy takes over.
 function fs.mount(path, proxy)
   path = fs.normalize(path)
-  if not path then return false, "invalid mount path" end
+  if not path then return false, "invalid mount path" end  -- #SEC M-1
   if mounts[path] then
     return false, "Already mounted at " .. path
   end
@@ -68,23 +101,25 @@ function fs.mount(path, proxy)
   return true
 end
 
+--- Unmount
 function fs.unmount(path)
   path = fs.normalize(path)
-  if not path then return false, "invalid path" end
+  if not path then return false, "invalid path" end  -- #SEC M-1
   if path == "/" then return false, "Cannot unmount root" end
   mounts[path] = nil
   return true
 end
 
+--- Resolve a path to (filesystem_proxy, relative_path)
 local function resolve(path)
   path = fs.normalize(path)
-  if not path then return nil end
-
+  if not path then return nil end  -- #SEC M-1 — tainted path: no proxy, fail closed
+  -- Find longest matching mount point
   local bestMount = "/"
   local bestLen = 1
   for mp in pairs(mounts) do
     if #mp > bestLen then
-
+      -- Match root "/" or prefix with boundary (e.g., /mnt/data must not match /mnt/data2)
       if mp == "/" or (path:sub(1, #mp) == mp and (#path == #mp or path:sub(#mp + 1, #mp + 1) == "/")) then
         bestMount = mp
         bestLen = #mp
@@ -96,6 +131,10 @@ local function resolve(path)
   if relPath:sub(1, 1) ~= "/" then relPath = "/" .. relPath end
   return mounts[bestMount], relPath
 end
+
+-- ============================================================
+-- File operations
+-- ============================================================
 
 function fs.exists(path)
   local proxy, rel = resolve(path)
@@ -131,8 +170,8 @@ end
 
 function fs.remove(path)
   path = fs.normalize(path)
-  if not path then return false, "invalid path" end
-
+  if not path then return false, "invalid path" end  -- #SEC M-1 (don't let resolve() re-default nil to "/")
+  -- Prevent deleting mount points directly
   if mounts[path] then
     return false, "Cannot delete a mount point (use umount)"
   end
@@ -146,8 +185,8 @@ end
 function fs.rename(from, to)
   from = fs.normalize(from)
   to = fs.normalize(to)
-  if not from or not to then return false, "invalid path" end
-
+  if not from or not to then return false, "invalid path" end  -- #SEC M-1
+  -- Prevent renaming mount points
   if mounts[from] then
     return false, "Cannot rename a mount point"
   end
@@ -176,6 +215,10 @@ function fs.lastModified(path)
   return ok and result or 0
 end
 
+-- Cooperative slice (#REV multi-seat freeze), resolved lazily — fs
+-- loads BEFORE kernel.process at boot. Called between whole-file
+-- operations only (never mid-file), so per-file atomicity within one
+-- resume is preserved; a no-op outside a yieldable process.
 local coopProc = nil
 local function coopYield()
   if coopProc == nil then
@@ -185,6 +228,11 @@ local function coopYield()
   if coopProc then coopProc.yieldCooperative() end
 end
 
+-- ============================================================
+-- File I/O
+-- ============================================================
+
+--- Read entire file as string
 function fs.readFile(path)
   local proxy, rel = resolve(path)
   if not proxy then return nil, "No filesystem" end
@@ -193,7 +241,10 @@ function fs.readFile(path)
   local h, err = proxy.open(rel, "r")
   if not h then return nil, err end
   local chunks = {}
-
+  -- #MEM — table.concat runs INSIDE the pcall: on a tight heap the concat
+  -- itself is the allocation most likely to raise ("not enough memory for
+  -- buffer allocation"), and outside the pcall it escaped as a kernel
+  -- panic (crash-24/41: verify → readFile → concat). Callers see nil+err.
   local readOk, result = pcall(function()
     repeat
       local chunk = proxy.read(h, 4096)
@@ -207,10 +258,11 @@ function fs.readFile(path)
   return result
 end
 
+--- Write string to file (overwrite)
 function fs.writeFile(path, content)
   local proxy, rel = resolve(path)
   if not proxy then return false, "No filesystem" end
-
+  -- Ensure parent directory exists
   local dir = rel:match("^(.+)/[^/]+$")
   if dir and dir ~= "" then
     local ok0, isDir = pcall(proxy.isDirectory, dir)
@@ -224,6 +276,7 @@ function fs.writeFile(path, content)
   return true
 end
 
+--- Append to file
 function fs.appendFile(path, content)
   local proxy, rel = resolve(path)
   if not proxy then return false, "No filesystem" end
@@ -235,6 +288,16 @@ function fs.appendFile(path, content)
   return true
 end
 
+-- ============================================================
+-- Atomic write + crash recovery (power-loss corruption guard)
+-- ============================================================
+-- writeFileAtomic writes the FULL new content to a sibling temp file,
+-- then replaces the target with a single rename. A power cut therefore
+-- leaves EITHER the intact old file OR the intact new file — never a
+-- truncated half-write (the failure mode that bricks /etc/users.dat and
+-- friends when the machine is yanked mid-save). The one lossy window
+-- (between removing the old file and renaming the temp in) is repaired at
+-- boot by fs.recoverAtomic().
 local ATOMIC_SUFFIX = ".tos-tmp"
 
 function fs.writeFileAtomic(path, content)
@@ -246,7 +309,8 @@ function fs.writeFileAtomic(path, content)
     pcall(fs.remove, tmp)
     return false, err or "temp write failed"
   end
-
+  -- Remove-then-rename: OC's rename is not guaranteed to overwrite an
+  -- existing destination across host platforms, so clear it first.
   if fs.exists(path) then
     local rok = pcall(fs.remove, path)
     if not rok then pcall(fs.remove, tmp); return false, "cannot replace target" end
@@ -256,6 +320,10 @@ function fs.writeFileAtomic(path, content)
   return true
 end
 
+-- Repair interrupted atomic writes for the given base paths. A temp with
+-- no base file = crash mid-replace ⇒ promote the (complete) temp. Both
+-- present = stale temp from an aborted write ⇒ discard. Returns
+-- (recovered, cleaned). Called once at boot before the critical loaders run.
 function fs.recoverAtomic(paths)
   local recovered, cleaned = 0, 0
   for _, base in ipairs(paths or {}) do
@@ -275,11 +343,12 @@ function fs.recoverAtomic(paths)
   return recovered, cleaned
 end
 
+--- Copy a file from src to dst (handles cross-filesystem copies)
 function fs.copy(src, dst)
   src = fs.normalize(src)
   dst = fs.normalize(dst)
-  if not src or not dst then return false, "invalid path" end
-
+  if not src or not dst then return false, "invalid path" end  -- #SEC M-1
+  -- If source is a directory, use recursive copy
   if fs.isDirectory(src) then
     return fs.copyRecursive(src, dst)
   end
@@ -288,35 +357,43 @@ function fs.copy(src, dst)
   return fs.writeFile(dst, content)
 end
 
+--- Recursively copy a directory tree from src to dst.
+-- Creates the destination directory and copies all files and subdirectories.
+-- @param src string: Source directory path
+-- @param dst string: Destination directory path
+-- @return boolean, string: success or false + error
 function fs.copyRecursive(src, dst)
   src = fs.normalize(src)
   dst = fs.normalize(dst)
-  if not src or not dst then return false, "invalid path" end
+  if not src or not dst then return false, "invalid path" end  -- #SEC M-1
 
   if not fs.exists(src) then
     return false, "Source not found: " .. src
   end
   if not fs.isDirectory(src) then
-
+    -- Single file, just copy it
     return fs.copy(src, dst)
   end
 
+  -- Prevent copying a directory into itself
   if dst:sub(1, #src) == src and (#dst == #src or dst:sub(#src + 1, #src + 1) == "/") then
     return false, "Cannot copy a directory into itself"
   end
 
+  -- Create destination directory
   if not fs.exists(dst) then
     local ok, err = fs.makeDirectory(dst)
     if not ok then return false, "Cannot create directory: " .. tostring(err) end
   end
 
+  -- Iterate contents
   local items = fs.list(src)
   if not items then return false, "Cannot list source directory" end
 
   local copied, failed = 0, 0
   for _, name in ipairs(items) do
-    coopYield()
-
+    coopYield()   -- between files: big trees stop freezing other seats
+    -- Strip trailing slash from directory names (OC fs.list may include it)
     local cleanName = name:match("^(.-)/?$") or name
     if cleanName ~= "" then
       local srcPath = fs.join(src, cleanName)
@@ -343,12 +420,13 @@ function fs.copyRecursive(src, dst)
   return true
 end
 
+--- Open a file handle (low-level)
 function fs.open(path, mode)
   local proxy, rel = resolve(path)
   if not proxy then return nil, "No filesystem" end
   local h, err = proxy.open(rel, mode or "r")
   if not h then return nil, err end
-
+  -- Return a wrapper with read/write/close
   return {
     handle = h,
     proxy  = proxy,
@@ -367,6 +445,7 @@ function fs.open(path, mode)
   }
 end
 
+-- Disk space info
 function fs.spaceTotal(path)
   local proxy = resolve(path or "/")
   if not proxy then return 0 end
@@ -385,6 +464,7 @@ function fs.spaceFree(path)
   return fs.spaceTotal(path) - fs.spaceUsed(path)
 end
 
+-- List mount points
 function fs.mounts()
   local result = {}
   for mp, proxy in pairs(mounts) do

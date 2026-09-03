@@ -1,5 +1,42 @@
+-- ╔══════════════════════════════════════════════════════════════╗
+-- ║  TOS Shell — keybinds                                        ║
+-- ║                                                              ║
+-- ║  ONE TABLE, and everything first-party reads it: the shell,   ║
+-- ║  its dialogs, the picker, and every bundled package.          ║
+-- ║                                                              ║
+-- ║  WHY THIS EXISTS. Operator, 2026-08-11: "^Q is the close      ║
+-- ║  combination, the ttt game just uses Q to exit, which can be  ║
+-- ║  confusing for Operators who prefer one standard." Correct    ║
+-- ║  and worth more than it sounds — a shortcut you have to       ║
+-- ║  remember PER PROGRAM is not a shortcut, it is trivia. So     ║
+-- ║  the bindings live here rather than being re-decided in       ║
+-- ║  every init.lua, and an operator can change them once and     ║
+-- ║  have every TOS program follow.                                ║
+-- ║                                                              ║
+-- ║  THIS IS A CONVENTION, NOT A CAGE. A third-party package can  ║
+-- ║  bind whatever it likes and nothing here stops it. What we    ║
+-- ║  get by being consistent is that OUR packages feel like one   ║
+-- ║  system — which is the difference the operator was after.     ║
+-- ║                                                              ║
+-- ║  Operator configuration, layered:                              ║
+-- ║    /etc/keys.cfg    the machine's binds (admin)               ║
+-- ║    ~/.keys.cfg      this user's, applied on top               ║
+-- ║  Keys are written the way a person says them — "^Q", "F10",   ║
+-- ║  "Ctrl+S", "/" — never scancodes. A config nobody can read    ║
+-- ║  back is a config nobody will edit.                           ║
+-- ║                                                              ║
+-- ║  Reachable from sandboxed package code (kernel.sandbox's      ║
+-- ║  ALLOWED_MODULE_NAMES), because a keybind table that only     ║
+-- ║  the base image could see would standardise nothing. It is    ║
+-- ║  safe to expose: it reads two config files and returns key    ║
+-- ║  matchers. No authority passes through it.                     ║
+-- ╚══════════════════════════════════════════════════════════════╝
+
 local keys = {}
 
+-- ============================================================
+-- The standard actions
+-- ============================================================
 --! Deliberately SMALL. These are the bindings that mean the same thing
 --! in every program; anything a single program invented stays in that
 --! program. A "standard" that tries to cover every key ends up
@@ -56,6 +93,13 @@ local RESERVED = {
   ["^C"] = "interrupt the foreground program (kernel)",
 }
 
+-- ============================================================
+-- Key names ↔ matchers
+-- ============================================================
+-- A matcher is { ch = <char code> } or { code = <scancode> }. OC hands
+-- key_down both; letters arrive as chars and function/arrow keys as
+-- scancodes, which is why one form cannot cover both.
+
 local NAMED = {
   esc = { code = 1 },      enter = { code = 28 },  tab = { code = 15 },
   space = { code = 57 },   backspace = { code = 14 },
@@ -65,14 +109,19 @@ local NAMED = {
   up = { code = 200 },     down = { code = 208 },
   left = { code = 203 },   right = { code = 205 },
 }
-for i = 1, 10 do NAMED["f" .. i] = { code = 58 + i } end
+for i = 1, 10 do NAMED["f" .. i] = { code = 58 + i } end   -- F1=59 … F10=68
 NAMED.f11, NAMED.f12 = { code = 87 }, { code = 88 }
 
+--- Parse a human key name into a matcher, or nil.
+-- Accepts "F10", "Esc", "^Q", "Ctrl+Q", "ctrl-q", "/", "a", and
+-- modifier+named forms like "Ctrl+Insert", "Shift+Delete", "Alt+Enter".
 function keys.parse(name)
   if type(name) ~= "string" then return nil end
   local s = name:match("^%s*(.-)%s*$")
   if s == "" then return nil end
 
+  -- Ctrl forms. In OC a control chord arrives as the character with the
+  -- top bits cleared: ^A is 1, ^Q is 17. Not a scancode.
   local c = s:match("^%^(.)$") or s:match("^[Cc][Tt][Rr][Ll][%+%-](.)$")
   if c then
     local b = c:upper():byte()
@@ -105,6 +154,8 @@ function keys.parse(name)
     return m
   end
 
+  -- A single printable character binds to itself (no modifier prefixes:
+  -- a modified letter is the ^X form above).
   if rest == s and #s == 1 then
     local b = s:byte()
     if b >= 32 and b < 127 then return { ch = b } end
@@ -112,6 +163,7 @@ function keys.parse(name)
   return nil
 end
 
+--- Render a matcher back as the name a person would write.
 function keys.name(m)
   if type(m) ~= "table" then return "?" end
   if m.ctrl then return "^" .. m.ctrl end
@@ -129,6 +181,9 @@ function keys.name(m)
   return prefix .. "code " .. tostring(m.code)
 end
 
+-- ============================================================
+-- Modifier state
+-- ============================================================
 --! OC delivers key_down/key_up for the modifier keys themselves, and
 --! that is the ONLY way to know whether Shift is held: Shift+Left and
 --! Left are byte-identical in a key_down signal (no character, same
@@ -145,27 +200,32 @@ end
 --! keypress re-asserts it) and un-wedges the case that would otherwise
 --! need a re-login to clear.
 local MOD_CODES = {
-  [42] = "shift", [54] = "shift",
-  [29] = "ctrl",  [157] = "ctrl",
-  [56] = "alt",   [184] = "alt",
+  [42] = "shift", [54] = "shift",     -- lshift / rshift
+  [29] = "ctrl",  [157] = "ctrl",     -- lcontrol / rcontrol
+  [56] = "alt",   [184] = "alt",      -- lmenu / rmenu
 }
 local STALE_AFTER = 15
 
+--- A fresh modifier-state table.
 function keys.newMods()
   return { shift = false, ctrl = false, alt = false, at = 0 }
 end
 
+--- Fold one signal into `mods`. Pure apart from mutating `mods`, so a
+--- test can drive a whole keyboard sequence through it.
+--- Returns true when the signal WAS a modifier key (caller may ignore it).
 function keys.trackMods(mods, sig, ch, co, now)
   if type(mods) ~= "table" then return false end
   now = now or 0
-
+  -- Expire first: a stale reading must not survive into this decision.
   if mods.at > 0 and (now - mods.at) > STALE_AFTER then
     mods.shift, mods.ctrl, mods.alt = false, false, false
   end
   local which = MOD_CODES[co]
   if sig == "key_down" then
     if which then mods[which] = true; mods.at = now; return true end
-
+    -- A printable character proves Ctrl and Alt are NOT held: both
+    -- suppress the character. Cheap self-correction for a lost key_up.
     if ch and ch >= 32 then mods.ctrl, mods.alt = false, false end
     mods.at = now
   elseif sig == "key_up" then
@@ -175,6 +235,7 @@ function keys.trackMods(mods, sig, ch, co, now)
   return false
 end
 
+--- Is a modifier held, honouring the staleness rule?
 function keys.modDown(mods, which, now)
   if type(mods) ~= "table" then return false end
   if mods.at > 0 and ((now or 0) - mods.at) > STALE_AFTER then return false end
@@ -184,7 +245,10 @@ end
 keys.MOD_CODES = MOD_CODES
 keys.STALE_AFTER = STALE_AFTER
 
-local _cache = {}
+-- ============================================================
+-- Loading
+-- ============================================================
+local _cache = {}   -- who -> resolved binding table
 
 local function decodeFile(path)
   local okF, fs = pcall(require, "kernel.fs")
@@ -223,6 +287,7 @@ local function homeOf(who)
   return (who == "root") and "/root" or ("/home/" .. who)
 end
 
+--- Resolved bindings for `who` (defaults to the live session's user).
 function keys.load(who)
   if not who then
     local okU, users = pcall(require, "kernel.users")
@@ -256,6 +321,18 @@ function keys.reload()
   return true
 end
 
+-- ============================================================
+-- The API programs use
+-- ============================================================
+
+--- Does this keypress mean `action`?
+-- @param action  "quit" | "help" | "save" | "find" | "refresh" | "view"
+--                | "copy" | "cut" | "paste"
+-- @param ch      character code from key_down (may be nil)
+-- @param code    scancode from key_down (may be nil)
+-- @param who     user whose bindings to read (defaults to the session's)
+-- @param mods    live modifier state from keys.trackMods (optional)
+--
 --! `mods` IS OPTIONAL AND THAT IS LOAD-BEARING. Every call site that
 --! predates modifier-aware bindings passes four arguments and must keep
 --! behaving identically, so a matcher's modifier requirements are only
@@ -283,17 +360,22 @@ function keys.is(action, ch, code, who, mods)
   return false
 end
 
+--- The keys bound to `action`, as the names a person would write:
+--- "^Q / F10". For help text, so a footer can never disagree with what
+--- the program actually listens for.
 function keys.label(action, who)
   local bind = keys.load(who)[action]
   if not bind or #bind == 0 then return "" end
   local parts = {}
   for _, m in ipairs(bind) do
-
+    -- Esc is honoured but never ADVERTISED: telling an operator to press
+    -- it is exactly the bug this whole convention came from.
     if m.code ~= 1 then parts[#parts + 1] = keys.name(m) end
   end
   return table.concat(parts, " / ")
 end
 
+--- Every action, for `keys list` and for the settings UI.
 function keys.actions(who)
   local bound = keys.load(who)
   local out = {}
@@ -313,6 +395,7 @@ function keys.actions(who)
   return rows
 end
 
+--- Kernel-owned chords, so `keys` can say why rebinding them is refused.
 function keys.reserved()
   local out = {}
   for k, v in pairs(RESERVED) do out[#out + 1] = { key = k, help = v } end
@@ -320,6 +403,7 @@ function keys.reserved()
   return out
 end
 
+--- Is this key name reserved by the kernel?
 function keys.isReserved(name)
   local m = keys.parse(name)
   if not m or not m.ctrl then return false end

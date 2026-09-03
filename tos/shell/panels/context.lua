@@ -1,3 +1,8 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels Context Menu                     ║
+-- ║  Build and execute right-click context menu actions  ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local helpers = require("shell.panels.helpers")
 local filebrowser = require("shell.panels.filebrowser")
 local editor = require("shell.panels.editor")
@@ -88,7 +93,8 @@ function M.execute(S, action, makeProgramEnv)
   elseif action == "ctx_rename" then
     filebrowser.doRename(S, S.ctxPath, S.ctxFile)
   elseif action == "ctx_props" then
-
+    -- A directory's own `sz` is 0 (the fs reports 0 for dir entries), so sum
+    -- its contents recursively — otherwise folder properties always read 0B.
     local sizeText
     if S.ctxFile.dir then
       local F = S.F

@@ -1,5 +1,38 @@
+-- ╔══════════════════════════════════════════════════════════════╗
+-- ║  TOS Shell — text selection maths                            ║
+-- ║                                                              ║
+-- ║  Three surfaces let you select text — the command prompt (one║
+-- ║  line), the editor (a rectangle of lines) and a view buffer   ║
+-- ║  (whole lines of read-only output) — and all three need the  ║
+-- ║  same handful of operations: normalise an anchor and a cursor ║
+-- ║  into a range, pull the text out of it, take it out of the    ║
+-- ║  buffer, put other text in its place.                         ║
+-- ║                                                              ║
+-- ║  Written once, here, PURE: no requires, no globals, no draw   ║
+-- ║  calls. Three copies of "which end of the selection is the    ║
+-- ║  start" is three places for an off-by-one to hide, and this   ║
+-- ║  is exactly the kind of index arithmetic that unit tests are  ║
+-- ║  good at and a person reading code is not.                    ║
+-- ║                                                              ║
+-- ║  CONVENTIONS, and they are the same everywhere:              ║
+-- ║    · a one-line offset is a CURSOR position, 1..#s+1, the     ║
+-- ║      same space S.cmdCursor already lives in — so "select     ║
+-- ║      from 3 to 5" covers the two characters 3 and 4           ║
+-- ║    · a position in a buffer is { row = r, col = c }, with col ║
+-- ║      in the same 1..#line+1 cursor space                       ║
+-- ║    · an anchor of nil means "no selection", never "0"         ║
+-- ╚══════════════════════════════════════════════════════════════╝
+
 local sel = {}
 
+-- ============================================================
+-- One line (the command prompt)
+-- ============================================================
+
+--- Normalise anchor + cursor into (from, to), from <= to. Returns nil
+--- when there is no selection or it is empty — an empty selection is
+--- NOT a selection, so copy falls back to "the whole line" instead of
+--- putting nothing on the clipboard.
 function sel.range(anchor, cursor)
   if type(anchor) ~= "number" or type(cursor) ~= "number" then return nil end
   local from, to = anchor, cursor
@@ -8,12 +41,16 @@ function sel.range(anchor, cursor)
   return from, to
 end
 
+--- The selected text of `s`, or nil.
 function sel.text(s, anchor, cursor)
   local from, to = sel.range(anchor, cursor)
   if not from then return nil end
   return tostring(s or ""):sub(from, to - 1)
 end
 
+--- Remove the selection. Returns (newString, removedText, newCursor).
+--- With no selection the string is returned untouched, so a caller can
+--- run this unconditionally on "typed a character" without checking.
 function sel.remove(s, anchor, cursor)
   s = tostring(s or "")
   local from, to = sel.range(anchor, cursor)
@@ -21,6 +58,7 @@ function sel.remove(s, anchor, cursor)
   return s:sub(1, from - 1) .. s:sub(to), s:sub(from, to - 1), from
 end
 
+--- Insert `text` at `at`. Returns (newString, newCursor).
 function sel.insert(s, at, text)
   s = tostring(s or "")
   text = tostring(text or "")
@@ -28,11 +66,19 @@ function sel.insert(s, at, text)
   return s:sub(1, at - 1) .. text .. s:sub(at), at + #text
 end
 
+--- Replace the selection (if any) with `text`.
+--- Returns (newString, newCursor).
 function sel.replace(s, anchor, cursor, text)
   local cut, _, at = sel.remove(s, anchor, cursor)
   return sel.insert(cut, at or cursor, text)
 end
 
+-- ============================================================
+-- A buffer of lines (the editor)
+-- ============================================================
+
+--- Order two { row, col } positions. Returns (first, second) as plain
+--- tables; nil when either is missing or they are the same point.
 function sel.orderPos(a, b)
   if type(a) ~= "table" or type(b) ~= "table" then return nil end
   local ar, ac = a.row or 1, a.col or 1
@@ -44,6 +90,7 @@ function sel.orderPos(a, b)
   return { row = ar, col = ac }, { row = br, col = bc }
 end
 
+--- The selected text as an array of lines, or nil.
 function sel.extract(lines, a, b)
   local first, last = sel.orderPos(a, b)
   if not first then return nil end
@@ -58,6 +105,10 @@ function sel.extract(lines, a, b)
   return out
 end
 
+--- Remove the selection from `lines` IN PLACE. Returns (removedLines,
+--- row, col) — the position the cursor should land on — or nil when
+--- there was no selection. The buffer never becomes empty: an editor
+--- with zero lines has no line to type on.
 function sel.removeBlock(lines, a, b)
   local first, last = sel.orderPos(a, b)
   if not first then return nil end
@@ -70,6 +121,8 @@ function sel.removeBlock(lines, a, b)
   return removed, first.row, first.col
 end
 
+--- Insert an array of lines at { row, col } IN PLACE.
+--- Returns (row, col) after the inserted text.
 function sel.insertBlock(lines, row, col, block)
   lines = lines or {}
   block = block or {}
@@ -94,6 +147,8 @@ function sel.insertBlock(lines, row, col, block)
   return lastRow, lastCol
 end
 
+--- Is (row, col) inside the selection? Used by the renderer, one cell at
+--- a time, so it stays a comparison and never allocates.
 function sel.contains(a, b, row, col)
   local first, last = sel.orderPos(a, b)
   if not first then return false end
@@ -103,12 +158,23 @@ function sel.contains(a, b, row, col)
   return true
 end
 
+-- ============================================================
+-- Whole lines (a read-only view buffer)
+-- ============================================================
+
+--- Normalise two line indices into an inclusive (from, to). Unlike the
+--- character ranges above, a single line IS a selection here: there is
+--- no cursor to distinguish "on line 4" from "line 4 selected", so the
+--- anchor being set is the whole signal.
 function sel.lineRange(anchor, cursor)
   if type(anchor) ~= "number" or type(cursor) ~= "number" then return nil end
   if anchor > cursor then return cursor, anchor end
   return anchor, cursor
 end
 
+--- Pull an inclusive line range out of a view buffer. `content` rows are
+--- either plain strings or { text, colour } pairs, which is how view
+--- tabs store them; both are accepted and only the text comes back.
 function sel.lines(content, anchor, cursor)
   local from, to = sel.lineRange(anchor, cursor)
   if not from then return nil end

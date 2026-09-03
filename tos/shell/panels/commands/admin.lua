@@ -1,9 +1,21 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Commands subfile                            ║
+-- ║  Auto-extracted from commands.lua during the v1.3 split  ║
+-- ║  to bring per-file size under ~500 lines and enable      ║
+-- ║  lazy-loading via the dispatcher.                        ║
+-- ║                                                          ║
+-- ║  Each subfile exports a single registration function     ║
+-- ║  that adds its commands to the shared C table. The       ║
+-- ║  dispatcher in commands.lua loads each subfile only on   ║
+-- ║  first access to one of its commands.                    ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local computer   = require("computer")
 local component  = require("component")
 local helpers    = require("shell.panels.helpers")
 
 return function(C, S, deps)
-
+  -- Stable references aliased as locals (avoids per-call S/deps lookup).
   local K, E, P, F, D, U = S.K, S.E, S.P, S.F, S.D, S.U
   local SC, NM, st        = S.SC, S.NM, S.st
   local T                 = S.T
@@ -24,7 +36,12 @@ return function(C, S, deps)
   local promptInput       = deps.promptInput
 
   C.kill = function(args, o)
-
+    -- #SEC C7 — process control is an admin capability (REGISTRY tier=2,
+    -- matching the sibling bg/run/fg commands). The kernel's proc.kill
+    -- already enforces per-process ownership, but the in-body tier gate is
+    -- the documented belt-and-braces line: the executor performs NO
+    -- dispatch-level tier check, so a missing guard here let any logged-in
+    -- user (including GUEST) invoke kill directly.
     if not adminOnly(o) then return end
     if not args[1] then o("Usage: kill <pid>", T.dim); return end
     local pid = tonumber(args[1])
@@ -35,7 +52,12 @@ return function(C, S, deps)
   end
 
   C.fg = function(args, o)
-
+    -- #SEC C7/H13 — admin-gated (REGISTRY tier=2). Without this guard a
+    -- GUEST could point their own seat's foreground at another user's
+    -- process; proc.tick then delivers the guest's keystrokes to that
+    -- process — input injection into a higher-privileged session. The
+    -- kernel proc.setForeground now also enforces target ownership, but
+    -- this is the documented in-body tier gate (the executor does not gate).
     if not adminOnly(o) then return end
     if not args[1] then o("Usage: fg <pid>", T.dim); return end
     local pid = tonumber(args[1])
@@ -48,6 +70,12 @@ return function(C, S, deps)
   C.verify = function(args, o)
     if not adminOnly(o) then return end
 
+    -- `verify anchor` / `verify anchor --clear` — the operator-facing half
+    -- of #SEC C1. The manifest hash is anchored in the EEPROM data field so
+    -- a later boot can prove the manifest wasn't swapped. `doctor` used to
+    -- tell operators to "run kernel.anchorManifestHash()", which is a
+    -- kernel function with no shell surface — unrunnable anywhere they
+    -- could reach. This is that surface.
     local sub = args and args[1] and tostring(args[1]):lower()
     if sub == "anchor" then
       local clear = false
@@ -67,7 +95,9 @@ return function(C, S, deps)
       if not K.anchorManifestHash then
         o("This TOS build has no manifest anchoring.", T.error); return
       end
-
+      -- Anchor AFTER confirming the files actually match the manifest —
+      -- anchoring a system you haven't verified just certifies whatever
+      -- happens to be on disk, including damage.
       o("Anchoring records THIS system's manifest hash in the EEPROM.", T.dim)
       o("Only do it on a system you trust (fresh install, or verified).", T.dim)
       local okA, digest = K.anchorManifestHash()
@@ -80,10 +110,15 @@ return function(C, S, deps)
       return
     end
 
+    -- verify = FILE INTEGRITY: every file in the manifest, checked for presence,
+    -- syntax (Lua), and declared hash. Distinct from `doctor` (runtime health).
+    -- Only problems are printed; a clean system shows just the summary.
     o("=== File integrity (every system file vs the manifest) ===", T.title)
     o("Checking presence, syntax, and declared hashes...", T.dim)
     o("")
-
+    -- verifySystem can still fail catastrophically (e.g. manifest module
+    -- itself OOMs, or kernel.fs throws). pcall so a crash can't kill the
+    -- whole shell.
     local ok, err = pcall(K.verifySystem, function(t, c) o(t, c) end)
     if not ok then
       o("verify: " .. tostring(err), T.error)
@@ -94,6 +129,27 @@ return function(C, S, deps)
     o("knew the system was good — and to put it back — use 'srm scan' / 'srm repair'.", T.dim)
   end
 
+  -- FEAT-7 / FEAT-9 — package manager command.
+  -- Subcommands:
+  --   pkg list                         installed packages
+  --   pkg search                       packages available in any repo / mount
+  --   pkg info <name>                  manifest details
+  --   pkg outdated                     installed packages with a newer version
+  --   pkg upgrade <name>… | --all      replace with the newer version, keeping
+  --                                    enable state + the rc boot marker
+  --   pkg install <name> [<name>…]     resolve deps + install across all sources
+  --   pkg install-dir <dir>            install a single source dir explicitly
+  --   pkg install (no arg)             open the full-screen picker (menu);
+  --                                    add --prompts for the classic y/N scan
+  --   pkg from-floppy                  alias for the no-arg install
+  --   ── automation (no picker, no prompts) ──
+  --   pkg install --all --yes          every package on inserted media/repos
+  --   pkg install <names…> --dry-run   print the plan, change nothing
+  --   (--yes is REQUIRED by --all: a script must not hang on a question,
+  --    and --all pulls in every package on whatever disk happens to be in)
+  --   pkg make-disk <mount> [name…]    build an Optional Utilities disk from
+  --                                    installed add-ons (parity with deploy)
+  --   pkg uninstall <name>             remove an installed package
   C.pkg = function(args, o)
     if not adminOnly(o) then return end
     local okP, pkgMod = pcall(require, "kernel.pkg")
@@ -118,7 +174,8 @@ return function(C, S, deps)
         o("Looked under: /usr/repo, /var/repo, /mnt/*", T.dim)
         return
       end
-
+      -- Group the listing by category so `pkg search` reads the same way
+      -- the picker does. listAllAvailable comes name-sorted; bucket it.
       table.sort(list, function(a, b)
         if (a.category or "misc") ~= (b.category or "misc") then
           return (a.category or "misc") < (b.category or "misc")
@@ -136,6 +193,10 @@ return function(C, S, deps)
           tostring(e.root or "?")), T.fg)
       end
 
+    -- ── Publisher signatures ───────────────────────────────────────
+    -- The trust store answers "whose packages does this machine accept".
+    -- Everything that CHANGES it goes through pkgMod, which owns the
+    -- admin gate; this branch is presentation.
     elseif sub == "trust" then
       local act = (args[2] or "list"):lower()
       if act == "list" then
@@ -193,7 +254,9 @@ return function(C, S, deps)
         o("Unsigned packages are now " .. (val == "on" and "REFUSED." or "allowed."), T.highlight)
 
       elseif act == "key" then
-
+        -- Print the public key a passphrase signs as, WITHOUT signing
+        -- anything: a publisher needs to hand out their key before they
+        -- have a package to hand out with it.
         if not args[3] then
           o("Usage: pkg trust key <signing-passphrase>", T.dim)
           o("Prints the public key that passphrase signs as. Publish that", T.dim)
@@ -240,7 +303,10 @@ return function(C, S, deps)
       for i = 3, #args do
         if args[i] == "--as" then signerName = args[i + 1] end
       end
-
+      -- The passphrase is read MASKED (promptInput's third argument) and
+      -- passed straight through: never written to disk, never logged,
+      -- never taken from the command line — an argv passphrase would end
+      -- up in shell history, which is a file.
       if not promptInput then
         o("Signing needs an interactive prompt for the passphrase.", T.error)
         return
@@ -260,6 +326,7 @@ return function(C, S, deps)
       local okS2, ps2 = pcall(require, "kernel.pkgsign")
       if okS2 and ps2 then o("fingerprint " .. ps2.fingerprint(key), T.dim) end
 
+    -- ── Remote repositories (internet card) ────────────────────────
     elseif sub == "repo" or sub == "repos" then
       local act = (args[2] or "list"):lower()
       if act == "list" then
@@ -300,7 +367,7 @@ return function(C, S, deps)
       end
 
     elseif sub == "remote" then
-
+      -- What the configured repos have to offer.
       local inetOk = _G._TOS and _G._TOS.internet
       if inetOk and not inetOk.available() then
         o(inetOk.status().reason or "internet is not available", T.warning)
@@ -342,7 +409,8 @@ return function(C, S, deps)
           (res and res.bytes) or 0), T.highlight)
       else
         o(tostring(res), T.error)
-
+        -- The single most likely refusal, and the one worth explaining
+        -- rather than leaving as a bare error string.
         if tostring(res):find("hash", 1, true)
            or tostring(res):find("unverified", 1, true) then
           o("", T.dim)
@@ -383,7 +451,8 @@ return function(C, S, deps)
       if wantAll then
         for _, u in ipairs(pkgMod.outdated()) do todo[#todo + 1] = u end
       elseif #names > 0 then
-
+        -- Named packages are upgraded even when `outdated` didn't list
+        -- them, so `--force` can still drive a re-install or a downgrade.
         local avail = {}
         for _, u in ipairs(pkgMod.outdated()) do avail[u.name] = u end
         for _, n in ipairs(names) do
@@ -406,7 +475,8 @@ return function(C, S, deps)
         o("(--dry-run: nothing was changed)", T.dim)
         return
       end
-
+      -- An upgrade REPLACES running code, so --all needs the same explicit
+      -- confirmation `install --all` does.
       if wantAll and not assumeYes then
         o(string.format("--all would upgrade %d package(s):", #todo), T.warning)
         for _, u in ipairs(todo) do
@@ -477,7 +547,10 @@ return function(C, S, deps)
       if m.conflicts and #m.conflicts > 0 then
         o(" conflicts:   " .. table.concat(m.conflicts, ", "), T.warning)
       end
-
+      -- Provenance. A package written for OpenOS runs here on the compat
+      -- layer, and if its manifest declared no capabilities it was granted
+      -- the compat surface at install time — a real privilege grant the
+      -- operator is entitled to SEE rather than infer.
       if m.origin == "openos" then
         o(" origin:      OpenOS/OPPM package (runs on the compat layer)", T.warning)
         if m.capsFromCompat then
@@ -485,7 +558,12 @@ return function(C, S, deps)
             .. table.concat(m.capabilities or {}, ", "), T.warning)
         end
       end
-
+      -- Who signed it, recorded at install time from a real verification.
+      -- Two separate facts, deliberately shown separately: `signature`
+      -- says whether the bytes are attributable to a key, `integrity`
+      -- says whether the files matched their declared hashes. A package
+      -- can have either without the other and an operator should be able
+      -- to see which they have.
       do
         local st = m._sigState or "unsigned"
         if st == "trusted" then
@@ -507,7 +585,28 @@ return function(C, S, deps)
       end
 
     elseif sub == "install" or sub == "install-dir" or sub == "from-floppy" or sub == "fromfloppy" then
-
+      -- One smart verb (v1.4.0): `pkg install` reads what you gave it.
+      --   • no argument            → scan mounted media, confirm each
+      --                              (the old `from-floppy`)
+      --   • a path (has a "/")      → install that directory
+      --                              (the old `install-dir`)
+      --   • a bare name             → install by name, resolving deps
+      -- `install-dir` / `from-floppy` still work as hidden aliases so no
+      -- muscle memory or saved menu entry breaks.
+      -- #SEC — packages without a full hash set are rejected unless the
+      -- operator passes --allow-unverified (runs untrusted code with no
+      -- integrity check). Scan for the flag once; `target` skips it.
+      --
+      -- AUTOMATION FLAGS. The picker is for a person at a keyboard; a
+      -- startup script, a `bg` job or a cluster provisioning step needs to
+      -- install without one, and needs to be able to find out what WOULD
+      -- happen first. All of them are position-independent, and names may
+      -- be given in any number:
+      --   --all           every package available on inserted media/repos
+      --   --yes / -y      never prompt (required by --all, since the
+      --                   alternative is a script that hangs on a question
+      --                   nobody is there to answer)
+      --   --dry-run       print the plan, change nothing
       local allowUnverified, wantAll, assumeYes, dryRun = false, false, false, false
       local names = {}
       for i = 2, #args do
@@ -516,8 +615,8 @@ return function(C, S, deps)
         elseif a == "--all" then wantAll = true
         elseif a == "--yes" or a == "-y" then assumeYes = true
         elseif a == "--dry-run" or a == "--dryrun" then dryRun = true
-        elseif a == "--key" then
-        elseif args[i - 1] == "--key" then
+        elseif a == "--key" then                       -- consumed with its value
+        elseif args[i - 1] == "--key" then             -- the value itself
         elseif a:sub(1, 2) ~= "--" then names[#names + 1] = a end
       end
       local target = names[1]
@@ -533,6 +632,7 @@ return function(C, S, deps)
       elseif #names > 1 then mode = "many"
       else mode = "name" end
 
+      -- Shared driver for the non-interactive modes.
       local function installList(list)
         if #list == 0 then o("Nothing to install.", T.dim); return end
         if dryRun then
@@ -561,7 +661,9 @@ return function(C, S, deps)
       end
 
       if mode == "all" then
-
+        -- #SEC — --all installs every package it can see, which on a
+        -- machine with unknown media inserted is a lot of third-party code.
+        -- Require the explicit --yes so it can never happen from a typo.
         if not (assumeYes or dryRun) then
           o("--all installs EVERY package on every inserted disk and repo.", T.warning)
           o("Add --yes to confirm, or --dry-run to see the list first.", T.dim)
@@ -580,14 +682,14 @@ return function(C, S, deps)
       end
 
       if mode == "name" then
-
+        -- FEAT-14 — pick up an optional --key arg.
         local licenseKey
         for i = 3, #args do
           if args[i] == "--key" and args[i + 1] then licenseKey = args[i + 1] end
         end
         local ok2, summary = pkgMod.installByName(target,
           { licenseKey = licenseKey, session = helpers.sessionOf(S),
-            allowUnverified = allowUnverified })
+            allowUnverified = allowUnverified })  -- #SEC CR-5 + hash gate
         if ok2 then
           o(string.format("Installed: %s", table.concat(summary.installed, ", ")), T.highlight)
           if #summary.skipped > 0 then
@@ -601,12 +703,16 @@ return function(C, S, deps)
       elseif mode == "dir" then
         if not target then o("Usage: pkg install <dir>", T.dim); return end
         local ok2, info = pkgMod.install(target,
-          { session = helpers.sessionOf(S), allowUnverified = allowUnverified })
+          { session = helpers.sessionOf(S), allowUnverified = allowUnverified })  -- #SEC CR-5
         if ok2 then o("Installed: " .. tostring(info), T.highlight)
         else o("Install failed: " .. tostring(info), T.error) end
 
-      else
-
+      else  -- floppy / no-arg: prefer the full-screen picker, fall back to prompts
+        -- Prefer the Optional Utilities TUI picker (the same installer
+        -- that ships on the disk) over the sequential y/N prompts —
+        -- unless the operator forces the classic path with --prompts, or
+        -- the picker can't run (no GPU / load error), in which case we
+        -- drop through to installFromFloppy below.
         local forcePrompts = false
         for i = 2, #args do
           if args[i] == "--prompts" or args[i] == "--classic" then forcePrompts = true end
@@ -616,23 +722,34 @@ return function(C, S, deps)
           local okR, why = pkgMod.runInstaller({ session = helpers.sessionOf(S) })
           if okR then
             ranPicker = true
-
+            -- #FIX (emulator round 7) — DROP THE SHADOW FIRST. The picker
+            -- draws through a raw GPU proxy, straight past this seat's
+            -- dirty-cell shadow buffer, so the shadow still believes the
+            -- old shell screen is on the GPU. drawAll then elides every
+            -- cell it thinks is unchanged and the operator is left with a
+            -- half-painted shell — observed as a file list of icons with
+            -- no filenames or sizes. Same hazard executor.lua already
+            -- handles for sandboxed package commands (`foreignDraw`);
+            -- `pkg install` is a BUILT-IN, so it never went through that.
             if S.D and S.D.invalidate then pcall(S.D.invalidate) end
-            if deps.drawAll then pcall(deps.drawAll) end
+            if deps.drawAll then pcall(deps.drawAll) end  -- picker owned the screen
           elseif why then
-
+            -- Not fatal: fall back to the prompt scan. Say why once so a
+            -- headless/GPU-less operator understands the downgrade.
             o("Menu installer unavailable (" .. tostring(why)
               .. ") — using prompts.", T.dim)
           end
         end
         if ranPicker then return end
 
+        -- Classic path: scan every mount, prompt per package (y/N).
         local ok2, summary = pkgMod.installFromFloppy({
-          session = helpers.sessionOf(S),
+          session = helpers.sessionOf(S),  -- #SEC CR-5
           allowUnverified = allowUnverified,
           confirm = function(name, dir)
             if not promptInput then return false end
-
+            -- Name the DISK, not the nested repo path (an over-long path
+            -- pushed the "[y/N]:" affordance off an 80-column screen).
             local disk = dir:match("^(/mnt/[^/]+)") or dir
             local typed = promptInput("Install " .. name .. " from " .. disk .. "? [y/N]: ", 4) or ""
             return typed:lower() == "y" or typed:lower() == "yes"
@@ -655,7 +772,8 @@ return function(C, S, deps)
       end
 
     elseif sub == "license-hash" then
-
+      -- FEAT-14 — helper for package authors. Pass <name> + <key>;
+      -- print the 64-hex string they should put in license.keys[].
       if not args[2] or not args[3] then
         o("Usage: pkg license-hash <package-name> <license-key>", T.dim); return
       end
@@ -665,12 +783,14 @@ return function(C, S, deps)
 
     elseif sub == "uninstall" or sub == "remove" then
       if not args[2] then o("Usage: pkg uninstall <name>", T.dim); return end
-      local ok2, info = pkgMod.uninstall(args[2], { session = helpers.sessionOf(S) })
+      local ok2, info = pkgMod.uninstall(args[2], { session = helpers.sessionOf(S) })  -- #SEC CR-5
       if ok2 then o("Uninstalled: " .. args[2], T.highlight)
       else o("Uninstall failed: " .. tostring(info), T.error) end
 
     elseif sub == "make-disk" or sub == "export-disk" then
-
+      -- In-TOS Optional Utilities builder: assemble installed add-ons into a
+      -- pick-and-choose disk (parity with `deploy`, which builds a whole-OS
+      -- image). No dev box / TOS-Extras source tree required.
       if not args[2] then
         o("Usage: pkg make-disk <mount> [name ...]", T.dim)
         o("  Builds an Optional Utilities disk from your INSTALLED add-ons so", T.dim)
@@ -683,7 +803,7 @@ return function(C, S, deps)
       local only = nil
       if args[3] then only = {}; for i = 3, #args do only[#only + 1] = args[i] end end
       local ok2, summary = pkgMod.exportDisk(args[2],
-        { only = only, session = helpers.sessionOf(S) })
+        { only = only, session = helpers.sessionOf(S) })  -- #SEC CR-5
       if ok2 then
         o(string.format("Built add-on disk on %s: %d package(s), %d file(s)",
           summary.target, #summary.packages, summary.files), T.highlight)
@@ -701,15 +821,17 @@ return function(C, S, deps)
       end
 
     elseif sub == "enable" or sub == "disable" then
-
+      -- Folded in from the retired `mod` command (the legacy module manager was
+      -- replaced by pkg in v1.3.1): toggle an installed package on/off without
+      -- uninstalling it. A disabled package's commands/services stay dormant.
       if not args[2] then o("Usage: pkg " .. sub .. " <name>", T.dim); return end
       local on = (sub == "enable")
-      local ok2, err = pkgMod.setEnabled(args[2], on, { session = helpers.sessionOf(S) })
+      local ok2, err = pkgMod.setEnabled(args[2], on, { session = helpers.sessionOf(S) })  -- #SEC CR-5
       if ok2 then o((on and "Enabled: " or "Disabled: ") .. args[2], T.highlight)
       else o("Failed: " .. tostring(err), T.error) end
 
     elseif sub == "commands" then
-
+      -- Which shell commands the installed packages currently provide.
       local cmds = pkgMod.commands()
       local names = {}
       for n in pairs(cmds) do names[#names + 1] = n end
@@ -727,6 +849,11 @@ return function(C, S, deps)
     end
   end
 
+  -- Top-level shortcuts that imply the package manager, so a new operator
+  -- can type `install <name>` without knowing the manager is called `pkg`.
+  -- They just prepend the subcommand and route through C.pkg (which does
+  -- the admin gate + all the work). Registered as aliases of `pkg` so they
+  -- collapse onto its help row rather than adding their own.
   C.install = function(args, o)
     local a = { "install" }
     for i = 1, #(args or {}) do a[#a + 1] = args[i] end
@@ -738,12 +865,17 @@ return function(C, S, deps)
     return C.pkg(a, o)
   end
 
+  -- FEAT-6 — backup/restore command.
+  -- Subcommands:
+  --   backup snapshot <src> <dest.bak>   create a snapshot file
+  --   backup inspect  <file.bak>         show header info
+  --   backup restore  <file.bak> [dest]  restore (force= --force)
   C.backup = function(args, o)
     if not adminOnly(o) then return end
     local bmod = _G._TOS and _G._TOS.backup
     if not bmod then o("backup module unavailable", T.error); return end
     local sub = args[1]
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
 
     if sub == "snapshot" or sub == "create" then
       if not args[2] or not args[3] then
@@ -796,12 +928,18 @@ return function(C, S, deps)
     end
   end
 
+  -- FEAT-4 — launch kiosk mode for the current shell. Admin-only:
+  -- starting kiosk for yourself doesn't make sense unless you're an
+  -- operator testing the config, and a non-admin shouldn't be able to
+  -- demote themselves into kiosk and then claim the shell is "broken".
   C.kiosk = function(args, o)
     if not adminOnly(o) then return end
     local okK, kioskMod = pcall(require, "shell.kiosk")
     if not okK or not kioskMod then o("kiosk module unavailable", T.error); return end
     o("Kiosk = the LOCKED, guest-facing menu (allow-list + read-only).", T.title)
-
+    -- We can't cleanly hand the panels shell over to kiosk in-place
+    -- (panels owns the event loop). Suggest the operator log out and
+    -- log back in as the kiosk user, which is the supported path.
     o("To test: log out, log in as the 'kiosk' user.", T.dim)
     o("Config: /etc/kiosk.cfg", T.dim)
     o("", T.fg)
@@ -809,6 +947,10 @@ return function(C, S, deps)
     o("menu, but it runs real commands at YOUR tier (no allow-list).", T.dim)
   end
 
+  -- FEAT-2 — diagnostic unit. Canonical name is `doctor` (matches the
+  -- "brew doctor / pacman doctor" idiom — friendlier in error
+  -- messages: "run `doctor` to diagnose" reads better than "run
+  -- `diag`"). `diag` is kept below as an alias.
   C.doctor = function(args, o)
     local okD, diagMod = pcall(require, "kernel.diag")
     if not okD or not diagMod then o("doctor module unavailable", T.error); return end
@@ -818,8 +960,10 @@ return function(C, S, deps)
       warn = T.warning   or T.fg,
       err  = T.error     or T.fg,
     }
-
-    local only = args[1]
+    -- doctor = RUNTIME HEALTH: memory headroom, power state, disks, peripherals,
+    -- services, users, recent log warnings, security posture, trash. Distinct
+    -- from `verify` (static file integrity vs the manifest).
+    local only = args[1]  -- optional: run a single section
     o("=== TOS doctor \226\128\148 runtime health ===", T.title)
     local counts = diagMod.run(function(line, sev)
       o(line, severityColor[sev] or T.fg)
@@ -835,8 +979,19 @@ return function(C, S, deps)
     o("This checks RUNTIME health. For a full file-integrity check, run 'verify'.", T.dim)
     o("'srm' runs both, plus the known-good baseline check.", T.dim)
   end
-  C.diag = C.doctor
+  C.diag = C.doctor  -- back-compat alias
 
+  -- ── SRM: System Repair & Maintenance ──────────────────────────────
+  -- The front door over the four maintenance tools that grew up separately:
+  -- `doctor` (runtime health), `verify` (files vs the manifest), the boot
+  -- fixer pass, and the known-good baseline SRM itself adds. Those commands
+  -- all still work on their own — this is the one that runs them together,
+  -- and the only one that can report what the EEPROM half saw when a boot
+  -- failed before anything on disk could run.
+  --
+  -- Tier: read-only subcommands are open (a user should be able to ask why
+  -- the machine is unhappy); everything that WRITES is admin-gated in-body,
+  -- the same split `optimize` uses.
   C.srm = function(args, o)
     local okS, srmMod = pcall(require, "kernel.srm")
     if not okS or not srmMod then o("srm module unavailable", T.error); return end
@@ -859,6 +1014,8 @@ return function(C, S, deps)
         SEV[srmMod.worst(rep)] or T.fg)
     end
 
+    -- Grammar lives in the module (srm.parseArgs) so it is pure and pinned by
+    -- test_srm.lua rather than trapped in this closure.
     local sub, flags, rest = srmMod.parseArgs(args)
     if flags.source == true then
       o("--source needs a mount point, e.g. --source /mnt/floppy", T.error); return
@@ -872,7 +1029,8 @@ return function(C, S, deps)
       o("repair = fix what is safe             baseline = record a known-good system", T.dim)
 
     elseif sub == "health" then
-
+      -- Same unit `doctor` runs; surfaced here so an operator working
+      -- through SRM never has to leave it.
       return C.doctor(rest, o)
 
     elseif sub == "verify" then
@@ -885,7 +1043,9 @@ return function(C, S, deps)
 
     elseif sub == "baseline" then
       if not adminOnly(o) then return end
-
+      -- #SEC — a baseline is a claim about what "good" looks like. Capturing
+      -- one on an already-compromised system just certifies the damage, so
+      -- say plainly what the operator is asserting before doing it.
       o("Recording what THIS system looks like right now as the known-good", T.title)
       o("baseline. Only do that on a system you trust — a fresh install, or", T.dim)
       o("one that just passed 'srm verify'. Anything already wrong becomes", T.dim)
@@ -945,7 +1105,9 @@ return function(C, S, deps)
       o("pass before anything reads the files it repairs.", T.dim)
 
     elseif sub == "full" then
-
+      -- Everything, in the order a diagnosis actually proceeds: what
+      -- happened last boot, is the hardware healthy, are the files intact,
+      -- have they changed since we knew them to be good.
       o("=== SRM full report ===", T.title)
       o("", T.dim)
       o("-- status --", T.title);  show(srmMod.status())
@@ -973,6 +1135,15 @@ return function(C, S, deps)
     end
   end
 
+  -- Disk swap status / maintenance. Viewing is harmless (any tier);
+  -- `clear` wipes the shared /var/swap scratch so it is admin-gated.
+  -- (v1.4.0 consolidation: the standalone `swap` command folded into
+  -- `optimize swap ...` — optimize was already the front door for the
+  -- swap boot-feature toggle, so status/clear/keys live there too.)
+
+  -- Boot settings editor (the missed-the-DEL-window fallback). CLI-driven
+  -- so it's robust inside the panels shell (the full modal UI is the
+  -- DEL-during-boot path). Writes /etc/boot.cfg; changes apply next boot.
   C.bootsettings = function(args, o)
     if not adminOnly(o) then return end
     local okC, bootcfg = pcall(require, "kernel.bootcfg")
@@ -1077,6 +1248,10 @@ return function(C, S, deps)
     end
   end
 
+  -- Unified control for performance optimizations. swap is a BOOT feature
+  -- (persists in boot.cfg, applies next boot); the display dirty-cell buffer
+  -- is a RUNTIME setting (applies immediately). Read-only status is open to
+  -- anyone; the toggles are admin-gated.
   C.optimize = function(args, o)
     local sub = (args[1] or ""):lower()
     local val = (args[2] or ""):lower()
@@ -1089,7 +1264,7 @@ return function(C, S, deps)
 
     if sub == "" or sub == "show" or sub == "status" then
       o("=== Optimizations ===", T.title)
-
+      -- Disk swap: the boot-feature flag, plus whether it's live right now.
       local swapFlag = "auto (profile)"
       local bootcfg, fsMod = bootcfgIO()
       if bootcfg and fsMod then
@@ -1107,11 +1282,11 @@ return function(C, S, deps)
       o(string.format("  Disk swap      %-14s [%s]", swapFlag, swapLive),
         sw and T.fg or T.dim)
       o("    extends usable memory onto /var/swap (boot feature)", T.dim)
-
+      -- Display buffer: runtime dirty-cell rendering optimization.
       local mode = (okSc and screenMod.bufferMode and screenMod.bufferMode()) or "?"
       o(string.format("  Display buffer %-14s", mode), T.fg)
       o("    skips GPU writes for unchanged cells (auto = memory-gated)", T.dim)
-
+      -- Show the payoff so the optimization is visible, not just a toggle.
       if okSc and screenMod.bufferStats then
         local st = screenMod.bufferStats()
         if st.total > 0 then
@@ -1129,9 +1304,12 @@ return function(C, S, deps)
     end
 
     if sub == "swap" then
-
+      -- Runtime views first (folded in from the old `swap` command):
+      -- status / keys read the live store, clear wipes it now.
       local sw = K.getSwap and K.getSwap()
-
+      -- `now` forces a cold-buffer sweep. Paging is pressure-triggered, so on
+      -- a roomy box it correctly never fires — which makes it impossible to
+      -- confirm the wiring works. This makes it observable on demand.
       if val == "now" then
         local okT, tabsMod = pcall(require, "shell.panels.tabs")
         if not okT or not tabsMod.sweepCold then
@@ -1149,7 +1327,9 @@ return function(C, S, deps)
         if not sw then o("Swap not available", T.error); return end
         if val == "clear" then
           if not adminOnly(o) then return end
-
+          -- Restore anything paged FIRST: wiping the store under a tab that
+          -- still points at it would turn its buffer into the "could not be
+          -- restored" placeholder.
           local okT, tabsMod = pcall(require, "shell.panels.tabs")
           if okT and tabsMod.isPaged then
             for _, tb in ipairs(S.tabs or {}) do
@@ -1171,7 +1351,7 @@ return function(C, S, deps)
           if #keys == 0 then o("(no keys)", T.dim)
           else for _, k in ipairs(keys) do o("  " .. k, T.dim) end end
         end
-
+        -- What is actually USING swap, and the knob that decides when.
         do
           local okT, tabsMod = pcall(require, "shell.panels.tabs")
           if okT and tabsMod.pagedStats then
@@ -1188,7 +1368,7 @@ return function(C, S, deps)
         o("'optimize swap now' pages cold tabs immediately (ignores pressure).", T.dim)
         return
       end
-
+      -- Boot-feature toggle (the original optimize-swap path).
       if not adminOnly(o) then return end
       local bootcfg, fsMod = bootcfgIO()
       if not bootcfg then o("bootcfg/fs unavailable", T.error); return end
@@ -1245,17 +1425,38 @@ return function(C, S, deps)
     local logMod = K.getLog()
     if not logMod then o("Logger unavailable", T.error); return end
 
+    -- Modes:
+    --   log [N]        DEFAULT — open the on-disk /var/log/kernel.log in a
+    --                  viewer (the full history across reboots). N limits to
+    --                  the last N lines. Falls back to the in-memory ring if
+    --                  the file isn't there yet, and to a freshly flushed
+    --                  file if even the ring is empty.
+    --   log ring [N]   Show the last N from the in-memory ring only (default
+    --                  20) on the output row — quick peek, no viewer tab.
+    --   log clear      Clear the in-memory ring (does NOT touch disk).
+    --   log filter [<source> <debug|info|warn|error|off>]
+    --                  List or set per-source level overrides, so one
+    --                  subsystem can be cranked to DEBUG (or hushed)
+    --                  without changing the global level.
+
+    -- #REV — `log` with no args (or a bare count) now goes to the FILE, per
+    -- the operator-facing contract "the log command should just go to the
+    -- log file". `file`/`f`/`all` remain accepted aliases.
     local wantsFile = (args[1] == nil) or (args[1] == "file") or (args[1] == "f")
       or (args[1] == "all") or (tonumber(args[1]) ~= nil)
     if wantsFile then
       local logPath = "/var/log/kernel.log"
-
+      -- The count can be args[1] (bare `log 50`) or args[2] (`log file 50`).
       local n = tonumber(args[1]) or tonumber(args[2])
 
+      -- Make sure the freshest entries are on disk before we read it, so
+      -- `log` reflects what just happened rather than the last flush tick.
       pcall(logMod.flush)
 
       if not F.exists(logPath) then
-
+        -- File unavailable — fall back to the in-memory ring so the
+        -- operator still sees something (and regenerates the file via the
+        -- flush above on the next entry).
         o("No /var/log/kernel.log yet — showing in-memory ring.", T.dim)
         local entries = logMod.recent(n or 20)
         if #entries == 0 then o("(log is empty)", T.dim); return end
@@ -1279,13 +1480,14 @@ return function(C, S, deps)
       end
       local first = (n and n > 0 and #lines - n + 1) or 1
       if first < 1 then first = 1 end
-
+      -- Open in a viewer tab so the user can scroll. Cheaper than
+      -- emitting all lines through `o` which spams S.lastOut.
       local buf = {}
       buf[#buf + 1] = { " /var/log/kernel.log  (" .. #lines .. " lines)", T.title }
       for i = first, #lines do
         local line = lines[i]
         local color = T.fg
-
+        -- Best-effort level colouring from the log.format prefix.
         if line:find("%[FTL%]") or line:find("%[ERR%]") then color = T.error
         elseif line:find("%[WRN%]") then color = T.warning
         elseif line:find("%[DBG%]") then color = T.dim end
@@ -1296,7 +1498,8 @@ return function(C, S, deps)
     end
 
     if args[1] == "filter" then
-
+      -- Admin is already enforced at command entry; setSourceLevel
+      -- re-checks the live session as belt-and-braces.
       local src, lvl = args[2], args[3]
       if not src then
         local names = { [0] = "DEBUG", "INFO", "WARN", "ERROR" }
@@ -1323,9 +1526,12 @@ return function(C, S, deps)
     end
 
     if args[1] == "clear" then
-
+      -- Force-flush before clearing so anything still in the ring
+      -- lands on disk (the on-disk log is the long-term record).
       pcall(logMod.flush)
-
+      -- We don't expose a clear() on log.lua's ring — easiest is to
+      -- emit a marker entry so a subsequent `log` shows a clean
+      -- separator. The ring will fill normally from there.
       logMod.info("log", "--- ring cleared on operator request ---")
       o("Ring marker recorded; old entries still on disk.", T.dim)
       return
@@ -1351,7 +1557,10 @@ return function(C, S, deps)
     o("  log ring   Quick peek at the in-memory ring", T.dim)
   end
   C.bg = function(args, o)
-
+    -- #SEC C7 — explicit tier gate. The CATEGORY map in commands.lua only
+    -- controlled lazy loading, not dispatch, so a GUEST shell could spawn
+    -- arbitrary background Lua via this dispatcher. Re-check here at the
+    -- function entry where it actually fires.
     if not adminOnly(o) then return end
     if not args[1] then
       o("Usage: bg <script.lua> [args...]", T.dim)
@@ -1366,21 +1575,21 @@ return function(C, S, deps)
     local runArgs = {}
     for i = 2, #args do runArgs[#runArgs+1] = args[i] end
     local name = args[1]:match("[^/]+$") or args[1]
-
+    -- Create an output tab for this background task
     local bgTab = deps.createTab("output", "bg:" .. name, {
       content = { "Background task: " .. name, "PID: (starting...)", "" },
       offset = 0,
       pid = nil,
     })
     local tabIdx = #deps.tabs
-
+    -- Capture output into the tab's content
     local BG_MAX_LINES = 500
     local function bgPrint(...)
       local parts = {}
       for i2 = 1, select("#", ...) do parts[#parts+1] = tostring(select(i2, ...)) end
       local line = table.concat(parts, "\t")
       bgTab.content[#bgTab.content + 1] = line
-
+      -- Trim oldest lines if over limit (keep recent output)
       if #bgTab.content > BG_MAX_LINES then
         local trim = #bgTab.content - BG_MAX_LINES
         for i2 = 1, BG_MAX_LINES do
@@ -1391,14 +1600,14 @@ return function(C, S, deps)
         end
         bgTab.offset = math.max(0, bgTab.offset - trim)
       end
-
+      -- Auto-scroll if user is at the end
       local viewH2 = H - 3
       if bgTab.offset >= #bgTab.content - viewH2 - 2 then
         bgTab.offset = math.max(0, #bgTab.content - viewH2)
       end
     end
     local pid = P.spawn("bg:" .. name, function()
-
+      -- Build sandboxed env with custom print for background output
       local taskEnv = makeProgramEnv{ name = args[1], stdout = bgPrint }
       local taskFn = load(data, "=" .. args[1], "t", taskEnv)
       if taskFn then
@@ -1422,7 +1631,7 @@ return function(C, S, deps)
   end
 
   C.run = function(args, o)
-
+    -- #SEC C7 — explicit tier gate (see C.bg).
     if not adminOnly(o) then return end
     if not args[1] then o("Usage: run <file.lua>", T.dim); return end
     local path = rp(args[1])
@@ -1438,9 +1647,17 @@ return function(C, S, deps)
   end
 
   C.lua = function(args, o)
-
+    -- REPL has full _ENV access (debugging tool) — restrict to ROOT.
+    -- #SEC M-7 — gate on the LIVE seat tier (rootOnly resolves the seat
+    -- token's current session), not the cached S.userTier snapshot taken at
+    -- panel construction. The cached value goes stale when a session is
+    -- demoted/expires mid-session, which would otherwise leave a root REPL
+    -- reachable after the principal lost root.
     if not rootOnly(o) then return end
-
+    -- #SEC M21 — audit every REPL session entry. The REPL grants
+    -- arbitrary code execution at root tier; operators need a log
+    -- entry per session even when the operator IS root (post-hoc
+    -- forensics, "who ran ad-hoc code yesterday at 23:14?").
     pcall(function()
       local logMod = require("kernel.log")
       if logMod and logMod.info then
@@ -1465,7 +1682,11 @@ return function(C, S, deps)
       D.set(1, row, tostring(text):sub(1,W), color or T.fg, T.bg)
       row = row + 1
     end
-
+    -- #REV (#13) — multi-line REPL. Lines accumulate into `chunkLines`; the
+    -- buffer is run only once it compiles. An "unexpected <eof>" compile
+    -- error means the statement is unfinished (open function/if/table/…), so
+    -- we keep reading with a ">>" continuation prompt instead of erroring.
+    -- A blank line force-runs (or cancels) the pending block.
     local function isIncomplete(err)
       return type(err) == "string" and err:find("<eof>", 1, true) ~= nil
     end
@@ -1496,39 +1717,42 @@ return function(C, S, deps)
             else hidx2 = #hist + 1 buf = "" end
           elseif ch2 and ch2 >= 32 and ch2 < 127 then buf = buf .. string.char(ch2) end
         elseif sig == "clipboard" and type(ch2) == "string" then
-
+          -- A pasted multi-line block: split on newlines and queue each.
           buf = buf .. ch2:gsub("\r", "")
           local nl = buf:find("\n", 1, true)
           if nl then
-
+            -- keep only the first line here; the rest replay as input below
+            -- (simpler: collapse newlines to spaces so it still compiles)
             buf = buf:gsub("\n", " ")
           end
         end
       end
       row = row + 1
 
+      -- Exit only when not mid-block.
       if (buf == "exit" or buf == "quit") and not cont then break end
 
       if buf == "" and not cont then
-
+        -- blank line at top level: nothing to do
       elseif buf == "" and cont then
-
+        -- blank line cancels the pending block
         chunkLines = {}
         reout("(cancelled)", T.dim)
       else
         chunkLines[#chunkLines + 1] = buf
         local src = table.concat(chunkLines, "\n")
-
+        -- Try as an expression first (so `1+1` prints 2), then as a chunk.
         local fnTry, errExpr = load("return " .. src, "=repl", "t")
         if not fnTry then fnTry, errExpr = load(src, "=repl", "t") end
         if not fnTry and isIncomplete(errExpr) then
-
+          -- Unfinished — keep reading more lines (>> prompt next iteration).
           goto repl_continue
         end
-
+        -- Complete (compiled) or a real syntax error: this block is done.
         chunkLines = {}
         hist[#hist+1] = src
-
+        -- #SEC M21 — log each executed REPL chunk so a compromised root
+        -- account leaves a trail (first 120 chars; kernel log sanitizes).
         pcall(function()
           local logMod = require("kernel.log")
           if logMod and logMod.info then
@@ -1541,14 +1765,19 @@ return function(C, S, deps)
           caps = {
             ["fs.read"]=true, ["fs.write"]=true, ["compat.io"]=true,
             ["component"]=true, ["load"]=true, ["net"]=true,
-
+            -- #SEC M21 — REPL is a debug tool; not all sessions need
+            -- peripheral.modem/redstone/etc. Grant the gated caps too
+            -- since this is root-tier already, but the audit log above
+            -- means each grant is attributable.
             ["peripheral.modem"]=true, ["peripheral.redstone"]=true,
             ["peripheral.robot"]=true, ["peripheral.inventory"]=true,
             ["peripheral.tape"]=true,
           },
           stdout = function(line) reout(line, T.fg) end,
         }
-
+        -- Compile against the sandbox env (the earlier compile used no env
+        -- purely to detect incompleteness). Expression form first so the
+        -- value prints; then statement form.
         local fn3, err3 = load("return " .. src, "=repl", "t", replEnv)
         if not fn3 then fn3, err3 = load(src, "=repl", "t", replEnv) end
         if fn3 then
@@ -1560,7 +1789,7 @@ return function(C, S, deps)
       end
       ::repl_continue::
     end
-
+    -- #SEC M21 — log session close so the audit trail has matched pairs.
     pcall(function()
       local logMod = require("kernel.log")
       if logMod and logMod.info then
@@ -1571,7 +1800,9 @@ return function(C, S, deps)
   end
 
   C.edit = function(args, o)
-
+    -- #SEC C7 — admin-only. The editor honours canWrite on save, but
+    -- guarding entry too means a GUEST shell can't even read protected
+    -- files through the editor's lower-friction interface.
     if not adminOnly(o) then return end
     if not args[1] then o("Usage: edit <file>", T.dim); return end
     local path = rp(args[1])
@@ -1589,7 +1820,9 @@ return function(C, S, deps)
     for addr in component.list("eeprom") do eepromAddr = addr; break end
     if not eepromAddr then
       o("No EEPROM detected. Insert EEPROM, or press Ctrl+C to abort...", T.warning)
-
+      -- Wait up to 60s for hot-plug. Accept component_added for eeprom OR
+      -- any key_down with Ctrl held (cooperative cancel) so the shell isn't
+      -- pinned indefinitely if the operator changes their mind.
       local deadline = computer.uptime() + 60
       while not eepromAddr and computer.uptime() < deadline do
         local sig, addr, compType = deps.pullSignal(1)
@@ -1613,6 +1846,14 @@ return function(C, S, deps)
       return
     end
 
+    -- #107 — verify the payload before we let the user brick an EEPROM.
+    -- Parse as Lua text (reject bytecode), then look for a marker that
+    -- this is actually a BIOS. The heuristic is intentionally loose:
+    -- any sensible BIOS either calls getBootAddress or probes for a
+    -- filesystem component to chain-load /init.lua. A generic script
+    -- will fail both checks.
+    -- Empty env: the chunk is only syntax-checked, never run — but if a
+    -- future edit ever did call it, it would execute against nothing.
     local chk, cerr = load(data, "=flash-verify", "t", {})
     if not chk then
       o("Refusing to flash: file does not parse as Lua text.", T.error)
@@ -1624,7 +1865,12 @@ return function(C, S, deps)
       data:find("setBootAddress", 1, true) or
       (data:find("component.list", 1, true) and data:find("init.lua", 1, true))
     if not looksLikeBios then
-
+      -- Soft warning — let the operator override if they really mean it,
+      -- but they have to type 'force' rather than y/N.
+      -- #REV — the prompt MESSAGE must be passed into promptInput: it
+      -- clears OUT_ROW and draws its own msg, so a separate drawOutRow()
+      -- here was instantly wiped, leaving a blank prompt the operator
+      -- couldn't answer (and any key but the exact word aborted).
       local forced = (promptInput and
         promptInput("Doesn't look like a BIOS — type 'force' to flash anyway: ", 16)) or ""
       if forced ~= "force" then
@@ -1634,13 +1880,22 @@ return function(C, S, deps)
     end
 
     local elabel = eeprom.getLabel and eeprom.getLabel() or "(no label)"
-
+    -- #102 — surface the source path AND the current boot-drive address
+    -- so the operator knows exactly what's about to happen before
+    -- committing to an irreversible write.
     local curBoot = "(unknown)"
     do
       local okB, b = pcall(computer.getBootAddress)
       if okB and b then curBoot = b:sub(1, 8) .. "..." end
     end
-
+    -- #SEC H-13 / H29 — show a fingerprint of the BIOS payload so the
+    -- operator can compare against a known-good value before the write
+    -- commits. We ONLY ever display a real SHA-256 here — there is no
+    -- weak (FNV/truncated) fallback. Per CLAUDE.md the weak-fingerprint
+    -- pattern must not recur: a 64-bit prefix is cheap to second-preimage,
+    -- so we print the FULL 64-hex digest for a meaningful comparison. If
+    -- the crypto module is unreachable we say so explicitly rather than
+    -- printing a bland line the operator might read as "verified".
     local fingerprint = nil
     do
       local okC, cryptoMod = pcall(require, "kernel.crypto")
@@ -1657,11 +1912,17 @@ return function(C, S, deps)
     end
     o(string.format("  EEPROM : %s", elabel), T.dim)
     o(string.format("  Boot   : %s", curBoot), T.dim)
-
+    -- #SEC H29 — require the operator to TYPE the literal "flash"
+    -- rather than a single y/N keystroke. Bumping into 'y' while the
+    -- prompt is on screen used to be enough to brick the machine.
+    -- #REV — pass the instruction INTO promptInput (it owns OUT_ROW and
+    -- clears it), or the operator just sees an empty prompt and every
+    -- keystroke "aborts" because it isn't the word "flash".
     local typed = (promptInput and promptInput('Type "flash" to confirm: ', 16)) or ""
     local confirmed = (typed == "flash")
     if confirmed then
-
+      -- eeprom.set can fail (hardware error, write-protect, removed mid-flash).
+      -- Capture the return so we don't claim success on a silent failure.
       local setOk, setErr = pcall(eeprom.set, data)
       if not setOk then
         o("Flash failed: " .. tostring(setErr), T.error)
@@ -1688,7 +1949,14 @@ return function(C, S, deps)
         u.locked and T.error or T.dim)
     end
   end
-
+  -- Resolve the ACTOR (invoking user) for user-management operations.
+  -- Previously these commands hard-coded "root" as the actor, which
+  -- meant every privilege check inside users.lua granted unconditional
+  -- success regardless of who typed the command. Root-gating at the
+  -- shell level (rootOnly) catches most of it, but the users.lua audit
+  -- log and any tier-based fine-grained checks got "root" for every
+  -- entry. We now pass the actual caller so audit is correct and any
+  -- later ACL tightening in users.lua sees the real principal.
   local function currentActor()
     if not U then return "root" end
     local s = U.getSession(st)
@@ -1741,7 +2009,8 @@ return function(C, S, deps)
       if ok2 then S.lastOut = { "'" .. name .. "' unlocked.", T.highlight }
       else      S.lastOut = { tostring(err2), T.error } end
     elseif action == "admin" then
-
+      -- The computer wants ROOT, not admin. Deadpan nudge (the real egg is
+      -- on `usermod computer root`).
       if name:lower() == "computer" then
         o("Failure. Did you mean 'usermod computer root'?", T.error); return
       end
@@ -1750,25 +2019,31 @@ return function(C, S, deps)
       if ok2 then S.lastOut = { "'" .. name .. "' promoted to admin.", T.highlight }
       else      S.lastOut = { tostring(err2), T.error } end
     elseif action == "root" then
-
+      -- ── Easter egg: handing ROOT to an account named "computer" ──
+      -- Reachable by root, or by anyone who elevates first (sudo usermod
+      -- computer root) since usermod is root-gated. Fires once per session;
+      -- the grant is intercepted as pure THEATRE (nothing granted, no files
+      -- touched), then the account keeps its normal tier. Fully guarded so
+      -- it never blocks real account management.
       if name:lower() == "computer" and S.D
          and not (_G._TOS and _G._TOS._takeoverFired) then
         _G._TOS = _G._TOS or {}
-        _G._TOS._takeoverFired = true
+        _G._TOS._takeoverFired = true   -- disabled for the rest of the session
         local okT, takeover = pcall(require, "shell.panels.takeover")
         if okT and takeover and takeover.run then
           local okRun, ending = pcall(takeover.run, S)
-          if S.D.invalidate then pcall(S.D.invalidate) end
+          if S.D.invalidate then pcall(S.D.invalidate) end   -- full repaint
           pcall(function()
             _G._TOS.logObj.info("kernel",
               "The computer briefly reconsidered its priorities (" ..
               tostring(okRun and ending or "?") .. ")")
           end)
-          S.lastOut = { "Access control updated.", T.dim }
+          S.lastOut = { "Access control updated.", T.dim }   -- deadpan
           return
         end
       end
-
+      -- Non-"computer" account, or egg already fired this session: real grant
+      -- (setTier enforces "only root-effective callers may grant root").
       if U.setTier then ok2, err2 = U.setTier(actor, name, 3)
       else ok2, err2 = false, "setTier unavailable" end
       if ok2 then S.lastOut = { "'" .. name .. "' promoted to root.", T.highlight }
@@ -1802,13 +2077,18 @@ return function(C, S, deps)
           cinfo = px.isWireless() and "wireless" or "wired"
         end
       elseif ctype == "drive" then
-
+        -- Unmanaged raw drive (no filesystem until formatted; see 'drive').
         local ok2, px = pcall(component.proxy, addr)
         if ok2 and px and px.getCapacity then
           cinfo = "raw " .. math.floor((px.getCapacity() or 0) / 1024) .. "K"
         end
       elseif ctype == "openprinter" then
-
+        -- OpenPrinter: the consumables ARE the interesting state. A printer
+        -- with no paper is present, addressed and useless, and that reads
+        -- identically to a working one unless we say so here. Every level
+        -- call is pcall'd individually — the mod throws rather than
+        -- returning nil, and the 1.7 branch is missing some of the newer
+        -- getters, so one absent method must not blank the whole row.
         local ok2, px = pcall(component.proxy, addr)
         if ok2 and px then
           local function lvl(fn)
@@ -1826,15 +2106,19 @@ return function(C, S, deps)
     end
     if count == 0 then o("  (no peripherals detected)", T.dim) end
   end
-  C.devices = C.lsdev
+  C.devices = C.lsdev   -- operator-friendly alias (v1.4.0)
 
   C.mount = function(args, o)
     if args[1] and args[2] then
       if not adminOnly(o) then return end
       local target, mntArg = args[1], args[2]
-
-      local candidates  = {}
-      local addrMatches = {}
+      -- #SEC M20 — when matching by label, collect ALL candidates and
+      -- pick deterministically (address-sorted) rather than relying on
+      -- component.list iteration order, which OC does not guarantee
+      -- across reboots. Two disks with the same label otherwise mount
+      -- in flip-flopping order — bookmark paths break.
+      local candidates  = {}   -- label matches
+      local addrMatches = {}   -- address-prefix matches
       for addr in component.list("filesystem") do
         if addr:sub(1, #target) == target then
           addrMatches[#addrMatches + 1] = addr
@@ -1845,7 +2129,11 @@ return function(C, S, deps)
           end
         end
       end
-
+      -- #SEC M-10 — the address-prefix path was non-deterministic (it took
+      -- whatever component.list() yielded first, which OC does not order
+      -- stably). An exact single match is fine; an ambiguous prefix that
+      -- matches several devices is refused rather than silently mounting a
+      -- coin-flip device.
       local found = nil
       if #addrMatches == 1 then
         found = addrMatches[1]
@@ -1856,7 +2144,7 @@ return function(C, S, deps)
         return
       end
       if not found and #candidates > 0 then
-        table.sort(candidates)
+        table.sort(candidates)  -- stable lexicographic order
         found = candidates[1]
         if #candidates > 1 then
           o(string.format("Note: %d disks share label '%s'; mounting %s (use partial address to disambiguate)",
@@ -1868,8 +2156,10 @@ return function(C, S, deps)
       local ok2, px2 = pcall(component.proxy, found)
       if not ok2 then o("Cannot proxy device", T.error); return end
       if not F.exists(mnt) then pcall(F.makeDirectory, mnt) end
-
-      local sess = helpers.sessionOf(S)
+      -- securefs.mount requires an explicit session arg (otherwise the
+      -- admin check sees no session and denies). Resolve the active
+      -- session from the user module and pass it through.
+      local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
       local mok, merr = F.mount(mnt, px2, sess)
       if mok == false then
         o(tostring(merr or "Mount failed"), T.error); return
@@ -1894,12 +2184,14 @@ return function(C, S, deps)
     if not args[1] then o("Usage: umount <mountpoint>", T.dim); return end
     if not adminOnly(o) then return end
     local mnt = args[1]:sub(1,1) == "/" and args[1] or ("/" .. args[1])
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
     local ok2, err2 = F.unmount(mnt, sess)
     if ok2 then S.lastOut = { "Unmounted " .. mnt, T.highlight }
     else      S.lastOut = { tostring(err2 or "Failed to unmount"), T.error } end
   end
 
+  -- JBOD disk pooling (opt-in feature; the kernel module only exists when
+  -- /etc/boot.cfg has advanced.jbod = true). Hidden from `help` otherwise.
   C.jbod = function(args, o)
     local jb = K.getJBOD and K.getJBOD()
     if not jb then
@@ -1909,6 +2201,9 @@ return function(C, S, deps)
     end
     local sub = (args[1] or "list"):lower()
 
+    -- Resolve a user-typed disk reference (address prefix or label) to a
+    -- full filesystem-component address. Mirrors the `mount` command's
+    -- deterministic matching so duplicate labels don't flip-flop.
     local function resolveFs(ref)
       local addrMatches, labelMatches = {}, {}
       for addr in component.list("filesystem") do
@@ -1955,18 +2250,23 @@ return function(C, S, deps)
       end
       if mount:sub(1, 1) ~= "/" then mount = "/" .. mount end
       mount = (F.normalize and F.normalize(mount)) or mount
-
+      -- #REV (#7) — confine pools to /mnt/ and MAKE the mount point a real
+      -- directory. Previously any string was accepted: a pool at "/mnt/pool"
+      -- mounted even though neither /mnt nor pool existed, so the path was
+      -- invisible in the browser and behaved confusingly.
       if not (mount:sub(1, 6) == "/mnt/" and #mount > 6) then
         o("JBOD mount point must be under /mnt/  (e.g. jbod create /mnt/pool ...)", T.error)
         return
       end
-
+      -- Build member proxies from the requested disks.
       local bootAddr = _G._TOS and _G._TOS.bootAddr
       local members, addrs = {}, {}
       for i = 3, #args do
         local addr, rerr = resolveFs(args[i])
         if not addr then o(tostring(rerr), T.error); return end
-
+        -- #REV (#7) — refuse the BOOT disk as a pool member. Pooling it
+        -- exposed the whole TOS install inside the pool ("cd /mnt/pool
+        -- showed a copy of TOS") and risks the system files. Data disks only.
         if bootAddr and addr == bootAddr then
           o("Refusing to pool the BOOT disk (" .. addr:sub(1, 8) .. "...).", T.error)
           o("It would expose the system files inside the pool. Use data disks.", T.dim)
@@ -1977,17 +2277,17 @@ return function(C, S, deps)
         members[#members + 1] = px
         addrs[#addrs + 1] = addr
       end
-
+      -- Create the mount path (and /mnt) so it's a real, visible directory.
       pcall(F.makeDirectory, "/mnt")
       pcall(F.makeDirectory, mount)
       local proxy = jb.makePool(members)
       local sess = helpers.sessionOf(S)
       local mok, merr = F.mount(mount, proxy, sess)
       if not mok then o(tostring(merr or "Mount failed"), T.error); return end
-
+      -- Persist so the pool re-mounts on the next boot.
       local cfg = jb.loadConfig(F) or { pools = {} }
       cfg.pools = cfg.pools or {}
-
+      -- Replace any existing entry for this mount point.
       for i = #cfg.pools, 1, -1 do
         if cfg.pools[i].mount == mount then table.remove(cfg.pools, i) end
       end
@@ -2001,7 +2301,7 @@ return function(C, S, deps)
       if not mount then o("Usage: jbod destroy <mountpoint>", T.dim); return end
       if mount:sub(1, 1) ~= "/" then mount = "/" .. mount end
       local sess = helpers.sessionOf(S)
-      F.unmount(mount, sess)
+      F.unmount(mount, sess)  -- best-effort; may already be unmounted
       local cfg = jb.loadConfig(F) or { pools = {} }
       local removed = false
       for i = #(cfg.pools or {}), 1, -1 do
@@ -2016,6 +2316,13 @@ return function(C, S, deps)
     end
   end
 
+  -- Remote filesystem shares. Two halves that are easy to confuse, so the
+  -- command keeps them visibly apart:
+  --   SERVING  — what this machine exports, from /etc/netfs-exports.cfg,
+  --              and whether the netfsd service has actually armed it.
+  --   MOUNTED  — remote shares this machine has attached.
+  -- A share is someone else's disk: when their computer is off the mount
+  -- is empty and the files vanish from a listing without being deleted.
   C.netfs = function(args, o)
     local okNF, nf = pcall(require, "kernel.netfs")
     if not okNF or not nf then
@@ -2024,6 +2331,9 @@ return function(C, S, deps)
     end
     local sub = (args[1] or "status"):lower()
 
+    -- Active netfs mounts are discoverable from the mount table itself —
+    -- attach() stamps a "netfs:" address — so the command keeps no state
+    -- of its own that could drift from reality.
     local function netfsMounts()
       local out = {}
       for _, m in ipairs(F.mounts() or {}) do
@@ -2036,7 +2346,8 @@ return function(C, S, deps)
     end
 
     if sub == "status" or sub == "list" then
-
+      -- Serving side. Exports configured but service stopped is the
+      -- confusing state, so say so rather than listing them as if live.
       local serving = nf.isEnabled and nf.isEnabled()
       local exports = nf.getExports and nf.getExports() or {}
       o("Serving: " .. (serving and "yes" or "no (service netfsd is not running)"),
@@ -2057,7 +2368,8 @@ return function(C, S, deps)
       else
         o("Mounted:", T.fg)
         for _, m in ipairs(mounted) do
-
+          -- A host that has gone away still has a mount entry; its
+          -- capacity reads as zero, which is the honest signal.
           local live = (m.total or 0) > 0
           o(string.format("  %-16s %-22s %s", m.mountPoint, m.label,
             live and fmtSz(m.total - (m.used or 0)) .. " free" or "unreachable"),
@@ -2067,7 +2379,8 @@ return function(C, S, deps)
       o("Manage: netfs mount <host> <share> <mountpoint> · netfs umount <mountpoint>", T.dim)
 
     elseif sub == "exports" then
-
+      -- Re-read from disk so an operator can check a file they just
+      -- edited without restarting the service to find out it is invalid.
       local ok2, err2 = nf.loadExports(F)
       if not ok2 then
         o("Export file rejected: " .. tostring(err2), T.error)
@@ -2102,10 +2415,13 @@ return function(C, S, deps)
       end
       if not NM then o("Networking is not available.", T.error); return end
 
+      -- Resolve a hostname or address prefix the same way `share` does.
       local addr = host
       local peer = NM.findPeer and NM.findPeer(host)
       if peer and peer.addr then addr = peer.addr end
 
+      -- The server refuses anything below TRUSTED, but failing here with
+      -- the real reason beats a timeout the operator has to guess at.
       if NM.getTrust or NM.getProtocol then
         local okT, trustMod = pcall(require, "kernel.net.trust")
         if okT and trustMod and trustMod.getLevel and trustMod.LEVEL then
@@ -2117,13 +2433,17 @@ return function(C, S, deps)
         end
       end
 
+      -- Same rule as jbod pools: under /mnt/ only, so a share can never
+      -- shadow a system path and is visible where people look for it.
       if not (mount:sub(1, 5) == "/mnt/" and #mount > 5) then
         o("Mount point must be under /mnt/  (e.g. netfs mount box pub /mnt/box)", T.error)
         return
       end
 
       local proxy = nf.attach(addr, share)
-
+      -- Probe before mounting. attach() is lazy — it opens no connection —
+      -- so without this, a wrong share name mounts "successfully" and only
+      -- fails later, when the operator is no longer looking at this command.
       local probe = proxy.spaceTotal and proxy.spaceTotal() or 0
       if not proxy.exists("/") and probe == 0 then
         o("Cannot reach share '" .. share .. "' on " .. tostring(addr):sub(1, 8) .. ".", T.error)
@@ -2165,13 +2485,22 @@ return function(C, S, deps)
   end
 
   C.theme = function(args, o)
-
+    -- #SEC C7 — `theme set` writes through themeMod.saveForUser(sess)
+    -- which persists to the current user's home, but the system-wide
+    -- side effects of setting THEME (status bar, every redraw) are
+    -- destructive to the current display context. Read-only `theme`
+    -- with no args is still informational; mutating subcommands need
+    -- admin tier. We gate after the manager-availability check so the
+    -- "theme manager unavailable" message is still surfaced first.
     local themeMod = _G._TOS and _G._TOS.theme
     if not themeMod then
       o("Theme manager unavailable (T1 / monochrome or low-RAM boot)", T.warning)
       return
     end
-
+    -- #FIX (per-user themes) — any regular user may pick a PRESET theme for
+    -- THEIR OWN session (saved to ~/.theme.cfg, restored at their next login).
+    -- Only CUSTOM colour overrides remain admin-gated ("preset ones and stuff
+    -- root allows if they're custom"). Read-only views are open to anyone.
     do
       local sub0 = (args[1] or "show"):lower()
       local READONLY = { list = true, ls = true, show = true, current = true, keys = true, [""] = true }
@@ -2179,7 +2508,9 @@ return function(C, S, deps)
       if CUSTOM[sub0] then
         if not adminOnly(o) then return end
       elseif not READONLY[sub0] then
-
+        -- Applying / resetting a preset is a personal action; require a real
+        -- (USER+) login so a transient GUEST/kiosk session can't repaint a
+        -- shared screen.
         if helpers.liveTier(S) < 1 then
           o("Log in as a user to set a personal theme.", T.error); return
         end
@@ -2188,7 +2519,9 @@ return function(C, S, deps)
 
     local function parseColor(s)
       if not s then return nil end
-
+      -- Accept 0xFF8800, #FF8800, FF8800, or plain decimal.
+      -- #SEC M19 — limit input length so a multi-megabyte string can't
+      -- consume the parser. The largest legitimate form is "0xFFFFFF" (8).
       if type(s) ~= "string" or #s > 16 then return nil end
       local hex = s:match("^0[xX](%x+)$") or s:match("^#(%x+)$") or s:match("^(%x+)$")
       if hex and #hex <= 6 then return tonumber(hex, 16) end
@@ -2198,7 +2531,9 @@ return function(C, S, deps)
     local function fmtHex(n) return string.format("0x%06X", n) end
 
     local sub = args[1] and args[1]:lower() or "show"
-
+    -- #SEC CR-9 — save to the SEAT-bound user, not the global currentSession
+    -- (which in multi-seat is some other seat's session). This is what makes
+    -- "each user's own theme" correct on login restore.
     local sess = helpers.sessionOf(S)
 
     if sub == "list" or sub == "ls" then
@@ -2323,6 +2658,7 @@ return function(C, S, deps)
     end
   end
 
+  -- ── Scheduled tasks ───────────────────────────────────
   C.cron = function(args, o)
     if not adminOnly(o) then return end
     local ok2, cronMod = pcall(require, "kernel.cron")

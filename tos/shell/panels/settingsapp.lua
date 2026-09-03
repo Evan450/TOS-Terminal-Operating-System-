@@ -1,8 +1,42 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Settings App (tab)                      ║
+-- ║                                                      ║
+-- ║  Visual settings instead of memorized commands: a    ║
+-- ║  paged form (Appearance / Status Bar / Desktop /     ║
+-- ║  System) built from ui.lua setting rows. Runs as a   ║
+-- ║  panels TAB (type "settings").                       ║
+-- ║                                                      ║
+-- ║  Persistence semantics, deliberately mixed:          ║
+-- ║   • Theme      — Left/Right PREVIEWS live; "Save as  ║
+-- ║     my theme" persists (preview ≠ persist matters    ║
+-- ║     here, mirroring `theme` / `theme save`).         ║
+-- ║   • Status bar — toggles apply + save immediately    ║
+-- ║     (same as the old menu-bar checkbox row).         ║
+-- ║   • Landing    — saves to ~/.profile.cfg on change.  ║
+-- ║   • System     — buttons dispatch existing commands  ║
+-- ║     (bootsettings, users, doctor, about) through the ║
+-- ║     shell executor, tier-gated as always.            ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local ui = require("shell.panels.ui")
 local tabsMod = require("shell.panels.tabs")
 
 local M = {}
 
+-- ============================================================
+-- Page model (pure given deps — unit-tested off-box)
+-- ============================================================
+
+--- Build the page list. deps = {
+---   themeNames       = { "default", ... },
+---   themeCurrent     = "default",
+---   widgetsAvailable = { "memory", ... },
+---   widgetsEnabled   = { memory = true, ... },
+---   landing          = "tiles"|"files" (or the legacy "desktop"|"shell"),
+---   userTier         = number,
+---   canProfile       = bool (session has a home to save a profile in)
+--- }
+--- Pure — no requires, no globals.
 function M.buildPages(deps)
   deps = deps or {}
   local pages = {}
@@ -27,6 +61,9 @@ function M.buildPages(deps)
   end
   pages[#pages + 1] = { id = "statusbar", label = "Status Bar", rows = sb }
 
+  -- One surface now, so this picks a VIEW of it rather than which of two
+  -- tabs to focus. Legacy stored values map onto the new names so an
+  -- operator who set this before the merge sees their choice reflected.
   local LANDING_VIEW = { desktop = "tiles", shell = "files" }
   local landingValue = LANDING_VIEW[deps.landing] or deps.landing or "tiles"
   local desktop = {
@@ -66,6 +103,10 @@ function M.buildPages(deps)
   return pages
 end
 
+-- ============================================================
+-- Live model
+-- ============================================================
+
 local function sessionOf(S)
   if S.U and S.st and S.U.getSession then
     local ok, sess = pcall(S.U.getSession, S.st)
@@ -78,6 +119,9 @@ local function sessionOf(S)
   return nil
 end
 
+--- Default landing when the profile doesn't say: root keeps the
+--- files-first muscle memory, everyone else lands on the tiles. Returned
+--- in the STORED spelling, which panels/init.lua maps to a view.
 function M.defaultLanding(who)
   return (who == "root") and "shell" or "desktop"
 end
@@ -93,6 +137,8 @@ local function liveDeps(S)
     d.themeCurrent = (okC and type(cur) == "table" and cur.preset) or nil
   end
 
+  -- Status-bar widgets: the same base set + custom defs the menu-bar
+  -- checkbox row offered.
   local base = { "memory", "disk", "clock", "user", "uptime", "battery" }
   local seen, avail = {}, {}
   for _, w in ipairs(base) do seen[w] = true; avail[#avail + 1] = w end
@@ -114,6 +160,7 @@ local function liveDeps(S)
   end
   d.widgetsAvailable = avail
 
+  -- Language: installed catalogs + the active one (kernel.i18n).
   local okI, i18nMod = pcall(require, "kernel.i18n")
   if okI and i18nMod then
     local codes = {}
@@ -129,6 +176,7 @@ local function liveDeps(S)
     d.langName = okN and name or nil
   end
 
+  -- Landing preference from the per-user profile.
   local sess = sessionOf(S)
   d.canProfile = not not (sess and sess.home and sess.home ~= "" and sess.home ~= "/")
   local okP, profileMod = pcall(require, "kernel.profile")
@@ -148,6 +196,7 @@ function M.refresh(S, tab)
   tab.sel = ui.firstSelectable(rows) or 1
 end
 
+--- Find-or-create the Settings tab and focus it.
 function M.open(S)
   local idx = tabsMod.find(S, "settings")
   local tab
@@ -160,6 +209,10 @@ function M.open(S)
   M.refresh(S, tab)
   return tab
 end
+
+-- ============================================================
+-- Actions
+-- ============================================================
 
 local function shellTabIndex(S)
   for i, t in ipairs(S.tabs) do
@@ -191,7 +244,7 @@ local function saveLanguage(S, tab, code)
     tab.msg = { "Cannot set '" .. tostring(code) .. "': " .. tostring(err), S.T.error }
     return
   end
-
+  -- Persist to the caller's profile (same contract as the lang command).
   local sess = sessionOf(S)
   local okP, profileMod = pcall(require, "kernel.profile")
   if okP and profileMod and profileMod.load and profileMod.save then
@@ -206,7 +259,9 @@ local function saveLanguage(S, tab, code)
 end
 
 local function saveStatusbar(S, tab)
-
+  -- Collect the enabled set from the CURRENT page rows (they carry the
+  -- live toggle state) and persist system-wide, matching the old
+  -- menu-bar checkbox behaviour.
   local page = tab.pages[tab.page]
   local result = {}
   for _, row in ipairs(page.rows) do
@@ -227,11 +282,13 @@ local function applyTheme(S, tab, name)
   if not (okT and themeMod and themeMod.apply) then
     tab.msg = { "Theme module unavailable", S.T.error }; return
   end
-
+  -- theme.apply reports failure by RETURN VALUE (false, err), not by
+  -- raising — check both the pcall and the result.
   local okCall, ok, err = pcall(themeMod.apply, name)
   if not okCall then ok, err = false, ok end
   if ok then
-
+    -- The live theme table changed under us — re-fetch so this very
+    -- redraw uses the new palette.
     S.T = S.D.getTheme()
     tab.msg = { "Previewing: " .. name .. "  (use Save to keep it)", S.T.highlight }
   else
@@ -239,6 +296,8 @@ local function applyTheme(S, tab, name)
   end
 end
 
+--- Act on the selected row. dir: -1/+1 for choice cycling (Enter = +1).
+--- deps = { exec = fn }. Returns drawLevel.
 local function activateRow(S, tab, row, dir, deps)
   if not row then return 0 end
 
@@ -263,7 +322,8 @@ local function activateRow(S, tab, row, dir, deps)
   if row.kind == "button" then
     local cmd = type(row.id) == "string" and row.id:match("^run:(.+)$")
     if cmd then
-
+      -- Same convention as the desktop: land on the Shell tab so the
+      -- command's output routes exactly as if typed.
       S.activeTab = shellTabIndex(S)
       if deps and deps.exec then deps.exec(cmd) end
       return 3
@@ -271,7 +331,7 @@ local function activateRow(S, tab, row, dir, deps)
     if row.id == "theme_save" then
       local okT, themeMod = pcall(require, "kernel.theme")
       if okT and themeMod and themeMod.saveForUser then
-
+        -- (ok, err) return convention, same caveat as theme.apply.
         local okCall, ok, err = pcall(themeMod.saveForUser, sessionOf(S))
         if not okCall then ok, err = false, ok end
         tab.msg = ok and { "Theme saved for " .. (S.who or "?"), S.T.highlight }
@@ -293,6 +353,11 @@ local function activateRow(S, tab, row, dir, deps)
   return 0
 end
 
+-- ============================================================
+-- Drawing
+-- ============================================================
+
+-- Page-chip layout (mirrored by click hit-testing so they can't drift).
 local function chipSpans(pages)
   local spans, x = {}, 2
   for i, p in ipairs(pages) do
@@ -313,6 +378,7 @@ function M.draw(S, tab)
   ui.drawRail(D, T, 2, W, { { label = "§ Settings" } },
     { labelFg = T.title or T.fg })
 
+  -- Page chips (row 3).
   for i, sp in ipairs(chipSpans(pages)) do
     if sp.s <= W then
       if i == tab.page then
@@ -323,8 +389,9 @@ function M.draw(S, tab)
     end
   end
 
+  -- Rows (from row 5), scrolled so the selection stays visible.
   local top = 5
-  local capacity = H - top - 1
+  local capacity = H - top - 1          -- keep the footer row free
   tab.scroll = tab.scroll or 0
   if tab.sel - tab.scroll > capacity then tab.scroll = tab.sel - capacity end
   if tab.sel - tab.scroll < 1 then tab.scroll = math.max(0, tab.sel - 1) end
@@ -335,6 +402,7 @@ function M.draw(S, tab)
     ui.drawSettingRow(D, T, top + i - 1, 2, W - 2, row, ri == tab.sel)
   end
 
+  -- Message + key hints.
   if tab.msg then
     D.fill(1, H - 1, W, 1, " ", T.fg, T.bg)
     D.set(2, H - 1, tostring(tab.msg[1]):sub(1, W - 2), tab.msg[2] or T.dim, T.bg)
@@ -343,6 +411,10 @@ function M.draw(S, tab)
     "Arrows Move · Left/Right Change · Enter Apply · Tab Page · ^Q Close",
     nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
 end
+
+-- ============================================================
+-- Input handling
+-- ============================================================
 
 local function switchPage(S, tab, dir)
   tab.page = tab.page + dir
@@ -353,35 +425,38 @@ local function switchPage(S, tab, dir)
   tab.sel = ui.firstSelectable(tab.pages[tab.page].rows) or 1
 end
 
+--- Keyboard. Returns (drawLevel[, result]).
 function M.handleKey(S, tab, ch, co, deps)
   if not tab.pages then M.refresh(S, tab) end
   local rows = tab.pages[tab.page].rows
   local row = rows[tab.sel]
 
-  if ch == 17 then
+  if ch == 17 then                                    -- Ctrl+Q: close
     tabsMod.close(S)
     return 3
-  elseif co == 15 or co == 209 then
+  elseif co == 15 or co == 209 then                   -- Tab / PgDn: next page
     switchPage(S, tab, 1); return 3
-  elseif co == 201 then
+  elseif co == 201 then                               -- PgUp: prev page
     switchPage(S, tab, -1); return 3
-  elseif co == 200 then
+  elseif co == 200 then                               -- Up
     tab.sel = ui.nextSelectable(rows, tab.sel, -1); return 3
-  elseif co == 208 then
+  elseif co == 208 then                               -- Down
     tab.sel = ui.nextSelectable(rows, tab.sel, 1); return 3
-  elseif co == 203 then
+  elseif co == 203 then                               -- Left: cycle back
     return activateRow(S, tab, row, -1, deps)
-  elseif co == 205 then
+  elseif co == 205 then                               -- Right: cycle fwd
     return activateRow(S, tab, row, 1, deps)
-  elseif co == 28 then
+  elseif co == 28 then                                -- Enter
     return activateRow(S, tab, row, 1, deps)
   end
   return 0
 end
 
+--- Mouse click. Returns (drawLevel[, result]).
 function M.handleClick(S, tab, ev, deps)
   if not tab.pages then M.refresh(S, tab) end
 
+  -- Page chips.
   if ev.y == 3 then
     for i, sp in ipairs(chipSpans(tab.pages)) do
       if ev.x >= sp.s and ev.x <= sp.e then
@@ -395,18 +470,20 @@ function M.handleClick(S, tab, ev, deps)
     return 0
   end
 
+  -- Rows.
   local top = 5
   local ri = (tab.scroll or 0) + (ev.y - top + 1)
   local rows = tab.pages[tab.page].rows
   local row = rows[ri]
   if ev.y >= top and row and ui.rowSelectable(row) then
     tab.sel = ri
-    if ev.button == 1 then return 3 end
-    return activateRow(S, tab, row, 1, deps)
+    if ev.button == 1 then return 3 end     -- right-click: select only
+    return activateRow(S, tab, row, 1, deps) -- left-click: apply/toggle/cycle
   end
   return 0
 end
 
+--- Mouse scroll: move the selection. Returns drawLevel.
 function M.handleScroll(S, tab, ev)
   if not tab.pages then M.refresh(S, tab) end
   local rows = tab.pages[tab.page].rows

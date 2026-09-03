@@ -1,7 +1,22 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Commands subfile                            ║
+-- ║  Auto-extracted from commands.lua during the v1.3 split  ║
+-- ║  to bring per-file size under ~500 lines and enable      ║
+-- ║  lazy-loading via the dispatcher.                        ║
+-- ║                                                          ║
+-- ║  Each subfile exports a single registration function     ║
+-- ║  that adds its commands to the shared C table. The       ║
+-- ║  dispatcher in commands.lua loads each subfile only on   ║
+-- ║  first access to one of its commands.                    ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local computer   = require("computer")
 local component  = require("component")
 local helpers    = require("shell.panels.helpers")
 
+-- Cooperative slice (#REV multi-seat freeze) for the long silent loops
+-- here (deploy-drive file copy, drive check scan). Throttled inside
+-- kernel.process; no-op off-box / outside a yieldable process.
 local coopYield = function() end
 do
   local okP, procMod = pcall(require, "kernel.process")
@@ -11,7 +26,7 @@ do
 end
 
 return function(C, S, deps)
-
+  -- Stable references aliased as locals (avoids per-call S/deps lookup).
   local K, E, P, F, D, U = S.K, S.E, S.P, S.F, S.D, S.U
   local SC, NM, st        = S.SC, S.NM, S.st
   local T                 = S.T
@@ -54,6 +69,17 @@ return function(C, S, deps)
   end
   C.rs = C.redstone
 
+  -- cluster-setup — the ONE front door for standing up a cluster.
+  --
+  -- Lives in the base image so it can answer "what do I install, and where?"
+  -- BEFORE anything is installed, which is the question operators actually
+  -- get stuck on. Named `cluster-setup`, not `cluster`: a registry command
+  -- shadows /usr/bin (executor.lua), so taking `cluster` would break the
+  -- Master's own CLI the moment cluster-master was installed.
+  --
+  -- The flow itself is shell.clustersetup, which touches nothing directly —
+  -- this function supplies every side effect, and the tests supply scripted
+  -- answers instead.
   C["cluster-setup"] = function(args, o)
     if not rootOnly(o) then return end
     local okW, wiz = pcall(require, "shell.clustersetup")
@@ -70,8 +96,13 @@ return function(C, S, deps)
 
     ctx.say = function(text, kind) o(text or "", SEV[kind or ""] or T.fg) end
 
+    -- Modal for choices (this is a decision, and the operator should not be
+    -- able to walk past it), status-row prompt for free text.
+    -- deps.dialog (not dialogs.dialog directly): the shell's wrapper repaints
+    -- the screen under the box afterwards, so a wizard that raises several in
+    -- a row doesn't leave holes behind.
     ctx.choose = function(title, lines, opts)
-      if not dialog then
+      if not dialog then                      -- CLI shell: no modal available
         ctx.say(title, "title")
         for _, l in ipairs(type(lines) == "table" and lines or { lines }) do
           ctx.say(l, nil)
@@ -89,7 +120,7 @@ return function(C, S, deps)
     ctx.ask = function(prompt, default)
       local label = prompt .. (default and (" [" .. default .. "]") or "") .. ": "
       local v = promptInput and promptInput(label, 64) or nil
-      if v == nil then return default end
+      if v == nil then return default end          -- Esc with a default = accept it
       v = tostring(v):gsub("^%s+", ""):gsub("%s+$", "")
       if v == "" then return default end
       return v
@@ -105,6 +136,9 @@ return function(C, S, deps)
       return p.installByName(name, { session = helpers.sessionOf(S) })
     end
 
+    -- Atomic: /etc/*.cfg is read at boot by a daemon, and a truncating write
+    -- that died halfway would leave an unparseable config on a machine whose
+    -- whole job is to come back up on its own.
     ctx.writeFile = function(path, data)
       if not fsMod then return false, "filesystem unavailable" end
       if fsMod.writeFileAtomic then return fsMod.writeFileAtomic(path, data) end
@@ -115,11 +149,17 @@ return function(C, S, deps)
       local okR, rc = pcall(require, "kernel.rc")
       if not (okR and rc and rc.start) then return false, "rc unavailable" end
       local okS, err = rc.start(svcName)
-
+      -- "Already running" is success from the operator's point of view.
       if not okS and tostring(err):find("Already running", 1, true) then return true end
       return okS, err
     end
 
+    -- #FIX — the rc BOOT marker is /etc/rc.d/<svc>.disabled, not the
+    -- package's `state` byte (that gates command dispatch). rc.start()
+    -- already REMOVES the marker to persist an enable, so honouring "no"
+    -- means putting it back after starting. The old installer wrote the
+    -- wrong file entirely, which is why its "start at boot?" question had
+    -- no effect whichever way you answered it.
     ctx.setBootStart = function(svcName, on)
       if not fsMod then return false, "filesystem unavailable" end
       local marker = "/etc/rc.d/" .. svcName .. ".disabled"
@@ -169,6 +209,8 @@ return function(C, S, deps)
       return mgr.pair(addr, code)
     end
 
+    -- `cluster-setup explain` just prints the topology and stops — for an
+    -- operator who wants to know what they're in for before committing.
     if (args[1] or ""):lower() == "explain" then
       o("=== What a cluster is made of ===", T.title)
       for _, line in ipairs(wiz.explain()) do o(line, T.fg) end
@@ -180,6 +222,9 @@ return function(C, S, deps)
     refreshBrowser()
   end
 
+  -- Intercom — thin BASE stub for the intercom ADD-ON (same shape as the
+  -- mail stub below). The package owns the catalog, the tape and the mesh
+  -- service; this is the privileged glue that gives it the shell's display.
   C.intercom = function(args, o)
     local okLib, ic = pcall(require, "intercom")
     if not okLib or type(ic) ~= "table" or not ic.announce then
@@ -191,12 +236,13 @@ return function(C, S, deps)
     local fsMod = _G._TOS and _G._TOS.fs
     local sub = (args[1] or ""):lower()
 
+    -- Flags anywhere; the rest are positional words.
     local flags, rest = {}, {}
     do
       local skip
       for i = 2, #args do
         local a = tostring(args[i])
-        if i == skip then
+        if i == skip then                                -- consumed as a value
         elseif a:sub(1, 2) == "--" then
           local k, v = a:match("^%-%-([%w%-]+)=?(.*)$")
           if k then
@@ -226,10 +272,13 @@ return function(C, S, deps)
       elseif not rep.localOnly then o("Nothing was broadcast.", T.warning) end
     end
 
+    -- No subcommand → the announcement-post TAB (cue list + heard log),
+    -- mirroring how bare `mail` opens the inbox tab. `intercom status`
+    -- always prints the text summary, which is what a script wants.
     if sub == "" then
       local okA, app = pcall(require, "intercomapp")
       if okA and app and app.open then app.open(S); return end
-      sub = "status"
+      sub = "status"   -- app unavailable (CLI shell): fall through to text
     end
 
     if sub == "status" then
@@ -294,7 +343,9 @@ return function(C, S, deps)
       local cue = ic.findCue(loadCues(), name)
       if not cue then o("No such cue: " .. name, T.error); return end
       if sub == "test" then
-
+        -- The "check it before you trust it" path the operator asked for:
+        -- plays the recording so you can hear whether the positions really
+        -- bracket it, and tells nobody at all.
         o("Testing cue '" .. cue.name .. "' — playing locally, sending nothing.", T.title)
         o("  should say: " .. cue.text, T.dim)
         o("  tape " .. cue.start .. " -> " .. cue.stop, T.dim)
@@ -359,6 +410,13 @@ return function(C, S, deps)
     end
   end
 
+  -- Mail — the thin BASE stub for the mail ADD-ON (stage 5). Mail left the
+  -- base image: the kernel keeps the generic mesh TRANSPORT (net.meshSend /
+  -- net.meshOn, shared with chat and anything else), and mailbox semantics
+  -- + the UIs live in the `mail` Optional Utilities package. This stub is
+  -- the privileged glue that hands the package the shell's display and
+  -- session — exactly how the base `drive` command relates to blockfs.
+  -- Not installed → an honest install hint, never a broken command.
   C.mail = function(args, o)
     local okLib, mailLib = pcall(require, "mail")
     if not okLib or type(mailLib) ~= "table" or not mailLib.send then
@@ -370,19 +428,25 @@ return function(C, S, deps)
     if not mailLib.available() then
       o("Mail unavailable (no network hardware?)", T.error); return
     end
-    mailLib.tick()
+    mailLib.tick()                                 -- pump retries on every look
     local me  = S.who or "user"
     local sub = args[1]
 
+    -- No subcommand → the Mail app TAB: inbox / read / compose in a
+    -- persistent tab. The send/list/read/delete subcommands stay for
+    -- scripting and the minimal CLI shell. `mail ui`/`mail tui` also open
+    -- the tab (kept as spellings operators learned).
     if not sub or sub == "ui" or sub == "tui" then
       local okM, mailApp = pcall(require, "mailapp")
       if okM and mailApp and mailApp.open then
         mailApp.open(S)
         return
       end
-
+      -- App unavailable → fall through to the text inbox listing below.
     end
 
+    -- Receiving needs the rc.d service; sending/reading doesn't. Say so
+    -- once, up front, instead of letting mail silently never arrive.
     if not mailLib.running() then
       o("Note: the mail service is stopped — this box won't RECEIVE mail.", T.warning)
       o("      Start it with:  service start mail", T.dim)
@@ -405,7 +469,7 @@ return function(C, S, deps)
           or "  (PLAINTEXT bulletin)"),
           sealed and T.highlight or T.warning)
       else
-
+        -- #SEC — refuse-plaintext: an unpaired unicast peer lands here.
         o("Send failed: " .. tostring(sealed), T.error)
       end
 
@@ -428,7 +492,7 @@ return function(C, S, deps)
       if box and i and box:delete(i) then o("Deleted #" .. i, T.highlight)
       else o("No message #" .. tostring(args[2]), T.error) end
 
-    else
+    else  -- list (default)
       local box, boxErr = mailLib.inbox(me)
       if not box then o(tostring(boxErr), T.error); return end
       if #box == 0 then o("(inbox empty)", T.dim)
@@ -444,6 +508,11 @@ return function(C, S, deps)
     end
   end
 
+  -- RBMK reactor controller — thin BASE stub for the add-on (same
+  -- relationship `mail` has with its package, and `drive` with blockfs).
+  -- The controller's libraries hold raw console access and the SCRAM
+  -- path, so they are deliberately unreachable from sandboxed package
+  -- code; this stub is the privileged entry point.
   C.rbmk = function(args, o)
     local okLib, rbmk = pcall(require, "rbmk-cmd")
     if not okLib or type(rbmk) ~= "table" or not rbmk.run then
@@ -511,7 +580,12 @@ return function(C, S, deps)
       o("  component reload-caps     Reload the cap configs (see below)", T.dim)
       return
     end
-
+    -- FEAT-5 — admin can refresh the runtime component allowlist after
+    -- editing /etc/component_caps.cfg. It also reloads the PACKAGE-cap
+    -- overrides in /etc/pkg_caps.cfg: the two files are halves of one
+    -- answer ("may this code touch that device?") and reloading one
+    -- without the other is how an operator ends up with a component type
+    -- allowed and the package that drives it still refused.
     if args[1] == "reload-caps" then
       local okS, sandbox = pcall(require, "kernel.sandbox")
       if not okS or not sandbox.reloadComponentConfig then
@@ -534,7 +608,8 @@ return function(C, S, deps)
         end
         o(string.format("Reloaded: %d extra package caps, %d denials",
           nAllow, nDeny), T.highlight)
-
+        -- A package already loaded this boot kept the caps it was built
+        -- with; say so rather than letting the operator assume otherwise.
         if nAllow > 0 or nDeny > 0 then
           o("Packages already loaded this boot keep their old caps.", T.dim)
         end
@@ -554,13 +629,15 @@ return function(C, S, deps)
       end
       return
     end
-
+    -- #SEC H12 — raw component method calls bypass the capability
+    -- system and can drive hardware directly (filesystem.remove,
+    -- eeprom.set, ...). Restrict all proxy access to root.
     if not rootOnly(o) then return end
     local ctype = args[1]
     local proxy = component.proxy(component.list(ctype)() or "")
     if not proxy then o("No component: " .. ctype, T.error); return end
     if not args[2] then
-
+      -- List methods
       local methods = {}
       for k, v in pairs(proxy) do
         if type(v) == "function" then methods[#methods+1] = k end
@@ -568,7 +645,9 @@ return function(C, S, deps)
       table.sort(methods)
       for _, m in ipairs(methods) do o("  " .. m .. "()", T.fg) end
     else
-
+      -- Call method
+      -- Never write the EEPROM from here; the verified `flash` command
+      -- must remain the only BIOS-write path.
       if ctype == "eeprom" and (args[2] == "set" or args[2] == "setData"
          or args[2] == "makeReadonly") then
         o("Denied: use the 'flash' command to write EEPROM", T.error)
@@ -593,6 +672,11 @@ return function(C, S, deps)
     end
   end
 
+  -- ── OpenOS compat info ────────────────────────────────
+  -- Internet card status and a bounded fetch. The status half exists
+  -- because "it doesn't work" has three completely different causes — no
+  -- card, the server has HTTP off, or an admin here switched it off — and
+  -- an operator who cannot tell them apart will debug the wrong one.
   C.internet = function(args, o)
     local okI, inet = pcall(require, "kernel.internet")
     if not okI or not inet then o("internet module unavailable", T.error); return end
@@ -637,7 +721,8 @@ return function(C, S, deps)
       o(string.format("%d bytes%s", #body,
         (meta and meta.status) and ("  (HTTP " .. tostring(meta.status) .. ")") or ""),
         T.dim)
-
+      -- Print it, but never more than fits a screenful — this is a status
+      -- tool, not a pager, and a 64 KB body would bury the shell.
       local shown = 0
       for line in body:gmatch("([^\n]*)\n?") do
         if shown >= 20 then o("... (truncated)", T.dim); break end
@@ -660,14 +745,18 @@ return function(C, S, deps)
         m.loaded and T.highlight or T.dim)
     end
   end
+  -- (The legacy `mod` command was removed — the module manager it fronted was
+  -- retired in v1.3.1. Its unique subcommands, `enable`/`disable`/`commands`,
+  -- were folded into `pkg`; use `pkg enable|disable|commands|info` instead.)
 
+  -- ── Disk manager ──────────────────────────────────────
   C.disk = function(args, o)
     local sub = args[1]
     if not sub or sub == "list" then
-
+      -- List all mounted removable disks
       local fsList = F.mounts and F.mounts() or nil
       if fsList and type(fsList) == "table" and #fsList > 0 then
-
+        -- Use mount list from kernel fs
         local removable = {}
         for _, m in ipairs(fsList) do
           if m.mountPoint ~= "/" then
@@ -688,7 +777,7 @@ return function(C, S, deps)
           end
         end
       elseif F.exists("/mnt") then
-
+        -- Fallback: scan /mnt/
         local entries = F.list("/mnt")
         if entries and #entries == 0 then
           o("No removable disks mounted", T.dim)
@@ -725,12 +814,16 @@ return function(C, S, deps)
       o(" Contains: " .. info.desc, info.kind ~= "data" and T.highlight or T.dim)
       if info.hint then o("   -> " .. info.hint, T.dim) end
     elseif sub == "install" then
-
+      -- (v1.4.0 consolidation: installing is pkg's job — this branch
+      -- duplicated `pkg install-dir` / `pkg from-floppy` with a third
+      -- syntax. `disk` keeps its real niche: removable media.)
       o("'disk install' folded into the package manager:", T.warning)
       o("  pkg install              scan all mounts, confirm per package", T.dim)
       o("  pkg install <mnt>        install one specific directory", T.dim)
     elseif sub == "export" then
-
+      -- 'disk export' built a module-format disk; that left with the legacy
+      -- module system (v1.3.1). Building an install disk is now the Optional
+      -- Utilities builder's job.
       o("'disk export' was removed with the legacy module system.", T.warning)
       o("To build an install disk for add-ons, use the Optional Utilities", T.dim)
       o("builder: TOS-Extras/build/build-disk.lua.", T.dim)
@@ -747,14 +840,24 @@ return function(C, S, deps)
       o("  Pool several disks into one: 'jbod'.   Free space per mount: 'df'.", T.dim)
     end
   end
-
+  -- ── Unmanaged (raw block) drives ─────────────────────────
+  -- Managed disks (`disk`, `df`) present a ready-made file API. UNMANAGED
+  -- drives are raw `drive` components (readSector/writeSector) with no
+  -- filesystem at all. This command is base — detection + raw inspection
+  -- always work — but format/mount/check/defrag need the `blockfs`
+  -- package (TBFS), which lays a real hierarchical filesystem onto the
+  -- bare sectors so the drive mounts like any other TOS disk.
   C.drive = function(args, o)
     local sub = args[1]
     local function bf()
       local ok, mod = pcall(require, "blockfs")
       return ok and mod or nil
     end
-
+    -- EXACT match (the `true`): OC's component.list filters by SUBSTRING,
+    -- so a bare "drive" also returns `tape_drive` and `disk_drive`. This
+    -- command formats and writes to what it finds — offering a tape or a
+    -- floppy drive as an unmanaged block device would be a genuinely
+    -- destructive mistake, not just a mislabel.
     local function proxyFor(prefix)
       local matches = {}
       for addr in component.list("drive", true) do
@@ -772,7 +875,7 @@ return function(C, S, deps)
     if not sub or sub == "list" then
       o("Unmanaged drives (raw block devices):", T.title)
       local n, lib = 0, bf()
-      for addr in component.list("drive", true) do
+      for addr in component.list("drive", true) do   -- exact: not tape_/disk_drive
         local okP, px = pcall(component.proxy, addr)
         if okP and px then
           n = n + 1
@@ -822,6 +925,7 @@ return function(C, S, deps)
       return
     end
 
+    -- Everything below needs the filesystem driver + admin.
     local lib = bf()
     if not lib then o("The 'blockfs' package is required:  pkg install blockfs", T.error); return end
 
@@ -854,7 +958,8 @@ return function(C, S, deps)
       local mok, merr = F.mount(mnt, proxy, sess)
       if mok == false then o(tostring(merr or "mount failed"), T.error); return end
       o("Mounted TBFS at " .. mnt, T.highlight)
-
+      -- Auto-defrag advisory: a heavily fragmented volume seeks a lot on
+      -- the simulated head. Nudge (don't force) at mount time.
       local s = lib.stats(px)
       if s and s.fragmentation > 0.30 then
         o(string.format("  Note: %d%% fragmented — 'drive defrag %s' to compact.",
@@ -884,7 +989,8 @@ return function(C, S, deps)
       if not adminOnly(o) then return end
       local px, addr = proxyFor(args[2])
       if not px then o(tostring(addr), T.error); return end
-
+      -- --if-over N : only defrag when fragmentation ≥ N% (cron-friendly
+      -- automatic mode). No flag = always (manual mode).
       local threshold = nil
       for i = 3, #args do
         if args[i] == "--if-over" and args[i + 1] then threshold = tonumber(args[i + 1]) end
@@ -910,9 +1016,9 @@ return function(C, S, deps)
       if not px then o(tostring(addr), T.error); return end
       local sec = tonumber(args[3])
       if not sec then o("Usage: drive read <addr> <sector>", T.dim); return end
-      local ok2, data = pcall(px.readSector, sec + 1)
+      local ok2, data = pcall(px.readSector, sec + 1)   -- OC sectors 1-indexed
       if not ok2 then o("Read failed: " .. tostring(data), T.error); return end
-
+      -- Hex dump the first 64 bytes (a sector is big; keep it readable).
       local bytes = {}
       for i = 1, math.min(64, #(data or "")) do bytes[#bytes + 1] = string.format("%02X", (data):byte(i)) end
       o("Sector " .. sec .. " (first 64 bytes):", T.title)
@@ -933,19 +1039,19 @@ return function(C, S, deps)
   end
 
   C.tape = function(args, o)
-
+    -- Delegate to the tape package's command if it's installed + enabled.
     local ok2, pkgMod = pcall(require, "kernel.pkg")
     if ok2 and pkgMod and pkgMod.getCommand then
       local fn = pkgMod.getCommand("tape")
       if fn then fn(args, o); return end
-
+      -- Installed but disabled?
       if pkgMod.info and pkgMod.info("tape") then
         o("The tape package is installed but not enabled.", T.warning)
         o("Enable it with:  pkg enable tape", T.highlight)
         return
       end
     end
-
+    -- Not installed — show guidance
     o("Tape Storage", T.title)
     o("", T.fg)
     o("The 'tape' package isn't installed. To use Computronics tapes:", T.fg)
@@ -960,9 +1066,15 @@ return function(C, S, deps)
     o(" plus a package.lua manifest (kind=\"command\"). See the TOS Manual.", T.dim)
   end
 
+  -- ── Deploy command ─────────────────────────────────────
   C.deploy = function(args, o)
     if not rootOnly(o) then return end
 
+    -- ── Deploy onto an UNMANAGED (raw) drive as a bootable TBFS volume ──
+    -- `deploy drive <addr>`: format the raw drive with TBFS + a boot
+    -- region, copy the OS onto it, and write the stage-2 boot blob. This
+    -- needs the blockfs package (TBFS lives in it); if TOS doesn't have
+    -- blockfs, fail LOUDLY with the fix rather than half-writing a disk.
     if args[1] == "drive" then
       local okBF, blockfs = pcall(require, "blockfs")
       if not okBF or not blockfs then
@@ -972,16 +1084,17 @@ return function(C, S, deps)
         o("    pkg install blockfs", T.highlight)
         return
       end
-
+      -- The driver SOURCE (for embedding in the boot blob). The installed
+      -- package puts it here; if it's missing the package is broken.
       local blockfsSrc = F.exists("/usr/lib/blockfs.lua") and F.readFile("/usr/lib/blockfs.lua")
       if not blockfsSrc then
         o("blockfs is loadable but /usr/lib/blockfs.lua is missing — reinstall it:", T.error)
         o("    pkg install blockfs", T.highlight)
         return
       end
-
+      -- Resolve the drive component (prefix match).
       local addrs = {}
-      for a in component.list("drive", true) do
+      for a in component.list("drive", true) do       -- exact: not tape_/disk_drive
         if not args[2] or a:sub(1, #args[2]) == args[2] then addrs[#addrs + 1] = a end
       end
       table.sort(addrs)
@@ -991,8 +1104,9 @@ return function(C, S, deps)
       local okP, drive = pcall(component.proxy, addr)
       if not okP or not drive then o("Cannot proxy drive " .. addr:sub(1, 8), T.error); return end
 
+      -- Assemble the boot blob NOW so we can size the boot region for it.
       local blob = blockfs.bootBlob(blockfsSrc)
-      local bootBytes = #blob + 4096
+      local bootBytes = #blob + 4096   -- slack for the length header + growth
 
       local ans = promptInput and promptInput(
         "Install TOS onto raw drive " .. addr:sub(1, 8) .. "...? ERASES it [y/N]: ", 4) or "n"
@@ -1005,6 +1119,7 @@ return function(C, S, deps)
       local proxy, mErr = blockfs.mount(drive, { now = nowfn })
       if not proxy then o("Mount failed: " .. tostring(mErr), T.error); return end
 
+      -- Copy the OS: every manifest file, creating parent dirs as we go.
       local files = {}
       local okM, manifest = pcall(require, "system_manifest")
       if okM and type(manifest) == "table" then
@@ -1015,10 +1130,10 @@ return function(C, S, deps)
       if #files == 0 then o("system_manifest not loadable — aborting.", T.error); return end
       local copied, failed = 0, 0
       for _, path in ipairs(files) do
-        coopYield()
+        coopYield()   -- whole-OS copy: give other seats a slice per file
         local content = F.readFile(path)
         if content then
-
+          -- Create the parent directory chain.
           local dir = path:match("^(.*)/[^/]+$")
           if dir and dir ~= "" then
             local acc = ""
@@ -1032,7 +1147,7 @@ return function(C, S, deps)
           else if h then proxy.close(h) end; failed = failed + 1; o("  FAIL " .. path, T.error) end
         end
       end
-
+      -- Write the stage-2 boot blob into the reserved boot region.
       local wok, werr = blockfs.writeBoot(drive, blob)
       proxy.unmount()
       o("", T.fg)
@@ -1062,6 +1177,9 @@ return function(C, S, deps)
       target = target:sub(1, -2)
     end
 
+    -- Refuse to deploy onto the running system. `/`, `/tos`, `/etc`,
+    -- etc. would overwrite live files and most likely brick the host.
+    -- Require an external mount like /mnt/floppy instead.
     local FORBIDDEN = { "/", "/tos", "/etc", "/var", "/usr", "/home", "/root", "/public" }
     for _, p in ipairs(FORBIDDEN) do
       if target == p or target:sub(1, #p + 1) == p .. "/" then
@@ -1078,6 +1196,7 @@ return function(C, S, deps)
 
     o("Creating TOS install disk on " .. target .. " ...", T.title)
 
+    -- Check available space (best-effort)
     local total = F.spaceTotal(target)
     local free  = F.spaceFree(target)
     if total and total > 0 then
@@ -1085,6 +1204,7 @@ return function(C, S, deps)
         math.floor(total / 1024), math.floor(free / 1024)), T.dim)
     end
 
+    -- Directories to create on install media
     local dirs = {
       "/tos/", "/tos/kernel/", "/tos/kernel/net/", "/tos/shell/",
       "/tos/compat/", "/tos/peripheral/",
@@ -1093,6 +1213,12 @@ return function(C, S, deps)
       F.makeDirectory(target .. d)
     end
 
+    -- System files to include on the install disk (#119/#156 —
+    -- sourced from /tos/system_manifest.lua so deploy, verify, and
+    -- installer all agree on the canonical file list instead of each
+    -- carrying its own hand-maintained copy). Any file present in the
+    -- manifest gets copied; if the manifest isn't readable we fall
+    -- back to a minimal list that at least produces a bootable disk.
     local files = {}
     do
       local ok1, manifest = pcall(require, "system_manifest")
@@ -1126,6 +1252,7 @@ return function(C, S, deps)
       else skipped = skipped + 1 end
     end
 
+    -- Copy bios.lua
     if F.exists("/bios.lua") then
       local bc = F.readFile("/bios.lua")
       if bc then
@@ -1134,6 +1261,9 @@ return function(C, S, deps)
       end
     end
 
+    -- Copy install.lua — the unified installer that auto-detects
+    -- the install disk, copies files, runs the setup questionnaire,
+    -- and offers to flash the BIOS on the target machine.
     if F.exists("/install.lua") then
       local ic = F.readFile("/install.lua")
       if ic then
@@ -1164,12 +1294,14 @@ return function(C, S, deps)
   end
   C.chat = function(args, o)
     if not NM then o("No network available", T.error); return end
-
+    -- Chat is an app TAB now (stage 4): it stays open, and messages
+    -- keep arriving (unread badge) while you work in other tabs.
     local ok2, chatApp = pcall(require, "shell.panels.chatapp")
     if not ok2 then o("Chat unavailable: " .. tostring(chatApp), T.error); return end
     chatApp.open(S)
   end
 
+  -- ── Remote exec ───────────────────────────────────────
   C.rsh = function(args, o)
     if not adminOnly(o) then return end
     if not args[1] or not args[2] then o("Usage: rsh <address> <command>", T.dim); return end
@@ -1184,6 +1316,7 @@ return function(C, S, deps)
     else o("Error: " .. tostring(err), T.error) end
   end
 
+  -- ── File transfer ─────────────────────────────────────
   C.scp = function(args, o)
     if not adminOnly(o) then return end
     if not args[1] or not args[2] then
@@ -1194,10 +1327,10 @@ return function(C, S, deps)
     if not NM then o("No network available", T.error); return end
     local ok2, transferMod = pcall(require, "kernel.net.transfer")
     if not ok2 then o("Transfer module unavailable", T.error); return end
-
+    -- Parse address:path format
     local addr, rpath = args[1]:match("^([^:]+):(.+)$")
     if addr then
-
+      -- Download: scp addr:remote local
       local lpath = rp(args[2])
       o("Downloading " .. rpath .. " from " .. addr:sub(1,8) .. "...", T.dim)
       local ok3, err = transferMod.request(addr, rpath, lpath)
@@ -1210,11 +1343,14 @@ return function(C, S, deps)
     end
   end
 
+  -- ── Screen switching ──────────────────────────────────
   C.screen = function(args, o)
     local ok2, screenMod = pcall(require, "kernel.screen")
     if not ok2 then o("Screen module unavailable", T.error); return end
     if args[1] == "res" then
-
+      -- Show or change the screen resolution policy. With no value it reports
+      -- current/max/blocks + the configured policy. With a value it writes the
+      -- policy to config (authoritative next boot) and applies it live now.
       local gpu = D.getGpu and D.getGpu()
       local curW, curH = D.getSize()
       local maxW, maxH = curW, curH
@@ -1242,7 +1378,8 @@ return function(C, S, deps)
         o("Usage: screen res <auto|max|WxH>", T.error); return
       end
       if cfg and cfg.set then cfg.set("screenRes", vl); if cfg.save then cfg.save() end end
-
+      -- Apply live to THIS seat: refresh the policy from config, fit the
+      -- display, re-fit the panels layout to the new size, and redraw.
       screenMod.setPolicy(screenMod.specFromConfig(cfg))
       local w, h, note = screenMod.fitDisplay(S.displayIdx)
       local okSM, SM = pcall(require, "shell.panels.state")

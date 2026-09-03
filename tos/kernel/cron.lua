@@ -1,22 +1,36 @@
+-- ╔══════════════════════════════════════╗
+-- ║  TOS Kernel - Scheduled Tasks        ║
+-- ║  Timer-based job execution           ║
+-- ╚══════════════════════════════════════╝
+-- Lightweight cron-like scheduler. Jobs are stored in /etc/cron.dat
+-- and checked every tick by a kernel interval timer.
+
 local computer = require("computer")
 local serialize = require("kernel.serialize")
 
 local cron = {}
 
 local CRON_PATH = "/etc/cron.dat"
-local jobs = {}
+local jobs = {}       -- id -> { interval, lastRun, script, name, enabled, user }
 local nextID = 1
 local fs = nil
 local log = nil
 local event = nil
 local timerID = nil
 
+-- Caps granted to every cron job. Deliberately modest: a cron job that
+-- needs more than this (e.g. net) should be scheduled via a wrapping
+-- rc.d service. The sandbox is bound to the scheduling user's session,
+-- so fs ops are enforced against that user's ACL — NOT root's.
 local CRON_CAPS = {
   ["fs.read"]  = true,
   ["fs.write"] = true,
   ["component"] = true,
 }
 
+-- Resolve the session to run a job as. Prefers the user recorded when
+-- the job was scheduled (so admin-created jobs don't suddenly run as
+-- root once root logs in). Falls back to the kernel boot session.
 local function sessionForJob(job)
   if not job then return nil end
   local usersmod = nil
@@ -37,13 +51,19 @@ local function sessionForJob(job)
   return nil
 end
 
+-- Build a sandbox env for a given session. Cached per-tick so that
+-- multiple jobs running as the same user share one env build
+-- (previously every job got its own fresh env every firing).
 local function makeSandboxFor(session)
   local sandbox = require("kernel.sandbox")
   return sandbox.build({ caps = CRON_CAPS, session = session })
 end
 
 function cron.init(modules)
-
+  -- #MEM — re-init safe: the module can now self-initialize on load (lazy
+  -- path below) and STILL receive an explicit init() from the kernel or a
+  -- test. Cancel any previous tick timer first so a second init can't
+  -- leave two schedulers running.
   if timerID and event then
     pcall(event.cancelTimer, timerID)
     timerID = nil
@@ -52,12 +72,14 @@ function cron.init(modules)
   log   = modules.log
   event = modules.event
 
+  -- Load saved jobs
   local saved = serialize.loadFile(fs, CRON_PATH)
   if saved then
     jobs = saved.jobs or {}
     nextID = saved.nextID or 1
   end
 
+  -- Register a kernel interval timer to check jobs
   if event then
     timerID = event.interval(10, function() cron.tick() end, "kernel:cron")
   end
@@ -75,6 +97,18 @@ local function saveJobs()
   serialize.saveFile(fs, CRON_PATH, { jobs = jobs, nextID = nextID })
 end
 
+--- Add a recurring job.
+-- @param name string: Human-readable name
+-- @param intervalSec number: Seconds between runs
+-- @param script string: Lua code to execute OR path to a .lua file
+-- @param opts table|nil: { user = "alice" } to override the actor.
+--        If omitted, the current session's user is recorded — so the
+--        job runs under the identity of whoever scheduled it, not as
+--        whoever happens to be logged in when the timer fires.
+--        Setting opts.user to a different user than the caller requires
+--        ADMIN tier (>=2). A normal user can only schedule jobs that
+--        will run as themselves.
+-- @return number: Job ID
 function cron.add(name, intervalSec, script, opts)
   if type(intervalSec) ~= "number" or intervalSec <= 0 then
     return nil, "Invalid interval (must be a positive number)"
@@ -82,13 +116,26 @@ function cron.add(name, intervalSec, script, opts)
   if type(script) ~= "string" or script == "" then
     return nil, "Script must be a non-empty string"
   end
-
+  -- #SEC H12 — enforce a script size ceiling at insertion time. Cron
+  -- jobs run in the timer-callback context (no per-tick supervisor),
+  -- so a 1MB inline script (or a path pointing at a multi-megabyte
+  -- file) would consume the whole tick budget. Reject obviously
+  -- pathological inputs up front.
   if #script > 16384 then
     return nil, "cron: script too large (max 16 KB)"
   end
 
   opts = opts or {}
 
+  -- Resolve the caller's identity. Every scheduling call must be
+  -- attributable — anonymous jobs are refused.
+  --
+  -- #SEC H11 — the boot-session fallback used to fire whenever no live
+  -- session resolved, which let a listener registered during boot
+  -- schedule jobs as root from a callback that fired AFTER boot
+  -- completed. We now require an explicit `kernelMode = true` opt for
+  -- boot-time callers to claim that fallback; everyone else gets the
+  -- normal nil-session refusal path.
   local callerUser, callerTier = nil, 0
   do
     local ok, usersmod = pcall(require, "kernel.users")
@@ -110,12 +157,16 @@ function cron.add(name, intervalSec, script, opts)
   end
 
   local actorUser = opts.user or callerUser
-
+  -- Enforce: scheduling as someone other than yourself requires ADMIN.
   if actorUser ~= callerUser and callerTier < 2 then
     return nil, "cron: tier " .. tostring(callerTier) ..
       " cannot schedule jobs as '" .. tostring(actorUser) .. "'"
   end
 
+  -- #SEC H12 — if `script` is a path, validate canRead AT INSERTION
+  -- time as the caller (not the actor). A USER scheduling a job as
+  -- themselves shouldn't be able to register `/etc/users.dat` and then
+  -- have cron read it on their behalf at tick time.
   if script:sub(1, 1) == "/" then
     local okU, usersmod = pcall(require, "kernel.users")
     if okU and usersmod and usersmod.canAccessAs then
@@ -148,6 +199,7 @@ function cron.add(name, intervalSec, script, opts)
   return id
 end
 
+--- Remove a job.
 function cron.remove(id)
   if not jobs[id] then return false, "No such job" end
   local name = jobs[id].name
@@ -157,6 +209,7 @@ function cron.remove(id)
   return true
 end
 
+--- Enable/disable a job.
 function cron.setEnabled(id, enabled)
   if not jobs[id] then return false end
   jobs[id].enabled = enabled
@@ -164,6 +217,7 @@ function cron.setEnabled(id, enabled)
   return true
 end
 
+--- List all jobs.
 function cron.list()
   local result = {}
   for id, job in pairs(jobs) do
@@ -180,13 +234,25 @@ function cron.list()
   return result
 end
 
+--- Execute pending jobs (called by interval timer).
 function cron.tick()
   local now = computer.uptime()
-
+  -- Per-tick sandbox cache keyed by user. Jobs owned by the same user
+  -- share one env build; jobs for different users still get their own.
   local envCache = {}
-
+  -- Use a securefs proxy for reading script files so a job scheduled
+  -- by a non-admin can't resolve a path that user has no read access to.
   local secfs = _G._TOS and _G._TOS.securefs
 
+  -- #SEC M28 — spawn cron jobs via proc.spawn instead of running them
+  -- inline in the timer callback. Two wins:
+  --   1. An infinite-loop job can be killed (`kill <pid>`) without
+  --      taking down the kernel. Inline execution wedged everything.
+  --   2. CPU is properly accounted; `ps` shows the job among other
+  --      processes; the scheduler's preemptive yield (when enabled)
+  --      will kick in.
+  -- Falls through to the old inline path only when proc.spawn isn't
+  -- available (very early boot, no process subsystem yet).
   local procMod
   do local okP, p = pcall(require, "kernel.process"); if okP then procMod = p end end
 
@@ -207,6 +273,7 @@ function cron.tick()
           envCache[userKey] = env
         end
 
+        -- Resolve source body up front (file path or inline code).
         local source, srcErr
         local chunkName
         if job.script:match("^/") then
@@ -233,7 +300,7 @@ function cron.tick()
             if log then log.warn("cron", "Job '" .. job.name .. "' compile error: " ..
               tostring(err)) end
           elseif procMod and procMod.spawn then
-
+            -- Spawn as a real process so it's killable + accounted.
             local pid = procMod.spawn("cron:" .. (job.name or "?"), function()
               local pok, perr = pcall(fn)
               if not pok and log then
@@ -243,14 +310,15 @@ function cron.tick()
             end, {
               source    = "cron",
               principal = session,
-              priority  = 8,
+              priority  = 8,  -- low-priority by default
               tsr       = false,
             })
             if log and pid then
               log.info("cron", "Job '" .. job.name .. "' started as PID " .. tostring(pid))
             end
           else
-
+            -- Fallback: inline execution. Same behavior as before
+            -- M28 — used only when the process subsystem isn't ready.
             local pok, perr = pcall(fn)
             if not pok and log then
               log.warn("cron", "Job '" .. job.name .. "' failed: " .. tostring(perr))
@@ -262,12 +330,23 @@ function cron.tick()
   end
 end
 
+--- Shutdown: cancel the timer
 function cron.shutdown()
   if timerID and event then
     event.cancelTimer(timerID)
   end
 end
 
+-- #MEM — lazy self-initialization. When no /etc/cron.dat exists the kernel
+-- skips the scheduler at boot entirely; the first `cron` command loads this
+-- module (shell paths pcall(require, "kernel.cron") directly) and this
+-- block brings it up from the live _TOS handles — including registering
+-- the tick timer, so a job added now runs without a reboot. Off-box tests
+-- (no _TOS.fs) keep using explicit init().
+-- #SEC — a boot profile that gates cron OFF (Safe Mode, minimal) sets
+-- _TOS.cronDisabled. Honor it here, or the first `cron` command would
+-- self-init the scheduler and start running saved jobs on a boot whose
+-- whole point was that no stored job code runs.
 do
   local T = rawget(_G, "_TOS")
   if T and T.fs and not fs and not T.cronDisabled then

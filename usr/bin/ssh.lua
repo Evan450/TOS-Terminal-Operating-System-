@@ -1,3 +1,10 @@
+-- ssh - Remote command execution on a trusted TOS peer
+-- Usage: ssh <host> <command...>
+--
+-- Sends a REMOTE_EXEC packet to the specified host (hostname or
+-- address prefix) and waits for the REMOTE_RES response.
+-- The peer must be at TRUSTED level.
+
 local args = {...}
 if #args < 2 then
   print("Usage: ssh <host> <command...>")
@@ -14,6 +21,7 @@ end
 local target = args[1]
 local cmd = table.concat(args, " ", 2)
 
+-- Resolve target to address
 local peer = net.findPeer(target)
 if not peer then
   print("Unknown host: " .. target)
@@ -23,6 +31,9 @@ end
 
 local protocol = net.getProtocol()
 
+-- Register listener BEFORE sending so a fast peer can't reply before
+-- we're listening. net.onceFrom does the peer-address filter and
+-- de-duplicates duplicate / late responses for us.
 local gotResponse = false
 local listeners = {
   { type = protocol.TYPE.REMOTE_RES,

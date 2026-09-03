@@ -1,3 +1,21 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - System Monitor App (tab)                ║
+-- ║                                                      ║
+-- ║  The grown-up Ctrl+T: a full-screen, scrollable,     ║
+-- ║  LIVE view of processes + rc.d services — the modal  ║
+-- ║  switcher truncated all of this into a 66-wide box.  ║
+-- ║  Runs as a panels TAB (type "monitor") through the   ║
+-- ║  app registry; opened by Ctrl+T (kernel sends        ║
+-- ║  "tos_monitor") or the `monitor` / `top` command.    ║
+-- ║                                                      ║
+-- ║  Data + actions go through the kernel (the shell     ║
+-- ║  sandbox can't require kernel.*): kernel.monitorList ║
+-- ║  is the privilege-filtered snapshot; monitorAct      ║
+-- ║  (switch/kill/tsr/svc) re-checks policy against the  ║
+-- ║  CALLING PROCESS's principal, so the rows' canAct    ║
+-- ║  flags here are advisory greying only.               ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local ui      = require("shell.panels.ui")
 local tabsMod = require("shell.panels.tabs")
 local helpers = require("shell.panels.helpers")
@@ -8,6 +26,8 @@ local function kernelAPI()
   local TOS = _G._TOS
   return TOS and TOS.kernel or nil
 end
+
+-- ── Selection over the unified row list (headers not selectable) ──
 
 function M.rowSelectable(row)
   return row ~= nil and row.kind ~= "header"
@@ -33,6 +53,10 @@ function M.firstSelectable(rows)
   return 1
 end
 
+-- ── Data ─────────────────────────────────────────────────────
+
+--- Re-snapshot from the kernel, keeping the selection on the same
+--- process/service when it survived the refresh.
 function M.refresh(S, tab)
   local k = kernelAPI()
   local snap = nil
@@ -46,7 +70,7 @@ function M.refresh(S, tab)
   if not snap then
     tab.msg = { "System monitor data unavailable.", S.T.error }
   end
-
+  -- Re-find the previously selected entry (pid for procs, name for svcs).
   local sel = nil
   if prev then
     for i, r in ipairs(tab.rows) do
@@ -62,6 +86,7 @@ function M.refresh(S, tab)
   end
 end
 
+--- Find-or-create the Monitor tab and focus it.
 function M.open(S)
   local idx = tabsMod.find(S, "monitor")
   local tab
@@ -75,6 +100,11 @@ function M.open(S)
   M.refresh(S, tab)
   return tab
 end
+
+-- ── Drawing ──────────────────────────────────────────────────
+-- Layout: row 1 top bar (drawn by the shell) · row 2 rail · row 3
+-- vitals · row 4 column header · rows 5..H-2 the list · row H-1
+-- message · row H key-hint ramp bar.
 
 local LIST_TOP = 5
 
@@ -114,7 +144,7 @@ function M.draw(S, tab)
     if r then
       local selected = (idx == tab.sel)
       if r.kind == "header" then
-
+        -- Section rule, column math (r.text is ASCII).
         local prefix = " ── " .. (r.text or "") .. " "
         local pad = math.max(0, W - #prefix)
         D.set(1, y, prefix .. string.rep("─", pad), T.title, T.bg)
@@ -132,7 +162,7 @@ function M.draw(S, tab)
           if r.isFg then color = T.highlight or T.fg end
           D.set(1, y, line:sub(1, W), color, T.bg)
         end
-      else
+      else -- svc
         local status = r.running and "running"
           or (r.enabled == false and "disabled" or "stopped")
         local line = string.format("   %-33s %s", tostring(r.name):sub(1, 33), status)
@@ -161,6 +191,8 @@ function M.draw(S, tab)
     nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
 end
 
+-- ── Actions ──────────────────────────────────────────────────
+
 local function act(S, tab, action, id, okMsg)
   local k = kernelAPI()
   if not (k and k.monitorAct) then
@@ -172,7 +204,8 @@ local function act(S, tab, action, id, okMsg)
   if ok then
     tab.msg = okMsg and { okMsg, S.T.highlight } or nil
     if action == "switch" then
-
+      -- Foreground just moved to the target process; stop painting until
+      -- input (or tos_focus / Ctrl+T) proves the shell is in front again.
       S.suspendIdleDraw = true
     end
   else
@@ -194,37 +227,40 @@ local function activate(S, tab)
   return 0
 end
 
+-- ── Input ────────────────────────────────────────────────────
+
+--- Keyboard. Returns (drawLevel[, result]).
 function M.handleKey(S, tab, ch, co, deps)
   if not tab.rows then M.refresh(S, tab) end
   local rows = tab.rows
   local listH = listHeight(S.H)
 
-  if ch == 17 then
+  if ch == 17 then                                    -- Ctrl+Q: close
     tabsMod.close(S)
     return 3
-  elseif co == 200 then
+  elseif co == 200 then                               -- Up
     tab.sel = M.nextSelectable(rows, tab.sel, -1); return 3
-  elseif co == 208 then
+  elseif co == 208 then                               -- Down
     tab.sel = M.nextSelectable(rows, tab.sel, 1); return 3
-  elseif co == 201 then
+  elseif co == 201 then                               -- PgUp
     for _ = 1, listH do tab.sel = M.nextSelectable(rows, tab.sel, -1) end
     return 3
-  elseif co == 209 then
+  elseif co == 209 then                               -- PgDn
     for _ = 1, listH do tab.sel = M.nextSelectable(rows, tab.sel, 1) end
     return 3
-  elseif co == 199 then
+  elseif co == 199 then                               -- Home
     tab.sel = M.firstSelectable(rows); tab.scroll = 0; return 3
-  elseif co == 207 then
+  elseif co == 207 then                               -- End
     tab.sel = #rows
     if not M.rowSelectable(rows[tab.sel]) then
       tab.sel = M.nextSelectable(rows, tab.sel, -1)
     end
     return 3
-  elseif ch == 114 or ch == 82 then
+  elseif ch == 114 or ch == 82 then                   -- r/R: refresh now
     M.refresh(S, tab); return 3
-  elseif co == 28 then
+  elseif co == 28 then                                -- Enter
     return activate(S, tab)
-  elseif ch == 107 or ch == 75 then
+  elseif ch == 107 or ch == 75 then                   -- k/K: kill
     local r = rows[tab.sel]
     if r and r.kind == "proc" then
       if not r.canAct then
@@ -232,7 +268,7 @@ function M.handleKey(S, tab, ch, co, deps)
       end
       return act(S, tab, "kill", r.pid, "Killed PID " .. r.pid)
     end
-  elseif ch == 116 or ch == 84 then
+  elseif ch == 116 or ch == 84 then                   -- t/T: toggle TSR
     local r = rows[tab.sel]
     if r and r.kind == "proc" then
       if not r.canAct then
@@ -244,6 +280,8 @@ function M.handleKey(S, tab, ch, co, deps)
   return 0
 end
 
+--- Mouse click: first click selects; a click on the already-selected
+--- row activates (switch / service toggle). Right-click selects only.
 function M.handleClick(S, tab, ev, deps)
   if not tab.rows then M.refresh(S, tab) end
   local idx = (tab.scroll or 0) + (ev.y - LIST_TOP + 1)
@@ -258,6 +296,7 @@ function M.handleClick(S, tab, ev, deps)
   return 0
 end
 
+--- Mouse scroll: move the selection.
 function M.handleScroll(S, tab, ev)
   if not tab.rows then M.refresh(S, tab) end
   local dir = (ev.dir or 0) > 0 and -1 or 1
@@ -267,6 +306,8 @@ function M.handleScroll(S, tab, ev)
   return 3
 end
 
+--- Periodic live refresh (driven by the event loop while this tab is
+--- front and the shell is foreground). Returns a redraw hint.
 function M.tick(S, tab)
   M.refresh(S, tab)
   return 3

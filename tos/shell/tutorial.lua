@@ -1,10 +1,39 @@
+-- ╔══════════════════════════════════════════════════════════════╗
+-- ║  TOS Welcome Tutorial                                         ║
+-- ║  Role-aware, skippable walkthrough — once per ACCOUNT          ║
+-- ╚══════════════════════════════════════════════════════════════╝
+-- login.lua already offers the tutorial after EVERY successful login,
+-- and always has. What made it "the machine's first boot only" was the
+-- marker: one shared file at /etc/.tutorial_done. Root finished the
+-- walkthrough on the very first boot and every account created
+-- afterwards was told, in effect, that someone else had already read
+-- their welcome. A second person on the same computer never saw it.
+--
+-- So the marker is per-account now, kept in the user's own home beside
+-- ~/.profile.cfg and ~/.launcher.cfg. That also drops a privilege
+-- oddity: writing /etc needed ADMIN tier, so a plain USER finishing the
+-- tutorial could not record that they had (it logged a warning and
+-- offered the tutorial again next login). A user can always write their
+-- own home.
+
 local computer = require("computer")
 
 local tutorial = {}
 
+-- The pre-1.4 shared marker. Still consulted, never written: an existing
+-- machine must not put root back through a walkthrough they finished.
 local LEGACY_MARKER = "/etc/.tutorial_done"
 local MARKER_FILE   = ".tutorial_done"
 
+--- Where THIS account's "seen it" marker lives, or nil when the account
+--- has no private home to keep one in.
+---
+--- Guest is deliberately nil. Guest is anonymous and its home (/public)
+--- is SHARED, so a marker there would mean one of two wrong things: the
+--- first guest ever to log in suppresses the welcome for every guest
+--- after them, or nobody can record it and every guest is made to sit
+--- through it. Guests can still run `tutorial` themselves, and it is
+--- still offered on a box that has never completed it.
 function tutorial.markerFor(session)
   if type(session) ~= "table" then return nil end
   if session.isGuest or session.user == "guest" then return nil end
@@ -12,6 +41,12 @@ function tutorial.markerFor(session)
   if type(home) ~= "string" or home == "" or home == "/" then return nil end
   return (home:gsub("/+$", "")) .. "/" .. MARKER_FILE
 end
+
+-- ============================================================
+-- Page definitions
+-- Each page: { title, minTier, lines }
+-- minTier: 0=ALL, 1=USER+, 2=ADMIN+, 3=ROOT
+-- ============================================================
 
 local pages = {
   { title = "Welcome to TOS", minTier = 0, lines = {
@@ -163,7 +198,10 @@ local pages = {
     "Remember:",
     "  Press F1 anytime for command help.",
     "",
-
+    -- Worth saying now that this is per-ACCOUNT and skippable: whether you
+    -- read it or skipped it, it is marked done and you will not be asked
+    -- again. Somebody who skipped on their first login has no other way of
+    -- knowing it is still here.
     "  Run 'tutorial' to see this again -- it won't",
     "  interrupt you a second time on its own.",
     "",
@@ -171,18 +209,33 @@ local pages = {
   }},
 }
 
+-- ============================================================
+-- Check whether the tutorial should be shown
+-- ============================================================
+
+--- Should this account be offered the walkthrough?
+--- `session` is the authenticated session (users.getSession(token)).
 function tutorial.shouldShow(F, session)
   if not (F and F.exists) then return false end
   local path = tutorial.markerFor(session)
   if not path then
-
+    -- No private home to remember it in — see markerFor. Fall back to the
+    -- shared marker so a machine that has never completed the tutorial
+    -- still offers it to a guest exactly once, which is what it did before.
     return not F.exists(LEGACY_MARKER)
   end
   if F.exists(path) then return false end
-
+  -- Migration: the shared marker was written by the machine's first-boot
+  -- flow, and that was root. Honour it for root so an existing box does
+  -- not replay a walkthrough that was finished long ago. Everyone else
+  -- never had a marker of their own and is genuinely new here.
   if session.user == "root" and F.exists(LEGACY_MARKER) then return false end
   return true
 end
+
+-- ============================================================
+-- Main tutorial runner
+-- ============================================================
 
 function tutorial.run(ctx)
   local D  = ctx.D
@@ -192,6 +245,13 @@ function tutorial.run(ctx)
   local W  = ctx.W or 80
   local H  = ctx.H or 25
 
+  -- #SEC H18 — read tier from the authenticated session so the page
+  -- filter reflects what the user is actually entitled to see, BUT
+  -- keep the writeSess for the final markDone (the marker file is in
+  -- /etc and requires admin tier under securefs). We don't run any
+  -- arbitrary code at the user's tier in this tutorial — pages are
+  -- static text and a navigation loop — so there's no privilege
+  -- expansion from preserving the authenticated session here.
   local tier = 0
   local writeSess = nil
   local session = nil
@@ -203,9 +263,16 @@ function tutorial.run(ctx)
       session = sess
     end
   end
-
+  -- Where to record completion for THIS account. nil (guest, or a session
+  -- with no private home) falls back to the shared marker, which is what
+  -- this always used to write.
   local marker = tutorial.markerFor(session) or LEGACY_MARKER
 
+  -- Helper: mark tutorial done (uses the authenticated session so /etc writes
+  -- aren't denied by securefs when called from the login process principal).
+  -- #SEC H18 — surface write failures rather than silently swallowing
+  -- them. A failed marker write means the user re-enters the tutorial
+  -- on every login, which is the visible symptom the audit flagged.
   local function markDone()
     local ok, err
     if writeSess then
@@ -224,6 +291,7 @@ function tutorial.run(ctx)
     return ok, err
   end
 
+  -- Build filtered page list for this tier
   local vis = {}
   for i = 1, #pages do
     if tier >= pages[i].minTier then
@@ -231,7 +299,7 @@ function tutorial.run(ctx)
     end
   end
   if #vis == 0 then
-
+    -- Shouldn't happen, but bail gracefully
     pcall(markDone)
     return
   end
@@ -239,10 +307,12 @@ function tutorial.run(ctx)
   local total = #vis
   local cur = 1
 
+  -- Helper: mark tutorial done
   local function finish()
     pcall(markDone)
   end
 
+  -- Simple word-wrap helper
   local function wrapText(text, width)
     if #text <= width then return { text } end
     local lines = {}
@@ -259,10 +329,12 @@ function tutorial.run(ctx)
     return lines
   end
 
+  -- Helper: draw one page
   local function drawPage()
     local T = D.getTheme()
     local pg = vis[cur]
 
+    -- Box dimensions — fit within the screen, even on T1 (50x16)
     local boxW = math.min(W - 2, 60)
     local boxH = math.min(H - 2, 20)
     local boxX = math.floor((W - boxW) / 2) + 1
@@ -270,17 +342,20 @@ function tutorial.run(ctx)
 
     D.clear(T.bg)
 
+    -- Draw bordered box
     D.dbox(boxX, boxY, boxW, boxH, pg.title, {
       bg     = T.panel_bg,
       border = T.border,
       title  = T.title,
     })
 
+    -- Content area: inside the box, below the title row
     local contentX = boxX + 2
     local contentY = boxY + 2
     local contentW = boxW - 4
-    local maxLines = boxH - 4
+    local maxLines = boxH - 4 -- leave room for border top/bottom + nav line
 
+    -- Wrap all page lines to fit within contentW, then render
     local wrapped = {}
     for _, line in ipairs(pg.lines) do
       if #line == 0 then
@@ -296,6 +371,7 @@ function tutorial.run(ctx)
       D.set(contentX, contentY + (i - 1), wrapped[i], T.fg, T.panel_bg)
     end
 
+    -- Navigation bar at bottom of box — adaptive to available width
     local navW = boxW - 4
     local nav
     if navW >= 44 then
@@ -310,12 +386,14 @@ function tutorial.run(ctx)
     D.set(math.max(boxX + 1, navX), boxY + boxH - 1, nav, T.dim, T.panel_bg)
   end
 
+  -- Main input loop
   drawPage()
 
   while true do
     local sig, _, ch, code = computer.pullSignal(0.5)
     if sig == "key_down" then
-
+      -- Ctrl+Q: char value 17. #SEC H18 — require y/N confirm so a
+      -- stray Ctrl+Q doesn't silently mark the tutorial complete.
       if ch == 17 then
         local T = D.getTheme()
         local prompt = "Skip tutorial? [y/N]"
@@ -328,17 +406,17 @@ function tutorial.run(ctx)
             if c2 == 121 or c2 == 89 then confirmed = true; break
             elseif c2 ~= 0 then break end
           elseif s2 == nil then
-            break
+            break  -- timeout: treat as no
           end
         until false
         if confirmed then
           finish()
           return
         else
-          drawPage()
+          drawPage()  -- redraw to clear the prompt
         end
       end
-
+      -- Enter (code 28) or Down arrow (code 208): next page
       if code == 28 or code == 208 then
         if cur >= total then
           finish()
@@ -346,7 +424,7 @@ function tutorial.run(ctx)
         end
         cur = cur + 1
         drawPage()
-
+      -- Backspace (code 14) or Up arrow (code 200): prev page
       elseif code == 14 or code == 200 then
         if cur > 1 then
           cur = cur - 1

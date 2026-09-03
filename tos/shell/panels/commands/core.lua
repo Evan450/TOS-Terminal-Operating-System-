@@ -1,7 +1,22 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Commands subfile                            ║
+-- ║  Auto-extracted from commands.lua during the v1.3 split  ║
+-- ║  to bring per-file size under ~500 lines and enable      ║
+-- ║  lazy-loading via the dispatcher.                        ║
+-- ║                                                          ║
+-- ║  Each subfile exports a single registration function     ║
+-- ║  that adds its commands to the shared C table. The       ║
+-- ║  dispatcher in commands.lua loads each subfile only on   ║
+-- ║  first access to one of its commands.                    ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local computer   = require("computer")
 local component  = require("component")
 local helpers    = require("shell.panels.helpers")
 
+-- Cooperative slice (#REV multi-seat freeze) for silent walk loops
+-- (find/du don't print per entry, so the executor's o() chokepoint
+-- can't slice them). Throttled inside kernel.process; no-op off-box.
 local coopYield = function() end
 do
   local okP, procMod = pcall(require, "kernel.process")
@@ -10,6 +25,10 @@ do
   end
 end
 
+-- Help text must not spell keys that the session doesn't use. The merged
+-- Home surface gave F2 to the `view` action and moved tab cycling to
+-- Tab; split mode kept the old pair. Ask, don't hardcode — a help screen
+-- that lies about a key is worse than no help screen.
 local function homeMod()
   local ok, m = pcall(require, "shell.panels.home")
   return (ok and m) or nil
@@ -25,9 +44,10 @@ local function viewKeyHelp(S)
   end
   return "F2  Next tab      "
 end
-
+--- "Copy Ctrl+Insert  Cut Shift+Delete / ^X  Paste Shift+Insert / ^V",
+--- straight from the live bindings.
 local function clipHelpLine(S)
-  local h = homeMod()
+  local h = homeMod()   -- only used for its `who`-free convenience
   local okK, keys = pcall(require, "shell.keys")
   if not (okK and keys) then return "Copy Ctrl+Insert  Cut ^X  Paste ^V" end
   local who = S and S.who or nil
@@ -42,7 +62,7 @@ local function cycleKeyHelp(S)
 end
 
 return function(C, S, deps)
-
+  -- Stable references aliased as locals (avoids per-call S/deps lookup).
   local K, E, P, F, D, U = S.K, S.E, S.P, S.F, S.D, S.U
   local SC, NM, st        = S.SC, S.NM, S.st
   local T                 = S.T
@@ -102,7 +122,9 @@ return function(C, S, deps)
       o("  Open file in editor tab. Creates the file if it doesn't exist.", T.fg)
       o("  Keys:  Ctrl+S = save   Ctrl+Q = close tab   Ctrl+F = find", T.dim)
       o("  Ctrl+H = find/replace  Ctrl+Z = undo", T.dim)
-
+      -- These used to read "Ctrl+C = copy line", which never worked: the
+      -- kernel eats char 3 for the interrupt. Read the live bindings so
+      -- this line cannot drift from what the editor listens for again.
       o("  Select: Shift+arrows.  " .. clipHelpLine(S), T.dim)
       o("  With nothing selected, copy/cut take the whole line.", T.dim)
       o("  Use " .. cycleKeyLabel(S) .. " to switch tabs, F4 to close.", T.dim)
@@ -245,7 +267,10 @@ return function(C, S, deps)
       o("    2 descending        Shutdown / logout", T.dim)
       o("    3 ascending         Boot complete", T.dim)
     elseif topic and topic ~= "" then
-
+      -- Registry-driven fallback: a focused help entry for ANY known command
+      -- that doesn't have a bespoke page above — so EVERY command has its own
+      -- help sub-menu (name, one-liner, minimum tier, group), not just the
+      -- couple dozen with hand-written pages.
       local Cmds = require("shell.panels.commands")
       local entry = Cmds.entry and Cmds.entry(topic)
       if entry then
@@ -255,7 +280,9 @@ return function(C, S, deps)
         o("", T.fg)
         o(string.format("  Minimum tier: %s    Group: %s",
           TIERS[entry.tier or 0] or tostring(entry.tier), entry.category or "?"), T.dim)
-
+        -- Only advertise `man <topic>` when that page actually exists —
+        -- "…'man launcher' for the manual" followed by "No manual page
+        -- for 'launcher'" was a dead-end referral loop.
         local tip = "  Tip: run '" .. topic .. "' with no args for usage"
         if F.exists("/usr/man/" .. topic .. ".man") then
           tip = tip .. "; 'man " .. topic .. "' for the manual."
@@ -267,7 +294,9 @@ return function(C, S, deps)
         o("No such command: '" .. topic .. "'.  Type 'help' for the full list.", T.warning)
       end
     else
-
+      -- Role-aware AND install-aware help: only show commands the user
+      -- can access AND whose dependency is present on THIS machine.
+      -- TIER: GUEST=0, USER=1, ADMIN=2, ROOT=3
       local Cmds = require("shell.panels.commands")
       local function avail(token) return Cmds.needMet and Cmds.needMet(token) end
       o("=== TOS Command Reference ===  (help <cmd> for detail)", T.title)
@@ -277,7 +306,7 @@ return function(C, S, deps)
       o("  ls [path]             List directory  (dir = alias)", T.fg)
       o("  cat <file>            View file contents  (type = alias)", T.fg)
       o("  more <file>           Open file in view tab", T.fg)
-      if S.userTier >= 1 then
+      if S.userTier >= 1 then -- USER+
       o("  mkdir <dir>           Create directory", T.fg)
       o("  touch <file>          Create empty file", T.fg)
       o("  cp <src> <dst>        Copy file (both paths required)", T.fg)
@@ -292,19 +321,22 @@ return function(C, S, deps)
       o("", T.fg)
       o(" UI & Shortcuts", T.highlight)
       o("  F1  Help      " .. viewKeyHelp(S) .. "  F3  View file", T.fg)
-
+      -- F5/F6 are FILE operations (mark a file, copy it here). Text
+      -- copy/paste is a different verb on a different clipboard, and
+      -- calling them both "Copy" in one list is how an operator learns
+      -- the wrong one.
       o("  F4  Close tab F5  Copy file      F6  Move file", T.fg)
       o("  " .. cycleKeyHelp(S) .. " F9  Menu bar", T.fg)
       o("  F7  Mkdir     F8  Delete", T.fg)
       o("  Text: Shift+arrows select.  " .. clipHelpLine(S), T.fg)
       o("  F10 Quit      ^Q  Cancel/Close   ^F  Find", T.fg)
       o("  Enter on file = context menu  |  ^T  System Monitor", T.dim)
-      if S.userTier >= 1 then
+      if S.userTier >= 1 then -- USER+ can mount
       o("", T.fg)
       o(" Devices", T.highlight)
       o("  lsdev                 List all connected peripherals", T.fg)
       o("  mount                 List mounted filesystems", T.fg)
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+ can mount/umount
       o("  mount <dev> <path>    Mount a device at path", T.fg)
       o("  umount <path>         Unmount a device", T.fg)
       end
@@ -318,21 +350,23 @@ return function(C, S, deps)
       o("  ver    TOS version info", T.fg)
       o("  about  Changelog and credits", T.fg)
       o("  uptime Show system uptime", T.fg)
-      if S.userTier >= 1 then
-
+      if S.userTier >= 1 then -- USER+
+      -- srm is the front door; doctor is the runtime-health half of it. The
+      -- curated list advertised `verify` but neither of these, so the two
+      -- commands an operator actually reaches for first were invisible here.
       o("  srm    System Repair & Maintenance  (status/scan/repair/baseline)", T.fg)
       o("  doctor Runtime health: memory, disk, services, power, security", T.fg)
       end
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("  log [N]       Show last N system log entries", T.fg)
       o("  verify Check all system files for integrity", T.fg)
       end
-      if S.userTier >= 1 then
+      if S.userTier >= 1 then -- USER+
       o("  run <file>    Execute a Lua file", T.fg)
       o("  bg <file>     Run a Lua file in a background tab", T.fg)
       o("  edit <file>   Open in editor tab  (^S save, ^Q close)", T.fg)
       end
-      if S.userTier >= 3 then
+      if S.userTier >= 3 then -- ROOT
       o("  lua           Interactive Lua REPL  (exit to quit)", T.fg)
       o("  flash <file>  Flash EEPROM with Lua file  (!CAUTION)", T.fg)
       end
@@ -351,11 +385,11 @@ return function(C, S, deps)
       o("", T.fg)
       o(" Session & Power", T.highlight)
       o("  whoami  passwd  logout", T.fg)
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("  users                            List user accounts", T.fg)
       o("  reboot  shutdown", T.fg)
       end
-      if S.userTier >= 3 then
+      if S.userTier >= 3 then -- ROOT
       o("", T.fg)
       o(" Administration (root)", T.highlight)
       o("  useradd <user>                   Create a new user", T.fg)
@@ -363,14 +397,14 @@ return function(C, S, deps)
       o("  usermod <user> lock|unlock|admin|user  Modify user", T.fg)
       o("  deploy <mount>                   Copy TOS to another disk", T.fg)
       end
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("", T.fg)
       o(" Environment & Services", T.highlight)
       o("  env [KEY=VAL]   Show/set environment variables", T.fg)
       o("  service [start|stop <n>]  Manage startup services", T.fg)
       o("  cron [list|add|rm]        Scheduled tasks", T.fg)
       end
-
+      -- Install-aware: only list peripherals actually attached / installed.
       local hasRs, hasRobot = avail("component:redstone"), avail("component:robot")
       local hasInv, hasTape = avail("inventory"), avail("module:tape")
       if hasRs or hasRobot or hasInv or hasTape or S.userTier >= 2 then
@@ -380,7 +414,7 @@ return function(C, S, deps)
       if hasRobot then o("  robot <cmd>          Robot/drone movement & interaction", T.fg) end
       if hasInv   then o("  inventory [side]     Inspect inventories  (inv = alias)", T.fg) end
       if hasTape  then o("  tape [subcmd]        Tape drive data storage (module)", T.fg) end
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("  component <type> [method] [args]  Call any component", T.fg)
       end
       end
@@ -388,10 +422,10 @@ return function(C, S, deps)
       o("", T.fg)
       o(" Network", T.highlight)
       o("  net  ping  hostname", T.fg)
-      if S.userTier >= 1 then
+      if S.userTier >= 1 then -- USER+
       o("  chat               Open chat with trusted peers", T.fg)
       end
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("  hostname  config  battery  audio", T.fg)
       o("  rsh <addr> <cmd>   Run command on remote peer", T.fg)
       o("  scp <addr>:<path> <local>  Transfer file from peer", T.fg)
@@ -402,7 +436,7 @@ return function(C, S, deps)
       o(" Packages & Disks", T.highlight)
       o("  pkg list           List installed packages", T.fg)
       o("  pkg search         Show packages on repos + mounted disks", T.fg)
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("  pkg install <name>         Install an add-on (deps + verify)", T.fg)
       o("  pkg enable|disable <name>  Toggle an installed package", T.fg)
       o("  pkg uninstall <name>       Remove a package", T.fg)
@@ -410,12 +444,12 @@ return function(C, S, deps)
       end
       o("  disk [list]        List removable disks", T.fg)
       o("  disk info <mount>  Show disk contents", T.fg)
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("  disk install <mount>          Install module from disk", T.fg)
       o("  disk export <name> <mount>    Write module to disk", T.fg)
       end
       o("  disk eject <mount> Unmount a disk", T.fg)
-      if S.userTier >= 2 then
+      if S.userTier >= 2 then -- ADMIN+
       o("", T.fg)
       o(" Compatibility", T.highlight)
       o("  compat             Show OpenOS compatibility status", T.fg)
@@ -430,6 +464,9 @@ return function(C, S, deps)
     end
   end
 
+  -- man — detailed manual pages (deeper than 'help', lighter than the external
+  -- MANUAL.md book). Reads /usr/man/<topic>; opens it in a scrollable view tab
+  -- under panels, or prints it in the CLI fallback. Depth: help < man < Manual.
   C.man = function(args, o)
     local MANDIR = "/usr/man"
     local topic = args and args[1]
@@ -448,7 +485,7 @@ return function(C, S, deps)
       o("Depth: help (quick) < man (detailed) < MANUAL.md (the full book)", T.dim)
       return
     end
-
+    -- Sanitize: a man topic is a bare name, never a path (no traversal).
     topic = tostring(topic):gsub("[^%w_%-]", "")
     if topic == "" then o("man: invalid topic", T.error); return end
     local path = F.join(MANDIR, topic .. ".man")
@@ -464,8 +501,8 @@ return function(C, S, deps)
       local buf = {}
       for l in (content .. "\n"):gmatch("([^\n]*)\n") do
         local col = T.fg
-        if l:match("^[A-Z][A-Z0-9 /%-]+$") then col = T.title
-        elseif l:match("^%s") then col = T.dim end
+        if l:match("^[A-Z][A-Z0-9 /%-]+$") then col = T.title    -- section header
+        elseif l:match("^%s") then col = T.dim end                -- indented body
         buf[#buf + 1] = { l, col }
       end
       openViewTab(buf, "man " .. topic)
@@ -474,8 +511,11 @@ return function(C, S, deps)
     end
   end
 
+  -- (v1.4.0 consolidation: `ver` folded into `about` — two commands
+  -- reported the same fact. about carries the hardware one-liner now.)
   C.about = function(args, o)
-
+    -- Pull the live identity rather than hard-coding it (this command went
+    -- stale at v0.3.0 once; reading the real values keeps it honest).
     local tos = _G._TOS or {}
     local vendor, motto, tagline = "Strata Systems LLC", nil, "Terminal Operating System"
     local okL, logo = pcall(require, "kernel.logo")
@@ -500,13 +540,24 @@ return function(C, S, deps)
     o("", T.fg)
     o("'help' lists commands · 'tutorial' walks you through it.", T.dim)
   end
-
+  -- `ver` is a muscle-memory alias for `about` (registry entry in
+  -- commands.lua maps the name so the lazy-loader knows it). Folded here
+  -- in v1.4.0; the name kept advertising itself in help, so restore it.
   C.ver = C.about
 
   C.echo = function(args, o)
     o(table.concat(args, " "), T.fg)
   end
 
+  -- notify — put a DOS-style dialog box in front of whoever is at the
+  -- machine (every seat), instead of a line in the output area above the
+  -- command prompt that they'll see only when they next look down.
+  --
+  -- This is the operator/scripting surface for kernel.notify: the same
+  -- facility the Intercom's announcements ride. Useful on its own (page the
+  -- other seat, have a long `bg` job announce that it finished), and it is
+  -- how you check the mechanism works without needing a second machine and
+  -- a tape drive.
   C.notify = function(args, o)
     local okN, nf = pcall(require, "kernel.notify")
     if not okN or not nf then o("notify unavailable", T.error); return end
@@ -515,7 +566,7 @@ return function(C, S, deps)
     local skip
     for i = 1, #(args or {}) do
       local a = tostring(args[i])
-      if i == skip then
+      if i == skip then                                  -- consumed as a value
       elseif a:sub(1, 2) == "--" then
         local k, v = a:match("^%-%-([%w%-]+)=?(.*)$")
         if k == "style" or k == "title" then
@@ -540,13 +591,15 @@ return function(C, S, deps)
 
     local id, why = nf.post({
       message = message, style = style, title = title,
-
+      -- Stamped with the user, not just "shell": on a multi-seat box the
+      -- operator being interrupted should see WHO interrupted them.
       from = "notify/" .. tostring(S.who or "?"),
     })
     if id then
       o("Raised on every seat (dialog #" .. id .. ").", T.highlight)
     else
-
+      -- A refusal is normal and is the rate limiter doing its job — say so
+      -- plainly rather than reporting it as a failure.
       o("Not raised: " .. tostring(why), T.warning)
       o("The message is in the log either way ('log' to see it).", T.dim)
     end
@@ -555,7 +608,10 @@ return function(C, S, deps)
   C.tutorial = function(args, o)
     local ok2, tut = pcall(require, "shell.tutorial")
     if not ok2 then o("Tutorial module unavailable", T.error); return end
-
+    -- --reset clears THIS account's marker, so the walkthrough is offered
+    -- again at their next login. It is per-account now: resetting your own
+    -- must not silently re-run it for everyone else on the machine, and the
+    -- old code deleted the one shared file that did exactly that.
     if args[1] == "--reset" then
       local sess = (U and st and U.getSession) and U.getSession(st) or nil
       local mark = tut.markerFor and tut.markerFor(sess)
@@ -668,6 +724,9 @@ return function(C, S, deps)
     o("Touched: " .. args[1], T.highlight)
   end
 
+  -- Disk compression (data-card deflate/inflate). Writes a self-describing
+  -- .tcz container; only actually compresses when a data card is present
+  -- (otherwise it tells you, rather than storing something that saves nothing).
   local function parseKeep(args)
     local keep, files = false, {}
     for _, a in ipairs(args) do
@@ -732,7 +791,10 @@ return function(C, S, deps)
   end
 
   C.rm = function(args, o)
-
+    -- Flag parsing: first non-flag arg is the path. -r / -rf allow
+    -- recursive delete of directories; without it, rm refuses to touch
+    -- a non-empty directory so `rm /etc` doesn't nuke /etc in one go.
+    -- --hard skips the trash (FEAT-1) and unlinks immediately.
     local recursive, hard = false, false
     local targets = {}
     for _, a in ipairs(args) do
@@ -746,6 +808,11 @@ return function(C, S, deps)
     local p = rp(target)
     if p == "/" then o("Cannot remove root", T.error); return end
 
+    -- #SEC — Guard against accidental deletion of protected system
+    -- paths from a user shell. Securefs should already refuse most of
+    -- these via canWrite, but an admin/root session could wipe the OS
+    -- with a single typo. Require -r *and* explicit system path typed
+    -- out (not a wildcard or expansion).
     local systemGuards = {
       "^/$", "^/init%.lua$", "^/bios%.lua$",
       "^/tos$", "^/tos/", "^/etc$", "^/etc/",
@@ -760,6 +827,8 @@ return function(C, S, deps)
 
     if not canWrite(p, o) then return end
 
+    -- Non-empty directories need -r so `rm /home/user/project` doesn't
+    -- silently wipe a whole tree when the user meant a single file.
     if F.isDirectory and F.isDirectory(p) then
       if not recursive then
         o("Cannot remove directory without -r: " .. p, T.error)
@@ -771,12 +840,18 @@ return function(C, S, deps)
       end
     end
 
+    -- FEAT-1 — soft delete via the trash module when available, unless
+    -- the operator explicitly opted for --hard. Failures fall through
+    -- to a hard delete (e.g. guest sessions have no trash dir; in that
+    -- case the operator's `rm` IS the irreversible action they
+    -- typed). System paths under /tos /etc /var also skip the trash so
+    -- we don't leak system files into a user's home trash.
     local trashOk = false
     local systemSkip = p:match("^/tos") or p:match("^/etc") or p:match("^/var") or p:match("^/usr")
     if not hard and not systemSkip then
       local okT, trashMod = pcall(require, "kernel.trash")
       if okT and trashMod and trashMod.put then
-        local sess = helpers.sessionOf(S)
+        local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
         local ok2, err2 = trashMod.put(p, sess)
         if ok2 then trashOk = true; o("Trashed: " .. target .. " (use 'restore' to undo)", T.highlight) end
       end
@@ -792,11 +867,12 @@ return function(C, S, deps)
     end
   end
 
+  -- FEAT-1 — trash management.
   C.trash = function(args, o)
     local okT, trashMod = pcall(require, "kernel.trash")
     if not okT or not trashMod then o("Trash unavailable", T.error); return end
     local sub = args[1] or "list"
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
     if sub == "list" or sub == "ls" then
       local items = trashMod.list(sess)
       if #items == 0 then o("Trash is empty.", T.dim); return end
@@ -815,7 +891,8 @@ return function(C, S, deps)
       if ok2 then o("Emptied " .. tostring(n) .. " items.", T.highlight)
       else o(tostring(n or "empty failed"), T.error) end
     elseif sub == "restore" then
-
+      -- (v1.4.0 consolidation: was the standalone `restore` command —
+      -- trash and restore are one feature.)
       if not args[2] then o("Usage: trash restore <name> [dest] [--force]", T.dim); return end
       local force, dest = false, nil
       for i = 3, #args do
@@ -835,14 +912,34 @@ return function(C, S, deps)
     end
   end
 
+  -- FEAT-11 — `vault` command: standalone encryption for files
+  -- (anywhere on the filesystem, including /mnt/<floppy>/...) and
+  -- tapes. The kernel.vault module owns the wire format; this command
+  -- is just the user-facing entry point that the tape module's
+  -- legacy `tape encrypt` subcommands now defer to.
+  --
+  -- Subcommands:
+  --   vault encrypt <src> <dst> <passphrase>     encrypt file
+  --   vault decrypt <src> <dst> <passphrase>     decrypt file
+  --   vault encrypt-in-place <file> <passphrase> encrypt file (overwrites)
+  --   vault decrypt-in-place <file> <passphrase> decrypt file (overwrites)
+  --   vault info <file>                          inspect blob (no decrypt)
+  --   vault tape encrypt <passphrase>            encrypt current tape archive
+  --   vault tape decrypt <passphrase>            decrypt current tape archive
   C.vault = function(args, o)
     local okV, vmod = pcall(require, "kernel.vault")
     if not okV or not vmod then o("vault module unavailable", T.error); return end
     local sub = args[1]
 
-    local sess = helpers.sessionOf(S)
+    -- Resolve the calling session for ACL-aware reads/writes.
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
     local secfs = _G._TOS and _G._TOS.securefs
 
+    -- #SEC M-8 — fail CLOSED. The old fallbacks dropped to the raw fs
+    -- (F.readFile/F.writeFile), which performs NO ACL check, whenever
+    -- securefs was absent — so on a degraded boot `vault` could read/write
+    -- any path regardless of the caller's tier. Without securefs there is
+    -- no enforcement authority, so we refuse rather than bypass it.
     local function readBytes(path)
       if secfs and secfs.readFile then return secfs.readFile(path, sess) end
       return nil, "securefs unavailable (refusing unchecked read)"
@@ -910,7 +1007,7 @@ return function(C, S, deps)
       if not vmod.isEncrypted(data) then
         o("Not a vault blob (no TVAULT1 magic).", T.warning); return
       end
-
+      -- Pull algo + lengths out of the header without decrypting.
       o(string.format(" file:     %s", file), T.title)
       o(string.format(" size:     %d bytes", #data), T.fg)
       local off = #vmod.MAGIC + 1
@@ -920,12 +1017,15 @@ return function(C, S, deps)
       o(" (decrypt with the right passphrase to access contents)", T.dim)
 
     elseif sub == "tape" then
-
+      -- Delegate to the tape module's encrypt/decrypt subcommands so
+      -- users have ONE command surface ("vault ...") for everything.
       local tapeSub = args[2]
       if tapeSub ~= "encrypt" and tapeSub ~= "decrypt" then
         o("Usage: vault tape encrypt|decrypt <passphrase>", T.dim); return
       end
-
+      -- We can't call the tape module directly here (it's in usr/modules);
+      -- we use the existing `tape` command dispatcher which already
+      -- handles the tape side. Re-route args.
       local tapeCmd = C.tape
       if not tapeCmd then
         o("Tape module not installed (run `pkg install tape`).", T.warning); return
@@ -943,10 +1043,19 @@ return function(C, S, deps)
     end
   end
 
+  -- FEAT-12 — keychain command.
+  -- Subcommands:
+  --   keychain unlock              prompt for master pass, decrypt vault
+  --   keychain lock                zero the in-memory map
+  --   keychain status              locked/unlocked
+  --   keychain list                slot names (no passphrases)
+  --   keychain set <name>          prompt for passphrase, add slot
+  --   keychain get <name>          print slot (echoed to terminal)
+  --   keychain remove <name>       drop slot
   C.keychain = function(args, o)
     local km = _G._TOS and _G._TOS.keychain
     if not km then o("keychain module unavailable", T.error); return end
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
     local sub = args[1] or "status"
 
     if sub == "status" then
@@ -999,10 +1108,11 @@ return function(C, S, deps)
     end
   end
 
+  -- FEAT-3 — per-user configuration profile.
   C.profile = function(args, o)
     local pmod = _G._TOS and _G._TOS.profile
     if not pmod then o("profile module unavailable", T.error); return end
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
     local sub = args[1] or "show"
 
     if sub == "show" then
@@ -1025,7 +1135,8 @@ return function(C, S, deps)
       local field, value = args[2], args[3]
       local p = pmod.load(sess)
       if field == "name" or field == "theme" or field == "cwd" or field == "prompt" then
-
+        -- Catch a bad preset name at set time instead of silently
+        -- doing nothing at next login.
         if field == "theme" then
           local tm = _G._TOS and _G._TOS.theme
           if tm and tm.preset and not tm.preset(value) then
@@ -1088,10 +1199,14 @@ return function(C, S, deps)
     end
   end
 
+  -- (v1.4.0 consolidation: `restore` moved to `trash restore`.)
+
   C.cp = function(args, o)
     if not args[2] then o("Usage: cp <src> <dst>", T.dim); return end
     local src, dst = rp(args[1]), rp(args[2])
-
+    -- #REV — Unix semantics: copying onto a directory copies INTO it.
+    -- Without this, `cp foo.txt /tmp` tried to create a file literally
+    -- named /tmp and failed (or clobbered the dir on lax proxies).
     if F.isDirectory(dst) then dst = F.join(dst, src:match("[^/]+$") or src) end
     local ok2, err2 = F.copy(src, dst)
     if ok2 then
@@ -1102,11 +1217,12 @@ return function(C, S, deps)
   C.mv = function(args, o)
     if not args[2] then o("Usage: mv <src> <dst>", T.dim); return end
     local src, dst = rp(args[1]), rp(args[2])
-
+    -- #REV — Unix semantics: moving onto a directory moves INTO it.
     if F.isDirectory(dst) then dst = F.join(dst, src:match("[^/]+$") or src) end
     if not canWrite(src, o) then return end
     if not canWrite(dst, o) then return end
-
+    -- #REV — fall back to copy+remove for cross-filesystem moves (OC's
+    -- rename returns false across mounts), matching the browser's F6.
     if F.rename(src, dst) then
       refreshBrowser()
       o("Moved: " .. args[2], T.highlight)
@@ -1131,7 +1247,11 @@ return function(C, S, deps)
         root = rp(args[i]); i = i + 1
       end
     end
-
+    -- Validate the user-supplied pattern up front. Lua's string.match
+    -- errors on malformed patterns like "%" or "[" — without this pcall
+    -- a user typing `find -name "["` would propagate an error out of
+    -- the shell and drop them to minimalAuth. A dry-run match against
+    -- the empty string surfaces the problem immediately.
     if pattern then
       local pok, perr = pcall(string.match, "", pattern)
       if not pok then
@@ -1140,15 +1260,22 @@ return function(C, S, deps)
       end
     end
     o("Searching " .. root .. " ...", T.dim)
-
+    -- #SEC H10 — bounded scan. Unbounded `find /` on a populated FS used
+    -- to hang the shell event loop (and could amplify ReDoS-style pattern
+    -- inputs across many filenames). Cap depth, cap total results, and
+    -- skip directories the caller can't read so an admin-only tree isn't
+    -- probed implicitly.
     local MAX_DEPTH   = 16
     local MAX_RESULTS = 1000
     local results = {}
-
+    -- Silent read-permission probe: side-effect-free check via the
+    -- session's canAccess so canRead-style toast errors don't pile up.
     local function silentCanRead(p)
-
+      -- #SEC M-8 — fail CLOSED. The old code returned true (allow) when the
+      -- users module was unavailable, so a degraded boot let `find` probe
+      -- admin-only trees. With no ACL authority we skip the directory.
       if not U or not U.canAccessAs then return false end
-      local sess = helpers.sessionOf(S)
+      local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
       local ok = U.canAccessAs(sess, p, "r")
       return ok
     end
@@ -1163,7 +1290,7 @@ return function(C, S, deps)
       elseif type(list) == "function" then for n in list do fitems[#fitems+1] = n end end
       for _, n in ipairs(fitems) do
         if #results >= MAX_RESULTS then break end
-        coopYield()
+        coopYield()   -- big trees: give other seats a slice
         local full = F.join(dir, n:gsub("/$",""))
         local isDir = n:sub(-1) == "/"
         local matched = false
@@ -1239,6 +1366,9 @@ return function(C, S, deps)
     end
   end
 
+  -- `head`'s missing other half. The reason it earns its place over
+  -- "just use more": `watch tail /var/log/tos.log` is how you follow a log,
+  -- and without this the obvious phrasing of that could not be typed.
   C.tail = function(args, o)
     if not args[1] then o("Usage: tail <file> [lines]", T.dim); return end
     local p = rp(args[1])
@@ -1249,18 +1379,26 @@ return function(C, S, deps)
     if n < 1 then return end
     local lines = {}
     for line in content:gmatch("([^\n]*)\n?") do lines[#lines + 1] = line end
-
+    -- A file ending in a newline yields a trailing empty match on some Lua
+    -- versions and not others (5.4 changed the empty-match rule). Dropping
+    -- it here makes `tail` print the same last line either way, instead of
+    -- spending one of the N lines on a blank.
     if #lines > 1 and lines[#lines] == "" then lines[#lines] = nil end
     for i = math.max(1, #lines - n + 1), #lines do
       o(lines[i], T.fg)
     end
   end
 
+  -- With built-ins, package commands and /usr/bin programs all able to
+  -- answer to one name, "which one wins?" had no way to be asked. `which`
+  -- reports the executor's real answer by calling the executor's own
+  -- resolution helper — it cannot drift into describing a different shell.
   C.which = function(args, o)
     if not args[1] then o("Usage: which <name>", T.dim); return end
     local name = args[1]:lower()
     local found = false
 
+    -- 0. An alias is resolved before anything else is consulted.
     local aliases = helpers.aliases(S)
     if aliases[name] then
       o(name .. ": alias for '" .. aliases[name] .. "'", T.highlight)
@@ -1269,6 +1407,7 @@ return function(C, S, deps)
       found = true
     end
 
+    -- 1. Built-in command.
     local cmdsMod = require("shell.panels.commands")
     local meta = cmdsMod.entry and cmdsMod.entry(name) or nil
     if meta then
@@ -1282,6 +1421,8 @@ return function(C, S, deps)
       found = true
     end
 
+    -- 2. Package-provided command. Uses ownerOfCommand, not getCommand:
+    -- resolving a name must not load (and therefore run) the package.
     local okP, pkgMod = pcall(require, "kernel.pkg")
     local owner = okP and pkgMod and pkgMod.ownerOfCommand
       and pkgMod.ownerOfCommand(name) or nil
@@ -1292,6 +1433,7 @@ return function(C, S, deps)
       found = true
     end
 
+    -- 3. External program on the safe search path.
     local path, source = helpers.resolveProgram(F, name)
     if path then
       o(name .. ": " .. path .. (source == "path" and "  (via PATH)" or ""),
@@ -1307,10 +1449,12 @@ return function(C, S, deps)
     end
   end
 
+  -- Per-user command aliases, stored in ~/.profile.cfg. `alias` with no
+  -- arguments lists; `alias <name> <command...>` defines; `unalias` removes.
   C.alias = function(args, o)
     local pmod = _G._TOS and _G._TOS.profile
     if not pmod then o("profile module unavailable", T.error); return end
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)   -- #SEC CR-9 — seat-bound principal
 
     if not args[1] then
       local p = pmod.load(sess)
@@ -1336,7 +1480,7 @@ return function(C, S, deps)
     end
     local p = pmod.load(sess)
     if not args[2] then
-
+      -- `alias <name>` alone reports what it maps to, matching `which`.
       if p.aliases and p.aliases[name] then
         o(string.format(" %-12s %s", name, p.aliases[name]), T.fg)
       else
@@ -1346,7 +1490,9 @@ return function(C, S, deps)
     end
 
     local expansion = table.concat(args, " ", 2)
-
+    -- Refuse an alias whose expansion starts with itself. It would work —
+    -- expandAlias breaks the cycle — but it reads like recursion to whoever
+    -- wrote it, and refusing is clearer than silently doing something subtle.
     local firstWord = tostring(helpers.tokenizeSimple(expansion)[1] or ""):lower()
     if firstWord == name then
       o("An alias cannot expand to itself.", T.error)
@@ -1357,7 +1503,7 @@ return function(C, S, deps)
     p.aliases[name] = expansion
     local ok2, err2 = pmod.save(p, sess)
     if not ok2 then o(tostring(err2 or "save failed"), T.error); return end
-    helpers.invalidateAliases(S)
+    helpers.invalidateAliases(S)   -- effective on the next command, not next login
     o("alias " .. name .. " -> " .. expansion, T.highlight)
   end
 
@@ -1387,7 +1533,7 @@ return function(C, S, deps)
         local total, list = 0, F.list(path)
         if type(list) == "table" then
           for _, name in ipairs(list) do
-            coopYield()
+            coopYield()   -- big trees: give other seats a slice
             total = total + sizeOf(join(path, name:gsub("/$", "")))
           end
         end
@@ -1407,6 +1553,8 @@ return function(C, S, deps)
     o(string.format(" %8s  %s (total)", fmtSz(sizeOf(target)), target), T.title)
   end
 
+  -- df — per-mount DISK SPACE (distinct from `du`, which sizes a path, and
+  -- `disk`, which manages removable media + pools). Now shows a usage bar + %.
   C.df = function(args, o)
     local okM, mon = pcall(require, "kernel.monitor")
     o(string.format(" %-16s %8s %8s %8s  %s", "Mount", "Total", "Used", "Free", "Use%"), T.title)
@@ -1426,7 +1574,11 @@ return function(C, S, deps)
           (m.mountPoint or "?"):sub(1, 16), fmtSz(total), fmtSz(used), fmtSz(free), bar, pct), bc)
       end
     end
-
+    -- #FIX (in-game, 2026-08-11) — a read-only root is the kind of fault
+    -- that only announces itself through some unrelated write failing
+    -- much later (it surfaced as "Persist failed" halfway through the
+    -- First Boot password prompt). The boot flags it; `df` is where an
+    -- operator looks afterwards, so it says so here too.
     if _G._TOS_ROOT_READONLY then
       o("", T.dim)
       o("WARNING: the root filesystem is READ-ONLY.", T.error)
@@ -1436,6 +1588,8 @@ return function(C, S, deps)
     o("A path's own size: 'du <path>'.  Removable media + pools: 'disk'.", T.dim)
   end
 
+  -- mem — the dedicated MEMORY report: RAM used/total + bar, tier, swap, and the
+  -- low-RAM danger zone. (`hw` covers hardware tiers; `monitor` is the live view.)
   C.mem = function(args, o)
     local fr, tot = computer.freeMemory(), computer.totalMemory()
     local used = tot - fr
@@ -1467,6 +1621,9 @@ return function(C, S, deps)
     o("Live usage: 'monitor'.  Hardware tiers: 'hw'.", T.dim)
   end
 
+  -- hw — the HARDWARE inventory: component tiers (incl. data card, shared with
+  -- the System Config screen), counts, and network reach. For the raw component
+  -- list use `lsdev`; for memory detail use `mem`; for live state use `monitor`.
   C.hw = function(args, o)
     local info = K.getHAL().systemInfo()
     o("=== Hardware ===", T.title)
@@ -1484,14 +1641,19 @@ return function(C, S, deps)
       info.hasTunnel and "yes" or "no"), T.dim)
     o("Full component list: 'devices'.  Memory detail: 'mem'.  Live: 'monitor'.", T.dim)
   end
-  C.hardware = C.hw
+  C.hardware = C.hw   -- operator-friendly alias (v1.4.0)
 
+  -- CORE 1 — Permissions-aware task manager.
+  -- Shows owner + tier + caps and filters which processes the caller is
+  -- entitled to see in detail. GUEST sees only their own; USER sees own
+  -- + sibling user processes (name only); ADMIN+ sees everything with
+  -- full detail.
   C.ps = function(args, o)
     local fgPID = P.getForeground(S.displayIdx)
-    local sess = helpers.sessionOf(S)
+    local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
     local viewerTier = (sess and sess.tier) or 0
     local viewerUser = sess and sess.user or "?"
-
+    -- Verbose mode shows caps too; only meaningful for ADMIN+.
     local verbose = (args[1] == "-v" or args[1] == "--verbose") and viewerTier >= 2
 
     if verbose then
@@ -1506,12 +1668,12 @@ return function(C, S, deps)
     for _, proc in ipairs(P.list()) do
       local procUser = proc.principal and proc.principal.user or "?"
       local procTier = proc.principal and proc.principal.tier or 0
-
+      -- Visibility filter.
       local visible = false
-      if viewerTier >= 2 then visible = true
+      if viewerTier >= 2 then visible = true        -- ADMIN+ sees all
       elseif viewerTier >= 1 and procUser == viewerUser then visible = true
       elseif viewerTier >= 1 then
-
+        -- USER sees other users' processes as a redacted line
         visible = "redacted"
       end
       if visible == true then
@@ -1551,6 +1713,11 @@ return function(C, S, deps)
     o(" * = foreground  |  -v for caps (admin+)  |  'monitor' for the live view", T.dim)
   end
 
+  -- Live System Monitor — the grown-up task switcher (also opened with Ctrl+T):
+  -- every process (kernel + user, each explained), the rc.d services, and
+  -- memory/uptime vitals, auto-refreshing and interactive (switch / kill / TSR
+  -- / service start-stop). A full-screen APP TAB — roomy + scrollable (the old
+  -- centred modal truncated), per-seat, driven by the panels event loop.
   C.monitor = function(args, o)
     local okM, monMod = pcall(require, "shell.panels.monitorapp")
     if not okM then o("Monitor unavailable: " .. tostring(monMod), T.error); return end
@@ -1558,6 +1725,10 @@ return function(C, S, deps)
   end
   C.top = C.monitor
 
+  -- watch — open a LIVE tab that re-runs a (read-only) command on a timer, the
+  -- live counterpart to running it once for static output. Works for any safe
+  -- status command: `watch ps`, `watch 2 df`, `watch net peers`, `watch mem`.
+  -- The watched command still runs at your tier (its own gate applies).
   C.watch = function(args, o)
     if not args[1] then
       o("Usage: watch [seconds] <command ...>", T.dim)
@@ -1570,7 +1741,8 @@ return function(C, S, deps)
     if not args[idx] then o("Usage: watch [seconds] <command ...>", T.dim); return end
     local cmdline = table.concat(args, " ", idx)
     local name = (cmdline:match("^(%S+)") or ""):lower()
-
+    -- Interactive / screen-driven commands can't be watched: they'd block the
+    -- refresh tick or fight the watched tab for the screen.
     local UNSAFE = {
       edit = true, lua = true, monitor = true, top = true, watch = true,
       launcher = true, launch = true, apps = true, kiosk = true, chat = true,
@@ -1582,7 +1754,8 @@ return function(C, S, deps)
       return
     end
     if not deps.openLiveTab then o("Live tabs aren't available in this shell.", T.error); return end
-
+    -- Refresh closure: run the command, capturing its output as the tab content.
+    -- Reuses the live command table `C` (lazy-resolved) + package commands.
     local function runOnce()
       local out = {}
       local parts = {}
@@ -1605,6 +1778,12 @@ return function(C, S, deps)
     deps.openLiveTab("watch: " .. cmdline, runOnce, interval)
   end
 
+  -- why — turn a "Permission denied" into a plain-English explanation + the fix.
+  --   why            explain the LAST command this seat was denied
+  --   why <command>  explain what <command> needs and whether you can run it
+  -- Reads the command's required tier from the registry (single source of truth)
+  -- and compares it to the seat's live tier. Pure formatting lives in
+  -- helpers.whyExplain so it's unit-tested off-box.
   C.why = function(args, o)
     local commandsMod = require("shell.panels.commands")
     local have = helpers.liveTier(S)
@@ -1637,6 +1816,11 @@ return function(C, S, deps)
     emit(helpers.whyExplain(target, entry and entry.tier or 0, have, entry ~= nil))
   end
 
+  -- screendump — capture this seat's screen to a text file for a bug report.
+  --   screendump            -> ./screen-<uptime>.txt
+  --   screendump <path>     -> the given file
+  -- Reads the seat's display (shadow buffer when active, else gpu.get), so it
+  -- captures exactly what the operator sees — including a garbled/panicked TUI.
   C.screendump = function(args, o)
     if not D or not D.dump then o("Screen capture isn't available on this seat.", T.error); return end
     local okCap, cap = pcall(D.dump)
@@ -1649,7 +1833,11 @@ return function(C, S, deps)
     local hdr = string.format("TOS screendump — seat %s · user %s · %dx%d · uptime %ds · read from the %s",
       tostring(S.displayIdx or "?"), who, cap.w or 0, cap.h or 0,
       math.floor(K.uptime()), tostring(cap.source or "?"))
-
+    -- string.char(10) rather than an escape, and a COLOUR MAP alongside
+    -- the text: a dump of characters alone cannot show the class of fault
+    -- that changes only colour, and "the status bar went black" is exactly
+    -- that -- same text, wrong background. Run-length encoded, so a
+    -- correct full-width bar is one line and a broken one says where.
     local NL = string.char(10)
     local blob = hdr .. NL .. string.rep("-", #hdr) .. NL
       .. table.concat(cap.lines, NL) .. NL
@@ -1673,7 +1861,11 @@ return function(C, S, deps)
         .. "  menubar_bg=" .. string.format("%06X", T2.menubar_bg or T2.bar_bg or 0)
         .. NL
     end
-
+    -- ── The section that names the guilty layer ───────────────────────
+    -- Everything above describes the screen. This describes the MACHINERY,
+    -- and for the fault TOS keeps having -- a cell the shadow believes is
+    -- painted, so it elides the repaint forever -- the disagreement IS the
+    -- bug. Empty is the good answer.
     local hx = function(c) return c and string.format("%06X", c) or "nil" end
     blob = blob .. NL .. "--- cache vs glass ---" .. NL
     if cap.disagree and #cap.disagree > 0 then
@@ -1722,6 +1914,9 @@ return function(C, S, deps)
     end
   end
 
+  -- crash — list or read the flight-recorder's post-mortems (/var/crash).
+  -- Admin-gated: the reports embed the dmesg ring, which can carry sensitive
+  -- lines (mirrors `log` being privileged).
   C.crash = function(args, o)
     if not adminOnly(o) then return end
     local fs = _G._TOS and _G._TOS.fs
@@ -1767,9 +1962,17 @@ return function(C, S, deps)
     o(string.format("Uptime: %dh %dm %ds (%.1fs total)", h2, m2, s2, up), T.fg)
   end
 
+  -- date / time — OC's os.time() is in-game ticks*1000, so we use the
+  -- real Lua os.time for wall clock and os.date() for formatting. The
+  -- timezone offset config knob is cosmetic; we honor it for readability
+  -- but don't pretend to do real TZ math.
   C.date = function(args, o)
     local cfg = K.getConfig and K.getConfig() or nil
-
+    -- #REV — `date tz <hours>` sets the display timezone offset. There is
+    -- no settable real-time clock in OpenComputers (the world clock that
+    -- backs os.time is read-only), so shifting the offset is the only way
+    -- to change the displayed time — make that discoverable instead of
+    -- leaving "how do I set the date?" ambiguous.
     if args[1] == "tz" or args[1] == "timezone" or args[1] == "set" then
       local cur = (cfg and cfg.get and cfg.get("timezone")) or 0
       local n = tonumber(args[2])
@@ -1795,6 +1998,12 @@ return function(C, S, deps)
   end
   C.time = C.date
 
+  -- #REV — modular menu shortcuts. `menu add <label> <cmd...> [in <Menu>]`
+  -- writes ~/.menu.cfg (per-user, now writable since the securefs home fix)
+  -- and rebuilds the live menu bar so any command can live in a drop-down.
+  -- ── keys — the standard shortcuts, and the operator's control of them
+  -- Tier 0 on purpose: which key closes a window is not a privilege, and
+  -- a guest who cannot find out how to leave a program is stuck.
   C.keys = function(args, o)
     local okK, K2 = pcall(require, "shell.keys")
     if not okK or not K2 then o("Keybind module unavailable.", T.error); return end
@@ -1836,7 +2045,8 @@ return function(C, S, deps)
       o("", T.dim)
       o("Change one:  keys set quit F4       (add --system for everyone)", T.dim)
       o("Undo:        keys reset [action]", T.dim)
-
+      -- Say out loud what the standard buys, because the operator asked
+      -- for it by name: one combination that closes anything of ours.
       o("Every first-party TOS program follows this table.", T.dim)
 
     elseif sub == "set" then
@@ -1856,7 +2066,9 @@ return function(C, S, deps)
         if not K2.parse(nm) then
           o("Not a key name: '" .. nm .. "'  (try ^Q, F10, Ctrl+S, /)", T.error); return
         end
-
+        -- Rebinding a kernel chord produces a setting that silently does
+        -- nothing, because the kernel eats the key before any program
+        -- sees it. Refuse, and say which one it is.
         if K2.isReserved(nm) then
           o(nm .. " is reserved by the kernel and never reaches a program.", T.error)
           o("See 'keys list' for the reserved set.", T.dim); return
@@ -1898,7 +2110,10 @@ return function(C, S, deps)
 
   C.menu = function(args, o)
     local sub = (args[1] or "list"):lower()
-
+    -- `--system` edits /etc/menu.cfg (the machine's bar, every user sees
+    -- it) instead of ~/.menu.cfg. Admin-gated by securefs on the write,
+    -- not by a check here — the filesystem is the authority and a second
+    -- gate would be a second thing to keep in step.
     local system = false
     for i = 2, #args do
       if args[i] == "--system" then system = true; table.remove(args, i); break end
@@ -1943,6 +2158,11 @@ return function(C, S, deps)
         o(string.format("  %d. %s", i, describe(e)), T.fg)
       end
 
+    -- ── The bar as it currently IS ────────────────────────────
+    -- The point of `show`: the operator asked for the bar to be
+    -- adjustable, and the first thing you need in order to adjust
+    -- something is to see what it currently says. `list` shows your
+    -- EDITS; this shows the RESULT, built-ins included.
     elseif sub == "show" then
       local okD, dm = pcall(require, "shell.panels.draw")
       if not okD or not dm or not dm.buildMenuDefs then
@@ -1961,7 +2181,7 @@ return function(C, S, deps)
       o("Change it with: menu add|remove|rename|move  (add --system for everyone)", T.dim)
 
     elseif sub == "rename" or sub == "move" then
-
+      -- rename <from> <to>   |   move <item> <Menu>
       local a, b = args[2], args[3]
       if not (a and b) then
         o("Usage: menu " .. sub .. " <name> <" .. (sub == "rename" and "new name" or "Menu") .. ">", T.dim)
@@ -1973,7 +2193,8 @@ return function(C, S, deps)
       else o("Save failed" .. (system and " (needs admin for /etc)." or "."), T.error) end
 
     elseif sub == "hide" then
-
+      -- Removing a BUILT-IN is an edit, not a deletion from the list —
+      -- the built-ins live in code, so "hide" is the honest verb.
       local target = args[2]
       if not target then
         o("Usage: menu hide <item or Menu name>", T.dim)
@@ -2038,6 +2259,8 @@ return function(C, S, deps)
     end
   end
 
+  -- tree — visual recursive listing. Capped depth/entry count so a
+  -- runaway directory doesn't fill the output buffer.
   C.tree = function(args, o)
     local start = rp(args[1] or S.cwd)
     local maxDepth = tonumber(args[2]) or 3
@@ -2086,7 +2309,8 @@ return function(C, S, deps)
     if not old then return end
     local new = promptInput("New password: ",     64, true)
     if not new then return end
-
+    -- Confirm the new password so a typo doesn't silently lock the
+    -- user out. useradd has done this forever; passwd should too.
     local confirm = promptInput("Confirm new password: ", 64, true)
     if confirm ~= new then
       S.lastOut = { "Passwords do not match — unchanged.", T.error }
@@ -2102,7 +2326,13 @@ return function(C, S, deps)
     if ok2 then S.lastOut = { "Password changed.", T.highlight }
     else        S.lastOut = { tostring(err2), T.error } end
   end
-
+  -- ── sudo / doas — temporary privilege elevation ──────────
+  -- A separate elevation password (users.elevate; configured by root via
+  -- `sudo setup`) lets a non-root USER run higher-tier commands WITHOUT the
+  -- root account or its login password. Runs the command under an elevated
+  -- session by swapping BOTH the shell tier-gate token (S.st) AND the shell
+  -- process principal (which securefs + users.currentSession resolve
+  -- through), then ALWAYS restoring — never left elevated.
   --! `o` is a PARAMETER, not an upvalue. Every command body receives its own
   --! `o` from the executor (C.sudo = function(args, o)), so this helper had
   --! no `o` in scope and the `o(...)` below read a nil GLOBAL — meaning the
@@ -2118,7 +2348,7 @@ return function(C, S, deps)
     if token then S.st = token end
     if p then p.principal = elevated end
     local ok, err = pcall(fn)
-
+    -- Restore on EVERY path (a thrown command must not leave us root).
     S.st = origSt
     if p then p.principal = origPrincipal end
     if token and U.logout then pcall(U.logout, token) end
@@ -2135,13 +2365,14 @@ return function(C, S, deps)
     S._sudo = nil
     return true
   end
-  S.sudoDrop = sudoDrop
+  S.sudoDrop = sudoDrop   -- so logout can drop an active elevated shell
 
   C.sudo = function(args, o)
     if not U then o("No user system", T.error); return end
     local sess = helpers.sessionOf(S)
     local sub = args[1]
 
+    -- Root-only configuration.
     if sub == "setup" then
       if not rootOnly(o) then return end
       local cap = 2
@@ -2171,7 +2402,7 @@ return function(C, S, deps)
       o("Usage: sudo <command> | sudo -s | sudo -k | sudo setup [admin|root] | sudo off", T.dim)
       return
     end
-
+    -- Guests never elevate.
     if helpers.liveTier(S) < 1 then o("sudo: guests cannot elevate.", T.error); return end
     local info = U.elevationInfo and U.elevationInfo() or { configured = false }
     if not info.configured then
@@ -2184,8 +2415,8 @@ return function(C, S, deps)
     if not elevated then o("sudo: " .. tostring(err or "elevation failed"), T.error); return end
 
     if sub == "-s" then
-
-      sudoDrop()
+      -- Persistent elevated shell until `sudo -k`, `exit`, or logout.
+      sudoDrop()   -- replace any existing elevation cleanly
       local token = U.registerSession and U.registerSession(elevated) or nil
       local okP, procMod = pcall(require, "kernel.process")
       local p = okP and procMod.current and procMod.current()
@@ -2197,6 +2428,7 @@ return function(C, S, deps)
       return
     end
 
+    -- Per-command: run the rest of the line elevated, capture its output.
     local cmdline = table.concat(args, " ")
     sudoRunElevated(elevated, function()
       if not S.execOne then o("sudo: executor unavailable", T.error); return end
@@ -2210,8 +2442,17 @@ return function(C, S, deps)
     end, o)
   end
 
+  -- helpers.logout is the single implementation: it drops an active
+  -- elevation and then pushes the signal. This used to be the only one of
+  -- five logout paths that dropped it.
   C.logout   = function(args, o) helpers.logout(S) end
-
+  -- ── The two shells ───────────────────────────────────────────
+  -- Same command set, different interface. `cli` sets a flag the panels
+  -- event loop reads on its next turn (command bodies have no way to
+  -- return an exit code, and giving them one would mean touching every
+  -- command for the sake of this pair). In the CLI, `cli` is a no-op
+  -- that says so and `tui` is intercepted before dispatch — the CLI
+  -- cannot leave itself by setting a flag nobody there reads.
   C.cli = function(args, o)
     if S.isCLI then
       o("You are already at the command line. Type 'tui' for the full interface.", T.dim)
@@ -2221,14 +2462,18 @@ return function(C, S, deps)
   end
   C.tui = function(args, o)
     if S.isCLI then
-
+      -- Unreachable in practice (the CLI intercepts `tui` before
+      -- dispatch, because it has to break its own read loop), but a
+      -- command that silently does nothing is worse than one that
+      -- explains itself if the interception ever moves.
       o("Returning to the full interface…", T.dim)
       S._exitTo = "tui"
       return
     end
     o("You are already in the full interface. Type 'cli' for the command line.", T.dim)
   end
-
+  -- #REV (#9) — power-off policy: a sole operator may reboot/shut down even
+  -- as a non-admin; with other operators logged in, admin+ only.
   C.reboot   = function(args, o)
     local ok, reason = helpers.canPowerOff(S)
     if not ok then o(reason, T.error); return end
@@ -2245,13 +2490,13 @@ return function(C, S, deps)
     local P2 = K.getProc()
     local cur = P2 and P2.current() or nil
     if args[1] then
-
+      -- set: env KEY=VALUE
       local k, v = args[1]:match("^([%w_]+)=(.*)$")
       if k then
         envMod.write(cur, k, v)
         o(k .. "=" .. v, T.highlight)
       else
-
+        -- get: env KEY
         local val = envMod.read(cur, args[1])
         o(args[1] .. "=" .. tostring(val or ""), T.fg)
       end
@@ -2263,11 +2508,29 @@ return function(C, S, deps)
   C.export = C.env
   C.set = C.env
 
+  -- ── Launcher: menu-driven Operator multi-tool ──────────────
+  -- Opens a full-screen, clickable menu of actions. Items run REAL commands
+  -- at YOUR tier (click instead of type) — the generalized successor to the
+  -- kiosk menu. Sources: a built-in home (quick actions + a cluster helper
+  -- when the cluster add-on is installed) plus the operator's optional
+  -- ~/.launcher.cfg. Returns to the shell on Q / Ctrl+D / Back-past-root.
+  -- (v1.4.0 consolidation: `launcher`/`apps` retired. The Desktop is
+  -- the menu surface — ~/.launcher.cfg entries appear there as tiles
+  -- and package commands auto-tile. What survives here is the one
+  -- launcher feature the Desktop can't cover: the PERSONAL MENU that
+  -- travels on a tape-authenticator keycard, now honestly named.)
   C["tape-menu"] = function(args, o)
     local okL, L = pcall(require, "shell.launcher")
     if not okL or not L then o("Menu engine unavailable (low RAM?)", T.error); return end
     if not D or not D.getSize then o("tape-menu needs a screen.", T.error); return end
 
+    -- runLine: dispatch a command line through a fresh command table bound
+    -- to THIS session (operator tier), collecting output as lines. Same
+    -- execution path the shell uses; screen-taking commands (edit/chat) just
+    -- take over and return, after which the launcher redraws.
+    -- #FIX Tape-Menu OOM (round 4, part 2): build that table LAZILY, on the
+    -- first item actually run — building a second full command table up
+    -- front stacked onto the tape read at the menu's peak-memory moment.
     local CTable = nil
     local function runLine(line)
       local out = {}
@@ -2292,6 +2555,11 @@ return function(C, S, deps)
       return out
     end
 
+    -- Open the personal menu carried on your identity tape (a
+    -- tape-authenticator keycard, managed by `tape-auth menu`). Read
+    -- the card, unlock its menu with your passphrase, and run THAT
+    -- menu at your tier. The card travels between machines, so your
+    -- toolbox follows you.
     local addr = component.list and component.list("tape_drive")()
     if not addr then o("No tape drive found.", T.error); return end
     local drive = component.proxy(addr)
@@ -2303,13 +2571,21 @@ return function(C, S, deps)
     if not pass or pass == "" then o("Cancelled.", T.dim); return end
     local okV, vault = pcall(require, "kernel.vault")
     if not okV or not vault then o("vault unavailable", T.error); return end
-
+    -- #FIX Tape-Menu OOM (round 4): STREAM only the header + menu region
+    -- off the card. The old path read the WHOLE tape into one string
+    -- (chunk list + concat = 2x tape size at peak) — a stock 4 MB tape
+    -- OOMs every realistic RAM config the moment the menu opened.
     local menu, mErr = L.readTapeMenuFromDrive(drive, pass, vault)
     if not menu then o(tostring(mErr), T.error); return end
     L.run({ display = D, profile = menu, runLine = runLine, title = "Tape toolbox" })
-    if deps.drawAll then pcall(deps.drawAll) end
+    if deps.drawAll then pcall(deps.drawAll) end   -- repaint the shell on return
   end
 
+  -- ── The text clipboard ───────────────────────────────────
+  -- The clipboard is otherwise invisible: you copy, and nothing on
+  -- screen says what you now hold. This is the command that answers it,
+  -- and it is also how a script gets text onto the clipboard for the
+  -- operator to paste somewhere the script cannot reach.
   C.clip = function(args, o)
     local okCB, clip = pcall(require, "kernel.clipboard")
     if not okCB or not clip then
@@ -2322,7 +2598,9 @@ return function(C, S, deps)
       o("Clipboard: " .. clip.describe(seat), T.title)
       local lines = clip.get(seat)
       if lines and not clip.isEmpty(seat) then
-
+        -- Show at most a screenful; the clipboard can hold 512 lines and
+        -- dumping all of them into the output region would push the
+        -- thing you were reading off the top.
         local shown = math.min(#lines, 10)
         for i = 1, shown do o("  " .. lines[i], T.fg) end
         if #lines > shown then
@@ -2359,6 +2637,8 @@ return function(C, S, deps)
     o("Usage: clip [set <text> | clear]", T.warning)
   end
 
+  -- ── Desktop + Settings (tab-based apps) ──────────────────
+  -- Both open (or focus) their tab; the panels event loop drives them.
   C.desktop = function(args, o)
     local okD, desktopMod = pcall(require, "shell.panels.desktop")
     if not okD then o("Desktop unavailable: " .. tostring(desktopMod), T.error); return end
@@ -2371,6 +2651,12 @@ return function(C, S, deps)
     settingsMod.open(S)
   end
 
+  -- ── Language (kernel.i18n) ───────────────────────────────
+  --   lang                 current language + installed catalogs
+  --   lang <code> | en     set for YOURSELF (live now + saved to profile)
+  --   lang system <code>   machine default (admin; /etc/tos.cfg `language`)
+  --   lang dump [path]     translator template of every t() key seen this
+  --                        session (open a few screens first to seed it)
   C.lang = function(args, o)
     local okI, i18nMod = pcall(require, "kernel.i18n")
     if not okI or not i18nMod then o("i18n unavailable: " .. tostring(i18nMod), T.error); return end
@@ -2429,6 +2715,7 @@ return function(C, S, deps)
       return
     end
 
+    -- lang <code>: apply live, persist to the caller's own profile.
     local ok, err = i18nMod.setLanguage(sub)
     if not ok then
       o("Cannot set '" .. tostring(sub) .. "': " .. tostring(err), T.error)

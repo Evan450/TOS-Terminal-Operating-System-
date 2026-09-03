@@ -1,3 +1,7 @@
+-- TOS OpenOS Compatibility - Buffered Streams
+-- Minimal buffer wrapper compatible with OpenOS stream interface
+-- Wraps a raw stream (with read/write/close/seek) into a buffered handle
+
 local buffer = {}
 
 function buffer.new(mode, stream)
@@ -40,15 +44,16 @@ function buffer.new(mode, stream)
         self.readBuf = self.readBuf .. chunk
       end
     elseif fmt == "*n" or fmt == "n" then
-
+      -- Read a number: accumulate digits from the buffer
+      -- Skip leading whitespace, return nil immediately for non-numeric input
       while true do
-
+        -- Strip leading whitespace for inspection
         local stripped = self.readBuf:match("^%s*(.*)")
         if stripped and #stripped > 0 then
-
+          -- Check if the first non-whitespace char could start a number
           local firstCh = stripped:sub(1, 1)
           if not firstCh:match("[%d%+%-%.eE]") then
-            return nil
+            return nil  -- Non-numeric input, return nil immediately
           end
           local s = self.readBuf:match("^%s*([%+%-]?%d[%d%.eE%+%-]*)")
           if s then
@@ -58,14 +63,23 @@ function buffer.new(mode, stream)
               self.readBuf = self.readBuf:sub((endpos or 0) + 1)
               return num
             end
-
+            -- #SEC M26 — `s` matched the number-shaped substring but
+            -- `tonumber` rejected it (e.g. "1.2.3e4" matches the
+            -- pattern but isn't a valid number). The old code returned
+            -- nil here WITHOUT advancing past the matched bytes, so a
+            -- subsequent read("*n") on the same stream loops forever
+            -- on the same garbage. Advance past what we consumed.
             local _, endpos = self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")
             self.readBuf = self.readBuf:sub((endpos or 0) + 1)
             return nil
           end
-
+          -- Have non-whitespace chars but no full number yet -- may need more data
+          -- if buffer is already large enough, give up.
+          -- #SEC M26 — advance past leading whitespace at minimum so a
+          -- buffer full of whitespace plus an unmatchable token doesn't
+          -- stall callers on retry.
           if #stripped > 64 then
-            self.readBuf = stripped
+            self.readBuf = stripped  -- drop leading whitespace at least
             return nil
           end
         end
@@ -118,7 +132,7 @@ function buffer.new(mode, stream)
   end
 
   function buf:flush()
-
+    -- No write buffering in this minimal implementation
     return self
   end
 

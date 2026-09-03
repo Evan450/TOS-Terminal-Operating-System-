@@ -1,6 +1,12 @@
+-- ╔═════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels Widgets                         ║
+-- ║  Syntax highlighting + status bar widget defs       ║
+-- ╚═════════════════════════════════════════════════════╝
+
 local computer = require("computer")
 local M = {}
 
+-- Syntax highlighting (lazy-loaded)
 local syntaxMod = nil
 
 function M.getSyntax(S)
@@ -14,6 +20,8 @@ function M.getSyntax(S)
   end
   return syntaxMod
 end
+
+-- ── Status bar widgets ────────────────────────────
 
 function M.makeWidgetDefs(S)
   local F = S.F
@@ -52,9 +60,14 @@ function M.makeWidgetDefs(S)
       if pm and pm.isActive() then
         return pm.level() .. "%"
       end
-      return nil
+      return nil  -- nil = don't show this widget
     end,
-
+    -- Which half of Home drew last. With one tab carrying two views, the
+    -- chip zone no longer answers "where am I" — a chip that reads "Home"
+    -- is true in both — so the bar does. It is an ordinary widget, which
+    -- means it is checkbox-configurable in Settings → Status Bar like any
+    -- other, and it reports nothing in split mode where the tab chips
+    -- already say which surface is up.
     view = function()
       local okH, home = pcall(require, "shell.panels.home")
       if not (okH and home and home.enabled(S)) then return nil end
@@ -74,6 +87,12 @@ function M.getWidgetList(S)
   return { "memory", "disk", "view" }
 end
 
+-- #SEC C15 — one-shot per panels-session cache. The previous version
+-- re-scanned /etc/widgets on every status-bar redraw, repeatedly handing
+-- attacker-writable Lua to `load()`. We cache the result keyed by the
+-- shell session object so a single panels run loads once. An admin
+-- installing a new widget has to log out and back in to pick it up —
+-- this is acceptable for what is effectively privileged shell extension.
 local _widgetCache = setmetatable({}, { __mode = "k" })
 
 function M.loadCustomWidgets(S, widgetDefs)
@@ -83,11 +102,17 @@ function M.loadCustomWidgets(S, widgetDefs)
   local F = S.F
   if not F.isDirectory("/etc/widgets") then return end
 
+  -- #SEC C15 — read access must be granted to the current session.
+  -- Without this gate, a guest-tier shell would still trigger every
+  -- widget body to `load()`. Use the session-aware probe so a denied
+  -- read doesn't even surface the widget existence.
   local U = S.U
   local st = S.st
   local function silentCanRead(p)
     if not U or not U.canAccessAs then return true end
-
+    -- #SEC CR-9 — resolve the seat-bound session token first; only fall
+    -- back to currentSession() when there's no token. Passing the raw
+    -- token (the old `or st`) to canAccessAs silently failed every check.
     local sess = (st and U.getSession and U.getSession(st))
       or (U.currentSession and U.currentSession())
     local ok = U.canAccessAs(sess, p, "r")
@@ -100,7 +125,9 @@ function M.loadCustomWidgets(S, widgetDefs)
   local items = {}
   if type(list) == "table" then items = list
   elseif type(list) == "function" then for n in list do items[#items + 1] = n end end
-
+  -- Hard cap on widget count so an attacker can't drop 10000 tiny .lua
+  -- files into /etc/widgets and force the kernel through that many
+  -- load() calls on first boot.
   local MAX_WIDGETS = 32
   local loaded = 0
   for _, n in ipairs(items) do

@@ -1,3 +1,44 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - i18n (language catalogs)               ║
+-- ║                                                      ║
+-- ║  Community-translatable UI text WITHOUT touching     ║
+-- ║  code. Every call site keeps its English inline:     ║
+-- ║                                                      ║
+-- ║    i18n.t("login.username", "Username:")             ║
+-- ║                                                      ║
+-- ║  and a catalog merely overrides keys it knows. So:   ║
+-- ║   • no catalog / missing key / corrupt file          ║
+-- ║       -> exact current English behaviour, always;    ║
+-- ║   • a PARTIAL translation is valid by design         ║
+-- ║       (untranslated keys fall back per-key);         ║
+-- ║   • translators edit ONE data file, never code.      ║
+-- ║                                                      ║
+-- ║  Catalogs are DATA at /usr/lang/<code>.lang —        ║
+-- ║  kernel.serialize table literals (comments allowed,  ║
+-- ║  parsed by the safe decoder, never load()ed):        ║
+-- ║                                                      ║
+-- ║    return {                                          ║
+-- ║      meta = { code = "ru", name = "Русский" },       ║
+-- ║      strings = {                                     ║
+-- ║        ["login.username"] = "Имя пользователя:",     ║
+-- ║      },                                              ║
+-- ║    }                                                 ║
+-- ║                                                      ║
+-- ║  Common packs may ship in the base image; rarer ones ║
+-- ║  install as ordinary pkg packages that just drop a   ║
+-- ║  file into /usr/lang (no special pkg support).       ║
+-- ║                                                      ║
+-- ║  Selection: /etc/tos.cfg `language` is the system    ║
+-- ║  default (applies from boot, incl. the login         ║
+-- ║  screen); a per-user profile `lang` overrides at     ║
+-- ║  login. NOTE: the active catalog is currently        ║
+-- ║  system-wide — on a multi-seat box the last login's  ║
+-- ║  preference wins. Per-seat catalogs are future work. ║
+-- ║                                                      ║
+-- ║  Draw sites rendering t() output should use          ║
+-- ║  kernel.ustr for width math (UTF-8 ≠ bytes).         ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local i18n = {}
 
 local fs, log, serialize, config
@@ -8,12 +49,22 @@ local MAX_KEY_LEN = 64
 local MAX_VAL_LEN = 512
 local MAX_STRINGS = 2048
 
-local current = nil
-local strings = nil
-local meta    = nil
+local current = nil    -- active language code, nil = English (no catalog)
+local strings = nil    -- active key -> translated string map
+local meta    = nil    -- active catalog's meta table
 
+-- Runtime key registry: every (key, default) t() has seen this session.
+-- Powers `lang dump` so a translator can start from a real template
+-- instead of grepping the source tree.
 local seen = {}
 
+-- ============================================================
+-- Helpers
+-- ============================================================
+
+--- A valid language code: 2+ lowercase letters, then letters/digits/-/_,
+--- 8 chars max ("ru", "es", "pt-br"). Also the filename stem, so the
+--- pattern doubles as path-traversal protection.
 function i18n.validCode(code)
   return type(code) == "string" and #code >= 2 and #code <= 8
     and code:match("^%l%l[%l%d_%-]*$") ~= nil
@@ -23,13 +74,18 @@ local function catalogPath(code)
   return LANG_DIR .. "/" .. code .. ".lang"
 end
 
+-- ============================================================
+-- Init
+-- ============================================================
+
 function i18n.init(modules)
   modules = modules or {}
   fs        = modules.fs
   log       = modules.log
   serialize = modules.serialize or require("kernel.serialize")
   config    = modules.config
-
+  -- System default language (applies from boot, so the login screen is
+  -- already translated). Failure is non-fatal: stay English.
   local sys = config and config.get and config.get("language")
   if type(sys) == "string" and sys ~= "" and sys ~= "en" then
     local ok, err = i18n.setLanguage(sys)
@@ -39,6 +95,12 @@ function i18n.init(modules)
   end
 end
 
+-- ============================================================
+-- Catalog loading
+-- ============================================================
+
+--- Load + validate a catalog file (pure-ish: touches only fs).
+--- Returns { meta = {...}, strings = {...} } or (nil, reason).
 function i18n.loadCatalog(code)
   if not i18n.validCode(code) then return nil, "invalid language code" end
   if not fs then return nil, "i18n not initialized" end
@@ -63,6 +125,7 @@ function i18n.loadCatalog(code)
   return { meta = m, strings = out, count = n }
 end
 
+--- Switch the active language. "en"/nil/"" resets to English defaults.
 function i18n.setLanguage(code)
   if code == nil or code == "" or code == "en" then
     current, strings, meta = nil, nil, nil
@@ -83,6 +146,8 @@ function i18n.languageName()
   return (meta and type(meta.name) == "string" and meta.name) or current
 end
 
+--- Scan /usr/lang for installed catalogs. Returns a sorted array of
+--- { code, name } (English is always first — it's the built-in default).
 function i18n.available()
   local out = { { code = "en", name = "English (built-in)" } }
   if not fs or not fs.exists or not fs.exists(LANG_DIR) then return out end
@@ -104,6 +169,15 @@ function i18n.available()
   return out
 end
 
+-- ============================================================
+-- Lookup
+-- ============================================================
+
+--- Translate. `default` is the inline English text and the guaranteed
+--- fallback. Extra args run through string.format — a broken %-spec in
+--- a community catalog falls back to formatting the ENGLISH default,
+--- and if even that fails, returns the unformatted default (a wrong-
+--- language or unformatted string beats a crash in a draw path).
 function i18n.t(key, default, ...)
   if type(key) == "string" and type(default) == "string" then
     seen[key] = seen[key] or default
@@ -117,6 +191,8 @@ function i18n.t(key, default, ...)
   return default or tostring(key)
 end
 
+--- The (key -> English default) registry gathered this session, as a
+--- sorted array of { key, default }. Powers `lang dump`.
 function i18n.keysSeen()
   local keys = {}
   for k in pairs(seen) do keys[#keys + 1] = k end

@@ -1,3 +1,8 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels Menu Actions                     ║
+-- ║  Handle menu bar item execution                      ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local filebrowser = require("shell.panels.filebrowser")
 local dialogs = require("shell.panels.dialogs")
 local draw = require("shell.panels.draw")
@@ -28,6 +33,9 @@ function M.execute(S, action, deps)
   S.menuOpen = nil
   S.menuFocused = false
 
+  -- #REV — modular command shortcut: any menu item with action
+  -- "run:<command>" runs that command through the shell executor. This is
+  -- what lets a per-user ~/.menu.cfg entry put any command in a drop-down.
   if type(action) == "string" then
     local cmd = action:match("^run:(.+)$")
     if cmd then exec(cmd); return nil end
@@ -56,13 +64,14 @@ function M.execute(S, action, deps)
   elseif action == "quit" then
     drawAll()
     D.fill(1, S.OUT_ROW, W, 1, " ", T.fg, T.bg)
-
+    -- Kept identical to the ^Q prompt in events.lua — two spellings of
+    -- the same four choices is how an operator learns to distrust both.
     D.set(1, S.OUT_ROW, (" [1]Reboot [2]Shut down [3]Log out [4]CLI Mode [^Q]Cancel"):sub(1, W),
           T.title, T.bg)
     while true do
       local s2, _, c2 = pullSignal()
       if s2 == "key_down" then
-        if c2 == 49 or c2 == 50 then
+        if c2 == 49 or c2 == 50 then  -- Reboot / Off — power-off gated (#9)
           local ok, reason = helpers.canPowerOff(S)
           if not ok then
             D.fill(1, S.OUT_ROW, W, 1, " ", T.fg, T.bg)
@@ -90,7 +99,8 @@ function M.execute(S, action, deps)
   elseif action == "shutdown" then
     local ok, reason = helpers.canPowerOff(S)
     if ok then K.shutdown() else S.lastOut = { reason, T.error } end
-
+  -- Help menu — all of these run an existing guest-accessible command,
+  -- except keyhelp which renders a static read-only key reference.
   elseif action == "help" then exec("help")
   elseif action == "man" then exec("man")
   elseif action == "tutorial" then exec("tutorial")
@@ -204,7 +214,10 @@ function M.execute(S, action, deps)
       D.set(1, S.OUT_ROW, table.concat(wparts, " "):sub(1, W), T.title, T.bg)
       local sig, _, ch2, co2 = pullSignal()
       if sig == "touch" and type(S._mouseLib) == "table" and co2 == S.OUT_ROW then
-
+        -- Mouse driver installed (probed by shell.panels.mouse): click a
+        -- checkbox to toggle it. Touch tuple: (name, addr, x, y, ...) so
+        -- ch2 = x, co2 = y. Mirror the widths used to draw wparts above:
+        -- ">"/" " + "[x]"/"[ ]" + name, joined by single spaces from x=1.
         local x = 1
         for i, wname in ipairs(available) do
           local w2 = 4 + #wname

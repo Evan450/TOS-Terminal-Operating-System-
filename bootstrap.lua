@@ -1,9 +1,45 @@
+-- ╔══════════════════════════════════════╗
+-- ║  TOS Network Bootstrap               ║
+-- ║  Terminal Operating System           ║
+-- ║  Fetch a release, hand off to setup  ║
+-- ╚══════════════════════════════════════╝
+-- For a bare OpenOS machine that has neither a TOS install disk nor any
+-- TOS files yet, but DOES have an Internet Card. This pulls the same file
+-- set an install disk carries (bios.lua, install.lua, and every file
+-- /tos/system_manifest.lua declares) from GitHub over
+-- raw.githubusercontent.com, stages it in a scratch directory, and then
+-- hands off to the downloaded install.lua exactly as if that directory
+-- were a mounted floppy — every safety check install.lua already has
+-- (FORCE-WIPE confirmation, BIOS fingerprint + typed confirm, post-copy
+-- size verification) runs completely unchanged.
+--
+-- Run from OpenOS:
+--   # bootstrap.lua                          (uses the built-in repo)
+--   # bootstrap.lua <owner>/<repo>            (install from a fork)
+--   # bootstrap.lua <owner>/<repo> <branch>
+--   # bootstrap.lua <owner>/<repo> <branch> <subdir>
+--
+-- Requires an Internet Card. No card, no physical disk yet either? Craft
+-- one (tier 1 is enough) or borrow one temporarily — nothing else here
+-- substitutes for it, on purpose (see the internet-access note below).
+
 local component = require("component")
 local computer = require("computer")
 local term = require("term")
 
+-- Try to load OpenOS's filesystem library. Staging files needs it; the
+-- internet fetch below deliberately does NOT depend on OpenOS's own
+-- `internet` library (require("internet")) being intact — it talks to
+-- component.internet directly, the same low-level approach TOS's own
+-- kernel.internet module uses once installed, so a damaged or missing
+-- OpenOS internet.lua can't take this path down with it.
 local fs = nil
 pcall(function() fs = require("filesystem") end)
+
+-- ============================================================
+-- Helpers — same vocabulary as install.lua, so the two scripts read as
+-- one continuous flow when this hands off to it.
+-- ============================================================
 
 local gpu = component.gpu
 
@@ -58,7 +94,8 @@ local function confirm(question)
 end
 
 local function pause(seconds)
-
+  -- Best-effort — a build without os.sleep just retries immediately
+  -- rather than failing the whole run over a missing convenience.
   if os.sleep then pcall(os.sleep, seconds) end
 end
 
@@ -83,11 +120,24 @@ local function header()
   print()
 end
 
+-- ============================================================
+-- Repository configuration
+-- ============================================================
+-- Overridable by CLI arg so a fork, a mirror, or a different branch/
+-- layout doesn't need a code change — only the built-in defaults live
+-- here.
 local DEFAULT_OWNER = "Evan450"
 local DEFAULT_REPO  = "TOS-Terminal-Operating-System-"
 
+-- Branches tried in order until one serves a real manifest — covers
+-- both the "main" and older "master" default-branch conventions without
+-- the operator needing to know which this repo uses.
 local BRANCH_CANDIDATES = { "main", "master" }
 
+-- Subdirectory inside the repo that holds the install-disk root
+-- (install.lua + bios.lua + tos/ + etc/ + usr/ + init.lua). "" means the
+-- repo root IS that root. Tried in order — a repo layout guess that's
+-- wrong is a "not found, try the next one" instead of a hard failure.
 local SUBDIR_CANDIDATES = { "", "TOS-Release" }
 
 --! A CLI-supplied owner/repo/branch/subdir becomes part of an HTTPS URL
@@ -101,6 +151,11 @@ local function safeToken(s)
     and s:match("^[%w%.%-_/]+$") ~= nil
 end
 
+-- ============================================================
+-- Internet access (raw component — see the note above on why this
+-- doesn't go through OpenOS's own `internet` library)
+-- ============================================================
+
 local function internetCard()
   local addr = component.list("internet")()
   if not addr then return nil end
@@ -109,11 +164,17 @@ local function internetCard()
   return p
 end
 
+-- Sized for OpenComputers, not a desktop: a Tier 1 machine has 192 KB of
+-- RAM total, and a response held as a Lua string is real RAM. The
+-- largest individual TOS source file is well under this.
 local MAX_FILE_BYTES    = 96 * 1024
-local REQUEST_TIMEOUT   = 20
+local REQUEST_TIMEOUT   = 20   -- seconds of no progress before giving up
 local DOWNLOAD_RETRIES  = 3
 local PROBE_RETRIES     = 2
 
+--- GET url -> body, err, status. Retries transient failures; a clean
+--- non-200 (404, etc.) returns immediately since retrying won't change
+--- "the file isn't there".
 local function httpGet(card, url, retries)
   retries = retries or DOWNLOAD_RETRIES
   for attempt = 1, retries do
@@ -172,6 +233,16 @@ local function rawUrl(owner, repo, branch, subdir, path)
     owner, repo, branch, prefix, path)
 end
 
+-- ============================================================
+-- Manifest parsing — identical contract to install.lua's loadManifest:
+-- text-only load() with an empty environment, never executed with
+-- ambient globals. kernel.serialize is not reachable from bare OpenOS
+-- (the TOS kernel's require() search paths don't exist yet), so unlike
+-- install.lua's disk-mode path this never even attempts that branch —
+-- it goes straight to the same safe fallback install.lua would land on
+-- anyway in this exact scenario.
+-- ============================================================
+
 local function parseManifest(source)
   if #source > 256 * 1024 then
     return nil, "manifest exceeds 256 KB sanity cap"
@@ -183,6 +254,10 @@ local function parseManifest(source)
   if type(result) ~= "table" then return nil, "manifest did not return a table" end
   return result
 end
+
+-- ============================================================
+-- Main
+-- ============================================================
 
 term.clear()
 header()
@@ -203,6 +278,7 @@ end
 ok("Internet Card found")
 print()
 
+-- CLI overrides: bootstrap.lua [owner/repo] [branch] [subdir]
 local cliArgs = {...}
 local owner, repoName = DEFAULT_OWNER, DEFAULT_REPO
 if cliArgs[1] then
@@ -233,6 +309,7 @@ if not confirm("Download TOS from the internet and install it here?") then
 end
 print()
 
+-- ── Locate a reachable (branch, subdir) combo ─────────────────────
 color(0x00AAFF); print("--- Locating release files ---"); color(0xFFFFFF)
 local baseBranch, baseSubdir, manifestSrc
 for _, branch in ipairs(branches) do
@@ -293,6 +370,11 @@ ok("Using " .. owner .. "/" .. repoName .. "@" .. baseBranch ..
   " (" .. #manifest .. " files declared)")
 print()
 
+-- ── Staging directory, with a fallback if /tmp isn't there ─────────
+-- /tmp is OpenOS's normal tmpfs mount and is present on any install
+-- that boots to a shell at all, but a stripped-down or custom image
+-- might not have it — fall back to a root-level scratch dir instead
+-- of failing outright.
 local stagingDir = (fs.isDirectory("/tmp") and "/tmp/tos-netinstall")
   or "/tos-netinstall-tmp"
 if fs.exists(stagingDir) then
@@ -304,6 +386,10 @@ if not fs.makeDirectory(stagingDir) then
   return
 end
 
+-- ── Build the file list: every manifest entry, plus install.lua and
+--    bios.lua, which live at the disk root and are not part of the
+--    running-system manifest (mirrors what the `deploy` command puts
+--    on a physical install disk — see extras.lua's deploy command). ──
 local fileList, seen = {}, {}
 for _, entry in ipairs(manifest) do
   if type(entry) == "table" and type(entry.path) == "string" and not seen[entry.path] then
@@ -314,6 +400,7 @@ end
 if not seen["/install.lua"] then fileList[#fileList + 1] = "/install.lua" end
 if not seen["/bios.lua"] then fileList[#fileList + 1] = "/bios.lua" end
 
+-- ── Download ─────────────────────────────────────────────────────
 color(0x00AAFF)
 print("--- Downloading " .. #fileList .. " files ---")
 color(0xFFFFFF)
@@ -340,9 +427,10 @@ for i, path in ipairs(fileList) do
       failedPaths[#failedPaths + 1] = path .. ": cannot open staging file for write"
     end
   else
-
+    -- bios.lua is not on every install disk either; a 404 for it
+    -- specifically is not a failure, just "this release has none".
     if path == "/bios.lua" then
-
+      -- silently skip
     else
       failed = failed + 1
       failedPaths[#failedPaths + 1] = path .. ": " .. tostring(err)
@@ -364,6 +452,10 @@ else
 end
 print()
 
+-- install.lua is the one file bootstrap cannot proceed without — every
+-- other manifest entry's fate is install.lua's own copy+verify problem
+-- (it re-checks sizes against this staging directory exactly as it
+-- would against a physical disk), same as a floppy that lost a sector.
 local installPath = stagingDir .. "/install.lua"
 local installStaged = fs.exists(installPath) and (fs.size(installPath) or 0) > 0
 if not installStaged then
@@ -374,6 +466,15 @@ if not installStaged then
   return
 end
 
+-- ── Hand off to the downloaded install.lua ──────────────────────────
+-- Loaded and called directly (not via shell.execute) so this doesn't
+-- depend on any particular shell implementation being present or on
+-- OpenOS's os.getenv("_") convention for locating the invoking script.
+-- The staging directory is passed as install.lua's first argument,
+-- which its own findInstallDisk() takes as an explicit source override
+-- — the same door a scripted/unattended install would use, and more
+-- reliable here than path inference since this script's directory has
+-- no fixed relationship to where the release got staged.
 color(0x00AAFF); print("--- Handing off to install.lua ---"); color(0xFFFFFF)
 ok("Staged at " .. stagingDir)
 print()

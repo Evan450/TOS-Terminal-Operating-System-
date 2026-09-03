@@ -1,3 +1,6 @@
+-- TOS OpenOS Compatibility - sides
+-- Maps side names to numbers for redstone/inventory operations.
+--
 --! The number -> name direction is written out LITERALLY rather than derived
 --! from the name -> number entries. Deriving it needs a pairs() walk, and
 --! (a) adding keys during that walk is undefined behaviour that silently

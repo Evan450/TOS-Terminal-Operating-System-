@@ -1,17 +1,39 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Chat App (tab)                          ║
+-- ║                                                      ║
+-- ║  Chat as a persistent panels TAB (type "chat")       ║
+-- ║  instead of a screen-taking command: switch away and ║
+-- ║  messages KEEP ARRIVING — an NM.on(MSG) listener     ║
+-- ║  (dispatched by the kernel event pump under this     ║
+-- ║  shell's context) appends to the tab and bumps an    ║
+-- ║  unread badge on the tab label. No dedicated process ║
+-- ║  needed: the kernel-side dispatch IS the background. ║
+-- ║                                                      ║
+-- ║  The listener must never draw (it runs while ANY     ║
+-- ║  process may own the screen); it marks the tab dirty ║
+-- ║  and the event loop's app tick repaints when this    ║
+-- ║  tab is front. Send/parse logic reuses shell.chat's  ║
+-- ║  pure helpers (parseInput / resolveTarget).          ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local computer = require("computer")
 local ui       = require("shell.panels.ui")
 local tabsMod  = require("shell.panels.tabs")
-local chatCore = require("shell.chat")
+local chatCore = require("shell.chat")   -- pure helpers only
 
 local M = {}
 
 local MAX_MESSAGES = 128
 
+-- ── Pure-ish model helpers (exposed for tests) ──────────────
+
+--- Tab label with the unread badge. Pure.
 function M.label(unread)
   if (unread or 0) > 0 then return "Chat(" .. unread .. ")" end
   return "Chat"
 end
 
+--- Append a message line to the tab's ring buffer. Pure given tab.
 function M.addMessage(tab, text, color)
   local msgs = tab.messages
   msgs[#msgs + 1] = { text = text, color = color,
@@ -39,6 +61,11 @@ local function trustedPeers(trustMgr)
   return out
 end
 
+-- ── Group storage (multi-operator addressing) ───────────────
+-- chat.lua owns the pure group logic; this pair binds it to the live
+-- kernel handles. Loaded on demand rather than cached, so an edit to
+-- /etc/chat-groups.cfg (or a change made from another seat) takes effect
+-- without reopening the tab.
 local function groupIO()
   local okF, fsMod = pcall(require, "kernel.fs")
   local okS, ser   = pcall(require, "kernel.serialize")
@@ -54,6 +81,11 @@ local function saveGroups(groups)
   return chatCore.saveGroups(fsMod, ser, groups)
 end
 
+-- ── Open / lifecycle ────────────────────────────────────────
+
+--- Find-or-create the Chat tab and focus it. Registers the incoming-
+--- message listener on first open; the listener lives until the tab
+--- CLOSES (tabs.close fires onClose), not merely until you switch away.
 function M.open(S)
   local idx = tabsMod.find(S, "chat")
   if idx then
@@ -84,6 +116,8 @@ function M.open(S)
   end
   if #peers == 0 then M.addMessage(tab, "  (no trusted peers)", T.warning) end
 
+  -- Incoming messages: same TRUSTED gate + ack as the old chat TUI
+  -- (#SEC M-3), but NO drawing — mark dirty, badge if not front.
   local protocol = NM.getProtocol and NM.getProtocol()
   local trustMgr = NM.getTrust and NM.getTrust()
   if protocol and trustMgr and NM.on then
@@ -112,6 +146,8 @@ function M.open(S)
   return tab
 end
 
+--- Tab closed: unregister the listener (the background reception ends
+--- with the tab, deliberately — no invisible chat presence).
 function M.onClose(S, tab)
   local NM = S.NM
   if tab._listenerId and NM and NM.off and NM.getProtocol then
@@ -120,6 +156,10 @@ function M.onClose(S, tab)
     tab._listenerId = nil
   end
 end
+
+-- ── Drawing ─────────────────────────────────────────────────
+-- Row 1 top bar (shell) · row 2 rail · rows 3..H-2 messages ·
+-- row H-1 input · row H hints.
 
 function M.draw(S, tab)
   local D, T, W, H = S.D, S.T, S.W, S.H
@@ -132,6 +172,7 @@ function M.draw(S, tab)
     { text = "peers:" .. peers },
   }, { labelFg = T.title or T.fg })
 
+  -- Messages: the tail, backed off by tab.scroll lines (PgUp/PgDn).
   local msgTop, msgBot = 3, H - 2
   local msgH = msgBot - msgTop + 1
   local msgs = tab.messages or {}
@@ -151,6 +192,7 @@ function M.draw(S, tab)
     end
   end
 
+  -- Input line.
   D.set(1, H - 1, "> ", T.highlight, T.bg)
   local maxW = W - 3
   local shown = tab.input or ""
@@ -161,10 +203,13 @@ function M.draw(S, tab)
     "Enter Send · peer:msg Direct · /help · PgUp/Dn Scroll · ^Q Close",
     nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
 
+  -- Seen: clear the badge + dirty flag.
   tab.unread = 0
   tab.label = M.label(0)
   tab._dirty = false
 end
+
+-- ── Sending (Enter) ─────────────────────────────────────────
 
 local function doSend(S, tab)
   local T, NM = S.T, S.NM
@@ -193,7 +238,11 @@ local function doSend(S, tab)
       M.addMessage(tab, "  /clear  /help  ^Q closes the tab", T.dim)
 
     elseif name == "group" then
-
+      -- /group                        list every group and its members
+      -- /group new  <name> [peer...]  create (optionally populated)
+      -- /group add  <name> <peer...>  add members
+      -- /group rm   <name> <peer...>  remove members
+      -- /group del  <name>            delete the group
       local verb, gargs = arg:match("^(%S*)%s*(.*)$")
       verb = (verb or ""):lower()
       local gname, members = gargs:match("^(%S*)%s*(.*)$")
@@ -282,7 +331,7 @@ local function doSend(S, tab)
       end
       if #peers == 0 then M.addMessage(tab, "  (no trusted peers)", T.warning) end
     elseif name == "mail" then
-
+      -- Mail is an ADD-ON (stage 5); the mesh transport under it is base.
       local mp, mtext = arg:match("^(%S+)%s+(.+)$")
       local dest = mp and trustMgr and chatCore.resolveTarget(
         trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED)
@@ -308,7 +357,10 @@ local function doSend(S, tab)
     end
 
   elseif act.kind == "group" then
-
+    -- A group send is N directed sends, nothing more (see the design note
+    -- in shell/chat.lua). Members that can't be resolved are NAMED, not
+    -- quietly skipped — "sent to 2 of 4" is the difference between an
+    -- operator knowing their message landed and assuming it did.
     local groups = loadGroups()
     local addrs, missing = chatCore.resolveGroup(groups, act.group,
       (trustMgr and trustMgr.listPeers()) or {},
@@ -346,12 +398,20 @@ local function doSend(S, tab)
       M.addMessage(tab, "Unknown peer: " .. act.target, T.error)
     end
 
-  else
+  else  -- broadcast
     local peers = trustedPeers(trustMgr)
     if #peers == 0 then
       M.addMessage(tab, "No trusted peers to send to.", T.warning)
     else
-
+      -- Count what actually went, the way the group branch above does.
+      -- This used to discard sendMessage's result and then echo the
+      -- message unconditionally, so a send that was REFUSED still looked
+      -- delivered. The common way to hit it: elevate a peer to TRUSTED
+      -- by hand without provisioning a shared secret, at which point
+      -- net.send refuses to downgrade to plaintext and returns
+      -- false, "TRUSTED peer has no shared secret". The operator saw
+      -- their own message echoed and no error -- the reason was only in
+      -- kernel.log, which is not where anyone looks first.
       local sent, firstErr = 0, nil
       for _, p in ipairs(peers) do
         local ok, err = NM.sendMessage(p.address, act.text)
@@ -366,7 +426,8 @@ local function doSend(S, tab)
           sent, #peers), T.warning)
         if firstErr then
           M.addMessage(tab, "  " .. tostring(firstErr), T.error)
-
+          -- The refusal is actionable, so say what to do about it rather
+          -- than leaving the operator to find `net trust gen` themselves.
           if tostring(firstErr):find("shared secret", 1, true) then
             M.addMessage(tab, "  run: net trust gen <addr>   (as admin)", T.dim)
           end
@@ -376,21 +437,24 @@ local function doSend(S, tab)
   end
 end
 
+-- ── Input ───────────────────────────────────────────────────
+
+--- Keyboard. Returns (drawLevel[, result]).
 function M.handleKey(S, tab, ch, co, deps)
-  if ch == 17 then
+  if ch == 17 then                                    -- Ctrl+Q: close tab
     tabsMod.close(S)
     return 3
-  elseif co == 28 then
+  elseif co == 28 then                                -- Enter: send
     doSend(S, tab)
     tab.scroll = 0
     return 3
-  elseif co == 14 then
+  elseif co == 14 then                                -- Backspace
     if #(tab.input or "") > 0 then tab.input = tab.input:sub(1, -2) end
     return 3
-  elseif co == 201 then
+  elseif co == 201 then                               -- PgUp: scrollback
     tab.scroll = (tab.scroll or 0) + math.max(1, S.H - 5)
     return 3
-  elseif co == 209 then
+  elseif co == 209 then                               -- PgDn
     tab.scroll = math.max(0, (tab.scroll or 0) - math.max(1, S.H - 5))
     return 3
   elseif ch and ch >= 32 and ch < 127 then
@@ -402,6 +466,7 @@ function M.handleKey(S, tab, ch, co, deps)
   return 0
 end
 
+--- Mouse scroll: scrollback.
 function M.handleScroll(S, tab, ev)
   local dir = (ev.dir or 0) > 0 and 1 or -1
   local newScroll = math.max(0, (tab.scroll or 0) + dir * 2)
@@ -410,6 +475,17 @@ function M.handleScroll(S, tab, ev)
   return 3
 end
 
+-- ── Intercom announcements in chat ──────────────────────────
+-- The operator asked for announcements to "pop up in chat", and chat is the
+-- right home for them: it is already the shell's running conversation log,
+-- so an announcement reads as one more thing that was said. Urgent ones ALSO
+-- raise a message box (panels/events.lua) — that is the interruption; this
+-- is the record.
+--
+-- Pull-based, from the add-on's spool, so it works no matter which machine
+-- or which seat received the announcement and needs no second listener. The
+-- cursor is the spool's receive counter (intercom.since), which survives the
+-- spool pruning its oldest entries.
 local ANN_COLOR = { critical = "error", alert = "error",
                     warn = "warning", notice = "highlight", info = "dim" }
 
@@ -417,7 +493,8 @@ local function drainAnnouncements(S, tab)
   local okI, ic = pcall(require, "intercom")
   if not (okI and type(ic) == "table" and ic.since) then return false end
   local T = S.T
-
+  -- First look: skip the backlog. Opening chat should not replay every
+  -- announcement since boot — those are in `intercom log`.
   if tab._annSeen == nil then
     local okH, high = pcall(ic.highWater)
     tab._annSeen = (okH and high) or 0
@@ -434,6 +511,8 @@ local function drainAnnouncements(S, tab)
   return true
 end
 
+--- Live: repaint when the listener marked us dirty while front, or when a
+--- new announcement arrived while this tab was the one being looked at.
 function M.tick(S, tab)
   local newAnn = drainAnnouncements(S, tab)
   if tab._dirty or newAnn then return 3 end

@@ -1,12 +1,50 @@
+-- ╔═══════════════════════════════════════════════════════════════╗
+-- ║  TOS Shell — Cluster setup wizard                              ║
+-- ║                                                                ║
+-- ║  ONE front door for standing up a cluster, and it works with   ║
+-- ║  nothing installed — because "what am I supposed to install,   ║
+-- ║  and where?" is the question an operator actually has, and no  ║
+-- ║  amount of README fixes it if the answer lives in a README.    ║
+-- ║                                                                ║
+-- ║  The answer, stated once, here:                                ║
+-- ║                                                                ║
+-- ║    Every cluster machine installs exactly ONE package, from    ║
+-- ║    the ordinary Optional Utilities disk. The control machine   ║
+-- ║    gets `cluster-master`; every compute machine gets           ║
+-- ║    `cluster-manager`. Nothing is copied by hand, ever. The     ║
+-- ║    only optional extra is OpenOS worker boxes, which are a     ║
+-- ║    separate, later, deliberate step.                           ║
+-- ║                                                                ║
+-- ║  Lives in the BASE image, not in either package, precisely so  ║
+-- ║  it can answer that question BEFORE anything is installed.     ║
+-- ║  It is named `cluster-setup`, not `cluster`: a registry        ║
+-- ║  command shadows /usr/bin (see executor.lua), so taking the    ║
+-- ║  name `cluster` would break the Master's own CLI the moment    ║
+-- ║  the package was installed.                                    ║
+-- ║                                                                ║
+-- ║  EVERYTHING GOES THROUGH AN INJECTED ctx. The wizard never     ║
+-- ║  touches io.read, never draws, and never calls a kernel        ║
+-- ║  module directly — so the whole flow runs off-box against      ║
+-- ║  scripted answers (test_cluster_setup.lua) instead of being    ║
+-- ║  the one part of the cluster nobody can test.                  ║
+-- ╚═══════════════════════════════════════════════════════════════╝
+
 local M = {}
 
 M.MASTER_PKG  = "cluster-master"
 M.MANAGER_PKG = "cluster-manager"
-M.MASTER_SVC  = "clusterd"
+M.MASTER_SVC  = "clusterd"          -- rc.d stem, NOT the package name
 M.MANAGER_SVC = "cluster-manager"
 M.MASTER_CFG  = "/etc/cluster-master.cfg"
 M.MANAGER_CFG = "/etc/cluster-manager.cfg"
 
+-- ============================================================
+-- The explainer
+-- ============================================================
+
+--- What a cluster is made of, as data so a test can prove the wizard
+--- actually names both packages and both roles rather than gesturing at
+--- "see the manual".
 function M.topology()
   return {
     { role = "Master",
@@ -27,6 +65,7 @@ function M.topology()
   }
 end
 
+--- Lines for the "I don't know what to install" screen. Pure.
 function M.explain()
   local out = {
     "A cluster is one Master and any number of Managers.",
@@ -35,7 +74,7 @@ function M.explain()
   for _, t in ipairs(M.topology()) do
     out[#out + 1] = t.role .. "  ->  pkg install " .. t.pkg
     for line in (t.what):gmatch("[^\n]+") do
-
+      -- Wrapped by the caller; keep the data as one paragraph per role.
       out[#out + 1] = "    " .. line
     end
     out[#out + 1] = ""
@@ -46,6 +85,14 @@ function M.explain()
   return out
 end
 
+-- ============================================================
+-- Validation (pure)
+-- ============================================================
+
+--- An OC component address is 36 chars of hex and dashes. Operators
+--- routinely paste a TRUNCATED one (every TOS listing abbreviates to 8),
+--- so the check exists to catch that specific, very common mistake with a
+--- message that says what went wrong rather than "invalid".
 function M.checkMasterAddress(s)
   if type(s) ~= "string" then return false, "no address given" end
   s = s:gsub("%s+", "")
@@ -64,6 +111,7 @@ function M.checkMasterAddress(s)
   return true, s
 end
 
+--- Pairing codes come from `cluster pair start` on the Master.
 function M.checkPairingCode(s)
   if type(s) ~= "string" or s:gsub("%s+", "") == "" then
     return false, "no pairing code given"
@@ -82,6 +130,8 @@ local function clampNumber(v, lo, hi, dflt)
   return math.max(lo, math.min(hi, math.floor(v)))
 end
 
+--- Build the Master's config from raw answers. Pure, so the defaults and
+--- the clamping are checkable without running an install.
 function M.masterConfig(a)
   a = a or {}
   return {
@@ -92,6 +142,7 @@ function M.masterConfig(a)
   }
 end
 
+--- Build the Manager's config. `master` must already be validated.
 function M.managerConfig(a)
   a = a or {}
   local profile = a.profile
@@ -107,6 +158,9 @@ function M.managerConfig(a)
   }
 end
 
+--- Serialize a config table to the `return { ... }` form the daemons
+--- loadfile() back. Pure. Keys are sorted so a regenerated config diffs
+--- cleanly against the previous one instead of reordering randomly.
 function M.encodeConfig(tbl)
   local keys = {}
   for k in pairs(tbl) do keys[#keys + 1] = k end
@@ -124,11 +178,32 @@ function M.encodeConfig(tbl)
   return table.concat(out)
 end
 
+-- ============================================================
+-- The flow
+-- ============================================================
+-- ctx supplies every side effect, so this function is pure control flow:
+--   say(text, kind)            kind = nil|"ok"|"warn"|"err"|"title"
+--   choose(title, lines, opts) -> index (1-based) into opts
+--   ask(prompt, default)       -> string or nil (nil = operator cancelled)
+--   installed(pkgName)         -> bool
+--   install(pkgName)           -> ok, err
+--   writeFile(path, data)      -> ok, err        (caller makes it atomic)
+--   startService(svcName)      -> ok, err
+--   setBootStart(svcName, on)  -> ok, err
+--   modemCount()               -> total, wireless
+--   myModemAddress()           -> addr or nil
+--   startPairing()             -> code, secondsRemaining  (Master only)
+--   pairWith(addr, code)       -> ok, message              (Manager only)
+--   hostname()                 -> string or nil
+
 local function report(ctx, ok, what, err)
   if ok then ctx.say(what, "ok") else ctx.say(what .. ": " .. tostring(err), "err") end
   return ok
 end
 
+--- Stage 0 — hardware. A cluster with no modem is not a cluster, and
+--- finding that out AFTER installing and configuring is a waste of the
+--- operator's time.
 function M.checkHardware(ctx)
   local total, wireless = ctx.modemCount()
   if (total or 0) == 0 then
@@ -143,6 +218,7 @@ function M.checkHardware(ctx)
   return true
 end
 
+--- The whole wizard. Returns true when the machine ended up configured.
 function M.run(ctx)
   ctx.say("Cluster setup", "title")
 
@@ -150,6 +226,7 @@ function M.run(ctx)
   local haveMaster  = ctx.installed(M.MASTER_PKG)
   local haveManager = ctx.installed(M.MANAGER_PKG)
 
+  -- If both are installed something is wrong: one machine is one role.
   if haveMaster and haveManager then
     ctx.say("Both cluster packages are installed on this machine.", "warn")
     ctx.say("A machine is either the Master or a Manager, not both. Uninstall"
@@ -161,7 +238,7 @@ function M.run(ctx)
   if haveMaster then role = "master"
   elseif haveManager then role = "manager"
   else
-
+    -- Nothing installed: this is the case the operator is actually stuck in.
     local lines = M.explain()
     local pick = ctx.choose("What is this machine?", lines,
       { "Master (control)", "Manager (compute)", "Cancel" })
@@ -197,7 +274,8 @@ function M.run(ctx)
     })
     cfgPath = M.MASTER_CFG
   else
-
+    -- Manager: the Master's address is the one answer with a real failure
+    -- mode, so it is checked and re-asked rather than written wrong.
     local addr
     while true do
       local raw = ctx.ask("The Master's FULL modem address", nil)
@@ -218,6 +296,10 @@ function M.run(ctx)
   local okW, werr = ctx.writeFile(cfgPath, M.encodeConfig(cfg))
   if not report(ctx, okW, "Wrote " .. cfgPath, werr) then return false end
 
+  -- Boot behaviour BEFORE starting: rc.start persists the enable by
+  -- clearing the service's .disabled marker, so asking afterwards and then
+  -- writing a different file (which is what the old installer did) left the
+  -- operator's answer with no effect at all.
   local atBoot = ctx.choose("Start " .. svc .. " automatically at boot?", {
     "Answer now — starting the service also decides this.",
   }, { "Yes, start at boot", "No, I'll start it by hand" }) == 1
@@ -227,6 +309,8 @@ function M.run(ctx)
   local okB, berr = ctx.setBootStart(svc, atBoot)
   report(ctx, okB, atBoot and "Enabled at boot" or "Left disabled at boot", berr)
 
+  -- Pairing: the step that actually joins the machines together, and the
+  -- one the old flow made hardest by printing a truncated address.
   if role == "master" then
     ctx.say("Pairing", "title")
     local code, secs = ctx.startPairing()
@@ -238,7 +322,10 @@ function M.run(ctx)
       ctx.say("Pairing window open for " .. math.floor(secs or 0) .. "s.", "ok")
       ctx.say("On EACH Manager, run cluster-setup and give it:", nil)
       ctx.say("", nil)
-
+      -- The full address, deliberately. The old installer truncated it to 12
+      -- characters and printed it as a command line, which read as
+      -- copy-pasteable and was not — so every operator typed a broken
+      -- command once before working out why.
       ctx.say("  Master address:  " .. tostring(addr or "(no modem address?)"), "title")
       ctx.say("  Pairing code:    " .. code, "title")
       ctx.say("", nil)

@@ -1,3 +1,13 @@
+-- ╔══════════════════════════════════════╗
+-- ║  TOS Chat Relay Service              ║
+-- ║  Relay messages between peers        ║
+-- ╚══════════════════════════════════════╝
+-- Listens for MSG packets and:
+--   1. Displays them via the kernel log (visible in `log` command)
+--   2. Optionally relays to other TRUSTED peers (mesh mode)
+--
+-- Chat history is kept in a ring buffer for the `chat` command.
+
 local running = false
 local listenerID = nil
 local HISTORY_SIZE = 64
@@ -24,18 +34,24 @@ local function start()
   local protocol = net.getProtocol()
   local computer = require("computer")
 
+  -- #SEC H20 — per-peer flood guard. Without this a TRUSTED peer can
+  -- spew MSG packets and exhaust history + log budget for every machine
+  -- on the network. We track a sliding window per source: > MAX_PER_WINDOW
+  -- in WINDOW_SEC drops further messages from that peer silently.
   local rate = {}
-  local WINDOW_SEC     = 5
-  local MAX_PER_WINDOW = 20
-  local MAX_TEXT_LEN   = 512
+  local WINDOW_SEC     = 5     -- sliding window length in seconds
+  local MAX_PER_WINDOW = 20    -- packets per window before we drop
+  local MAX_TEXT_LEN   = 512   -- ignore absurdly large bodies up front
 
   listenerID = net.on(protocol.TYPE.MSG, function(packet, remoteAddr)
     if not running then return end
-
+    -- Rate-limit check (per remoteAddr).
     local now = computer.uptime()
     local entry = rate[remoteAddr]
     if not entry then
-
+      -- #SEC L — bound the rate map: an attacker spoofing many source
+      -- addresses would otherwise grow it without limit (memory leak over
+      -- long uptimes). Evict the oldest-tracked peer past the cap.
       rate.__order = rate.__order or {}
       if #rate.__order >= 256 then
         local victim = table.remove(rate.__order, 1)
@@ -51,7 +67,7 @@ local function start()
     end
     entry.count = entry.count + 1
     if entry.count > MAX_PER_WINDOW then
-
+      -- Don't even log — the log itself is a target for flooding.
       return
     end
 
@@ -64,7 +80,7 @@ local function start()
     if #text > MAX_TEXT_LEN then text = text:sub(1, MAX_TEXT_LEN) end
 
     local hostname = "?"
-
+    -- Try to resolve hostname from discovered peers
     local peer = net.findPeer(remoteAddr)
     if peer and peer.hostname then hostname = peer.hostname end
 
@@ -88,6 +104,7 @@ local function stop()
   end
 end
 
+-- Expose history for the chat command
 local function getHistory()
   if histCount == 0 then return {} end
   local result = {}

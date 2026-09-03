@@ -1,1 +1,13 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels TUI (forwarding shim)            ║
+-- ║                                                      ║
+-- ║  The panels implementation lives in the directory    ║
+-- ║  shell/panels/ as of the phase-3 split. This shim    ║
+-- ║  exists so `require("shell.panels")` resolves to the ║
+-- ║  new init.lua + submodules without breaking existing ║
+-- ║  callers or the kernel's critical-file sanity check. ║
+-- ║                                                      ║
+-- ║  Do NOT add logic here. Edit shell/panels/init.lua   ║
+-- ║  or the submodule that owns the concern.             ║
+-- ╚══════════════════════════════════════════════════════╝
 return require("shell.panels.init")

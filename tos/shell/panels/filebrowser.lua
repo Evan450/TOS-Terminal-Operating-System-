@@ -1,3 +1,8 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels File Browser Operations          ║
+-- ║  Navigate, copy, move, delete, rename, mkdir, etc.   ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local helpers = require("shell.panels.helpers")
 local dialogs = require("shell.panels.dialogs")
 
@@ -11,7 +16,10 @@ local function pullSignal()
 end
 
 function M.navigateUp(S)
-
+  -- Route through fs.normalize so trailing slashes, "//" runs, and any
+  -- ".." that survives the regex match end up resolved instead of
+  -- leaking into S.browser.path. Cheap insurance — the regex alone is
+  -- correct for clean inputs but not robust against odd ones.
   local parent = S.browser.path:match("^(.*)/[^/]+/?$") or "/"
   if parent == "" then parent = "/" end
   S.browser.path = S.F.normalize and S.F.normalize(parent) or parent
@@ -27,6 +35,9 @@ function M.navigateInto(S, dirName)
   S.cwd = S.browser.path
 end
 
+-- Yes/No confirmation prompt drawn on the output row. Returns true if
+-- the user pressed y/Y, false otherwise. Used by paste-overwrite,
+-- rename-overwrite, and any other "are you sure?" gate.
 local function promptYN(S, message)
   local D, T, W = S.D, S.T, S.W
   D.fill(1, S.OUT_ROW, W, 1, " ", T.fg, T.bg)
@@ -44,7 +55,9 @@ function M.doCopy(S)
   local T = S.T
   if S.clipboard then
     local dst = S.F.join(S.browser.path, S.clipboard.name)
-
+    -- Overwrite gate: don't silently clobber an existing target. The
+    -- previous version called S.F.copy unconditionally, which would
+    -- silently overwrite on most OC fs proxies — easy data loss.
     if S.F.exists(dst) and not promptYN(S, "Overwrite '" .. S.clipboard.name .. "'?") then
       S.lastOut = { "Cancelled", T.dim }
       S.clipboard = nil
@@ -79,13 +92,16 @@ function M.doMove(S, path, f)
   local dst = helpers.resolvePath(S, dest)
   if S.F.isDirectory(dst) then dst = S.F.join(dst, f.name) end
   if not helpers.canWrite(S, dst) then return end
-
+  -- Overwrite gate
   if S.F.exists(dst) and dst ~= path then
     if not promptYN(S, "Overwrite '" .. dst .. "'?") then
       S.lastOut = { "Cancelled", T.dim }; return
     end
   end
-
+  -- Try same-fs rename first; fall back to copy+remove for cross-fs.
+  -- OC's filesystem.rename returns false (not an error) when the source
+  -- and destination are on different mounts, which is the same code
+  -- path PaneUI handles — backporting that behaviour here.
   local renamed = S.F.rename(path, dst)
   if not renamed then
     local cok, cerr = S.F.copy(path, dst)
@@ -95,7 +111,8 @@ function M.doMove(S, path, f)
     end
     local rok, rerr = S.F.remove(path)
     if not rok then
-
+      -- Copy succeeded but original couldn't be removed — half-move.
+      -- Still surface the error so the user knows to clean up.
       S.lastOut = { "Copied to " .. dst .. " but could not remove source: " ..
         tostring(rerr or "?"), T.warning }
       helpers.refreshBrowser(S)
@@ -114,13 +131,20 @@ function M.doDelete(S, path, f)
   end
   if path == "/" then S.lastOut = { "Cannot delete root", T.error }; return end
   if not helpers.canWrite(S, path) then return end
-
+  -- INTRUSIVE confirm. Deletion is destructive and irreversible, so it
+  -- earns the modal box (danger-coloured, default focus on the safe
+  -- [Cancel]) rather than a status-line (y/n) the operator can blow
+  -- past on reflex. The caller's `draw = 3` repaints over the box after
+  -- we return, so no redraw callback is needed here.
   local go = dialogs.confirm(S,
     "Delete '" .. f.name .. "'?\nThis cannot be undone.",
     { title = "Delete File", severity = "danger",
       yes = "Delete", no = "Cancel", default = "no" })
   if not go then S.lastOut = { "Cancelled", T.dim }; return end
-
+  -- Capture and surface fs.remove's return value. An earlier version
+  -- dropped it and always printed "Deleted: foo" — including for
+  -- non-empty directories, where OC's filesystem.remove returns false,
+  -- leaving a green success message beside a dir still in the list.
   local ok, err = S.F.remove(path)
   helpers.refreshBrowser(S)
   if ok then
@@ -154,12 +178,15 @@ function M.doRename(S, path, f)
   if not newName or #newName == 0 then S.lastOut = { "Cancelled", T.dim }; return end
   local dst = S.F.join(S.browser.path, newName)
   if dst == path then S.lastOut = { "Cancelled", T.dim }; return end
-
+  -- Overwrite gate. Without this the rename either silently overwrites
+  -- (depending on the OC fs proxy's rename semantics) or returns false
+  -- with an opaque error. Either way the user loses without warning.
   if S.F.exists(dst) then
     if not promptYN(S, "Overwrite '" .. newName .. "'?") then
       S.lastOut = { "Cancelled", T.dim }; return
     end
-
+    -- Most OC fs proxies refuse rename-over; remove the destination
+    -- first so the rename has somewhere to land.
     pcall(S.F.remove, dst)
   end
   if S.F.rename(path, dst) then

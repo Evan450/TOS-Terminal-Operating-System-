@@ -1,3 +1,8 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels Editor Tab Operations            ║
+-- ║  Open view/edit tabs                                 ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local helpers = require("shell.panels.helpers")
 local tabs = require("shell.panels.tabs")
 
@@ -15,6 +20,11 @@ function M.openViewTab(S, rawBuf, label)
   })
 end
 
+-- A LIVE tab is a view tab that regenerates its OWN content on a timer (driven
+-- by the event loop's idle tick). `refresh()` returns a rawBuf (array of
+-- {text,color} or strings). refreshLiveTab wraps it with a header and rebuilds
+-- tab.content, keeping the scroll position valid. Scroll/search/close behave
+-- exactly like a static view tab — only the content updates by itself.
 function M.refreshLiveTab(S, tab)
   if not tab or type(tab.refresh) ~= "function" then return end
   local T = S.T or {}
@@ -22,7 +32,9 @@ function M.refreshLiveTab(S, tab)
   if not okR or type(raw) ~= "table" then
     raw = { { "(refresh error: " .. tostring(raw) .. ")", T.error } }
   end
-
+  -- A monotonically rising tick count in the header proves the tab is LIVE even
+  -- when the watched command's output is static (e.g. `watch ps` on an idle box
+  -- looks frozen otherwise — the body is identical refresh-to-refresh).
   tab.refreshCount = (tab.refreshCount or 0) + 1
   local full = {
     { "\226\151\143 LIVE  " .. (tab.liveLabel or tab.label or "")
@@ -37,6 +49,9 @@ function M.refreshLiveTab(S, tab)
   if (tab.offset or 0) > maxOff then tab.offset = maxOff end
 end
 
+-- Open a live tab. `refreshFn` is called now (for the initial paint) and again
+-- on each interval tick while the tab is in front. `interval` is in seconds
+-- (>= 1). The label gets a ● marker so it's distinct from a static view tab.
 function M.openLiveTab(S, label, refreshFn, interval)
   if type(refreshFn) ~= "function" then return end
   label = label or "Live"

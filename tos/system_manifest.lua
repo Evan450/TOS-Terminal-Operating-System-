@@ -1,8 +1,38 @@
-return {
+-- TOS System Manifest - Single source of truth for system files.
+-- Used by:
+--   /init.lua (boot verification, critical files only)
+--   kernel.verifySystem() (full integrity check via `verify` command)
+--   deploy/install tooling (panels deploy, install.lua)
+--
+-- Fields:
+--   path     = absolute path on the OC filesystem
+--   critical = true if the system cannot boot without this file
+--
+-- Coverage rule: every runtime .lua file under /tos, /etc/rc.d,
+-- /usr/bin, /usr/modules and the bootstrap files at the root MUST
+-- appear here. /usr/lib/tests is intentionally excluded — those are
+-- unit tests for development, not part of a deployed install.
+--
+-- After the Dev/Release/Extras split (see ../../README.md): the
+-- master-skeleton, OpenOS-side cluster worker, and PaneUI now live
+-- under ../../TOS-Extras/ rather than inside the source tree, and
+-- ship via the Optional Utilities installer instead of /tos/deploy.
+-- The bundled-modules entries (tape-storage, tetris) remain listed
+-- here for now because the Dev manifest is intentionally inclusive;
+-- the Release build's strip pass auto-prunes any entry whose target
+-- file isn't present in the dist tree, so the Release manifest stays
+-- accurate without a manual edit.
+--
+-- A coverage test under /usr/lib/tests/test_manifest_completeness.lua
+-- enforces this; if you add a runtime file, also add it here, or the
+-- test will fail and `deploy` will silently ship an incomplete image.
 
+return {
+  -- ── Boot ─────────────────────────────────────────────────
   { path = "/init.lua",                       critical = true  },
   { path = "/install.lua",                    critical = false },
 
+  -- ── Kernel core ──────────────────────────────────────────
   { path = "/tos/kernel/init.lua",            critical = true  },
   { path = "/tos/kernel/log.lua",             critical = true  },
   { path = "/tos/kernel/hal.lua",             critical = true  },
@@ -12,6 +42,7 @@ return {
   { path = "/tos/kernel/serialize.lua",       critical = true  },
   { path = "/tos/kernel/display.lua",         critical = true  },
 
+  -- ── Kernel optional ──────────────────────────────────────
   { path = "/tos/kernel/screen.lua",          critical = false },
   { path = "/tos/kernel/clipboard.lua",       critical = false },
   { path = "/tos/kernel/config.lua",          critical = false },
@@ -40,7 +71,12 @@ return {
   { path = "/tos/kernel/srm.lua",             critical = false },
   { path = "/tos/kernel/notify.lua",          critical = false },
   { path = "/tos/kernel/sha256.lua",          critical = false },
-
+  -- Package signing. All three are LAZILY loaded — nothing requires them
+  -- until a signature is actually present to check — but they are listed
+  -- here because the manifest is what `verify` walks. A file the image
+  -- ships and the manifest omits is a file tampering cannot be detected
+  -- in, and ed25519.lua is precisely the file an attacker would want to
+  -- edit: make verify() return true and every other gate opens.
   { path = "/tos/kernel/sha512.lua",          critical = false },
   { path = "/tos/kernel/ed25519.lua",         critical = false },
   { path = "/tos/kernel/pkgsign.lua",         critical = false },
@@ -58,6 +94,7 @@ return {
   { path = "/tos/kernel/trash.lua",           critical = false },
   { path = "/tos/kernel/vault.lua",           critical = false },
 
+  -- ── Networking ───────────────────────────────────────────
   { path = "/tos/kernel/net/init.lua",        critical = false },
   { path = "/tos/kernel/net/protocol.lua",    critical = false },
   { path = "/tos/kernel/net/trust.lua",       critical = false },
@@ -68,12 +105,21 @@ return {
   { path = "/tos/kernel/net/mesh.lua",        critical = false },
   { path = "/tos/kernel/net/meshctl.lua",     critical = false },
 
+  -- ── Shell ────────────────────────────────────────────────
   { path = "/tos/shell/init.lua",             critical = true  },
-
+  -- CRITICAL, like the launcher above it and unlike the panels tree: the
+  -- CLI is the interface a seat falls back to when the TUI will not
+  -- load, and `ui=cli` boots straight into it. A machine that has lost
+  -- this has lost both of its shells and is down to the emergency
+  -- terminal.
   { path = "/tos/shell/cli.lua",              critical = true  },
-
+  -- The sandbox-environment builder both shells hand to every program
+  -- they run. Not critical to REACH a prompt, but a shell that cannot
+  -- build a program env cannot run anything from it.
   { path = "/tos/shell/progenv.lua",          critical = false },
-
+  -- The shared keybind table. Not critical to reach a prompt, but a
+  -- machine that lost it falls back to the coded defaults rather than
+  -- to no keys at all — see the module.
   { path = "/tos/shell/keys.lua",             critical = false },
   { path = "/tos/shell/ext.lua",              critical = false },
   { path = "/tos/shell/login.lua",            critical = false },
@@ -86,6 +132,7 @@ return {
   { path = "/tos/shell/kiosk.lua",            critical = false },
   { path = "/tos/shell/launcher.lua",         critical = false },
 
+  -- ── Panels (Norton Commander UI) ─────────────────────────
   { path = "/tos/shell/panels.lua",           critical = false },
   { path = "/tos/shell/panels/init.lua",      critical = false },
   { path = "/tos/shell/panels/commands.lua",  critical = false },
@@ -112,11 +159,15 @@ return {
   { path = "/tos/shell/panels/settingsapp.lua", critical = false },
   { path = "/tos/shell/panels/monitorapp.lua", critical = false },
   { path = "/tos/shell/panels/chatapp.lua",   critical = false },
+  -- (mailapp.lua left with the mail package — stage 5. The app registry
+  -- pcall-requires "mailapp" from /usr/lib when the add-on is installed.)
 
+  -- Command-table subfiles (v1.3 split — see panels/commands.lua header)
   { path = "/tos/shell/panels/commands/core.lua",   critical = false },
   { path = "/tos/shell/panels/commands/admin.lua",  critical = false },
   { path = "/tos/shell/panels/commands/extras.lua", critical = false },
 
+  -- ── Compat layer (OpenOS-compatible APIs) ────────────────
   { path = "/tos/compat/init.lua",            critical = false },
   { path = "/tos/compat/buffer.lua",          critical = false },
   { path = "/tos/compat/colors.lua",          critical = false },
@@ -131,21 +182,31 @@ return {
   { path = "/tos/compat/term.lua",            critical = false },
   { path = "/tos/compat/text.lua",            critical = false },
 
+  -- ── Peripheral helpers ───────────────────────────────────
   { path = "/tos/peripheral/inventory.lua",   critical = false },
   { path = "/tos/peripheral/redstone.lua",    critical = false },
   { path = "/tos/peripheral/robot.lua",       critical = false },
 
+  -- ── Boot services (rc.d) ─────────────────────────────────
   { path = "/etc/rc.d/10-discoveryd.lua",     critical = false },
   { path = "/etc/rc.d/20-chatrelay.lua",      critical = false },
   { path = "/etc/rc.d/20-fileshare.lua",      critical = false },
   { path = "/etc/rc.d/20-netfsd.lua",         critical = false },
   { path = "/etc/rc.d/20-rshd.lua",           critical = false },
-
+  -- Ships DISABLED by default (security): rshd registers but doesn't
+  -- auto-start unless an admin runs `service start 20-rshd`. This marker
+  -- must ship so fresh installs stay opt-in.
   { path = "/etc/rc.d/20-rshd.disabled",      critical = false },
 
+  -- ── /usr/bin tools ───────────────────────────────────────
   { path = "/usr/bin/share.lua",              critical = false },
   { path = "/usr/bin/ssh.lua",                critical = false },
 
+  -- (Bundled modules moved to the optional cluster/Optional-Utilities
+  --  packages in v1.3.1 — they are no longer part of the base image and
+  --  install via `pkg`. See TOS-Extras/.)
+
+  -- ── /usr/man manual pages (read by the `man` command) ────
   { path = "/usr/man/boot.man",               critical = false },
   { path = "/usr/man/bootsettings.man",       critical = false },
   { path = "/usr/man/compress.man",           critical = false },
@@ -167,7 +228,11 @@ return {
   { path = "/usr/man/swap.man",               critical = false },
   { path = "/usr/man/vault.man",              critical = false },
 
+  -- ── Language catalogs (kernel.i18n DATA files) ───────────
+  -- Common languages ship in the base image; rarer ones install as
+  -- ordinary packages that drop a file here.
   { path = "/usr/lang/ru.lang",               critical = false },
 
+  -- ── Self-reference ───────────────────────────────────────
   { path = "/tos/system_manifest.lua",        critical = false },
 }

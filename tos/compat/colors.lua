@@ -1,10 +1,11 @@
+-- TOS OpenOS Compatibility - colors
 local colors = {
   white      = 0, orange   = 1, magenta    = 2, lightblue  = 3,
   yellow     = 4, lime     = 5, pink       = 6, gray       = 7,
   silver     = 8, cyan     = 9, purple     = 10, blue      = 11,
   brown      = 12, green   = 13, red       = 14, black     = 15,
 }
-
+-- Reverse lookup (number -> name).
 --! Snapshot the names FIRST, then write. Inserting a NEW key into a table
 --! that is being walked by pairs() is undefined behaviour in Lua ("you may
 --! clear or modify existing fields, but not add new ones"), and here it bit:

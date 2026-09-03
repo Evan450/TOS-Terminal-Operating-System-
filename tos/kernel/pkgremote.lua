@@ -1,3 +1,27 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - Remote package repositories                  ║
+-- ║                                                            ║
+-- ║  Fetching packages over an internet card, for repos laid   ║
+-- ║  out the OPPM way: one `programs.cfg` index at the root,   ║
+-- ║  sources underneath it.                                    ║
+-- ║                                                            ║
+-- ║  Loaded LAZILY by pkg — a machine that never fetches       ║
+-- ║  anything never parses this file.                          ║
+-- ╚══════════════════════════════════════════════════════════╝
+--
+-- THE SHAPE OF THIS, AND WHY:
+--
+-- Nothing here installs anything. It DOWNLOADS a remote repo into a local
+-- staging directory laid out exactly like a repo on a floppy, and then the
+-- ordinary `pkg.install` runs against that directory. Every guarantee the
+-- local path already has — manifest validation, write-root confinement,
+-- SHA-256 verification, conflict and file-ownership checks, dependency
+-- resolution, the unverified-package gate — therefore applies to a remote
+-- package without a second implementation that could drift from the first.
+--
+-- The alternative, threading HTTP through pkg.install, would have meant a
+-- network-aware copy of the most security-sensitive loop in the system.
+--
 --! THREAT MODEL. This is the path by which EXECUTABLE CODE FROM OUTSIDE
 --! THE WORLD reaches a TOS machine. Everything downloaded is hostile until
 --! proven otherwise, and "proven otherwise" is not something this module
@@ -34,6 +58,7 @@ local log = nil
 local REPO_CFG   = "/etc/pkg-repos.cfg"
 local STAGE_ROOT = "/var/pkg/remote"
 
+-- Bounds. Deliberately modest: these are Minecraft computers.
 local MAX_INDEX_BYTES   = 128 * 1024
 local MAX_FILE_BYTES    = 128 * 1024
 local MAX_PKG_BYTES     = 512 * 1024
@@ -50,10 +75,25 @@ local function inet()
   return nil
 end
 
+-- ============================================================
+-- Repository configuration
+-- ============================================================
+-- /etc/pkg-repos.cfg:
+--   return {
+--     { name = "myrepo", url = "https://example.com/oc/master" },
+--   }
+-- The URL is the directory the index sits in; `programs.cfg` is appended.
+-- Writing this file is an admin act (it is under /etc, so securefs gates
+-- it), and it IS the allowlist — there is no separate host list to keep in
+-- step with it.
+
 local function validRepoName(n)
   return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
 end
 
+--- Load configured repos. Returns an array of { name, url, host }.
+--- A malformed entry is dropped rather than failing the whole file: one
+--- bad line should not make every other repo unreachable.
 function pkgremote.repos()
   local out = {}
   if not fs.exists(REPO_CFG) then return out end
@@ -68,7 +108,8 @@ function pkgremote.repos()
   for _, e in ipairs(raw) do
     if type(e) == "table" and validRepoName(e.name) and type(e.url) == "string" then
       local host = im and im.hostOf(e.url) or nil
-
+      -- A repo whose URL does not parse as http/https is not usable and
+      -- must not sit in the list looking configured.
       if host then
         out[#out + 1] = {
           name = e.name,
@@ -93,6 +134,8 @@ local function saveRepos(list)
     or fs.writeFile(REPO_CFG, serialize.encode(clean))
 end
 
+--- Add (or replace) a repo. The caller is responsible for the admin gate —
+--- pkg's `repo` verb does it, in the same place it gates install.
 function pkgremote.addRepo(name, url, description)
   if not validRepoName(name) then
     return false, "invalid repo name (letters, digits, _ and - only)"
@@ -127,6 +170,9 @@ function pkgremote.removeRepo(name)
   return true
 end
 
+-- ============================================================
+-- Path vetting  (#SEC — see rule 2 in the header)
+-- ============================================================
 --! A source path out of a remote index is used for two things: appended to
 --! the repo URL, and appended to the staging directory. Both are injection
 --! sites. Refused: absolute paths, any "." or ".." segment, backslashes,
@@ -145,12 +191,19 @@ local function safeRepoPath(p)
   for seg in p:gmatch("[^/]+") do
     if seg == "." or seg == ".." then return nil end
   end
-
+  -- Collapse any doubled slashes so the joined URL and the joined path
+  -- agree on the segment count.
   return (p:gsub("/+", "/"))
 end
 
-local indexCache = {}
+-- ============================================================
+-- Index fetch
+-- ============================================================
+local indexCache = {}   -- repoName -> { at = uptime, index = table }
 
+--- Fetch and parse a repo's programs.cfg. Cached for the session so a
+--- multi-package install doesn't re-download the index per package.
+--- Returns index, err.
 function pkgremote.index(repo, opts)
   opts = opts or {}
   local im = inet()
@@ -177,6 +230,8 @@ end
 
 function pkgremote.clearCache() indexCache = {} end
 
+--- Every package available across the configured repos.
+--- Returns an array of { name, repo, description, version, files }.
 function pkgremote.search(opts)
   local out = {}
   for _, repo in ipairs(pkgremote.repos()) do
@@ -200,6 +255,14 @@ function pkgremote.search(opts)
   return out
 end
 
+-- ============================================================
+-- Fetch a package into staging
+-- ============================================================
+--- Download `name` from the configured repos into a local staging tree
+--- laid out like a repo directory, and return the PACKAGE DIRECTORY inside
+--- it for pkg.install to consume.
+---
+--- Returns pkgDir, err.
 function pkgremote.fetch(name, opts)
   opts = opts or {}
   local im = inet()
@@ -228,6 +291,9 @@ function pkgremote.fetch(name, opts)
     return nil, "package '" .. name .. "' declares no files"
   end
 
+  -- Staging tree: <STAGE_ROOT>/<repo>/  holds programs.cfg + the sources,
+  -- and <STAGE_ROOT>/<repo>/<name>/ is the package directory whose PARENT
+  -- the manifest reader looks in for the index. Cleared per fetch.
   local root   = fs.join(STAGE_ROOT, repo.name)
   local pkgDir = fs.join(root, name)
   pcall(fs.remove, root)
@@ -235,20 +301,23 @@ function pkgremote.fetch(name, opts)
     return nil, "could not create staging directory " .. pkgDir
   end
 
+  -- Write a ONE-PACKAGE index next to the sources. Deliberately not the
+  -- whole remote index: the manifest reader would happily read any entry
+  -- in it, and staging should contain only what this fetch is for.
   local okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
     serialize.encode({ [name] = entry }))
   if not okIdx then return nil, "could not stage the package index" end
 
   local count, total = 0, 0
   for src in pairs(entry.files) do
-    local rel = safeRepoPath(src:gsub("^:", ""))
+    local rel = safeRepoPath(src:gsub("^:", ""))   -- ':' = OPPM dir copy
     if src:sub(1, 1) == ":" then
       return nil, "package '" .. name ..
         "' uses an OPPM directory-copy entry (" .. tostring(src) ..
         "); TOS installs a declared file list"
     end
     if not rel then
-
+      -- #SEC — the index tried to name a path that is not a path.
       if log then
         log.warn("pkgremote", "Refused unsafe source path from repo '"
           .. repo.name .. "': " .. tostring(src))
@@ -290,6 +359,8 @@ function pkgremote.fetch(name, opts)
   return pkgDir, nil, { repo = repo.name, files = count, bytes = total }
 end
 
+--- Drop the staging tree. Called after an install so downloaded sources do
+--- not sit on a small disk forever.
 function pkgremote.cleanup(pkgDir)
   if type(pkgDir) ~= "string" then return end
   local root = pkgDir:match("^(" .. STAGE_ROOT:gsub("%-", "%%-") .. "/[^/]+)")
@@ -298,7 +369,7 @@ end
 
 pkgremote.STAGE_ROOT = STAGE_ROOT
 pkgremote.REPO_CFG   = REPO_CFG
-
+-- Exposed for tests: the path vetting is the sharpest edge in this file.
 pkgremote._safeRepoPath = safeRepoPath
 
 return pkgremote

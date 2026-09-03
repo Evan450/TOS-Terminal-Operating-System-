@@ -1,6 +1,36 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - JBOD (Just a Bunch Of Disks)                ║
+-- ║                                                            ║
+-- ║  Spill-over disk pool: presents N filesystem components    ║
+-- ║  as ONE filesystem-component-shaped proxy that can be      ║
+-- ║  mounted at a single path. Reads search every member;      ║
+-- ║  writes land on whichever member already holds the file,   ║
+-- ║  else the one with the most free space.                    ║
+-- ║                                                            ║
+-- ║  WHY JBOD AND NOT RAID, for OpenComputers:                 ║
+-- ║    - No striping/parity math (OC CPUs are slow; a per-     ║
+-- ║      block XOR across members would crawl).                ║
+-- ║    - A member removed -> only THAT member's files are      ║
+-- ║      lost; the rest of the pool stays readable. RAID-0     ║
+-- ║      would lose everything. That makes JBOD strictly       ║
+-- ║      safer than striping for OC use.                       ║
+-- ║    - It is a TRANSPORT (a union mount), not an access      ║
+-- ║      layer: securefs still mediates every op on the mount  ║
+-- ║      point, so per-user ACLs apply to the pool as a whole. ║
+-- ║                                                            ║
+-- ║  OPT-IN: this module is NOT loaded unless /etc/boot.cfg    ║
+-- ║  has advanced.jbod = true (default off). See the boot      ║
+-- ║  stage in kernel/init.lua and `man jbod` / `jbod` command. ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local serialize = require("kernel.serialize")
 local jbod = {}
 
+-- FNV-1a over a relative path. Used only to spread NEW files across
+-- members deterministically when none already holds the path and we have
+-- no free-space reason to prefer one — keeps a fresh pool from piling
+-- every file onto member #1. (Existing files and the free-space rule in
+-- pickWriteMember take precedence; this is just the tiebreak seed.)
 local function hashPath(p)
   local h = 0x811C9DC5
   for i = 1, #p do
@@ -10,15 +40,26 @@ local function hashPath(p)
   return h
 end
 
+-- ============================================================
+-- Pool proxy: looks like an OC filesystem component
+-- ============================================================
+-- `members` is an array of filesystem-component proxies (each with the
+-- usual exists/open/read/write/list/... surface). makePool returns:
+--   proxy  — mount this via kernel.fs.mount(path, proxy)
+--   pool   — a small management handle (members/add/remove/stats)
 function jbod.makePool(members)
   local proxy = {}
 
+  -- A mounted proxy needs an address; reuse the first member's so
+  -- df/mount listings show something stable.
   proxy.address = members[1] and members[1].address or "jbod"
 
   function proxy.getLabel()
     return "JBOD(" .. tostring(#members) .. ")"
   end
 
+  -- The pool is read-only only if EVERY member is read-only; a single
+  -- writable member makes the pool writable.
   function proxy.isReadOnly()
     for _, m in ipairs(members) do
       if m.isReadOnly() then return true end
@@ -26,6 +67,7 @@ function jbod.makePool(members)
     return false
   end
 
+  -- Capacity is the sum across members (the whole point of pooling).
   function proxy.spaceTotal()
     local sum = 0
     for _, m in ipairs(members) do sum = sum + (m.spaceTotal() or 0) end
@@ -37,6 +79,7 @@ function jbod.makePool(members)
     return sum
   end
 
+  -- A path exists in the pool if any member has it.
   function proxy.exists(rel)
     for _, m in ipairs(members) do
       if m.exists(rel) then return true end
@@ -58,7 +101,7 @@ function jbod.makePool(members)
     return 0
   end
   function proxy.lastModified(rel)
-
+    -- Most recent across members (a dir can exist on several).
     local latest = 0
     for _, m in ipairs(members) do
       if m.exists(rel) then
@@ -69,6 +112,8 @@ function jbod.makePool(members)
     return latest
   end
 
+  -- A directory listing is the UNION of members' listings, de-duplicated
+  -- (the same dir can exist on several members at once).
   function proxy.list(rel)
     local seen = {}
     local out = {}
@@ -89,6 +134,8 @@ function jbod.makePool(members)
     return out
   end
 
+  -- mkdir on every writable member that lacks the dir, so subsequent
+  -- writes (which may land on any member) always have the parent dir.
   function proxy.makeDirectory(rel)
     local ok = false
     for _, m in ipairs(members) do
@@ -102,6 +149,9 @@ function jbod.makePool(members)
     return ok
   end
 
+  -- Choose the member a write should go to:
+  --   1. the member that already holds the file (overwrite in place), else
+  --   2. the writable member with the most free space (spread the load).
   local function pickWriteMember(rel)
     for _, m in ipairs(members) do
       if m.exists(rel) and not m.isDirectory(rel) then return m end
@@ -118,6 +168,23 @@ function jbod.makePool(members)
     return best
   end
 
+  -- A pool handle MUST remember which member opened it. Members are
+  -- OpenComputers filesystem components (shell/panels/commands/admin.lua
+  -- builds pools straight from `component.proxy(addr)`), and a component's
+  -- open() returns an OPAQUE handle: reads are `member.read(handle, n)`,
+  -- with the handle as an argument, not a receiver. It has no methods of
+  -- its own.
+  --
+  -- This used to return the member's handle bare and forward with
+  -- `handle:read(n)`, which cannot work for any real member -- and since
+  -- the pool proxy is what kernel/fs.lua calls `proxy.read(h, n)` on, it
+  -- meant every read and write through a mounted pool errored. The unit
+  -- test missed it because its fake member returned a method-bearing
+  -- table, which no component does.
+  --
+  -- The wrapper carries the routing information; the `:read`/`:write`/
+  -- `:close`/`:seek` methods are kept so a caller holding the wrapper
+  -- directly still works.
   local function wrapHandle(member, h)
     local w = { member = member, h = h }
     function w:read(n)           return self.member.read(self.h, n) end
@@ -146,6 +213,10 @@ function jbod.makePool(members)
     return nil, "file not found in pool"
   end
 
+  -- Handle ops route back to the member that opened the handle. Which
+  -- member that was is the one thing the pool cannot rediscover later:
+  -- two members can hold the same path, so "search for it again" would
+  -- read one file and write another.
   function proxy.read(handle, n)
     return handle and handle.member.read(handle.h, n)
   end
@@ -160,7 +231,8 @@ function jbod.makePool(members)
   end
 
   function proxy.remove(rel)
-
+    -- The same path could exist on several members (e.g. a dir); remove
+    -- from all, and only report success if every copy is gone.
     local found = false
     local allOk = true
     for _, m in ipairs(members) do
@@ -181,15 +253,17 @@ function jbod.makePool(members)
     end
     if not srcMember then return false, "source not found in pool" end
     local dstMember = pickWriteMember(to)
-
+    -- Same member: a real in-place rename is cheap and atomic.
     if srcMember == dstMember then
       return srcMember.rename(from, to)
     end
-
+    -- Cross-member rename of a directory would mean walking + copying a
+    -- whole subtree across disks; refuse rather than do it half-way.
     if srcMember.isDirectory(from) then
       return false, "cross-member directory rename not supported"
     end
-
+    -- Cross-member file rename = copy to the destination member, then
+    -- drop the source. Chunked so a big file doesn't spike RAM.
     local rh = srcMember.open(from, "r")
     if not rh then return false, "cannot open source" end
     local parts = {}
@@ -206,6 +280,7 @@ function jbod.makePool(members)
     return true
   end
 
+  -- ── Management handle (not the mountable proxy) ──────────
   local pool = {}
   function pool.members() return members end
   function pool.addMember(newMember)
@@ -233,6 +308,11 @@ function jbod.makePool(members)
   return proxy, pool
 end
 
+-- ============================================================
+-- Config persistence (/etc/jbod.cfg)
+-- ============================================================
+-- Schema (serialized data, never load()'d as code):
+--   { pools = { { mount = "/mnt/pool", members = { "<fs-addr>", ... } }, ... } }
 local CONFIG_PATH = "/etc/jbod.cfg"
 
 function jbod.loadConfig(fsModule)

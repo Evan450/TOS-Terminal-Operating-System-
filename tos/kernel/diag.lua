@@ -1,3 +1,21 @@
+-- ╔══════════════════════════════════════╗
+-- ║  TOS Kernel - Diagnostics            ║
+-- ╚══════════════════════════════════════╝
+-- Health-check unit. Single function `diag.run(report)` walks the
+-- system, calling `report(line, severity)` for each finding. The shell
+-- `diag` command formats this with colors; cron / scripted callers
+-- can pass any collector they want.
+--
+-- Sections:
+--   * memory   — free/total/headroom
+--   * disks    — per-mount used/total, low-space warnings
+--   * peripherals — count + types, missing critical components
+--   * services — rc.d running/stopped/error
+--   * users    — locked accounts, failed-attempt counts
+--   * log      — recent ERROR/FATAL entries
+--   * security — first-boot still set, anchored manifest hash, etc.
+--   * trash    — usage vs cap (per-user)
+
 local computer  = require("computer")
 local component = require("component")
 
@@ -11,6 +29,10 @@ local SEVERITY = {
 }
 diag.SEVERITY = SEVERITY
 
+-- ============================================================
+-- Internal helpers
+-- ============================================================
+
 local function fmtBytes(n)
   if n >= 1048576 then return string.format("%.1f MB", n / 1048576) end
   if n >= 1024 then return string.format("%.1f KB", n / 1024) end
@@ -22,6 +44,10 @@ local function pctUsed(total, used)
   return math.floor((used or 0) * 100 / total)
 end
 
+-- ============================================================
+-- Section runners
+-- ============================================================
+
 local function checkMemory(R)
   local total = computer.totalMemory() or 0
   local free  = computer.freeMemory() or 0
@@ -32,7 +58,8 @@ local function checkMemory(R)
   elseif p > 75 then sev = "warn" end
   R(string.format("memory: %s used / %s total (%d%%)",
     fmtBytes(used), fmtBytes(total), p), sev)
-
+  -- Free below 16 KB is the OC danger zone where any allocation can
+  -- throw out-of-memory.
   if free < 16384 then
     R("  free memory critically low (< 16 KB)", "err")
   end
@@ -48,7 +75,11 @@ local function checkDisks(R)
     R("disks: no mounts visible", "warn"); return
   end
   R(string.format("disks: %d mount(s)", #mounts), "info")
-
+  -- #FIX (in-game, 2026-08-11) — a read-only root is the single fault
+  -- that makes every other diagnosis a lie: everything reports fine and
+  -- nothing you do about it persists. It surfaced as "Persist failed"
+  -- halfway through the First Boot password prompt, which named neither
+  -- the disk nor the cause. `doctor` should lead with it.
   if _G._TOS_ROOT_READONLY then
     R("  ROOT FILESYSTEM IS READ-ONLY — no change made here survives a reboot", "err")
     R("  (users, logs, packages and settings are all discarded; install to a", "err")
@@ -72,14 +103,14 @@ local function checkPeripherals(R)
     total = total + 1
   end
   R(string.format("peripherals: %d connected", total), "info")
-
+  -- Sort alphabetically for stable output.
   local types = {}
   for t in pairs(counts) do types[#types + 1] = t end
   table.sort(types)
   for _, t in ipairs(types) do
     R(string.format("  %-22s x %d", t, counts[t]), "ok")
   end
-
+  -- Critical components for a TOS boot:
   if not counts.gpu       then R("  no GPU detected", "err") end
   if not counts.screen    then R("  no screen detected", "err") end
   if not counts.eeprom    then R("  no EEPROM detected (BIOS reflash blocked)", "warn") end
@@ -113,7 +144,7 @@ local function checkUsers(R)
   local locked, firstBoot = 0, 0
   for _, u in ipairs(list) do
     if u.locked then locked = locked + 1 end
-
+    -- firstBoot may not be in the public projection; query via getUser.
     if U.getUser then
       local rec = U.getUser(u.username)
       if rec and rec.firstBoot then firstBoot = firstBoot + 1 end
@@ -128,7 +159,7 @@ local function checkUsers(R)
 end
 
 local function checkLog(R)
-
+  -- _G._TOS.log is a write-only adapter; the full module is at logObj.
   local log = _G._TOS and _G._TOS.logObj
   if not log or not log.recent then
     R("log: kernel.log not available", "warn"); return
@@ -149,21 +180,23 @@ end
 local function checkSecurity(R)
   local U = _G._TOS and _G._TOS.users
   if not U then R("security: users unavailable", "warn"); return end
-
+  -- BIOS-anchored manifest hash (C1). Only meaningful if anchored.
   local kernel = _G._TOS and _G._TOS.kernel
   if kernel and kernel.verifyManifestHash then
     local ok, why = kernel.verifyManifestHash()
     if ok then
       R("security: manifest hash matches EEPROM anchor", "ok")
     elseif why and why:find("no anchored hash") then
-
+      -- Name a command the operator can actually TYPE. This used to say
+      -- "run kernel.anchorManifestHash()", which is a kernel function with
+      -- no shell surface — advice nobody could follow.
       R("security: manifest hash not anchored in EEPROM " ..
         "(optional hardening — run 'verify anchor' as admin)", "warn")
     else
       R("security: manifest hash MISMATCH — " .. tostring(why), "err")
     end
   end
-
+  -- Trust DB summary.
   local trust = _G._TOS and _G._TOS.net and _G._TOS.net.trust
   if trust and trust.list then
     local peers = trust.list()
@@ -173,7 +206,10 @@ local function checkSecurity(R)
 end
 
 local function checkNotices(R)
-
+  -- Pending dialog boxes. On a CLI-shell or headless box nothing drains
+  -- them, so a queue that only grows is worth surfacing here — it means
+  -- some program has been trying to get an operator's attention and
+  -- failing.
   local ok, nf = pcall(require, "kernel.notify")
   if not ok or not nf or not nf.depth then return end
   local n = nf.depth()
@@ -200,13 +236,15 @@ end
 local function checkPower(R)
   local tos = _G._TOS or {}
   R(string.format("boot: session #%d", tos.bootCount or 0), "info")
-
+  -- Unsafe-shutdown detection (dirty bit at /var/run/pwrstate).
   if tos.unsafeShutdown then
     R("  last shutdown was UNSAFE (power loss / forced off)", "warn")
   else
     R("  last shutdown clean", "ok")
   end
-
+  -- Preemption watchdog breadcrumb (#REV finding #2): the scheduler
+  -- removes this the moment it regains control, so its survival means
+  -- the machine died to OC's yield watchdog — and names the culprit.
   local f = tos.fs
   if f and f.exists and f.readFile and f.exists("/var/crash/preempt.txt") then
     local crumb = f.readFile("/var/crash/preempt.txt")
@@ -214,7 +252,7 @@ local function checkPower(R)
     R("  runaway process before last reboot: " .. head, "warn")
     R("    (details: /var/crash/preempt.txt — delete after reviewing)", "info")
   end
-
+  -- Battery state (tablets only; power.statusString returns nil on AC).
   local pw = tos.power
   if pw and pw.statusString then
     local s = pw.statusString()
@@ -224,6 +262,10 @@ local function checkPower(R)
     end
   end
 end
+
+-- ============================================================
+-- Public API
+-- ============================================================
 
 local SECTIONS = {
   { name = "memory",      fn = checkMemory      },
@@ -238,6 +280,8 @@ local SECTIONS = {
   { name = "trash",       fn = checkTrash       },
 }
 
+--- Run every check, calling `report(line, severity)` for each line.
+--- Returns an aggregate { ok = N, info = N, warn = N, err = N }.
 function diag.run(report, opts)
   opts = opts or {}
   local counts = { ok = 0, info = 0, warn = 0, err = 0 }

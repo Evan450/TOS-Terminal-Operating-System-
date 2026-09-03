@@ -1,3 +1,18 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - Software SHA-256 (pure Lua 5.3)             ║
+-- ║                                                            ║
+-- ║  Extracted from kernel.crypto so it can be used WITHOUT    ║
+-- ║  the component/computer machine globals — the release      ║
+-- ║  build (build-disk.lua, standalone Lua) needs it to        ║
+-- ║  generate package file hashes. kernel.crypto still owns    ║
+-- ║  the hardware-accelerated path (data-card sha256) and only ║
+-- ║  falls back to this when no card is present.               ║
+-- ║                                                            ║
+-- ║  Pure: no require of component/computer/fs; Lua 5.3        ║
+-- ║  bitwise ops only. Returns 64-char lowercase hex, matching ║
+-- ║  a data card's sha256 -> hex.                              ║
+-- ╚══════════════════════════════════════════════════════════╝
+
 local sha256 = {}
 
 local function rrot(x, n) return ((x >> n) | (x << (32 - n))) & 0xFFFFFFFF end
@@ -15,9 +30,22 @@ local K = {
 
 local function tohex32(x) return string.format("%08x", x & 0xFFFFFFFF) end
 
+--- SHA-256 of a string → 64-char lowercase hex.
 function sha256.hex(msg)
   local bitLen = #msg * 8
 
+  -- The padded message is built as a STRING and indexed in place, the way
+  -- sha512.lua does it. This used to be
+  --     local bytes = { msg:byte(1, #msg) }
+  -- which returns ONE LUA VALUE PER BYTE and raises "stack overflow
+  -- (string slice too long)" past a few hundred thousand of them -- it
+  -- could not hash the one-million-'a' FIPS vector at all.
+  --
+  -- sha512.lua already carried a note calling this latent "on the grounds
+  -- that nothing feeds it a file today". That premise expired:
+  -- kernel/backup.lua hashes file BODIES through crypto.hash, and
+  -- crypto.hash falls back to this pure-Lua path whenever there is no
+  -- data card to do it in hardware.
   local padLen = 56 - ((#msg + 1) % 64)
   if padLen < 0 then padLen = padLen + 64 end
   local lenBytes = {}
@@ -32,7 +60,7 @@ function sha256.hex(msg)
   local w = {}
 
   for chunk = 1, #m, 64 do
-
+    -- message schedule
     for i = 0, 15 do
       local j = chunk + i*4
       w[i+1] =

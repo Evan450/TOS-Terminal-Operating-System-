@@ -1,3 +1,8 @@
+-- share - Request or list shared files from a trusted peer
+-- Usage: share <host> [path]
+--   share <host>          List /public/ on the remote peer
+--   share <host> <path>   Request a specific file
+
 local args = {...}
 if #args < 1 then
   print("Usage: share <host> [path]")
@@ -14,6 +19,7 @@ end
 local target = args[1]
 local path = args[2] or "/public/"
 
+-- Resolve target
 local peer = net.findPeer(target)
 if not peer then
   print("Unknown host: " .. target)
@@ -22,6 +28,9 @@ end
 
 local protocol = net.getProtocol()
 
+-- Register listeners BEFORE sending. net.onceFrom does peer-address
+-- filtering and one-shot de-dup; net.offAll cleans them all up in
+-- one call so an early send-failure can't leave dangling listeners.
 local gotResponse = false
 local listeners = {
   { type = protocol.TYPE.FILE_RES,

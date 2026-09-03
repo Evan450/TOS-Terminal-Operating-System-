@@ -1,3 +1,25 @@
+-- ╔═════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels Dialogs                         ║
+-- ║                                                     ║
+-- ║  Two registers of attention a developer can pick    ║
+-- ║  between, whatever the message:                      ║
+-- ║   • NON-INTRUSIVE - promptInput / promptSearch.     ║
+-- ║       A single line on the status row. The screen   ║
+-- ║       behind it stays put; the operator can ignore  ║
+-- ║       it. Good for ordinary input (filenames, find).║
+-- ║   • DIALOG BOX    - dialog / alert / confirm.       ║
+-- ║       A titled, framed box painted over the middle  ║
+-- ║       of the screen (the MS-DOS INSTALL/ERROR/      ║
+-- ║       GENERAL look) that blocks until the operator  ║
+-- ║       answers. It is a GENERAL primitive, not a     ║
+-- ║       danger siren: use it for anything that wants  ║
+-- ║       a focused yes/no/ack — installs, results,     ║
+-- ║       "are you sure". The `style` only chooses the  ║
+-- ║       colour; reserve the red (danger/error) styles ║
+-- ║       for the genuinely destructive so the colour   ║
+-- ║       still means something.                        ║
+-- ╚═════════════════════════════════════════════════════╝
+
 local M = {}
 
 local function pullSignal()
@@ -7,12 +29,23 @@ local function pullSignal()
   return require("computer").pullSignal(0.05)
 end
 
+-- Keep the END of a growing input visible: return the trailing `width`
+-- columns of `text`. A field that just `:sub(1, W)`'d clipped the cursor
+-- (and whatever you were typing — e.g. a long ".example" extension) off
+-- the right edge once the line filled; this scrolls it left to follow the
+-- cursor instead. Pure + testable.
 function M.scrollTail(text, width)
   width = math.max(0, math.floor(width or 0))
   if #text <= width then return text end
   return text:sub(#text - width + 1)
 end
 
+-- Fit a prompt MESSAGE to the row, middle-ellipsized. The TAIL is what
+-- carries the affordance ("? [y/N]: "), so an over-long message must
+-- lose its middle, never its end — `pkg from-floppy` built an 88-column
+-- question whose "[y/N]: " AND the echo of the typed answer both fell
+-- off the right edge of an 80-column screen. Also reserves ~10 columns
+-- so the typed input stays visible. Pure + testable.
 function M.fitPrompt(msg, width)
   msg = tostring(msg or "")
   local budget = math.max(12, math.floor(width or 80) - 10)
@@ -30,7 +63,8 @@ function M.promptInput(S, msg, maxLen, isPassword)
   while true do
     D.fill(1, OUT_ROW, W, 1, " ", T.fg, T.bg)
     local disp = isPassword and string.rep("*", #buf) or buf
-
+    -- Reserve room for the prompt + the trailing cursor, then scroll the
+    -- input so the cursor end stays on screen as it grows.
     local shown = M.scrollTail(disp, W - #msg - 1)
     D.set(1, OUT_ROW, (msg .. shown .. "_"):sub(1, W), T.title, T.bg)
     local sig, _, ch2, co2 = pullSignal()
@@ -47,6 +81,12 @@ function M.promptInput(S, msg, maxLen, isPassword)
   end
 end
 
+-- ============================================================
+-- Intrusive modal box (pure geometry, then the interactive shells)
+-- ============================================================
+
+-- Word-wrap `text` to `width` columns. Honours explicit newlines and
+-- hard-breaks any single word longer than the column. Pure + testable.
 function M.wrapText(text, width)
   width = math.max(1, math.floor(width or 40))
   local lines = {}
@@ -56,7 +96,7 @@ function M.wrapText(text, width)
     else
       local cur = ""
       for word in rawLine:gmatch("%S+") do
-        while #word > width do
+        while #word > width do            -- a single over-long token
           if cur ~= "" then lines[#lines + 1] = cur; cur = "" end
           lines[#lines + 1] = word:sub(1, width)
           word = word:sub(width + 1)
@@ -72,6 +112,9 @@ function M.wrapText(text, width)
   return lines
 end
 
+-- Lay a row of buttons out as a single string + per-button spans
+-- (1-based column ranges within the row). Used for both drawing and
+-- click hit-testing, so the two can never drift. Pure + testable.
 function M.layoutButtons(labels)
   local parts, spans, col = {}, {}, 1
   for i, lbl in ipairs(labels) do
@@ -84,14 +127,24 @@ function M.layoutButtons(labels)
   return table.concat(parts), spans, (col - 1)
 end
 
+-- Centre a content box (contentW x contentH interior, excluding the
+-- frame) on a W x H screen. Returns the outer rect {x,y,w,h}, clamped
+-- to the screen. Pure + testable.
 function M.boxRect(W, H, contentW, contentH)
-  local w = math.min(W, math.max(1, contentW) + 4)
-  local h = math.min(H, math.max(1, contentH) + 2)
+  local w = math.min(W, math.max(1, contentW) + 4)   -- frame + 1 pad each side
+  local h = math.min(H, math.max(1, contentH) + 2)   -- frame top + bottom
   local x = math.max(1, math.floor((W - w) / 2) + 1)
   local y = math.max(1, math.floor((H - h) / 2) + 1)
   return { x = x, y = y, w = w, h = h }
 end
 
+-- A dialog STYLE is pure presentation: which theme colour the frame and
+-- title wear. It is NOT a claim that the dialog is dangerous — a dialog
+-- box is a general way to talk to the operator (à la the MS-DOS
+-- INSTALL/ERROR/GENERAL boxes), usable for anything from "package
+-- installed" to "are you sure". Pick the style whose colour fits.
+--   info/install -> accent (title colour)   general/plain -> neutral
+--   warn -> warning (amber)                  danger/error  -> error (red)
 local STYLES = {
   info    = { frame = "title",   title = "title"   },
   install = { frame = "title",   title = "title"   },
@@ -101,55 +154,72 @@ local STYLES = {
   general = { frame = "border",  title = "fg"      },
   plain   = { frame = "border",  title = "fg"      },
 }
-
+-- Default title shown when a caller gives a style but no explicit title.
 local STYLE_TITLE = {
   info = "Information", install = "Install", warn = "Warning",
   danger = "Warning",  error = "Error",     general = "Message",
   plain = "Message",
 }
 
+-- Draw the dialog frame + contents and return the on-screen button rects
+-- (absolute columns) for click hit-testing. Single-line DOS frame with a
+-- centred "┤ Title ├" tab on the top border, an optional drop shadow, and
+-- a focus-highlighted button row. `focus` is the 1-based index of the
+-- highlighted button (or nil for none).
 local function drawDialog(S, style, title, lines, labels, focus, shadow)
   local D, T, W, H = S.D, S.T, S.W, S.H
   local meta = STYLES[style] or STYLES.general
   local frameColor = T[meta.frame] or T.border or T.fg
   local titleColor = T[meta.title] or T.fg
   title = title or ""
-
+  -- Visual grammar rule 1: dialogs are MODAL, so they wear the
+  -- double-line frame (+ the existing ▓-tinted shadow). Passive
+  -- containers (tiles, panes) keep single-line — see ui.drawTile.
   local titleTab = (title ~= "") and ("╡ " .. title .. " ╞") or nil
-  local titleCols = titleTab and (#title + 4) or 0
+  local titleCols = titleTab and (#title + 4) or 0   -- title is ASCII: bytes == cols
 
   local btnRow, spans, btnW = M.layoutButtons(labels)
   local contentW = math.max(titleCols - 2, btnW)
   for _, l in ipairs(lines) do contentW = math.max(contentW, #l) end
-  local contentH = #lines + 2
+  local contentH = #lines + 2                 -- blank + button row
 
   local r = M.boxRect(W, H, contentW, contentH)
-  local interior = r.w - 2
+  local interior = r.w - 2                     -- columns between the side frames
   local bg = T.panel_bg or T.bg
 
+  -- Drop shadow first (offset one row down / one col right), so the box
+  -- paints on top. A near-black tint; on a black theme it just blends in
+  -- harmlessly, on a lighter theme it reads as depth like the DOS look.
   if shadow ~= false then
     local sh = 0x1A1A1A
-    D.set(r.x + 1, r.y + r.h, string.rep(" ", r.w), sh, sh)
+    D.set(r.x + 1, r.y + r.h, string.rep(" ", r.w), sh, sh)         -- bottom edge
     for row = 1, r.h do
-      D.set(r.x + r.w, r.y + row, " ", sh, sh)
+      D.set(r.x + r.w, r.y + row, " ", sh, sh)                      -- right edge
     end
   end
 
+  -- Frame. Each box char is one column but 3 bytes — draw whole runs and
+  -- never byte-slice them (a column-count :sub would cut one in half and
+  -- corrupt the line on a real Unicode GPU).
   D.set(r.x, r.y, "╔" .. string.rep("═", interior) .. "╗", frameColor, bg)
   for row = 1, r.h - 2 do
     D.set(r.x, r.y + row, "║" .. string.rep(" ", interior) .. "║", frameColor, bg)
   end
   D.set(r.x, r.y + r.h - 1, "╚" .. string.rep("═", interior) .. "╝", frameColor, bg)
 
+  -- Centre the "╡ Title ╞" tab on the top border (interior >= titleCols by
+  -- construction). Drawn whole, in the title colour, over the ═ run.
   if titleTab then
     local off = math.max(0, math.floor((interior - titleCols) / 2))
     D.set(r.x + 1 + off, r.y, titleTab, titleColor, bg)
   end
 
+  -- Message lines (left-aligned, one pad column in).
   for i, l in ipairs(lines) do
     D.set(r.x + 2, r.y + i, l:sub(1, interior - 2), T.fg, bg)
   end
 
+  -- Button row, centred in the interior.
   local rowY = r.y + #lines + 2
   local off = math.max(0, math.floor((interior - btnW) / 2))
   local baseX = r.x + 1 + off
@@ -166,8 +236,12 @@ local function drawDialog(S, style, title, lines, labels, focus, shadow)
   return rects
 end
 
+-- Block until one of the buttons is chosen. Keyboard: Left/Right or Tab
+-- move focus, Enter accepts, Esc picks `escIndex`, and any label's first
+-- letter is a hotkey. Touch: a click inside a button rect picks it.
+-- Returns the 1-based index of the chosen button.
 local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow)
-
+  -- Build a first-letter hotkey map (lowercased).
   local hot = {}
   for i, l in ipairs(labels) do
     local c = l:sub(1, 1):lower()
@@ -177,11 +251,13 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
     local rects = drawDialog(S, style, title, lines, labels, focus, shadow)
     local sig, _, b, c = pullSignal()
     if sig == "key_down" then
-      if c == 28 then return focus
-
-      elseif c == 1 or b == 17 then return escIndex
-      elseif c == 203 then focus = (focus > 1) and (focus - 1) or #labels
-      elseif c == 205 or c == 15 then
+      if c == 28 then return focus                       -- Enter
+      -- ^Q cancels. Esc is still accepted, but it never arrives in real
+      -- Minecraft (it closes the screen GUI), so a dialog that offered
+      -- only Esc was a dialog with no way out but answering it.
+      elseif c == 1 or b == 17 then return escIndex      -- ^Q / Esc
+      elseif c == 203 then focus = (focus > 1) and (focus - 1) or #labels   -- Left
+      elseif c == 205 or c == 15 then                    -- Right / Tab
         focus = (focus < #labels) and (focus + 1) or 1
       elseif b and b >= 32 and b < 127 then
         local i = hot[string.char(b):lower()]
@@ -195,6 +271,22 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
   end
 end
 
+--- GENERAL dialog box — the reusable primitive. Shows a titled, framed,
+--- centred box with a wrapped message and one or more buttons, and blocks
+--- until the operator picks one. Returns the chosen button's 1-based index.
+--- `opts` = {
+---   title    = string,                       -- centred on the top border
+---   message  = string,                       -- body (word-wrapped)
+---   buttons  = { "OK" } | {"Yes","No"} | ..., -- labels, left to right
+---   style    = "info"|"install"|"warn"|"danger"|"error"|"general",
+---   default  = index of the initially-focused button (default 1),
+---   escIndex = index returned on Esc (default last button),
+---   shadow   = false to suppress the drop shadow,
+---   redraw   = function() called to repaint under the box afterwards,
+--- }
+--- Use this for ANY interruptive prompt — install confirmations, results,
+--- "are you sure" — not only dangerous ones. For a quiet, non-intrusive
+--- prompt that stays on the status row instead, use M.promptInput.
 function M.dialog(S, opts)
   opts = opts or {}
   local style  = opts.style or opts.severity or "general"
@@ -208,6 +300,9 @@ function M.dialog(S, opts)
   return pick
 end
 
+-- Convenience: a one-button acknowledgement box. Returns true once
+-- dismissed. Defaults to the "info" style (override with opts.style or
+-- opts.severity). opts: { title, style/severity, ok=label, shadow, redraw }.
 function M.alert(S, message, opts)
   opts = opts or {}
   M.dialog(S, {
@@ -221,6 +316,10 @@ function M.alert(S, message, opts)
   return true
 end
 
+-- Convenience: a yes/no box. Returns true for yes, false for no/cancel
+-- (Esc and the No button both mean false). Defaults to the "danger" style
+-- and focuses the safe (No) choice. opts: { title, style/severity,
+-- yes=label, no=label, default="yes"|"no", shadow, redraw }.
 function M.confirm(S, message, opts)
   opts = opts or {}
   local pick = M.dialog(S, {
@@ -240,7 +339,7 @@ function M.promptSearch(S, currentTerm)
   local buf = currentTerm or ""
   while true do
     D.fill(1, H, W, 1, " ", T.fg, T.bg)
-    local shown = M.scrollTail(buf, W - 7)
+    local shown = M.scrollTail(buf, W - 7)   -- "Find: " + cursor
     D.set(1, H, ("Find: " .. shown .. "_"):sub(1, W), T.title, T.bg)
     local sig, _, ch2, co2 = pullSignal()
     if sig == "key_down" then

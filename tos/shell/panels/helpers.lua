@@ -1,5 +1,12 @@
+-- ╔══════════════════════════════════════════════════════╗
+-- ║  TOS Shell - Panels Helpers                          ║
+-- ║  Path, file, text, and permission utility functions  ║
+-- ╚══════════════════════════════════════════════════════╝
+
 local computer = require("computer")
 local M = {}
+
+-- ── Path / file helpers ─────────────────────────────
 
 function M.resolvePath(S, p)
   if not p or p == "" then return S.cwd end
@@ -39,7 +46,8 @@ function M.loadFiles(S, b)
     b.files[#b.files + 1] = { name = name, dir = isDir, sz = sz }
   end
   if b.sel > #b.files then b.sel = math.max(1, #b.files) end
-
+  -- Free space on THIS path's mount, cached here so the summary rail
+  -- (draw.sumRail) repaints without touching the filesystem per frame.
   b.freeStr = nil
   pcall(function()
     local best, bestLen = nil, -1
@@ -81,6 +89,19 @@ function M.selPath(S)
   return S.F.join(S.browser.path, f.name), f
 end
 
+-- ── Removable-disk classification ──────────────────
+-- Identify what an inserted/mounted disk IS so the shell can guide the
+-- operator to the right next step (the "auto-detect & guide on insert"
+-- feature). Pure F (kernel filesystem) reads, no side effects. Shared by
+-- the component_added handler (one-line hint) and the `disk` command
+-- (full detail) so the two never describe the same disk differently.
+-- Returns { kind, desc, hint } where:
+--   kind: "tos-install" | "optional-utilities" | "package-repo"
+--       | "package" | "module" | "data"
+--   desc: short human label
+--   hint: the single most useful next action, or nil
+-- Detection order is significant: a TOS install disk also carries a
+-- root install.lua, so the whole-OS check must precede the picker check.
 function M.classifyDisk(F, mnt)
   if not F or not mnt or mnt == "" then return { kind = "data", desc = "disk" } end
   local function exists(p)
@@ -97,7 +118,9 @@ function M.classifyDisk(F, mnt)
     end
     return names
   end
-
+  -- Does `dir` directly contain at least one <name>/package.lua? Defence-in-
+  -- depth: a list entry is one path component, but skip separators/dot-
+  -- segments so the existence probe can't be steered outside the mount.
   local function hasPackageDir(dir)
     for _, n in ipairs(listNames(dir)) do
       local clean = n:gsub("/$", "")
@@ -110,27 +133,37 @@ function M.classifyDisk(F, mnt)
     return false
   end
 
+  -- Whole-OS install image (deploy output): the TOS kernel + installer.
   if has("tos/kernel/init.lua") then
     return { kind = "tos-install", desc = "TOS install disk",
       hint = "(install image — run its install.lua on the target machine)" }
   end
 
+  -- Repo layout: one subdirectory per package, each holding a package.lua —
+  -- AT the disk root...
   if hasPackageDir(mnt) then
-
+    -- An Optional Utilities disk is now identified by its SET MANIFEST, not
+    -- by carrying a copy of the installer. That is both more accurate (the
+    -- manifest is what makes it a set rather than a loose pile of packages)
+    -- and necessary — the picker moved into the base image, so the disks
+    -- stopped shipping install.lua at all.
     if has("optutil-set.lua") then
       return { kind = "optional-utilities", desc = "Optional Utilities disk",
         hint = "pkg install" }
     end
     return { kind = "package-repo", desc = "package repo disk", hint = "pkg install" }
   end
-
+  -- ...or ONE LEVEL DOWN. This covers a disk where the whole
+  -- dist/optional-utilities FOLDER was copied on (so the packages sit under
+  -- /mnt/<disk>/optional-utilities/) instead of its contents — a very easy
+  -- mistake that otherwise reads as a blank "data" disk.
   for _, n in ipairs(listNames(mnt)) do
     local clean = n:gsub("/$", "")
     if clean ~= "" and clean ~= "." and clean ~= ".." and not clean:find("[/\\]") then
       local sub = F.join(mnt, clean)
       if hasPackageDir(sub) then
         if exists(F.join(sub, "optutil-set.lua")) then
-
+          -- Nested layout, same rule as above.
           return { kind = "optional-utilities", desc = "Optional Utilities disk",
             hint = "pkg install" }
         end
@@ -139,11 +172,12 @@ function M.classifyDisk(F, mnt)
     end
   end
 
+  -- Single-package disk: a bare manifest at the root.
   if has("package.lua") then
     return { kind = "package", desc = "single-package disk",
       hint = "disk install " .. mnt }
   end
-
+  -- Legacy module disk (pre-pkg module.cfg format).
   if has("module.cfg") then
     return { kind = "module", desc = "module disk (legacy)",
       hint = "disk install " .. mnt }
@@ -151,6 +185,13 @@ function M.classifyDisk(F, mnt)
   return { kind = "data", desc = "data / blank disk" }
 end
 
+-- Scan mounted removable media for the first ACTIONABLE disk (anything
+-- classifyDisk recognizes as non-"data" — an install image, package repo,
+-- Optional Utilities disk, single package, or legacy module). The hot-plug
+-- auto-detect only fires on INSERT, so a disk already in the drive at boot
+-- would otherwise never be announced; the shell calls this once at startup
+-- to surface it. Returns the classification table (with .mountPoint/.label
+-- added) or nil when there's nothing worth surfacing.
 function M.scanMountedMedia(F)
   if not F or not F.mounts then return nil end
   local ok, mnts = pcall(F.mounts)
@@ -168,6 +209,12 @@ function M.scanMountedMedia(F)
   return nil
 end
 
+-- Decide the LIGHTEST surface for a command's `n` wrapped output lines, so a
+-- few lines of result don't open a whole tab the operator has to close:
+--   "none"   nothing to show
+--   "status" one line on the status row (OUT_ROW)
+--   "inline" a transient multi-line region just above the prompt
+--   "tab"    a real scrollable view tab (only for genuinely long output)
 function M.routeOutput(n, maxInline)
   n = tonumber(n) or 0
   if n <= 0 then return "none" end
@@ -176,6 +223,10 @@ function M.routeOutput(n, maxInline)
   return "tab"
 end
 
+-- Tab-completion core. Given a `prefix` and `candidates`, return the longest
+-- string all matching candidates share (≥ prefix), plus the list of matches.
+-- One match → the full candidate; several → the common prefix (extends the
+-- input as far as is unambiguous); none → the prefix unchanged. Pure.
 function M.completeToken(prefix, candidates)
   prefix = prefix or ""
   local matches = {}
@@ -193,9 +244,15 @@ function M.completeToken(prefix, candidates)
   return cp, matches
 end
 
+-- Complete the LAST token of a shell `cmdline`. The first word completes
+-- against `cmds` (command names); a later word is a path, completed against
+-- `listDir(dirPart)` -> array of { name=, dir=bool } (the caller resolves the
+-- directory). Returns the new cmdline + the match list (for showing on
+-- ambiguity). A lone command match gets a trailing space; a lone directory
+-- match gets a trailing "/". Pure given `listDir`.
 function M.completeCmdline(cmdline, cmds, listDir)
   local before, token = (cmdline or ""):match("^(.-)(%S*)$")
-  if not before:find("%S") then
+  if not before:find("%S") then            -- still on the first word: a command
     local comp, matches = M.completeToken(token, cmds or {})
     if #matches == 1 then comp = comp .. " " end
     return before .. comp, matches
@@ -215,15 +272,23 @@ function M.completeCmdline(cmdline, cmds, listDir)
   return before .. dirPart .. comp, matches
 end
 
+-- Horizontal scroll for the command line: given the string length, the 1-based
+-- cursor index (1 .. len+1, where len+1 means "after the last char") and the
+-- number of columns `avail` available for text, return the count of leading
+-- chars to hide so the cursor cell stays visible. Pure; unit-tested. Keeps the
+-- cursor at the right edge once you type past the visible width, and slides back
+-- left when you move the cursor toward the start.
 function M.cmdScroll(len, cursor, avail)
   if avail < 1 then avail = 1 end
-  local cur0 = (cursor or (len + 1)) - 1
+  local cur0 = (cursor or (len + 1)) - 1      -- 0-based column of the cursor
   if cur0 < 0 then cur0 = 0 elseif cur0 > len then cur0 = len end
   local hs = 0
   if cur0 > avail - 1 then hs = cur0 - (avail - 1) end
   if hs < 0 then hs = 0 end
   return hs
 end
+
+-- ── Text helpers ──────────────────────────────────
 
 function M.wrapLine(text, width)
   if #text <= width then return { text } end
@@ -243,7 +308,13 @@ end
 
 function M.expandBuf(S, rawBuf)
   local out = {}
-
+  -- #REV — wrap to the VIEWER's content width, not the full screen width.
+  -- A view tab draws a line-number gutter on T2+ (viewW = W - gutterW) and
+  -- then truncates each line to viewW. expandBuf used to wrap to the full
+  -- S.W, so the rightmost gutter-width characters were clipped at draw
+  -- time — the "'or' becomes 'o', 'r' off-screen" bug. Reserve a fixed 6
+  -- columns on T2+ (enough for the gutter of any output up to 99,999
+  -- lines) so a wrapped line always fits inside viewW without re-clipping.
   local reserve = (S.tier and S.tier >= 2) and 6 or 0
   local wrapW = math.max(8, S.W - reserve)
   for _, e in ipairs(rawBuf) do
@@ -256,6 +327,11 @@ function M.expandBuf(S, rawBuf)
   return out
 end
 
+-- Pre-built printf format strings for the line-number gutter, keyed by
+-- gutter width. Building "%Nd " from scratch on every visible line on
+-- every redraw burns string concatenations; the gutter width changes
+-- rarely (only when a file crosses a power of 10), so the cache holds
+-- ~3 entries in practice.
 local lineNumFmtCache = {}
 
 function M.formatLineNum(n, gutterW)
@@ -267,6 +343,7 @@ function M.formatLineNum(n, gutterW)
   return string.format(fmt, n)
 end
 
+-- Safe pad: avoids string.format width limit of 99
 function M.padR(s, w)
   s = tostring(s)
   if #s >= w then return s:sub(1, w) end
@@ -279,9 +356,22 @@ function M.padL(s, w)
   return string.rep(" ", w - #s) .. s
 end
 
+-- ── Permission helpers ────────────────────────────
+-- TIER constants: GUEST=0, USER=1, ADMIN=2, ROOT=3
+
+-- #SEC M-7 — resolve the LIVE tier from the seat's session rather than the
+-- cached S.userTier snapshot taken at panel construction. Without this, an
+-- admin demoted (or whose session expired) mid-session keeps elevated
+-- command access until they re-login. Fail closed: if a seat token exists
+-- but no live session resolves (expired/revoked), drop to GUEST(0). Only
+-- fall back to the cached value for token-less contexts (e.g. kernel REPL).
 function M.liveTier(S)
   if S and S.U and S.st then
-
+    -- Resolve ONLY the seat token's session — do NOT fall back to the
+    -- module-global currentSession() here. If this seat's token has
+    -- expired/been revoked, the seat is no longer authenticated and must
+    -- drop to GUEST, regardless of what some other seat's global session
+    -- says.
     if S.U.getSession then
       local s = S.U.getSession(S.st)
       if s and type(s.tier) == "number" then return s.tier end
@@ -293,7 +383,7 @@ end
 
 function M.rootOnly(S, o)
   if M.liveTier(S) < 3 then
-
+    -- Record the denial so `why` (no args) can explain it after the fact.
     S.lastDenial = { cmd = S.curCmd, need = 3, have = M.liveTier(S) }
     local msg = "Permission denied: root only"
     if o then o(msg, S.T.error) else S.lastOut = { msg, S.T.error } end
@@ -312,12 +402,17 @@ function M.adminOnly(S, o)
   return true
 end
 
+-- Pure: the human name of a tier number (0..3). Used by `why`.
 function M.tierName(n)
   n = tonumber(n) or 0
   return ({ [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" })[n]
     or ("tier " .. n)
 end
 
+-- Pure: explain whether a command `cmd` (needing tier `need`) is runnable at the
+-- caller's tier `have`. `known` = is it a real command. Returns an array of
+-- { text=, tone= } where tone ∈ title/ok/err/fix/dim — the caller maps tone to a
+-- theme colour. Unit-tested off-box (test_why.lua); the `why` command renders it.
 function M.whyExplain(cmd, need, have, known)
   local out = {}
   local function add(t, tone) out[#out + 1] = { text = t, tone = tone } end
@@ -376,19 +471,32 @@ function M.logout(S)
   if S and S.E and S.E.push then S.E.push("tos_logout", S.displayIdx) end
 end
 
+-- #REV (#9) — power-off policy. Reboot/shutdown halt the WHOLE machine,
+-- killing every seat's session, so a non-admin may only do it when they are
+-- the SOLE active operator. ADMIN+ may always power off. Returns (ok,
+-- reason). Logout is per-seat and not gated by this.
 function M.canPowerOff(S)
-  if M.liveTier(S) >= 2 then return true end
-
+  if M.liveTier(S) >= 2 then return true end  -- admin/root always may
+  -- Count seats with a live shell (active operators).
   local n = 0
   local pids = _G._TOS and _G._TOS.shellPIDs
   if type(pids) == "table" then
     for _, pid in pairs(pids) do if pid then n = n + 1 end end
   end
-  if n <= 1 then return true end
+  if n <= 1 then return true end  -- sole operator — fine
   return false, n .. " operators are logged in. Ask an admin to power off, "
     .. "or wait for the others to log out."
 end
 
+-- #SEC CR-9 — resolve the principal BOUND TO THIS SEAT. The panel state
+-- carries the seat's login token (S.st); resolve it to the live session
+-- TABLE. We must NOT rely on users.currentSession() for ACL decisions:
+-- logins use setCurrent=false, so the module-global is nil (single-seat)
+-- or another seat's session (multi-seat) — either way the wrong principal.
+-- Falls back to currentSession() only when no seat token is present
+-- (e.g. the kernel REPL). Always returns a session table or nil — never a
+-- raw token (passing a token where a session is expected silently fails
+-- every tier check).
 function M.sessionOf(S)
   if S and S.U then
     if S.st and S.U.getSession then
@@ -405,15 +513,17 @@ end
 
 function M.canAccess(S, path, mode, o)
   if S.U then
-
+    -- #SEC C8/CR-9 — check against the seat-bound session, not the global.
     local session = M.sessionOf(S)
     local ok, reason
     if session and S.U.canAccessAs then
       ok, reason = S.U.canAccessAs(session, path, mode)
     elseif S.U.canAccess then
-      ok, reason = S.U.canAccess(path, mode)
+      ok, reason = S.U.canAccess(path, mode)  -- legacy back-compat only
     else
-
+      -- #SEC M-8 — fail CLOSED: the users module is present but exposes no
+      -- usable access-check API (or no session resolved). Denying is safer
+      -- than granting on a half-initialised auth subsystem.
       ok, reason = false, "access check unavailable"
     end
     if not ok then
@@ -440,12 +550,19 @@ end
 function M.canWrite(S, path, o) return M.canAccess(S, path, "w", o) end
 function M.canRead(S, path, o)  return M.canAccess(S, path, "r", o) end
 
+-- ============================================================
+-- External program resolution (shared by the executor and `which`)
+-- ============================================================
 --! #SEC H9 — an unqualified command name resolves only against a fixed set
 --! of system bin directories. PATH is honoured only where its entries are
 --! also on the safe list: anything under /mnt, /tmp, /public, /home or
 --! /root is REJECTED, so an attacker setting PATH=/mnt/floppy:/bin and
 --! running `ls` cannot silently shadow the system binary.
-
+--
+-- This lived inline in executor.lua until `which` needed the same answer.
+-- Two copies of a security rule is one copy too many — the whole point of
+-- `which` is to report what the executor WILL run, and it can only do that
+-- honestly by asking the same code.
 M.SYSTEM_BIN_DIRS  = { "/bin", "/usr/bin", "/tos/shell" }
 M.UNSAFE_PREFIXES  = { "/mnt/", "/tmp/", "/public/", "/home/", "/root/" }
 
@@ -469,6 +586,14 @@ function M.dirIsSafe(dir)
   return true
 end
 
+-- ============================================================
+-- Command aliases (per-user, stored in ~/.profile.cfg)
+-- ============================================================
+-- Loaded LAZILY on first dispatch and cached on S, rather than at login:
+-- the boot path is the most-tested code in the shell and an alias table is
+-- not worth a new step in it. `alias`/`unalias` call M.invalidateAliases so
+-- an edit takes effect on the next command, not the next login.
+--
 --! An alias carries NO privilege. It is expanded before dispatch, so the
 --! expansion meets exactly the same tier gates as if it had been typed —
 --! aliasing a name to an admin command does not make it runnable. The
@@ -492,6 +617,14 @@ end
 
 function M.invalidateAliases(S) S._aliases = nil end
 
+--- Expand a leading alias in an already-tokenized command.
+--- Returns the (possibly rewritten) parts array.
+--
+-- Expansion is repeated so `alias ll='ls -l'` + `alias l=ll` works, but a
+-- name is only ever expanded ONCE per chain: `alias ls='ls -a'` must run
+-- the real `ls`, not recurse until the stack gives out. That self-reference
+-- is the single most common alias people write, so it has to be the case
+-- that works rather than the case that hangs the seat.
 local ALIAS_MAX_DEPTH = 8
 function M.expandAlias(S, parts)
   if type(parts) ~= "table" or #parts == 0 then return parts end
@@ -513,12 +646,21 @@ function M.expandAlias(S, parts)
   return parts
 end
 
+--- Whitespace tokenizer for alias expansions (quotes are already resolved
+--- by the executor's tokenizer when the alias was DEFINED, so the stored
+--- string is plain). Deliberately not the executor's full quote-aware
+--- tokenizer: re-parsing quotes here would let a stored alias smuggle
+--- quoting through a second round of interpretation.
 function M.tokenizeSimple(s)
   local t = {}
   for word in tostring(s):gmatch("%S+") do t[#t + 1] = word end
   return t
 end
 
+--- Resolve `name` to an executable file path, or nil.
+--- Returns (path, source) where source is "system" (a trusted bin dir) or
+--- "path" (an allowed PATH entry) — `which` reports the difference because
+--- "it came from your PATH" is the interesting half of the answer.
 function M.resolveProgram(F, name)
   if type(name) ~= "string" or name == "" then return nil end
   local function probe(dir)

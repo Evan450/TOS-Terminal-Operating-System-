@@ -1,3 +1,19 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Compat - OpenOS `internet` library                   ║
+-- ║                                                            ║
+-- ║  require("internet") as OpenOS programs expect it:          ║
+-- ║    internet.request(url, [data], [headers], [method])       ║
+-- ║        -> iterator function; call it for the next chunk,    ║
+-- ║           nil at end of stream                              ║
+-- ║    internet.socket(address, [port])  -> stream              ║
+-- ║    internet.open(address, [port])    -> buffered stream     ║
+-- ╚══════════════════════════════════════════════════════════╝
+--
+-- Faithful to OpenOS's contract, including the parts that are awkward:
+-- `request` ERRORS (rather than returning nil, err) when there is no card
+-- or the request is refused, because that is what OpenOS does and porting
+-- a program should not mean rewriting its error handling.
+--
 --! This shim reaches the internet card DIRECTLY, exactly as the OpenOS
 --! library does — an OpenOS program's `internet.request` is expected to
 --! stream, and routing it through kernel.internet's bounded string reader
@@ -29,6 +45,8 @@ local function card()
   return p
 end
 
+-- Cooperative slice: an OpenOS read loop polls until bytes arrive, and on
+-- one shared CPU that would otherwise starve every other seat.
 local function pause()
   local okP, proc = pcall(require, "kernel.process")
   if okP and proc and proc.yieldCooperative then
@@ -39,6 +57,9 @@ local function pause()
   if okE and ev and ev.pull then pcall(ev.pull, 0) end
 end
 
+--- OpenOS internet.request. Returns a callable that yields body chunks and
+--- nil at end of stream; the handle's own methods (read/close/response)
+--- remain reachable through __index, as in OpenOS.
 function internet.request(url, data, headers, method)
   checkArg(1, url, "string")
   checkArg(2, data, "string", "table", "nil")
@@ -48,6 +69,7 @@ function internet.request(url, data, headers, method)
   local inet = card()
   if not inet then error("no primary internet card found", 2) end
 
+  -- OpenOS accepts POST data as a table and form-encodes it.
   local post
   if type(data) == "string" then
     post = data
@@ -73,17 +95,18 @@ function internet.request(url, data, headers, method)
         if not chunk then
           pcall(function() request.close() end)
           if err then error(err, 2) end
-          return nil
+          return nil                    -- end of stream
         elseif #chunk > 0 then
           return chunk
         end
-        pause()
+        pause()                         -- no data yet: let other seats run
       end
     end,
     __index = request,
   })
 end
 
+-- ── Socket streams ──────────────────────────────────────────
 local socketStream = {}
 
 function socketStream:close()
@@ -102,7 +125,8 @@ end
 
 function socketStream:write(value)
   if not self.socket then return nil, "connection is closed" end
-
+  -- A socket write is not guaranteed to take the whole buffer; loop until
+  -- it does (OpenOS does the same) or the far end refuses.
   while #value > 0 do
     local written, reason = self.socket.write(value)
     if not written then return nil, reason end

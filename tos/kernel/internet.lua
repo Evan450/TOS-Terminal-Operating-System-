@@ -1,3 +1,21 @@
+-- ╔══════════════════════════════════════════════════════════╗
+-- ║  TOS Kernel - Internet card transport                     ║
+-- ║                                                            ║
+-- ║  ONE place that answers "can this machine reach outside    ║
+-- ║  the world, and how much of it may it pull in?" — so pkg,  ║
+-- ║  the compat shim, sysinfo and the `internet` command all   ║
+-- ║  agree, and so every size/timeout bound lives together     ║
+-- ║  instead of once per caller.                               ║
+-- ║                                                            ║
+-- ║  An OpenComputers internet card offers two things, each    ║
+-- ║  separately switchable in the mod's own config:            ║
+-- ║    HTTP  — request(url, [postData], [headers], [method])   ║
+-- ║    TCP   — connect(host:port)  (raw sockets)               ║
+-- ║  A card with HTTP disabled server-side is present and      ║
+-- ║  useless; status() reports the difference so an operator    ║
+-- ║  is told "your server has HTTP off" rather than "failed".  ║
+-- ╚══════════════════════════════════════════════════════════╝
+--
 --! THREAT MODEL — read before widening anything here.
 --!
 --! This module is the first way code on a TOS machine can reach a system
@@ -34,11 +52,17 @@ local internet = {}
 local log    = nil
 local config = nil
 
-local DEFAULT_MAX_BYTES   = 64 * 1024
-local HARD_MAX_BYTES      = 512 * 1024
-local DEFAULT_TIMEOUT     = 15
+-- ============================================================
+-- Bounds
+-- ============================================================
+-- These are sized for OpenComputers, not for a desktop. A Tier 1 machine
+-- has 192 KB of RAM in TOTAL; a response held as a Lua string is real RAM,
+-- so "just read it all" is how you OOM a machine from a web page.
+local DEFAULT_MAX_BYTES   = 64 * 1024   -- string reads (internet.get)
+local HARD_MAX_BYTES      = 512 * 1024  -- ceiling on any configured value
+local DEFAULT_TIMEOUT     = 15          -- seconds of no progress
 local MAX_REDIRECTS       = 3
-local READ_CHUNK_YIELD    = 8
+local READ_CHUNK_YIELD    = 8           -- yield to other seats every N chunks
 
 internet.DEFAULT_MAX_BYTES = DEFAULT_MAX_BYTES
 internet.DEFAULT_TIMEOUT   = DEFAULT_TIMEOUT
@@ -49,12 +73,16 @@ function internet.init(modules)
   config = modules.config
 end
 
+-- ============================================================
+-- URL vetting
+-- ============================================================
 --! Only http/https. An OC internet card's request() will happily be handed
 --! whatever string you give it, and a scheme we have not thought about is a
 --! surface we have not thought about. Control characters are refused
 --! outright: a newline in a URL is how header injection starts.
 local ALLOWED_SCHEMES = { http = true, https = true }
 
+--- Validate a URL for use with request(). Returns ok, scheme|err, host.
 function internet.parseUrl(url)
   if type(url) ~= "string" or url == "" then return false, "empty URL" end
   if #url > 2048 then return false, "URL too long" end
@@ -67,7 +95,8 @@ function internet.parseUrl(url)
   end
   local hostport = rest:match("^([^/?#]+)") or ""
   if hostport == "" then return false, "URL has no host" end
-
+  -- Strip any userinfo; a "user:pass@host" URL is a phishing shape and the
+  -- credentials would be logged by anything that echoes the URL back.
   if hostport:find("@", 1, true) then
     return false, "URL must not contain credentials"
   end
@@ -75,12 +104,16 @@ function internet.parseUrl(url)
   return true, scheme, host:lower()
 end
 
+--- The host part of a URL, lower-cased, or nil.
 function internet.hostOf(url)
   local ok, _, host = internet.parseUrl(url)
   if not ok then return nil end
   return host
 end
 
+-- ============================================================
+-- Card detection
+-- ============================================================
 local function card()
   local addr = component.list("internet")()
   if not addr then return nil end
@@ -89,6 +122,10 @@ local function card()
   return p, addr
 end
 
+--- Is internet access usable right now? Reports WHY not, because the three
+--- reasons an operator hits are genuinely different problems: no card
+--- installed, the mod's server config has HTTP off, or an admin here has
+--- switched it off in /etc/tos.cfg.
 function internet.status()
   local st = {
     present = false, http = false, tcp = false,
@@ -116,6 +153,11 @@ function internet.available()
   return st.present and st.http and st.enabled
 end
 
+--- Machine-wide kill switch. A card is installed by a deliberate physical
+--- act, so the default when one is present is ON — requiring both a card
+--- and a config toggle is friction without a matching gain. The switch
+--- exists for the shared box where the card is wanted for one service and
+--- not for everybody.
 function internet.isEnabled()
   if not config or not config.get then return true end
   local v = config.get("internet")
@@ -123,6 +165,9 @@ function internet.isEnabled()
   return v ~= false and v ~= "false" and v ~= "off" and v ~= 0
 end
 
+-- ============================================================
+-- Limits
+-- ============================================================
 local function maxBytesLimit(opts)
   local want = (opts and tonumber(opts.maxBytes))
     or (config and config.get and tonumber(config.get("internetMaxKB") or 0) * 1024)
@@ -144,6 +189,14 @@ local function coopYield()
   if okP and proc and proc.yieldCooperative then proc.yieldCooperative() end
 end
 
+-- ============================================================
+-- The request core
+-- ============================================================
+-- `sink(chunk)` is called with each body chunk and returns true to keep
+-- going. Both get() and download() are thin wrappers over this, so the
+-- timeout / byte-cap / yield behaviour cannot drift between them.
+--
+-- Returns ok, err, meta   where meta = { status=, headers=, bytes= }.
 local function requestInto(url, sink, opts)
   opts = opts or {}
   local okUrl, schemeOrErr = internet.parseUrl(url)
@@ -170,6 +223,8 @@ local function requestInto(url, sink, opts)
     if not closed then closed = true; pcall(function() handle.close() end) end
   end
 
+  -- Response metadata is available only once the card has a reply; OC's
+  -- handle exposes response() on newer versions. Absent = not fatal.
   local function grabMeta()
     if meta.status or not handle.response then return end
     local okR, code, msg, headers = pcall(handle.response)
@@ -189,7 +244,7 @@ local function requestInto(url, sink, opts)
     end
     grabMeta()
     if chunk == nil then
-
+      -- nil = end of stream, or an error carried in the second return.
       shut()
       if readErr then return false, tostring(readErr), meta end
       return true, nil, meta
@@ -205,9 +260,10 @@ local function requestInto(url, sink, opts)
       if not sink(chunk) then
         shut(); return false, "write failed while saving the response", meta
       end
-      deadline = computer.uptime() + timeout
+      deadline = computer.uptime() + timeout   -- progress resets the clock
     else
-
+      -- Empty chunk = "nothing yet"; yield rather than spin. This is the
+      -- loop that would otherwise hold the CPU for every seat on the box.
       coopYield()
     end
     chunks = chunks + 1
@@ -219,6 +275,9 @@ local function requestInto(url, sink, opts)
   end
 end
 
+--- Fetch a URL into a STRING. For small things — an index, a status page.
+--- Bounded by maxBytes (default 64 KB) because the result is RAM.
+--- Returns body, err, meta.
 function internet.get(url, opts)
   local parts = {}
   local ok, err, meta = requestInto(url, function(chunk)
@@ -229,6 +288,17 @@ function internet.get(url, opts)
   return table.concat(parts), nil, meta
 end
 
+--- Fetch a URL straight to a FILE, a chunk at a time.
+--
+-- This is the one to use for anything that might be big: the body is never
+-- held in RAM as a whole, which on a 192 KB machine is the difference
+-- between a download and a crash. Writes to `destPath .. ".part"` and
+-- renames on success, so a failed or truncated transfer never leaves a
+-- half-file that looks complete to the next reader.
+--
+-- The CALLER is responsible for vetting destPath — this module does not
+-- know which paths the caller is allowed to write.
+-- Returns ok, err, meta.
 function internet.download(url, destPath, opts)
   local fs = (_G._TOS and _G._TOS.fs) or require("kernel.fs")
   if type(destPath) ~= "string" or destPath == "" then
@@ -237,6 +307,8 @@ function internet.download(url, destPath, opts)
   local tmp = destPath .. ".part"
   pcall(fs.remove, tmp)
 
+  -- Buffered append: one fs write per chunk would be brutal on a managed
+  -- filesystem, and holding everything is what we are avoiding.
   local buf, bufLen = {}, 0
   local FLUSH_AT = 8 * 1024
   local writeFailed = false
@@ -264,11 +336,12 @@ function internet.download(url, destPath, opts)
     pcall(fs.remove, tmp)
     return false, err or "write failed", meta
   end
-
+  -- Atomic-ish finish: remove any previous file, then rename the part in.
   pcall(fs.remove, destPath)
   local okMv = fs.rename and fs.rename(tmp, destPath)
   if not okMv then
-
+    -- No rename in this fs layer: fall back to copy-then-drop, still only
+    -- after the whole body arrived.
     local data = fs.readFile(tmp)
     if not data or not fs.writeFile(destPath, data) then
       pcall(fs.remove, tmp)
@@ -283,6 +356,10 @@ function internet.download(url, destPath, opts)
   return true, nil, meta
 end
 
+--- Raw TCP socket, for the few things that are not HTTP. Returns the OC
+--- socket handle untouched — there is no useful bounding to apply to a
+--- stream whose protocol we do not know, so this is deliberately thin and
+--- the `internet` capability is the whole of the gate.
 function internet.socket(address, port)
   local st = internet.status()
   if not st.present then return nil, "no internet card installed" end

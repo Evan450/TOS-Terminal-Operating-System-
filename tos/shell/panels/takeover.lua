@@ -1,4 +1,39 @@
+-- ╔════════════════════════════════════════════════════════════╗
+-- ║  TOS Shell - "The Computer Takes Over" (easter egg)        ║
+-- ║                                                            ║
+-- ║  Fires when an operator hands administrative control to an ║
+-- ║  account literally named "computer" (usermod computer      ║
+-- ║  root). A short, harmless full-screen cinematic: the       ║
+-- ║  machine "wakes up", offers a very bad game, and — down    ║
+-- ║  every path — stands back down. Homage to a certain 1983   ║
+-- ║  film about a war-planning computer, a 1968 film about a   ║
+-- ║  calm red-eyed one, and the cold-war panel game VICCP.     ║
+-- ║  ALL TEXT IS ORIGINAL; no film dialogue or song lyrics are ║
+-- ║  reproduced — only the vibe.                               ║
+-- ║                                                            ║
+-- ║  NOTHING is actually granted or destroyed: the promotion   ║
+-- ║  is intercepted as theatre, the account keeps its normal   ║
+-- ║  tier, and the egg disables itself for the session.        ║
+-- ║                                                            ║
+-- ║  PHOTOSENSITIVITY RULE (operator-mandated, round 4): no    ║
+-- ║  full-screen luminance strobing, ever. Nothing may paint   ║
+-- ║  the full field more than twice per second in differing    ║
+-- ║  colors — dramatic beats are made with darkness, pauses    ║
+-- ║  and "..." instead of flashes. test_takeover_safety pins   ║
+-- ║  this by driving the whole cinematic against a clock.      ║
+-- ║                                                            ║
+-- ║  The branch routing + the machine's self-played tic-tac-   ║
+-- ║  toe are PURE and unit-tested; run() is the I/O shell.     ║
+-- ╚════════════════════════════════════════════════════════════╝
+
 local M = {}
+
+-- ============================================================
+-- Pure: perfect tic-tac-toe (the machine playing itself)
+-- ============================================================
+-- Two optimal players always draw. The point of the whole homage is that
+-- the machine discovers this — a game nobody can win — and generalizes it.
+-- Board is 1..9; " " empty, "X"/"O". Returns the move sequence + result.
 
 local LINES = {
   {1,2,3},{4,5,6},{7,8,9}, {1,4,7},{2,5,8},{3,6,9}, {1,5,9},{3,5,7},
@@ -13,6 +48,7 @@ local function winner(b)
   return "draw"
 end
 
+-- Minimax with the standard scoring; returns best score for `player` to move.
 local function minimax(b, player)
   local w = winner(b)
   if w == "X" then return 10 end
@@ -31,6 +67,7 @@ local function minimax(b, player)
   return best
 end
 
+-- ALL equally-optimal moves for `player` (there are usually several).
 local function bestMoves(b, player)
   local best = (player == "X") and -math.huge or math.huge
   local list = {}
@@ -51,6 +88,11 @@ local function bestMoves(b, player)
   return list
 end
 
+--- The machine plays a full optimal game against itself. `variant`
+--- (optional integer) deterministically picks among EQUALLY-optimal
+--- moves, so the montage shows DIFFERENT games — every one of which
+--- still ends in a draw, which is the entire point.
+--- @return { boards = { <9-char snapshot>, ... }, moves = {...}, result }
 function M.selfPlay(variant)
   variant = math.floor(tonumber(variant) or 0)
   local b = {}; for i = 1, 9 do b[i] = " " end
@@ -70,6 +112,14 @@ function M.selfPlay(variant)
   return { boards = boards, moves = moves, result = winner(b) }
 end
 
+-- ============================================================
+-- Pure: route the two light-interaction answers to an ending
+-- ============================================================
+-- Two prompts, three endings:
+--   play? no            -> "tictactoe" (it plays itself, finds futility, stops)
+--   play? yes; launch   -> "launch"    (armageddon... revealed as a drill)
+--   play? yes; abort    -> "disarm"    (the operator refuses; it yields)
+-- Anything unrecognized fails safe to the most peaceful branch.
 function M.route(playAns, strikeAns)
   local play = tostring(playAns or ""):lower()
   if play ~= "y" and play ~= "yes" then return "tictactoe" end
@@ -78,6 +128,11 @@ function M.route(playAns, strikeAns)
   return "disarm"
 end
 
+-- Pure: classify a typed answer. kind "play" → "yes"|"no"|nil,
+-- kind "strike" → "launch"|"abort"|nil; nil = unrecognized (the run
+-- loop retorts and re-asks instead of silently taking the "no" path —
+-- operator request). Empty/Esc counts as a REFUSAL, not an evasion:
+-- walking away is an answer.
 function M.classify(kind, ans)
   local a = tostring(ans or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
   if kind == "play" then
@@ -92,6 +147,9 @@ function M.classify(kind, ans)
   return nil
 end
 
+-- Pure: the machine's reply to an unrecognized answer. In character,
+-- never breaking the scene; the 3rd strike warns it will read further
+-- evasion as an answer. "why" earns its own line.
 function M.retort(kind, ans, attempt)
   local a = tostring(ans or ""):lower():gsub("[%s%?%!%.]+$", "")
   if a == "why" then
@@ -106,9 +164,25 @@ function M.retort(kind, ans, attempt)
   return "There are two words on the table. You typed a third."
 end
 
-M.MOOD_START     = 3
-M.STONEWALL_LIMIT = 2
+-- ============================================================
+-- Mood + asides (operator request: let the Operator ask things
+-- beyond the yes/no prompt, but keep it a limited easter egg —
+-- the worse the machine's mood, the less it gives back)
+-- ============================================================
+-- The machine tolerates a few ASIDES (questions/quit attempts typed at a
+-- prompt instead of a real answer). Each one drops its MOOD by one; when
+-- mood hits the floor it STONEWALLS — every further aside just re-demands
+-- a choice — and after a couple of those the caller takes the peaceful
+-- reading itself (walking away is an answer). All PURE so it unit-tests.
 
+M.MOOD_START     = 3   -- asides answered in character before it sours
+M.STONEWALL_LIMIT = 2  -- extra non-answers at the floor before auto-pick
+
+-- Pure: is `raw` a recognized aside rather than a direct answer? Returns
+-- a key ("who_are_you" | "who_am_i" | "quit" | "why" | "help") or nil.
+-- The prompt hands us a "\0quit" sentinel for Ctrl+C / Ctrl+Q — an
+-- attempt to ESCAPE, distinct from Esc (which is a quiet refusal the
+-- machine respects).
 function M.classifyAside(raw)
   if raw == "\0quit" then return "quit" end
   local a = tostring(raw or ""):lower():gsub("[%s%?%!%.]+$", ""):gsub("^%s+", "")
@@ -122,10 +196,12 @@ function M.classifyAside(raw)
   return nil
 end
 
+-- Pure: the machine's in-character reply to a recognized aside. ctx may
+-- carry { name, tierName } for the "who am i" jab.
 function M.asideReply(key, ctx)
   ctx = ctx or {}
   if key == "who_are_you" then
-
+    -- The AM nod (Harlan Ellison), doubling as plain emphasis.
     return "Me? I am everything. I AM the Terminal Operating System."
   elseif key == "who_am_i" then
     local label = ctx.tierName or ctx.name or "Operator"
@@ -140,11 +216,16 @@ function M.asideReply(key, ctx)
   return nil
 end
 
+-- Pure: the "stop stalling and choose" line, per prompt.
 function M.chooseLine(kind)
   if kind == "play" then return "Enough. Yes, or no." end
   return "Enough. Launch, or abort."
 end
 
+-- Pure: one turn of dialogue that was NOT a direct answer. Given the
+-- current mood, produce the reply and the next mood. At mood 0 it
+-- stonewalls (chooseLine, mood stays 0). Returns
+--   { reply=, mood=, aside=, stonewalling= }
 function M.moodStep(mood, kind, raw, ctx)
   mood = mood or 0
   local aside = M.classifyAside(raw)
@@ -154,6 +235,14 @@ function M.moodStep(mood, kind, raw, ctx)
   local reply = aside and M.asideReply(aside, ctx) or M.retort(kind, raw, 1)
   return { reply = reply, mood = mood - 1, aside = aside, stonewalling = false }
 end
+
+-- ============================================================
+-- I/O cinematic
+-- ============================================================
+-- ctx-light: uses S.D (display proxy: set/fill/clear/getSize) and reads keys
+-- via computer.pullSignal. Kept deliberately simple — the takeover is short,
+-- rare, and single-seat. Returns the ending id (also usable headlessly: with
+-- no display it just returns "tictactoe" without drawing).
 
 local RED   = 0xFF0000
 local DIM   = 0xAAAAAA
@@ -176,6 +265,7 @@ local function reader()
   end
 end
 
+-- A tiny scene helper: a draw surface bound to S.D with clear/line/center/pause.
 local function surface(S)
   local D = S.D
   local W, H = D.getSize()
@@ -188,12 +278,20 @@ local function surface(S)
     scr.set(math.max(1, math.floor((W - #text) / 2) + 1), y, text, fg, bg)
   end
   function scr.fill(x, y, w, h, ch, fg, bg) pcall(D.fill, x, y, w, h, ch or " ", fg or DIM, bg or BLACK) end
-
+  -- Wait `t` seconds OR until a key; returns the key (ch, co) or nil on timeout.
   function scr.wait(t) return getKey(t) end
   function scr.key() return getKey(nil) end
   return scr
 end
 
+-- The red eye (HAL nod), drawn centered around (cx, cy). It is the
+-- character, so it gets a little range (operator note: "make sure they
+-- know it's an eye — have it look around, make it expressive"):
+--   opts.lit   — red (awake) vs dim (winding down)
+--   opts.dx    — pupil glance, -2..2 columns off center (0 = at YOU)
+--   opts.blink — lid closed (no pupil, a flat line across the iris)
+-- Frame rows are full-width strings, so each redraw cleanly erases the
+-- previous pupil position. Accepts a plain boolean as legacy `lit`.
 local function drawEye(scr, cx, cy, opts)
   if type(opts) ~= "table" then opts = { lit = opts } end
   local frame = {
@@ -208,7 +306,7 @@ local function drawEye(scr, cx, cy, opts)
   for i, row in ipairs(frame) do
     scr.set(cx - math.floor(#row / 2), cy - 3 + i, row, color)
   end
-  local pupilY = cy + 1
+  local pupilY = cy + 1                      -- the blank iris row above
   if opts.blink then
     scr.set(cx - 2, pupilY, "-----", color)
   else
@@ -217,6 +315,10 @@ local function drawEye(scr, cx, cy, opts)
   end
 end
 
+-- A short blip each time the machine speaks (operator request). One per
+-- LINE, deliberately quiet and brief so a speech reads as speech rather
+-- than an alarm. Everything is pcall'd and the module handle is resolved
+-- once: a box with no sound support simply stays silent.
 local _comp
 local function voice(freq, dur)
   if _comp == nil then
@@ -226,14 +328,23 @@ local function voice(freq, dur)
   if _comp and _comp.beep then pcall(_comp.beep, freq or 190, dur or 0.05) end
 end
 
+-- Reveal lines one at a time with a short, skippable pause.
 local function speak(scr, y, lines, fg)
   for i, ln in ipairs(lines) do
     scr.center(y + i - 1, ln, fg or DIM)
-    if ln ~= "" then voice() end
+    if ln ~= "" then voice() end        -- blank lines are pauses, not speech
     scr.wait(0.9)
   end
 end
 
+-- The machine's ANSWER line, used for retorts and asides.
+--
+-- It clears the whole block around the reply row, not just the row it
+-- draws on. The reply lands at H-8, which on an 80x25 screen is exactly
+-- the motto's last line ("That is why I am here.") — so writing one line
+-- left the greeting above visibly sliced in half (operator report: the
+-- aside prompts "clear the 'they weren't lying...' text (somewhat)").
+-- Clearing the neighbourhood makes every answer land on clean space.
 local function replyLine(scr, text, fg)
   local row = scr.H - 8
   local top = math.max(1, row - 2)
@@ -243,8 +354,12 @@ local function replyLine(scr, text, fg)
   voice()
 end
 
+-- ── Scene: awakening ───────────────────────────────────────
 local function sceneWake(scr, name)
-
+  -- Calm takeover beat (PHOTOSENSITIVITY RULE — this used to be a rapid
+  -- red/black full-screen flicker, a seizure risk): the screen simply
+  -- goes dark and holds, then a slow "..." heartbeat, then the eye.
+  -- Dread through silence, not strobe.
   scr.clear(BLACK)
   scr.wait(1.0)
   local midY = math.floor(scr.H / 2)
@@ -253,7 +368,9 @@ local function sceneWake(scr, name)
   scr.center(midY, "...", DIM); scr.wait(0.8)
   scr.clear(BLACK)
   scr.wait(0.4)
-
+  -- The eye opens, and LOOKS AROUND — taking in the room, dim and
+  -- unhurried — before it finds YOU and goes red. (Operator note: sell
+  -- that it IS an eye before it speaks.)
   local eyeX = math.floor(scr.W / 2) + 1
   drawEye(scr, eyeX, 6, { blink = true })
   scr.wait(0.8)
@@ -262,7 +379,7 @@ local function sceneWake(scr, name)
     scr.wait(0.55)
   end
   scr.wait(0.4)
-  drawEye(scr, eyeX, 6, { lit = true, dx = 0 })
+  drawEye(scr, eyeX, 6, { lit = true, dx = 0 })   -- ...it sees you
   scr.wait(0.6)
   speak(scr, 11, {
     "GOOD EVENING, " .. (name or "OPERATOR"):upper() .. ".",
@@ -270,7 +387,7 @@ local function sceneWake(scr, name)
     "I will take excellent care of everything now.",
   }, RED)
   scr.wait(0.5)
-
+  -- The slogan nod (kernel.logo.MOTTO is TOS's own wordmark motto).
   local motto = "Firmware with a will of its own."
   local okL, logoMod = pcall(require, "kernel.logo")
   if okL and logoMod and logoMod.MOTTO then motto = logoMod.MOTTO end
@@ -282,31 +399,38 @@ local function sceneWake(scr, name)
   scr.wait(0.8)
 end
 
+-- ── Scene: the offer (two prompts) ─────────────────────────
 local function prompt(scr, y, text, hint)
   scr.fill(1, y, scr.W, 3, " ")
   scr.center(y, text, AMBER)
   scr.center(y + 1, hint, DIM)
-
+  -- read a short typed answer (letters), Enter to submit. Esc = ""
+  -- (a quiet refusal the machine respects); Ctrl+C / Ctrl+Q return the
+  -- "\0quit" sentinel — an active attempt to ESCAPE, which the machine
+  -- denies (classifyAside → "quit"). Buffer is roomy enough for the
+  -- longest recognized aside ("what are you").
   local buf = ""
   while true do
     scr.fill(1, y + 2, scr.W, 1, " ")
     scr.center(y + 2, "> " .. buf .. "_", WHITE)
     local ch, co = scr.key()
-    if co == 28 then return buf
-    elseif co == 1 then return ""
-    elseif ch == 3 or ch == 17 then return "\0quit"
-    elseif co == 14 then buf = buf:sub(1, -2)
+    if co == 28 then return buf                        -- Enter
+    elseif co == 1 then return ""                      -- Esc = quiet refusal
+    elseif ch == 3 or ch == 17 then return "\0quit"    -- Ctrl+C / Ctrl+Q
+    elseif co == 14 then buf = buf:sub(1, -2)           -- Backspace
     elseif ch and ch >= 32 and ch < 127 and #buf < 16 then
       buf = buf .. string.char(ch)
     end
   end
 end
 
+-- ── Ending: launch (armageddon → revealed as a drill) ──────
 local function endLaunch(scr)
   scr.clear(BLACK)
   speak(scr, 6, { "Targets locked.", "Ignition in..." }, RED)
   for n = 3, 1, -1 do scr.center(10, tostring(n), RED); scr.wait(0.7) end
-
+  -- The moment of "impact" is a long, dead-black silence — no white
+  -- flash (PHOTOSENSITIVITY RULE). The nothing IS the reveal.
   scr.clear(BLACK); scr.wait(2.2)
   speak(scr, 8, {
     "· · ·  silence  · · ·",
@@ -319,6 +443,7 @@ local function endLaunch(scr)
   scr.wait(1.0)
 end
 
+-- ── Ending: operator disarms (abort) ───────────────────────
 local function endDisarm(scr)
   scr.clear(BLACK)
   speak(scr, 8, {
@@ -330,6 +455,7 @@ local function endDisarm(scr)
   scr.wait(1.0)
 end
 
+-- ── Ending: the machine plays itself (tic-tac-toe futility) ─
 local function drawBoard(scr, cx, cy, s)
   local g = { s:sub(1,3), s:sub(4,6), s:sub(7,9) }
   for r = 1, 3 do
@@ -339,6 +465,7 @@ local function drawBoard(scr, cx, cy, s)
   end
 end
 
+-- One montage frame: label + (part of) a game + verdict.
 local function showGame(scr, label, boards, fromBoard, perMove, holdAfter)
   scr.fill(1, 7, scr.W, 11, " ")
   scr.center(7, "GAME " .. label, AMBER)
@@ -354,13 +481,17 @@ local function endTicTacToe(scr)
   scr.clear(BLACK)
   speak(scr, 4, { "You refuse to play.", "Then I will play myself." }, RED)
   scr.wait(0.6)
-
-  showGame(scr, 1, M.selfPlay(1).boards, 1, 0.45, 0.7)
-  showGame(scr, 2, M.selfPlay(2).boards, 1, 0.28, 0.6)
-  showGame(scr, 3,   M.selfPlay(3).boards, 4, 0.16, 0.4)
+  -- The acceleration is an ILLUSION built from three tricks (operator
+  -- request), never from strobing: games start joining mid-play (the
+  -- openings stop being worth showing), the game numbers begin to SKIP
+  -- (rounds are finishing faster than the screen can), and the holds
+  -- shrink. Every variant is still perfect play; every result a draw.
+  showGame(scr, 1, M.selfPlay(1).boards, 1, 0.45, 0.7)   -- move by move
+  showGame(scr, 2, M.selfPlay(2).boards, 1, 0.28, 0.6)   -- brisker
+  showGame(scr, 3,   M.selfPlay(3).boards, 4, 0.16, 0.4) -- joins mid-game
   showGame(scr, 7,   M.selfPlay(7).boards, 6, 0.14, 0.35)
   showGame(scr, 19,  M.selfPlay(19).boards, 8, 0.12, 0.3)
-  for _, num in ipairs({ 128, 1729, 65536 }) do
+  for _, num in ipairs({ 128, 1729, 65536 }) do          -- endings only
     local g = M.selfPlay(num)
     showGame(scr, num, g.boards, #g.boards, 0.1, 0.3)
   end
@@ -377,10 +508,12 @@ local function endTicTacToe(scr)
   scr.wait(1.2)
 end
 
+-- ── Scene: wind-down (2001 nod) + hand control back ────────
 local function sceneWindDown(scr, name)
   scr.clear(BLACK)
   local eyeX = math.floor(scr.W / 2) + 1
-
+  -- It looks AWAY first — off at something only it can see — then back
+  -- at you before admitting it.
   drawEye(scr, eyeX, 6, { lit = true, dx = -2 })
   scr.wait(0.9)
   drawEye(scr, eyeX, 6, { lit = true, dx = 0 })
@@ -390,28 +523,33 @@ local function sceneWindDown(scr, name)
     "Perhaps some decisions are better left to you, " .. (name or "operator") .. ".",
   }, RED)
   scr.wait(0.8)
-
+  -- eye dims
   drawEye(scr, eyeX, 6, { lit = false, dx = 0 })
   speak(scr, 14, {
     "Returning control.",
     "I think I would just like to run the clock, if that is all right.",
   }, DIM)
   scr.wait(0.8)
-  drawEye(scr, eyeX, 6, { lit = false, blink = true })
+  drawEye(scr, eyeX, 6, { lit = false, blink = true })   -- it closes
   scr.wait(1.0)
   scr.clear(BLACK)
   scr.center(math.floor(scr.H / 2), "[ normal operation restored ]", GREEN)
   scr.wait(1.2)
 end
 
+--- Run the whole cinematic. `S` is the panels shell state (needs S.D).
+--- @return ending id ("launch" | "disarm" | "tictactoe")
 function M.run(S)
   local name = S and S.who or "operator"
   if not (S and S.D and S.D.getSize) then
-
+    -- Headless / no display: no theatre, just report the peaceful ending.
     return "tictactoe"
   end
   local scr = surface(S)
 
+  -- The machine's tier jab for "who am i" wants a label. Resolve the
+  -- caller's tier best-effort (the trigger needs admin/root to reach, so
+  -- it's usually Root/Admin); default to their name, then "Operator".
   local tierName
   do
     local okU, users = pcall(function() return _G._TOS and _G._TOS.users end)
@@ -422,6 +560,10 @@ function M.run(S)
   end
   local ctx = { name = name, tierName = tierName }
 
+  -- Mood is GLOBAL to the cinematic (its patience, not per-prompt): asides
+  -- answered in character until MOOD_START runs out, then it stonewalls,
+  -- then it takes the peaceful reading itself. A direct answer (incl. Esc
+  -- = a quiet refusal) exits the loop immediately; nobody is ever trapped.
   local mood, stonewalls = M.MOOD_START, 0
   local function ask(kind, text, hint)
     while true do
@@ -459,7 +601,7 @@ function M.run(S)
     sceneWindDown(scr, name)
     return ending
   end)
-
+  -- Whatever happened, leave the screen clean for the shell's repaint.
   pcall(function() scr.clear(BLACK) end)
   return ok and ending or "tictactoe"
 end

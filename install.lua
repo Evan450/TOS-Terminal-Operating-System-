@@ -1,9 +1,32 @@
+-- ╔══════════════════════════════════════╗
+-- ║  TOS Installer                       ║
+-- ║  Terminal Operating System           ║
+-- ║  Interactive setup + install disk    ║
+-- ╚══════════════════════════════════════╝
+-- Version lives ONLY in the INSTALLER_VERSION constant below (the banner
+-- reads it) — keep no literal version in this header to avoid drift.
+-- Two modes:
+--   1. Install disk: auto-detects source disk, copies files,
+--      runs questionnaire, offers BIOS flash.
+--      (Created by the `deploy` command in TOS)
+--   2. Standalone: just runs the questionnaire to configure
+--      an existing TOS installation.
+--
+-- Run from OpenOS:
+--   # /mnt/<disk>/install.lua   (install disk mode)
+--   # install.lua               (standalone mode)
+
 local component = require("component")
 local computer = require("computer")
 local term = require("term")
 
+-- Try to load OpenOS modules
 local fs = nil
 pcall(function() fs = require("filesystem") end)
+
+-- ============================================================
+-- Helpers
+-- ============================================================
 
 local gpu = component.gpu
 
@@ -38,7 +61,7 @@ local function ask(question, options, default)
   end
   color(0xFFFFFF)
   io.write(": ")
-
+  -- Use term.read if available (OpenOS provides it), fall back to io.read
   local answer
   if term and term.read then
     local ok2, result = pcall(term.read)
@@ -58,8 +81,17 @@ local function confirm(question)
   return answer and (answer:lower() == "y" or answer:lower() == "yes")
 end
 
+-- Single source of truth for the version string. Update only the
+-- INSTALLER_VERSION constant; the banner reads it. Previously the
+-- header comment said v1.2.6 while the banner displayed v0.3.0 —
+-- two-place version drift caught in code review.
 local INSTALLER_VERSION = "1.4.0"
 
+-- Runtime directories TOS expects at first boot. Keep in sync with
+-- /tos/kernel/init.lua's coreDirs list (single source of truth lives
+-- in the kernel; this duplicate exists because install.lua runs from
+-- OpenOS BEFORE the TOS kernel is reachable). If you add an entry
+-- here, also add it there.
 local RUNTIME_DIRS = {
   "/tos", "/tos/kernel", "/tos/kernel/net", "/tos/shell",
   "/tos/compat", "/tos/peripheral", "/tos/shell/panels",
@@ -70,6 +102,9 @@ local RUNTIME_DIRS = {
   "/tmp",
 }
 
+-- Embedded TOS wordmark — kept byte-identical to kernel.logo.MARK. Embedded
+-- (not required) because the installer runs from OpenOS before the TOS kernel
+-- is reachable.
 local LOGO_MARK = {
   "████████  ████████  ████████",
   "   ██     ██    ██  ██      ",
@@ -89,14 +124,33 @@ local function header()
   print()
 end
 
+-- ============================================================
+-- Install disk detection
+-- ============================================================
+-- If this script lives on a disk that also contains
+-- /tos/kernel/init.lua, we're in install-disk mode.
+
+-- `explicitSrc`, when given, is a caller-supplied source directory that
+-- skips detection entirely — the door a scripted or chain-loaded install
+-- uses (bootstrap.lua passes the directory it just staged from the
+-- network here) instead of relying on path inference, which has no
+-- reason to hold for a script that was loadfile()'d rather than run as
+-- a shell command.
 local function findInstallDisk(explicitSrc)
   if not fs then return nil end
 
+  -- Method 0: explicit override.
   if type(explicitSrc) == "string" and explicitSrc ~= "" then
     local p = explicitSrc:sub(-1) == "/" and explicitSrc:sub(1, -2) or explicitSrc
     if fs.exists(p .. "/tos/kernel/init.lua") then return p end
   end
 
+  -- Method 1: detect from the script's own path (OpenOS sets _ env).
+  -- Generalized to any containing directory rather than requiring a
+  -- literal /mnt/<name> prefix — that assumption broke for anything not
+  -- mounted under /mnt (a devfs path, a loop-mounted directory, a
+  -- staged temp folder) even though the same "sibling tos/kernel/init.lua"
+  -- check is exactly as valid there.
   local scriptPath = os.getenv and os.getenv("_") or nil
   if scriptPath then
     local dir = scriptPath:match("^(.*)/[^/]+$")
@@ -105,6 +159,11 @@ local function findInstallDisk(explicitSrc)
     end
   end
 
+  -- Method 2: scan all filesystems for one with both install.lua
+  -- and the TOS kernel — but NOT the boot drive. Each proxy call is
+  -- pcall-wrapped: a filesystem component can throw (e.g. a disk
+  -- ejected mid-scan), and one flaky component must not abort the
+  -- whole detection pass for every other one.
   local bootAddr = computer.getBootAddress()
   for addr in component.list("filesystem") do
     if addr ~= bootAddr then
@@ -113,7 +172,7 @@ local function findInstallDisk(explicitSrc)
       local okE1, hasKernel = pcall(function() return px and px.exists("/tos/kernel/init.lua") end)
       local okE2, hasInstall = pcall(function() return px and px.exists("/install.lua") end)
       if okE1 and okE2 and hasKernel and hasInstall then
-
+        -- Find its mount point
         if fs.mounts then
           local okM, mounts = pcall(fs.mounts)
           if okM and mounts then
@@ -130,6 +189,10 @@ local function findInstallDisk(explicitSrc)
 
   return nil
 end
+
+-- ============================================================
+-- Hardware survey
+-- ============================================================
 
 local function surveyHardware()
   local hw = {}
@@ -187,6 +250,16 @@ local function printHardwareReport(hw)
   print()
 end
 
+-- ============================================================
+-- File copy (install disk mode)
+-- ============================================================
+
+-- Load the install disk's manifest. The manifest is the canonical
+-- file list — drives copy AND post-copy verification. Previously the
+-- copy was a directory walk filtered to *.lua, which silently skipped
+-- non-Lua files including the bundled module.cfg files (and would
+-- also miss any future binary asset, theme file, README, etc.). The
+-- manifest is the single source of truth.
 local function loadManifest(srcDisk)
   local path = srcDisk .. "/tos/system_manifest.lua"
   if not fs.exists(path) then return nil, "no manifest at " .. path end
@@ -195,7 +268,14 @@ local function loadManifest(srcDisk)
   local source = h:read("*a")
   h:close()
   if not source then return nil, "empty manifest" end
-
+  -- #SEC H3 — parse manifest as DATA via serialize.decode, not as
+  -- executable Lua. The old loader did `load(source); pcall()` which
+  -- ran the manifest body in the installer process — anything in the
+  -- file's top-level statements executed before we even checked the
+  -- return type. We try serialize.decode first (the manifest's normal
+  -- format is `return { ... }` table literal), and only if that fails
+  -- do we fall back to the load() path with a warning. A defensive
+  -- size cap blocks pathological inputs.
   if #source > 256 * 1024 then
     return nil, "manifest exceeds 256 KB sanity cap"
   end
@@ -205,13 +285,15 @@ local function loadManifest(srcDisk)
     if data and type(data) == "table" then
       return data
     elseif data == nil then
-
+      -- Fall through to load() — older manifests that used non-literal
+      -- expressions (string concat for paths, etc.) won't parse via
+      -- serialize.decode but ARE legitimate.
       warn("manifest serialize.decode failed (" .. tostring(derr) ..
         "); falling back to constrained load()")
     end
   end
-
-  local fn, err = load(source, "=manifest", "t", { })
+  -- Text-only mode: never load bytecode from the install disk.
+  local fn, err = load(source, "=manifest", "t", { })  -- empty env: no globals reachable
   if not fn then return nil, "manifest parse error: " .. tostring(err) end
   local ok2, result = pcall(fn)
   if not ok2 then return nil, "manifest run error: " .. tostring(result) end
@@ -219,6 +301,14 @@ local function loadManifest(srcDisk)
   return result
 end
 
+-- #SEC H3 — refuse to overwrite an existing TOS install without a root
+-- password check (or an explicit --force-wipe flag). The audit's worst
+-- case is a malicious install disk inserted into a working machine; if
+-- the operator is at the BIOS prompt with no password yet (firstBoot
+-- root account), the install proceeds unrestricted. We can't ask for
+-- the password from inside the BIOS chain-load path, but we CAN refuse
+-- to silently overwrite a populated /etc/users.dat — the operator must
+-- type FORCE-WIPE to acknowledge.
 local function preInstallSafetyCheck(forceWipe)
   if forceWipe then return true end
   if fs.exists("/etc/users.dat") then
@@ -241,6 +331,11 @@ local function preInstallSafetyCheck(forceWipe)
   return true
 end
 
+-- Chunked file copy. Reads the source in 4 KiB blocks instead of
+-- pulling the whole thing into RAM with `*a` first — important on
+-- 192 KB machines where a large module + a partial copy of itself
+-- can OOM the install. Mirrors the same pattern init.lua's
+-- in-bootloader copier already uses (line 143).
 local function copyFileChunked(src, dst)
   local ih = io.open(src, "r")
   if not ih then return false, "open source" end
@@ -256,6 +351,11 @@ local function copyFileChunked(src, dst)
   return true
 end
 
+-- Post-copy verification: every file declared in the manifest must
+-- exist on the target with size matching the source. A truncated
+-- write (out-of-space, partial buffer) makes the file present but
+-- short; without this check, the BIOS flash would proceed onto a
+-- silently broken install and brick the box on next boot.
 local function verifyCopy(srcDisk, manifest)
   local missing, sized = {}, {}
   for _, entry in ipairs(manifest) do
@@ -274,7 +374,7 @@ local function verifyCopy(srcDisk, manifest)
 end
 
 local function copyFromDisk(srcDisk)
-
+  -- Load manifest first — installer is useless without it.
   local manifest, mErr = loadManifest(srcDisk)
   if not manifest then
     fail("Cannot load install manifest: " .. tostring(mErr))
@@ -283,6 +383,10 @@ local function copyFromDisk(srcDisk)
   ok("Manifest loaded: " .. #manifest .. " files declared")
   print()
 
+  -- Pre-create every directory mentioned in the manifest. fs.writeFile
+  -- on the boot proxy creates parents but io.open does not, so we walk
+  -- the manifest paths and ensure the dirname of each is present
+  -- before the copy.
   color(0x00AAFF); print("--- Creating directories ---"); color(0xFFFFFF)
   local dirSeen = {}
   for _, entry in ipairs(manifest) do
@@ -293,13 +397,16 @@ local function copyFromDisk(srcDisk)
       dir = dir:match("^(.+)/[^/]+$")
     end
   end
-
+  -- Plus the runtime directories TOS expects to find at boot. Single
+  -- source instead of duplicating across install-disk + standalone.
   for _, d in ipairs(RUNTIME_DIRS) do
     if not fs.isDirectory(d) then fs.makeDirectory(d) end
   end
   ok("Directory structure created")
   print()
 
+  -- Copy every manifest entry. Track failures explicitly — on any
+  -- failure the BIOS flash gate later refuses to proceed.
   color(0x00AAFF); print("--- Copying system files ---"); color(0xFFFFFF)
   local copied, failed = 0, 0
   local errs = {}
@@ -326,6 +433,8 @@ local function copyFromDisk(srcDisk)
   end
   print()
 
+  -- Post-copy size verification. Catches truncated writes that
+  -- copyFileChunked thought succeeded.
   if failed == 0 then
     color(0x00AAFF); print("--- Verifying copy ---"); color(0xFFFFFF)
     local missing, sized = verifyCopy(srcDisk, manifest)
@@ -349,6 +458,23 @@ local function copyFromDisk(srcDisk)
   return failed == 0
 end
 
+-- ============================================================
+-- Clean install — shed OpenOS leftovers
+-- ============================================================
+-- The operator boots OpenOS only as a bootstrap host; once TOS is copied
+-- onto the same drive, the OpenOS *libraries* are dead weight (TOS never
+-- requires them) and clutter the new system tree. A clean install removes
+-- the two top-level trees OpenOS owns that TOS never uses — /bin and /lib.
+--
+-- DELIBERATELY conservative:
+--   * Only /bin and /lib. /etc, /usr, /home, /tmp, /mnt, /var, /tos and
+--     /init.lua are shared, TOS-owned, or user data and are NEVER touched
+--     (a blind manifest-diff of /etc would delete the /etc/tos.cfg we just
+--     wrote and the /etc/users.dat TOS mints on first boot).
+--   * Caller gates this on a fully-verified copy. Removing OpenOS's runtime
+--     before TOS is safely in place would brick the box (no working OS).
+--   * Run as the LAST action before reboot: the still-running OpenOS lazy-
+--     loads from /lib, so we pull it only when nothing else will need it.
 local OPENOS_ONLY_TREES = { "/bin", "/lib" }
 local function hasOpenOsLeftovers()
   if not fs then return false end
@@ -362,7 +488,7 @@ local function cleanOpenOsLeftovers()
   if not fs then return removed end
   for _, d in ipairs(OPENOS_ONLY_TREES) do
     if fs.exists(d) then
-
+      -- OpenOS filesystem.remove deletes directories recursively.
       local okR = pcall(fs.remove, d)
       if okR and not fs.exists(d) then removed[#removed + 1] = d end
     end
@@ -370,10 +496,16 @@ local function cleanOpenOsLeftovers()
   return removed
 end
 
+-- ============================================================
+-- BIOS flash
+-- ============================================================
+
 local function offerBiosFlash(srcDisk)
   local biosPath = srcDisk .. "/bios.lua"
   if not fs.exists(biosPath) then return end
 
+  -- #SEC H3 — surface a fingerprint of the BIOS we're about to flash
+  -- and require an explicit typed confirmation, not just a y/N.
   local h = io.open(biosPath, "r")
   if not h then warn("Could not read bios.lua"); print(); return end
   local biosCode = h:read("*a"); h:close()
@@ -408,6 +540,10 @@ local function offerBiosFlash(srcDisk)
   print()
 end
 
+-- ============================================================
+-- Questionnaire
+-- ============================================================
+
 local function runQuestionnaire(hw)
   local cfg = {}
 
@@ -432,7 +568,7 @@ local function runQuestionnaire(hw)
     cfg.headless = true
     cfg.autoServices = true
     ok("Server mode (headless boot, services auto-start)")
-
+    -- Rack user-error checks
     print()
     color(0xFFFF00)
     print("  Server rack checklist:")
@@ -463,6 +599,7 @@ local function runQuestionnaire(hw)
   ok("Hostname: " .. cfg.hostname)
   print()
 
+  -- Security
   color(0x00AAFF)
   print("--- Security ---")
   color(0xFFFFFF)
@@ -486,6 +623,7 @@ local function runQuestionnaire(hw)
   end
   print()
 
+  -- Network
   if hw.hasModem or hw.hasTunnel then
     color(0x00AAFF)
     print("--- Network ---")
@@ -502,6 +640,7 @@ local function runQuestionnaire(hw)
     cfg.listenPort = 42
   end
 
+  -- Tablet extras
   if cfg.device == "tablet" then
     color(0x00AAFF)
     print("--- Tablet Options ---")
@@ -518,6 +657,10 @@ local function runQuestionnaire(hw)
 
   return cfg
 end
+
+-- ============================================================
+-- Write config
+-- ============================================================
 
 local function writeConfig(cfg)
   local lines = { "return {" }
@@ -538,18 +681,32 @@ local function writeConfig(cfg)
   return false
 end
 
+-- ============================================================
+-- Main
+-- ============================================================
+
 term.clear()
 header()
 
 local hw = surveyHardware()
 printHardwareReport(hw)
 
+-- Detect install disk. The first positional argument, when given, is an
+-- explicit source directory override (see findInstallDisk's Method 0) —
+-- bootstrap.lua uses this to hand off a network-staged directory that
+-- has no reason to sit under /mnt or bear any fixed relation to this
+-- script's own path.
 local args = {...}
 local srcDisk = findInstallDisk(args[1])
 local diskMode = srcDisk ~= nil
 
+-- A copy-success flag carried through the whole install.
+-- Set true only when the file copy AND the post-copy size verification
+-- both pass. Gates the BIOS flash later — no opt-out.
 local copyOk = false
-
+-- Clean-install intent: when set, shed OpenOS's /bin + /lib at the very
+-- end so TOS doesn't inherit the bootstrap host's filesystem. Captured
+-- only in disk mode, only after a verified copy, only with leftovers present.
 local cleanInstall = false
 
 if diskMode then
@@ -563,8 +720,15 @@ if diskMode then
   if not confirm("Continue?") then print("Cancelled."); return end
   print()
 
+  -- #SEC H3 — refuse to overwrite an existing install without typed
+  -- confirmation. --force-wipe on the command line bypasses (for
+  -- scripted installs); without it the operator must type FORCE-WIPE.
   if not preInstallSafetyCheck(_G._FORCE_WIPE or false) then return end
 
+  -- Copy system files from install disk. On failure we still allow
+  -- the user to proceed to the questionnaire (so config can be saved
+  -- against whatever copied successfully), but the BIOS flash gate
+  -- below refuses unconditionally.
   copyOk = copyFromDisk(srcDisk)
   if not copyOk then
     fail("Install file copy/verify did NOT fully succeed.")
@@ -574,6 +738,8 @@ if diskMode then
     print()
   end
 
+  -- Clean install: offer to shed OpenOS leftovers, but only when TOS is
+  -- safely in place (copyOk) and there's actually something to remove.
   if copyOk and hasOpenOsLeftovers() then
     color(0x00AAFF); print("--- Clean install ---"); color(0xFFFFFF)
     color(0xAAAAAA)
@@ -589,7 +755,7 @@ if diskMode then
     print()
   end
 else
-
+  -- Standalone mode: just configure an existing installation
   color(0xFFFF00)
   print("No install disk detected - running in configuration mode.")
   print("TOS system files must already be present on the boot drive.")
@@ -599,8 +765,14 @@ else
   print()
 end
 
+-- Run the setup questionnaire BEFORE any BIOS flash. Previously the
+-- BIOS flash happened first, so a user who Ctrl+C'd during the
+-- questionnaire was left with the BIOS pointing at an unconfigured
+-- install and no /etc/tos.cfg. Reordered so the point-of-no-return
+-- (BIOS flash) is the very last action.
 local cfg = runQuestionnaire(hw)
 
+-- Summary
 color(0x00AAFF)
 print("--- Summary ---")
 color(0xAAAAAA)
@@ -623,6 +795,9 @@ print()
 if not confirm("Apply these settings?") then print("Cancelled."); return end
 print()
 
+-- Create directories (standalone mode may need this too).
+-- Uses the same RUNTIME_DIRS list as the install-disk path so the
+-- two flows can't diverge.
 color(0x00AAFF); print("--- Applying configuration ---"); color(0xFFFFFF)
 if fs then
   for _, d in ipairs(RUNTIME_DIRS) do
@@ -638,6 +813,11 @@ end
 ok("Device profile: " .. cfg.device)
 print()
 
+-- BIOS flash (install-disk mode only, and only if the copy fully
+-- verified). This is the last action before reboot — if the user
+-- bails out from here, /etc/tos.cfg is already on disk and the
+-- existing BIOS still points at the previous installation, so they
+-- can rerun install.lua without bricking anything.
 if diskMode then
   if copyOk then
     offerBiosFlash(srcDisk)
@@ -648,6 +828,10 @@ if diskMode then
   end
 end
 
+-- Clean install (the VERY last filesystem action before reboot). Gated on
+-- a verified copy so we never strip OpenOS's runtime out from under a
+-- half-installed box. Run here — after every other write — because the
+-- still-running OpenOS lazy-loads from /lib until the moment we reboot.
 if diskMode and copyOk and cleanInstall then
   color(0x00AAFF); print("--- Cleaning OpenOS leftovers ---"); color(0xFFFFFF)
   local removed = cleanOpenOsLeftovers()
@@ -660,6 +844,7 @@ if diskMode and copyOk and cleanInstall then
   print()
 end
 
+-- Done
 color(0x00AAFF); print("--- Installation Complete ---"); color(0xFFFFFF)
 print()
 color(0x00FF00)
