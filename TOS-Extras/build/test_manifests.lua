@@ -26,16 +26,29 @@ local function readFile(p)
 end
 
 -- Enumerate SOURCE manifests (never the generated dist/ tree).
+--! POSIX `find` is not available from cmd.exe, where `find` is a text
+--! search utility instead -- and native Lua's io.popen goes through
+--! cmd.exe whichever shell launched the suite. This passed from Git Bash
+--! and failed from cmd, surfacing as "found source manifests to lint"
+--! rather than as a shell problem. `dir /b /s` is a cmd builtin; it
+--! prints absolute paths, which is fine here because every use below
+--! only needs a path it can open.
+local WINDOWS = package.config:sub(1, 1) == "\\"
 local manifests = {}
-local fh = io.popen('find modules cluster -name package.lua 2>&1')
-if fh then
-  for line in fh:lines() do
-    line = line:gsub("\\", "/")
-    if line:match("/package%.lua$") and not line:match("/dist/") then
-      manifests[#manifests + 1] = line
+for _, root in ipairs({ "modules", "cluster" }) do
+  local cmd = WINDOWS
+    and ('dir /b /s "' .. root .. '\\package.lua" 2>nul')
+    or  ('find "' .. root .. '" -name package.lua 2>/dev/null')
+  local fh = io.popen(cmd)
+  if fh then
+    for line in fh:lines() do
+      line = line:gsub("\\", "/"):gsub("%s+$", "")
+      if line:match("/package%.lua$") and not line:match("/dist/") then
+        manifests[#manifests + 1] = line
+      end
     end
+    fh:close()
   end
-  fh:close()
 end
 test("found source manifests to lint", #manifests > 0)
 

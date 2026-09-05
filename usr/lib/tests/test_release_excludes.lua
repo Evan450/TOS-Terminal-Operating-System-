@@ -88,12 +88,22 @@ end
 print()
 print("-- top-level dev scripts --")
 do
-  local ok, pipe = pcall(io.popen, "ls")
+  --! `ls` is not a command on Windows. Native Lua's io.popen runs through
+  --! cmd.exe regardless of the shell that launched the suite, so this
+  --! passed from Git Bash (Git's bin on PATH) and failed from cmd with
+  --! "'ls' is not recognized" -- reported as this test's own sanity gate,
+  --! which reads like a missing script rather than a missing shell.
+  --! `dir /b` is a cmd builtin; both forms list bare names.
+  local WINDOWS = package.config:sub(1, 1) == "\\"
+  local ok, pipe = pcall(io.popen, WINDOWS and "dir /b 2>nul" or "ls 2>/dev/null")
   if not ok or not pipe then
     print("  SKIP: io.popen unavailable; cannot enumerate the root")
   else
     local names = {}
-    for line in pipe:lines() do names[#names + 1] = line end
+    for line in pipe:lines() do
+      line = line:gsub("%s+$", "")
+      if line ~= "" then names[#names + 1] = line end
+    end
     pipe:close()
     local checked = 0
     for _, name in ipairs(names) do

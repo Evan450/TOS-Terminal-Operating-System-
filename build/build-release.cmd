@@ -30,6 +30,7 @@ lua "%DEV_DIR%\build\strip.lua" "%DEV_DIR%" "%RELEASE_DIR%" --minify ^
     --exclude /run_tests.sh ^
     --exclude /run_tests.py ^
     --exclude /todo_index.py ^
+    --exclude /tos.py ^
     --exclude /.claude/ ^
     --exclude /README.md ^
     --exclude /CHANGELOG.md ^

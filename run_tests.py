@@ -117,6 +117,17 @@ def needs_extras(test: Path) -> bool:
 # times), so rather than serialise everything, mark the exclusive tests
 # and run them FIRST, alone, before the parallel pool starts. One-off cost,
 # zero risk, and the pool still gets the long tail.
+#
+# Three other tests were briefly listed here, on the theory that their
+# intermittent failures were pool contention. That was wrong, and the
+# record is worth keeping straight: they enumerate the tree with io.popen,
+# and were calling POSIX `ls` and `find`. Native Lua routes io.popen
+# through cmd.exe whatever shell started the suite, so those resolved only
+# when Git's bin happened to be on PATH -- deterministic failure from
+# cmd.exe, and intermittent failure under 16 concurrent PATH lookups from
+# Git Bash. Same cause, two faces. They now call `dir`/`cd`, which are cmd
+# builtins and need no PATH lookup at all, and they have been stable in
+# the pool since. Serialising them fixed nothing; it only hid it.
 EXCLUSIVE = {"test_build_disk.lua"}
 
 

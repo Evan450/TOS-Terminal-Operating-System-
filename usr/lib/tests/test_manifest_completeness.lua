@@ -62,13 +62,38 @@ if fs and fs.list and fs.exists then
 else
   -- ── Host mode: `find` + dofile, from the TOS-Dev root ──────────
   manifest = dofile("tos/system_manifest.lua")
+  --! PLATFORM-AWARE ENUMERATION. The old form shelled out to POSIX `find`
+  --! and claimed to be portable across Git-Bash and cmd. It is not:
+  --! native Windows Lua routes io.popen through cmd.exe, whose `find` is
+  --! a TEXT SEARCH utility, not a file finder, and which has no `ls` at
+  --! all. It only ever worked when the suite happened to be launched from
+  --! a shell with Git's bin on PATH -- so the same checkout passed from
+  --! Git Bash and failed from cmd, and the failure surfaced as this
+  --! test's own "file enumeration works" gate rather than as anything
+  --! resembling a shell problem.
+  --!
+  --! `dir /b /s` is a cmd builtin and works whichever shell launched us,
+  --! but prints ABSOLUTE paths where `find <rel>` prints relative ones,
+  --! so the working directory is stripped back off to keep both shapes
+  --! identical to everything downstream.
+  local WINDOWS = package.config:sub(1, 1) == "\\"
+  local cwd
+  do
+    local p = io.popen(WINDOWS and "cd" or "pwd")
+    if p then cwd = (p:read("*l") or ""):gsub("\\", "/"):gsub("/+$", ""); p:close() end
+  end
   for _, r in ipairs(ROOTS) do
-    -- `2>&1` (not /dev/null — cmd.exe can't redirect there) keeps this
-    -- portable across Git-Bash and cmd.
-    local fh = io.popen('find ' .. r:gsub("^/", "") .. ' -name "*.lua" 2>&1')
+    local rel = r:gsub("^/", "")
+    local cmd = WINDOWS
+      and ('dir /b /s "' .. rel:gsub("/", "\\") .. '\\*.lua" 2>nul')
+      or  ('find "' .. rel .. '" -name "*.lua" 2>/dev/null')
+    local fh = io.popen(cmd)
     if fh then
       for line in fh:lines() do
-        line = line:gsub("\\", "/")
+        line = line:gsub("\\", "/"):gsub("%s+$", "")
+        if cwd and cwd ~= "" and line:sub(1, #cwd + 1) == cwd .. "/" then
+          line = line:sub(#cwd + 2)
+        end
         if line:match("%.lua$") and not line:match("No such") and not line:match("cannot find") then
           actual[#actual + 1] = "/" .. line
         end

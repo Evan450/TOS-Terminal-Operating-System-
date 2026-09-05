@@ -102,6 +102,26 @@ for _, name in ipairs(names) do
   -- source path is simply <name> .. <key>.
   local files = { [name .. "/package.lua"] = "/" }
   local n = 1
+
+  --! The signature has to be advertised or it never travels. pkg.install
+  --! verifies by reading the .sig sitting beside the manifest
+  --! (pkgsign.sigPathFor: package.lua -> package.sig), and pkgremote only
+  --! downloads what this index lists -- so an unlisted signature means a
+  --! package that is signed on the floppy and arrives UNSIGNED over the
+  --! network. With `pkg trust require on` that is the difference between
+  --! installing and being refused, and the operator would have no way to
+  --! tell which half was wrong.
+  --!
+  --! Conditional because signing is opt-in (build-disk.lua --sign): an
+  --! unsigned pack simply has none of these, and listing a file that is
+  --! not there would fail the download instead.
+  do
+    local sigRel = name .. "/package.sig"
+    if readAll(string.format("%s/disk%d/%s", DIST, tonumber(meta.disk) or 1, sigRel)) then
+      files[sigRel] = "/"
+      n = n + 1
+    end
+  end
   if type(manifest.hashes) == "table" then
     for target in pairs(manifest.hashes) do
       files[name .. target] = target

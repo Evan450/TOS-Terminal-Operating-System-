@@ -165,6 +165,36 @@ do
   end
 end
 
+-- ── A signature on disk must also be advertised ────────────────────
+--! pkgremote downloads only what the index lists, and pkg.install looks
+--! for the .sig beside the manifest. So a signature that exists in the
+--! built pack but is missing from programs.cfg produces a package that
+--! is signed on the floppy and arrives UNSIGNED over the network -- and
+--! with `pkg trust require on` that is the difference between installing
+--! and being refused, with nothing to tell the operator which half broke.
+--! Signing is opt-in, so an unsigned pack is fine; a half-advertised one
+--! is not.
+do
+  local unadvertised, sigCount = nil, 0
+  for name, entry in pairs(index) do
+    local meta = set and set.packages and set.packages[name]
+    local disk = meta and tonumber(meta.disk) or 1
+    local sigRel = name .. "/package.sig"
+    if readAll(string.format("%s/disk%d/%s", DIST, disk, sigRel)) then
+      sigCount = sigCount + 1
+      if type(entry.files) ~= "table" or entry.files[sigRel] == nil then
+        unadvertised = unadvertised or sigRel
+      end
+    end
+  end
+  if sigCount > 0 then
+    test(("every built signature is advertised (%d signed)"):format(sigCount)
+      .. (unadvertised and (" -- " .. unadvertised) or ""), unadvertised == nil)
+  else
+    print("  SKIP: pack is unsigned (build with --sign to exercise this)")
+  end
+end
+
 -- Each package must ship its own manifest, or the installer has nothing
 -- to verify the download against.
 local noManifest = nil

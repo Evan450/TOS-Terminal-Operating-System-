@@ -7,6 +7,73 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### The suite only passed because of which terminal it was launched from
+
+Three tests enumerate the tree with `io.popen`, and were calling POSIX `ls` and
+`find`. Native Lua routes `io.popen` through `cmd.exe` whatever shell started
+the run, so those commands resolved only when Git's bin directory happened to
+be on PATH. From Git Bash: green. From `cmd.exe`: `'ls' is not recognized`, and
+three failures. The Windows `find` is a text search utility rather than a file
+finder, so the older comment claiming portability "across Git-Bash and cmd" was
+wrong on its own terms.
+
+The failures did not look like a shell problem. Each test opens with a "did I
+find anything at all" gate, so an empty enumeration surfaced as
+`file enumeration works`, `found at least one top-level dev script` and
+`found source manifests to lint` -- which read as a broken checkout. Those
+gates are the reason this was catchable at all: without them an empty
+enumeration passes every assertion vacuously.
+
+They now use `dir` and `cd`, cmd builtins that need no PATH lookup, with the
+working directory stripped back off so paths keep the shape POSIX `find` gave.
+Verified from `cmd.exe` with Git's tools removed from PATH, and from Git Bash,
+187/187 in both.
+
+This also corrects the previous entry. The same three tests had been failing
+intermittently under the parallel pool, and that was attributed to contention
+over shared scratch and fixed by serialising them. Wrong cause: it was the same
+PATH lookup, failing occasionally when 16 workers resolved `ls` at once and
+deterministically when it was not there at all. With builtins there is nothing
+to look up, so the three went back into the pool and have been stable across
+six runs. Serialising them fixed nothing; it hid it, and the note explaining
+why has been corrected in place rather than left to read as settled.
+
+### Signatures reach the network, and one command runs the toolchain
+
+`programs.cfg` now advertises each `package.sig`. It had to: `pkgremote`
+downloads only what the index lists and `pkg.install` looks for the signature
+beside the manifest, so a signed pack was arriving UNSIGNED over `pkg fetch`
+while verifying correctly from a floppy. With `pkg trust require on` that is
+the difference between installing and being refused, and nothing would have
+told an operator which half was wrong. `test_repo_index.lua` fails if a
+signature exists in the pack and is missing from the index; proved by deleting
+one entry and watching it name the file.
+
+`build/sign-package.lua` signs one package in place, or `--all`, or prints the
+public key with `--key` and signs nothing -- the thing a publisher needs before
+they have anything to sign. It drives `kernel/pkgsign.lua` over a filesystem
+shim exactly as the disk builder does, so a package signed off-box, one signed
+by `pkg sign` on a booted machine and a pack signed by the builder cannot
+disagree about what a signature is. Writing it turned up an ordering trap worth
+recording: `ed25519.lua` requires `kernel.sha512` at load time, so the hashers
+must be in `package.loaded` BEFORE it loads. Loading all four and registering
+them afterwards leaves ed25519 the only one that quietly fails, and the error
+then reads as "no crypto modules found" -- pointing at the search path rather
+than at the ordering.
+
+`tos.py` is one entry point for the whole toolchain: `test`, `build`, `pack`,
+`sign`, `key`, `check`, `roadmap`, `publish`. Every path resolves from the
+script rather than the shell, so it works from any directory, and it echoes
+each command it runs with the directory it ran in -- the point is to remove the
+choreography, not to hide it. `check` is the useful one day to day: only the
+checks that catch a generated file drifting from its source, which is the
+mistake this project makes most.
+
+Adding it immediately tripped `test_release_excludes.lua`, which derives the
+top-level dev scripts rather than trusting a hand-written list and so knew
+about `tos.py` before either build script did. It had already shipped into
+`TOS-Release` once by then. Both build scripts exclude it now.
+
 ### verify stops taking the filesystem's word for it
 
 `system_manifest.lua` now carries a SHA-256 per entry, so `verify` and the boot
