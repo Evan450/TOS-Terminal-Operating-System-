@@ -12,7 +12,7 @@ return {
   { path = "/tos/kernel/serialize.lua",       critical = true  , hash = "9b466afe83b746fc27b1e2c964f703398a838df9a2a81df49ed1d5f4de6996b3" },
   { path = "/tos/kernel/display.lua",         critical = true  , hash = "310af35643ca0a8e50bd85d500a7f00a3f5d7abfabc552b942aaf3dbc8d9fabd" },
 
-  { path = "/tos/kernel/screen.lua",          critical = false , hash = "69896c528a75da21da9061f21116d46673f1ad6cc03339cd0dffad15fca6b1d4" },
+  { path = "/tos/kernel/screen.lua",          critical = false , hash = "196db37565399311952227a92a323c8690eb0718e9dc120ac5729a6f90b7d5dd" },
   { path = "/tos/kernel/clipboard.lua",       critical = false , hash = "dc9c62a8e37662bf6620f0f506c31bda4b39c98c4fdd8eaf3726fd0463a20903" },
   { path = "/tos/kernel/config.lua",          critical = false , hash = "267662985a05ccd5424309696a85ac836fffb833a7669e6d0ece414824011479" },
   { path = "/tos/kernel/users.lua",           critical = false , hash = "2326fc3f080df10cfb68a0dd944977b1682f48e2495480feba4e9c07f2e0c6a7" },

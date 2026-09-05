@@ -1116,13 +1116,34 @@ function screen.displayProxy(idx)
       if disp[name] then
         proxy[name] = function(...)
           local args = table.pack(...)
-          local r = disp.withContext(d.gpu, d.w, d.h, function()
-            return disp[name](table.unpack(args, 1, args.n))
-          end)
+          --! THE CLEANUP MUST RUN EVEN IF THE DRAW THROWS.
+          --!
+          --! This used to call withContext directly and clean up after
+          --! it. withContext re-raises, so a forwarded draw that threw
+          --! skipped both resets and left the shadow and the colour cache
+          --! describing a screen that had moved on -- permanently, with
+          --! nothing to correct it. That is the exact desync shape behind
+          --! the black status bar, and the round-five note said so:
+          --! "if a black bar or a wrong-coloured row ever survives this
+          --! fix, start here." It survived.
+          --!
+          --! No path was ever found that actually throws in here, and
+          --! that is still true -- so this is not a claimed diagnosis. It
+          --! closes the one hole the previous round left open, and makes
+          --! the invariant unconditional instead of contingent on nothing
+          --! ever failing.
+          --!
+          --! pcall + re-raise, not a swallow: a caller that draws a
+          --! dialog and gets no dialog must still hear about it.
+          local res = table.pack(pcall(disp.withContext, d.gpu, d.w, d.h,
+            function()
+              return disp[name](table.unpack(args, 1, args.n))
+            end))
 
           lastFg, lastBg = nil, nil
           disownGlass()
-          return r
+          if not res[1] then error(res[2], 0) end
+          return table.unpack(res, 2, res.n)
         end
       end
     end
