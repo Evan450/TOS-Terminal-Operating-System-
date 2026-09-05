@@ -263,6 +263,22 @@ do
     test("a failed netinstall does not leave the staging tree behind",
       bootstrapSrc:find("pcall(fs.remove, stagingDir)", 1, true) ~= nil)
 
+    -- A long wait must LOOK like a wait, not like a hang. The probe used
+    -- to print "probing main ... " and then go silent for however long
+    -- the request took; the operator's only options were guess or reboot.
+    test("httpGet accepts a wait tick", bootstrapSrc:find("onWait", 1, true) ~= nil)
+    -- Parens escaped: unescaped, "tick()" is an empty capture group and
+    -- the pattern matches nothing that looks like the code.
+    test("the tick fires while waiting for bytes",
+      bootstrapSrc:find("tick%(%)%s*pause%(0%)") ~= nil)
+    test("the probe passes a ticker", bootstrapSrc:find("PROBE_RETRIES, tickDot", 1, true) ~= nil)
+    test("dots are throttled, not one per read",
+      bootstrapSrc:find("lastDot >= 0.3", 1, true) ~= nil)
+    test("...and capped so they cannot wrap an 80-column line",
+      bootstrapSrc:find("dots < 40", 1, true) ~= nil)
+    test("a tick failure cannot take the install down",
+      bootstrapSrc:find("pcall(onWait)", 1, true) ~= nil)
+
     -- The guard that turns a broken hasher into a refusal rather than a crash.
     test("bootstrap known-answer-tests the hasher before trusting it",
       bootstrapSrc:find("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",

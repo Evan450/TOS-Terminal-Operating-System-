@@ -188,8 +188,14 @@ local PROBE_RETRIES     = 2
 --- GET url -> body, err, status. Retries transient failures; a clean
 --- non-200 (404, etc.) returns immediately since retrying won't change
 --- "the file isn't there".
-local function httpGet(card, url, retries)
+--! `onWait` is called while the request is in flight so a caller can
+--! show that something is still happening. A probe that prints
+--! "probing main ... " and then goes silent for ten seconds is
+--! indistinguishable from one that has hung, and the operator's only
+--! options are to guess or to reboot.
+local function httpGet(card, url, retries, onWait)
   retries = retries or DOWNLOAD_RETRIES
+  local function tick() if onWait then pcall(onWait) end end
   for attempt = 1, retries do
     local okReq, handle, reason = pcall(card.request, url, nil,
       { ["user-agent"] = "TOS-Bootstrap/" .. BOOTSTRAP_VERSION })
@@ -218,6 +224,7 @@ local function httpGet(card, url, retries)
           parts[#parts + 1] = chunk
           deadline = computer.uptime() + REQUEST_TIMEOUT
         else
+          tick()
           pause(0)
         end
         if computer.uptime() > deadline then
@@ -328,9 +335,28 @@ local baseBranch, baseSubdir, manifestSrc
 for _, branch in ipairs(branches) do
   for _, subdir in ipairs(subdirs) do
     local label = branch .. (subdir ~= "" and ("/" .. subdir) or "")
-    io.write("  probing " .. label .. " ... ")
+    io.write("  probing " .. label .. " ")
+    --! A dot every third of a second while the request is in flight, so
+    --! a slow probe LOOKS slow instead of looking hung. Throttled rather
+    --! than one-per-read: the read loop spins far faster than a person
+    --! can read, and a wall of dots is its own kind of noise.
+    --!
+    --! Capped so an unreachable host cannot push the label off an
+    --! 80-column line -- at 20 s of REQUEST_TIMEOUT this would otherwise
+    --! print ~60 dots and wrap.
+    local dots = 0
+    local lastDot = computer.uptime()
+    local function tickDot()
+      local now = computer.uptime()
+      if now - lastDot >= 0.3 and dots < 40 then
+        lastDot = now
+        dots = dots + 1
+        io.write(".")
+      end
+    end
     local url = rawUrl(owner, repoName, branch, subdir, "/tos/system_manifest.lua")
-    local body, err = httpGet(card, url, PROBE_RETRIES)
+    local body, err = httpGet(card, url, PROBE_RETRIES, tickDot)
+    io.write(" ")
     if body and #body > 0 then
       color(0x00FF00); print("found"); color(0xFFFFFF)
       baseBranch, baseSubdir, manifestSrc = branch, subdir, body
@@ -438,9 +464,19 @@ do
     warn("corrupted transfer will not be caught here.")
     print()
   else
-    io.write("  fetching the hasher ... ")
+    io.write("  fetching the hasher ")
     local SHA_PATH = "/tos/kernel/sha256.lua"
-    local body = httpGet(card, rawUrl(owner, repoName, baseBranch, baseSubdir, SHA_PATH))
+    -- Same throttled ticker as the probe: this is a ~14 KB fetch that is
+    -- usually instant and occasionally is not.
+    local hDots, hLast = 0, computer.uptime()
+    local body = httpGet(card, rawUrl(owner, repoName, baseBranch, baseSubdir, SHA_PATH),
+      nil, function()
+        local now = computer.uptime()
+        if now - hLast >= 0.3 and hDots < 40 then
+          hLast = now; hDots = hDots + 1; io.write(".")
+        end
+      end)
+    io.write(" ")
     if not body then
       color(0xFFFF00); print("unavailable"); color(0xFFFFFF)
       warn("Could not fetch " .. SHA_PATH .. "; downloads will NOT be verified.")

@@ -22,11 +22,32 @@
 
 local M = {}
 
+--! computer.pullSignal(t) returns THE MOMENT a signal arrives; `t` is
+--! only the longest it will wait when nothing happens. So this number
+--! does not affect how fast a keypress registers -- it only decides how
+--! often the machine wakes up to be told nothing happened.
+--!
+--! It was 0.05: twenty wakeups a second, per open dialog, burning
+--! per-tick call budget the whole time a box sat there waiting for
+--! someone to read it. Every other wait in the kernel uses 0.5. A modal
+--! dialog has nothing to animate, so it can afford to wait far longer
+--! than any of them.
+--!
+--! Not infinite, deliberately. Waking occasionally redraws the box,
+--! which self-heals the case the screen log already reports -- "Display
+--! cache was wrong ... Something moved the glass without declaring it".
+--! A dialog that blocked forever would stay corrupted forever.
+local DIALOG_IDLE_WAIT = 5
+
 local function pullSignal()
+  --! The good path: inside a coroutine this is a true event wait, and it
+  --! hands control back to the scheduler so background services keep
+  --! running while the box is up. The timeout below is the fallback for
+  --! callers that are not on a coroutine.
   if coroutine.isyieldable and coroutine.isyieldable() then
     return coroutine.yield()
   end
-  return require("computer").pullSignal(0.05)
+  return require("computer").pullSignal(DIALOG_IDLE_WAIT)
 end
 
 -- Keep the END of a growing input visible: return the trailing `width`

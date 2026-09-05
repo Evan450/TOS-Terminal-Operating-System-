@@ -707,10 +707,15 @@ return function(C, S, deps)
     local p      = rp(args[1])
     local parent = p:match("^(.*)/[^/]+/?$") or "/"
     if not canWrite(parent, o) then return end
-    if F.makeDirectory(p) then
+    --! Surface the REASON. securefs returns a full explanation --
+    --! which guard refused, why, and how root lifts it -- and this threw
+    --! it away and printed "Failed", sending the operator to the kernel
+    --! log to find out what happened.
+    local okMk, errMk = F.makeDirectory(p)
+    if okMk then
       refreshBrowser()
       o("Created: " .. args[1], T.highlight)
-    else o("Failed", T.error) end
+    else o(tostring(errMk or "Could not create " .. args[1]), T.error) end
   end
 
   C.touch = function(args, o)
@@ -718,7 +723,8 @@ return function(C, S, deps)
     local p = rp(args[1])
     if not canWrite(p, o) then return end
     if not F.exists(p) then
-      if not F.writeFile(p, "") then o("Failed", T.error); return end
+      local okW, errW = F.writeFile(p, "")
+      if not okW then o(tostring(errW or "Could not create " .. args[1]), T.error); return end
     end
     refreshBrowser()
     o("Touched: " .. args[1], T.highlight)
@@ -858,10 +864,11 @@ return function(C, S, deps)
     end
 
     if not trashOk then
-      if F.remove(p) then
+      local okRm, errRm = F.remove(p)
+      if okRm then
         refreshBrowser()
         o("Removed: " .. target, T.highlight)
-      else o("Failed", T.error) end
+      else o(tostring(errRm or "Could not remove " .. target), T.error) end
     else
       refreshBrowser()
     end

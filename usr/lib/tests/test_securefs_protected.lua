@@ -139,6 +139,66 @@ do
   test("...and it reports as disarmed", false, securefs.operatorOverride(rootSess))
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- The refusal has to explain itself
+-- ══════════════════════════════════════════════════════════════════════
+--! It used to say "Cannot write protected system path (/etc)" -- true,
+--! and useless. The operator learned neither that the rule was
+--! deliberate nor that there is a supported way past it, so the only
+--! route to the full story was the kernel log, which is not somewhere
+--! anyone looks unless they already know to.
+print()
+print("-- refusals explain what, why, and the way out --")
+do
+  local TIER = { GUEST = 0, USER = 1, ADMIN = 2, ROOT = 3 }
+  --! canAccessAs is needed once the override is armed: the guard steps
+  --! aside and the ordinary ACL check runs, which is the point -- the
+  --! override lifts the blanket guard, it does not bypass permissions.
+  --! fs.remove likewise, so the armed path has something to call.
+  securefs.init({
+    fs    = { normalize = function(p) return p end,
+              remove    = function() return true end },
+    users = { TIER = TIER, canAccessAs = function() return true end },
+  })
+  local rootSess = { user = "root", tier = TIER.ROOT }
+  local userSess = { user = "bob",  tier = TIER.USER }
+
+  local _, rootErr = securefs.remove("/etc/thing", rootSess)
+  local _, userErr = securefs.remove("/etc/thing", userSess)
+  rootErr, userErr = tostring(rootErr), tostring(userErr)
+
+  test("names WHAT was refused", true, rootErr:find("removing", 1, true) ~= nil)
+  test("names WHICH guard caught it", true, rootErr:find("/etc", 1, true) ~= nil)
+  test("says WHY the guard exists", true,
+    rootErr:find("above the permission model", 1, true) ~= nil)
+
+  -- The remedy, and it is tailored: telling a plain user to run a
+  -- root-only command sends them after a permission they cannot have.
+  test("tells root the override exists", true, rootErr:find("protect off", 1, true) ~= nil)
+  test("...and that it is per-session", true,
+    rootErr:find("THIS SESSION ONLY", 1, true) ~= nil)
+  test("...and that it is logged", true, rootErr:find("logged", 1, true) ~= nil)
+  test("tells a plain user it needs root", true, userErr:find("Only root", 1, true) ~= nil)
+  test("...without implying they can run it", true,
+    userErr:find("THIS SESSION ONLY", 1, true) == nil)
+
+  -- Every refusing path, not just remove.
+  local _, wErr = securefs.writeFile("/tos/kernel/init.lua", "x", rootSess)
+  local _, mErr = securefs.makeDirectory("/usr/newdir", rootSess)
+  local _, nErr = securefs.rename("/etc/a", "/etc/b", rootSess)
+  test("writeFile explains too", true, tostring(wErr):find("protect off", 1, true) ~= nil)
+  test("makeDirectory explains too", true, tostring(mErr):find("protect off", 1, true) ~= nil)
+  test("rename explains too", true, tostring(nErr):find("protect off", 1, true) ~= nil)
+  test("the verb matches the operation", true,
+    tostring(wErr):find("writing to", 1, true) ~= nil)
+
+  -- An armed override must not still be lecturing about how to arm it.
+  securefs.setOperatorOverride(rootSess, true)
+  local okNow = securefs.remove("/etc/thing", rootSess)
+  securefs.setOperatorOverride(rootSess, false)
+  test("an armed session is not refused at all", true, okNow ~= false)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

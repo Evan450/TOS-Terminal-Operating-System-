@@ -116,6 +116,25 @@ do
     test("no first-letter hotkeys (they would eat the typing)",
       body:find("hot%[") == nil)
   end
+
+  --! An open dialog used to wake the machine 20 times a second doing
+  --! nothing, per box, for as long as someone took to read it.
+  --! pullSignal(t) returns the moment a signal arrives -- t is only the
+  --! idle ceiling -- so a long wait costs nothing in responsiveness and
+  --! saves all of that call budget.
+  if src then
+    test("the dialog does not poll 20x a second",
+      src:find("pullSignal(0.05)", 1, true) == nil)
+    test("it waits on an event with a long idle ceiling",
+      src:find("DIALOG_IDLE_WAIT", 1, true) ~= nil)
+    local wait = tonumber(src:match("local DIALOG_IDLE_WAIT = ([%d%.]+)"))
+    test("the ceiling is at least as patient as the kernel's 0.5s waits",
+      type(wait) == "number" and wait >= 0.5)
+    test("...but not infinite, so a corrupted box still redraws",
+      type(wait) == "number" and wait < math.huge)
+    test("a coroutine caller still yields to the scheduler",
+      src:find("coroutine.yield()", 1, true) ~= nil)
+  end
 end
 
 -- ══════════════════════════════════════════════════════════════════════
