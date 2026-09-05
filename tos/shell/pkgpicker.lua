@@ -64,7 +64,7 @@ function M.run(opts)
 
   local SET = readSet()
 
-  local avail = (pkg.listAllAvailable and pkg.listAllAvailable()) or {}
+  local avail = (pkg.listAllAvailable and pkg.listAllAvailable({ includeRemote = true })) or {}
 
   local here = {}
   for _, e in ipairs(avail) do e.reachable = true; here[e.name] = true end
@@ -518,7 +518,9 @@ function M.run(opts)
       field("Kind", e.kind)
       field("Author", e.author)
 
-      if e.reachable then
+      if e.remote then
+        field("From", "repo " .. tostring(e.repo or "?") .. "  (downloads on install)")
+      elseif e.reachable then
         field("From", e.root or (e.disk and ("disk " .. e.disk)))
       else
 
@@ -839,7 +841,7 @@ function M.run(opts)
   local row = 0
 
   local function reachableNow(name)
-    for _, e in ipairs((pkg.listAllAvailable and pkg.listAllAvailable()) or {}) do
+    for _, e in ipairs((pkg.listAllAvailable and pkg.listAllAvailable({ includeRemote = true })) or {}) do
       if e.name == name then return true end
     end
     return false
@@ -849,7 +851,17 @@ function M.run(opts)
     row = row + 1
     if progress then progress(e.name, "row", row) else raw(string.format("  %-16s ", e.name)) end
 
-    local ok, res = pkg.installByName(e.name, { session = session })
+    --! A REMOTE entry is not on any disk, so installByName -- which
+    --! searches local roots -- would report it missing. installRemote
+    --! downloads it, verifies the signature and hashes, and then runs the
+    --! ordinary local install on the staged copy, so every gate the disk
+    --! path has still applies.
+    local ok, res
+    if e.remote then
+      ok, res = pkg.installRemote(e.name, { session = session })
+    else
+      ok, res = pkg.installByName(e.name, { session = session })
+    end
     if ok then
       okCount = okCount + 1
       installedThisRun[#installedThisRun + 1] = e.name
