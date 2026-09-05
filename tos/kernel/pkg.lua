@@ -1304,9 +1304,32 @@ local function signGate(manifestPath, opts)
       .. "). This is tampering or corruption, not a missing signature, and there is no override."
   end
 
-  if verdict.state == "unsigned" and ps.requiresSignature() and not opts.allowUnsigned then
-    return verdict, "refusing to install an unsigned package: this machine is set to "
-      .. "require signatures (pkg trust require off, or --allow-unsigned for one install)."
+  --! `pkg trust require on` has to mean signed BY SOMEONE THIS MACHINE
+  --! TRUSTS, not merely "carries a signature".
+  --!
+  --! It used to refuse only `unsigned`, so a package signed by a key
+  --! nobody had ever heard of installed with a warning. Anyone can
+  --! generate a key in seconds and sign anything with it, so that gate
+  --! stopped honest unsigned packages and nothing an attacker would
+  --! actually do -- while reading, to an operator who had switched it
+  --! on, like a guarantee of provenance.
+  --!
+  --! The two refusals are worded separately because the remedies are
+  --! different: an unsigned package needs the publisher to sign it, an
+  --! untrusted one needs a decision from the person at the keyboard.
+  if ps.requiresSignature() and not opts.allowUnsigned then
+    if verdict.state == "unsigned" then
+      return verdict, "refusing to install an unsigned package: this machine is set to "
+        .. "require signatures (pkg trust require off, or --allow-unsigned for one install)."
+    end
+    if verdict.state == "unknown" then
+      return verdict, "refusing to install '" .. tostring(manifestPath)
+        .. "': its signature is valid but the key is not trusted here, and this machine "
+        .. "is set to require signatures. Trust the publisher with 'pkg trust add <name> "
+        .. tostring(verdict.key) .. "' (fingerprint " .. tostring(verdict.fingerprint)
+        .. " -- compare it with the publisher over a channel that is NOT this package), "
+        .. "or use --allow-unsigned for one install."
+    end
   end
 
   return verdict, nil
