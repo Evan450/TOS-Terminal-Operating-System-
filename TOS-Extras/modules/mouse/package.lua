@@ -1,0 +1,29 @@
+-- Optional Utilities — mouse driver.
+-- TOS has no baked-in mouse support (like MS-DOS); this add-on installs a
+-- userspace driver library, require("mouse"), that turns OpenComputers
+-- touch/drag/drop/scroll signals into clean mouse events, plus a
+-- `mousetest` demo that proves it works. Pure userspace — it only reads
+-- input signals (the `component` cap covers computer.pullSignal + GPU).
+--
+-- 1.1.0 — the panels shell now auto-detects this driver
+-- (shell.panels.mouse): installing it makes the shell's menus, tabs,
+-- file list, dialogs and editor clickable/scrollable. `pkg disable
+-- mouse` turns shell mouse support back off.
+return {
+  name        = "mouse",
+  version     = "1.1.0",
+  kind        = "command",
+  category    = "drivers",
+  description = "Mouse driver: require(\"mouse\") for events + clickable TOS shell UI + `mousetest` demo.",
+  author      = "Strata Systems",
+  files       = {
+    "/usr/lib/mouse.lua",                 -- the driver library
+    "/usr/modules/mouse/init.lua",        -- the `mousetest` demo command
+  },
+  commands     = { mousetest = "/usr/modules/mouse/init.lua" },
+  -- `component` grants the trimmed computer table (pullSignal) and GPU
+  -- drawing; `fs.read` lets the user-lib loader read /usr/lib/mouse.lua
+  -- (which lives under world-readable /usr, so this grants nothing extra).
+  capabilities = { "component", "fs.read" },
+  requires    = {},
+}

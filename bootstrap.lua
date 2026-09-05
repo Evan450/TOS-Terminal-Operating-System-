@@ -370,6 +370,79 @@ ok("Using " .. owner .. "/" .. repoName .. "@" .. baseBranch ..
   " (" .. #manifest .. " files declared)")
 print()
 
+-- ============================================================
+-- Download integrity
+-- ============================================================
+--! WHAT THIS DOES AND DOES NOT PROVE. The release manifest carries a
+--! SHA-256 for every file it lists, so once the manifest is in hand every
+--! subsequent download can be checked against it. That turns a truncated
+--! transfer, a proxy that mangles line endings, or a file swapped in
+--! flight into a loud refusal instead of a machine that boots something
+--! subtly wrong.
+--!
+--! It does NOT prove the release is genuine. The manifest and the files
+--! come from the same place over the same connection: whoever can rewrite
+--! one can rewrite the other. Verifying downloads against it means "these
+--! are the bytes that repository is serving", not "these are the bytes
+--! Strata published". Closing that gap needs a signature checked against
+--! a key pinned HERE, in this file, rather than fetched alongside the
+--! thing it vouches for -- tracked, not done.
+--!
+--! Bootstrapping the hasher is the ordering problem: sha256.lua is itself
+--! one of the downloads. It is fetched first and checked against its own
+--! manifest entry, which catches corruption but is obviously circular
+--! against a hostile server. Stated plainly rather than dressed up.
+local hashes = {}
+for _, entry in ipairs(manifest) do
+  if type(entry) == "table" and type(entry.path) == "string"
+     and type(entry.hash) == "string" and #entry.hash == 64 then
+    hashes[entry.path] = entry.hash:lower()
+  end
+end
+
+local sha256, verifyOn = nil, false
+do
+  local declared = 0
+  for _ in pairs(hashes) do declared = declared + 1 end
+  if declared == 0 then
+    warn("This release ships no digests — downloads cannot be verified.")
+    warn("Older releases predate them; the install will still work, but a")
+    warn("corrupted transfer will not be caught here.")
+    print()
+  else
+    io.write("  fetching the hasher ... ")
+    local SHA_PATH = "/tos/kernel/sha256.lua"
+    local body = httpGet(card, rawUrl(owner, repoName, baseBranch, baseSubdir, SHA_PATH))
+    if not body then
+      color(0xFFFF00); print("unavailable"); color(0xFFFFFF)
+      warn("Could not fetch " .. SHA_PATH .. "; downloads will NOT be verified.")
+      print()
+    else
+      local chunk = load(body, "=sha256", "t", {})
+      local okS, mod = false, nil
+      if chunk then okS, mod = pcall(chunk) end
+      if okS and type(mod) == "table" and mod.hex then
+        -- Circular by construction; see the note above.
+        if hashes[SHA_PATH] and mod.hex(body) ~= hashes[SHA_PATH] then
+          color(0xFF0000); print("CORRUPT"); color(0xFFFFFF)
+          fail("sha256.lua does not match its own manifest entry.")
+          fail("Refusing to install from a repository that is inconsistent")
+          fail("with itself. Retry; if it persists, the release is broken.")
+          return
+        end
+        sha256, verifyOn = mod, true
+        color(0x00FF00); print("ok"); color(0xFFFFFF)
+        ok(declared .. " of " .. #manifest .. " files carry a digest and will be verified")
+        print()
+      else
+        color(0xFFFF00); print("unusable"); color(0xFFFFFF)
+        warn("sha256.lua did not load; downloads will NOT be verified.")
+        print()
+      end
+    end
+  end
+end
+
 -- ── Staging directory, with a fallback if /tmp isn't there ─────────
 -- /tmp is OpenOS's normal tmpfs mount and is present on any install
 -- that boots to a shell at all, but a stripped-down or custom image
@@ -418,6 +491,17 @@ for i, path in ipairs(fileList) do
   local url = rawUrl(owner, repoName, baseBranch, baseSubdir, path)
   local body, err = httpGet(card, url)
   if body then
+    --! Verify BEFORE writing. A file that fails its digest never reaches
+    --! the staging tree, so a later retry cannot find a bad copy sitting
+    --! there and a partial install cannot be completed by accident.
+    local want = verifyOn and hashes[path] or nil
+    if want and sha256.hex(body) ~= want then
+      failed = failed + 1
+      failedPaths[#failedPaths + 1] = path .. ": DIGEST MISMATCH (corrupt or tampered)"
+      body = nil
+    end
+  end
+  if body then
     local f = io.open(stagingDir .. path, "w")
     if f then
       f:write(body); f:close()
@@ -426,6 +510,8 @@ for i, path in ipairs(fileList) do
       failed = failed + 1
       failedPaths[#failedPaths + 1] = path .. ": cannot open staging file for write"
     end
+  elseif err == nil then
+    -- Already counted as a digest failure above; nothing more to say.
   else
     -- bios.lua is not on every install disk either; a 404 for it
     -- specifically is not a failure, just "this release has none".
@@ -451,6 +537,31 @@ else
   if #failedPaths > 5 then warn("  (+" .. (#failedPaths - 5) .. " more)") end
 end
 print()
+
+--! A digest mismatch is not a flaky network. Ordinary download failures
+--! are worth retrying and install.lua's own copy+verify pass will catch
+--! whatever is missing; a file that arrived intact and hashed WRONG is a
+--! different claim — the repository served bytes it does not agree with.
+--! Refuse the whole install rather than hand a partly-suspect tree to the
+--! installer, and say which files, because "some of it was wrong" is not
+--! something an operator can act on.
+do
+  local tampered = {}
+  for _, msg in ipairs(failedPaths) do
+    if msg:find("DIGEST MISMATCH", 1, true) then tampered[#tampered + 1] = msg end
+  end
+  if #tampered > 0 then
+    fail(#tampered .. " file(s) did not match the digest the manifest declares:")
+    for i = 1, math.min(8, #tampered) do warn("  " .. tampered[i]) end
+    if #tampered > 8 then warn("  (+" .. (#tampered - 8) .. " more)") end
+    print()
+    fail("Refusing to install. Nothing was written outside " .. stagingDir .. ".")
+    warn("Retry once — a mangling proxy or a truncated transfer looks the")
+    warn("same as tampering from here. If it repeats, the release is either")
+    warn("broken or not what it claims to be; install from a disk instead.")
+    return
+  end
+end
 
 -- install.lua is the one file bootstrap cannot proceed without — every
 -- other manifest entry's fate is install.lua's own copy+verify problem

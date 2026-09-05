@@ -89,7 +89,7 @@ end
 -- The real blockfs driver (for formatting the fake drive + the blob).
 local blockfs
 do
-  local src = findUp("../TOS-Extras/modules/blockfs/usr/lib/blockfs.lua")
+  local src = findUp("TOS-Extras/modules/blockfs/usr/lib/blockfs.lua")
   test("blockfs.lua readable (TOS-Extras)", src ~= nil)
   if not src then print(); print("*** TESTS FAILED ***"); return false end
   blockfs = assert(load(src, "=blockfs.lua", "t"))()

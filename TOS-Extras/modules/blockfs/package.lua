@@ -1,0 +1,32 @@
+-- Optional Utilities — TBFS block filesystem for UNMANAGED drives.
+--
+-- OpenComputers drives come managed (a `filesystem` component with a
+-- ready-made file API — what TOS mounts by default) or UNMANAGED (a raw
+-- `drive` component: readSector/writeSector and nothing else). An
+-- unmanaged drive has no files until an OS lays a filesystem onto its
+-- bare sectors. This package IS that filesystem: install it and the base
+-- `drive` command can format, mount, check, and defragment unmanaged
+-- drives, after which they behave like any other TOS disk.
+--
+-- Ships ONLY the driver library (/usr/lib/blockfs.lua). The privileged
+-- glue — detecting drives and the `drive` command that mounts them —
+-- lives in the base image, so a stock TOS always SEES unmanaged drives
+-- and only needs this package to actually USE them for storage. The
+-- library is pure (it touches only the drive proxy handed to it), so it
+-- carries no capabilities of its own.
+return {
+  name        = "blockfs",
+  version     = "1.0.0",
+  kind        = "lib",
+  category    = "storage",
+  description = "TBFS: a real hierarchical filesystem for unmanaged drives (format/mount/fsck/defrag via the base `drive` command).",
+  author      = "Strata Systems",
+  files       = {
+    "/usr/lib/blockfs.lua",
+  },
+  -- Pure library — no command entrypoints, no capabilities. The base
+  -- `drive` command require()s it and supplies the raw drive proxy.
+  commands     = {},
+  capabilities = {},
+  requires    = {},
+}

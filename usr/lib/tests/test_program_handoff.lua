@@ -64,7 +64,7 @@ do
   local names = { "calc", "snake", "ttt", "tetris",
                   "mail", "mouse", "tape-authenticator", "blockfs" }
   for _, n in ipairs(names) do
-    local m = findUp("../TOS-Extras/modules/" .. n .. "/package.lua")
+    local m = findUp("TOS-Extras/modules/" .. n .. "/package.lua")
     if m then
       if m:find("fullscreen%s*=%s*true") then declared[#declared + 1] = n
       else undeclared[#undeclared + 1] = n end
@@ -78,7 +78,7 @@ do
 
   -- Background policies are deliberate, not copy-paste.
   local function policyOf(n)
-    local m = findUp("../TOS-Extras/modules/" .. n .. "/package.lua") or ""
+    local m = findUp("TOS-Extras/modules/" .. n .. "/package.lua") or ""
     return m:match('background%s*=%s*"(%w+)"')
   end
   eq("tetris freezes when you leave (a falling piece must not fall on)",
@@ -177,9 +177,9 @@ do
   for _, f in ipairs({ "tos/shell/panels/events.lua",
                        "tos/shell/panels/commands/core.lua",
                        "tos/shell/init.lua",
-                       "../TOS-Extras/modules/calc/init.lua",
-                       "../TOS-Extras/modules/ttt/init.lua",
-                       "../TOS-Extras/modules/snake/init.lua" }) do
+                       "TOS-Extras/modules/calc/init.lua",
+                       "TOS-Extras/modules/ttt/init.lua",
+                       "TOS-Extras/modules/snake/init.lua" }) do
     scan(f)
   end
   test("Ctrl+B (2) is bound by nothing else", bound[2] == nil)

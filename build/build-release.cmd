@@ -26,12 +26,16 @@ pushd "%ROOT_DIR%"
 lua "%DEV_DIR%\build\strip.lua" "%DEV_DIR%" "%RELEASE_DIR%" --minify ^
     --exclude /build/ ^
     --exclude /usr/lib/tests/ ^
+    --exclude /TOS-Extras/ ^
     --exclude /run_tests.sh ^
     --exclude /run_tests.py ^
     --exclude /todo_index.py ^
     --exclude /.claude/ ^
     --exclude /README.md ^
     --exclude /CHANGELOG.md ^
+    --exclude /CONTRIBUTING.md ^
+    --exclude /ROADMAP.md ^
+    --exclude /SECURITY.md ^
     --exclude /Codenames.txt ^
     --exclude /TODO.txt ^
     --exclude /MANUAL.md ^

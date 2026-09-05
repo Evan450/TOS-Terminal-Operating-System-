@@ -56,6 +56,7 @@ esac
 lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify \
     --exclude /build/ \
     --exclude /usr/lib/tests/ \
+    --exclude /TOS-Extras/ \
     --exclude /run_tests.sh \
     --exclude /run_tests.py \
     --exclude /todo_index.py \

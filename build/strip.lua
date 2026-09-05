@@ -431,6 +431,83 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
         #dropped, #dropped == 1 and "y" or "ies"))
       for _, p in ipairs(dropped) do io.write("  - " .. p .. "\n") end
     end
+
+    -- ── Content digests ──────────────────────────────────────
+    --! `verify` and the boot self-check have been able to check a
+    --! per-entry `hash` field since #SEC C1 -- kernel.verifySystem reads
+    --! `file.hash`, compares it against the file on disk and counts a
+    --! mismatch as damage. Nothing ever WROTE those hashes, so both were
+    --! confirming that files exist rather than that they are unmodified,
+    --! and an edited kernel module passed. Meanwhile pkg has required a
+    --! SHA-256 for every file in a third-party package all along: add-on
+    --! code was held to a higher standard than the OS carrying it.
+    --!
+    --! Injected HERE, over the EMITTED bytes, because that is what gets
+    --! installed -- the source file differs from the stripped one, so a
+    --! hash taken in TOS-Dev would be wrong for every release. Only the
+    --! Release manifest gets them; the Dev tree's is deliberately left
+    --! alone, so editing a source file does not dirty the manifest on
+    --! every save.
+    --!
+    --! These are integrity, NOT authenticity: anyone who can rewrite a
+    --! file can rewrite its hash beside it. What they give is a checkable
+    --! chain when the manifest itself is trusted -- anchored in the
+    --! EEPROM by kernel.anchorManifestHash, or fetched over a verified
+    --! channel by bootstrap.lua.
+    local sha = nil
+    do
+      local chunk = loadfile(src .. "/tos/kernel/sha256.lua")
+        or loadfile(dst .. "/tos/kernel/sha256.lua")
+      if chunk then local okS, m = pcall(chunk); if okS then sha = m end end
+    end
+    if not sha or not sha.hex then
+      io.write("\nWARNING: kernel/sha256.lua not loadable - manifest ships WITHOUT\n")
+      io.write("         digests, so `verify` will only check that files exist.\n")
+    else
+      local body = readAll(manifestPath)
+      local out, hashed, absent = {}, 0, 0
+      for line in body:gmatch("([^\n]*)\n?") do
+        local p = line:match('path%s*=%s*"([^"]+)"')
+        --! The manifest cannot carry its own digest: injecting one changes
+        --! the bytes the digest was taken over, so it can never match and
+        --! `verify` would report the manifest as damaged on every install.
+        --! Left hash-free deliberately -- the manifest's own integrity is
+        --! the EEPROM anchor's job (kernel.anchorManifestHash), which is
+        --! what makes the chain work: EEPROM vouches for the manifest, the
+        --! manifest vouches for everything else.
+        if p == "/tos/system_manifest.lua" then
+          out[#out + 1] = line
+        elseif p and not line:match('hash%s*=') then
+          local data = readAll(dst .. p)
+          if data then
+            --! Close the entry on the SAME line the path is on: the
+            --! manifest is read by a data-only parser, so this must stay
+            --! a flat `{ ... }` literal, and appending before the closing
+            --! brace keeps it one.
+            --! The comma matters. Lua table fields need a separator, and
+            --! `critical = false hash = "..."` is a syntax error -- but
+            --! serialize.decode's permissive parser accepts it, so the
+            --! manifest read back fine while every REAL consumer
+            --! (init.lua, install.lua, bootstrap.lua all use load()) would
+            --! have refused to boot. Caught by parsing the output with
+            --! plain Lua instead of with the forgiving reader.
+            local injected, n = line:gsub("}%s*,%s*$",
+              string.format(', hash = %q },', sha.hex(data)))
+            if n == 1 then out[#out + 1] = injected; hashed = hashed + 1
+            else out[#out + 1] = line end   -- unusual shape: leave it be
+          else
+            out[#out + 1] = line; absent = absent + 1
+          end
+        else
+          out[#out + 1] = line
+        end
+      end
+      writeAll(manifestPath, table.concat(out, "\n"))
+      io.write(string.format("\nManifest digests: %d entr%s hashed", hashed,
+        hashed == 1 and "y" or "ies"))
+      if absent > 0 then io.write(string.format(", %d with no file in dist", absent)) end
+      io.write("\n")
+    end
   end
 end
 

@@ -78,6 +78,30 @@ if bootstrap then
     bootstrap:find("MAX_FILE_BYTES", 1, true) ~= nil)
   test("hands off via loadfile + pcall on the staged install.lua",
     bootstrap:find("loadfile(installPath)", 1, true) ~= nil)
+
+  -- ── Download verification ────────────────────────────────────────
+  -- The manifest carries a SHA-256 per entry; bootstrap must actually use
+  -- them. Source-level pins, because bootstrap.lua is a top-level script
+  -- with real side effects (it clears the screen and surveys hardware the
+  -- moment it loads) and cannot be required into a harness.
+  test("reads the manifest's hash field",
+    bootstrap:find("entry.hash", 1, true) ~= nil)
+  test("fetches the hasher before the payload",
+    bootstrap:find("/tos/kernel/sha256.lua", 1, true) ~= nil)
+  test("checks the hasher against its own manifest entry",
+    bootstrap:find("does not match its own manifest entry", 1, true) ~= nil)
+  test("verifies BEFORE writing to the staging tree",
+    bootstrap:find("Verify BEFORE writing", 1, true) ~= nil)
+  test("treats a digest mismatch as refusal, not a warning",
+    bootstrap:find("DIGEST MISMATCH", 1, true) ~= nil
+      and bootstrap:find("Refusing to install", 1, true) ~= nil)
+  test("degrades honestly when a release ships no digests",
+    bootstrap:find("ships no digests", 1, true) ~= nil)
+  -- The claim has to stay calibrated: verifying downloads against a
+  -- manifest fetched from the same host proves consistency, not
+  -- provenance. If that ever gets overstated in the file, this fails.
+  test("does not overstate what verification proves",
+    bootstrap:find("does NOT prove the release is genuine", 1, true) ~= nil)
   test("passes the staging directory as install.lua's override arg",
     bootstrap:find("pcall(chunk, stagingDir)", 1, true) ~= nil)
 end

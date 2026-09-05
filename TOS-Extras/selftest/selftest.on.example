@@ -1,0 +1,13 @@
+# Presence of this file arms the self-test battery.
+#
+# Options:
+#   shutdown=true   power the machine off when the run finishes (CI)
+#   only=20-        run only checks whose name starts with this
+#   screen=true     allow checks that DRAW on the boot console
+#
+# `screen` is OFF by default and that is deliberate. The boot console is
+# a scrolling log and the battery logs while it runs, so a drawing check
+# cannot stay invisible -- a row saved at one moment holds different
+# content two seconds later, and restoring it puts stale text back.
+# Turn it on when you want the display answers and accept a messy
+# console for that round.

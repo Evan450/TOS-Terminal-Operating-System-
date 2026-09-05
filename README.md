@@ -16,7 +16,7 @@ TOS is public and installable. v1.4.0 "Iris" is the current release — install 
 | Branch | What it is | Edit it? |
 |---|---|---|
 | **`main`** | The **release build** — what installers download. Comments stripped, dev tests and build tooling removed, blank-line runs collapsed. | **No.** Generated. |
-| **`dev`** | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, notes. | **Yes** — all work happens here. |
+| **`dev`** | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, and the add-on source in `TOS-Extras/`. One clone, suite green. | **Yes** — all work happens here. |
 | **`optional-utilities`** | The **add-on pack**, laid out as a `pkg` repository so a machine with an internet card installs from it directly. | **No.** Generated from `TOS-Extras/` on `dev`. |
 
 **`main` is a build artifact, not a source tree.** Every file on it is generated from `dev` by `build/strip.lua`, so a change committed to `main` is silently destroyed by the next release build. Open pull requests against **`dev`**.

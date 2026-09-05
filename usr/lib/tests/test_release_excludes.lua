@@ -40,6 +40,16 @@ local MUST_EXCLUDE = {
   -- lean OS image (`man`/`help` are the in-OS help). The dev roadmap + the
   -- in-emulator checklist are working docs, not shipped.
   "/MANUAL.md", "/EMULATOR_CHECKLIST.md",
+  -- Contributor-facing docs, added when the repo went public. They were
+  -- excluded in build-release.sh and NOT in build-release.cmd for a
+  -- while, because the pin below only covers names listed here -- which
+  -- is exactly the drift this list exists to stop. Both now, both pinned.
+  "/CONTRIBUTING.md", "/ROADMAP.md", "/SECURITY.md",
+  -- The add-on source. It is a SIBLING of TOS-Dev in the monorepo but
+  -- sits INSIDE the repo root on the published dev branch, so a
+  -- contributor running build-release would otherwise sweep every
+  -- package's source into their OS image.
+  "/TOS-Extras/",
 }
 
 for _, script in ipairs({ "build/build-release.sh", "build/build-release.cmd" }) do

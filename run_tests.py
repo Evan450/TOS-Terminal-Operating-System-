@@ -54,7 +54,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEV_DIR = Path(__file__).resolve().parent
-EXTRAS_DIR = DEV_DIR.parent / "TOS-Extras"
+# TOS-Extras sits in one of two places and both are correct. In the local
+# monorepo it is a SIBLING of TOS-Dev; on the published dev branch it is
+# INSIDE the repo root, because a contributor gets one clone and a sibling
+# would be outside it. Prefer the sibling so the monorepo keeps working,
+# fall back to the nested copy so a contributor's add-on tests actually run
+# -- without this they get the add-on source but none of its 21 tests.
+_SIBLING_EXTRAS = DEV_DIR.parent / "TOS-Extras"
+_NESTED_EXTRAS = DEV_DIR / "TOS-Extras"
+EXTRAS_DIR = _SIBLING_EXTRAS if _SIBLING_EXTRAS.is_dir() else _NESTED_EXTRAS
 
 DEFAULT_TIMEOUT = int(os.environ.get("TEST_TIMEOUT", "120"))
 
@@ -85,7 +93,10 @@ SKIP_PATTERN = re.compile(r"not available; run inside TOS|run inside TOS", re.I)
 #
 # Gated on the tree actually being absent, so on a full checkout this
 # never fires and a genuine failure is still reported as a failure.
-EXTRAS_ABSENT = not (Path(__file__).resolve().parent.parent / "TOS-Extras").is_dir()
+# Absent means absent from BOTH places -- see EXTRAS_DIR above. Getting
+# this wrong in the nested layout would skip 14 tests the contributor can
+# actually run, which is the failure this whole mechanism exists to avoid.
+EXTRAS_ABSENT = not EXTRAS_DIR.is_dir()
 
 
 def needs_extras(test: Path) -> bool:

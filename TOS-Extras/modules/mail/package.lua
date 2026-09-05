@@ -1,0 +1,46 @@
+-- Optional Utilities — Mail (mesh mailbox on the integrated network).
+--
+-- Stage 5 of the app/network split: the MESH TRANSPORT is part of the base
+-- OS now (kernel/net/meshctl.lua — flood + dedup + TTL, store-and-forward
+-- retry, end-to-end sealing, TRUSTED-only blind relays), multiplexed by a
+-- service name so any service can ride it. Chat rides it in the base image;
+-- MAIL is this package: mailbox storage (/var/mail/<user>/inbox.dat),
+-- subject/body semantics, the inbox/compose UIs, and the rc.d service that
+-- registers the delivery handler at boot.
+--
+-- Install this on the machines that should HAVE a mailbox. A TOS box
+-- without it still relays mail for its trusted neighbours (relaying is the
+-- transport's job, and relays can't read the sealed payload anyway) — it
+-- just has no inbox of its own.
+--
+-- FULL-PRIV package (blockfs/cluster precedent): the libraries live in
+-- /usr/lib and are loaded by the base shell + rc via the real require, so
+-- they may use kernel.net / kernel.fs. The base image keeps only a thin
+-- `mail` command stub that pcall-requires this package and prints an
+-- install hint when it's absent — exactly how `drive` relates to blockfs.
+return {
+  name        = "mail",
+  version     = "1.0.0",
+  kind        = "service",
+  category    = "network",
+  description = "Mesh email: store-and-forward mailbox, end-to-end sealed, with an inbox tab + CLI TUI.",
+  author      = "Strata Systems",
+  files       = {
+    "/usr/lib/mail.lua",      -- service lib: mailbox, send, delivery handler
+    "/usr/lib/mailui.lua",    -- CLI-shell full-screen TUI
+    "/usr/lib/mailapp.lua",   -- panels tab (the app registry picks it up)
+    "/etc/rc.d/mail.lua",     -- boot service: register the mesh handler
+  },
+  -- No sandboxed command entrypoints: the base `mail` command stub drives
+  -- these libraries with the shell's own display + session context.
+  commands     = {},
+  capabilities = {},
+  requires    = {},
+  -- The inbox tab is clickable (mailapp handles mouse events) when the
+  -- driver is installed; it works fine on the keyboard without it.
+  recommends  = { "mouse" },
+  -- Receiving mail means accepting flooded envelopes from trusted peers
+  -- and writing them to disk — an operator decision, so it starts OFF.
+  -- `service start mail` enables it and persists the enable.
+  service      = { defaultState = "disabled" },
+}

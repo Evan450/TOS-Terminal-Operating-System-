@@ -1,0 +1,55 @@
+-- Optional Utilities — stock: what is in your base, and what is short.
+--
+-- Scans every inventory adjacent to a transposer or inventory controller,
+-- totals each item across all of them, and flags anything below a
+-- threshold you set. Live monitor (`stock`) or one-shot listings
+-- (`stock list` / `stock low` / `stock sides`).
+--
+-- THE CORRECTNESS POINT, because it is the one thing a stock count can
+-- get quietly and badly wrong: items are aggregated by their REGISTRY
+-- NAME plus damage, never by the display label. Two mods can both ship a
+-- "Copper Ingot", and any item can be renamed on an anvil — a count keyed
+-- on the visible name merges things that are not the same item and splits
+-- things that are. The label is carried for display only. Pinned by
+-- test_stock.lua in both directions.
+--
+-- Runs fully inside the pkg sandbox: hardware through
+-- peripheral.inventory (which enforces the peripheral.inventory cap),
+-- drawing through the sandboxed component GPU proxy, and the watch list
+-- through the session-bound `fs`. Thresholds live in /etc/stock-watch.cfg
+-- as plain tab-separated lines — hand-editable, and never executable.
+-- Writing them needs admin, since a base-wide alarm level is not a
+-- personal preference; the monitor says so rather than silently
+-- discarding the setting.
+--
+-- Aggregation, thresholds and formatting are PURE (stock/stock.lua) and
+-- unit-tested off-box by test_stock.lua — 53 assertions, no hardware.
+return {
+  name        = "stock",
+  version     = "1.0.0",
+  kind        = "command",
+  category    = "automation",
+  description = "Inventory monitor: totals every adjacent chest, warns on low stock.",
+  author      = "Strata Systems",
+  files       = {
+    "/usr/modules/stock/init.lua",
+    "/usr/modules/stock/stock.lua",
+  },
+  -- Full-screen program: the shell hands it the seat as its own process,
+  -- so Ctrl+B pushes it to the background and Ctrl+T brings it back.
+  fullscreen  = true,
+  -- Background policy (drowsy): it rescans on a slow timer, and an
+  -- operator who glances away should come back to fresh numbers rather
+  -- than a frozen snapshot. Nothing is lost by letting it settle.
+  background  = "drowsy",
+
+  commands     = { stock = "/usr/modules/stock/init.lua" },
+  -- fs for the watch list, component for the GPU, peripheral.inventory
+  -- for the transposer / inventory controller. Explicitly NOT `net` or
+  -- `internet` — this reads chests, it has nobody to tell.
+  capabilities = { "fs.read", "fs.write", "component", "peripheral.inventory" },
+  requires    = {},
+  -- Soft suggestion only: the monitor is keyboard-first and complete
+  -- without a mouse.
+  recommends  = { "mouse" },
+}
