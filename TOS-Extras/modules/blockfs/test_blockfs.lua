@@ -358,6 +358,66 @@ do
   _G.component, _G.computer, _G._TOS_UNMANAGED_ROOT = savedComp, savedComputer, savedRoot
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- Block cache: faster, and never stale
+-- ══════════════════════════════════════════════════════════════════════
+--! Measured before it was written: one 8 KB file cost 219 sector reads,
+--! and two sectors were 89% of them -- the inode block re-read 144 times
+--! and the bitmap block 50 times, because bitGet/bitSet re-read a whole
+--! sector to test one bit.
+--!
+--! The cache is WRITE-THROUGH, so the danger it must never introduce is
+--! a read that returns bytes older than the last write. The existing
+--! read-after-write tests above already exercise that heavily; these add
+--! the two properties specific to the cache itself.
+do
+  local rd, wr = 0, 0
+  local function countingDrive(ss, n)
+    local store = {}
+    return { getSectorSize=function() return ss end, getCapacity=function() return ss*n end,
+      getPlatterCount=function() return 1 end,
+      readSector=function(i) rd = rd + 1; return store[i] or string.rep("\0", ss) end,
+      writeSector=function(i,d) wr = wr + 1
+        if #d < ss then d = d .. string.rep("\0", ss - #d)
+        elseif #d > ss then d = d:sub(1, ss) end
+        store[i] = d end }
+  end
+
+  local cd = countingDrive(512, 2048)
+  blockfs.format(cd, { label = "cache", now = nowfn })
+  local cp = blockfs.mount(cd, { now = nowfn })
+
+  -- Write-through: the DRIVE must have the bytes, not just the cache.
+  -- Reading through a second, cache-free handle proves it reached disk.
+  local h = cp.open("/c.bin", "w"); cp.write(h, "cached-and-durable"); cp.close(h)
+  local cp2 = blockfs.mount(cd, { now = nowfn })
+  local h2 = cp2.open("/c.bin", "r")
+  local got = cp2.read(h2, 64); cp2.close(h2)
+  --! eq(), not test(): this file's test() takes (name, cond) -- a
+  --! three-argument call passes `true` as the condition and can never
+  --! fail. All four checks in this block were vacuous until a negative
+  --! run (cache removed, 220 reads) still reported PASS.
+  eq("a write reaches the drive, not just the cache", "cached-and-durable", got)
+
+  -- Read-after-write through the SAME handle must see the new bytes: a
+  -- cache that did not update on write would hand back the old sector.
+  local h3 = cp.open("/c.bin", "w"); cp.write(h3, "second version"); cp.close(h3)
+  local h4 = cp.open("/c.bin", "r")
+  local got2 = cp.read(h4, 64); cp.close(h4)
+  eq("a rewrite is visible immediately on the same handle", "second version", got2)
+
+  -- And the point of the whole exercise. Not a fixed number -- that would
+  -- break on any unrelated layout change -- but the ratio the cache
+  -- exists to deliver. Without it this file cost ~14 reads per block.
+  rd, wr = 0, 0
+  local hb = cp.open("/perf.bin", "w"); cp.write(hb, string.rep("z", 8 * 1024)); cp.close(hb)
+  local blocks = math.ceil(8 * 1024 / 512)
+  test("writing 8 KB costs well under 4 reads per block ("
+    .. rd .. " reads for " .. blocks .. " blocks)", rd < blocks * 4)
+  test("...and the writes still happen (write-through, not write-back)",
+    wr >= blocks)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
