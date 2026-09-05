@@ -20,6 +20,31 @@ confinement and the unverified-package gate are the same code as installing
 from a disk. The configured repo list is the allowlist: TOS reaches only
 hosts an admin wrote down, and there is no default repo.
 
+## Verifying what you install
+
+Every package here is signed. Add the publisher key once, and from then on
+`pkg` tells you whether what arrived is what was published:
+
+```
+pkg trust add discover 0db57e705448efc6781d39364a9d7545c8dadaa814480ef9ebc0b9e24d1b6714
+```
+
+With the key added, an install of a package signed by it reports `trusted`.
+Without it, signatures still verify but report `unknown` -- valid, from an
+unrecognised publisher. Tampering reports `invalid` either way: the
+signature covers the manifest's exact bytes, and the manifest carries a
+SHA-256 for every file it installs, so a single altered byte anywhere in a
+package fails the check.
+
+To refuse anything that is not signed by a key you have added:
+
+```
+pkg trust require on
+```
+
+That is off by default, because turning it on before adding a key would lock
+you out of your own packages.
+
 ## Install from a floppy instead
 
 `optutil-set.lua` describes the whole set. To build physical disks, use
