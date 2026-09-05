@@ -94,6 +94,10 @@ function M.openEditTab(S, path)
     curRow     = 1,
     curCol     = 1,
     viewTop    = 1,
+    --! Horizontal companion to viewTop: the leftmost visible column.
+    --! Maintained by clampEdit on every cursor move. draw.lua defaults
+    --! it too, so a tab from an older session cannot render blank.
+    viewLeft   = 1,
     modified   = false,
     searchTerm = nil,
     undoStack  = {},

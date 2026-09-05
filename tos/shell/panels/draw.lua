@@ -702,6 +702,23 @@ function M.editTab(S, tab)
   local editW = W - gutterW
   local isLua = tab.path and tab.path:match("%.lua$")
   local syn = isLua and widgets.getSyntax(S)
+  --! Horizontal scroll offset, decided HERE and nowhere else.
+  --!
+  --! This is the only code that knows the real geometry: gutterW depends
+  --! on the tier and the line count, editW on the current screen width.
+  --! Computing it in the key handler as well would be two places
+  --! deriving the same number from different information -- and the one
+  --! that gets it wrong is invisible, because a mis-scrolled view just
+  --! looks like the editor lost your cursor.
+  --!
+  --! Deciding it at draw time also means a screen RESIZE needs no
+  --! special handling: the next repaint recomputes from the new width.
+  local viewLeft = tab.viewLeft or 1
+  if tab.curCol < viewLeft then viewLeft = tab.curCol end
+  if tab.curCol > viewLeft + editW - 1 then viewLeft = tab.curCol - editW + 1 end
+  if viewLeft < 1 then viewLeft = 1 end
+  tab.viewLeft = viewLeft            -- remembered so the view is stable
+  local lastCol = viewLeft + editW - 1
 
   D.fill(1, 2, W, edH, " ", T.fg, T.bg)
   for i = 1, edH do
@@ -716,22 +733,41 @@ function M.editTab(S, tab)
       end
 
       if syn then
+        --! Tokenize the WHOLE line, then clip each token to the visible
+        --! window. Tokenizing only the visible slice would be simpler
+        --! and wrong: a slice can cut a string literal or comment in
+        --! half, and the highlighter would then colour the remainder as
+        --! code from there to the end of the line.
         local tokens = syn.tokenize(lineText)
-        local x = gutterW + 1
+        local col = 1                      -- absolute column of tok start
         for _, tok in ipairs(tokens) do
           local tokText = tok.text
-          if x - gutterW - 1 + #tokText > editW then
-            tokText = tokText:sub(1, editW - (x - gutterW - 1))
+          local tokEnd  = col + #tokText - 1
+          local from = math.max(col, viewLeft)
+          local to   = math.min(tokEnd, lastCol)
+          if to >= from then
+            local piece = tokText:sub(from - col + 1, to - col + 1)
+            if #piece > 0 then
+              D.set(gutterW + (from - viewLeft) + 1, y,
+                piece, syn.tokenColor(tok.type, T), T.bg)
+            end
           end
-          if #tokText > 0 then
-            local tc = syn.tokenColor(tok.type, T)
-            D.set(x, y, tokText, tc, T.bg)
-            x = x + #tokText
-          end
-          if x > W then break end
+          col = tokEnd + 1
+          if col > lastCol then break end
         end
       else
-        D.set(gutterW + 1, y, lineText:sub(1, editW), T.fg, T.bg)
+        D.set(gutterW + 1, y, lineText:sub(viewLeft, lastCol), T.fg, T.bg)
+      end
+
+      --! Say when a line runs past either edge, the way nano does. Only
+      --! drawn when there IS more text that way, so the markers are
+      --! information rather than decoration -- and only over the edge
+      --! cell, which is the one column they cost.
+      if viewLeft > 1 then
+        D.set(gutterW + 1, y, "<", T.dim, T.bg)
+      end
+      if #lineText > lastCol then
+        D.set(gutterW + editW, y, ">", T.dim, T.bg)
       end
     end
   end
@@ -748,17 +784,21 @@ function M.editTab(S, tab)
       local li = tab.viewTop + i - 1
       local lineText = lines[li]
       if lineText then
-        for cix = 1, math.min(#lineText, editW) do
+        --! Walk the VISIBLE columns, not 1..editW. Iterating from 1
+        --! painted the selection at the wrong x once the view scrolled,
+        --! and highlighted cells the operator could not see.
+        for cix = viewLeft, math.min(#lineText, lastCol) do
           if selMod.contains(tab.selAnchor, here, li, cix) then
-            D.set(gutterW + cix, 1 + i, lineText:sub(cix, cix), sfg, sbg)
+            D.set(gutterW + (cix - viewLeft) + 1, 1 + i, lineText:sub(cix, cix), sfg, sbg)
           end
         end
         -- A selection that runs past the end of a line covers the
         -- newline; show that as one highlighted cell so a multi-line
         -- selection doesn't look ragged.
-        if #lineText < editW
-           and selMod.contains(tab.selAnchor, here, li, #lineText + 1) then
-          D.set(gutterW + #lineText + 1, 1 + i, " ", sfg, sbg)
+        local eol = #lineText + 1
+        if eol >= viewLeft and eol <= lastCol
+           and selMod.contains(tab.selAnchor, here, li, eol) then
+          D.set(gutterW + (eol - viewLeft) + 1, 1 + i, " ", sfg, sbg)
         end
       end
     end
@@ -767,8 +807,12 @@ function M.editTab(S, tab)
   -- Cursor
   local cy = tab.curRow - tab.viewTop + 2
   if cy >= 2 and cy < 2 + edH then
-    local curX = gutterW + tab.curCol
-    if curX <= W then
+    --! Offset by the scroll, so the cursor is drawn where the character
+    --! it sits on actually IS. Previously this was gutterW + curCol and
+    --! simply skipped when that fell past the screen -- which is what
+    --! made typing past the right edge look like a frozen editor.
+    local curX = gutterW + (tab.curCol - viewLeft) + 1
+    if curX >= gutterW + 1 and curX <= gutterW + editW then
       local char = (lines[tab.curRow] or ""):sub(tab.curCol, tab.curCol)
       if char == "" then char = " " end
       D.set(curX, cy, char, T.sel_fg, T.sel_bg)

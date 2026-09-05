@@ -402,11 +402,55 @@ function M.build(S, deps)
     if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
   end
 
+  --! Give a category back. Nothing did this before: once a category was
+  --! require()d it sat in package.loaded for the life of the boot, and
+  --! the three of them are 268 KB of SOURCE (admin 112K, core 100K,
+  --! extras 56K) before Lua compiles them. Anything that iterates the
+  --! command table -- `help`, tab-completion, the app launcher, via the
+  --! __pairs below -- pulls in all three at once and they never leave.
+  --!
+  --! Safe precisely because loading is lazy and idempotent: the next
+  --! access to any command in an evicted category loads it again. The
+  --! cost of being wrong is a reload, not a broken command.
+  --!
+  --! `keep` is the category we are trying to make room FOR, so evicting
+  --! never throws away the thing being asked for.
+  local function releaseCategories(keep)
+    local freed = 0
+    for cat in pairs(loaded) do
+      if cat ~= keep then
+        loaded[cat] = nil
+        package.loaded["shell.panels.commands." .. cat] = nil
+        freed = freed + 1
+      end
+    end
+    --! The command table itself still holds every function the evicted
+    --! module registered, and those closures are what pin the chunk in
+    --! memory -- dropping only package.loaded would free nothing at all.
+    if freed > 0 then
+      for name, cat in pairs(CATEGORY) do
+        if cat ~= keep and not loaded[cat] then C[name] = nil end
+      end
+      nudgeGC()
+    end
+    return freed
+  end
+  M._releaseCategories = releaseCategories
+
   local function loadCategory(cat)
     if loaded[cat] then return end
     local ok, mod = pcall(require, "shell.panels.commands." .. cat)
     if not ok and isOOM(mod) then
-      -- Transient low-memory read failure: free what we can and try once more.
+      --! Out of memory, and the likeliest thing holding it is the OTHER
+      --! command categories -- which are reloadable. Give them back
+      --! before retrying, so a low-memory box loses a reload rather than
+      --! losing half its commands. A GC alone cannot free them: they are
+      --! live references, not garbage.
+      releaseCategories(cat)
+      ok, mod = pcall(require, "shell.panels.commands." .. cat)
+    end
+    if not ok and isOOM(mod) then
+      -- Still short: nothing left to evict, so fall back to the GC nudge.
       nudgeGC()
       ok, mod = pcall(require, "shell.panels.commands." .. cat)
     end

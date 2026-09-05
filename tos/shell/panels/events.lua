@@ -803,6 +803,10 @@ function M.run(S, deps)
               tab.curCol = math.max(1, math.min(#(lines[tab.curRow] or "") + 1, tab.curCol))
               if tab.curRow < tab.viewTop then tab.viewTop = tab.curRow end
               if tab.curRow > tab.viewTop + edH - 1 then tab.viewTop = tab.curRow - edH + 1 end
+
+              --! Horizontal scrolling is decided in draw.lua, which is
+              --! the only place that knows the gutter width and the
+              --! current screen width. Deliberately NOT duplicated here.
             end
             local function pushUndo()
               if not tab.undoStack then tab.undoStack = {} end
