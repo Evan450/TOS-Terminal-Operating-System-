@@ -234,7 +234,13 @@ return function(C, S, deps)
           o("name their disk claims.", T.dim)
           return
         end
-        local ok2, err = pkgMod.trustAdd(args[3], args[4], { session = S and S.session })
+        --! helpers.sessionOf(S), not S.session -- the latter does not
+        --! exist, so these passed nil and worked only because the
+        --! kernel fell back to the module-global current session.
+        --! That fallback is exactly what other paths disable once
+        --! boot completes, and on a multi-seat machine it attributes
+        --! one seat's action to whatever the global happens to hold.
+        local ok2, err = pkgMod.trustAdd(args[3], args[4], { session = helpers.sessionOf(S) })
         if not ok2 then o("Refused: " .. tostring(err), T.error); return end
         o("Trusted '" .. args[3] .. "'.", T.highlight)
         o("Packages signed by this key will now install without a fresh", T.dim)
@@ -242,7 +248,7 @@ return function(C, S, deps)
 
       elseif act == "remove" or act == "rm" then
         if not args[3] then o("Usage: pkg trust remove <name>", T.dim); return end
-        local ok2, err = pkgMod.trustRemove(args[3], { session = S and S.session })
+        local ok2, err = pkgMod.trustRemove(args[3], { session = helpers.sessionOf(S) })
         if not ok2 then o("Refused: " .. tostring(err), T.error); return end
         o("Removed '" .. args[3] .. "'. Already-installed packages are", T.highlight)
         o("unaffected — this changes what will be accepted from now on.", T.dim)
@@ -255,7 +261,7 @@ return function(C, S, deps)
           o("your Optional Utilities disks before turning it on.", T.dim)
           return
         end
-        local ok2, err = pkgMod.trustRequire(val == "on", { session = S and S.session })
+        local ok2, err = pkgMod.trustRequire(val == "on", { session = helpers.sessionOf(S) })
         if not ok2 then o("Refused: " .. tostring(err), T.error); return end
         o("Unsigned packages are now " .. (val == "on" and "REFUSED." or "allowed."), T.highlight)
 
@@ -364,7 +370,7 @@ return function(C, S, deps)
         return
       end
       local key, sigPathOrErr = pkgMod.signPackage(args[2], pass,
-        { session = S and S.session, signer = signerName })
+        { session = helpers.sessionOf(S), signer = signerName })
       if not key then o("Signing failed: " .. tostring(sigPathOrErr), T.error); return end
       o("Signed. Wrote " .. tostring(sigPathOrErr), T.highlight)
       o("public key " .. key, T.fg)
@@ -1896,7 +1902,19 @@ return function(C, S, deps)
     if not okS or not sfs or not sfs.setOperatorOverride then
       o("This build has no protected-path override.", T.error); return
     end
-    local sess = S and S.session
+    --! S.session does not exist. The seat holds a TOKEN at S.st, and
+    --! helpers.sessionOf resolves it (falling back to the module-global
+    --! current session) -- which is what every other session-aware
+    --! command in this file uses. Reaching for S.session meant `protect`
+    --! reported "no session" to a perfectly good root seat, including
+    --! after sudo.
+    local sess = helpers.sessionOf(S)
+    if not sess then
+      o("Could not identify your session, so there is nothing to arm.", T.error)
+      o("This is a bug rather than a permission problem — `whoami` should", T.dim)
+      o("say who you are; if it does, please report it.", T.dim)
+      return
+    end
     local state = sfs.operatorOverride and sfs.operatorOverride(sess)
     local verb = (args[1] or ""):lower()
 

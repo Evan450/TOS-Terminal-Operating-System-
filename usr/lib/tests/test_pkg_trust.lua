@@ -162,6 +162,88 @@ installCalls = 0
 pkg.installFromFloppy({ confirm = function() return true end })
 test("explicit confirm installs", 1, installCalls)
 
+-- ══════════════════════════════════════════════════════════════════════
+-- `pkg trust require on` must mean TRUSTED, not merely SIGNED
+-- ══════════════════════════════════════════════════════════════════════
+--! Reported from a real machine: trust-require was on, a package signed
+--! by a key the machine had never seen installed anyway with a warning,
+--! and the operator could not find the refusal because there was none.
+--!
+--! The gate refused only `unsigned`. Anyone can generate a key in
+--! seconds and sign anything with it, so that stopped honest unsigned
+--! packages and nothing an attacker would do -- while reading, to
+--! someone who had deliberately switched it on, like a guarantee of
+--! provenance.
+--!
+--! Driven through pkg._signGate directly: it is the one place the
+--! decision is made, and the states it switches on come from pkgsign.
+do
+  print()
+  print("-- trust require covers untrusted keys --")
+
+  -- `pkg` is already loaded at the top of this file.
+  local function ok(name, cond) test(name, true, cond and true or false) end
+  if not pkg._signGate then
+    ok("pkg._signGate reachable", false)
+  else
+    -- Stand in for kernel.pkgsign with a scripted verdict + policy.
+    local verdictState, requireOn = "unsigned", false
+    package.loaded["kernel.pkgsign"] = {
+      -- signGate calls init() before verifying; the real module needs fs
+      -- and serialize, the stub needs nothing.
+      init               = function() return true end,
+      verifyManifest     = function()
+        return { state = verdictState, key = "deadbeef", fingerprint = "AAAA BBBB" }
+      end,
+      requiresSignature  = function() return requireOn end,
+      describe           = function() return {} end,
+    }
+
+    local function gate(state, req, opts)
+      verdictState, requireOn = state, req
+      local _, err = pkg._signGate("/d/package.lua", opts or {})
+      return err
+    end
+
+    -- Off: everything but tampering installs, as before.
+    test("require OFF: unsigned installs", nil, gate("unsigned", false))
+    test("require OFF: untrusted key installs", nil, gate("unknown", false))
+    test("require OFF: trusted installs", nil, gate("trusted", false))
+
+    -- On: the two that are not trusted are both refused.
+    local unsignedErr = gate("unsigned", true)
+    local unknownErr  = gate("unknown", true)
+    ok("require ON: unsigned is refused", unsignedErr ~= nil)
+    ok("require ON: an UNTRUSTED key is refused (the bug: it was not)",
+      unknownErr ~= nil)
+    test("require ON: a trusted key still installs", nil, gate("trusted", true))
+
+    -- The two refusals need different remedies, so they must not share
+    -- wording: one needs the publisher to sign, one needs a decision here.
+    ok("the untrusted refusal names the key to trust",
+      unknownErr and unknownErr:find("pkg trust add", 1, true) ~= nil)
+    ok("...and the fingerprint to compare",
+      unknownErr and unknownErr:find("AAAA BBBB", 1, true) ~= nil)
+    ok("...and says to compare it out of band",
+      unknownErr and unknownErr:find("NOT this package", 1, true) ~= nil)
+    ok("the unsigned refusal is worded differently",
+      unsignedErr and unsignedErr ~= unknownErr)
+
+    -- Tampering is never overridable, and that must not have regressed.
+    ok("invalid is refused even with require OFF", gate("invalid", false) ~= nil)
+    ok("...and with the override flag",
+      gate("invalid", true, { allowUnsigned = true }) ~= nil)
+
+    -- The per-install escape hatch still works for the softer cases.
+    test("--allow-unsigned lets an unsigned one through", nil,
+      gate("unsigned", true, { allowUnsigned = true }))
+    test("--allow-unsigned lets an untrusted one through", nil,
+      gate("unknown", true, { allowUnsigned = true }))
+
+    package.loaded["kernel.pkgsign"] = nil
+  end
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then

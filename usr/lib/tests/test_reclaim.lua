@@ -100,6 +100,17 @@ if adminSrc and manSrc then
     adminSrc:match("C%.reclaim = function%(args, o%)%s*if not rootOnly%(o%) then return end") ~= nil)
   test("protect is root-gated",
     adminSrc:match("C%.protect = function%(args, o%)%s*if not rootOnly%(o%) then return end") ~= nil)
+
+  --! S.session does not exist on the seat state -- the token is S.st and
+  --! helpers.sessionOf resolves it. Reaching for S.session made `protect`
+  --! report "no session" to a perfectly good root seat, even after sudo.
+  --! Four older call sites had the same mistake and worked only because
+  --! the kernel fell back to the module-global current session, which is
+  --! wrong the moment a machine has two seats.
+  test("no command reaches for the non-existent S.session",
+    adminSrc:find("S and S.session", 1, true) == nil)
+  test("protect resolves the session like everything else does",
+    adminSrc:find("local sess = helpers.sessionOf(S)", 1, true) ~= nil)
   test("reclaim warns that /bin leaving PATH changes behaviour",
     adminSrc:find("not a command", 1, true) ~= nil)
 end
