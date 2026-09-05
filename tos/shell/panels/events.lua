@@ -480,6 +480,8 @@ function M.run(S, deps)
                 local containsSecret =
                   lowInput:find("trust setsecret", 1, true) or
                   lowInput:find("trust generatesecret", 1, true) or
+
+                  lowInput:find("trust key ", 1, true) or
                   lowInput:find("changepass ", 1, true) or
                   lowInput:find("usermod ", 1, true) and lowInput:find(" pass", 1, true)
                 if not containsSecret then

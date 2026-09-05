@@ -92,23 +92,40 @@ The passphrase **is** the private key — the key is derived from it, not stored
 
 ```
 python tos.py key                      print your public key; signs nothing
-python tos.py sign modules/mything     sign one package, in place
-python tos.py sign --all               every discovered package
-python tos.py pack --sign              build the pack with every manifest signed
+python tos.py pack --sign              build a signed pack  <- to PUBLISH
+python tos.py sign modules/mything     sign one source package, in place
+python tos.py sign --all               every discovered source package
 ```
 
-It must be at least 12 characters. Signing a package writes `package.sig` beside its `package.lua`; signing the *source* tree is not the same as shipping a signed pack, so rebuild afterwards (`tos.py pack --sign`) to carry signatures into `dist/`.
+**`pack --sign` is the one that publishes.** The other two sign the *source* manifests, which is what you want when handing someone a package directory to `pkg install` directly — but those signatures never reach the pack and cannot. The disk builder rewrites every manifest as it assembles, injecting the `hashes` block, so the shipped bytes differ from the source bytes; a signature over the source verifies as **invalid** against the shipped copy. `--sign` therefore signs the assembled manifests itself and ignores anything signed in the source tree.
+
+It must be at least 20 characters and use at least 10 distinct ones. **Generate it; do not invent one.** The key is derived by SHA-512 over `TOS-pkg-signing-key-v2`, your publisher label, and the passphrase, iterated 4096 times. That is deliberately cheap — it has to run on a 192 KB machine sharing one CPU — and cheap means *the passphrase's own entropy is the whole defence*. A KDF that could genuinely protect a memorable phrase needs on the order of 10⁵–10⁶ rounds, which is not reachable here, so the length floor is enforced rather than advised. Whoever recovers your passphrase signs as you.
+
+**Your publisher label is part of your key.** It salts the derivation, so the same passphrase under `acme` and under `Acme Corp` are two different identities with two different public keys. Pick one label and keep using it. Case and surrounding whitespace are normalised (`Discover` and `discover` agree); anything else does not. The label is public — it is printed in the repo README beside the key — so unlike the passphrase it is fine on a command line.
+
+What the salt does and does not buy: it means one precomputed passphrase→key table cannot yield every publisher's key at once, so each identity has to be attacked separately. It adds no secrecy of its own and does nothing against someone targeting you specifically.
+
+Generate and store it in a password manager **before** you sign. It is never written to disk, so there is no keyfile to back up — the passphrase is the only copy. Lose it and every operator who trusted your key has to re-trust a new one.
+
+```bash
+# a generated passphrase, never typed from memory
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Signing a package writes `package.sig` beside its `package.lua`. To ship, run `tos.py pack --sign` — which signs `dist/` itself, as above, rather than carrying anything across from the source tree.
 
 `programs.cfg` advertises each `package.sig`, so signatures travel over `pkg fetch` as well as on a floppy. That matters: `pkgremote` downloads only what the index lists, so an unadvertised signature means a package that is signed on the disk and arrives **unsigned** over the network — and with `pkg trust require on`, that is the difference between installing and being refused.
 
 To publish the key people should trust, print it without signing anything. On a TOS machine:
 
 ```
-pkg trust key <your-passphrase>       prints the public key that passphrase signs as
-pkg sign <directory> [--as <name>]    signs a package tree on-box
+pkg trust key <publisher-label>       prints the public key you sign as
+pkg sign <directory> --as <name>      signs a package tree on-box
 ```
 
-Publish the key it prints; never the passphrase. Note that `pkg trust key` takes the passphrase as an argument, so it lands in the shell's command history — clear it afterwards (`history` is per-user), or derive the key with the builder off-box instead, where the passphrase comes from the environment.
+Both ask for the passphrase without echoing it. The argument is your *label*, which is public; the passphrase is never accepted on a command line, because the line is echoed as you type it and stays in the recall buffer for anyone at that seat. `--as` is required for the same reason it is required off-box: it salts the key, so signing without it would quietly produce a different identity.
+
+Publish the key it prints; never the passphrase.
 
 Lose the passphrase and you lose the identity: there is no recovery, and the only remedy is to publish a new key and ask people to re-trust it. Use something long, keep it somewhere you would keep a password, and do not reuse it.
 

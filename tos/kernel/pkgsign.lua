@@ -313,15 +313,96 @@ function pkgsign.signManifest(manifestPath, seedRaw, opts)
   return rec.key, sigPath
 end
 
-function pkgsign.seedFromPassphrase(pass)
-  if type(pass) ~= "string" or #pass < 12 then
-    return nil, "signing passphrase must be at least 12 characters"
+--! The key is DERIVED from the passphrase, never stored, so the
+--! passphrase IS the private key. Everything below follows from that.
+
+--! v2 (was v1: no salt, 512 rounds, 12-char floor). Three changes, and it
+--! is worth being honest about which one is load-bearing:
+--!
+--!  * SALT = the publisher label. Stops ONE precomputed passphrase->key
+--!    table from yielding every publisher's key at once; each identity
+--!    now has to be attacked on its own. It adds no secrecy — the label
+--!    is public, it is printed in the repo README — so it does nothing
+--!    against someone targeting one specific publisher.
+--!
+--!  * 4096 rounds, was 512. Three bits. That is the honest size of it:
+--!    a KDF that could actually defend a guessable passphrase needs
+--!    ~1e5-1e6 rounds, and this runs on a 192 KB machine sharing one CPU
+--!    with every other seat. Defence in depth, not a defence.
+--!
+--!  * THE ONE THAT MATTERS: the passphrase floor below. Against a
+--!    generated 32-byte passphrase the round count is irrelevant; against
+--!    "correcthorsebattery" no round count reachable here saves it. So
+--!    the entropy is the whole defence, and it is enforced rather than
+--!    advised.
+
+--! Changing any of these three changes every derived key, which is why
+--! the domain string carries a version. A publisher whose key came from
+--! v1 gets a DIFFERENT key here: that is a re-key, not a bug. Already
+--! published signatures still verify — verification reads the public key
+--! out of the signature record and never runs this function.
+local KDF_DOMAIN     = "TOS-pkg-signing-key-v2"
+local KDF_ROUNDS     = 4096
+local KDF_MIN_PASS   = 20
+local KDF_MIN_UNIQUE = 10
+pkgsign.KDF_DOMAIN, pkgsign.KDF_ROUNDS = KDF_DOMAIN, KDF_ROUNDS
+pkgsign.KDF_MIN_PASS, pkgsign.KDF_MIN_UNIQUE = KDF_MIN_PASS, KDF_MIN_UNIQUE
+
+--! Resolved lazily and tolerated absent, exactly as ed25519.lua does:
+--! this module has to load under plain Lua for the off-box signer and
+--! during early boot, where kernel.process does not exist yet.
+local yieldCoop
+do
+  local okP, procMod = pcall(require, "kernel.process")
+  if okP and type(procMod) == "table" and type(procMod.yieldCooperative) == "function" then
+    yieldCoop = procMod.yieldCooperative
+  else
+    yieldCoop = function() end
   end
+end
+
+function pkgsign.normalizeLabel(label)
+  if type(label) ~= "string" then return nil end
+  local s = label:gsub("^%s+", ""):gsub("%s+$", ""):lower()
+  if s == "" then return nil end
+  return s
+end
+
+function pkgsign.seedFromPassphrase(pass, label)
+  local salt = pkgsign.normalizeLabel(label)
+  if not salt then
+    return nil, "a publisher label is required: it salts the key, so the same " ..
+                "passphrase under a different label is a different identity"
+  end
+  if type(pass) ~= "string" or #pass < KDF_MIN_PASS then
+    return nil, "signing passphrase must be at least " .. KDF_MIN_PASS ..
+                " characters (it IS the private key; generate it, do not invent it)"
+  end
+  --! A length floor alone passes "aaaaaaaaaaaaaaaaaaaaaa". This is a
+  --! crude floor, NOT an entropy measure, and is not sold as one: it
+  --! rejects the obviously degenerate and nothing more.
+  local seen, distinct = {}, 0
+  for i = 1, #pass do
+    local c = pass:sub(i, i)
+    if not seen[c] then seen[c] = true; distinct = distinct + 1 end
+  end
+  if distinct < KDF_MIN_UNIQUE then
+    return nil, "signing passphrase uses only " .. distinct .. " distinct characters; " ..
+                "need " .. KDF_MIN_UNIQUE .. ". Generate one rather than composing it."
+  end
+
   local okS, sha512 = pcall(require, "kernel.sha512")
   if not okS or not sha512 then return nil, "sha512 unavailable" end
-  local seed = sha512.raw("TOS-pkg-signing-key-v1\0" .. pass)
 
-  for _ = 1, 512 do seed = sha512.raw(seed) end
+  local seed = sha512.raw(KDF_DOMAIN .. "\0" .. salt .. "\0" .. pass)
+  --! Yield periodically or OpenComputers' watchdog kills the process
+  --! partway through ("too long without yielding"), which at 4096 rounds
+  --! on a shared CPU is a real risk rather than a theoretical one. The
+  --! hash chain is unaffected by being suspended between rounds.
+  for i = 1, KDF_ROUNDS do
+    seed = sha512.raw(seed)
+    if i % 256 == 0 then yieldCoop() end
+  end
   return seed:sub(1, 32)
 end
 

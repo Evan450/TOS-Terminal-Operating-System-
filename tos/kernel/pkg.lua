@@ -2051,6 +2051,10 @@ function pkg.checkSignature(srcDir)
   return ps.verifyManifest(manifestPath), m
 end
 
+--! `opts.signer` is REQUIRED: it is the KDF salt, not decoration. Signing
+--! without it would derive a different key than signing with it, so the
+--! same passphrase would produce two identities depending on whether a
+--! flag was typed.
 function pkg.signPackage(srcDir, passphrase, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts); if not g then return nil, gErr end
@@ -2058,14 +2062,16 @@ function pkg.signPackage(srcDir, passphrase, opts)
   if type(srcDir) ~= "string" or srcDir == "" then return nil, "invalid directory" end
   local m, source, manifestPath = loadAnyManifest(fs.normalize(srcDir))
   if not m then return nil, "no manifest in " .. srcDir .. ": " .. tostring(source) end
-  local seed, sErr = ps.seedFromPassphrase(passphrase)
+  local seed, sErr = ps.seedFromPassphrase(passphrase, opts.signer)
   if not seed then return nil, sErr end
-  return ps.signManifest(manifestPath, seed, { signer = opts.signer })
+  --! Record the NORMALIZED label, so what the signature says its
+  --! publisher is matches the string that actually salted the key.
+  return ps.signManifest(manifestPath, seed, { signer = ps.normalizeLabel(opts.signer) })
 end
 
-function pkg.signingKey(passphrase)
+function pkg.signingKey(passphrase, label)
   local ps, e = withSign(); if not ps then return nil, e end
-  local seed, sErr = ps.seedFromPassphrase(passphrase)
+  local seed, sErr = ps.seedFromPassphrase(passphrase, label)
   if not seed then return nil, sErr end
   local okE, ed = pcall(require, "kernel.ed25519")
   if not okE or not ed then return nil, "ed25519 support unavailable" end

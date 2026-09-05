@@ -2,14 +2,14 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**66 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**67 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 47 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 16 | Idea, no commitment. Discuss before building. |
+| Planned | 49 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
@@ -200,18 +200,22 @@ NEXT REAL-MINECRAFT ROUND — the point of these four is that
 
 ## SIGNED MANIFESTS round (2026-08-11)
 
-### Idea / far future — NOT DONE
+### Planned — Emulator checklist — key DERIVATION, added with KDF v2
 
 ```text
-NOT DONE, deliberate, and the one bullet from the original
-    note that was not followed: no first-party publisher key
-    exists and the shipped Optional Utilities disks are still
-    UNSIGNED. Generating a signing key is the operator's act,
-    not an agent's — a key committed to a repo is not a secret,
-    and a first-party key that everyone has is worse than none
-    because it looks like assurance. The workflow is built and
-    tested; `pkg trust key <passphrase>` prints the public half
-    to publish, and `build-disk.lua --sign` uses it.
+Emulator checklist — key DERIVATION, added with KDF v2:
+      - TIME IT. `pkg trust key <label>` and `pkg sign` on a T1
+        and a T3. v2 raised the round count 512 -> 4096, and
+        4096 rounds of SHA-512 is 0.13 s natively; the on-box
+        figure is the one that decides whether this is usable,
+        and off-box tests cannot give it.
+      - confirm the 5-second watchdog does NOT fire mid-derive.
+        The loop yields every 256 rounds (16 yields); if a seat
+        still stalls, lower that interval rather than the round
+        count — the rounds are the point.
+      - derive the SAME label twice on two machines and confirm
+        the key matches, and a different label gives a different
+        one. This is what makes the salt safe to require.
 ```
 
 ### Planned — Emulator checklist
@@ -1149,6 +1153,31 @@ SPLIT TABS — two or more tabs sharing one screen. Operator
 ```
 
 ## FROM AN EXTERNAL REVIEW (2026-09-04)
+
+### Planned — THE SIGNING KDF IS FAST AND UNSALTED
+
+```text
+THE SIGNING KDF IS FAST AND UNSALTED. seedFromPassphrase is
+    sha512("TOS-pkg-signing-key-v1 "..pass) then 512 iterations.
+    Modest on purpose -- it has to run on a 192 KB machine, and a
+    KDF that makes signing painful just pushes people to shorter
+    secrets, which is a real argument. But two consequences follow
+    and neither is written down anywhere a publisher would look:
+      1. 512 rounds is cheap on a PC, so passphrase ENTROPY is
+         doing all the work. A memorable phrase is brute-forceable
+         into the private key, and the private key is the identity.
+      2. There is no salt -- the domain separator is fixed for
+         every publisher -- so an attacker's work is shared across
+         all of them, and a table can be precomputed once.
+    Options: raise the iteration count for the OFF-BOX signer only
+    (the builder runs on a PC; the machine only ever VERIFIES, and
+    verification does not touch the KDF), or salt with the
+    publisher label, or both. Either changes derived keys, so it
+    needs a v2 domain separator and a migration note -- the "v1" in
+    the string suggests this was anticipated.
+    Meanwhile CONTRIBUTING should say plainly: generate the
+    passphrase, do not invent one.
+```
 
 ### Planned — `pkg trust key &lt;passphrase&gt;` TAKES THE PASSPHRASE AS AN
 
