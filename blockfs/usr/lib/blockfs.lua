@@ -59,14 +59,66 @@ local function driveGeom(drive)
 end
 
 -- Read block b (0-indexed) as an ss-byte string.
+-- ============================================================
+-- Block cache
+-- ============================================================
+--! MEASURED, not guessed. Writing one 8 KB file cost 219 sector reads
+--! for 16 blocks of data, and TWO sectors were 89% of them: the file's
+--! inode block, re-read 144 times, and the allocation bitmap, re-read 50
+--! times. Both are read-modify-write per operation -- bitGet/bitSet
+--! re-read the same bitmap sector for every single bit tested, and one
+--! bitmap sector covers ss*8 blocks, so a scan can re-read one sector
+--! thousands of times.
+--!
+--! WRITE-THROUGH, never write-back. The cached copy is updated at the
+--! moment the drive is, so a machine that stops mid-operation -- which
+--! here means someone broke the computer block -- never loses data a
+--! caller was told had been written. Write-back would be faster again
+--! and is the wrong trade on hardware that can vanish mid-write.
+--!
+--! Four slots: 4 * 512 B = 2 KB, roughly 1% of a Tier 1 machine's RAM.
+--! The hot set is genuinely tiny -- one inode block, one bitmap block,
+--! one directory block -- so more slots would buy almost nothing.
+--!
+--! Safe only because of two facts about this file: every write goes
+--! through writeBlock (the single writeSector call), and the only read
+--! that bypasses readBlock is the superblock at mount time, before an fs
+--! handle exists. If either stops being true, this becomes a corruption
+--! bug rather than a speedup.
+local CACHE_SLOTS = 4
+
+local function cachePut(fs, b, data)
+  local c = fs.cache
+  if not c then return end
+  local e = c.map[b]
+  c.tick = c.tick + 1
+  if e then e.data, e.used = data, c.tick; return end
+  if c.n >= CACHE_SLOTS then
+    local oldest, oldestUsed
+    for blk, ent in pairs(c.map) do
+      if not oldestUsed or ent.used < oldestUsed then oldest, oldestUsed = blk, ent.used end
+    end
+    if oldest then c.map[oldest] = nil; c.n = c.n - 1 end
+  end
+  c.map[b] = { data = data, used = c.tick }
+  c.n = c.n + 1
+end
+
 local function readBlock(fs, b)
   if b < 0 or b >= fs.totalBlocks then
     error("readBlock out of range: " .. tostring(b), 2)
   end
+  local c = fs.cache
+  if c then
+    local e = c.map[b]
+    if e then c.tick = c.tick + 1; e.used = c.tick; return e.data end
+  end
   local s = fs.drive.readSector(b + 1)          -- OC sectors are 1-indexed
   if type(s) ~= "string" then s = "" end
   if #s < fs.ss then s = s .. string.rep("\0", fs.ss - #s) end
-  return s:sub(1, fs.ss)
+  s = s:sub(1, fs.ss)
+  cachePut(fs, b, s)
+  return s
 end
 
 -- Write an ss-byte block (data is padded/truncated to the sector).
@@ -77,6 +129,8 @@ local function writeBlock(fs, b, data)
   if #data < fs.ss then data = data .. string.rep("\0", fs.ss - #data)
   elseif #data > fs.ss then data = data:sub(1, fs.ss) end
   fs.drive.writeSector(b + 1, data)
+  --! Through, not back: the drive already has it before the cache does.
+  cachePut(fs, b, data)
 end
 
 -- ============================================================
@@ -551,6 +605,9 @@ local function openVolume(drive, opts)
   local sb, err = unpackSuper(raw)
   if not sb then return nil, err end
   local fs = {
+    --! Created here so it lives and dies with the handle: unmounting
+    --! or reformatting drops it, and there is no global to go stale.
+    cache = { map = {}, n = 0, tick = 0 },
     drive = drive, ss = sb.ss, totalBlocks = sb.totalBlocks,
     bitmapStart = sb.bitmapStart, bitmapBlocks = sb.bitmapBlocks,
     inodeStart = sb.inodeStart, inodeCount = sb.inodeCount,
