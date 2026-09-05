@@ -2517,6 +2517,21 @@ return function(C, S, deps)
           (m.label or ""):sub(1,14),
           used, kb), T.fg)
       end
+      --! Same gap as `disk`: this lists MOUNTED FILESYSTEMS, and an
+      --! unmanaged drive is not one until it has been formatted and
+      --! mounted. Someone with a raw drive attached sees a list without
+      --! it and reasonably concludes it is not detected. Only shown when
+      --! one is actually attached.
+      local raw = 0
+      for _ in component.list("drive", true) do raw = raw + 1 end
+      if raw > 0 then
+        o("", T.dim)
+        o(raw .. " unmanaged (raw) drive(s) are attached and NOT listed above:", T.warning)
+        o("they hold no filesystem yet, so there is nothing to mount.", T.dim)
+        o("  drive list           see them", T.dim)
+        o("  drive format <addr>  make one a TBFS filesystem", T.dim)
+        o("  drive mount <addr>   then mount it here", T.dim)
+      end
     end
   end
 
