@@ -118,8 +118,20 @@ function M.run(ctx)
       return dialogsMod.alert(S, msg, opts)
     end,
     confirm        = function(msg, opts)
-      opts = opts or {}; opts.redraw = opts.redraw or function() drawMod.all(S, widgetDefs) end
+      opts = opts or {}
+      --! `redraw = false` means "another box follows" -- do NOT replace
+      --! it with the default repaint, or a run of questions flickers the
+      --! whole shell between every one. `or` would have done exactly
+      --! that, since false is falsey.
+      if opts.redraw == nil then
+        opts.redraw = function() drawMod.all(S, widgetDefs) end
+      end
       return dialogsMod.confirm(S, msg, opts)
+    end,
+
+    confirmTyped   = function(msg, word, opts)
+      opts = opts or {}; opts.redraw = opts.redraw or function() drawMod.all(S, widgetDefs) end
+      return dialogsMod.confirmTyped(S, msg, word, opts)
     end,
     drawAll        = function() return drawMod.all(S, widgetDefs) end,
     drawOutRow     = function(text, color) return drawMod.outRow(S, text, color) end,

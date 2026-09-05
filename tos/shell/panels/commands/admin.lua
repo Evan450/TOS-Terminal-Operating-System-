@@ -22,6 +22,12 @@ return function(C, S, deps)
   local fmtSz             = helpers.fmtSz
   local expandBuf         = function(buf) return helpers.expandBuf(S, buf) end
   local promptInput       = deps.promptInput
+  --! The framed yes/no box. Text mode falls back to a [y/N] prompt,
+  --! and BOTH default to no on an interrupted read.
+  local confirmBox        = deps.confirm
+  --! Same framed box, but yes means typing an exact word. For the two
+  --! gates whose failure mode is a machine that no longer boots.
+  local confirmTyped      = deps.confirmTyped
 
   C.kill = function(args, o)
 
@@ -656,11 +662,38 @@ return function(C, S, deps)
         local ok2, summary = pkgMod.installFromFloppy({
           session = helpers.sessionOf(S),
           allowUnverified = allowUnverified,
-          confirm = function(name, dir)
+          confirm = function(name, dir, index, total)
+            --! The box wins when there is one, and it is strictly more
+            --! informative: the one-line prompt had to name only the
+            --! DISK because an over-long path pushed the "[y/N]:"
+            --! affordance off an 80-column screen. A wrapped box has
+            --! room for the whole path, so the operator can actually see
+            --! WHERE a package is coming from before allowing it.
+            --!
+            --! `redraw = false` keeps the box up across the run instead
+            --! of repainting the shell between every question -- a box
+            --! that vanishes and reappears reads as a new interruption
+            --! each time rather than one sequence.
+            if confirmBox then
+              return confirmBox(
+                "Install  " .. name .. "?" .. "\n\n" ..
+                "From:" .. "\n  " .. dir,
+                { title = "Install from media", severity = "install",
+                  yes = "Install", no = "Skip",
+                  progress = (index and total and total > 1)
+                    and { index = index, total = total } or nil,
+                  redraw = (index and total and index < total) and false or nil })
+            end
+            --! Kept, and not only for old shells: a screen too small for
+            --! a framed box, a headless seat, or a GPU-less boot all end
+            --! up here. Name the DISK rather than the path for the same
+            --! 80-column reason as before.
             if not promptInput then return false end
-
             local disk = dir:match("^(/mnt/[^/]+)") or dir
-            local typed = promptInput("Install " .. name .. " from " .. disk .. "? [y/N]: ", 4) or ""
+            local pos = (index and total and total > 1)
+              and string.format(" (%d/%d)", index, total) or ""
+            local typed = promptInput("Install " .. name .. " from " .. disk ..
+              pos .. "? [y/N]: ", 4) or ""
             return typed:lower() == "y" or typed:lower() == "yes"
           end,
         })
@@ -1755,6 +1788,20 @@ return function(C, S, deps)
       return
     end
 
+    --! --apply is a FLAG, and a flag is not consent -- it is something
+    --! copied out of the help text. Ask, in a box, with the safe answer
+    --! first and focused, so the reflex press cancels.
+    if confirmBox then
+      local okGo = confirmBox(
+        string.format("Permanently delete %d OpenOS file(s), ~%d KB?\n\n" ..
+          "%s\n\nTOS keeps working; this drive stops being able to boot " ..
+          "OpenOS. Your recovery path becomes an OpenOS floppy.",
+          #acc.files, kb, table.concat(TREES, "  ")),
+        { title = "Remove OpenOS leftovers", severity = "danger",
+          yes = "Delete", no = "Cancel" })
+      if not okGo then o("Cancelled. Nothing was removed.", T.highlight); return end
+    end
+
     o("", T.dim)
     o("Removing...", T.warning)
     local removed, failedN, freed = 0, 0, 0
@@ -1822,9 +1869,22 @@ return function(C, S, deps)
       (data:find("component.list", 1, true) and data:find("init.lua", 1, true))
     if not looksLikeBios then
 
-      local forced = (promptInput and
-        promptInput("Doesn't look like a BIOS — type 'force' to flash anyway: ", 16)) or ""
-      if forced ~= "force" then
+      local forced
+      if confirmTyped then
+        forced = confirmTyped(
+          "This file does not look like a BIOS." .. "\n\n" ..
+          "None of the markers a BIOS normally carries were found in it. " ..
+          "Flashing it will very likely leave a machine that cannot boot, " ..
+          "and fixing that means physically replacing the EEPROM.",
+          "force",
+          { title = "Not a BIOS", severity = "danger",
+            yes = "Flash anyway", no = "Cancel" })
+      else
+
+        forced = (promptInput and
+          promptInput("Doesn't look like a BIOS — type 'force' to flash anyway: ", 16)) == "force"
+      end
+      if not forced then
         o("Aborted (safety check).", T.dim)
         return
       end
@@ -1855,8 +1915,19 @@ return function(C, S, deps)
     o(string.format("  EEPROM : %s", elabel), T.dim)
     o(string.format("  Boot   : %s", curBoot), T.dim)
 
-    local typed = (promptInput and promptInput('Type "flash" to confirm: ', 16)) or ""
-    local confirmed = (typed == "flash")
+    local confirmed
+    if confirmTyped then
+      confirmed = confirmTyped(
+        "Overwrite this machine's EEPROM with " .. tostring(path or "this image") .. "?" .. "\n\n" ..
+        "The EEPROM is what starts the computer. If the image is wrong, " ..
+        "the machine will not boot and no software fix will reach it.",
+        "flash",
+        { title = "Flash EEPROM", severity = "danger",
+          yes = "Flash", no = "Cancel" })
+    else
+
+      confirmed = (promptInput and promptInput('Type "flash" to confirm: ', 16)) == "flash"
+    end
     if confirmed then
 
       local setOk, setErr = pcall(eeprom.set, data)
@@ -1911,8 +1982,22 @@ return function(C, S, deps)
     if not U then o("No user system", T.error); return end
     local name = args[1]
     if not name then o("Usage: userdel <username>", T.dim); return end
-    local confirm = promptInput("Delete '" .. name .. "'? [y/N]: ", 1, false)
-    if confirm ~= "y" and confirm ~= "Y" then o("Aborted.", T.dim); return end
+    --! A framed box rather than a one-character prompt: deleting an
+    --! account is not recoverable from the shell, and "[y/N]" typed into
+    --! the same line as everything else is easy to answer on reflex.
+    --! Falls back to the text prompt only where no dialog layer exists.
+    local okDel
+    if confirmBox then
+      okDel = confirmBox("Delete the account '" .. name .. "'?\n\n" ..
+        "Their home directory and files are NOT removed, but the account " ..
+        "cannot be recovered from here.",
+        { title = "Delete user", severity = "danger",
+          yes = "Delete", no = "Cancel" })
+    else
+      local typed = promptInput("Delete '" .. name .. "'? [y/N]: ", 1, false)
+      okDel = (typed == "y" or typed == "Y")
+    end
+    if not okDel then o("Aborted.", T.dim); return end
     local ok2, err2 = U.delete(currentActor(), name)
     if ok2 then S.lastOut = { "User '" .. name .. "' deleted.", T.highlight }
     else      S.lastOut = { tostring(err2), T.error } end

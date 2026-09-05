@@ -195,16 +195,140 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
   end
 end
 
+--! Same frame, same title tab, same shadow, same button styling as every
+--! other dialog -- it calls drawDialog like dialogLoop does, and adds
+--! nothing to the visual grammar. The only difference is what it takes
+--! to answer yes.
+--!
+--! WHY THIS EXISTS RATHER THAN A y/N BOX. Typing a word is what defeats
+--! muscle memory, and the operations using it (flashing an EEPROM,
+--! forcing a non-BIOS image onto one) fail by leaving a machine that no
+--! longer boots. Safe-choice-first helps a reflex press; it does nothing
+--! for a confident wrong press, and these are the cases where the
+--! operator being confident is the problem.
+--!
+--! No first-letter hotkeys here, unlike dialogLoop: every printable key
+--! belongs to the text field, or the word could never be typed.
+function M.confirmTyped(S, message, word, opts)
+  opts = opts or {}
+  local style  = opts.style or opts.severity or "danger"
+  local title  = opts.title or STYLE_TITLE[style] or "Confirm"
+  local labels = { opts.no or "Cancel", opts.yes or "Confirm" }
+  local body   = M.wrapText(opts.message or message or "",
+                            math.max(16, (S.W or 50) - 8))
+  local buf, focus = "", 1
+  local maxLen = math.max(#word + 8, 16)
+
+  while true do
+    --! Constant line COUNT in every state. Adding or removing a line as
+    --! the text matched would resize the box mid-typing, and a dialog
+    --! that jumps under the cursor is how a misclick happens.
+    local lines = {}
+    for _, l in ipairs(body) do lines[#lines + 1] = l end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = 'Type  ' .. word .. '  to confirm:'
+    lines[#lines + 1] = "  " .. buf .. "_"
+    local matched = (buf == word)
+    lines[#lines + 1] = matched and "  the word matches - choose Confirm"
+                                 or "  (Confirm stays inert until it matches)"
+
+    local rects = drawDialog(S, style, title, lines, labels, focus, opts.shadow)
+    local sig, _, b, c = pullSignal()
+
+    if sig == "key_down" then
+      if c == 1 or b == 17 then
+        if opts.redraw then opts.redraw() end
+        return false
+      elseif c == 28 then
+        if focus == 1 then
+          if opts.redraw then opts.redraw() end
+          return false
+        elseif matched then
+          if opts.redraw then opts.redraw() end
+          return true
+        end
+
+      elseif c == 203 then focus = (focus > 1) and (focus - 1) or #labels
+      elseif c == 205 or c == 15 then
+        focus = (focus < #labels) and (focus + 1) or 1
+      elseif c == 14 then
+        if #buf > 0 then buf = buf:sub(1, -2) end
+      elseif b and b >= 32 and b < 127 and #buf < maxLen then
+        buf = buf .. string.char(b)
+      end
+
+    elseif sig == "touch" and type(b) == "number" and type(c) == "number" then
+      for i, rt in ipairs(rects) do
+        if c == rt.y and b >= rt.x1 and b <= rt.x2 then
+          if i == 1 then
+            if opts.redraw then opts.redraw() end
+            return false
+          elseif matched then
+            if opts.redraw then opts.redraw() end
+            return true
+          else
+            --! A click on an inert Confirm moves focus there rather than
+            --! doing nothing at all, so the button is visibly the thing
+            --! waiting on them.
+            focus = 2
+          end
+        end
+      end
+
+    elseif sig == "clipboard" and type(b) == "string" then
+      buf = (buf .. b:gsub("\n", "")):sub(1, maxLen)
+    end
+  end
+end
+
+--! Exists because a run of yes/no questions with no visible end is the
+--! thing operators start clicking through. Telling them there are three
+--! left costs two lines and buys an answer they actually meant.
+function M.progressLines(index, total, width)
+  if type(index) ~= "number" or type(total) ~= "number" or total < 1 then
+    return {}
+  end
+  width = math.max(10, math.min(width or 30, 40))
+  --! Counts the question you are ON, not the ones behind you. Measuring
+  --! answered-so-far was defensible and read as broken: the last prompt
+  --! sat at 3-of-4 filled and the bar never completed, no matter what
+  --! you installed. "4 of 4" with a bar that is not full invites the
+  --! reasonable conclusion that something is stuck.
+  --!
+  --! So the first prompt shows one step of progress rather than an empty
+  --! trough, and the last one is full while it is still on screen -- the
+  --! run finishes visibly, before the box goes away.
+  local seen = math.max(0, math.min(index, total))
+  local filled = math.floor((seen / total) * width + 0.5)
+  return {
+    "",
+    string.format("%d of %d   [%s%s]", index, total,
+      string.rep("#", filled), string.rep("-", width - filled)),
+  }
+end
+
 function M.dialog(S, opts)
   opts = opts or {}
   local style  = opts.style or opts.severity or "general"
   local title  = opts.title or STYLE_TITLE[style] or "Message"
   local labels = opts.buttons or { "OK" }
   local lines  = M.wrapText(opts.message or opts.body or "", math.max(16, (S.W or 50) - 8))
+  --! Appended to the body rather than drawn separately, so it lands
+  --! inside the same frame with no change to drawDialog.
+  if opts.progress then
+    for _, l in ipairs(M.progressLines(opts.progress.index, opts.progress.total,
+                                       (S.W or 50) - 16)) do
+      lines[#lines + 1] = l
+    end
+  end
   local focus  = opts.default or 1
   local escIdx = opts.escIndex or #labels
   local pick = dialogLoop(S, style, title, lines, labels, focus, escIdx, opts.shadow)
-  if opts.redraw then opts.redraw() end
+  --! `redraw == false` means "another box follows immediately -- leave
+  --! the screen alone". Repainting the whole shell between questions is
+  --! what made a sequence flicker: box, full redraw, box again, one row
+  --! lower or in a different place. Only the LAST one in a run repaints.
+  if opts.redraw and opts.redraw ~= false then opts.redraw() end
   return pick
 end
 
@@ -221,18 +345,29 @@ function M.alert(S, message, opts)
   return true
 end
 
+--! NO COMES FIRST. Keyboard focus already started on the safe choice, but
+--! the button ORDER was { Yes, No } -- so the leftmost button, the one a
+--! click-through or a stray mouse press lands on, was the destructive
+--! one. Someone dismissing a dialog without reading it should get the
+--! outcome that changes nothing.
+--!
+--! The return value is unchanged (true means yes), so callers did not
+--! need touching -- which is also the trap: the index-to-meaning mapping
+--! flipped inside here and nowhere else. test_dialog_confirm.lua pins
+--! both the order and the mapping.
 function M.confirm(S, message, opts)
   opts = opts or {}
   local pick = M.dialog(S, {
     style    = opts.style or opts.severity or "danger",
     title    = opts.title,
     message  = opts.message or message,
-    buttons  = { opts.yes or "Yes", opts.no or "No" },
-    default  = (opts.default == "yes") and 1 or 2,
-    escIndex = 2,
+    buttons  = { opts.no or "No", opts.yes or "Yes" },
+    default  = (opts.default == "yes") and 2 or 1,
+    escIndex = 1,
+    progress = opts.progress,
     shadow   = opts.shadow, redraw = opts.redraw,
   })
-  return pick == 1
+  return pick == 2
 end
 
 function M.promptSearch(S, currentTerm)

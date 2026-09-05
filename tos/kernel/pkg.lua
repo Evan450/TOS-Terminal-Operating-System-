@@ -1815,16 +1815,36 @@ function pkg.installFromFloppy(opts)
   local installed_pkgs = {}
   local skipped_pkgs = {}
 
+  --! ENUMERATE FIRST, then ask. The loop used to prompt as it walked, so
+  --! the callback could not know how many questions were coming -- and a
+  --! UI cannot show progress it has not been told about. An operator
+  --! being asked a fifth yes/no with no idea whether it is the last one
+  --! gives up and starts pressing whatever ends it soonest, which is the
+  --! opposite of what a confirmation is for.
+  --!
+  --! Two passes over listRepo would be wasteful, so the candidates are
+  --! collected once and reused.
+
+  local candidates = {}
   for _, mountPath in ipairs(mountedRepoRoots()) do
     for _, entry in ipairs(pkg.listRepo(mountPath)) do
-      if confirm(entry.name, entry.dir) then
-        local ok, err = pkg.installByName(entry.name,
-          { extraRoots = { mountPath }, session = opts.session })
-        if ok then installed_pkgs[#installed_pkgs + 1] = entry.name
-        else skipped_pkgs[#skipped_pkgs + 1] = entry.name .. " (" .. tostring(err) .. ")" end
-      else
-        skipped_pkgs[#skipped_pkgs + 1] = entry.name .. " (declined)"
-      end
+      candidates[#candidates + 1] =
+        { name = entry.name, dir = entry.dir, mount = mountPath }
+    end
+  end
+
+  --! The callback signature GREW rather than changed: (name, dir) still
+  --! mean what they did, and index/total are extra trailing arguments an
+  --! older callback simply ignores.
+  local total = #candidates
+  for i, c in ipairs(candidates) do
+    if confirm(c.name, c.dir, i, total) then
+      local ok, err = pkg.installByName(c.name,
+        { extraRoots = { c.mount }, session = opts.session })
+      if ok then installed_pkgs[#installed_pkgs + 1] = c.name
+      else skipped_pkgs[#skipped_pkgs + 1] = c.name .. " (" .. tostring(err) .. ")" end
+    else
+      skipped_pkgs[#skipped_pkgs + 1] = c.name .. " (declined)"
     end
   end
   return true, { installed = installed_pkgs, skipped = skipped_pkgs }
