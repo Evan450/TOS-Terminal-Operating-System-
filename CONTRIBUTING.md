@@ -26,7 +26,7 @@ The roadmap also records work deliberately **not** done, with reasons. Reading t
 
 ## Getting set up
 
-You need a `lua` interpreter (5.3 or 5.4) and Python 3 for the test runner.
+You need a `lua` interpreter (5.3 or 5.4) and Python 3 for the test runner. One Python test (`build/test_sync_emulator.py`) needs **pytest** — `pip install pytest`. Without it that single test fails; everything else runs.
 
 ```bash
 git clone --branch dev https://github.com/Evan450/TOS-Terminal-Operating-System-.git
@@ -35,6 +35,16 @@ python run_tests.py
 ```
 
 The suite is ~185 files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
+
+### What you will see: ~14 skipped tests
+
+A fresh clone reports something like `PASS=151 FAIL=0 SKIP(needs TOS-Extras)=14`, with a note explaining why. That is the expected result, not a broken checkout.
+
+Those tests drive the **add-on packages** — the games, `mail`, `blockfs`, the cluster control plane — which live in a `TOS-Extras/` tree that is **not published yet**. The tests look for it as a *sibling* of the repo (`../TOS-Extras/`), so nothing you can clone today satisfies them. The runner detects the tree is absent and skips them instead of failing.
+
+The built add-ons *are* published, on the `optional-utilities` branch, but in the installable package layout (`write/usr/modules/write/init.lua`) rather than the source layout the tests expect (`modules/write/init.lua`) — so that branch is not a substitute, and reconstructing one from the other is guesswork you should not have to do.
+
+**Practical consequence:** you can work on the kernel, the shell, the network stack and the installers today. You cannot currently contribute an add-on, because there is no tree to open a pull request against. Publishing that tree is tracked in `ROADMAP.md`; if add-ons are what you came for, say so in an issue and it will help it get prioritised.
 
 To try your change on a real machine, install it over the network onto a bare OpenOS box with an internet card, pointing the bootstrap at your branch:
 

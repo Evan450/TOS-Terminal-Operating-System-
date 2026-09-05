@@ -2397,6 +2397,26 @@ that command needs (which tier) and whether your account can run it. *See also:*
   anchored — anyone with write access to those paths (ADMIN+) has code execution
   before login. Treat third-party packages with the usual caution; prefer
   manifests that declare hashes.
+- **securefs is a policy, not a boundary against physical access.** ACLs are
+  enforced by the running TOS. Break the computer, pull the disk, put it in
+  another machine and read it under OpenOS, and every ACL on it is simply
+  gone — the bytes were never encrypted, only guarded. In Minecraft terms:
+  ACLs stop the other players who use *your* terminal, not the one who breaks
+  the block and walks off with the drive. If the contents matter more than
+  that, put them in a `vault` (passphrase-derived key, and it refuses to
+  fall back to software crypto for secret-bearing stores) rather than relying
+  on file permissions. The same applies to a `tape` or any removable medium.
+- **The manifest records presence, not integrity.** `verify` and the boot
+  self-check confirm that every file the manifest lists *exists*; they do not
+  check that its contents are unmodified, because the manifest carries no
+  per-file digests yet. A corrupted or edited kernel module passes. Note the
+  asymmetry: `pkg` requires a SHA-256 for every file in a third-party package,
+  so add-on code is currently held to a higher integrity standard than the OS
+  is. Tracked work, not a design position.
+- **`bootstrap.lua` trusts its transport.** The network installer verifies that
+  what it downloaded is the right *size*, not that it is the right *bytes*. It
+  relies on HTTPS and on the GitHub account not being compromised. Installing
+  from a disk you made yourself avoids that dependency.
 
 ## 16. Configuration Files
 
