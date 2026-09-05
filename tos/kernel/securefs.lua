@@ -42,6 +42,10 @@ local function checkRead(path, session)
 end
 
 local _isProtectedTarget
+--! Forward-declared for the same reason as the guard above:
+--! checkWrite needs it and it is defined further down, next to
+--! the protected-path tables it describes.
+local protectedMsg
 
 local function checkWrite(path, session)
   if not fs or not usermod then return false, "securefs not initialized" end
@@ -55,14 +59,16 @@ local function checkWrite(path, session)
   if _isProtectedTarget then
     local hit = _isProtectedTarget(path, sess)
     if hit then
-      if log then log.warn("securefs", "WRITE denied (protected): " .. path) end
+      if log then log.warn("securefs",
+        "WRITE denied (protected system path " .. hit .. "): " .. path ..
+        " -- root can lift this for one session with `protect off`") end
 
       local hint = ""
       if hit == "/usr/lib" or hit == "/usr/modules" or hit == "/usr/bin"
          or hit == "/var/pkg" then
         hint = " — install add-ons with 'pkg install', not by copying files here"
       end
-      return false, "Cannot write protected system path (" .. hit .. ")" .. hint, path
+      return false, protectedMsg("writing to", hit, sess) .. hint, path
     end
   end
   local allowed, reason = usermod.canAccessAs(sess, path, "w")
@@ -266,6 +272,34 @@ function securefs.operatorOverride(session)
   return hasOverride(session)
 end
 
+--! One place builds the refusal text, so every path -- write, remove,
+--! rename -- says the same three things: WHAT was refused, WHY, and what
+--! to do about it.
+--!
+--! The old messages said only "Cannot write protected system path
+--! (/etc)". True, and useless: the operator learned neither that the
+--! rule is deliberate rather than a bug, nor that there is a supported
+--! way past it. The full explanation existed only in the kernel log,
+--! which is not somewhere anyone looks unless they already know to.
+--!
+--! The remedy line is TAILORED. Telling a plain user to run a root-only
+--! command is noise that sends them looking for a permission they cannot
+--! have, so they are told what it would take instead.
+function protectedMsg(verb, hit, session)
+  local base = "Refused: " .. verb .. " " .. hit ..
+    " is a protected system path. This guard sits above the permission " ..
+    "model and stops even an admin overwriting the kernel or its libraries."
+  local TIER = usermod and usermod.TIER
+  local isRoot = TIER and session and session.tier and session.tier >= TIER.ROOT
+  if isRoot then
+    return base .. "  You own this machine: `protect off` stands the guard " ..
+      "down for THIS SESSION ONLY (it ends at logout, and every path it " ..
+      "allows is logged)."
+  end
+  return base .. "  Only root can lift it, with `protect off`, and only " ..
+    "for their own session."
+end
+
 local function isProtectedTarget(path, session)
   --! An armed root session sees no protected targets at all. Logged at
   --! the point of use so the record names the path, not just the arming.
@@ -303,7 +337,7 @@ function securefs.remove(path, session)
   path = fs.normalize(path)
   local hit = isProtectedTarget(path, sessionOf(session))
   if hit then
-    return false, "Cannot remove protected system path (" .. hit .. ")"
+    return false, protectedMsg("removing", hit, sessionOf(session))
   end
   local ok, err = checkWrite(path, session)
   if not ok then return false, err end
@@ -317,11 +351,11 @@ function securefs.rename(from, to, session)
 
   local hitFrom = isProtectedTarget(nFrom, sessionOf(session))
   if hitFrom then
-    return false, "Cannot rename protected system path (" .. hitFrom .. ")"
+    return false, protectedMsg("renaming", hitFrom, sessionOf(session))
   end
   local hitTo = isProtectedTarget(nTo, sessionOf(session))
   if hitTo then
-    return false, "Cannot rename onto protected system path (" .. hitTo .. ")"
+    return false, protectedMsg("renaming onto", hitTo, sessionOf(session))
   end
   local ok1, err1, normFrom = checkWrite(nFrom, session)
   if not ok1 then return false, err1 end
