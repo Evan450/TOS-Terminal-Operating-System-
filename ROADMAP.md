@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**65 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**66 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 46 | Planned or under investigation. Most contributions belong here. |
+| Planned | 47 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 16 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1149,6 +1149,20 @@ SPLIT TABS — two or more tabs sharing one screen. Operator
 ```
 
 ## FROM AN EXTERNAL REVIEW (2026-09-04)
+
+### Planned — `pkg trust key &lt;passphrase&gt;` TAKES THE PASSPHRASE AS AN
+
+```text
+`pkg trust key <passphrase>` TAKES THE PASSPHRASE AS AN
+    ARGUMENT, so it lands in the shell history that up-arrow reads
+    back. build-disk.lua deliberately refuses a --sign flag for
+    exactly this reason ("argv lands in shell history, and this
+    passphrase IS the private key") -- the on-box path then does
+    the thing the off-box path refuses to. Prompt for it instead,
+    the way login does, or read it from an env var. Noted while
+    documenting the signing workflow; the doc currently warns the
+    reader to clear their history, which is a workaround, not a fix.
+```
 
 ### Planned — DIGESTS IN system_manifest.lua. Every entry is
 

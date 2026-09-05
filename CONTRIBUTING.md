@@ -36,15 +36,59 @@ python run_tests.py
 
 The suite is ~185 files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
 
-### What you will see: ~14 skipped tests
+One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. The full suite should be green — roughly `PASS=187 FAIL=0`.
 
-A fresh clone reports something like `PASS=151 FAIL=0 SKIP(needs TOS-Extras)=14`, with a note explaining why. That is the expected result, not a broken checkout.
+> **Windows note.** Clone somewhere short, like `C:\src\tos`. Some package paths run to ~255 characters, and Windows' 260-character `MAX_PATH` will make the disk builder fail on a write with a path that *looks* fine.
 
-Those tests drive the **add-on packages** — the games, `mail`, `blockfs`, the cluster control plane — which live in a `TOS-Extras/` tree that is **not published yet**. The tests look for it as a *sibling* of the repo (`../TOS-Extras/`), so nothing you can clone today satisfies them. The runner detects the tree is absent and skips them instead of failing.
+## Writing an add-on
 
-The built add-ons *are* published, on the `optional-utilities` branch, but in the installable package layout (`write/usr/modules/write/init.lua`) rather than the source layout the tests expect (`modules/write/init.lua`) — so that branch is not a substitute, and reconstructing one from the other is guesswork you should not have to do.
+Add-ons live under `TOS-Extras/`, install through `pkg`, and run in the capability sandbox. A package is a directory with a `package.lua` manifest and the files it installs:
 
-**Practical consequence:** you can work on the kernel, the shell, the network stack and the installers today. You cannot currently contribute an add-on, because there is no tree to open a pull request against. Publishing that tree is tracked in `ROADMAP.md`; if add-ons are what you came for, say so in an issue and it will help it get prioritised.
+```
+TOS-Extras/modules/mything/
+  package.lua          the manifest: name, version, kind, files, capabilities
+  init.lua             your code
+  test_mything.lua     picked up automatically by run_tests.py
+```
+
+Build the pick-and-choose disks, which also computes each file's SHA-256 into the manifest:
+
+```bash
+cd TOS-Extras
+lua build/build-disk.lua
+lua build/test_manifests.lua      # manifest lint: capability and shape errors
+```
+
+`test_manifests.lua` catches the mistakes that are otherwise silent: `commands` declared as an array instead of a name→path map (which `pkg.commands` drops without a word), sandboxed code using `crypto` or `vault` without declaring the capability, declaring a capability the sandbox will not grant, and a `kind = "service"` package with no `/etc/rc.d/<name>.lua`.
+
+Two rules the tooling enforces rather than trusts:
+
+- **Below 1.0.0 does not ship.** `build-disk.lua`'s `SKIP` table holds pre-1.0 packages off the public pack, and the tests fail if one rejoins. An unfinished add-on that installs cleanly is worse than one nobody can reach.
+- **Hashes are not optional.** `pkg.install` refuses a package whose manifest does not declare a SHA-256 for every file, unless the operator explicitly passes `--allow-unverified`. The builder writes them; you should never have to.
+
+## Signing a package
+
+`pkg` supports Ed25519 publisher signatures. An operator adds your public key once (`pkg trust add <label> <key>`), and from then on your packages verify as yours — and with `pkg trust require on` they can refuse anything unsigned.
+
+The passphrase **is** the private key; the key is derived from it, not stored. So it is taken from the environment, never from a flag:
+
+```bash
+export TOS_SIGNING_PASSPHRASE='the passphrase you will not forget'
+lua build/build-disk.lua --sign
+```
+
+That writes a `package.sig` beside each `package.lua`. A command-line flag was deliberately not offered — argv ends up in shell history, in process listings, and in CI logs.
+
+To publish the key people should trust, print it without signing anything. On a TOS machine:
+
+```
+pkg trust key <your-passphrase>       prints the public key that passphrase signs as
+pkg sign <directory> [--as <name>]    signs a package tree on-box
+```
+
+Publish the key it prints; never the passphrase. Note that `pkg trust key` takes the passphrase as an argument, so it lands in the shell's command history — clear it afterwards (`history` is per-user), or derive the key with the builder off-box instead, where the passphrase comes from the environment.
+
+Lose the passphrase and you lose the identity: there is no recovery, and the only remedy is to publish a new key and ask people to re-trust it. Use something long, keep it somewhere you would keep a password, and do not reuse it.
 
 To try your change on a real machine, install it over the network onto a bare OpenOS box with an internet card, pointing the bootstrap at your branch:
 

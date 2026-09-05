@@ -7,6 +7,100 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### verify stops taking the filesystem's word for it
+
+`system_manifest.lua` now carries a SHA-256 per entry, so `verify` and the boot
+self-check test that files are *unmodified* rather than merely *present*. The
+consumer side turned out to have been there all along — `kernel.verifySystem`
+has read a `file.hash` field since #SEC C1 and counts a mismatch as damage —
+and nothing ever wrote one. `strip.lua` injects them over the emitted bytes,
+which is the only place they can be taken: the source file differs from the
+stripped one, so a digest computed in `TOS-Dev` would be wrong for every
+release. The Dev manifest stays digest-free by design, or every source edit
+would dirty it.
+
+The manifest cannot carry its own digest — injecting one changes the bytes the
+digest was over — so that single entry is left alone and vouched for by the
+EEPROM anchor instead. That is the shape of the chain: EEPROM vouches for the
+manifest, the manifest vouches for everything else. The first version of the
+generator emitted `critical = false hash = "..."`, missing a comma, which
+`serialize.decode`'s permissive parser accepted while real Lua refused — so the
+manifest read back perfectly and would have bricked the release. Caught by
+parsing the output with plain `load()`, which is what `init.lua` actually uses,
+and pinned that way in `test_manifest_digests.lua`.
+
+`bootstrap.lua` now verifies every download against those digests: it fetches
+the hasher first, checks it against its own manifest entry, verifies each file
+*before* writing it to the staging tree, and refuses the whole install on any
+mismatch rather than handing a partly-suspect tree to the installer. The
+comments state plainly what that does and does not prove — the manifest and the
+files come from the same host over the same connection, so this establishes
+"these are the bytes that repository is serving", not "these are the bytes
+Strata published". Closing that gap needs a signature checked against a key
+pinned in `bootstrap.lua` itself, which is written down and not done.
+
+### Contributors can build and sign an add-on now
+
+`TOS-Extras` is published inside the `dev` branch, so one clone carries the OS,
+the add-on source and the whole test suite: `PASS=187 FAIL=0`, no skips. The
+skip mechanism added last round stays as a fallback, but nothing needs it.
+
+That layout change broke three things quietly, and each is worth naming. The
+disk builder located `kernel/sha256.lua` only via a sibling `TOS-Dev`, so a
+contributor's first build produced packages with **no hashes at all** — and
+`pkg.install` refuses an unverified package, so their work would have looked
+broken for a path reason. `--sign` failed the same way on `sha512`, `ed25519`
+and `pkgsign`, meaning signing was unavailable to exactly the people it exists
+for. And `build-release.sh` would have swept every package's source into a
+contributor's OS image, because the exclude list had no `/TOS-Extras/`. While
+fixing that last one it turned out `build-release.cmd` had already drifted from
+the `.sh` — missing `CONTRIBUTING.md`, `ROADMAP.md` and `SECURITY.md` — because
+the lint only pins the names it is told about. All four are pinned now.
+
+Signing itself needed no changes: the passphrase comes from
+`TOS_SIGNING_PASSPHRASE` rather than a flag, because argv reaches shell history
+and that passphrase *is* the private key. Verified end to end in the nested
+layout with a throwaway key, 16 of 16 packages signed. Documenting it did
+surface an inconsistency worth fixing: `pkg trust key` takes the passphrase as
+an argument, which is the thing the builder refuses to do. Written into the
+queue; the doc warns the reader in the meantime.
+
+### Checking the published thing, not the thing we published
+
+`pkg fetch` was refusing 39 of the pack's 59 files, and had been since the
+pack went public. The build hashed the bytes it wrote; publishing put those
+bytes through git, which normalises text to LF in the stored blob. This is a
+Windows checkout with `core.autocrlf=true`, so 64 of the 87 source Lua files
+carry CRLF, the recorded SHA-256s were computed over those CRLFs, and
+`raw.githubusercontent.com` served LF. Fixed at the one seam where package
+content is read, so the bytes hashed, the bytes written and the bytes git
+stores are the same bytes — which is what `strip.lua` has always done for the
+release build.
+
+The interesting part is why nothing caught it. On a physical floppy the
+manifest and the files travel together unnormalised, so the disk path verified
+correctly the whole time; the two halves disagree only after git has touched
+one of them. Every guard was on this side of that boundary — the index matched
+the built disks, every advertised path returned 200, the built pack matched its
+source. All true, and all measuring the wrong side.
+
+So publishing now fetches the artifact back and checks it as a stranger's
+machine would: every manifest hash against the served bytes for the pack, all
+152 manifest paths plus the BIOS byte budget for the OS branches, and for `dev`
+that the private working notes are genuinely absent. It runs automatically
+after a push and standalone via `-VerifyOnly`. It caught one thing immediately
+— itself: measuring `dev`'s unstripped `bios.lua` against the 4 KiB EEPROM
+budget, which is what the strip pass exists to achieve and not a property of
+the source.
+
+Two more guards on the same fault line, since this is the third time a
+generated artifact has drifted from its source with nothing watching the join:
+`test_repo_index.lua` refuses any CRLF in the pack and checks every manifest
+hash against the bytes on disk, and `test_build_disk.lua` now diffs the
+checked-in pack against a fresh build by content rather than by mtime — mtime
+being a proxy that calls a touched file stale and a byte-identical rewrite
+fresh. Both were verified by breaking them deliberately.
+
 ### An outside reader ran the suite, and it was red before they started
 
 Someone reviewed the published repo and sent findings. The most useful one was
