@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**67 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**68 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 49 | Planned or under investigation. Most contributions belong here. |
+| Planned | 50 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -199,6 +199,24 @@ NEXT REAL-MINECRAFT ROUND — the point of these four is that
 ```
 
 ## SIGNED MANIFESTS round (2026-08-11)
+
+### Planned — Emulator checklist - confirmTyped's interactive loop
+
+```text
+Emulator checklist - confirmTyped's interactive loop:
+      - the box draws with the same frame/shadow as every other
+        dialog (it calls drawDialog), at 80x25 and on a resized
+        screen; the line COUNT is constant in both matched and
+        unmatched states so it must not resize while typing
+      - typing the word letter by letter, backspacing, and pasting
+        it via the clipboard signal all reach Confirm
+      - Confirm is inert until the word matches: clicking it moves
+        focus rather than firing, Enter on it does nothing
+      - Esc and ^Q both cancel; Cancel is the FIRST button, so a
+        click-through lands on it
+      - off-box tests cover the contract around this loop, not the
+        loop -- it needs a real screen and signal stream
+```
 
 ### Planned — Emulator checklist — key DERIVATION, added with KDF v2
 

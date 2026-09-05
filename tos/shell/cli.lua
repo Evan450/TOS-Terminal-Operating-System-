@@ -320,6 +320,14 @@ function M.run(ctx)
       local a = readLine(tostring(msg) .. " [y/N]: ", false, 4)
       return a ~= nil and a:lower():sub(1, 1) == "y"
     end,
+    -- Text mode has no frame to draw, but the GATE is the same: the
+    -- exact word or nothing. Never weaken this to y/N just because the
+    -- box is missing -- the box was never what made it safe.
+    confirmTyped   = function(msg, word)
+      if msg then o(tostring(msg), D.c("warning")) end
+      local a = readLine('Type "' .. tostring(word) .. '" to confirm: ', false, 32)
+      return a == word
+    end,
     dialog         = function(opts)
       opts = opts or {}
       if opts.title then o(tostring(opts.title), D.c("title")) end

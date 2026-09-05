@@ -46,6 +46,10 @@ return function(C, S, deps)
   local fmtSz             = helpers.fmtSz
   local expandBuf         = function(buf) return helpers.expandBuf(S, buf) end
   local promptInput       = deps.promptInput
+  --! Framed yes/no box; text mode falls back to a [y/N] line.
+  --! Both default to no. See dialogs.M.confirm -- the SAFE
+  --! choice is the first button, so a click-through cancels.
+  local confirmBox        = deps.confirm
 
   C.redstone = function(args, o)
     local ok2, rs = pcall(require, "peripheral.redstone")
@@ -934,8 +938,20 @@ return function(C, S, deps)
       local px, addr = proxyFor(args[2])
       if not px then o(tostring(addr), T.error); return end
       local label = args[3] or ("disk" .. addr:sub(1, 4))
-      local ans = promptInput and promptInput("FORMAT " .. addr:sub(1, 8) .. "... as TBFS? destroys all data [y/N]: ", 4) or "n"
-      if (ans or ""):lower() ~= "y" then o("Cancelled.", T.dim); return end
+      local okFmt
+      if confirmBox then
+        okFmt = confirmBox(
+          "Format drive " .. addr:sub(1, 8) .. "... as TBFS?" .. "\n\n" ..
+          "Every file on it is destroyed. There is no undo and no\n" ..
+          "recovery tool in TOS that can bring it back.",
+          { title = "Format drive", severity = "danger",
+            yes = "Format", no = "Cancel" })
+      else
+        local ans = promptInput and promptInput("FORMAT " .. addr:sub(1, 8) ..
+          "... as TBFS? destroys all data [y/N]: ", 4) or "n"
+        okFmt = (ans or ""):lower() == "y"
+      end
+      if not okFmt then o("Cancelled.", T.dim); return end
       local ok2, err = lib.format(px, { label = label, now = function() return math.floor(K.uptime and K.uptime() or 0) end })
       if ok2 then o('Formatted as TBFS "' .. label .. '". Mount with: drive mount ' .. addr:sub(1, 8), T.highlight)
       else o("Format failed: " .. tostring(err), T.error) end
@@ -1108,9 +1124,20 @@ return function(C, S, deps)
       local blob = blockfs.bootBlob(blockfsSrc)
       local bootBytes = #blob + 4096   -- slack for the length header + growth
 
-      local ans = promptInput and promptInput(
-        "Install TOS onto raw drive " .. addr:sub(1, 8) .. "...? ERASES it [y/N]: ", 4) or "n"
-      if (ans or ""):lower() ~= "y" then o("Cancelled.", T.dim); return end
+      local okInst
+      if confirmBox then
+        okInst = confirmBox(
+          "Install TOS onto raw drive " .. addr:sub(1, 8) .. "...?" .. "\n\n" ..
+          "The drive is erased and reformatted as bootable TBFS.\n" ..
+          "Anything on it now is gone.",
+          { title = "Erase and install", severity = "danger",
+            yes = "Erase", no = "Cancel" })
+      else
+        local ans = promptInput and promptInput(
+          "Install TOS onto raw drive " .. addr:sub(1, 8) .. "...? ERASES it [y/N]: ", 4) or "n"
+        okInst = (ans or ""):lower() == "y"
+      end
+      if not okInst then o("Cancelled.", T.dim); return end
 
       local nowfn = function() return math.floor((K.uptime and K.uptime()) or 0) end
       o("Formatting " .. addr:sub(1, 8) .. "... as bootable TBFS...", T.title)
