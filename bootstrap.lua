@@ -556,9 +556,21 @@ do
     if #tampered > 8 then warn("  (+" .. (#tampered - 8) .. " more)") end
     print()
     fail("Refusing to install. Nothing was written outside " .. stagingDir .. ".")
-    warn("Retry once — a mangling proxy or a truncated transfer looks the")
-    warn("same as tampering from here. If it repeats, the release is either")
-    warn("broken or not what it claims to be; install from a disk instead.")
+    --! The likeliest cause by far is a release published minutes ago, not
+    --! an attack, and saying so first stops an operator hunting one.
+    --! GitHub caches branch URLs, so a fetch during a release can pick up
+    --! the NEW manifest and files still cached from the OLD one. Every
+    --! digest then mismatches for an entirely boring reason. Said before
+    --! the tampering wording, because a scary message people learn to
+    --! ignore is worse than no message.
+    warn("Most likely: a release was published in the last few minutes and")
+    warn("the download caught it half-updated — the host serves cached files")
+    warn("for a while after a push. Wait five minutes and retry; that fixes")
+    warn("this on its own, and no wait is needed for a disk install.")
+    print()
+    warn("If it repeats after that, treat it as real: a mangling proxy or a")
+    warn("truncated transfer looks the same as tampering from here, and so")
+    warn("does a release that is not what it claims. Install from a disk.")
     return
   end
 end
