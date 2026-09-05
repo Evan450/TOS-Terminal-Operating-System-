@@ -103,7 +103,7 @@ function M.run(opts)
 
   local SET = readSet()
 
-  local avail = (pkg.listAllAvailable and pkg.listAllAvailable()) or {}
+  local avail = (pkg.listAllAvailable and pkg.listAllAvailable({ includeRemote = true })) or {}
   -- Everything reachable RIGHT NOW is what listAllAvailable returned; mark it
   -- so the rest of the picker can tell "here" from "on the other floppy".
   local here = {}
@@ -669,7 +669,9 @@ function M.run(opts)
       -- Which disk this one is on. listAllAvailable already spans every
       -- mounted repo; the picker just never said so, which made a two-floppy
       -- set look like one disk with things mysteriously missing.
-      if e.reachable then
+      if e.remote then
+        field("From", "repo " .. tostring(e.repo or "?") .. "  (downloads on install)")
+      elseif e.reachable then
         field("From", e.root or (e.disk and ("disk " .. e.disk)))
       else
         -- Not in the drive. Say which floppy to fetch — and that picking it
@@ -1041,7 +1043,7 @@ function M.run(opts)
   --- Is this package installable right now? Re-checked between disks: the
   --- answer changes the moment a floppy is swapped.
   local function reachableNow(name)
-    for _, e in ipairs((pkg.listAllAvailable and pkg.listAllAvailable()) or {}) do
+    for _, e in ipairs((pkg.listAllAvailable and pkg.listAllAvailable({ includeRemote = true })) or {}) do
       if e.name == name then return true end
     end
     return false
@@ -1052,7 +1054,17 @@ function M.run(opts)
     if progress then progress(e.name, "row", row) else raw(string.format("  %-16s ", e.name)) end
     -- installByName resolves deps + verifies hashes + enforces the admin
     -- gate via the threaded session.
-    local ok, res = pkg.installByName(e.name, { session = session })
+    --! A REMOTE entry is not on any disk, so installByName -- which
+    --! searches local roots -- would report it missing. installRemote
+    --! downloads it, verifies the signature and hashes, and then runs the
+    --! ordinary local install on the staged copy, so every gate the disk
+    --! path has still applies.
+    local ok, res
+    if e.remote then
+      ok, res = pkg.installRemote(e.name, { session = session })
+    else
+      ok, res = pkg.installByName(e.name, { session = session })
+    end
     if ok then
       okCount = okCount + 1
       installedThisRun[#installedThisRun + 1] = e.name

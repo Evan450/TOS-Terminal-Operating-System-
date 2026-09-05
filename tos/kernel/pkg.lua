@@ -2464,7 +2464,35 @@ end
 
 --- List packages across every configured repo + mounted media. Useful
 --- for `pkg search` UI: shows what's installable right now.
-function pkg.listAllAvailable()
+--! Forward-declared: the remote helpers below are defined further
+--! down, next to the other repo plumbing, and this is called from
+--! here. Without this it resolves to a nil GLOBAL and only fails
+--! when someone actually passes includeRemote.
+local remoteMod
+
+--! `opts.includeRemote` also lists what the CONFIGURED REPOS advertise,
+--! not just what is on a disk right now.
+--!
+--! Without it `pkg search` answered "no packages available" on a machine
+--! with a working repo and an internet card, because it only ever looked
+--! at local roots -- so the operator had to already know a package's name
+--! to fetch it, which is the opposite of searching.
+--!
+--! Remote entries are marked `remote = true` and carry `repo`; they have
+--! no `root`, because they are not anywhere yet. Callers that INSTALL
+--! must branch on that: a remote entry needs pkg.installRemote (fetch,
+--! verify, then the ordinary local install), not installByName.
+--!
+--! A local copy always wins the dedup. If a package is already on a disk
+--! there is no reason to make the operator wait on the network for it.
+--!
+--! No internet card, or no repos configured, means the remote pass
+--! contributes nothing and says nothing: pkgremote.index returns an
+--! error, search logs it and skips. The listing is simply shorter, which
+--! is the correct behaviour for a machine that cannot reach a network --
+--! not an error, and not an empty screen where a list should be.
+function pkg.listAllAvailable(opts)
+  opts = opts or {}
   local seen = {}
   local out = {}
   local function addFrom(root)
@@ -2479,6 +2507,38 @@ function pkg.listAllAvailable()
   end
   for _, r in ipairs(DEFAULT_REPO_ROOTS) do addFrom(r) end
   for _, root in ipairs(mountedRepoRoots()) do addFrom(root) end
+
+  if opts.includeRemote then
+    for _, e in ipairs(pkg.listRemoteAvailable(opts)) do
+      if not seen[e.name] then
+        seen[e.name] = true
+        out[#out + 1] = e
+      end
+    end
+  end
+  return out
+end
+
+--- What the configured remote repos advertise. Empty when there is no
+--- internet card, no repos, or nothing reachable -- never an error.
+function pkg.listRemoteAvailable(opts)
+  local m = remoteMod()
+  if not m or type(m.search) ~= "function" then return {} end
+  local okS, list = pcall(m.search, opts or {})
+  if not okS or type(list) ~= "table" then return {} end
+  local out = {}
+  for _, e in ipairs(list) do
+    if type(e) == "table" and type(e.name) == "string" then
+      out[#out + 1] = {
+        name        = e.name,
+        version     = e.version,
+        description = e.description,
+        category    = e.category or "remote",
+        repo        = e.repo,
+        remote      = true,
+      }
+    end
+  end
   return out
 end
 
@@ -2794,7 +2854,7 @@ pkg.PKG_WRITE_ROOTS      = PKG_WRITE_ROOTS
 -- dependency resolution and the unverified-package gate are the same code
 -- for a remote package as for a local one, because it IS the same code.
 
-local function remoteMod()
+function remoteMod()
   local ok, m = pcall(require, "kernel.pkgremote")
   if not ok or type(m) ~= "table" then return nil, "remote package support unavailable" end
   if m.init and log then pcall(m.init, { log = log }) end

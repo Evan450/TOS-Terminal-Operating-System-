@@ -1023,6 +1023,26 @@ intention.
 Services keep their enabled/disabled state across an upgrade but keep running
 the old code until restarted: `service stop <svc>` then `service start <svc>`.
 
+### 7.4 Finding packages
+
+`pkg search` lists everything installable: what is on a mounted disk, and
+what the repos you have configured advertise.
+
+```
+pkg search
+```
+
+Remote entries show `repo:<name>` in the source column instead of a path,
+because they are not anywhere yet — picking one downloads it. The
+graphical picker (`pkg install` with no arguments) shows them the same
+way, marked *downloads on install*.
+
+A machine with no internet card simply sees a shorter list. That is not an
+error and does not need saying: you get the packages you can actually
+reach. If the list is empty and you expected otherwise, `pkg search` says
+which case you are in — no repos configured, or repos configured that did
+not answer.
+
 ### 7.45 Reclaiming space after installing over OpenOS
 
 Installing TOS onto a drive that already ran OpenOS leaves OpenOS behind.

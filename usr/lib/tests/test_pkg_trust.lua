@@ -244,6 +244,55 @@ do
   end
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- `pkg search` has to see the repos, not just the disks
+-- ══════════════════════════════════════════════════════════════════════
+--! Reported from a real machine: a configured repo, a working internet
+--! card, a successful `pkg fetch mouse` -- and `pkg search` said nothing
+--! was available. It only ever looked at local roots, so the only way to
+--! find a package was to already know its name.
+do
+  print()
+  print("-- search spans configured repos --")
+  local function ok2(name, cond) test(name, true, cond and true or false) end
+
+  ok2("pkg.listRemoteAvailable exists", type(pkg.listRemoteAvailable) == "function")
+
+  -- No pkgremote at all: empty, and above all not an error. A machine
+  -- with no internet card must get a SHORTER list, not a broken one.
+  package.loaded["kernel.pkgremote"] = nil
+  local okA, a = pcall(pkg.listRemoteAvailable, {})
+  ok2("no remote module: does not throw", okA)
+  test("no remote module: no entries", 0, okA and #a or -1)
+
+  -- A repo that answers.
+  package.loaded["kernel.pkgremote"] = {
+    init   = function() end,
+    search = function()
+      return {
+        { name = "calc",  version = "1.2.0", repo = "utils", description = "a spreadsheet" },
+        { name = "snake", version = "1.0.0", repo = "utils" },
+      }
+    end,
+  }
+  local list = pkg.listRemoteAvailable({})
+  test("a configured repo contributes its packages", 2, #list)
+  ok2("entries are marked remote", list[1].remote == true)
+  ok2("...and carry the repo name", list[1].repo == "utils")
+  ok2("...and have no root, because they are not anywhere yet",
+    list[1].root == nil)
+
+  -- An index that blows up must not take the listing with it.
+  package.loaded["kernel.pkgremote"] = {
+    init = function() end, search = function() error("no card") end,
+  }
+  local okB, b = pcall(pkg.listRemoteAvailable, {})
+  ok2("a failing repo does not throw", okB)
+  test("...and contributes nothing", 0, okB and #b or -1)
+
+  package.loaded["kernel.pkgremote"] = nil
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then

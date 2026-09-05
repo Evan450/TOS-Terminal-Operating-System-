@@ -174,10 +174,25 @@ return function(C, S, deps)
       end
 
     elseif sub == "search" or sub == "available" then
-      local list = pkgMod.listAllAvailable()
+      --! Search the CONFIGURED REPOS too, not just local disks. Without
+      --! this, a machine with a working repo and an internet card
+      --! answered "no packages available" -- so the only way to find
+      --! something was to already know its name, which is not searching.
+      local list = pkgMod.listAllAvailable({ includeRemote = true })
       if #list == 0 then
-        o("No packages available in any configured repo or mounted media.", T.dim)
-        o("Looked under: /usr/repo, /var/repo, /mnt/*", T.dim)
+        o("No packages available.", T.dim)
+        o("Looked on disk under /usr/repo, /var/repo and /mnt/*", T.dim)
+        local repos = pkgMod.repos and pkgMod.repos() or {}
+        if #repos == 0 then
+          o("No remote repos are configured — add one with:", T.dim)
+          o("  pkg repo add <name> <https://host/path>", T.dim)
+        else
+          -- Repos exist but produced nothing: almost always no card, or
+          -- no route. Say which, rather than leaving a bare empty list.
+          o(#repos .. " remote repo(s) configured but none answered.", T.dim)
+          o("That usually means no internet card, or the host is", T.dim)
+          o("unreachable. `pkg repo list` shows what is configured.", T.dim)
+        end
         return
       end
       -- Group the listing by category so `pkg search` reads the same way
@@ -193,10 +208,15 @@ return function(C, S, deps)
       for _, e in ipairs(list) do
         local cat = e.category or "misc"
         if cat ~= lastCat then lastCat = cat; o("  [" .. cat .. "]", T.dim) end
+        --! Remote entries have no root -- they are not anywhere yet.
+        --! Name the repo instead, so the source column always answers
+        --! "where would this come from" rather than showing "?".
+        local src = e.remote and ("repo:" .. tostring(e.repo or "?"))
+          or tostring(e.root or "?")
         o(string.format(" %-20s %-10s %s",
           (e.name or "?"):sub(1, 20),
           (e.version or "?"):sub(1, 10),
-          tostring(e.root or "?")), T.fg)
+          src), T.fg)
       end
 
     -- ── Publisher signatures ───────────────────────────────────────

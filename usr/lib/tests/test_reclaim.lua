@@ -172,6 +172,52 @@ do
   end
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- Remote packages reach the search and the picker
+-- ══════════════════════════════════════════════════════════════════════
+--! `pkg search` looked only at disks, and the picker showed only what
+--! was mounted -- so a configured repo was invisible in both, and the
+--! operator had to know a package's name to fetch it.
+do
+  local function slurp(rel)
+    for _, pre in ipairs({ "", "../", "../../", "../../../" }) do
+      local h = io.open(pre .. rel, "rb")
+      if h then local x = h:read("*a"); h:close(); return x end
+    end
+  end
+  local admin  = slurp("tos/shell/panels/commands/admin.lua")
+  local picker = slurp("tos/shell/pkgpicker.lua")
+  test("admin.lua readable", admin ~= nil)
+  test("pkgpicker.lua readable", picker ~= nil)
+
+  if admin then
+    test("pkg search asks for remote entries",
+      admin:find("listAllAvailable({ includeRemote = true })", 1, true) ~= nil)
+    test("...and names the repo in the source column",
+      admin:find('"repo:" .. tostring(e.repo', 1, true) ~= nil)
+    test("an empty result explains WHY it is empty",
+      admin:find("none answered", 1, true) ~= nil)
+    test("...including the no-repos-configured case",
+      admin:find("No remote repos are configured", 1, true) ~= nil)
+  end
+
+  if picker then
+    -- Both listing sites, or the picker and its detail pane disagree.
+    local n = select(2, picker:gsub("includeRemote = true", ""))
+    test("the picker asks for remote entries everywhere it lists (" .. n .. "/2)", n == 2)
+    test("no bare listAllAvailable() call is left",
+      picker:find("listAllAvailable()", 1, true) == nil)
+    --! The install path MUST branch. installByName searches local roots
+    --! and would report a remote package missing.
+    test("the picker installs a remote entry with installRemote",
+      picker:find("pkg.installRemote(e.name", 1, true) ~= nil)
+    test("...and still uses installByName for local ones",
+      picker:find("pkg.installByName(e.name", 1, true) ~= nil)
+    test("the detail pane says a remote one downloads on install",
+      picker:find("downloads on install", 1, true) ~= nil)
+  end
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
