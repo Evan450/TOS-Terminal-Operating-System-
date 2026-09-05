@@ -26,7 +26,7 @@ Every package here is signed. Add the publisher key once, and from then on
 `pkg` tells you whether what arrived is what was published:
 
 ```
-pkg trust add discover 0db57e705448efc6781d39364a9d7545c8dadaa814480ef9ebc0b9e24d1b6714
+pkg trust add discover dcdafa5342333048be0ad519911a6bd1ecffefcffde73879a4e246fc20d7fd8b
 ```
 
 With the key added, an install of a package signed by it reports `trusted`.
