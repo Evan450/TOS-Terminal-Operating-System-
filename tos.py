@@ -100,6 +100,21 @@ def passphrase_env() -> dict:
         if not entered:
             raise Fail("no passphrase given.")
         env["TOS_SIGNING_PASSPHRASE"] = entered
+
+    # The publisher label SALTS the key, so it is not optional and not
+    # cosmetic: the same passphrase under a different label derives a
+    # different identity. Prompted plainly rather than masked -- it is
+    # public, printed in the repo README beside the key people trust --
+    # but it is asked for, because silently defaulting it would be a way
+    # to publish under a key nobody recognises and not notice.
+    if not (env.get("TOS_SIGNING_NAME") or "").strip():
+        try:
+            label = input("Publisher label (salts the key, e.g. discover): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise Fail("no publisher label given.")
+        if not label:
+            raise Fail("no publisher label given. It salts the key; there is no default.")
+        env["TOS_SIGNING_NAME"] = label
     return env
 
 

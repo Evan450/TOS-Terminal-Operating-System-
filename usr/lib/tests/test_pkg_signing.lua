@@ -323,17 +323,56 @@ end
 -- ══════════════════════════════════════════════════════════════════════
 do
   local ps, F = newSign({ ["/d/package.lua"] = MANIFEST })
-  local seed, sErr = ps.seedFromPassphrase("short")
-  test("a short signing passphrase is refused", nil, seed)
-  ok("and says how long", tostring(sErr):find("12 characters") ~= nil)
+  local PASS  = "a properly long signing passphrase"
+  local PASS2 = "a properly long signing passphrasf"
 
-  local good = ps.seedFromPassphrase("a properly long signing passphrase")
-  test("a long one yields 32 bytes", 32, #good)
+  -- ── The passphrase floor. It is the only part of the KDF that can
+  -- ── actually defend a weak secret on this hardware, so it is enforced.
+  local seed, sErr = ps.seedFromPassphrase("short", "acme")
+  test("a short signing passphrase is refused", nil, seed)
+  ok("and says how long", tostring(sErr):find(tostring(ps.KDF_MIN_PASS)) ~= nil)
+
+  local rep, rErr = ps.seedFromPassphrase(string.rep("a", 40), "acme")
+  test("a long but degenerate passphrase is refused", nil, rep)
+  ok("and says why", tostring(rErr):find("distinct") ~= nil)
+
+  -- ── The salt is REQUIRED. An optional salt is the dangerous kind: the
+  -- ── same passphrase would derive one key with a label and another
+  -- ── without, so a publisher who forgot the flag once would ship under
+  -- ── a second identity with nothing in the output to show it.
+  local noLabel, lErr = ps.seedFromPassphrase(PASS, nil)
+  test("deriving without a publisher label is refused", nil, noLabel)
+  ok("and explains that the label is part of the key",
+    tostring(lErr):find("label") ~= nil)
+  test("an empty label is refused too", nil, ps.seedFromPassphrase(PASS, "   "))
+
+  local good = ps.seedFromPassphrase(PASS, "acme")
+  test("a good passphrase and label yield 32 bytes", 32, #good)
   -- Deterministic across machines, or a publisher could not sign from
   -- two computers.
-  test("and is deterministic", good, ps.seedFromPassphrase("a properly long signing passphrase"))
+  test("and is deterministic", good, ps.seedFromPassphrase(PASS, "acme"))
   ok("a different passphrase gives a different key",
-    good ~= ps.seedFromPassphrase("a properly long signing passphrasf"))
+    good ~= ps.seedFromPassphrase(PASS2, "acme"))
+
+  -- ── What the salt actually buys: two publishers who happen to choose
+  -- ── the same passphrase are still different identities, so one
+  -- ── precomputed table cannot yield both.
+  ok("the SAME passphrase under a different label is a different key",
+    good ~= ps.seedFromPassphrase(PASS, "othercorp"))
+
+  -- ── Label normalization. A human types this on more than one machine,
+  -- ── months apart; if case or stray whitespace changed the key, they
+  -- ── would silently acquire a second identity.
+  test("label case is normalized", good, ps.seedFromPassphrase(PASS, "ACME"))
+  test("surrounding whitespace is normalized", good, ps.seedFromPassphrase(PASS, "  acme  "))
+  test("normalizeLabel reports the salted form", "acme", ps.normalizeLabel(" AcMe "))
+  test("normalizeLabel rejects an empty label", nil, ps.normalizeLabel("   "))
+
+  -- ── v2 is a deliberate break from v1, and must stay one: if the domain
+  -- ── string or round count ever silently reverted, every publisher's
+  -- ── key would change again without the version saying so.
+  test("the KDF domain is versioned", "TOS-pkg-signing-key-v2", ps.KDF_DOMAIN)
+  ok("and iterates more than v1's 512", ps.KDF_ROUNDS > 512)
 
   local key, sigPath = ps.signManifest("/d/package.lua", good, { signer = "me" })
   ok("signing produces a key", type(key) == "string" and #key == 64)

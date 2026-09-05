@@ -605,6 +605,12 @@ function M.run(S, deps)
                 local containsSecret =
                   lowInput:find("trust setsecret", 1, true) or
                   lowInput:find("trust generatesecret", 1, true) or
+                  -- `pkg trust key` no longer ACCEPTS a passphrase on the
+                  -- command line, but someone who learned the old form
+                  -- will type it once before finding that out, and by then
+                  -- the line already exists. Keep it out of the recall
+                  -- buffer; the refusal cannot un-type it.
+                  lowInput:find("trust key ", 1, true) or
                   lowInput:find("changepass ", 1, true) or
                   lowInput:find("usermod ", 1, true) and lowInput:find(" pass", 1, true)
                 if not containsSecret then

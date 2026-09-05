@@ -7,6 +7,104 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### Signing keys: the passphrase left the command line, and got a salt
+
+`pkg trust key` took the passphrase as an argument. The argument is now the
+publisher *label*, and the passphrase is read masked — the same way `pkg sign`
+already did it. The old form echoed the private key across the screen as it was
+typed and left it in `S.cmdHistory` for anyone at that seat to recall with
+Up-arrow. Passing a second argument is refused rather than guessed at, since a
+passphrase with a space in it would otherwise derive the wrong key and print a
+public key that is not yours — which you would then publish. `trust key` also
+joined the `#SEC M5` history denylist, because someone who learned the old form
+will type it once before the refusal tells them not to, and by then the line
+exists.
+
+Correcting something said in the previous entry: this history is
+`S.cmdHistory`, in memory and per session, not a file. The advice to "clear it
+afterwards" was wrong — there is nothing on disk to clear, and no command that
+clears it. The exposure is the seat, not the filesystem.
+
+**KDF v2**, which changes every derived key. Three changes, and they are not
+equally important:
+
+- **A salt: the publisher label.** One precomputed passphrase→key table can no
+  longer yield every publisher at once; each identity has to be attacked
+  separately. It adds no secrecy — the label is public and printed in the repo
+  README — and does nothing against someone targeting one publisher.
+- **4096 rounds, was 512.** Three bits. Recorded plainly rather than dressed
+  up: a KDF that could defend a guessable passphrase wants 10⁵–10⁶ rounds, and
+  this shares one CPU with every other seat on a 192 KB machine. Defence in
+  depth, not a defence.
+- **A passphrase floor of 20 characters and 10 distinct ones, enforced.** This
+  is the one doing the work. Against a generated 32-byte passphrase the round
+  count is irrelevant; against a memorable phrase no round count reachable here
+  saves it. So the entropy is the whole defence and is now a refusal rather
+  than a paragraph of advice. The distinct-character check is a crude floor,
+  not an entropy measure, and does not claim to be.
+
+The salt is **required**, and that is the substantive design call. An optional
+salt is the dangerous kind: the same passphrase would derive one key with a
+label and a different one without, so a publisher who forgot the flag once
+would ship under a second identity with nothing in the output to show it. So
+`--as` and `TOS_SIGNING_NAME` are now mandatory, and the label is normalised
+(trimmed, lowercased) because a human types it on two machines months apart and
+`Discover` must not become a different publisher than `discover`.
+
+Derivation now yields every 256 rounds. At 4096 rounds this is a real watchdog
+risk on-box rather than a theoretical one, and the resolve-lazily-tolerate-absent
+pattern is copied from `ed25519.lua` so the module still loads under plain Lua
+for the off-box signer.
+
+Verified: 187/187, and in a scratch tree the same passphrase under two labels
+produced `7ce7390b…` and `6193be2d…`, with a full 16-package pack signed under
+a label verifying end to end. Both off-box signers refuse to start without a
+label, before writing anything.
+
+**This is a re-key.** Already-published signatures still verify — verification
+reads the public key out of the signature record and never runs the KDF — but
+the pack has to be re-signed and the README's trust line will carry a new key.
+Done now, one day after first publishing and with no adopters, rather than
+later.
+
+### The Optional Utilities pack is signed, and says whose signature it is
+
+The published pack now carries an Ed25519 signature on all 16 packages, under
+key `0db57e70…` (fingerprint `2D77 9F3E 6B63 1C25`). Operators add it once with
+`pkg trust add <name> <key>` and every install from the repo reports `trusted`
+from then on.
+
+The pack README carries that line, because without it the signatures were
+inert: every install would have read `unknown` — valid, publisher unrecognised
+— with no published key to get to `trusted`, and `pkg trust require on` would
+have refused the whole repo. The key is read back out of the staged `.sig`
+records rather than written into the script, since a hardcoded copy of a
+generated value is the drift this project keeps getting caught by. A pack
+signed by two different keys is refused outright: operators trust one publisher
+identity, so a mixed pack verifies in parts.
+
+Two corrections to guidance that was actively misleading. `sign-package.lua`
+closed with "rebuild the pack to carry these into `dist/`", and `CONTRIBUTING`
+repeated it. Source signatures cannot reach the pack and never could — the disk
+builder injects a `hashes = {…}` block as it assembles each manifest, so calc's
+goes 2140 → 2375 bytes and a signature over the source bytes verifies as
+`invalid` against the shipped copy. Measured by copying one across and asking
+the real verifier, not argued from the code. `tos.py pack --sign` is the
+command that publishes; the other two sign source trees for handing someone a
+directory to `pkg install` directly.
+
+`Test-Published` verified the 43 files each package *installs* and never
+`package.lua` itself — the file carrying those hashes — nor `package.sig`. A
+manifest normalised in transit would have broken all 16 signatures while every
+content hash still passed: the same blind spot the CRLF break came through, one
+file further in. It now compares both byte-for-byte against the staged copies,
+which settles it without a second Ed25519 implementation in PowerShell to keep
+in step with `kernel/pkgsign.lua`.
+
+Verified against the live branch rather than the build: all 16 signatures
+validate over the bytes GitHub actually returns, and a deliberately
+CRLF-normalised manifest is caught while all 43 content hashes still pass.
+
 ### The suite only passed because of which terminal it was launched from
 
 Three tests enumerate the tree with `io.popen`, and were calling POSIX `ls` and

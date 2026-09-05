@@ -75,6 +75,20 @@ if not pass or pass == "" then
   os.exit(1)
 end
 
+--! Required, and public. The label salts the key, so signing without it
+--! would derive a different one -- a publisher who forgot it once would
+--! quietly ship under a second identity.
+local signLabel = os.getenv("TOS_SIGNING_NAME")
+if not signLabel or signLabel:gsub("%s", "") == "" then
+  io.stderr:write(
+    "error: set TOS_SIGNING_NAME to your publisher label.\n" ..
+    "       It SALTS the signing key: the same passphrase under a different\n" ..
+    "       label is a different identity, so use the same one every time.\n" ..
+    "       Unlike the passphrase it is public -- it is printed in the repo\n" ..
+    "       README next to the key people trust.\n")
+  os.exit(1)
+end
+
 -- ── Wire up the real signer ────────────────────────────────────────
 --! ORDER MATTERS. ed25519.lua does `require("kernel.sha512")` at load
 --! time (RFC 8032 needs SHA-512), so the hashers have to be in
@@ -103,12 +117,14 @@ if not ps then io.stderr:write("error: kernel/pkgsign.lua not found.\n"); os.exi
 ps.init({ fs = { exists = exists, readFile = readAll, writeFile = writeAll },
           serialize = serial })
 
-local seed, sErr = ps.seedFromPassphrase(pass)
+local seed, sErr = ps.seedFromPassphrase(pass, signLabel)
 if not seed then io.stderr:write("error: " .. tostring(sErr) .. "\n"); os.exit(1) end
+signLabel = ps.normalizeLabel(signLabel)
 local pubHex = ps.binToHex(ed.publickey(seed))
 
 print("Public key : " .. pubHex)
 print("Fingerprint: " .. ps.fingerprint(pubHex))
+print("Publisher  : " .. signLabel .. "  (salts the key -- change it and the key changes)")
 print("Recipients trust it with:  pkg trust add <name> " .. pubHex)
 
 if wantKeyOnly then os.exit(0) end
@@ -152,7 +168,7 @@ for _, d in ipairs(dirs) do
     failed = failed + 1
   else
     local okS, sigPathOrErr = ps.signManifest(manifest, seed,
-      { signer = os.getenv("TOS_SIGNING_NAME") })
+      { signer = signLabel })
     if okS then
       print("  signed " .. manifest)
       signed = signed + 1
@@ -166,10 +182,23 @@ end
 print()
 print(string.format("Signed %d package(s)%s.", signed,
   failed > 0 and (", " .. failed .. " failed") or ""))
---! Signing the SOURCE tree is not the same as shipping a signed pack: the
---! disk builder copies manifests into dist/, so say so rather than let
---! someone assume the published pack inherited this.
-if signed > 0 and not wantAll then
-  print("Rebuild the pack to carry these into dist/:  lua build/build-disk.lua --sign")
+--! DO NOT imply these carry into the pack. They cannot: build-disk
+--! INJECTS a `hashes = { ... }` block into each manifest as it copies it
+--! into dist/, so the shipped bytes differ from the source bytes and a
+--! signature over the latter verifies as `invalid` against the former --
+--! measured, not assumed. `--sign` therefore signs the dist manifests
+--! itself, and does not consult anything signed here.
+--!
+--! An earlier version of this line read "rebuild the pack to carry these
+--! into dist/", which is exactly the wrong idea and nearly sent someone
+--! to publish an unsigned pack with a source tree full of stray .sig
+--! files.
+if signed > 0 then
+  print()
+  print("These sign the SOURCE manifests, for handing someone a package")
+  print("directory directly (pkg install <dir>).")
+  print("They do NOT reach the published pack: build-disk rewrites each")
+  print("manifest as it assembles, so the pack signs its own copies.")
+  print("To publish a signed pack:  lua build/build-disk.lua --sign")
 end
 os.exit(failed > 0 and 1 or 0)

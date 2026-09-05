@@ -257,17 +257,44 @@ return function(C, S, deps)
         -- Print the public key a passphrase signs as, WITHOUT signing
         -- anything: a publisher needs to hand out their key before they
         -- have a package to hand out with it.
+        --
+        -- #SEC — the ARGUMENT is the publisher label, which is public and
+        -- belongs on the command line. The passphrase is read masked,
+        -- like `pkg sign`. It used to be argv, where it sat in plain
+        -- S.cmdHistory for anyone at this seat to recall with Up-arrow,
+        -- and was echoed across the screen as it was typed.
         if not args[3] then
-          o("Usage: pkg trust key <signing-passphrase>", T.dim)
-          o("Prints the public key that passphrase signs as. Publish that", T.dim)
-          o("key; never the passphrase.", T.dim)
+          o("Usage: pkg trust key <publisher-label>", T.dim)
+          o("Prints the public key you sign as under that label, and asks", T.dim)
+          o("for the passphrase without echoing it. Publish the key; never", T.dim)
+          o("the passphrase. The label is part of the key: the same", T.dim)
+          o("passphrase under a different label is a different identity.", T.dim)
           return
         end
-        local key, err = pkgMod.signingKey(table.concat(args, " ", 3))
+        if args[4] then
+          -- Almost certainly the old form, `pkg trust key <passphrase>`
+          -- with a passphrase containing a space. Refuse rather than
+          -- guess: deriving from the wrong string prints a key that is
+          -- not theirs, and they would publish it.
+          o("Too many arguments. Only the publisher label goes here — the", T.error)
+          o("passphrase is asked for separately, and must never be typed", T.dim)
+          o("on the command line where it is echoed and recalled.", T.dim)
+          return
+        end
+        if not promptInput then
+          o("This needs an interactive prompt for the passphrase.", T.error)
+          return
+        end
+        local pass = promptInput("Signing passphrase: ", 96, true)
+        if not pass or pass == "" then o("Aborted.", T.dim); return end
+        local key, err = pkgMod.signingKey(pass, args[3])
         if not key then o(tostring(err), T.error); return end
         o(key, T.highlight)
         local okS, ps = pcall(require, "kernel.pkgsign")
-        if okS and ps then o("fingerprint " .. ps.fingerprint(key), T.dim) end
+        if okS and ps then
+          o("fingerprint " .. ps.fingerprint(key), T.dim)
+          o("signing as '" .. tostring(ps.normalizeLabel(args[3])) .. "'", T.dim)
+        end
 
       else
         o("Usage: pkg trust [list|add|remove|require|key] ...", T.dim)
@@ -292,7 +319,7 @@ return function(C, S, deps)
 
     elseif sub == "sign" then
       if not args[2] then
-        o("Usage: pkg sign <directory> [--as <publisher-name>]", T.dim)
+        o("Usage: pkg sign <directory> --as <publisher-name>", T.dim)
         o("Signs the package's manifest with a key derived from a", T.dim)
         o("passphrase you will be asked for. The signature covers the", T.dim)
         o("MANIFEST, which covers the file hashes, which cover the files —", T.dim)
@@ -302,6 +329,18 @@ return function(C, S, deps)
       local signerName
       for i = 3, #args do
         if args[i] == "--as" then signerName = args[i + 1] end
+      end
+      -- #SEC — `--as` is REQUIRED because it salts the key. It used to be
+      -- optional decoration recorded in the signature; omitting it now
+      -- would derive a different key from the same passphrase, so a
+      -- publisher who forgot the flag once would sign as a second,
+      -- untrusted identity and have no way to tell from the output.
+      if not signerName or signerName == "" then
+        o("Usage: pkg sign <directory> --as <publisher-name>", T.error)
+        o("--as is required: the label salts your signing key, so the same", T.dim)
+        o("passphrase under a different label is a different identity.", T.dim)
+        o("Use the same label every time — it is part of who you are.", T.dim)
+        return
       end
       -- The passphrase is read MASKED (promptInput's third argument) and
       -- passed straight through: never written to disk, never logged,

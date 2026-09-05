@@ -326,12 +326,28 @@ local function loadKernelModule(rel)
   end
 end
 
+local signLabel
+
 local function setupSigning()
   local pass = os.getenv("TOS_SIGNING_PASSPHRASE")
   if not pass or pass == "" then
     io.write("error: --sign needs the TOS_SIGNING_PASSPHRASE environment variable.\n")
     io.write("       It is deliberately not a command-line flag: argv lands in\n")
     io.write("       shell history, and this passphrase IS the private key.\n")
+    os.exit(1)
+  end
+  --! TOS_SIGNING_NAME is REQUIRED, not decoration: it salts the key. It
+  --! used to be optional metadata copied into the signature record, so a
+  --! build that forgot it still signed -- with a DIFFERENT key. Silently
+  --! publishing under a second identity is worse than refusing to build.
+  --! Unlike the passphrase this is public, so an env var is a
+  --! convenience here rather than a requirement.
+  signLabel = os.getenv("TOS_SIGNING_NAME")
+  if not signLabel or signLabel:gsub("%s", "") == "" then
+    io.write("error: --sign needs the TOS_SIGNING_NAME environment variable.\n")
+    io.write("       It is the publisher label, and it SALTS the signing key --\n")
+    io.write("       the same passphrase under a different label is a different\n")
+    io.write("       identity. Use the same label every time you publish.\n")
     os.exit(1)
   end
   local sha512 = loadKernelModule("sha512.lua")
@@ -356,13 +372,15 @@ local function setupSigning()
     writeFile = function(p, d) return writeAll(p, d) end,
   }
   ps.init({ fs = shim, serialize = serializeMod })
-  local seed, sErr = ps.seedFromPassphrase(pass)
+  local seed, sErr = ps.seedFromPassphrase(pass, signLabel)
   if not seed then io.write("error: " .. tostring(sErr) .. "\n"); os.exit(1) end
+  signLabel = ps.normalizeLabel(signLabel)
   signer, signSeed = ps, seed
   local pub = ed.publickey(seed)
   local pubHex = ps.binToHex(pub)
   io.write("Signing as " .. pubHex .. "\n")
   io.write("           " .. ps.fingerprint(pubHex) .. "\n")
+  io.write("publisher  '" .. signLabel .. "' (salts the key -- changing it changes the key)\n")
   io.write("Recipients trust this build with:  pkg trust add <name> " .. pubHex .. "\n\n")
 end
 
@@ -853,7 +871,7 @@ local function emitDisk(diskRoot, relPrefix, disk, diskCount)
       -- would attest to a document this builder then rewrote.
       if signer then
         local key, sigPathOrErr = signer.signManifest(pkgOut .. "/package.lua", signSeed,
-          { signer = os.getenv("TOS_SIGNING_NAME") })
+          { signer = signLabel })
         if not key then
           io.write("error: signing " .. e.name .. " failed: " .. tostring(sigPathOrErr) .. "\n")
           os.exit(1)

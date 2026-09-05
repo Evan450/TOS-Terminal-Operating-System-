@@ -1121,16 +1121,21 @@ pkg verify-sig /mnt/xx/foo     # who signed this? — without installing it
 
 `pkg trust require on` is off by default, deliberately: a floppy from a
 friend is the normal case in this ecosystem and always will be. Turn it on
-when you want the stricter posture, and note that the shipped Optional
-Utilities disks are unsigned unless you signed them yourself.
+when you want the stricter posture. The published Optional Utilities pack is
+signed, and its README carries the key to trust; a disk you built yourself is
+signed only if you signed it.
 
-**Signing your own packages.** The private key is derived from a passphrase,
-so there is no key file to lose:
+**Signing your own packages.** The private key is derived from a passphrase
+and a publisher label, so there is no key file to lose:
 
 ```bash
-pkg trust key <your-long-passphrase>    # prints the PUBLIC key to hand out
-pkg sign /mnt/xx/mypackage              # prompts for the passphrase, masked
+pkg trust key mylabel                   # prompts masked; prints the PUBLIC key
+pkg sign /mnt/xx/mypackage --as mylabel # prompts for the passphrase, masked
 ```
+
+The label salts the key, so it is required and must be the same every time:
+the same passphrase under a different label is a different identity with a
+different public key.
 
 Sign **after** the hashes are final — the signature covers the manifest and
 the manifest carries the hashes. The passphrase *is* the private key: the
@@ -1142,7 +1147,7 @@ shell history.
 To sign a whole Optional Utilities disk at build time:
 
 ```bash
-TOS_SIGNING_PASSPHRASE='…' TOS_SIGNING_NAME='Me' lua build/build-disk.lua --sign
+TOS_SIGNING_PASSPHRASE='…' TOS_SIGNING_NAME='mylabel' lua build/build-disk.lua --sign
 ```
 
 **Under the hood**, for the curious: Ed25519 as specified by RFC 8032, in
