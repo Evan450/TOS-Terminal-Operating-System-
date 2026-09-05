@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**68 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 50 | Planned or under investigation. Most contributions belong here. |
+| Planned | 51 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -199,6 +199,26 @@ NEXT REAL-MINECRAFT ROUND — the point of these four is that
 ```
 
 ## SIGNED MANIFESTS round (2026-08-11)
+
+### Planned — Emulator checklist - editor horizontal scrolling
+
+```text
+Emulator checklist - editor horizontal scrolling:
+      - open a file with a line longer than the screen; typing
+        past the right edge must scroll, and the cursor must
+        stay visible (it used to vanish and look like a freeze)
+      - the "<" and ">" edge markers appear only when there is
+        more text that way, and do not flicker while typing
+      - a .lua file still highlights correctly once scrolled:
+        a string literal spanning the left edge must not turn
+        everything after it into code-coloured text
+      - select across a scrolled region and confirm the
+        highlight lands on the characters it claims
+      - resize the screen narrower with the cursor near the
+        right edge; the next repaint must re-anchor the window
+      - off-box tests cover the ARITHMETIC only; drawing needs
+        a real GPU
+```
 
 ### Planned — Emulator checklist - confirmTyped's interactive loop
 
