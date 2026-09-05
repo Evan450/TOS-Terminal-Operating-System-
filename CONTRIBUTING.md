@@ -28,6 +28,24 @@ The roadmap also records work deliberately **not** done, with reasons. Reading t
 
 You need a `lua` interpreter (5.3 or 5.4) and Python 3 for the test runner. One Python test (`build/test_sync_emulator.py`) needs **pytest** — `pip install pytest`. Without it that single test fails; everything else runs.
 
+### One command for everything: `tos.py`
+
+The individual tools live in different directories and different runtimes. `tos.py` finds them, runs them from the right place, and prints exactly what it ran — so you can learn the underlying commands, and reproduce a failure without it:
+
+```
+python tos.py test [--serial]     the whole suite
+python tos.py build               strip TOS-Dev -> TOS-Release
+python tos.py pack [--sign]       build the add-on disks + repo index
+python tos.py sign <dir>|--all    sign package manifests in place
+python tos.py key                 print the public key you sign as
+python tos.py check               fast drift checks, without the full suite
+python tos.py roadmap             regenerate the queue and ROADMAP.md
+```
+
+Every path resolves from the script, not from your shell, so it works from any directory. `check` is the one worth knowing: it runs only the checks that catch a *generated* file drifting from its source — release digests, manifest completeness, release excludes, the add-on repo index — which is the mistake this project makes most often.
+
+`roadmap` is maintainer-only and says so; the notes it reads are not published.
+
 ```bash
 git clone --branch dev https://github.com/Evan450/TOS-Terminal-Operating-System-.git
 cd TOS-Terminal-Operating-System-
@@ -70,14 +88,18 @@ Two rules the tooling enforces rather than trusts:
 
 `pkg` supports Ed25519 publisher signatures. An operator adds your public key once (`pkg trust add <label> <key>`), and from then on your packages verify as yours — and with `pkg trust require on` they can refuse anything unsigned.
 
-The passphrase **is** the private key; the key is derived from it, not stored. So it is taken from the environment, never from a flag:
+The passphrase **is** the private key — the key is derived from it, not stored — so it is never a command-line flag. `tos.py` prompts for it without echoing, or reads `TOS_SIGNING_PASSPHRASE` if you have already exported it:
 
-```bash
-export TOS_SIGNING_PASSPHRASE='the passphrase you will not forget'
-lua build/build-disk.lua --sign
+```
+python tos.py key                      print your public key; signs nothing
+python tos.py sign modules/mything     sign one package, in place
+python tos.py sign --all               every discovered package
+python tos.py pack --sign              build the pack with every manifest signed
 ```
 
-That writes a `package.sig` beside each `package.lua`. A command-line flag was deliberately not offered — argv ends up in shell history, in process listings, and in CI logs.
+It must be at least 12 characters. Signing a package writes `package.sig` beside its `package.lua`; signing the *source* tree is not the same as shipping a signed pack, so rebuild afterwards (`tos.py pack --sign`) to carry signatures into `dist/`.
+
+`programs.cfg` advertises each `package.sig`, so signatures travel over `pkg fetch` as well as on a floppy. That matters: `pkgremote` downloads only what the index lists, so an unadvertised signature means a package that is signed on the disk and arrives **unsigned** over the network — and with `pkg trust require on`, that is the difference between installing and being refused.
 
 To publish the key people should trust, print it without signing anything. On a TOS machine:
 
