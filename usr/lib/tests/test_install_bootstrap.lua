@@ -126,6 +126,79 @@ if bootstrap then
   end
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- The hasher sandbox, EXECUTED rather than grepped
+-- ══════════════════════════════════════════════════════════════════════
+-- Every other check in this file reads bootstrap.lua's text, and text is
+-- exactly what could not catch this: the sandbox was `{}`, sha256.lua
+-- loaded and returned a table quite happily because its body is all local
+-- function definitions, and the install died on a real machine the first
+-- time hex() reached for `string`. A missing global is not visible by
+-- reading. So this pulls bootstrap's ACTUAL environment table out of the
+-- file, loads the ACTUAL hasher into it, and hashes something.
+do
+  local bootstrapSrc = bootstrap
+  local shaSrc       = findUp("tos/kernel/sha256.lua")
+  test("bootstrap.lua and sha256.lua both readable",
+    bootstrapSrc ~= nil and shaSrc ~= nil)
+
+  if bootstrapSrc and shaSrc then
+    -- %b{} matches the balanced braces, so a nested table cannot truncate it.
+    local envExpr = bootstrapSrc:match("local HASHER_ENV = (%b{})")
+    test("bootstrap declares a named HASHER_ENV the suite can reuse", envExpr ~= nil)
+
+    if envExpr then
+      local envChunk = load("return " .. envExpr, "=HASHER_ENV", "t")
+      test("the environment table parses", envChunk ~= nil)
+      local okEnv, env = false, nil
+      if envChunk then okEnv, env = pcall(envChunk) end
+      test("...and builds", okEnv and type(env) == "table")
+
+      if okEnv and type(env) == "table" then
+        -- The bug, stated as an assertion.
+        test("the sandbox is not empty", next(env) ~= nil)
+        test("it provides string (sha256 uses string.format/char/rep)",
+          env.string ~= nil)
+        test("it provides table (sha256 uses table.concat)", env.table ~= nil)
+
+        -- Still a sandbox: downloaded code must not reach the machine.
+        for _, forbidden in ipairs({ "load", "loadstring", "dofile", "require",
+                                     "os", "io", "component", "computer", "fs" }) do
+          test("the sandbox withholds " .. forbidden, env[forbidden] == nil)
+        end
+
+        -- The real thing, loaded the real way, actually hashing.
+        local chunk = load(shaSrc, "=sha256", "t", env)
+        test("sha256.lua loads inside that sandbox", chunk ~= nil)
+        local okMod, mod = false, nil
+        if chunk then okMod, mod = pcall(chunk) end
+        test("...and returns a module", okMod and type(mod) == "table")
+
+        if okMod and type(mod) == "table" and type(mod.hex) == "function" then
+          -- Calling it is the whole point: loading proved nothing.
+          local okHex, got = pcall(mod.hex, "abc")
+          test("hex() RUNS in that sandbox (the bug: it did not)", okHex)
+          test("and returns FIPS 180-4's SHA-256(\"abc\")",
+            got == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+          local okEmpty, gotEmpty = pcall(mod.hex, "")
+          test("and SHA-256(\"\")",
+            okEmpty and gotEmpty ==
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        else
+          test("sha256 module exposes hex()", false)
+        end
+      end
+    end
+
+    -- The guard that turns a broken hasher into a refusal rather than a crash.
+    test("bootstrap known-answer-tests the hasher before trusting it",
+      bootstrapSrc:find("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        1, true) ~= nil)
+    test("and the first hex() call is pcall-guarded",
+      bootstrapSrc:find("pcall(mod.hex", 1, true) ~= nil)
+  end
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

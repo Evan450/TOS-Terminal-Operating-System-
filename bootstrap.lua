@@ -400,6 +400,21 @@ for _, entry in ipairs(manifest) do
   end
 end
 
+--! The sandbox the downloaded hasher runs in. Deliberately small: enough
+--! for pure computation over strings, and nothing that reaches the
+--! machine. No load/loadstring (it must not fetch more code), no
+--! require, no os/io/fs, no component or computer. `math` is not needed
+--! by sha256.lua today and is included only because a pure hasher may
+--! reasonably want it; if that stops being true, drop it rather than
+--! grow this list. NAMED so the test suite can load the real thing with
+--! the real environment instead of grepping for it.
+local HASHER_ENV = {
+  string = string, table = table, math = math,
+  tonumber = tonumber, tostring = tostring, type = type,
+  select = select, ipairs = ipairs, pairs = pairs,
+  error = error, assert = assert, setmetatable = setmetatable,
+}
+
 local sha256, verifyOn = nil, false
 do
   local declared = 0
@@ -418,9 +433,34 @@ do
       warn("Could not fetch " .. SHA_PATH .. "; downloads will NOT be verified.")
       print()
     else
-      local chunk = load(body, "=sha256", "t", {})
+      --! sha256.lua is code fetched from the internet, so it runs in a
+      --! sandbox: no load, no require, no os/io, no component/computer/fs.
+      --! But the sandbox was EMPTY, and a pure-Lua hasher still needs
+      --! `string` and `table`. The module body is nothing but local
+      --! function definitions, so it loaded and returned a table quite
+      --! happily; the failure only arrived when hex() was first CALLED,
+      --! as "attempt to index a nil value (global 'string')". Found on a
+      --! real OpenComputers machine -- the off-box tests only grep this
+      --! file's TEXT, and no amount of reading source finds a missing
+      --! global. Keep this table minimal, but never empty again.
+      local chunk = load(body, "=sha256", "t", HASHER_ENV)
       local okS, mod = false, nil
       if chunk then okS, mod = pcall(chunk) end
+
+      --! KNOWN-ANSWER TEST before trusting it, because "loads and returns
+      --! a table" turned out not to mean "works". FIPS 180-4's own
+      --! one-block vector: SHA-256("abc"). A hasher that cannot reproduce
+      --! it is not one, whatever it claims to be, and every digest below
+      --! would otherwise be checked with a broken tool.
+      if okS and type(mod) == "table" and type(mod.hex) == "function" then
+        local okK, got = pcall(mod.hex, "abc")
+        if not (okK and got ==
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") then
+          okS = false
+          mod = nil
+        end
+      end
+
       if okS and type(mod) == "table" and mod.hex then
         -- Circular by construction; see the note above.
         if hashes[SHA_PATH] and mod.hex(body) ~= hashes[SHA_PATH] then

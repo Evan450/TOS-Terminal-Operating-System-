@@ -7,6 +7,51 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### The network install died on the hasher it had just downloaded
+
+First install onto a bare OpenOS machine, and it failed at
+`fetching the hasher ... sha256:25: attempt to index a nil value (global
+'string')`. The suite was 187 green throughout, and could not have been
+otherwise: every check on this path reads bootstrap.lua's *text*, and no
+amount of reading source reveals a missing global.
+
+`bootstrap.lua` runs the downloaded `sha256.lua` in a sandbox, which is
+correct — it is code fetched from the internet. But the sandbox was `{}`,
+and a pure-Lua hasher still needs `string` and `table`. The module's body
+is nothing but local function definitions, so it loaded and returned a
+table quite happily; the failure only arrived when `hex()` was first
+**called**. The one call not wrapped in `pcall` was that one, so instead
+of taking the "unusable, downloads will NOT be verified" path sitting
+right beside it, the error escaped and dropped the operator back to a
+shell prompt mid-install.
+
+The sandbox now holds the minimum a hasher needs and still withholds
+`load`, `loadstring`, `dofile`, `require`, `os`, `io`, `component`,
+`computer` and `fs`. The idea was right; the contents were not.
+
+Bootstrap also **known-answer-tests** the module before trusting it —
+SHA-256("abc") against FIPS 180-4's own vector — because "loads and
+returns a table" demonstrably does not mean "works", and the alternative
+was checking every download with a broken tool.
+
+The regression test executes rather than greps: it lifts the real
+`HASHER_ENV` out of bootstrap.lua, loads the real `sha256.lua` into it,
+and hashes. Reverting the sandbox to `{}` in a scratch copy produces 6
+failures including *"hex() RUNS in that sandbox"*. It also asserts each
+dangerous global stays absent, so this cannot be "fixed" later by handing
+over `_G`.
+
+Installing is now one line, and runs bootstrap by **absolute path**:
+
+```
+wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
+```
+
+The old instructions said to save to `/bootstrap.lua` and then type
+`bootstrap.lua`, but the filesystem root is not on OpenOS's `PATH`, so
+that is "command not found" from every directory and only worked after a
+`cd /`.
+
 ### Signing keys: the passphrase left the command line, and got a salt
 
 `pkg trust key` took the passphrase as an argument. The argument is now the

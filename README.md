@@ -515,21 +515,31 @@ The deploy command sources its file list from `/tos/system_manifest.lua`. As of 
 For a bare OpenOS machine with an Internet Card but no TOS install disk at
 all — nothing has ever been copied onto it:
 
-1. Get `bootstrap.lua` onto the machine, one line, no other TOS files
-   needed first:
+1. Download and run it, in one line. No other TOS files are needed first:
+   ```
+   wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
+   ```
+   **The leading slash on `/bootstrap.lua` is not optional.** `wget` saves
+   it at the filesystem root, and the root is not on OpenOS's `PATH` — so
+   typing plain `bootstrap.lua` afterwards gets "command not found" no
+   matter which directory you are in. Running it by absolute path works
+   from anywhere and needs no `cd`.
+
+   If your shell does not chain with `&&`, it is two commands and the
+   second is still the absolute path:
    ```
    wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua
+   /bootstrap.lua
    ```
    (No `wget`? Any way of getting one file onto an OpenOS machine works —
    `pastebin`, typing it in with `edit`, another disk. `bootstrap.lua`
    itself needs nothing but the Internet Card from here on.)
-2. Run it: `bootstrap.lua`
-3. It downloads the release (bios.lua, install.lua, and every file
+2. It downloads the release (bios.lua, install.lua, and every file
    `/tos/system_manifest.lua` declares) from GitHub into a scratch
    directory, then hands off to that install.lua exactly as if it were a
    mounted floppy — the same FORCE-WIPE confirmation, BIOS fingerprint
    check, and post-copy size verification run unchanged.
-4. Reboot — first-boot tutorial guides you through the system
+3. Reboot — first-boot tutorial guides you through the system
 
 `bootstrap.lua` doesn't assume the repo's default branch or layout: it
 probes `main` then `master`, and a bare repo root then a `TOS-Release`
