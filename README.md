@@ -282,7 +282,13 @@ Security hardening — `securefs` normalization, protected-path deletion, remote
   probe for 5.3 *features* — 5.4 parses 5.3 syntax and carries every library
   TOS uses, so it boots normally — and halt with instructions on a 5.2 CPU:
   kernel modules use 5.3 bitwise syntax and the boot chain uses `string.pack`.
-- **Disk**: 100KB free minimum
+- **Disk**: **Tier 2 (2 MB) minimum for a full install.** The 152 files the
+  manifest installs are ~1,518 KB, and OpenComputers charges a per-file cost
+  (`fileCost`, 512 B by default) on top — so the real on-disk footprint is
+  **~1,594 KB**. That does not fit a floppy (512 KB) or a Tier 1 HDD (1 MB),
+  and leaves roughly 450 KB free on a Tier 2. Budget your own number as
+  `bytes + 512 × files`; `deploy` prints the target disk's free space before
+  it starts copying, so you can compare against it.
 
 ### Multi-seat: supported, but sequential use is recommended
 

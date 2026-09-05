@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**62 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**65 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 43 | Planned or under investigation. Most contributions belong here. |
+| Planned | 46 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 16 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1146,6 +1146,71 @@ SPLIT TABS — two or more tabs sharing one screen. Operator
     Verify with: Desktop | Shell side-by-side, then Monitor |
     Shell (a live tab next to an interactive one), then a
     too-narrow region showing the notice.
+```
+
+## FROM AN EXTERNAL REVIEW (2026-09-04)
+
+### Planned — DIGESTS IN system_manifest.lua. Every entry is
+
+```text
+DIGESTS IN system_manifest.lua. Every entry is
+    { path, critical } and nothing else, so `verify` and the boot
+    self-check confirm files are PRESENT, never that they are
+    UNMODIFIED. An edited kernel module passes. The asymmetry is
+    the embarrassing part: pkg requires a SHA-256 for every file
+    in a third-party package and supports ed25519 publisher
+    signatures, so add-on code is held to a higher integrity
+    standard than the OS itself.
+      Everything needed is already in the tree -- kernel/sha256.lua
+    was split out precisely so it works without a data card, and
+    build-release.sh already walks every emitted file. Shape:
+    build-release.sh writes a sha256 field per entry, `verify`
+    compares, SRM reports a mismatch as a fault. Watch the cost --
+    hashing 152 files at boot is not free on a T1 CPU, so this
+    probably wants to stay opt-in at boot (verify on demand,
+    critical-only on boot) rather than becoming a startup tax.
+```
+
+### Planned — BOOTSTRAP VERIFIES NOTHING IT DOWNLOADS
+
+```text
+BOOTSTRAP VERIFIES NOTHING IT DOWNLOADS. bootstrap.lua fetches
+    the whole OS over HTTPS and writes it to disk having checked
+    only that each file's SIZE matches what install.lua then
+    re-checks. No hash, no signature. It trusts TLS and it trusts
+    that the GitHub account has not been compromised, and it says
+    so nowhere. (What it DOES get right: the manifest is loaded
+    with load(src,"=manifest","t",{}) -- text mode, empty env --
+    so a hostile manifest cannot execute.)
+      Blocked on the digests above: once the manifest carries
+    them, fetch it first, verify every subsequent download against
+    it, abort loudly on mismatch. Signing the manifest with the
+    same ed25519 machinery pkg already uses would make the network
+    install strictly stronger than the floppy one, which is a nice
+    place to end up given it started as the weaker of the two.
+```
+
+### Planned — ONE-SECTOR CACHE IN blockfs. Measured, and the numbers are
+
+```text
+ONE-SECTOR CACHE IN blockfs. Measured, and the numbers are
+    not close: writing a 4 KB file costs 58 component calls (35
+    reads, 23 writes); 64 KB costs 1,389. The equivalent on a
+    managed filesystem is three, regardless of size. bitSet does
+    a full sector read + a three-way string concat + a full
+    sector write for EVERY block allocated, and readBlock builds
+    a fresh 512-byte string every call.
+      Caching the currently-addressed bitmap sector would collapse
+    the read side, and allocation is already locality-biased
+    (allocHint, the near+1 preference), so consecutive allocations
+    hit the same sector -- a single entry is enough. Do the
+    WRITE-THROUGH version first: mutate the cached copy and still
+    write it immediately, so crash semantics are unchanged and
+    the only thing removed is the redundant read. A write-back
+    cache in a filesystem driver is where data loss comes from,
+    and check()/defrag() read the drive directly in places, so
+    they would need the cache dropped or shared. The 81-assertion
+    test_blockfs.lua is the safety net; run it before and after.
 ```
 
 ## PLANNED (near future)

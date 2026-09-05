@@ -68,6 +68,32 @@ FAIL_MARKER = "*** TESTS FAILED ***"
 # happens to mention "run inside TOS" isn't misfiled as skipped.
 SKIP_PATTERN = re.compile(r"not available; run inside TOS|run inside TOS", re.I)
 
+# ── Tests that need the add-on source tree ───────────────────────────
+# TOS-Extras is a SIBLING of this directory and is not published to any
+# branch yet, so a contributor cloning `dev` alone has ~14 tests fail for
+# a tree they were never given. Those are not failures of their checkout;
+# reporting them as such teaches people that red is normal, which is the
+# fastest way to lose a test suite.
+#
+# Rather than maintain a hand-written list of which tests need Extras --
+# which drifts the moment someone adds one -- infer it from the test's
+# own SOURCE: a test that names TOS-Extras is one that drives it. That
+# signal is exact (all 14 such tests reference the path they search) and
+# self-maintaining, where matching on failure OUTPUT is not: most of them
+# fail with a package-specific message like "could not load
+# tape-authenticator" that never mentions the tree at all.
+#
+# Gated on the tree actually being absent, so on a full checkout this
+# never fires and a genuine failure is still reported as a failure.
+EXTRAS_ABSENT = not (Path(__file__).resolve().parent.parent / "TOS-Extras").is_dir()
+
+
+def needs_extras(test: Path) -> bool:
+    try:
+        return "TOS-Extras" in test.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
 # ── Isolation ────────────────────────────────────────────────────────
 # Almost every test is a pure function of its source tree: it spawns its
 # own `lua`, reads files, and writes nothing. `test_build_disk.lua` is the
@@ -184,6 +210,11 @@ def run_one(test: Path, cwd: Path, timeout: int) -> Result:
         out = (proc.stdout or "") + (proc.stderr or "")
         rc = proc.returncode
         status = classify_py(rc) if is_py else classify(out, rc)
+        # A failure that is really "you were not given this tree" -- see
+        # the EXTRAS_ABSENT note above. Only ever downgrades a fail, and
+        # only when the sibling tree genuinely is not there.
+        if status == "fail" and EXTRAS_ABSENT and needs_extras(test):
+            status = "skip"
     except subprocess.TimeoutExpired as e:
         out = (e.stdout or "") if isinstance(e.stdout, str) else ""
         out += f"\n*** TIMED OUT after {timeout}s ***"
@@ -278,12 +309,22 @@ def main() -> int:
 
     print()
     print("-" * 43)
-    print(f"PASS={passed} FAIL={len(failed)} SKIP(needs-TOS)={skipped}"
+    label = "SKIP(needs TOS-Extras)" if EXTRAS_ABSENT else "SKIP(needs-TOS)"
+    print(f"PASS={passed} FAIL={len(failed)} {label}={skipped}"
           f"   in {elapsed:.1f}s")
     if failed:
         print("Failed/unclear:")
         for r in failed:
             print(f"  {r.path}  ({r.status})")
+
+    # Say WHY, once, rather than leaving a contributor to guess what a
+    # skip count means on a fresh clone.
+    if EXTRAS_ABSENT and skipped:
+        print()
+        print(f"note: the sibling TOS-Extras/ tree is not present, so {skipped} test(s)")
+        print("      that drive add-on packages were skipped rather than failed.")
+        print("      That tree is not published yet; see CONTRIBUTING.md. Everything")
+        print("      testable without it ran.")
 
     # Slowest few — worth knowing which tests dominate the wall clock.
     if args.verbose or not failed:

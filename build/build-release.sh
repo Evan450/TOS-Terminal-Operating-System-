@@ -64,6 +64,7 @@ lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify \
     --exclude /CHANGELOG.md \
     --exclude /CONTRIBUTING.md \
     --exclude /ROADMAP.md \
+    --exclude /SECURITY.md \
     --exclude /Codenames.txt \
     --exclude /TODO.txt \
     --exclude /MANUAL.md \

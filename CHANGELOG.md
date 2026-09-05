@@ -7,6 +7,74 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### An outside reader ran the suite, and it was red before they started
+
+Someone reviewed the published repo and sent findings. The most useful one was
+also the most embarrassing: a fresh clone of `dev` reports 14 failures, because
+14 tests drive add-on packages from a sibling `TOS-Extras/` tree that is not
+published anywhere. `CONTRIBUTING.md` tells people the suite should be green
+before they start work, and it cannot be. They spent several attempts trying to
+reconstruct the tree from the `optional-utilities` branch before concluding it
+was not possible — correctly, since that branch ships the *installable* layout
+(`write/usr/modules/write/init.lua`) and the tests want the *source* layout
+(`modules/write/init.lua`).
+
+Publishing that tree is a decision already in the queue, so the fix here is the
+honest interim one: `run_tests.py` notices the sibling tree is absent and
+reports those tests as SKIPPED rather than FAILED, with a note saying why. A
+fresh clone now reads `PASS=151 FAIL=0 SKIP(needs TOS-Extras)=14`. The signal is
+the test's own source — a test that names `TOS-Extras` is one that drives it —
+because matching on failure *output* misses most of them: they fail with
+package-specific messages like "could not load tape-authenticator" that never
+mention the tree. It only ever downgrades a failure, and only when the tree
+genuinely is not there; with a full checkout a broken Extras test still fails,
+which was verified in both directions before this was believed.
+
+The disk requirement in `README.md` was wrong by a factor of sixteen. It said
+100 KB. The 152 files the manifest installs are ~1,518 KB, and OpenComputers
+charges a per-file cost on top, so the real footprint is ~1,594 KB — a Tier 2
+disk, not the floppy or Tier 1 HDD the old figure implied. An operator
+provisioning by the README would have run out of space partway through their
+first install.
+
+`SECURITY.md` now exists, with a private reporting route and a scope section
+that names the known limits up front rather than letting someone spend an
+evening rediscovering them. The manual's security model gained three more
+honest limits: `securefs` ACLs are policy inside a running TOS and evaporate
+when the disk is moved to another machine, the manifest records presence rather
+than integrity, and `bootstrap.lua` verifies the size of what it downloads
+rather than the bytes.
+
+`blockfs.close(nil)` raised `table index is nil` from inside the driver instead
+of returning false — it now points the caller at their own missing check on
+`open()`.
+
+Not everything in the report held up. It said no unit test covers the
+filesystem: `test_blockfs.lua` has covered create/write/read, rename, remove,
+remount, fsck, repair and defrag for some time — the reviewer could not see it,
+because it lives in the unpublished tree, which is finding one wearing a
+different hat. It said the software RNG merely warns: secret-bearing stores
+already refuse (`#SEC CR-7`), and the pool already mixes free memory, heap
+addresses, keypress timing and a cross-boot persisted blob. Its three
+bytecode-blocker line numbers point at `main`, not `dev`, and there are two of
+those loaders rather than three.
+
+What did survive from the filesystem section was the boundary cases. The
+existing test writes a 90 KB file, which lands deep in double-indirect and
+proves the tiers work; it never tests the *seams*. `test_blockfs.lua` now writes
+4096, 4097, 69632 and 69633 bytes — exactly the 8 direct pointers, the first
+single-indirect byte, the last address single-indirect can reach, and one past
+it. All four pass, so this is coverage rather than a fix, which is the good
+outcome. 54 assertions to 81.
+
+Three findings are real and deliberately not fixed yet, written into the queue
+instead: digests in `system_manifest.lua` (today `verify` proves presence, not
+integrity, and third-party packages are held to a higher standard than the OS),
+verification of what `bootstrap.lua` downloads (blocked on the digests), and a
+one-sector cache in `blockfs` (writing 4 KB costs 58 component calls; the
+managed-filesystem equivalent is three). The measurements in that section were
+reproduced exactly — all six rows of the reviewer's call-count table matched.
+
 ### The Optional Utilities pack installs over the wire
 
 The add-on pack is published as a third branch, `optional-utilities`, laid out
