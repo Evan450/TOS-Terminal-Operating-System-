@@ -1,0 +1,7 @@
+return {
+  ["v"] = 1,
+  ["sig"] = "95b135fa3744c4e8655f84e5a66712a69658ebd68665c51b42fdfa248e142918c04048c6626c32c9d65b739155e994e8a3954b4cd0049f636c32c66cdc4a4903",
+  ["covers"] = "package.lua",
+  ["key"] = "0db57e705448efc6781d39364a9d7545c8dadaa814480ef9ebc0b9e24d1b6714",
+  ["alg"] = "ed25519"
+}
