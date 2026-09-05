@@ -173,14 +173,28 @@ local pages = {
 
 function tutorial.shouldShow(F, session)
   if not (F and F.exists) then return false end
+  --! PASS THE SESSION. securefs resolves the acting principal as
+  --! explicit -> process principal -> users.currentSession() -> boot
+  --! session, and on the first-boot path every one of those is empty:
+  --! login() is called with setCurrent=false (deliberately, so a
+  --! multi-seat boot cannot race over the module-global), and the boot
+  --! session fallback is switched off once boot completes. So an
+  --! un-sessioned check fails closed, and root -- holding a perfectly
+  --! good root token -- was told "Root access required" for its own
+  --! /root/.tutorial_done.
+  --!
+  --! The WRITE path below already knew this and passes writeSess, with a
+  --! comment explaining it. The read path was never given the same
+  --! treatment, so the marker could not be READ by the account that had
+  --! just been allowed to write it.
   local path = tutorial.markerFor(session)
   if not path then
 
-    return not F.exists(LEGACY_MARKER)
+    return not F.exists(LEGACY_MARKER, session)
   end
-  if F.exists(path) then return false end
+  if F.exists(path, session) then return false end
 
-  if session.user == "root" and F.exists(LEGACY_MARKER) then return false end
+  if session.user == "root" and F.exists(LEGACY_MARKER, session) then return false end
   return true
 end
 

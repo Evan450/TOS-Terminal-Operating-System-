@@ -349,7 +349,19 @@ local function copyFromDisk(srcDisk)
   return failed == 0
 end
 
-local OPENOS_ONLY_TREES = { "/bin", "/lib" }
+--! Must stay identical to the TREES list in the `reclaim` command
+--! (tos/shell/panels/commands/admin.lua). Two lists, two files, same
+--! job: this one runs at install time, reclaim runs later for a machine
+--! that said no then or was never asked. test_reclaim.lua compares them
+--! and fails on any divergence.
+--!
+--! /boot was missing here. The installer's clean-install offer removed
+--! /bin and /lib and left OpenOS's twelve boot scripts sitting there, so
+--! a "clean install" was not one.
+--!
+--! Verified safe against the manifest rather than assumed: TOS installs
+--! 152 files and none of them land in any of these trees.
+local OPENOS_ONLY_TREES = { "/bin", "/boot", "/lib" }
 local function hasOpenOsLeftovers()
   if not fs then return false end
   for _, d in ipairs(OPENOS_ONLY_TREES) do

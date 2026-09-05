@@ -1603,6 +1603,177 @@ return function(C, S, deps)
     local path = rp(args[1])
     openEditTab(path)
   end
+
+  --! The protected-path set is defence-in-depth against a TAMPERED admin
+  --! session. It was also an absolute wall for the machine's owner:
+  --! creating a file in /etc, clearing OpenOS's man pages out of
+  --! /usr/man, and tidying an install were simply refused, with no
+  --! supported way to say "yes, I mean it" — the code's own advice was
+  --! to go around securefs with raw kernel.fs, which gives up both the
+  --! safety and the audit trail.
+  --!
+  --! Root can now stand it down for THEIR OWN SESSION. Admin cannot, so
+  --! the defence still does its job. It dies with the session.
+  C.protect = function(args, o)
+    if not rootOnly(o) then return end
+    local okS, sfs = pcall(require, "kernel.securefs")
+    if not okS or not sfs or not sfs.setOperatorOverride then
+      o("This build has no protected-path override.", T.error); return
+    end
+    local sess = S and S.session
+    local state = sfs.operatorOverride and sfs.operatorOverride(sess)
+    local verb = (args[1] or ""):lower()
+
+    if verb == "" or verb == "status" then
+      o("Protected-path guards are " ..
+        (state and "STOOD DOWN for this session." or "active."),
+        state and T.warning or T.highlight)
+      o("", T.dim)
+      o("They stop even root from writing under /tos, /etc, /usr and", T.dim)
+      o("/var through securefs — a line against a tampered admin", T.dim)
+      o("session, not an ACL. You own this machine, so you can stand", T.dim)
+      o("them down; nobody below root can, and it ends with this", T.dim)
+      o("session.", T.dim)
+      o("", T.dim)
+      o("  protect off    stand the guards down for this session", T.dim)
+      o("  protect on     put them back", T.dim)
+      return
+    end
+
+    if verb == "off" then
+      if state then o("Already stood down for this session.", T.dim); return end
+      local ok2, err = sfs.setOperatorOverride(sess, true)
+      if not ok2 then o("Refused: " .. tostring(err), T.error); return end
+      o("Protected-path guards STOOD DOWN for this session.", T.warning)
+      o("You can now write and remove under /tos, /etc, /usr and /var.", T.dim)
+      o("Every path allowed this way is written to the kernel log.", T.dim)
+      o("Deleting the wrong thing here is how a machine stops booting —", T.dim)
+      o("`protect on` when you are done.", T.dim)
+    elseif verb == "on" then
+      if not state then o("Guards are already active.", T.dim); return end
+      local ok2, err = sfs.setOperatorOverride(sess, false)
+      if not ok2 then o("Refused: " .. tostring(err), T.error); return end
+      o("Protected-path guards active again.", T.highlight)
+    else
+      o("Usage: protect [status|off|on]", T.dim)
+    end
+  end
+
+  --! Installing TOS over OpenOS leaves OpenOS behind: /bin, /boot and
+  --! /lib are untouched by the TOS installer (measured — TOS installs
+  --! 152 files and NONE of them land there), and after the compat-shim
+  --! fix nothing in the TOS runtime resolves into them either. On the
+  --! 4 MB drive this was found on, that is most of a megabyte of dead
+  --! weight, and /bin being on PATH means a command TOS does not
+  --! implement silently runs OpenOS's copy instead — which is how `tree`
+  --! came to fail with a sandbox error rather than "not a command".
+  --!
+  --! Dry run by default. Nothing is removed without --apply, and it
+  --! refuses outright unless /init.lua is TOS's, so it cannot fire on a
+  --! machine where OpenOS is still the operating system.
+  C.reclaim = function(args, o)
+    if not rootOnly(o) then return end
+
+    local apply = false
+    for _, a in ipairs(args or {}) do
+      if a == "--apply" then apply = true end
+    end
+
+    local okF, kfs = pcall(require, "kernel.fs")
+    if not okF or not kfs then o("Filesystem unavailable.", T.error); return end
+
+    --! The safety interlock. If /init.lua is not TOS's, this machine
+    --! boots OpenOS and its files are not leftovers -- they are the
+    --! operating system. Checked by content, not by asking politely.
+    local initSrc = kfs.readFile("/init.lua")
+    if not initSrc then
+      o("Cannot read /init.lua — refusing to guess what this machine boots.", T.error)
+      return
+    end
+    if not (initSrc:find("_TOS", 1, true) or initSrc:find("TOS Kernel", 1, true)
+            or initSrc:find("tos/kernel", 1, true)) then
+      o("/init.lua is not TOS's — this machine boots OpenOS.", T.error)
+      o("Those files are the operating system here, not leftovers.", T.dim)
+      o("Refusing.", T.dim)
+      return
+    end
+
+    --! Identical to install.lua's OPENOS_ONLY_TREES on purpose --
+    --! test_reclaim.lua fails if they diverge. Nothing under /home is
+    --! touched: .shrc is OpenOS's, but it sits in user data and a
+    --! cleanup that reaches into /home is a different promise than the
+    --! one this makes.
+    local TREES = { "/bin", "/boot", "/lib" }
+    local EXTRA = {}
+
+    local function walk(path, acc)
+      if not kfs.exists(path) then return end
+      if kfs.isDirectory(path) then
+        for _, name in ipairs(kfs.list(path) or {}) do
+          walk(path .. "/" .. (name:gsub("/$", "")), acc)
+        end
+        acc.dirs[#acc.dirs + 1] = path
+      else
+        acc.files[#acc.files + 1] = path
+        acc.bytes = acc.bytes + (kfs.size(path) or 0)
+      end
+    end
+
+    local acc = { files = {}, dirs = {}, bytes = 0 }
+    for _, t in ipairs(TREES) do walk(t, acc) end
+    for _, f in ipairs(EXTRA) do
+      if kfs.exists(f) and not kfs.isDirectory(f) then
+        acc.files[#acc.files + 1] = f
+        acc.bytes = acc.bytes + (kfs.size(f) or 0)
+      end
+    end
+
+    if #acc.files == 0 and #acc.dirs == 0 then
+      o("Nothing to reclaim — no OpenOS leftovers found.", T.highlight)
+      return
+    end
+
+    local kb = math.floor(acc.bytes / 1024 + 0.5)
+    o(string.format("OpenOS leftovers: %d file(s) in %d director(ies), ~%d KB",
+      #acc.files, #acc.dirs, kb), T.title)
+    for _, t in ipairs(TREES) do
+      if kfs.exists(t) then o("  " .. t, T.fg) end
+    end
+    for _, f in ipairs(EXTRA) do if kfs.exists(f) then o("  " .. f, T.fg) end end
+    o("", T.dim)
+    o("TOS installs no files into these; nothing in the TOS runtime", T.dim)
+    o("loads from them. An OpenOS floppy remains your recovery path —", T.dim)
+    o("this install stopped being one when TOS replaced /init.lua.", T.dim)
+    o("", T.dim)
+    o("Removing /bin also changes what an unknown command does: today", T.dim)
+    o("it may run OpenOS's version, afterwards you get 'not a command'.", T.dim)
+
+    if not apply then
+      o("", T.dim)
+      o("Dry run. Nothing was removed.", T.highlight)
+      o("Run it for real with:  reclaim --apply", T.dim)
+      return
+    end
+
+    o("", T.dim)
+    o("Removing...", T.warning)
+    local removed, failedN, freed = 0, 0, 0
+    for _, f in ipairs(acc.files) do
+      local sz = kfs.size(f) or 0
+      if kfs.remove(f) then removed = removed + 1; freed = freed + sz
+      else failedN = failedN + 1 end
+    end
+
+    for _, d in ipairs(acc.dirs) do pcall(kfs.remove, d) end
+
+    o(string.format("Removed %d file(s), ~%d KB reclaimed.",
+      removed, math.floor(freed / 1024 + 0.5)), T.highlight)
+    if failedN > 0 then
+      o(failedN .. " file(s) could not be removed.", T.warning)
+    end
+    o("Reboot when convenient; nothing running depends on them.", T.dim)
+  end
+
   C.flash = function(args, o)
     if not rootOnly(o) then return end
     if not args[1] then
