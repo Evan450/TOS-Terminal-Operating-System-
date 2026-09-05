@@ -3,7 +3,7 @@ return {
   { path = "/init.lua",                       critical = true  , hash = "710c660c953f5266c8516d690b3a5e45f3b1bb3af2d47a8658d660692ca60ae6" },
   { path = "/install.lua",                    critical = false , hash = "c545b6e2fa6ebd8c0810af7fbad6f05b48f56c2dba212ed335f4b9b1ec91c6a2" },
 
-  { path = "/tos/kernel/init.lua",            critical = true  , hash = "548f07200f31d447d09c01e8aeba4242f85c311187b424b4e5c57efc1b325028" },
+  { path = "/tos/kernel/init.lua",            critical = true  , hash = "09bb4e3809a36bb8934e9bf7ab478db4787dd0e75c7a71519501b99b44421b57" },
   { path = "/tos/kernel/log.lua",             critical = true  , hash = "3700d6aad36956c95ce647d1019bac1161f05a71652c3610199d40716d4db829" },
   { path = "/tos/kernel/hal.lua",             critical = true  , hash = "617c8be797d4a3d47628f3974d4faf6e32dcb3cfa4559947214f86acc1bb7ab2" },
   { path = "/tos/kernel/event.lua",           critical = true  , hash = "b77ea97a1169c140c1c981bb3140bd225a62a906e28588bb51ab634fad669009" },
