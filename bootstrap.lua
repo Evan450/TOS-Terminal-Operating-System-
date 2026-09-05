@@ -165,9 +165,22 @@ local function internetCard()
 end
 
 -- Sized for OpenComputers, not a desktop: a Tier 1 machine has 192 KB of
--- RAM total, and a response held as a Lua string is real RAM. The
--- largest individual TOS source file is well under this.
-local MAX_FILE_BYTES    = 96 * 1024
+-- RAM total, and a response held as a Lua string is real RAM. The cap
+-- exists to stop a hostile or broken server streaming until the machine
+-- dies, not to police our own files.
+--
+--! IT WAS 96 KB, AND THE RELEASE GREW PAST IT. core.lua reached 99,048
+--! bytes -- 744 over -- so every network install silently skipped the
+--! file holding most of the shell's commands. The machine booted, and
+--! then `Failed to load category 'core'` meant half the commands did not
+--! exist. admin.lua at 97,660 was still squeaking under, so this was one
+--! ordinary edit away from happening again on a different file.
+--!
+--! A constant that "the largest file is well under" is a tripwire, not a
+--! limit, unless something checks. test_install_bootstrap.lua now
+--! measures the real release against this number and fails when the
+--! headroom runs out.
+local MAX_FILE_BYTES    = 256 * 1024
 local REQUEST_TIMEOUT   = 20   -- seconds of no progress before giving up
 local DOWNLOAD_RETRIES  = 3
 local PROBE_RETRIES     = 2
@@ -663,13 +676,48 @@ else
 end
 print()
 
---! A digest mismatch is not a flaky network. Ordinary download failures
---! are worth retrying and install.lua's own copy+verify pass will catch
---! whatever is missing; a file that arrived intact and hashed WRONG is a
---! different claim — the repository served bytes it does not agree with.
---! Refuse the whole install rather than hand a partly-suspect tree to the
---! installer, and say which files, because "some of it was wrong" is not
---! something an operator can act on.
+--! ANY missing file refuses the install, not just a mismatched digest.
+--!
+--! This used to reason that "install.lua's own copy+verify pass will
+--! catch whatever is missing". It does not stop anything: a file the
+--! manifest marks `critical = false` is copied if present and shrugged
+--! at if absent, so the install completed and the machine booted with
+--! core.lua -- most of the shell's commands -- simply not there. The
+--! operator found out later, from `verify`, that a file was gone.
+--!
+--! An incomplete install is not a lesser kind of success. The whole
+--! reason to hand install.lua a staging tree is that it is a COMPLETE
+--! copy of the release; if it is not, the thing being installed is not
+--! the release, and only the person running it can decide to accept
+--! that. So it stops, names what is missing, and leaves the choice with
+--! them instead of quietly shipping a crippled system.
+do
+  local absent = {}
+  for _, msg in ipairs(failedPaths) do
+    if not msg:find("DIGEST MISMATCH", 1, true) then absent[#absent + 1] = msg end
+  end
+  if #absent > 0 then
+    fail(#absent .. " file(s) never made it into the staging tree:")
+    for i = 1, math.min(8, #absent) do warn("  " .. absent[i]) end
+    if #absent > 8 then warn("  (+" .. (#absent - 8) .. " more)") end
+    print()
+    fail("Refusing to install an incomplete release.")
+    warn("Installing anyway would produce a machine that boots and is")
+    warn("quietly missing pieces -- that is how a release once shipped")
+    warn("without the file holding most of the shell's commands.")
+    print()
+    warn("Retry: these are usually transient. If the same file fails")
+    warn("every time, the release is broken; install from a disk and")
+    warn("report which file.")
+    pcall(fs.remove, stagingDir)
+    return
+  end
+end
+
+--! A digest mismatch is a different claim from a missing file: the
+--! repository served bytes it does not agree with. Reported separately
+--! because the remedy differs -- a retry fixes a dropped download, and
+--! does not fix a server disagreeing with its own manifest.
 do
   local tampered = {}
   for _, msg in ipairs(failedPaths) do
@@ -739,4 +787,30 @@ if not hok then
   fail("install.lua exited with an error: " .. tostring(herr))
   warn("You can retry it directly:")
   warn("  " .. installPath .. " " .. stagingDir)
+  warn("Leaving the staging tree in place so a retry needs no re-download.")
+  return
+end
+
+--! Reclaim the staging tree once it has served its purpose.
+--!
+--! It is a second full copy of the release -- ~1.2 MB, and on a machine
+--! whose tmpfs was too small it lands on a real disk. A 4 MB boot drive
+--! carrying OpenOS plus TOS plus an abandoned copy of TOS was left with
+--! 550 KB free after an install, which is most of the way to the next
+--! failure. It is kept on FAILURE, where a retry can reuse it; on
+--! success there is nothing left to want from it.
+do
+  local freed = stagingFree and freeSpace(stagingDir)
+  if pcall(fs.remove, stagingDir) then
+    local after = freeSpace("/")
+    if after and freed then
+      ok("Removed the staging copy (" .. kb(after) .. " free now)")
+    else
+      ok("Removed the staging copy from " .. stagingDir)
+    end
+  else
+    warn("Could not remove the staging copy at " .. stagingDir .. ".")
+    warn("It is a full second copy of the release; delete it to reclaim")
+    warn("the space: rm -r " .. stagingDir)
+  end
 end

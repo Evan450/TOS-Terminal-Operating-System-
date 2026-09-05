@@ -2697,6 +2697,10 @@ function kernel.verifySystem(printFn)
   end
 
   local ok, missing, damaged = 0, 0, 0
+  --! Split out so the summary can say whether anything that matters is
+  --! gone. "3 missing" reads the same whether they are man pages or the
+  --! command registry, and those are not the same news.
+  local missingCritical = 0
 
   -- #SEC C1 — manifest entries may declare a SHA-256 `hash` field
   -- (64 hex). When present, verifySystem checks every listed file's
@@ -2837,21 +2841,52 @@ function kernel.verifySystem(printFn)
         pcall(collectgarbage, "collect")
       end
     else
-      local tag = file.critical and "MISS" or "skip"
+      -- #REV — a file that is NOT THERE is its own outcome. It was
+      -- labelled "skip" when non-critical, which reads as "verify chose
+      -- not to check this" -- so an install that arrived without
+      -- core.lua looked like a clean pass with a couple of skips, and
+      -- the operator went looking for a memory problem instead of a
+      -- missing file. It is not damaged either: there is nothing to be
+      -- broken. The count was always right (missing, never damaged);
+      -- only the word was wrong.
+      local tag   = file.critical and "MISS" or "GONE"
       local color = file.critical and cErr or cWrn
-      printFn("  " .. tag .. " " .. file.path, color)
+      printFn("  " .. tag .. " " .. file.path ..
+        (file.critical and " (critical, not installed)" or " (not installed)"), color)
       missing = missing + 1
+      if file.critical then missingCritical = missingCritical + 1 end
     end
     ::continue_verify::
+
+    --! Let the rest of the machine breathe. This sweep hashes and
+    --! compiles ~150 files; without a yield the shell is simply frozen
+    --! until it finishes, with no output reaching the screen, which
+    --! looks like a hang rather than like work. Every iteration, because
+    --! a single large file is already the slow unit here.
+    if proc and proc.yieldCooperative then pcall(proc.yieldCooperative) end
   end
 
   printFn("", cDim)
-  if hashMismatch > 0 then
-    printFn(string.format(
-      "Result: %d OK, %d missing, %d damaged (incl. %d HASH MISMATCH)",
-      ok, missing, damaged, hashMismatch), cErr)
+  --! MISSING and DAMAGED are deliberately separate totals and always
+  --! have been: a file that is absent has nothing to be broken. The
+  --! critical breakdown is new, so "2 missing" cannot hide the
+  --! difference between two man pages and the command registry.
+  local missText = tostring(missing)
+  if missingCritical > 0 then
+    missText = string.format("%d missing (%d CRITICAL)", missing, missingCritical)
   else
-    printFn(string.format("Result: %d OK, %d missing, %d damaged", ok, missing, damaged), cDim)
+    missText = string.format("%d missing", missing)
+  end
+  if hashMismatch > 0 then
+    printFn(string.format("Result: %d OK, %s, %d damaged (incl. %d HASH MISMATCH)",
+      ok, missText, damaged, hashMismatch), cErr)
+  elseif missingCritical > 0 or damaged > 0 then
+    printFn(string.format("Result: %d OK, %s, %d damaged", ok, missText, damaged), cErr)
+  elseif missing > 0 then
+    printFn(string.format("Result: %d OK, %s, %d damaged", ok, missText, damaged), cWrn)
+    printFn("Missing files are absent, not corrupt — reinstall to restore them.", cDim)
+  else
+    printFn(string.format("Result: %d OK, %s, %d damaged", ok, missText, damaged), cDim)
   end
 
   return missing == 0 and damaged == 0

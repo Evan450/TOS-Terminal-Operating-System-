@@ -190,6 +190,63 @@ do
       end
     end
 
+    -- ── MAX_FILE_BYTES vs the actual release ──────────────────────
+    --! The download cap was 96 KB and core.lua grew to 99,048 bytes, so
+    --! every network install silently skipped the file holding most of
+    --! the shell's commands. Nothing noticed, because the comment above
+    --! the constant asserted "the largest individual TOS source file is
+    --! well under this" and no code ever checked whether that was still
+    --! true. This measures it.
+    local capExpr = bootstrapSrc:match("MAX_FILE_BYTES%s*=%s*([%d%s%*]+)")
+    test("bootstrap declares a download size cap", capExpr ~= nil)
+    if capExpr then
+      local capFn = load("return " .. capExpr, "=cap", "t")
+      local cap = capFn and select(2, pcall(capFn)) or nil
+      test("the cap is a number", type(cap) == "number")
+
+      -- Measure the built release if it is there; the dev tree otherwise.
+      local roots = { "../TOS-Release", "../../TOS-Release", "." }
+      local biggest, biggestPath, scanned = 0, nil, 0
+      local sep = package.config:sub(1, 1)
+      for _, root in ipairs(roots) do
+        local cmd = (sep == "\\")
+          and ('dir /b /s "' .. root:gsub("/", "\\") .. '\\*.lua" 2>nul')
+          or  ('find "' .. root .. '" -name "*.lua" 2>/dev/null')
+        local pipe = io.popen(cmd)
+        if pipe then
+          for line in pipe:lines() do
+            line = line:gsub("%s+$", "")
+            local h = io.open(line, "rb")
+            if h then
+              local n = h:seek("end"); h:close()
+              scanned = scanned + 1
+              if n > biggest then biggest, biggestPath = n, line end
+            end
+          end
+          pipe:close()
+        end
+        if scanned > 0 then break end
+      end
+
+      test("found a tree to measure against the cap", scanned > 0)
+      if scanned > 0 and type(cap) == "number" then
+        if biggest >= cap then
+          print(string.format("    largest file %d bytes >= cap %d: %s",
+            biggest, cap, tostring(biggestPath)))
+        end
+        test(string.format("every file fits under the cap (largest %d, cap %d)",
+          biggest, cap), biggest < cap)
+        -- Headroom, so the NEXT ordinary edit does not reintroduce this.
+        test(string.format("...with room to grow (largest is %d%% of the cap)",
+          math.floor(biggest / cap * 100)), biggest < cap * 0.75)
+      end
+    end
+
+    test("an incomplete download refuses the install",
+      bootstrapSrc:find("Refusing to install an incomplete release", 1, true) ~= nil)
+    test("a successful install reclaims the staging copy",
+      bootstrapSrc:find("Removed the staging copy", 1, true) ~= nil)
+
     -- Staging space. These are source-pattern checks and say so: the
     -- behaviour they guard needs a real machine with a real tmpfs to
     -- exercise, and pretending otherwise is what let the sandbox bug
