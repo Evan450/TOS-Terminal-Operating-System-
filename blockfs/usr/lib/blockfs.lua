@@ -712,7 +712,15 @@ function blockfs.mount(drive, opts)
     return st.pos
   end
 
-  function P.close(h) handles[h] = nil; return true end
+  -- A nil handle is what a caller hands us when it forgot to check
+  -- open()'s return. Indexing `handles` with it raises "table index is
+  -- nil" from inside the driver, which points the reader at this file
+  -- instead of at their own missing check.
+  function P.close(h)
+    if h == nil or handles[h] == nil then return false, "bad file descriptor" end
+    handles[h] = nil
+    return true
+  end
 
   -- Flush the clean bit so a later mount knows the volume was shut down
   -- properly (fsck can then trust the free counts). Call on unmount.
