@@ -75,18 +75,28 @@ WORTH CHECKING NEXT, same shape: what else in TOS assumes a
 
 ## THE BLACK STATUS BAR, FIFTH TIME (2026-08-24)
 
-### Planned — NOT CHASED
+### Planned — NEW EVIDENCE
 
 ```text
-NOT CHASED, same area, no evidence of a live bug: a forwarded
-    display.* draw (statusBar/menuBar/scrollUp/box via
-    withContext) that THROWS skips the wrapper's cleanup, because
-    withContext re-raises. Both the shadow and the colour cache
-    are then stale with nothing to correct them -- the same
-    permanent-desync shape as above. No path was found that
-    actually throws in there, which is why this is a note; if a
-    black bar or a wrong-coloured row ever survives this fix,
-    start here. screen.lua ~line 1240.
+NEW EVIDENCE, 2026-09-05, not yet explained. The operator
+    reports that switching theme away and back (Default ->
+    Amber -> Default) SOMETIMES leaves the status bar in the
+    theme colour rather than black. So the bar CAN be painted
+    correctly, and a theme change is what does it -- which means
+    the colour and content logic are fine and something either
+    fails to paint row H at boot or paints over it afterwards.
+    "Sometimes" says it is racy.
+    Worth measuring next: the audit fires ONCE per boot
+    (auditHits == 1 gates the log), a few seconds after the
+    shell loads, reporting screen=000000 cache=<statusbar_bg>.
+    So the glass is black while the cache believes it painted.
+    Whatever blacks row H does it outside the shadow, once,
+    early. Candidates not yet eliminated: a full-screen clear
+    between the bar's paint and the audit; kiosk.lua draws via
+    display.* directly (wrong shell mode here, but the same
+    shape); a second proxy for the same seat (displayProxy
+    builds a fresh one per call -- login, shell, task switcher)
+    painting with its own idea of the glass.
 ```
 
 ## ACCIDENTAL-GLOBAL / COMPAT SWEEP (2026-08-23)

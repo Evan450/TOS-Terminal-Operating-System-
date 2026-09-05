@@ -432,6 +432,65 @@ do
   test("dedup returns once a proxy is alone again", n3, calls.set)
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- A forwarded draw that THROWS must still drop both caches
+-- ══════════════════════════════════════════════════════════════════════
+--! The proxy forwards the higher-level TUI methods (statusBar, menuBar,
+--! scrollUp, box...) to kernel.display via withContext. Those draw on
+--! OUR gpu but OUTSIDE this proxy's shadow and colour cache, so the
+--! wrapper resets both afterwards.
+--!
+--! It used to reset them AFTER calling withContext, which re-raises. A
+--! forwarded draw that threw therefore skipped both resets and left the
+--! shadow describing a screen that had moved on -- permanently, because
+--! nothing else declares a foreign write. That is the desync shape
+--! behind the black status bar, and the round-five note named this exact
+--! spot as where to look if the bar survived. It did.
+--!
+--! Round five also recorded WHY four rounds of fixes missed the bug:
+--! call-counting mocks pass against a broken build. So this asserts the
+--! STATE afterwards -- that a subsequent draw is actually emitted --
+--! rather than that some function was called.
+do
+  print()
+  print("-- a throwing forwarded draw still cleans up --")
+
+  package.loaded["kernel.display"] = {
+    withContext = function(_, _, _, fn) return fn() end,
+    statusBar   = function() error("simulated draw failure", 0) end,
+    menuBar     = function() return "ok" end,
+  }
+  screen.init()
+  local tp = screen.displayProxy(1)
+
+  if type(tp.statusBar) ~= "function" then
+    test("statusBar is forwarded", "function", type(tp.statusBar))
+  else
+    -- Prime the shadow so there is something to invalidate: this cell is
+    -- now believed-known, and a repeat draw of it would normally elide.
+    tp.set(1, 25, "X", 0xFFFFFF, 0x336699)
+    local beforeElide = calls.set
+    tp.set(1, 25, "X", 0xFFFFFF, 0x336699)
+    test("a repeat draw elides while the shadow is trusted",
+      beforeElide, calls.set)
+
+    -- Now a forwarded draw that throws. The error must reach the caller
+    -- (a caller that asked for a dialog and got none has to hear about
+    -- it) AND the caches must be gone anyway.
+    local okCall = pcall(tp.statusBar, "anything")
+    test("the failure is re-raised, not swallowed", false, okCall)
+
+    -- THE ASSERTION THAT MATTERS: the same draw must now be emitted,
+    -- because the shadow no longer claims to know that cell.
+    local beforeRepaint = calls.set
+    tp.set(1, 25, "X", 0xFFFFFF, 0x336699)
+    test("after a throwing forwarded draw the shadow is dropped, so the "
+      .. "next draw is EMITTED", beforeRepaint + 1, calls.set)
+  end
+
+  package.loaded["kernel.display"] = nil
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
