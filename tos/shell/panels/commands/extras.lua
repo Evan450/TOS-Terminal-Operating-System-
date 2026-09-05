@@ -711,6 +711,25 @@ return function(C, S, deps)
       else
         o("No removable disks mounted", T.dim)
       end
+      --! Raw drives are NOT filesystems, so nothing above can list them:
+      --! `disk` and `mount` both walk MOUNTED filesystems, and an
+      --! unmanaged drive has none until it is formatted and mounted. That
+      --! is correct and completely opaque -- an operator with a raw drive
+      --! attached sees "No removable disks mounted", concludes the drive
+      --! is not being detected, and has no way to learn that `drive` is
+      --! the command that sees it. Say so, but only when there is
+      --! actually one attached, so the hint never becomes noise.
+      do
+        local raw = 0
+        for _ in component.list("drive", true) do raw = raw + 1 end
+        if raw > 0 then
+          o("", T.dim)
+          o(raw .. " unmanaged (raw) drive(s) attached — not filesystems, so", T.warning)
+          o("they cannot appear above until formatted and mounted.", T.dim)
+          o("  drive list          see them, with address and capacity", T.dim)
+          o("  drive format <addr> make one a TBFS filesystem", T.dim)
+        end
+      end
       o("disk info <mnt> for details  ·  df for space  ·  jbod to pool disks", T.dim)
     elseif sub == "info" then
       if not args[2] then o("Usage: disk info <mount-point>", T.dim); return end
