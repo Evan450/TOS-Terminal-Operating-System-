@@ -148,8 +148,24 @@ do
       src:find("F.writeFile(marker", 1, true) ~= nil)
     test("...and no writeFile targets the legacy constant",
       src:find("writeFile(LEGACY_MARKER", 1, true) == nil)
+    -- Matched WITHOUT the closing paren on purpose. This asserted
+    -- `F.exists(LEGACY_MARKER)` exactly, which pinned the argument list
+    -- rather than the behaviour it is named for, and failed the moment
+    -- the session argument was added -- a fix, not a regression.
     test("the legacy path is still consulted for the migration",
-      src:find("F.exists(LEGACY_MARKER)", 1, true) ~= nil)
+      src:find("F.exists(LEGACY_MARKER", 1, true) ~= nil)
+
+    -- #SEC — every securefs read here must carry the session. Without
+    -- it securefs resolves no principal (first-boot login sets no
+    -- current session, and the boot-session fallback is off once boot
+    -- completes) and fails closed: root was denied its own
+    -- /root/.tutorial_done while holding a valid root token.
+    local reads = 0
+    for _ in src:gmatch("F%.exists%(") do reads = reads + 1 end
+    local sessioned = 0
+    for _ in src:gmatch("F%.exists%([^)]-,%s*session%s*%)") do sessioned = sessioned + 1 end
+    test(string.format("every F.exists passes the session (%d/%d)", sessioned, reads),
+      reads > 0 and sessioned == reads)
   end
 end
 

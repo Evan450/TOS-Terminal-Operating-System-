@@ -574,6 +574,28 @@ Left/Right changes a value, Enter applies.
 Paths are normalized first (`..`, `.`, backslashes, NUL bytes all handled -
 tainted paths fail closed), so ACL checks can't be tricked.
 
+**The protected core, and getting past it.** That last guard is
+defence-in-depth against a *tampered admin session*, not an ACL — it sits
+above the permission model and refuses regardless of tier. That made some
+ordinary operator work impossible: creating a file in `/etc`, clearing
+OpenOS's man pages out of `/usr/man`, tidying an install.
+
+Root can stand it down for their own session:
+
+```
+protect status                 # is it active?
+protect off                    # stand the guards down (root only)
+protect on                     # put them back
+```
+
+Admin cannot arm it — that would defeat the point — and it is per-session,
+so it dies at logout and can't be left on for whoever sits down next. Every
+path allowed through it is written to the kernel log with the path, because
+trusting the operator is not the same as keeping no record.
+
+It is your machine. `protect off` will happily let you delete the thing that
+makes it boot.
+
 ### 5.2 Trash, vault & keychain
 
 - **Trash:** `rm` moves files to per-user trash (use `--hard` to skip it);
@@ -1000,6 +1022,35 @@ intention.
 
 Services keep their enabled/disabled state across an upgrade but keep running
 the old code until restarted: `service stop <svc>` then `service start <svc>`.
+
+### 7.45 Reclaiming space after installing over OpenOS
+
+Installing TOS onto a drive that already ran OpenOS leaves OpenOS behind.
+TOS replaces exactly one of its files — `/init.lua` — and installs nothing
+into `/bin`, `/boot` or `/lib`, so those three trees are dead weight
+afterwards: roughly a megabyte on a 4 MB drive, which is most of the way to
+an install that fails for want of room.
+
+The installer offers to remove them at the end, but only when the file copy
+verified completely. A partial install skips the offer, so a machine can end
+up carrying both. To do it later:
+
+```
+reclaim                        # dry run: lists what would go, with a size
+reclaim --apply                # actually remove it
+```
+
+It refuses outright unless `/init.lua` is TOS's, so it cannot fire on a
+machine where OpenOS is still the operating system.
+
+Two things worth knowing before you run it. Your recovery path becomes an
+OpenOS **floppy** — this install stopped being one the moment TOS took over
+`/init.lua`. And `/bin` is on the shell's `PATH`, so a command TOS does not
+implement currently falls through to OpenOS's copy; afterwards you get a
+clean "not a command" instead. That is usually an improvement: those
+fall-throughs run under the TOS sandbox and tend to fail with a confusing
+`module 'computer' is not available in sandboxed code` rather than anything
+useful.
 
 ### 7.5 Third-party and OpenOS packages
 

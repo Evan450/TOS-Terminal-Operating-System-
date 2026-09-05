@@ -76,12 +76,17 @@ local _isProtectedTarget
 local function checkWrite(path, session)
   if not fs or not usermod then return false, "securefs not initialized" end
   path = fs.normalize(path)
+  --! Resolve the principal BEFORE the protected check, not after. The
+  --! shell supplies its session through the process, not as an explicit
+  --! argument, so `session` here is usually nil -- and an override armed
+  --! by root would never have been seen.
+  local sess = sessionOf(session)
   -- #SEC C18 — every write op (writeFile, appendFile, makeDirectory,
   -- open w/+/a) flows through here. Previously the protected-set check
   -- only fired from remove/rename, letting an admin overwrite
   -- /tos/kernel/init.lua and brick or backdoor the OS on next boot.
   if _isProtectedTarget then
-    local hit = _isProtectedTarget(path)
+    local hit = _isProtectedTarget(path, sess)
     if hit then
       if log then log.warn("securefs", "WRITE denied (protected): " .. path) end
       -- This is intentional even for root: it's a defence-in-depth line, not
@@ -96,7 +101,6 @@ local function checkWrite(path, session)
       return false, "Cannot write protected system path (" .. hit .. ")" .. hint, path
     end
   end
-  local sess = sessionOf(session)
   local allowed, reason = usermod.canAccessAs(sess, path, "w")
   if not allowed then
     if log then log.warn("securefs", "WRITE denied: " .. path .. " (" .. (reason or "?") .. ")") end
@@ -289,7 +293,79 @@ local WRITE_PROTECTED_EXEMPT = {
   ["/var/cluster"]      = true,  -- clusterd state.dat + status.dat
 }
 
-local function isProtectedTarget(path)
+-- ============================================================
+-- Operator override
+-- ============================================================
+--! The protected set above is defence-in-depth against a TAMPERED admin
+--! session, and it is worth having. What it should not be is a wall the
+--! machine's owner cannot get past on their own hardware: creating a
+--! file in /etc, clearing OpenOS's man pages out of /usr/man, and
+--! tidying an install were all simply refused, with no supported way to
+--! say "yes, I mean it".
+--!
+--! So it stays on by default and becomes something ROOT can stand down
+--! deliberately, for their own session only:
+--!
+--!   * ROOT tier only. An admin cannot arm it, which is the whole point
+--!     of the defence-in-depth line -- a compromised admin session is
+--!     still stopped.
+--!   * Per SESSION, never global, and gone on logout or reboot. It
+--!     cannot be left on by accident for the next person at the seat.
+--!   * Every bypass is logged with the path. Trusting the operator is
+--!     not the same as keeping no record.
+--!
+--! This is the "warn, then let them" model rather than "refuse and let
+--! them go around securefs with raw kernel.fs" -- which is what the old
+--! comment actually recommended, and which produced neither safety nor
+--! a log entry.
+local overrideSessions = setmetatable({}, { __mode = "k" })
+
+local function hasOverride(session)
+  if not session then return false end
+  return overrideSessions[session] == true
+end
+
+--- Arm or disarm the protected-path override for one session.
+-- Returns ok, err. ROOT tier only.
+function securefs.setOperatorOverride(session, enabled)
+  if not usermod then return false, "securefs not initialized" end
+  if not session then return false, "no session" end
+  local TIER = usermod.TIER
+  local tier = session.tier
+  if not (TIER and tier and tier >= TIER.ROOT) then
+    return false, "Operator override requires root"
+  end
+  if enabled then
+    overrideSessions[session] = true
+    if log then
+      log.warn("securefs", "Operator override ARMED by '" ..
+        tostring(session.user) .. "' — protected system paths are writable " ..
+        "for this session")
+    end
+  else
+    overrideSessions[session] = nil
+    if log then
+      log.info("securefs", "Operator override disarmed for '" ..
+        tostring(session.user) .. "'")
+    end
+  end
+  return true
+end
+
+--- Is the override armed for this session? (For UI to show the state.)
+function securefs.operatorOverride(session)
+  return hasOverride(session)
+end
+
+local function isProtectedTarget(path, session)
+  --! An armed root session sees no protected targets at all. Logged at
+  --! the point of use so the record names the path, not just the arming.
+  if hasOverride(session) then
+    if log then
+      log.warn("securefs", "Operator override: allowing protected path " .. tostring(path))
+    end
+    return nil
+  end
   -- Direct-exempt overrides: a write to one of these specific files is
   -- permitted even though its containing dir is in REMOVE_PROTECTED.
   if WRITE_PROTECTED_EXEMPT[path] then return nil end
@@ -321,7 +397,7 @@ _isProtectedTarget = isProtectedTarget
 function securefs.remove(path, session)
   -- Normalize FIRST so variants like "/tos/" or "/tos/." can't slip past
   path = fs.normalize(path)
-  local hit = isProtectedTarget(path)
+  local hit = isProtectedTarget(path, sessionOf(session))
   if hit then
     return false, "Cannot remove protected system path (" .. hit .. ")"
   end
@@ -339,11 +415,11 @@ function securefs.rename(from, to, session)
   -- closes the "rename /home -> /home.bak then recreate" side-door that
   -- would otherwise let a caller with write access to /home.bak (which
   -- they could create first) swap the real /home out from under users.
-  local hitFrom = isProtectedTarget(nFrom)
+  local hitFrom = isProtectedTarget(nFrom, sessionOf(session))
   if hitFrom then
     return false, "Cannot rename protected system path (" .. hitFrom .. ")"
   end
-  local hitTo = isProtectedTarget(nTo)
+  local hitTo = isProtectedTarget(nTo, sessionOf(session))
   if hitTo then
     return false, "Cannot rename onto protected system path (" .. hitTo .. ")"
   end
@@ -478,6 +554,6 @@ end
 
 -- Test hook (not part of the public API): the protected-target guard,
 -- exposed so the node-vs-subtree behavior can be unit-tested off-box.
-securefs._isProtectedTarget = function(p) return _isProtectedTarget(p) end
+securefs._isProtectedTarget = function(p, s) return _isProtectedTarget(p, s) end
 
 return securefs

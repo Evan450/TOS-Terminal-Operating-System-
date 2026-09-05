@@ -541,10 +541,24 @@ end
 -- Checked BEFORE the search paths so precedence matches the old behavior,
 -- where compat pre-registered these names in the require cache at boot
 -- (e.g. a /usr/lib/text.lua add-on must not shadow the OpenOS shim).
+--! MUST list every name compat.init registers, or that name's first
+--! require falls past this hook into the search path.
+--!
+--! `internet` was missing. compat.init registers it, but nothing here
+--! triggered on it, so require("internet") went to the path search and
+--! found OpenOS's /lib/internet.lua -- TOS quietly running OpenOS's
+--! library instead of its own shim. Worse, it was ORDER-DEPENDENT: touch
+--! any other shim name first and compat is already initialized, so
+--! package.loaded has "internet" and it resolves correctly. Touch
+--! `internet` first, on a disk with no OpenOS underneath it, and the
+--! require fails outright.
+--!
+--! Two lists that have to agree, with nothing checking. Now checked:
+--! test_openos_compat.lua compares them and fails on any divergence.
 local OPENOS_SHIMS = {
   sides = true, colors = true, keyboard = true, text = true,
   serialization = true, buffer = true, term = true, filesystem = true,
-  event = true, shell = true, io = true,
+  event = true, shell = true, io = true, internet = true,
 }
 
 local function tosRequireBody(name)

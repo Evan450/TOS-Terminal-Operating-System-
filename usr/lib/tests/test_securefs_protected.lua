@@ -85,6 +85,60 @@ test("/var/srm/store/tos/kernel/init.lua blocked",
   true, guard("/var/srm/store/tos/kernel/init.lua") ~= nil)
 test("/var/srm node blocked", true, guard("/var/srm") ~= nil)
 
+-- ══════════════════════════════════════════════════════════════════════
+-- Operator override
+-- ══════════════════════════════════════════════════════════════════════
+--! The protected set is defence-in-depth against a tampered ADMIN
+--! session, not a wall the machine's owner cannot get past. Root can
+--! stand it down for their own session; admin cannot, or the defence
+--! would be worth nothing.
+print()
+print("-- operator override --")
+do
+  local TIER = { GUEST = 0, USER = 1, ADMIN = 2, ROOT = 3 }
+  securefs.init({
+    fs      = { normalize = function(p) return p end },
+    users   = { TIER = TIER },
+    log     = nil,
+    process = nil,
+  })
+
+  local rootSess  = { user = "root",  tier = TIER.ROOT }
+  local adminSess = { user = "admin", tier = TIER.ADMIN }
+  local userSess  = { user = "bob",   tier = TIER.USER }
+
+  -- Nothing armed: the guard behaves exactly as before for everyone.
+  test("root sees /etc protected before arming", true, guard("/etc/newfile", rootSess) ~= nil)
+  test("admin sees /etc protected", true, guard("/etc/newfile", adminSess) ~= nil)
+  test("a nil session still hits the guard", true, guard("/etc/newfile", nil) ~= nil)
+
+  -- Only root may arm it.
+  test("admin cannot arm the override", false, (securefs.setOperatorOverride(adminSess, true)))
+  test("a plain user cannot arm it", false, (securefs.setOperatorOverride(userSess, true)))
+  test("no session cannot arm it", false, (securefs.setOperatorOverride(nil, true)))
+  test("admin arming did not take effect", true, guard("/etc/newfile", adminSess) ~= nil)
+
+  test("root can arm it", true, (securefs.setOperatorOverride(rootSess, true)))
+  test("...and it reports as armed", true, securefs.operatorOverride(rootSess))
+
+  -- The three refusals that prompted this, from the operator's own report.
+  test("root may now create a file in /etc", nil, guard("/etc/newfile", rootSess))
+  test("root may now clear /usr/man", nil, guard("/usr/man/oldpage", rootSess))
+  test("root may now touch /usr", nil, guard("/usr", rootSess))
+  test("root may now remove /tos", nil, guard("/tos/kernel/init.lua", rootSess))
+
+  -- Per-session, so it never leaks to anyone else at the machine.
+  test("admin is still blocked while root is armed", true, guard("/etc/newfile", adminSess) ~= nil)
+  test("an un-sessioned caller is still blocked", true, guard("/etc/newfile", nil) ~= nil)
+  test("another root-tier session is NOT armed", true,
+    guard("/etc/newfile", { user = "root", tier = TIER.ROOT }) ~= nil)
+
+  -- And it can be put back.
+  test("root can disarm", true, (securefs.setOperatorOverride(rootSess, false)))
+  test("...and the guard returns", true, guard("/etc/newfile", rootSess) ~= nil)
+  test("...and it reports as disarmed", false, securefs.operatorOverride(rootSess))
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

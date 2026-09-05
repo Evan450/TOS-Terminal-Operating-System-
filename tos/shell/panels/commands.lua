@@ -175,6 +175,8 @@ local REGISTRY = {
   lua      = { category = "admin", tier = 3, help = "Open the Lua REPL (root only)" },
   edit     = { category = "admin", tier = 2, help = "Open a file in the editor" },
   flash    = { category = "admin", tier = 3, help = "Flash a BIOS to EEPROM (root only)" },
+  protect  = { category = "admin", tier = 3, help = "Stand down protected-path guards for this session (root only)" },
+  reclaim  = { category = "admin", tier = 3, help = "Remove leftover OpenOS files after installing over it (root only)" },
   users    = { category = "admin", tier = 2, help = "List users (tier-filtered)" },
   useradd  = { category = "admin", tier = 2, help = "Create a new user" },
   userdel  = { category = "admin", tier = 2, help = "Delete a user" },
