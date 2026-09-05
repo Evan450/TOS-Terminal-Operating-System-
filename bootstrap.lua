@@ -483,13 +483,66 @@ do
   end
 end
 
--- ── Staging directory, with a fallback if /tmp isn't there ─────────
--- /tmp is OpenOS's normal tmpfs mount and is present on any install
--- that boots to a shell at all, but a stripped-down or custom image
--- might not have it — fall back to a root-level scratch dir instead
--- of failing outright.
-local stagingDir = (fs.isDirectory("/tmp") and "/tmp/tos-netinstall")
-  or "/tos-netinstall-tmp"
+-- ── Staging directory, chosen by FREE SPACE ────────────────────────
+--! /tmp used to be picked unconditionally. On a real machine that is a
+--! tmpfs of a few hundred KB, and the release is ~1.2 MB across 152
+--! files -- so it filled, and every remaining write failed with "cannot
+--! open staging file for write". The operator saw 142 identical errors
+--! and no mention of space, which is the least useful way to say "the
+--! disk is full".
+--!
+--! So: consider the candidates, ask each how much room it actually has,
+--! and take the roomiest. /tmp still wins when it is big enough, because
+--! staging in RAM leaves nothing behind on a failed install.
+local function freeSpace(path)
+  local okP, proxy = pcall(fs.get, path)
+  if not okP or not proxy then return nil end
+  local okT, total = pcall(proxy.spaceTotal)
+  local okU, used  = pcall(proxy.spaceUsed)
+  if not (okT and okU) or type(total) ~= "number" or type(used) ~= "number" then
+    return nil
+  end
+  --! An unmanaged or read-only mount can report a total of 0; treat that
+  --! as "unusable" rather than as "0 bytes free but maybe fine".
+  if total <= 0 then return nil end
+  return total - used
+end
+
+local function kb(n) return string.format("%.0f KB", n / 1024) end
+
+--! Roughly what the payload needs. Not read from the manifest, which
+--! declares no sizes -- it is a floor for WARNING only, never a refusal,
+--! so an unusual layout that knows better is not blocked by our guess.
+local NEED_BYTES = 1400 * 1024
+
+local stagingDir, stagingFree
+do
+  local candidates = {}
+  if fs.isDirectory("/tmp")  then candidates[#candidates + 1] = { "/tmp/tos-netinstall",  "/tmp"  } end
+  if fs.isDirectory("/home") then candidates[#candidates + 1] = { "/home/tos-netinstall", "/home" } end
+  candidates[#candidates + 1] = { "/tos-netinstall-tmp", "/" }
+
+  local best, bestFree
+  for _, c in ipairs(candidates) do
+    local free = freeSpace(c[2])
+    if free and (not bestFree or free > bestFree) then best, bestFree = c[1], free end
+  end
+
+  --! Every candidate refused to report. Fall back to the old behaviour
+  --! rather than refusing to install: not knowing the free space is not
+  --! the same as knowing there is none.
+  stagingDir  = best or ((fs.isDirectory("/tmp") and "/tmp/tos-netinstall") or "/tos-netinstall-tmp")
+  stagingFree = bestFree
+
+  if stagingFree then
+    ok("Staging in " .. stagingDir .. " (" .. kb(stagingFree) .. " free)")
+    if stagingFree < NEED_BYTES then
+      warn("That is under the ~" .. kb(NEED_BYTES) .. " the release needs.")
+      warn("The download will likely run out of space partway through.")
+      warn("Free some room, or install from a disk instead. Continuing.")
+    end
+  end
+end
 if fs.exists(stagingDir) then
   warn("Removing a stale staging directory from a previous run: " .. stagingDir)
   pcall(fs.remove, stagingDir)
@@ -519,6 +572,7 @@ print("--- Downloading " .. #fileList .. " files ---")
 color(0xFFFFFF)
 local copied, failed = 0, 0
 local failedPaths = {}
+local outOfSpace = false
 for i, path in ipairs(fileList) do
   local dir = path:match("^(.+)/[^/]+$")
   if dir then
@@ -548,6 +602,17 @@ for i, path in ipairs(fileList) do
       copied = copied + 1
     else
       failed = failed + 1
+      --! A write that fails because the filesystem is FULL will fail for
+      --! every remaining file too, so stop and say so once. Grinding on
+      --! produced 142 identical "cannot open staging file for write"
+      --! lines that never mentioned space -- the operator was left to
+      --! infer the cause from the volume of the noise.
+      local freeNow = freeSpace(stagingDir)
+      if freeNow and freeNow < 4096 then
+        outOfSpace = true
+        failedPaths[#failedPaths + 1] = path .. ": OUT OF SPACE (" .. kb(freeNow) .. " free)"
+        break
+      end
       failedPaths[#failedPaths + 1] = path .. ": cannot open staging file for write"
     end
   elseif err == nil then
@@ -568,6 +633,26 @@ for i, path in ipairs(fileList) do
 end
 print()
 print()
+
+--! Out of space is a different failure from "some downloads went wrong",
+--! and the remedy is different too, so it gets its own exit rather than
+--! being buried in a list of paths.
+if outOfSpace then
+  fail("Ran out of space in " .. stagingDir .. " after " .. copied .. " file(s).")
+  print()
+  warn("The release needs roughly " .. kb(NEED_BYTES) .. " of scratch space, and")
+  warn("this filesystem does not have it. Nothing was written outside")
+  warn(stagingDir .. ", and the target disk was never touched.")
+  print()
+  warn("Options, in the order worth trying:")
+  warn("  - Install from a floppy or install disk: no scratch space needed.")
+  warn("  - Free space on a larger drive; bootstrap stages wherever there")
+  warn("    is the most room, so it will pick it up automatically.")
+  warn("  - On a machine with only a small tmpfs, an installed HDD with")
+  warn("    free space is enough -- it does not have to be the target.")
+  pcall(fs.remove, stagingDir)
+  return
+end
 
 if failed == 0 then
   ok("Downloaded " .. copied .. " files")

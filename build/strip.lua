@@ -288,6 +288,30 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
     os.execute("mkdir -p " .. path)
   end
 
+  --! ONE seam for line endings, applied to every file the walk copies.
+  --!
+  --! The .lua branch already came out LF because the tokenizer discards
+  --! carriage returns, so this looked handled. It was not: non-Lua files
+  --! were copied byte-for-byte, and on Windows that means CRLF. The
+  --! release digests are then computed over CRLF bytes, git stores the
+  --! blob as LF, and GitHub serves LF -- so 21 files (every .man, the
+  --! .disabled rc script, the .cfg examples, ru.lang) failed their digest
+  --! on a real network install while verifying perfectly from a floppy,
+  --! where manifest and files travel together unnormalised.
+  --!
+  --! This is the SAME bug that broke `pkg fetch` for 39 of 59 files in
+  --! the Optional Utilities pack, fixed there with a normalizeEOL at
+  --! build-disk.lua's single content-read seam. It was not fixed here,
+  --! because nothing connected the two: the pack grew a "no CRLF in the
+  --! published pack" test and the release never got one. It has one now.
+  --!
+  --! Every file in this tree is text. Adding a binary would need this to
+  --! learn an exception -- check before you add one.
+  local function normalizeEOL(s)
+    if s == nil then return nil end
+    return (s:gsub("\r\n", "\n"):gsub("\r", "\n"))
+  end
+
   local function readAll(path)
     local h = io.open(path, "rb")
     if not h then return nil end
@@ -376,7 +400,7 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
       end
     elseif srcPath:sub(-4) == ".lua" then
       total = total + 1
-      local content = readAll(srcPath)
+      local content = normalizeEOL(readAll(srcPath))
       if content then
         local stripped = M.strip(content, { minify = minify })
         if writeAll(dstPath, stripped) then
@@ -386,9 +410,10 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
         end
       end
     else
-      -- Non-Lua file: copy as-is. The deploy chain still needs the
-      -- non-Lua bits (manifests, configs, themes) intact.
-      local content = readAll(srcPath)
+      -- Non-Lua file: content unchanged, but line endings normalized.
+      -- The deploy chain still needs the non-Lua bits (manifests,
+      -- configs, themes, man pages) intact.
+      local content = normalizeEOL(readAll(srcPath))
       if content then writeAll(dstPath, content) end
     end
   end

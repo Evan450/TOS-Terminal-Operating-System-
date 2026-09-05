@@ -190,6 +190,22 @@ do
       end
     end
 
+    -- Staging space. These are source-pattern checks and say so: the
+    -- behaviour they guard needs a real machine with a real tmpfs to
+    -- exercise, and pretending otherwise is what let the sandbox bug
+    -- through. They catch the guards being DELETED, not them working.
+    test("staging is chosen by free space, not hardcoded to /tmp",
+      bootstrapSrc:find("spaceTotal", 1, true) ~= nil and
+      bootstrapSrc:find("spaceUsed", 1, true) ~= nil)
+    test("staging considers more than one candidate filesystem",
+      bootstrapSrc:find("/home/tos%-netinstall") ~= nil)
+    test("a full filesystem aborts instead of failing every file",
+      bootstrapSrc:find("outOfSpace", 1, true) ~= nil)
+    test("and the out-of-space message names space, not just the write",
+      bootstrapSrc:find("OUT OF SPACE", 1, true) ~= nil)
+    test("a failed netinstall does not leave the staging tree behind",
+      bootstrapSrc:find("pcall(fs.remove, stagingDir)", 1, true) ~= nil)
+
     -- The guard that turns a broken hasher into a refusal rather than a crash.
     test("bootstrap known-answer-tests the hasher before trusting it",
       bootstrapSrc:find("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",

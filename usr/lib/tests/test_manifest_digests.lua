@@ -130,6 +130,48 @@ do
   end
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- No CR bytes anywhere the digests cover
+-- ══════════════════════════════════════════════════════════════════════
+--! Every check above hashes the LOCAL release tree against digests
+--! computed from that same local tree, so it agrees with itself no matter
+--! what the line endings are. Git does not agree: it normalizes text to
+--! LF in the stored blob, so a file built with CRLF is served as LF and
+--! its digest fails on a network install -- while a floppy install
+--! verifies fine, because there the manifest and the files travel
+--! together unnormalised.
+--!
+--! That shipped. 21 files (every .man, the .disabled rc script, the
+--! .cfg examples, ru.lang) failed their digest on the first real install
+--! from GitHub. strip.lua stripped .lua files through a tokenizer that
+--! drops CR and copied everything else byte-for-byte.
+--!
+--! The Optional Utilities pack learned this first and has had a "no CRLF
+--! in the published pack" test since. Nothing carried the lesson across
+--! to the release. This is that test.
+do
+  local offenders, checked = {}, 0
+  for _, e in ipairs(manifest or {}) do
+    if type(e) == "table" and type(e.path) == "string" then
+      local body = readAll(REL .. e.path)
+      if body then
+        checked = checked + 1
+        if body:find("\r", 1, true) then
+          offenders[#offenders + 1] = e.path
+        end
+      end
+    end
+  end
+  test("read files back to scan for CR bytes", checked > 0)
+  if #offenders > 0 then
+    print("    files containing CR (their digests will not survive git):")
+    for i = 1, math.min(8, #offenders) do print("      " .. offenders[i]) end
+    if #offenders > 8 then print("      (+" .. (#offenders - 8) .. " more)") end
+  end
+  test("no manifest-declared file contains a CR byte (" .. checked .. " scanned)",
+    #offenders == 0)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
