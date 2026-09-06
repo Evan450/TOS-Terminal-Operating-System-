@@ -80,6 +80,38 @@ On a Manager:
 cluster-manager status
 ```
 
+## Where the Master's task code may run (`task_execution`)
+
+An assignment carries Lua source. It comes from the Master you paired with,
+so this is not about hostile code — it is about what a **runaway** costs.
+Stopping a task mid-run needs `debug.sethook`, which OpenComputers does not
+give guest code, so a task that never returns cannot be interrupted: run
+inline, it holds a kernel timer callback until OC's watchdog reboots the
+whole computer, taking every seat on it with it.
+
+Pick how much of that you want to be exposed to, in
+`/etc/cluster-manager.cfg`:
+
+```lua
+task_execution = "inline",   -- default: run tasks here (a runaway reboots this box)
+task_execution = "bridge",   -- run them only on an OpenOS worker (see below)
+task_execution = "refuse",   -- run none; reject assignments that carry task code
+```
+
+- **`inline`** is what every build before this one did, and what a dedicated
+  compute Manager wants. The daemon logs a warning at start saying the bound
+  is not there.
+- **`bridge`** keeps task code off this machine entirely. A runaway takes out
+  the OpenOS worker, which is a machine whose only job is running tasks.
+  Needs `worker_bridge_enabled` and at least one worker; an assignment
+  arriving with no idle worker is *rejected*, never quietly run here.
+- **`refuse`** is the strictest, and the right answer for a Manager that
+  exists to contribute storage or presence rather than compute. Assignments
+  carrying task code are rejected at ACK time with a reason, so the Master's
+  scheduler sends them somewhere that will run them.
+
+`cluster-manager status` reports the live setting.
+
 ## OpenOS worker machines (optional)
 
 Everything above is pure TOS and needs no manual file copying. Worker boxes

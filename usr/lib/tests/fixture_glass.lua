@@ -124,7 +124,15 @@ function F.newGlass(w, h)
   local G = { W = w, H = h, SENT_CH = "\1", SENT_FG = 0xFF00FF, SENT_BG = 0xFF00FF,
               clock = 1234 }
   local pages, nextBuf, active = {}, 0, 0
-  local curFg, curBg = 0xFFFFFF, 0x000000
+  -- Every buffer -- the glass and each page -- carries its OWN current
+  -- foreground/background, exactly as OpenComputers' TextBuffer does.
+  -- setBackground while a page is active moves the page's colour and
+  -- leaves the screen's alone; bitblt copies cells, never this state.
+  -- A single shared pair here is what kept the seventh black status bar
+  -- invisible to a fixture that stored real pixels.
+  local colours = {}          -- [bufferIndex] = { fg = , bg = }
+  local function curFg() return colours[active].fg end
+  local function curBg() return colours[active].bg end
 
   local function newPage(sentinel)
     local c = {}
@@ -134,7 +142,9 @@ function F.newGlass(w, h)
     return c
   end
   pages[0] = newPage(true)
+  colours[0] = { fg = 0xFFFFFF, bg = 0x000000 }
   G.pages = pages
+  G.colours = colours
 
   G.gpu = {
     address       = "gpu-glass",
@@ -144,16 +154,16 @@ function F.newGlass(w, h)
     maxResolution = function() return 160, 50 end,
     setResolution = function(nw, nh)
       G.W, G.H = nw, nh; pages[0] = newPage(true)
-      for k in pairs(pages) do if k ~= 0 then pages[k] = nil end end
+      for k in pairs(pages) do if k ~= 0 then pages[k] = nil; colours[k] = nil end end
       nextBuf, active = 0, 0
       return true
     end,
     getDepth      = function() return 8 end,
     maxDepth      = function() return 8 end,
-    setForeground = function(c) curFg = c; return true end,
-    setBackground = function(c) curBg = c; return true end,
-    getForeground = function() return curFg end,
-    getBackground = function() return curBg end,
+    setForeground = function(c) colours[active].fg = c; return true end,
+    setBackground = function(c) colours[active].bg = c; return true end,
+    getForeground = function() return curFg() end,
+    getBackground = function() return curBg() end,
     -- Reads the ACTIVE buffer, not page 0. OpenComputers applies every
     -- gpu operation -- set, get, fill, copy -- to whichever buffer is
     -- active, and a fixture whose `get` always answered from the glass
@@ -196,7 +206,7 @@ function F.newGlass(w, h)
         i = i + 1
         local cx = x + i - 1
         if cx >= 1 and cx <= G.W and y >= 1 and y <= G.H then
-          p[(y - 1) * G.W + cx] = { ch, curFg, curBg }
+          p[(y - 1) * G.W + cx] = { ch, curFg(), curBg() }
         end
       end
       return true
@@ -206,7 +216,7 @@ function F.newGlass(w, h)
       for yy = y, y + fh - 1 do
         for xx = x, x + fw - 1 do
           if xx >= 1 and xx <= G.W and yy >= 1 and yy <= G.H then
-            p[(yy - 1) * G.W + xx] = { ch, curFg, curBg }
+            p[(yy - 1) * G.W + xx] = { ch, curFg(), curBg() }
           end
         end
       end
@@ -214,9 +224,14 @@ function F.newGlass(w, h)
     end,
     -- A freshly allocated page is BLANK. This is the detail the old mocks
     -- did not model and the bug depended on.
-    allocateBuffer  = function() nextBuf = nextBuf + 1; pages[nextBuf] = newPage(false); return nextBuf end,
-    freeBuffer      = function(i) pages[i] = nil; return true end,
-    setActiveBuffer = function(i) active = i; return true end,
+    allocateBuffer  = function()
+      nextBuf = nextBuf + 1
+      pages[nextBuf] = newPage(false)
+      colours[nextBuf] = { fg = 0xFFFFFF, bg = 0x000000 }   -- a fresh page's defaults
+      return nextBuf
+    end,
+    freeBuffer      = function(i) pages[i] = nil; colours[i] = nil; return true end,
+    setActiveBuffer = function(i) if not pages[i] then return false end; active = i; return true end,
     getActiveBuffer = function() return active end,
     bitblt = function(dst, dx, dy, bw, bh, src, sx, sy)
       -- A blit that REPORTS SUCCESS AND COPIES NOTHING. Not hypothetical:

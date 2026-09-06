@@ -341,6 +341,32 @@ do
   test("the old passphrase no longer opens it", true, outHas("Cannot decrypt menu"))
 end
 
+-- ── init must not wipe a menu-only card ───────────────────────────
+-- The refusal only looked at the log. A card whose log was empty but
+-- whose menu was not -- the common shape, since the menu is what the
+-- launcher uses -- was re-initialised without a word.
+print()
+print("-- init refuses to destroy a menu, not only a log --")
+do
+  adminMode = true                                -- init needs the machine secret
+  -- The card above has a menu (betterpw) and, at this point, a log too;
+  -- clear the log so ONLY the menu remains.
+  reset(); cmd({ "log", "clear", "hunter2" }, o)
+  reset(); cmd({ "info" }, o)
+  test("info reports the menu", true, outHas("Personal menu:"))
+  test("...and the empty log", true, outHas("Personal log: empty"))
+  reset(); cmd({ "init", "Overwritten" }, o)
+  test("init refuses while a menu is on the card", true, outHas("WITH a personal menu"))
+  reset(); cmd({ "menu", "list", "betterpw" }, o)
+  test("the menu survived the attempt", true, outHas("First") and outHas("Second"))
+  reset(); cmd({ "info" }, o)
+  test("the label was not replaced", false, outHas("label=Overwritten"))
+  -- Cleared of both, init proceeds.
+  reset(); cmd({ "menu", "clear", "betterpw" }, o)
+  reset(); cmd({ "init", "Fresh" }, o)
+  test("init proceeds once log and menu are both gone", true, outHas("Keycard initialized"))
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

@@ -213,41 +213,64 @@ function event.pull(timeout)
   local nextDeadline = now + timeout
 
   local procMod = getProc()
-  for i = #timers, 1, -1 do
+  --! Two passes, never one. A callback may add or cancel timers, and
+  --! `timers` is a plain array: cancelling an EARLIER entry shifts every
+  --! later one down by an index. The old single reverse walk removed the
+  --! fired one-shot by index AFTER its callback ran, so a callback that
+  --! cancelled an older timer left itself in the array one slot lower
+  --! (fired again -- same pass, then every pass) and the index removal
+  --! deleted a different, already-processed timer instead.
+  --! (test_event_timer_reentry.lua)
+  -- Pass 1: collect what is due; nothing here can mutate the array.
+  local due = nil
+  for i = 1, #timers do
     local t = timers[i]
     if now >= t.deadline then
-      -- #SEC H31 — fire timer under registering PID's context so
-      -- proc.signal/kill called from the callback see that PID's
-      -- tier rather than kernel's.
-      -- #SEC M-11 — if the registering process has died or its PID was
-      -- reused by a different spawn (generation mismatch), the timer is
-      -- stale: drop it WITHOUT firing, so its callback never runs under a
-      -- wrong/new principal.
-      local stale = t.regPid ~= nil and t.regGen ~= nil and procMod
-        and procMod.genOf and (procMod.genOf(t.regPid) ~= t.regGen)
-      if stale then
-        table.remove(timers, i)
-      else
-        if procMod and procMod.withListener and t.regPid then
-          local ok, err = pcall(procMod.withListener, t.regPid, t.callback)
-          if not ok then noteTimerError(t, err) end
-        else
-          local ok, err = pcall(t.callback)
-          if not ok then
-            -- Don't crash the pump — but don't lose it either: count it
-            -- and let the next pull flush into the log (see below).
-            noteTimerError(t, err)
-          end
-        end
-        if t.interval then
-          t.deadline = now + t.interval
-        else
-          table.remove(timers, i)
-        end
+      due = due or {}
+      due[#due + 1] = t
+    elseif t.deadline < nextDeadline then
+      nextDeadline = t.deadline
+    end
+  end
+  -- Pass 2: settle each due timer's bookkeeping BY IDENTITY and BEFORE
+  -- its callback runs, so whatever the callback does to the array is
+  -- already safe. A timer cancelled by an earlier callback in this same
+  -- pass is simply no longer found, and does not fire.
+  if due then
+    for _, t in ipairs(due) do
+      local idx = nil
+      for i = 1, #timers do
+        if timers[i] == t then idx = i; break end
       end
-    else
-      if t.deadline < nextDeadline then
-        nextDeadline = t.deadline
+      if idx then
+        -- #SEC M-11 — if the registering process has died or its PID was
+        -- reused by a different spawn (generation mismatch), the timer is
+        -- stale: drop it WITHOUT firing, so its callback never runs under
+        -- a wrong/new principal.
+        local stale = t.regPid ~= nil and t.regGen ~= nil and procMod
+          and procMod.genOf and (procMod.genOf(t.regPid) ~= t.regGen)
+        if stale or not t.interval then
+          table.remove(timers, idx)
+        else
+          t.deadline = now + t.interval
+          -- The rescheduled deadline bounds this pull's wait too;
+          -- otherwise a 0.1 s interval waited the full default 0.5 s.
+          if t.deadline < nextDeadline then nextDeadline = t.deadline end
+        end
+        if not stale then
+          -- #SEC H31 — fire timer under registering PID's context so
+          -- proc.signal/kill called from the callback see that PID's
+          -- tier rather than kernel's.
+          local ok, err
+          if procMod and procMod.withListener and t.regPid then
+            ok, err = pcall(procMod.withListener, t.regPid, t.callback)
+          else
+            ok, err = pcall(t.callback)
+          end
+          -- Don't crash the pump — but don't lose it either: count it
+          -- and let the next pull flush into the log (see above).
+          if not ok then noteTimerError(t, err) end
+        end
       end
     end
   end

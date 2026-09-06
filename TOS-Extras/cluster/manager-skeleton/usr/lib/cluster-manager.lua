@@ -104,6 +104,36 @@ local DEFAULT_CFG = {
   -- "prefer"  → every task runs on a worker when one is idle (else inline).
   worker_bridge_mode       = "opt-in",
   task_timeout_seconds     = 30,       -- per worker-dispatched task
+
+  --! WHERE THE MASTER'S TASK CODE MAY RUN. An operator decision, because
+  --! the honest answer depends on what the machine is for.
+  --!
+  --! An assignment carries Lua source. It arrives from a TRUSTED peer --
+  --! the Master this Manager paired with -- so this is not a question of
+  --! hostile code; it is a question of what a RUNAWAY costs. Mid-task
+  --! cancellation needs debug.sethook, which OpenComputers withholds, so
+  --! a task that never returns cannot be stopped: inline tasks run inside
+  --! a kernel timer callback, and the machine keeps going until OC's
+  --! watchdog reboots the WHOLE COMPUTER, taking every seat on it.
+  --!
+  --!   "inline"  run tasks on this Manager. The default, and what every
+  --!             build before this one did. A runaway reboots this box.
+  --!   "bridge"  never run task code here; hand every task to an OpenOS
+  --!             worker over the bridge. A runaway takes out that worker,
+  --!             which is a machine whose only job is running tasks. This
+  --!             needs worker_bridge_enabled and at least one worker; an
+  --!             assignment arriving with no idle worker is rejected
+  --!             rather than run here.
+  --!   "refuse"  run nothing. Assignments carrying task code are rejected
+  --!             at ACK time with a reason the Master can schedule
+  --!             around. Strictest, and the right setting for a Manager
+  --!             that exists to contribute storage or presence rather
+  --!             than compute.
+  --!
+  --! The default stays "inline" so an upgrade changes nothing on its own;
+  --! start() warns once, loudly, when it is running unbounded, and
+  --! mgr.status().task_execution reports the live setting.
+  task_execution           = "inline",
 }
 
 -- ============================================================
@@ -270,6 +300,9 @@ local function validateAssignment(p)
   if type(p) ~= "table" then return false, "payload not a table" end
   if not p.assignment_id then return false, "missing assignment_id" end
   if not p.job_id        then return false, "missing job_id" end
+  if p.tasks_inline ~= nil and type(p.tasks_inline) ~= "table" then
+    return false, "tasks_inline not a list"
+  end
   if p.tasks_inline and #p.tasks_inline > 100 then
     return false, "too many tasks_inline (>100)"
   end
@@ -306,11 +339,18 @@ end
 -- checks the flag every N instructions and raises `error("cancelled")`
 -- to terminate the coroutine when the flag flips.
 --
--- This means two flavors of cancellation work:
---   1. Between-tasks: dispatchAssignment checks `_inflight[id].cancelled`
---      after each task and bails before starting the next.
---   2. Mid-task: the hook fires inside the task's VM loop and errors
---      out, even if the task is in `while true do end`.
+--! Two flavours, and only ONE of them exists on OpenComputers:
+--!   1. Between tasks: dispatchAssignment checks `cancelled` before
+--!      each task, and a cancel that lands before the dispatch timer
+--!      fires runs nothing at all. This works everywhere.
+--!   2. Mid-task, via the hook. OC's sandbox does not export
+--!      debug.sethook (see TODO.txt, "THE BUDGETS THAT DO NOT EXIST"),
+--!      so on every real machine the guard below is false and a task in
+--!      `while true do end` runs until OC's watchdog reboots the whole
+--!      computer -- and since inline tasks run inside a kernel timer
+--!      callback, every seat on the box is frozen while it runs. The
+--!      hook stays so the off-box suite exercises it, and
+--!      mgr.status().cancel_midtask says which world this is.
 
 --- Execute one inline task. Each task is a Lua table of the shape
 --- { code = "<lua source>", input = <any> }. The code runs in a
@@ -388,16 +428,40 @@ local function aggregateStatus(total, errorCount, cancelledCount)
 end
 mgr._aggregateStatus = aggregateStatus
 
---- Where a task runs: "bridge" (an OpenOS worker) or "inline" (the Manager).
---- Bridge only when one is up AND the task opts in (via_bridge) or the
---- Manager policy prefers it. Inline is the safe, I/O-free default.
-local function routeTask(task, bridgeAvailable, mode)
-  if not bridgeAvailable then return "inline" end
-  if type(task) == "table" and task.via_bridge == true then return "bridge" end
-  if mode == "prefer" then return "bridge" end
-  return "inline"
+--- Where a task runs: "bridge" (an OpenOS worker), "inline" (this
+--- Manager), or "refuse" (nowhere — the operator's task_execution policy
+--- forbids the only place it could have run; see DEFAULT_CFG).
+--- Bridge when one is up AND the task opts in (via_bridge) or the mode
+--- prefers it; `policy` then has the last word over an inline landing.
+local function routeTask(task, bridgeAvailable, mode, policy)
+  local want = "inline"
+  if bridgeAvailable then
+    if type(task) == "table" and task.via_bridge == true then want = "bridge"
+    elseif mode == "prefer" then want = "bridge" end
+  end
+  if want == "inline" then
+    if policy == "refuse" then return "refuse" end
+    if policy == "bridge" then
+      -- Bridge-only: use a worker if there is one, never fall back here.
+      return bridgeAvailable and "bridge" or "refuse"
+    end
+  end
+  return want
 end
 mgr._routeTask = routeTask
+
+--- Can this Manager run an assignment's tasks at all, under the current
+--- policy? Pure. Used at ACK time so the Master learns to schedule
+--- elsewhere instead of collecting a failure per task.
+local function canAcceptTasks(taskCount, policy, bridgeAvailable)
+  if (taskCount or 0) == 0 then return true end          -- nothing to run
+  if policy == "refuse" then return false, "task_execution=refuse" end
+  if policy == "bridge" and not bridgeAvailable then
+    return false, "task_execution=bridge and no worker bridge is up"
+  end
+  return true
+end
+mgr._canAcceptTasks = canAcceptTasks
 
 --- Round-robin pick of an idle bridge worker, or nil if none/no bridge.
 local function pickIdleWorker()
@@ -460,8 +524,21 @@ local function dispatchAssignment(p)
   local id = p.assignment_id
   local tasks = p.tasks_inline or {}
   local started_at = computer.uptime()
-  local inflight = { id = id, p = p, cancelled = false, bridgeTids = {} }
-  _inflight[id] = inflight
+  -- Reuse the pending record onAssign created (it may already be
+  -- cancelled); a direct call with no record still works.
+  local inflight = _inflight[id]
+  if not inflight then
+    inflight = { id = id, p = p, cancelled = false, bridgeTids = {} }
+    _inflight[id] = inflight
+  end
+  inflight.pending = nil
+  if inflight.cancelled then
+    -- Cancelled between the ACK and now: nothing ran, say so once.
+    _inflight[id] = nil
+    sendResult(id, "cancelled", nil, nil,
+      { duration = 0, task_count = #tasks, error_count = 0, cancelled_count = #tasks })
+    return
+  end
   _state.workers_busy = _state.workers_busy + 1
 
   inflight.collector = newCollector(#tasks,
@@ -485,9 +562,12 @@ local function dispatchAssignment(p)
     if inflight.cancelled then
       record(i, nil, "cancelled")
     else
-      local route = routeTask(task, _bridge ~= nil, _cfg.worker_bridge_mode)
+      local route = routeTask(task, _bridge ~= nil, _cfg.worker_bridge_mode, _cfg.task_execution)
       local addr = (route == "bridge") and pickIdleWorker() or nil
-      if addr then
+      if route == "refuse" then
+        -- The operator's policy forbids the only place this could run.
+        record(i, nil, "refused by task_execution=" .. tostring(_cfg.task_execution))
+      elseif addr then
         local tid = _bridge.mod.dispatch(addr, task.code, {
           inputs  = task.input,
           timeout = _cfg.task_timeout_seconds,
@@ -498,10 +578,19 @@ local function dispatchAssignment(p)
         })
         if tid then
           inflight.bridgeTids[i] = tid          -- finished later by the callback
+        elseif _cfg.task_execution == "bridge" then
+          -- Bridge-only: a worker that went busy between pick and dispatch
+          -- must NOT become a reason to run the task on this machine.
+          record(i, nil, "no idle worker and task_execution=bridge")
         else
           -- Worker went busy/away between pick and dispatch — run inline.
           record(i, runOneTask(task, inflight))
         end
+      elseif route == "bridge" then
+        -- Wanted a worker, none idle. Under "bridge" that is a refusal;
+        -- routeTask already returned "refuse" in that case, so this is
+        -- the opt-in/prefer path and inline is the documented fallback.
+        record(i, runOneTask(task, inflight))
       else
         record(i, runOneTask(task, inflight))
       end
@@ -526,7 +615,25 @@ local function onAssign(packet, from)
     sendAssignAck(p.assignment_id, false, "draining")
     return
   end
+  -- Reject at ACK time when the policy means nothing here could run it:
+  -- the Master can then schedule the job somewhere that will, instead of
+  -- collecting one refusal per task and calling the assignment failed.
+  local canRun, whyNot = canAcceptTasks(p.tasks_inline and #p.tasks_inline or 0,
+    _cfg.task_execution, _bridge ~= nil)
+  if not canRun then
+    sendAssignAck(p.assignment_id, false, whyNot)
+    log.info(LOG_TAG, "assignment refused: " .. tostring(whyNot))
+    return
+  end
   sendAssignAck(p.assignment_id, true)
+  --! Inflight from the ACK onward, not from the dispatch. The dispatch
+  --! runs one event-loop cycle later, and a CLUSTER_CANCEL landing in
+  --! that window used to find nothing inflight: it reported "cancelled"
+  --! to the Master, and then the timer fired and ran the assignment
+  --! anyway, reporting a SECOND result. The pending record makes the
+  --! cancel land on the assignment it was meant for.
+  _inflight[p.assignment_id] = { id = p.assignment_id, p = p, cancelled = false,
+                                 pending = true, bridgeTids = {} }
   -- Run in a separate event-loop cycle so this handler returns fast
   -- (the spec mandates an ACK within a heartbeat interval).
   event.timer(0.1, function() pcall(dispatchAssignment, p) end)
@@ -545,6 +652,13 @@ local function onCancel(packet, from)
   -- (between tasks vs. mid-task vs. just after the last task finished
   -- legitimately).
   local p = packet.payload or {}
+  -- Sender check FIRST. It used to come after the unknown-id branch, so
+  -- any peer could make this node emit "cancelled" results to the Master
+  -- for assignment ids it did not hold.
+  if from and from ~= _state.master_addr then
+    log.warn(LOG_TAG, "cancel from non-master " .. tostring(from):sub(1, 8) .. " ignored")
+    return
+  end
   local in_f = _inflight[p.assignment_id]
   if not in_f then
     -- The Master cancelled an assignment we don't have inflight. Could
@@ -555,11 +669,14 @@ local function onCancel(packet, from)
       { reason = "cancel_for_unknown_inflight" })
     return
   end
-  if from and from ~= _state.master_addr then
-    log.warn(LOG_TAG, "cancel from non-master " .. tostring(from):sub(1, 8) .. " ignored")
+  in_f.cancelled = true
+  if in_f.pending then
+    -- ACKed, not yet dispatched: the dispatch timer will see the flag
+    -- and report "cancelled" without running anything.
+    log.info(LOG_TAG, string.format("cancel before dispatch for assignment %s",
+      tostring(p.assignment_id)))
     return
   end
-  in_f.cancelled = true
   -- CLUSTER v2 — tasks already out on a worker won't be stopped by the
   -- inline sethook, so cancel them on the bridge and record each as
   -- cancelled. recordTaskResult is per-index idempotent, so a worker result
@@ -596,6 +713,13 @@ end
 
 local function heartbeatTick()
   if not _state.registered then return end
+  -- The timer ticks at min_heartbeat_seconds; the Master's negotiated
+  -- interval (clamped in onRegisterAck) is honoured here. It used to be
+  -- stored and never read, so every Manager heartbeated at the floor
+  -- rate whatever the Master asked for.
+  local now = computer.uptime()
+  if now - (_state.last_heartbeat or 0) < (_state.heartbeat_interval or 0) then return end
+  _state.last_heartbeat = now
   sendHeartbeat()
 end
 
@@ -660,6 +784,34 @@ function mgr.start()
     end
   end
 
+  -- Say once, at start, what the task policy actually costs here. A
+  -- Manager running unbounded task code is a deliberate choice; it should
+  -- not be an unnoticed one. (Same shape as rshd's no-step-budget warning.)
+  do
+    local pol = _cfg.task_execution
+    if pol ~= "inline" and pol ~= "bridge" and pol ~= "refuse" then
+      log.warn(LOG_TAG, "task_execution=" .. tostring(pol)
+        .. " is not a known policy; treating it as 'inline'")
+      _cfg.task_execution = "inline"; pol = "inline"
+    end
+    if pol == "inline" then
+      if not (type(debug) == "table" and type(debug.sethook) == "function") then
+        log.warn(LOG_TAG, "task_execution=inline and mid-task cancellation is "
+          .. "UNAVAILABLE here (OpenComputers withholds debug.sethook): a task "
+          .. "that never returns cannot be stopped, and OC's watchdog will "
+          .. "reboot this whole computer, every seat included. Set "
+          .. "task_execution='bridge' (run tasks on an OpenOS worker) or "
+          .. "'refuse' (run none) in /etc/cluster-manager.cfg to bound it.")
+      end
+    elseif pol == "bridge" and not _bridge then
+      log.warn(LOG_TAG, "task_execution=bridge but no worker bridge is up: "
+        .. "every assignment carrying tasks will be refused until one is.")
+    elseif pol == "refuse" then
+      log.info(LOG_TAG, "task_execution=refuse: assignments carrying task code "
+        .. "are rejected; this Manager contributes presence and storage only.")
+    end
+  end
+
   -- Try first register immediately (don't wait for the timer).
   sendRegister()
 
@@ -707,6 +859,10 @@ function mgr.status()
     state               = _state.state,
     bridge_enabled      = _bridge ~= nil,
     bridge_workers      = bridge_workers,
+    -- Honest: mid-task cancellation needs debug.sethook, which OC withholds.
+    cancel_midtask      = (type(debug) == "table" and type(debug.sethook) == "function"),
+    -- Where the Master's task code may run here (see DEFAULT_CFG).
+    task_execution      = _cfg.task_execution,
     workers_active      = _cfg.worker_count,
     workers_busy        = _state.workers_busy,
     queue_depth         = _state.queue_depth,
@@ -759,10 +915,24 @@ function mgr.pair(masterAddr, code, opts)
     return false, "could not update local trust DB (admin tier required?)"
   end
 
-  -- Send CLUSTER_PAIR_INIT. Use a one-shot listener for the confirm
-  -- with a 10-second deadline.
+  --! BOTH MACs COVER THE MANAGER'S OWN ADDRESS. The Master verifies the
+  --! init with macForCode(secret, from, ts) where `from` is what it saw
+  --! on the wire -- this machine's modem address -- and signs its
+  --! confirm the same way. This side used to MAC over the MASTER's
+  --! address in both places, so every pairing died at "pair_init MAC
+  --! mismatch" on the Master, and had the Master ever answered, the
+  --! confirm would have failed here too. The comment beside the old
+  --! check even said "the address it covers is OUR address" and then
+  --! used the other one. net.getAddress() is the clean way to get our
+  --! modem address that the old fallback comment said did not exist.
+  --! (test_cluster_pairing.lua drives the real Master pair module
+  --! against this function.)
+  local selfAddr = net.getAddress and net.getAddress() or nil
+  if type(selfAddr) ~= "string" or #selfAddr < 16 then
+    return false, "cannot determine this machine's modem address (no modem?)"
+  end
   local ts = computer.uptime()
-  local mac = crypto.hmac(secret, tostring(masterAddr) .. "|" .. tostring(ts))
+  local mac = crypto.hmac(secret, tostring(selfAddr) .. "|" .. tostring(ts))
   local init = protocol.makePacket(protocol.TYPE.CLUSTER_PAIR_INIT, {
     mac = mac,
     ts  = ts,
@@ -776,24 +946,10 @@ function mgr.pair(masterAddr, code, opts)
     if type(p.mac) ~= "string" or type(p.ts) ~= "number" then
       confirm_err = "malformed confirm"; return
     end
-    local expected = crypto.hmac(secret,
-      -- Master MACs over OUR address + their timestamp. We're the
-      -- recipient of that MAC, so the address it covers is OUR address
-      -- (computed by the kernel from our local modem addr).
-      tostring(_state and _state.master_addr or masterAddr) .. "|" ..
-      tostring(p.ts))
-    -- The exchange is symmetric in the sense that BOTH sides know
-    -- which address each MAC covers. The simplest test that's robust
-    -- against asymmetric address-knowledge: try matching against our
-    -- modem address.
+    local expected = crypto.hmac(secret, tostring(selfAddr) .. "|" .. tostring(p.ts))
     if crypto.ctEquals(expected, p.mac) then
       got_confirm = true
     else
-      -- Fall back: maybe the master MACed over our outbound address
-      -- as it appeared at receive — try a sniff of the inbound source.
-      -- Without a clean way to get our own modem address from here,
-      -- just accept any MAC that matches the timestamp shape. The
-      -- crypto.ctEquals above is the canonical check.
       confirm_err = "MAC mismatch"
     end
   end)

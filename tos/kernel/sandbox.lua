@@ -116,6 +116,13 @@ local BLOCKED_MODULE_NAMES = {
   ["rbmk-cmd"]                = true,
   ["rbmk-controld"]           = true,
   ["rbmk.core"]               = true,
+  -- The SKALA panel is only a renderer, but it is blocked with the
+  -- rest anyway: it reaches kernel.screen and can paint every seat on
+  -- the machine, which is not something sandboxed package code should
+  -- be able to require its way into.
+  ["rbmk-skala"]              = true,
+  ["rbmk.skala"]              = true,
+  ["rbmk.wall"]               = true,
   ["shell.panels.takeover"]   = true,
   ["shell.login"]             = true,
   ["shell.chat"]              = true,
@@ -753,7 +760,11 @@ function sandbox.build(opts)
     local line = table.concat(parts, "\t")
     if opts.stdout then
       opts.stdout(line)
-    else
+    elseif type(print) == "function" then
+      -- OC's sandbox ships `print = nil` (machine.lua: "in boot/*_base.lua");
+      -- TOS only gains one when compat/init.lua loads, which a low-RAM boot
+      -- skips. Without this guard a program's print() would raise "attempt
+      -- to call a nil value" from inside the wrapper meant to serve it.
       print(line)
     end
   end

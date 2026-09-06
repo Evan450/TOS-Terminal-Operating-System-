@@ -15,7 +15,7 @@
 -- surface (printable terminals, easy file I/O).
 return {
   name        = "cluster-manager",
-  version     = "1.0.0",
+  version     = "1.2.0",
   kind        = "service",
   category    = "network",
   description = "Cluster Manager: registers with Master, accepts assignments, dispatches to workers.",

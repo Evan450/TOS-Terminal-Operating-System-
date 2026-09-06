@@ -21,7 +21,7 @@ return {
   -- in-place reinstalls, and the old build's files live at the old
   -- install path.)
   name        = "tape",
-  version     = "2.2.1",
+  version     = "2.3.0",
   kind        = "command",
   category    = "storage",
   description = "General Computronics tape control: data archive/restore + audio playback + raw I/O + device state.",

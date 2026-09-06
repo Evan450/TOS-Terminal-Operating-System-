@@ -7,6 +7,9 @@
 -- ║    rbmk status            live reading + safety evaluation   ║
 -- ║    rbmk limits            show the active limits             ║
 -- ║    rbmk scram             manual shutdown (admin)            ║
+-- ║    rbmk skala [--wall]    the SKALA information panel        ║
+-- ║                           (--net to watch a remote reactor)  ║
+-- ║    rbmk wall              what each screen would show        ║
 -- ║                                                              ║
 -- ║  `survey` is the important one and the reason this add-on    ║
 -- ║  exists in this shape: HBM's OC method names are Plan.md's   ║
@@ -137,6 +140,22 @@ function M.read(proxy, binding)
   return core.normalize(raw)
 end
 
+--- Read the per-channel core map, for the SKALA panel. Returns an
+--- array (possibly empty). DISPLAY-ONLY: a console with no column
+--- accessor is still fully supervised — see core.bind's note on why
+--- `columns` is not part of the LOGICAL set.
+---
+--- pcall'd like every other read: a console that vanishes mid-poll must
+--- yield an empty map, not an error inside a redraw loop.
+function M.readColumns(proxy, binding, grid)
+  if not (proxy and binding and binding.columns) then return {} end
+  local m = proxy[binding.columns]
+  if not m then return {} end
+  local ok, raw = pcall(m)
+  if not ok or type(raw) ~= "table" then return {} end
+  return core.normalizeColumns(raw, grid)
+end
+
 --- Fire the shutdown. Returns (ok, how). Tries the console method, then
 --- the redstone AZ-5 backup line — Plan.md §Safety rule 2 requires SCRAM
 --- to work with the network down, so both paths are local.
@@ -165,12 +184,75 @@ end
 
 -- ── Command entry ──────────────────────────────────────────────────
 
-function M.run(args, o)
+--- `ctx` carries the shell's display and event modules, handed in by
+--- the base image's `rbmk` stub. It is optional and only the
+--- full-screen subcommands need it: everything else prints lines, so
+--- `rbmk status` keeps working from a script, an rc shim, or anywhere
+--- else with no screen to own.
+function M.run(args, o, ctx)
   o = o or print
   args = args or {}
+  ctx = ctx or {}
   local sub = (args[1] or "status"):lower()
   local cfg = loadCfg()
   local profile = activeProfile(cfg)
+
+  -- ── The SKALA panel ──────────────────────────────────────────────
+  if sub == "skala" or sub == "panel" then
+    if not ctx.display then
+      o("The panel needs a screen; run `rbmk skala` from the shell.", 0xFF6600)
+      return
+    end
+    local okUI, ui = pcall(require, "rbmk-skala")
+    if not okUI or type(ui) ~= "table" or not ui.run then
+      o("The panel renderer is missing: " .. tostring(ui), 0xFF0000)
+      return
+    end
+    local mode, wallMode = "auto", false
+    for i = 2, #args do
+      local a = tostring(args[i]):lower()
+      if a == "--wall" or a == "wall" then wallMode = true
+      elseif a == "--net" or a == "net" then mode = "net"
+      elseif a == "--local" or a == "local" then mode = "local" end
+    end
+    ui.run({ display = ctx.display, event = ctx.event, cfg = cfg,
+             mode = mode, wallMode = wallMode, o = o })
+    return
+  end
+
+  -- ── What the wall would show ─────────────────────────────────────
+  if sub == "wall" then
+    local okW, wallMod = pcall(require, "rbmk.wall")
+    local okS, skalaMod = pcall(require, "rbmk.skala")
+    if not (okW and okS) then o("The panel libraries are missing.", 0xFF0000); return end
+    local seats = 1
+    if ctx.screen and ctx.screen.list then seats = #ctx.screen.list() end
+    local panes = wallMod.plan(seats, cfg.wall,
+      function(k) return skalaMod.param(k) ~= nil end)
+    o("Display wall on this machine (" .. seats .. " screen"
+      .. (seats == 1 and "" or "s") .. "):", 0x00AAFF)
+    for _, p in ipairs(panes) do
+      local page = wallMod.page(p.page)
+      o(string.format("  seat %d  %-9s %s%s%s", p.seat,
+        page and page.label or p.page,
+        (p.page == "map" or p.page == "trend") and ("[" .. p.param .. "] ") or "",
+        p.pinned and "pinned " or "",
+        p.rejected and "(config rejected -- using the default)" or ""),
+        p.rejected and 0xFFAA00 or 0xFFFFFF)
+    end
+    o("")
+    o("Run `rbmk skala --wall` to drive them all; plain `rbmk skala`", 0xAAAAAA)
+    o("uses only the seat you are sitting at, so other operators keep", 0xAAAAAA)
+    o("their screens. Set `wall = { [2] = { page = \"trend\" } }` in", 0xAAAAAA)
+    o(CFG_PATH .. " to change the assignment.", 0xAAAAAA)
+    o("")
+    --! Stated because it is the obvious question and the answer is a
+    --! deliberate safety choice, not a missing feature.
+    o("Satellites are NOT listed: displays never register with the", 0xAAAAAA)
+    o("controller. Each one picks its own page from its own config,", 0xAAAAAA)
+    o("so the machine that owns SCRAM has no inbound network path.", 0xAAAAAA)
+    return
+  end
 
   if sub == "survey" then
     o("RBMK component survey", 0x00AAFF)
@@ -208,6 +290,17 @@ function M.run(args, o)
         o("    missing: " .. table.concat(binding.missing, "  "), 0xFFAA00)
       end
       if binding.bulk then o("    bulk:    " .. binding.bulk, 0x00FF00) end
+      --! The core map's accessor, reported separately from `missing`
+      --! because its absence is not a fault: it costs the SKALA panel
+      --! its per-channel grid and nothing else. Saying so here is the
+      --! difference between an operator knowing the map is unavailable
+      --! and an operator thinking their reactor has no channels.
+      if binding.columns then
+        o("    columns: " .. binding.columns .. "  (SKALA core map available)", 0x00FF00)
+      else
+        o("    columns: (none) -- the panel will show reactor-wide", 0xAAAAAA)
+        o("             readings only, no per-channel core map", 0xAAAAAA)
+      end
       local usable, why = core.bindingUsable(binding, cfg.az5RedstoneSide ~= nil)
       o("    usable:  " .. (usable and "YES" or ("NO — " .. tostring(why))),
         usable and 0x00FF00 or 0xFF0000)

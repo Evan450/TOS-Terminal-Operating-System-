@@ -163,6 +163,30 @@ local function entryTapeSize(pathLen, dataLen)
   return HEADER_FIXED + pathLen + dataLen
 end
 
+--! An archive path is RELATIVE, and it has to be relative to the byte.
+--!
+--! This was `path:sub(#basePath + 1)`, which leaves the separator: with
+--! basePath "/home/docs", "/home/docs/a.txt" became "/a.txt" and the base
+--! directory itself became "" -> "/". Restore's #SEC C16 guard refuses an
+--! absolute path by rewinding and RETURNING, so the first entry aborted
+--! the whole restore and a directory archive restored nothing at all.
+--!
+--! Single files escaped it because fs.split returns "/home/" WITH the
+--! trailing slash, so the same arithmetic came out clean -- which is
+--! exactly why a manual test of `tape store <file>` looked fine.
+--!
+--! The base directory itself is "." (fs.join(dest, ".") normalizes back
+--! to dest, so restore recreates the destination and nothing else).
+--! (test_tape_archive.lua)
+local function relativeTo(basePath, full)
+  if #basePath > 1 and full:sub(1, #basePath) == basePath then
+    full = full:sub(#basePath + 1)
+  end
+  full = full:gsub("^/+", "")
+  if full == "" then full = "." end
+  return full
+end
+
 --- Scan the archive on tape and return { used = bytes, files = N, dirs = N, dataBytes = N }
 --- Leaves the drive rewound to position 0.
 local function scanArchive(drive)
@@ -413,11 +437,7 @@ local function cmdStore(args, o)
   local estimateFiles = 0
   local estimateData = 0
   for _, entry in ipairs(entries) do
-    local relPath = entry.path
-    if #basePath > 1 and relPath:sub(1, #basePath) == basePath then
-      relPath = relPath:sub(#basePath + 1)
-      if relPath == "" then relPath = "/" end
-    end
+    local relPath = relativeTo(basePath, entry.path)
     if entry.isDir then
       estimatedBytes = estimatedBytes + entryTapeSize(#relPath, 0)
     else
@@ -460,11 +480,7 @@ local function cmdStore(args, o)
 
   for _, entry in ipairs(entries) do
     -- Make path relative to the base
-    local relPath = entry.path
-    if #basePath > 1 and relPath:sub(1, #basePath) == basePath then
-      relPath = relPath:sub(#basePath + 1)
-      if relPath == "" then relPath = "/" end
-    end
+    local relPath = relativeTo(basePath, entry.path)
 
     local flags = entry.isDir and FLAG_DIR or 0
     local data = ""
@@ -593,10 +609,18 @@ local function cmdRestore(args, o)
       o("Skipping entry with empty path", 0xFF6600)
       break
     end
-    if relPath:sub(1, 1) == "/" or relPath:find("\0", 1, true) then
-      o("REFUSING absolute/tainted path from tape: " .. relPath, 0xFF0000)
+    if relPath:find("\0", 1, true) then
+      o("REFUSING tainted path from tape: " .. relPath, 0xFF0000)
       rewind(drive); return
     end
+    --! A leading slash is STRIPPED, not refused. What contains a hostile
+    --! path is the join under destBase plus the baseGuard check below --
+    --! "/etc/users.dat" becomes "etc/users.dat" and lands inside the
+    --! destination, which is the correct outcome. Refusing it outright
+    --! also refused every tape written before the store side was fixed,
+    --! and refusing meant aborting the whole restore.
+    relPath = relPath:gsub("^/+", "")
+    if relPath == "" then relPath = "." end
     -- Reject any `..` segment anywhere in the path.
     do
       local bad = false

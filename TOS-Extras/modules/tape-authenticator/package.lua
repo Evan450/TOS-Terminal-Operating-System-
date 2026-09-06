@@ -14,7 +14,7 @@
 -- disk; it now ships.
 return {
   name        = "tape-authenticator",
-  version     = "1.0.1",
+  version     = "1.0.2",
   kind        = "command",
   category    = "security",
   description = "Tape keycard + encrypted personal log: HMAC identity for access control, private notes you can edit any time.",

@@ -376,11 +376,16 @@ local function cmdInit(args, o)
   if not secret then return end
   local C = getCrypto(o)
 
-  -- Refuse to silently destroy an existing card's log.
+  -- Refuse to silently destroy an existing card's log OR menu. The menu
+  -- check is new: a card whose log was empty but whose menu was not was
+  -- re-initialised without a word, and the operator's toolbox went with
+  -- it. (test_tape_auth.lua)
   local existing = readCard(drive)
-  if existing and existing.logLen > 0 then
-    o("Tape already holds a keycard WITH a personal log.", 0xFF6600)
-    o("`tape-auth log clear <passphrase>` it first, or use a fresh tape.", 0xAAAAAA)
+  if existing and ((existing.logLen or 0) > 0 or (existing.menuLen or 0) > 0) then
+    local what = ((existing.logLen or 0) > 0) and "a personal log" or "a personal menu"
+    if (existing.logLen or 0) > 0 and (existing.menuLen or 0) > 0 then what = "a personal log and menu" end
+    o("Tape already holds a keycard WITH " .. what .. ".", 0xFF6600)
+    o("`tape-auth log clear` / `tape-auth menu clear <passphrase>` first, or use a fresh tape.", 0xAAAAAA)
     return
   end
 
@@ -440,6 +445,11 @@ local function cmdInfo(args, o)
       o(("Personal log: %d bytes (encrypted)"):format(img.logLen), 0xAAAAAA)
     else
       o("Personal log: empty", 0xAAAAAA)
+    end
+    if (img.menuLen or 0) > 0 then
+      o(("Personal menu: %d bytes (encrypted)"):format(img.menuLen), 0xAAAAAA)
+    else
+      o("Personal menu: empty", 0xAAAAAA)
     end
   else
     o("No log region (legacy card; `tape-auth init` to upgrade).", 0xAAAAAA)

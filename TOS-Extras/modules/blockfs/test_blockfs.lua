@@ -301,8 +301,11 @@ do
   test("writeBoot refuses a non-boot volume", not (blockfs.writeBoot(dn, "x")))
 
   -- Format WITH a boot region big enough for the driver + bootstrap.
+  -- `deploy drive` sizes the region from the assembled blob (#blob +
+  -- 4096); this fixed figure only has to stay ahead of the driver's
+  -- source size, which the size test further down keeps honest.
   local db = fakeDrive(512, 512)   -- 256 KB
-  local okF = blockfs.format(db, { label = "bootdisk", now = nowfn, bootBytes = 48 * 1024 })
+  local okF = blockfs.format(db, { label = "bootdisk", now = nowfn, bootBytes = 64 * 1024 })
   test("format with bootBytes succeeds", okF)
   local sb = blockfs.stats(db)
   test("volume still sane with a boot region", sb ~= nil and sb.files == 0)

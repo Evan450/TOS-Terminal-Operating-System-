@@ -64,8 +64,13 @@ end
 -- module spells the same thing `salt(n)`. Bridge both so this runs either way.
 local function randBytes(n) return (crypto.random or crypto.salt)(n) end
 
+--! HEX, never raw bytes. The frame is a Lua-literal string the EEPROM
+--! parses with  nonce="([^"]+)"  -- a raw 0x22 in the nonce (one frame in
+--! sixteen, with 16 random bytes) truncated it on the robot, the MAC was
+--! then computed over a different body than the host's, and the
+--! keystroke was silently dropped. (test_rc_pilot.lua)
 local function nonce()
-  return randBytes(16)
+  return (randBytes(16):gsub(".", function(c) return ("%02x"):format(c:byte()) end))
 end
 
 local function packFrame(op, arg, secret)
@@ -119,30 +124,57 @@ mod.commands = {
       return
     end
 
-    -- Resolve full target address from prefix.
+    -- Resolve a prefix against the peers TOS knows. This used to call
+    -- net.listPeers, which does not exist (trust.listPeers does), so the
+    -- prefix form advertised in the usage never resolved anything. A
+    -- robot on a bare EEPROM is not a TOS peer and will usually not be in
+    -- that list either -- so the honest instruction is the full address,
+    -- and a prefix is a convenience when it happens to be known.
     local full = nil
-    for _, m in ipairs(_G._TOS.net and _G._TOS.net.listPeers and _G._TOS.net.listPeers() or {}) do
-      if m.address and m.address:sub(1, #target) == target then full = m.address; break end
+    local tos = _G._TOS or {}
+    local tm = tos.trust or (tos.net and tos.net.trust)
+    if tm and tm.listPeers then
+      local okL, peers = pcall(tm.listPeers)
+      for _, m in ipairs(okL and peers or {}) do
+        local a = m.address or m.addr
+        if type(a) == "string" and a:sub(1, #target) == target then full = a; break end
+      end
     end
     full = full or target  -- accept full address verbatim
-    if #full < 16 then o("Target address looks too short."); return end
+    if #full < 16 then
+      o("Target address looks too short. Give the robot's full modem address")
+      o("(a prefix only works for a peer TOS already knows about).")
+      return
+    end
 
-    -- Resolve secret: --secret <s> or keychain.
+    -- Resolve secret: keychain, then --secret <s>, then a masked prompt.
     local secret
     for i = 2, #args do
       if args[i] == "--secret" and args[i + 1] then
         secret = args[i + 1]
+        --! argv is shell history. The same reason `pkg trust key` stopped
+        --! taking its passphrase this way; kept for scripts, said out loud.
+        o("Note: --secret puts the shared secret in this seat's command history.")
+        o("      Prefer the keychain:  keychain set rc:" .. full:sub(1, 8))
       end
     end
     if not secret then
-      local sess = _G._TOS.users and _G._TOS.users.currentSession()
+      local sess = tos.users and tos.users.currentSession and tos.users.currentSession()
       secret = resolveSecret(full, sess)
     end
+    if not secret then
+      -- Ask for it, masked, when the compat term is available to us.
+      local okT, term = pcall(require, "compat.term")
+      if okT and type(term) == "table" and type(term.read) == "function" then
+        o("Shared secret for " .. full:sub(1, 8) .. "... (not echoed): ")
+        local okR, line = pcall(term.read, nil, false, nil, "*")
+        if okR and type(line) == "string" then secret = line:gsub("[\r\n]+$", "") end
+      end
+    end
     if not secret or #secret < 16 then
-      o("No shared secret. Either:")
-      o("  rc <addr> --secret <secret>")
-      o("Or add it to the keychain:")
+      o("No shared secret (16+ characters). Either add it to the keychain:")
       o("  keychain set rc:" .. full:sub(1, 8))
+      o("or, for a script only:  rc <addr> --secret <secret>")
       return
     end
 
@@ -177,8 +209,13 @@ mod.commands = {
     end
 
     while true do
-      local sig, _, char, code = computer.pullSignal(0.5)
+      --! One pull, all of it. This used to take four values, and on a
+      --! modem_message call pullSignal() AGAIN -- with no timeout -- to
+      --! read the payload from whatever signal came next: the pong was
+      --! lost and the pilot hung until the operator pressed a key.
+      local sig, _, a3, a4, _, a6 = computer.pullSignal(0.5)
       if sig == "key_down" then
+        local char, code = a3, a4          -- (name, keyboard, char, code, player)
         -- #FIX (real Minecraft, 2026-08-11) — ^Q or F10, not Esc: Esc
         -- closes the screen GUI and never reaches the computer, and a
         -- pilot you cannot exit keeps flying a robot. Plain Q is TURN
@@ -194,8 +231,8 @@ mod.commands = {
           modem.send(full, PORT, packFrame(op, arg, secret))
         end
       elseif sig == "modem_message" then
-        -- Reply from the robot (e.g. pong) — show briefly.
-        local data = select(6, computer.pullSignal())
+        -- (name, local, remote, port, distance, data): the reply is a6.
+        local data = a6
         if type(data) == "string" then
           local pongAt = data:match('op="pong",arg=(%d+)')
           if pongAt then o("  pong @ uptime=" .. pongAt) end

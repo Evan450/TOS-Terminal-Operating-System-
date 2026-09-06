@@ -22,8 +22,12 @@
 -- ║  than idling next to an unsupervised reactor.                ║
 -- ╚══════════════════════════════════════════════════════════════╝
 
-local core = require("rbmk.core")
-local cmd  = require("rbmk-cmd")
+local core  = require("rbmk.core")
+local cmd   = require("rbmk-cmd")
+-- Only for PARAMS: the packed core map has to be encoded in the same
+-- field order the panel decodes it in, and that order is defined once,
+-- in rbmk.skala. No drawing happens here.
+local skala = require("rbmk.skala")
 
 local function firstRequire(...)
   for i = 1, select("#", ...) do
@@ -46,24 +50,52 @@ local D = {}
 
 local _running = false
 local _timer, _proxy, _binding, _cfg, _limits
+-- Core-map state. Declared here with the rest for the reason the note
+-- below records: an undeclared name here is a GLOBAL in whatever
+-- environment the service was loaded under, and test_rbmk.lua checks
+-- for exactly that.
+local _grid, _nextMap, _packedCols
 -- _lastLevel belongs here with the rest: without the `local` it was a plain
 -- GLOBAL, written into whatever environment the service happened to be
 -- loaded under. (test_rbmk.lua)
 local _seq, _lastGood, _scrammed, _lastLevel = 0, nil, false, nil
 
+-- ── Telemetry out ──────────────────────────────────────────────────
+-- #FIX — this used to go out as a TOS protocol MSG packet. That was
+-- unreachable by construction: net/trust.lua's PERMISSIONS table allows
+-- `msg` only at TRUSTED, and displays are UNTRUSTED BY DESIGN
+-- (Plan.md §Protocol) — so every satellite dropped every frame at the
+-- trust gate. OpenOS satellites could not have read it either;
+-- net/protocol.lua's own header says TOS machines only talk to TOS
+-- machines. Nothing caught it because the display half did not exist.
+--
+-- Now: a RAW MODEM BROADCAST of fixed primitive arguments on
+-- core.TELEMETRY_PORT. Still strictly one-way — the controller never
+-- opens the port, so this remains a machine with no inbound network
+-- path (§Safety rule 1). The mesh is still not used: telemetry is
+-- high-rate and local, and a relayed stale frame is worse than none.
+local _modems, _port
 local function broadcast(frame)
-  -- Telemetry is READ-ONLY data for untrusted displays, so it rides a
-  -- plain broadcast — no trust secret needed, and none is spent. The
-  -- mesh transport is not used: telemetry is high-rate, local, and
-  -- worthless to relay or retry (a stale frame is worse than none).
-  local net = firstRequire("kernel.net")
-  if not (net and net.broadcast and net.getProtocol) then return end
-  local ok, protocol = pcall(function() return net.getProtocol() end)
-  if not ok or not protocol then return end
-  -- Reuse the generic MSG type; displays filter on the RBMK magic.
-  local t = protocol.TYPE and (protocol.TYPE.MSG or protocol.TYPE.PING)
-  if not t then return end
-  pcall(net.broadcast, protocol.makePacket(t, frame))
+  if not _modems then
+    _modems, _port = {}, tonumber(_cfg and _cfg.telemetryPort) or core.TELEMETRY_PORT
+    if component and component.list then
+      for addr in component.list("modem") do
+        local ok, m = pcall(component.proxy, addr)
+        if ok and m and m.broadcast then _modems[#_modems + 1] = m end
+      end
+    end
+    if #_modems == 0 then
+      log.warn(LOG, "no modem: supervising locally, but no display can see this")
+    else
+      log.info(LOG, string.format("telemetry on port %d (%d modem%s)",
+        _port, #_modems, #_modems == 1 and "" or "s"))
+    end
+  end
+  if #_modems == 0 then return end
+  local a = core.encodeWire(frame)
+  for _, m in ipairs(_modems) do
+    pcall(m.broadcast, _port, a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9])
+  end
 end
 
 local function fireScram(why)
@@ -95,7 +127,20 @@ local function tick()
 
   local level, reasons = core.evaluate(snap, _limits, age)
   _seq = _seq + 1
-  broadcast(core.frame(snap, level, _seq, now, _cfg.name))
+
+  --! The core map is throttled independently of the safety poll. The
+  --! safety loop must run as often as the operator asked; the map is a
+  --! picture, and re-reading 225 channels four times a second spends
+  --! the machine's per-tick component budget on something no human can
+  --! read that fast. Safety NEVER waits on this: `snap` above is read
+  --! every tick regardless, and evaluate() runs on `snap` alone.
+  if now >= (_nextMap or 0) then
+    _nextMap = now + (tonumber(_cfg.mapInterval) or 1)
+    local cols = cmd.readColumns(_proxy, _binding, _grid)
+    _packedCols = (#cols > 0) and core.packColumns(cols, _grid, skala.PARAMS) or nil
+  end
+
+  broadcast(core.frame(snap, level, _seq, now, _cfg.name, _packedCols, reasons))
 
   if level == "scram" then
     fireScram(table.concat(reasons, "; "))
@@ -117,6 +162,11 @@ function D.start()
   if _running then return true end
   _cfg = cmd.loadCfg()
   _limits = core.mergeLimits(_cfg.limits)
+  _grid = core.mergeGrid(_cfg.grid)
+  --! Dropped so the next broadcast re-reads the modem list and the
+  --! configured port. A service restarted after the operator edited
+  --! /etc/rbmk.cfg (or plugged a card in) must pick both up.
+  _modems, _nextMap, _packedCols = nil, 0, nil
   local profile = cmd.activeProfile(_cfg)
 
   local cands = cmd.candidates(profile)

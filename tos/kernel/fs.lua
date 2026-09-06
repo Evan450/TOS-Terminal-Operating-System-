@@ -106,7 +106,16 @@ function fs.unmount(path)
   path = fs.normalize(path)
   if not path then return false, "invalid path" end  -- #SEC M-1
   if path == "/" then return false, "Cannot unmount root" end
+  local proxy = mounts[path]
   mounts[path] = nil
+  -- A proxy that keeps on-disk state of its own (TBFS marks its volume
+  -- dirty at mount and clean at unmount) gets told. Managed OC filesystem
+  -- components have no such method; nothing here depends on one existing.
+  -- Without this, `umount` dropped the table entry and every TBFS volume
+  -- stayed flagged "not cleanly unmounted" forever. (test_fs_unmount_hook.lua)
+  if type(proxy) == "table" and type(proxy.unmount) == "function" then
+    pcall(proxy.unmount)
+  end
   return true
 end
 
@@ -473,12 +482,22 @@ function fs.mounts()
     local total, used = 0, 0
     pcall(function() total = proxy.spaceTotal() end)
     pcall(function() used = proxy.spaceUsed() end)
+    -- How many file handles the driver has open, when it can say. Used by
+    -- `drive` to decide whether unmounting for a format/fsck/defrag is
+    -- safe to do without asking. A proxy that cannot answer reports nil,
+    -- which callers must treat as "unknown", not as "idle".
+    local openFiles = nil
+    if type(proxy) == "table" and type(proxy.openHandles) == "function" then
+      local okH, n = pcall(proxy.openHandles)
+      if okH and type(n) == "number" then openFiles = n end
+    end
     result[#result + 1] = {
       mountPoint = mp,
       label      = label,
       address    = proxy.address,
       total      = total,
       used       = used,
+      openFiles  = openFiles,
     }
   end
   return result

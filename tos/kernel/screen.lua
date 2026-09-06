@@ -887,7 +887,28 @@ function screen.displayProxy(idx)
   -- scoped to this seat's GPU so two seats don't poison each other's
   -- cached state. Set/fill/clear all share the same lastFg/lastBg
   -- since they target the same GPU.
-  local lastFg, lastBg = nil, nil
+  --! ...the same GPU, but NOT the same buffer, and that was the seventh
+  --! black status bar. In OpenComputers every video-RAM page is its own
+  --! TextBuffer with its own current foreground and background:
+  --! setBackground while a page is active sets THE PAGE's colour and
+  --! leaves buffer 0 exactly where it was, and bitblt copies cells, never
+  --! that state. One cache for both surfaces is therefore wrong every
+  --! time a frame closes: it says "the GPU is at statusbar_bg" because
+  --! the frame painted the bar last, the screen is still at the prompt
+  --! row's black from the last draw OUTSIDE a frame, and the 1 Hz tick
+  --! skips setBackground as redundant and lands the whole bar in black.
+  --! The shadow records statusbar_bg. That is the operator's log line,
+  --! screen=000000 cache=<statusbar_bg>, and the screendump that showed
+  --! the PAGE holding a correct bar over a black glass with an honest
+  --! blit. It only needs the page's last colour to equal the next outside
+  --! draw's, which is why it came and went with theme changes.
+  --!
+  --! So: lastFg/lastBg describe whichever buffer is ACTIVE, and the other
+  --! buffer's colours are stashed across the switch. Two integer swaps per
+  --! frame, no extra GPU calls. (test_screen_page_colors.lua)
+  local lastFg, lastBg = nil, nil        -- the ACTIVE buffer's colours
+  local glassFg, glassBg = nil, nil      -- buffer 0's, while a page is active
+  local pageFg, pageBg = nil, nil        -- the page's, while buffer 0 is active
   -- #PERF — dirty-cell shadow buffer (see screen._spanMatches). A TUI redraws
   -- mostly-unchanged rows every frame; each gpu.set/fill (and its
   -- setForeground/Background) crosses the OC bridge. We remember what every
@@ -918,6 +939,10 @@ function screen.displayProxy(idx)
   local function invalidateShadow()
     shC, shF, shB = {}, {}, {}
     lastFg, lastBg = nil, nil
+    -- "The glass moved behind our back" says nothing about WHICH buffer
+    -- the outsider had active, so neither stash can be trusted either.
+    glassFg, glassBg = nil, nil
+    pageFg, pageBg = nil, nil
   end
 
   -- Who touched this glass last?
@@ -1092,6 +1117,11 @@ function screen.displayProxy(idx)
     end
     frameDepth = 0
     pageStale  = true   -- the next page is a NEW one, and a new page is blank
+    -- The page is gone and buffer 0 may or may not be active again (the
+    -- setActiveBuffer above is not checked, and this is reached from
+    -- failure paths). Unknown colours are the only safe answer.
+    lastFg, lastBg = nil, nil
+    pageFg, pageBg = nil, nil
   end
 
   -- #SEC M27 — invalidate the fg/bg cache on any pcall failure. If a
@@ -1156,9 +1186,41 @@ function screen.displayProxy(idx)
   --! rarely elides outright -- the clock digits differ every second -- so
   --! hooking the elision path would almost never look at the one row that
   --! actually goes wrong.
+  --!
+  --! WHICH cell: one the draw is about to TRUST, never one it is about to
+  --! repaint. The first version audited the draw's origin, and for the
+  --! status bar that is column 1 -- the ramp cap, inside the region every
+  --! tick re-emits anyway -- so the once-a-second budget was spent on a
+  --! cell that could not be wrong for long, and the label cells that were
+  --! wrong were never looked at. Now a set audits the elided prefix or
+  --! suffix, a fill audits a corner outside its changed box, and a draw
+  --! that elides nothing audits nothing.
+  --!
+  --! WHAT it compares against: the colour THE GLASS REPORTS for what we
+  --! asked, not the number we asked for. A T3 GPU stores cells in a 6x8x5
+  --! cube and gpu.get hands back the cube value -- 0x103C4E reads back as
+  --! 0x004940 -- so a raw compare would call every correct cell a lie,
+  --! once a second, forever, on exactly the tier the themes are tuned
+  --! for. Rather than model each tier's quantiser, read one cell back the
+  --! first time a colour is emitted and remember what the hardware made
+  --! of it: one gpu.get per distinct colour per seat, and the audit then
+  --! compares like with like on any GPU, emulator included.
   local lastAudit  = 0
   local auditHits  = 0
   local AUDIT_GAP  = 1        -- seconds between checks
+  local quant      = {}       -- colour we asked for -> colour the glass reports
+  local function learnColours(x, y, efg, ebg)
+    if frameDepth > 0 then return end                  -- the page is not the glass
+    local needF = efg ~= nil and quant[efg] == nil
+    local needB = ebg ~= nil and quant[ebg] == nil
+    if not (needF or needB) then return end
+    if not (d.gpu and d.gpu.get) then return end
+    if x < 1 or x > W2 or y < 1 or y > H2 then return end
+    local okG, _, gfg, gbg = pcall(d.gpu.get, x, y)
+    if not okG then return end
+    if needF and type(gfg) == "number" then quant[efg] = gfg end
+    if needB and type(gbg) == "number" then quant[ebg] = gbg end
+  end
   local function auditCell(x, y)
     if frameDepth > 0 then return false end
     if not (d.gpu and d.gpu.get) then return false end
@@ -1174,7 +1236,7 @@ function screen.displayProxy(idx)
     lastAudit = now
     local okG, gch, _, gbg = pcall(d.gpu.get, x, y)
     if not okG then return false end
-    if gch == ch and gbg == bg then return false end
+    if gch == ch and gbg == (quant[bg] or bg) then return false end
     -- The screen does not hold what we were about to skip drawing.
     invalidateShadow()
     auditHits = auditHits + 1
@@ -1223,12 +1285,21 @@ function screen.displayProxy(idx)
       _drawEmitted = _drawEmitted + 1
       return
     end
-    auditCell(x, y)   -- at most one read-back per second; see auditCell
     local efg, ebg = fg or lastFg, bg or lastBg
     local chars = {}
     for ch in text:gmatch(UTF8) do chars[#chars + 1] = ch end
+    local n = #chars
     local base = (y - 1) * W2
     local first, last = screen._diffWindow(shC, shF, shB, base, x, chars, efg, ebg, W2)
+    -- Something in this span is about to be trusted rather than drawn:
+    -- spot-check one such cell (at most one read-back per second; see
+    -- auditCell). A hit drops the shadow, so the window is recomputed.
+    if first ~= 1 or last ~= n then
+      local ax = (first ~= 1) and x or (x + n - 1)
+      if auditCell(ax, y) then
+        first, last = screen._diffWindow(shC, shF, shB, base, x, chars, efg, ebg, W2)
+      end
+    end
     if not first then
       _drawSkipped = _drawSkipped + 1
       return  -- every target cell already holds this — skip the GPU entirely
@@ -1236,7 +1307,7 @@ function screen.displayProxy(idx)
     if fg then setFgCached(fg) end
     if bg then setBgCached(bg) end
     -- Emit only the changed window (matching prefix/suffix trimmed).
-    local sub = (first == 1 and last == #chars) and text
+    local sub = (first == 1 and last == n) and text
       or table.concat(chars, "", first, last)
     local ok = pcall(d.gpu.set, x + first - 1, y, sub)
     if not ok then lastFg, lastBg = nil, nil; invalidateShadow(); return end
@@ -1248,6 +1319,7 @@ function screen.displayProxy(idx)
         shC[k] = chars[i]; shF[k] = efg; shB[k] = ebg
       end
     end
+    learnColours(x + first - 1, y, efg, ebg)
   end
   function proxy.fill(x, y, w, h, ch, fg, bg)
     if type(x) ~= "number" or type(y) ~= "number"
@@ -1262,7 +1334,6 @@ function screen.displayProxy(idx)
       _drawEmitted = _drawEmitted + 1
       return
     end
-    auditCell(math.max(1, x), math.max(1, y))   -- see auditCell
     local efg, ebg = fg or lastFg, bg or lastBg
     local x1, y1 = math.max(1, x), math.max(1, y)
     local x2, y2 = math.min(W2, x + w - 1), math.min(H2, y + h - 1)
@@ -1280,6 +1351,17 @@ function screen.displayProxy(idx)
     -- every cell already holds this — skip the GPU entirely.
     local fx1, fy1, fx2, fy2 =
       screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, efg, ebg, W2)
+    -- A box smaller than the rect leaves cells trusted rather than drawn,
+    -- and at least one corner of the rect is among them: spot-check it
+    -- (see auditCell). A hit drops the shadow, so the box is recomputed.
+    if not fx1 or fx1 > x1 or fy1 > y1 or fx2 < x2 or fy2 < y2 then
+      local ax, ay = x2, y2
+      if not fx1 or fx1 > x1 or fy1 > y1 then ax, ay = x1, y1 end
+      if auditCell(ax, ay) then
+        fx1, fy1, fx2, fy2 =
+          screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, efg, ebg, W2)
+      end
+    end
     if not fx1 then
       _drawSkipped = _drawSkipped + 1; return
     end
@@ -1297,6 +1379,7 @@ function screen.displayProxy(idx)
         shC[k] = ch; shF[k] = efg; shB[k] = ebg
       end
     end
+    learnColours(fx1, fy1, efg, ebg)
   end
   function proxy.clear(bg)
     syncSize(); claimGlass()
@@ -1334,6 +1417,10 @@ function screen.displayProxy(idx)
     if not okS then
       releaseBackbuffer(); backBroken = true; return false
     end
+    -- The page is active now, and it has its own colours: park the
+    -- screen's and pick up where the page was left last frame.
+    glassFg, glassBg = lastFg, lastBg
+    lastFg, lastBg = pageFg, pageBg
     -- Make the page hold what the glass holds, so the dirty-cell elision
     -- stays valid across the flip.
     --
@@ -1375,6 +1462,11 @@ function screen.displayProxy(idx)
     -- Restore buffer 0 UNCONDITIONALLY. Leaving the active buffer on the
     -- off-screen page is the one failure here that looks like a dead seat.
     local okR = pcall(d.gpu.setActiveBuffer, 0)
+    -- Buffer 0 is active again: its colours are exactly what they were
+    -- when the frame opened (nothing in between touched it), and the
+    -- page keeps its own until the next frame.
+    pageFg, pageBg = lastFg, lastBg
+    lastFg, lastBg = glassFg, glassBg
     if not okR then releaseBackbuffer(); backBroken = true end
     if not blitted then
       -- The screen did NOT receive what the shadow now believes it has.

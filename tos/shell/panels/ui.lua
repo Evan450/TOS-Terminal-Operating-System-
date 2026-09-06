@@ -229,7 +229,15 @@ function ui.drawRampBar(D, th, y, W, left, right, fg, bg)
   fg = fg or th.statusbar_fg or th.bar_fg or th.fg
   bg = bg or th.statusbar_bg or th.bar_bg or th.bg
   local cap = th.dim or fg
-  D.fill(1, y, W, 1, "░", cap, bg)
+  -- Paint the FILLER only where filler will end up, not across the whole
+  -- row and then over it. A full-row fill of "░" followed by caps and a
+  -- label meant the seat proxy's dirty-cell diff saw every cap and label
+  -- cell change twice per tick (filler, then text), so the 1 Hz status
+  -- bar repaint re-sent ~30 cells across the OC bridge in four calls
+  -- every second even when nothing on the bar had changed -- the exact
+  -- "status-bar clock tick resends the row" cost the diff exists to
+  -- remove. Drawn as disjoint runs, a tick whose text has not changed
+  -- elides entirely. (test_ui_rampbar.lua)
   D.set(1, y, "▓▒░", cap, bg)
   if W > 6 then D.set(W - 2, y, "░▒▓", cap, bg) end
   -- Room for the text: it starts at column 5 and is drawn as " "..lt.." ",
@@ -237,12 +245,30 @@ function ui.drawRampBar(D, th, y, W, left, right, fg, bg)
   -- That leaves W - 9, not W - 8 — the old figure let a full-width label
   -- clip the first column of the right ramp.
   local lt = ufit(tostring(left or ""), math.max(0, W - 9))
-  if uwidth(lt) > 0 then D.set(5, y, " " .. lt .. " ", fg, bg) end
+  local lw = uwidth(lt)
+  local labelEnd = 3                      -- last column painted so far
+  if lw > 0 then
+    D.set(5, y, " " .. lt .. " ", fg, bg)
+    labelEnd = 5 + lw + 1
+    D.set(4, y, "░", cap, bg)             -- the one filler cell before it
+  end
+  -- First column of the right cap; a row too narrow for one (W <= 6, the
+  -- guard above) has filler all the way to its last column instead.
+  local rightStart = (W > 6) and (W - 2) or (W + 1)
   if right and #right > 0 then
     local rt = " " .. right .. " "
     local rx = W - 3 - #rt
-    if rx > 5 + uwidth(lt) + 2 then D.set(rx, y, rt, fg, bg) end
+    if rx > 5 + lw + 2 then
+      D.set(rx, y, rt, fg, bg)
+      -- filler between the right text and the right cap
+      local fx = rx + #rt
+      if fx <= W - 3 then D.fill(fx, y, W - 2 - fx, 1, "░", cap, bg) end
+      rightStart = rx
+    end
   end
+  -- filler between whatever was painted on the left and the right side
+  local fx = labelEnd + 1
+  if fx <= rightStart - 1 then D.fill(fx, y, rightStart - fx, 1, "░", cap, bg) end
 end
 
 -- ============================================================

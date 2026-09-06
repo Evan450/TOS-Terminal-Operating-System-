@@ -3,7 +3,7 @@
 -- Space/Shift and forwards them to the targeted robot.
 return {
   name        = "rc-pilot",
-  version     = "1.0.0",
+  version     = "1.1.0",
   kind        = "command",
   category    = "control",
   description = "WASD remote-control host for OC robots/drones running the rc-pilot EEPROM.",

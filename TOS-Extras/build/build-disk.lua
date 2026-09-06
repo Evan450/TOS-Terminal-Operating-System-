@@ -423,7 +423,7 @@ local DISCOVERY_ROOTS = { "modules", "cluster", "rbmk" }
 -- discovers it again on the next build.
 local SKIP = {
   ["cluster-storage"] = "0.1.0 — storage-spec-draft.md still open",
-  ["rbmk-control"]    = "0.1.0 — component names in Plan.md still a guess",
+  ["rbmk-control"]    = "0.2.0 — component names in Plan.md still a guess",
 }
 
 -- Explicit target→source maps for layouts that predate the mirror/flat

@@ -33,7 +33,7 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 
 local blockfs = {}
-blockfs._VERSION = "1.0.0"
+blockfs._VERSION = "1.2.0"
 
 local MAGIC        = "TBFS"
 local FMT_VERSION  = 1
@@ -87,24 +87,52 @@ end
 --! bug rather than a speedup.
 local CACHE_SLOTS = 4
 
-local function cachePut(fs, b, data)
+--! MEASURED AGAIN with the cache in (2026-09-06): reads were fixed, WRITES
+--! were not. A 64 KB file cost 384 sector writes for 128 blocks -- the
+--! data, plus the bitmap sector rewritten per BIT and the pointer block
+--! rewritten per POINTER -- and each block was read before being written
+--! to keep bytes a fresh block does not have. Three changes, and
+--! write-through survives all of them (test_blockfs_perf.lua):
+--!  1. Bitmap/pointer writes are COALESCED PER OPERATION: inside a batch
+--!     they update the cache, pinned, and are written once when the
+--!     outermost batch closes -- before the caller hears "written". Data
+--!     blocks are never deferred. A crash mid-batch leaves data the
+--!     bitmap still calls free and no inode referencing it: exactly the
+--!     old crash window, and one fsck repairs it. Drive order is
+--!     unchanged: data, bitmap+pointers, inode, superblock.
+--!  2. A block fully overwritten or just allocated is NOT read first.
+--!  3. File data stays OUT of the 4-slot cache (it streamed 128 blocks
+--!     through and evicted the inode/bitmap every time); directory data
+--!     is metadata and stays cached.
+local function cachePut(fs, b, data, pin)
   local c = fs.cache
   if not c then return end
   local e = c.map[b]
   c.tick = c.tick + 1
-  if e then e.data, e.used = data, c.tick; return end
+  if e then
+    e.data, e.used = data, c.tick
+    if pin then e.dirty = true end
+    return
+  end
   if c.n >= CACHE_SLOTS then
+    -- Evict the least recently used CLEAN entry. A dirty (pinned) entry
+    -- is a write the drive has not seen yet; it cannot be dropped.
     local oldest, oldestUsed
     for blk, ent in pairs(c.map) do
-      if not oldestUsed or ent.used < oldestUsed then oldest, oldestUsed = blk, ent.used end
+      if not ent.dirty and (not oldestUsed or ent.used < oldestUsed) then
+        oldest, oldestUsed = blk, ent.used
+      end
     end
     if oldest then c.map[oldest] = nil; c.n = c.n - 1 end
   end
-  c.map[b] = { data = data, used = c.tick }
+  c.map[b] = { data = data, used = c.tick, dirty = pin or nil }
   c.n = c.n + 1
 end
 
-local function readBlock(fs, b)
+-- Read block b (0-indexed) as an ss-byte string. `cacheable = false`
+-- reads around the cache (file data): the bytes come back but are not
+-- kept, so they cannot evict the metadata the cache is for.
+local function readBlock(fs, b, cacheable)
   if b < 0 or b >= fs.totalBlocks then
     error("readBlock out of range: " .. tostring(b), 2)
   end
@@ -117,20 +145,63 @@ local function readBlock(fs, b)
   if type(s) ~= "string" then s = "" end
   if #s < fs.ss then s = s .. string.rep("\0", fs.ss - #s) end
   s = s:sub(1, fs.ss)
-  cachePut(fs, b, s)
+  if cacheable ~= false then cachePut(fs, b, s) end
   return s
 end
 
+-- Write every deferred (dirty) cache entry to the drive, lowest block
+-- first, and unpin it. Called when the outermost batch closes.
+local function flushDeferred(fs)
+  local c = fs.cache
+  if not c or not c.dirtyCount or c.dirtyCount == 0 then return end
+  local blks = {}
+  for blk, ent in pairs(c.map) do
+    if ent.dirty then blks[#blks + 1] = blk end
+  end
+  table.sort(blks)
+  for _, blk in ipairs(blks) do
+    local ent = c.map[blk]
+    fs.drive.writeSector(blk + 1, ent.data)
+    ent.dirty = nil
+  end
+  c.dirtyCount = 0
+end
+
+-- Batching (see the cache note). Nestable; only the outermost close
+-- flushes. A batch left open on an error path is metadata the drive
+-- never received -- every opener closes on every path.
+local function beginBatch(fs) fs.batchDepth = (fs.batchDepth or 0) + 1 end
+local function endBatch(fs)
+  fs.batchDepth = fs.batchDepth - 1
+  if fs.batchDepth <= 0 then fs.batchDepth = 0; flushDeferred(fs) end
+end
+
 -- Write an ss-byte block (data is padded/truncated to the sector).
-local function writeBlock(fs, b, data)
+-- `defer` is honoured only inside a batch and only when a cache exists;
+-- otherwise this is the plain write-through it always was.
+local function writeBlock(fs, b, data, defer)
   if b < 0 or b >= fs.totalBlocks then
     error("writeBlock out of range: " .. tostring(b), 2)
   end
   if #data < fs.ss then data = data .. string.rep("\0", fs.ss - #data)
   elseif #data > fs.ss then data = data:sub(1, fs.ss) end
+  local c = fs.cache
+  if defer and c and (fs.batchDepth or 0) > 0 then
+    local wasDirty = c.map[b] and c.map[b].dirty
+    cachePut(fs, b, data, true)
+    if not wasDirty then c.dirtyCount = (c.dirtyCount or 0) + 1 end
+    return
+  end
   fs.drive.writeSector(b + 1, data)
   --! Through, not back: the drive already has it before the cache does.
-  cachePut(fs, b, data)
+  -- Metadata and already-cached blocks are kept; other data blocks stay
+  -- out (see readBlock). A dirty entry superseded here is now on the
+  -- drive, so unpin it.
+  if c and (b < fs.dataStart or (c.map[b] ~= nil)) then
+    local e = c.map[b]
+    if e and e.dirty then e.dirty = nil; c.dirtyCount = c.dirtyCount - 1 end
+    cachePut(fs, b, data)
+  end
 end
 
 -- ============================================================
@@ -173,6 +244,14 @@ local function writeSuper(fs)
     inodeBlocks = fs.inodeBlocks, bootStart = fs.bootStart, bootBlocks = fs.bootBlocks,
     dataStart = fs.dataStart, freeBlocks = fs.freeBlocks, clean = fs.clean, label = fs.label,
   }))
+  fs.superDirty = false
+end
+
+-- The superblock only changes when the free count does (allocBlock /
+-- freeBlock set the flag). A write that lands inside blocks a file already
+-- owns -- every small append -- used to rewrite it anyway.
+local function writeSuperIfDirty(fs)
+  if fs.superDirty then writeSuper(fs) end
 end
 
 -- ============================================================
@@ -199,7 +278,7 @@ local function bitSet(fs, blk, val)
   local sector = readBlock(fs, bb)
   local byte = sector:byte(off + 1) or 0
   if val == 1 then byte = byte | (1 << bit) else byte = byte & (~(1 << bit) & 0xFF) end
-  writeBlock(fs, bb, sector:sub(1, off) .. string.char(byte) .. sector:sub(off + 2))
+  writeBlock(fs, bb, sector:sub(1, off) .. string.char(byte) .. sector:sub(off + 2), true)
 end
 
 -- Layout-aware allocation: prefer `near`+1 (keep a file's blocks
@@ -212,6 +291,7 @@ local function allocBlock(fs, near)
   local function tryTake(b)
     if b >= first and b <= last and bitGet(fs, b) == 0 then
       bitSet(fs, b, 1); fs.freeBlocks = fs.freeBlocks - 1; fs.allocHint = b
+      fs.superDirty = true                     -- the free count moved
       return b
     end
     return nil
@@ -227,6 +307,7 @@ local function freeBlock(fs, b)
   if b == 0 then return end
   if bitGet(fs, b) == 1 then
     bitSet(fs, b, 0); fs.freeBlocks = fs.freeBlocks + 1
+    fs.superDirty = true
   end
 end
 
@@ -299,20 +380,29 @@ end
 local function writePtr(fs, blk, slot, val)
   local sector = readBlock(fs, blk)
   local at = slot * 4
-  writeBlock(fs, blk, sector:sub(1, at) .. string.pack("<I4", val) .. sector:sub(at + 5))
+  writeBlock(fs, blk, sector:sub(1, at) .. string.pack("<I4", val) .. sector:sub(at + 5), true)
 end
 
 -- Physical block backing logical file-block `li`; when `alloc`, grows
 -- the file (allocating indirect blocks as needed) and keeps blocks near
--- each other for a defrag-friendly, seek-cheap layout. Returns block#|nil.
+-- each other for a defrag-friendly, seek-cheap layout. Returns block#|nil,
+-- plus `true` when this call allocated the data block (nothing in it to
+-- preserve). node.blocks is counted here as blocks are gained, instead
+-- of re-walking the whole map after every write.
 local function mapBlock(fs, node, li, alloc)
   local P = ppb(fs)
   local function near() return fs.allocHint end
+  local function take(nearBlk)
+    local b = allocBlock(fs, nearBlk)
+    if b then node.blocks = (node.blocks or 0) + 1; node._dirty = true end
+    return b
+  end
   if li < N_DIRECT then
     if node.direct[li + 1] == 0 and alloc then
-      local b = allocBlock(fs, li > 0 and node.direct[li] ~= 0 and node.direct[li] or near())
+      local b = take(li > 0 and node.direct[li] ~= 0 and node.direct[li] or near())
       if not b then return nil end
-      node.direct[li + 1] = b; node._dirty = true
+      node.direct[li + 1] = b
+      return b, true
     end
     local d = node.direct[li + 1]
     return d ~= 0 and d or nil
@@ -321,13 +411,14 @@ local function mapBlock(fs, node, li, alloc)
   if li < P then                                   -- single indirect
     if node.indirect == 0 then
       if not alloc then return nil end
-      local ib = allocBlock(fs, near()); if not ib then return nil end
-      writeBlock(fs, ib, string.rep("\0", fs.ss)); node.indirect = ib; node._dirty = true
+      local ib = take(near()); if not ib then return nil end
+      writeBlock(fs, ib, string.rep("\0", fs.ss), true); node.indirect = ib
     end
     local phys = readPtr(fs, node.indirect, li)
     if phys == 0 and alloc then
-      phys = allocBlock(fs, node.indirect); if not phys then return nil end
+      phys = take(node.indirect); if not phys then return nil end
       writePtr(fs, node.indirect, li, phys)
+      return phys, true
     end
     return phys ~= 0 and phys or nil
   end
@@ -335,20 +426,21 @@ local function mapBlock(fs, node, li, alloc)
   if li < P * P then                               -- double indirect
     if node.double == 0 then
       if not alloc then return nil end
-      local db = allocBlock(fs, near()); if not db then return nil end
-      writeBlock(fs, db, string.rep("\0", fs.ss)); node.double = db; node._dirty = true
+      local db = take(near()); if not db then return nil end
+      writeBlock(fs, db, string.rep("\0", fs.ss), true); node.double = db
     end
     local l1, l2 = li // P, li % P
     local mid = readPtr(fs, node.double, l1)
     if mid == 0 then
       if not alloc then return nil end
-      mid = allocBlock(fs, node.double); if not mid then return nil end
-      writeBlock(fs, mid, string.rep("\0", fs.ss)); writePtr(fs, node.double, l1, mid)
+      mid = take(node.double); if not mid then return nil end
+      writeBlock(fs, mid, string.rep("\0", fs.ss), true); writePtr(fs, node.double, l1, mid)
     end
     local phys = readPtr(fs, mid, l2)
     if phys == 0 and alloc then
-      phys = allocBlock(fs, mid); if not phys then return nil end
+      phys = take(mid); if not phys then return nil end
       writePtr(fs, mid, l2, phys)
+      return phys, true
     end
     return phys ~= 0 and phys or nil
   end
@@ -389,7 +481,9 @@ local function walkBlocks(fs, node, fn)
 end
 
 local function freeInodeBlocks(fs, node)
+  beginBatch(fs)                 -- one bitmap write per sector touched, not per block
   walkBlocks(fs, node, function(b) freeBlock(fs, b) end)
+  endBatch(fs)
   node.blocks = 0; node.size = 0
   for i = 1, N_DIRECT do node.direct[i] = 0 end
   node.indirect = 0; node.double = 0
@@ -404,13 +498,16 @@ local function readData(fs, node, offset, count)
   count = math.min(count, node.size - offset)
   local out = {}
   local pos = offset
+  -- Directory blocks are metadata and stay cached; file data streams
+  -- around the cache so it cannot evict the inode/bitmap blocks.
+  local cacheable = (node.type == T_DIR)
   while count > 0 do
     local li = pos // fs.ss
     local within = pos % fs.ss
     local phys = mapBlock(fs, node, li, false)
     local chunk
     if phys then
-      chunk = readBlock(fs, phys):sub(within + 1, within + math.min(count, fs.ss - within))
+      chunk = readBlock(fs, phys, cacheable):sub(within + 1, within + math.min(count, fs.ss - within))
     else
       chunk = string.rep("\0", math.min(count, fs.ss - within))   -- sparse hole
     end
@@ -426,23 +523,32 @@ local function writeData(fs, node, offset, data)
   local pos = offset
   local i = 1
   local n = #data
+  local ss = fs.ss
+  beginBatch(fs)                 -- bitmap + pointer writes coalesce until the end
   while i <= n do
-    local li = pos // fs.ss
-    local within = pos % fs.ss
-    local phys = mapBlock(fs, node, li, true)
-    if not phys then return false, "out of space" end
-    local room = fs.ss - within
+    local li = pos // ss
+    local within = pos % ss
+    local phys, fresh = mapBlock(fs, node, li, true)
+    if not phys then endBatch(fs); return false, "out of space" end
+    local room = ss - within
     local chunk = data:sub(i, i + room - 1)
-    local sector = readBlock(fs, phys)
-    writeBlock(fs, phys, sector:sub(1, within) .. chunk .. sector:sub(within + #chunk + 1))
-    -- Recount owned blocks lazily via the high-water mark below.
+    local sector
+    if #chunk == ss then
+      sector = chunk                                   -- whole block: nothing to keep
+    elseif fresh then
+      -- Just allocated: nothing in it is ours to preserve, and the bytes
+      -- around the chunk are what a read would have returned anyway.
+      sector = string.rep("\0", within) .. chunk .. string.rep("\0", ss - within - #chunk)
+    else
+      local old = readBlock(fs, phys, node.type == T_DIR)
+      sector = old:sub(1, within) .. chunk .. old:sub(within + #chunk + 1)
+    end
+    writeBlock(fs, phys, sector)
     pos = pos + #chunk; i = i + #chunk
   end
+  endBatch(fs)
   if pos > node.size then node.size = pos end
-  -- Recompute block count (cheap: derive from size for the fast path).
-  local nb = 0
-  walkBlocks(fs, node, function() nb = nb + 1 end)
-  node.blocks = nb
+  -- node.blocks is maintained by mapBlock as blocks are allocated.
   node.mtime = fs.now()
   return true
 end
@@ -494,13 +600,18 @@ local function dirRemove(fs, dnode, name)
   dnode = readInode(fs, dnode.num)     -- fresh copy (see dirAdd)
   local kept = {}
   for _, e in ipairs(dirEntries(fs, dnode)) do
-    if e.name ~= name then kept[#kept + 1] = e end
+    if e.name ~= name then
+      kept[#kept + 1] = string.char(#e.name) .. e.name .. string.pack("<I4", e.inode)
+    end
   end
   freeInodeBlocks(fs, dnode)
   dnode.size = 0
-  for _, e in ipairs(kept) do
-    local rec = string.char(#e.name) .. e.name .. string.pack("<I4", e.inode)
-    writeData(fs, dnode, dnode.size, rec)
+  -- One write of the whole listing, not one writeData per surviving
+  -- entry: removing one file from a 20-entry directory cost 25 sector
+  -- writes that way, and each of those re-walked the block map.
+  if #kept > 0 then
+    local ok, err = writeData(fs, dnode, 0, table.concat(kept))
+    if not ok then return false, err end
   end
   writeInode(fs, dnode)
   return true
@@ -578,13 +689,19 @@ function blockfs.format(drive, opts)
     dataStart = dataStart, freeBlocks = 0, clean = true,
     label = (opts.label or "tbfs"):sub(1, 32),
     now = opts.now or function() return 0 end, allocHint = dataStart,
+    -- A cache so the bitmap marking below coalesces (see writeBlock);
+    -- this handle is dropped when format returns.
+    cache = { map = {}, n = 0, tick = 0 },
   }
 
   -- Zero metadata (superblock + bitmap + inode table).
   for b = 0, dataStart - 1 do writeBlock(fs, b, string.rep("\0", ss)) end
-  -- Mark metadata blocks used in the bitmap; data blocks free.
+  -- Mark metadata blocks used in the bitmap; data blocks free. One
+  -- bitmap write per sector, not one per block marked.
   fs.freeBlocks = totalBlocks - dataStart
+  beginBatch(fs)
   for b = 0, dataStart - 1 do bitSet(fs, b, 1) end
+  endBatch(fs)
   -- Root directory inode (empty).
   local root = { num = ROOT_INODE, type = T_DIR, flags = 0, size = 0,
     mtime = fs.now(), blocks = 0, direct = {}, indirect = 0, double = 0 }
@@ -680,15 +797,27 @@ function blockfs.mount(drive, opts)
     return out
   end
 
+  -- Creates parents as needed, as OC's managed filesystem does and as
+  -- kernel.fs (which passes makeDirectory straight through) expects;
+  -- pkg installing into a nested path failed on a TBFS root without it.
   function P.makeDirectory(path)
-    local node, parent, leaf = resolve(fs, path)
-    if node then return node.type == T_DIR end          -- already exists
-    if not parent or not leaf then return false end
-    local dir = allocInode(fs, T_DIR)
-    if not dir then return false end
-    local ok = dirAdd(fs, parent, leaf, dir.num)
-    if not ok then dir.type = T_FREE; writeInode(fs, dir); return false end
-    writeSuper(fs)
+    local parts = splitPath(path)
+    if #parts == 0 then return true end                 -- "/" already exists
+    local acc = ""
+    for _, seg in ipairs(parts) do
+      acc = acc .. "/" .. seg
+      local node, parent, leaf = resolve(fs, acc)
+      if node then
+        if node.type ~= T_DIR then return false end     -- a file is in the way
+      else
+        if not parent or not leaf then return false end
+        local dir = allocInode(fs, T_DIR)
+        if not dir then return false end
+        local ok = dirAdd(fs, parent, leaf, dir.num)
+        if not ok then dir.type = T_FREE; writeInode(fs, dir); return false end
+      end
+    end
+    writeSuperIfDirty(fs)
     return true
   end
 
@@ -710,9 +839,20 @@ function blockfs.mount(drive, opts)
 
   function P.rename(from, to)
     local node, fparent, fleaf = resolve(fs, from)
-    if not node then return false end
+    if not node or not fleaf then return false end      -- no source, or "/"
+    -- A directory cannot move into itself or its own subtree: the link
+    -- would succeed, the unlink would cut the only path to it, and the
+    -- whole subtree becomes an unreachable cycle fsck counts as leaked.
+    if node.type == T_DIR then
+      local f, t = splitPath(from), splitPath(to)
+      local inside = #t >= #f
+      for i = 1, #f do if t[i] ~= f[i] then inside = false; break end end
+      if inside and #t == #f then return true end       -- renamed onto itself
+      if inside then return false end
+    end
     local existing, tparent, tleaf = resolve(fs, to)
     if not tparent or not tleaf then return false end
+    if existing and existing.num == node.num then return true end   -- same entry
     if existing then P.remove(to) end
     local ok = dirAdd(fs, tparent, tleaf, node.num)
     if not ok then return false end
@@ -755,7 +895,7 @@ function blockfs.mount(drive, opts)
     local ok, err = writeData(fs, st.node, st.pos, data)
     if not ok then return false, err end
     st.pos = st.pos + #data
-    writeInode(fs, st.node); writeSuper(fs)
+    writeInode(fs, st.node); writeSuperIfDirty(fs)
     return true
   end
 
@@ -777,6 +917,17 @@ function blockfs.mount(drive, opts)
     if h == nil or handles[h] == nil then return false, "bad file descriptor" end
     handles[h] = nil
     return true
+  end
+
+  --- How many file handles are open on this volume right now.
+  --- The shell asks before it unmounts a volume to run format / fsck /
+  --- defrag: with nothing open it can unmount, act and remount without
+  --- troubling the operator; with something open it has to ask, because
+  --- unmounting pulls the volume out from under whatever holds them.
+  function P.openHandles()
+    local n = 0
+    for _ in pairs(handles) do n = n + 1 end
+    return n
   end
 
   -- Flush the clean bit so a later mount knows the volume was shut down
@@ -877,11 +1028,16 @@ function blockfs.check(drive, opts)
   local repaired = false
   if opts.repair then
     -- Rebuild the bitmap from reachability: metadata + referenced blocks used.
+    -- Batched: the whole bitmap lands in one write per sector, and only
+    -- after every bit is decided -- a repair is not something to leave
+    -- half-applied on the drive.
+    beginBatch(fs)
     for b = 0, fs.dataStart - 1 do bitSet(fs, b, 1) end
     local free = 0
     for b = fs.dataStart, fs.totalBlocks - 1 do
       if used[b] then bitSet(fs, b, 1) else bitSet(fs, b, 0); free = free + 1 end
     end
+    endBatch(fs)
     fs.freeBlocks = free; fs.clean = true; writeSuper(fs)
     repaired = true
   end
@@ -922,7 +1078,9 @@ function blockfs.defrag(drive, opts)
 
   -- Phase 2 — free the whole data region; allocation now starts clean at
   -- dataStart, so each rewrite packs contiguously from the front.
+  beginBatch(fs)
   for b = fs.dataStart, fs.totalBlocks - 1 do bitSet(fs, b, 0) end
+  endBatch(fs)
   fs.freeBlocks = fs.totalBlocks - fs.dataStart
   fs.allocHint = fs.dataStart
 

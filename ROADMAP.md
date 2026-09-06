@@ -2,18 +2,75 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**66 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 51 | Planned or under investigation. Most contributions belong here. |
+| Planned | 48 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## CLUSTER PAIRING NEVER WORKED, AND A CANCEL RACE (2026-09-06)
+
+### Planned — tape-auth passphrases are positional arguments (`log add &lt;pass&gt;
+
+```text
+tape-auth passphrases are positional arguments (`log add <pass>
+    <text>`), so every one lands in the seat's command history --
+    the same finding as `pkg trust key` and rc-pilot's --secret.
+    compat.term's masked read is reachable from a package (rc-pilot
+    now uses it). Changing the CLI contract touches every usage
+    line, the man page and `launcher tape`, so it is an operator
+    decision; a "-" placeholder meaning "prompt me" would keep the
+    old form working for scripts.
+```
+
+## RC-PILOT NEVER WORKED END TO END (2026-09-06)
+
+### Planned — robot/eeprom-rc-pilot.lua HAS NO BUILD STEP. The source is what
+
+```text
+robot/eeprom-rc-pilot.lua HAS NO BUILD STEP. The source is what
+    the repo carries; the burnable image is what strip.lua --minify
+    makes of it, and nothing produces that automatically -- the README
+    now says how. build-disk.lua could emit robot/ into dist alongside
+    the disks. Same shape as the "pack ships source unstripped" item.
+```
+
+## TBFS: THE COST WAS WRITES, AND A SECOND HANDLE (2026-09-06)
+
+### Planned — THE PACK SHIPS SOURCE UNSTRIPPED
+
+```text
+THE PACK SHIPS SOURCE UNSTRIPPED. build-disk.lua copies each
+    module's files as-is, comments and all, so blockfs.lua is
+    ~50 KB on disk and in RAM when required, and the boot blob
+    embeds all of it. strip.lua exists for the release tree and
+    keeps every `--!` line; running the same pass over pack
+    files would roughly halve the driver. Not done here: the
+    hashes and the signature are taken over the shipped bytes,
+    so this touches the build and publish chain, and the size
+    ceiling in test_blockfs_perf.lua (52 KB) holds the line
+    meanwhile. Worth doing before a machine with 192 KB tries to
+    boot from TBFS.
+```
+
+### Planned — STILL ~8 SECTOR WRITES PER TINY FILE (inode alloc, directory
+
+```text
+STILL ~8 SECTOR WRITES PER TINY FILE (inode alloc, directory
+    append + its inode, data block, bitmap, file inode, super).
+    Half of those are per-operation metadata that a "close-time
+    flush" could merge across a create-write-close sequence, at
+    the cost of "written" meaning "on close" -- an operator
+    decision, and not one to make for a filesystem on hardware
+    that vanishes when someone breaks the block.
+```
 
 ## THE ESCAPE HATCH NEEDED THE BROKEN THING (2026-08-24)
 
@@ -61,44 +118,6 @@ OPERATOR DECISION, deliberately not made here: should `rsh` REFUSE
       version of that; whether it should be louder is the call.
 ```
 
-### Planned — WORTH CHECKING NEXT
-
-```text
-WORTH CHECKING NEXT, same shape: what else in TOS assumes a
-    standard-Lua facility that OC's sandbox trims? machine.lua's
-    sandbox table is the authoritative list and it is right there in
-    the emulator jar. os.* and io.* are the obvious places to look --
-    the off-box suite runs on stock Lua 5.4, where everything exists,
-    so this entire class is invisible to it by construction. That is
-    the same blind spot that hid the byte-vs-column ustr fallback.
-```
-
-## THE BLACK STATUS BAR, FIFTH TIME (2026-08-24)
-
-### Planned — NEW EVIDENCE
-
-```text
-NEW EVIDENCE, 2026-09-05, not yet explained. The operator
-    reports that switching theme away and back (Default ->
-    Amber -> Default) SOMETIMES leaves the status bar in the
-    theme colour rather than black. So the bar CAN be painted
-    correctly, and a theme change is what does it -- which means
-    the colour and content logic are fine and something either
-    fails to paint row H at boot or paints over it afterwards.
-    "Sometimes" says it is racy.
-    Worth measuring next: the audit fires ONCE per boot
-    (auditHits == 1 gates the log), a few seconds after the
-    shell loads, reporting screen=000000 cache=<statusbar_bg>.
-    So the glass is black while the cache believes it painted.
-    Whatever blacks row H does it outside the shadow, once,
-    early. Candidates not yet eliminated: a full-screen clear
-    between the bar's paint and the audit; kiosk.lua draws via
-    display.* directly (wrong shell mode here, but the same
-    shape); a second proxy for the same seat (displayProxy
-    builds a fresh one per call -- login, shell, task switcher)
-    painting with its own idea of the glass.
-```
-
 ## ACCIDENTAL-GLOBAL / COMPAT SWEEP (2026-08-23)
 
 ### Planned — UNVERIFIED
@@ -107,7 +126,14 @@ NEW EVIDENCE, 2026-09-05, not yet explained. The operator
 UNVERIFIED, NEEDS A LUA 5.3 BOX: gmatch's empty-match rule
     differs between the two architectures TOS supports. Lua 5.4
     refuses a match that ends where the previous one ended; 5.3
-    has no such guard and returns the empty match. ~15 call sites
+    has no such guard and returns the empty match. (Counted
+    2026-09-06: TEN call sites, not ~15 -- core.lua x6, admin.lua,
+    extras.lua, context.lua, editor.lua -- and the two bare ones
+    named below; everything else already uses [^\n]+, which has
+    no empty match to disagree about. Still unverifiable here:
+    the emulator's Lua 5.3 lives inside a JNLua DLL that exports
+    no C API, so there is no 5.3 interpreter to run the probe.)
+    ~15 call sites
     split text with  gmatch("([^
 ]*)
 ?")  and two with the
@@ -129,22 +155,6 @@ b"):gmatch("[^
     Three lines means 5.4-like and there is nothing to do; four
     (with an empty one in the middle) confirms it, and then the
     fix is one shared splitLines() helper, not fifteen edits.
-```
-
-### Planned — WHILE IN THERE
-
-```text
-WHILE IN THERE, not chased: kernel/event.lua's timer loop
-    pcalls each callback while iterating `timers` in reverse, and
-    a callback that cancels or adds a timer mutates that array
-    mid-walk. Reverse iteration survives removals ABOVE the
-    cursor; a removal BELOW it shifts the entry just processed
-    down into the next index. It looked survivable in every case
-    traced by hand (a fired one-shot is already gone, an interval
-    has had its deadline pushed past `now`), which is why it is a
-    note and not a fix — but "survivable by argument" is how the
-    pairs() bug above lived for months. Worth a test that
-    registers and cancels timers from inside a timer callback.
 ```
 
 ## REAL MINECRAFT ROUND (2026-08-11)
@@ -209,6 +219,57 @@ NEXT REAL-MINECRAFT ROUND — the point of these four is that
 ```
 
 ## SIGNED MANIFESTS round (2026-08-11)
+
+### Planned — Emulator checklist - the RBMK SKALA panel (Extras, v0.2.0)
+
+```text
+Emulator checklist - the RBMK SKALA panel (Extras, v0.2.0).
+    NOTE: all of this is blocked behind rbmk/Plan.md open question
+    #1 -- the console's real method names -- which only an in-world
+    survey can answer. Do the survey FIRST; everything below assumes
+    `rbmk survey` reports `usable: YES`.
+      - `rbmk survey` against a real HBM console: does anything bind
+        to `columns`? If nothing does, the panel is scalars-only and
+        the core map never appears. That is a supported outcome, and
+        the point of this check is to find out WHICH world we are in.
+      - `rbmk skala` on a tier-3 screen: 15x15 cells must line up
+        with the column ruler. A cell that renders 5 characters
+        shifts its whole row -- the off-box tests pin the formatter,
+        but only a GPU proves the ALIGNMENT.
+      - the same at 80x25: the rail should be gone and the numbers
+        should have survived (layout drops the rail before the
+        digits, deliberately). Check the header still names the
+        selected parameter, since that is the only place it appears
+        without a rail.
+      - a screen too small for the core map: must print the SIZE IT
+        NEEDS, not "too small", and still show the scalar readings.
+      - N/T/X/K/G swap the parameter; arrows move the inspection
+        cursor and the status line follows it; TAB cycles the pages;
+        Q leaves and GIVES THE SCREEN BACK.
+      - `rbmk skala --wall` on a multi-seat box: each seat shows a
+        DIFFERENT page, and seats keep their identity across a
+        reboot (they are sorted for that reason). Confirm plain
+        `rbmk skala` leaves the other seats alone -- that is the
+        whole reason --wall is opt-in.
+      - THE OVERRIDE: drive the core to a scram and confirm every
+        unpinned pane switches to the alarm page, a pinned one does
+        not, and a mere WARNING leaves the wall alone. Then pull the
+        controller's modem and confirm every pane goes STALE.
+      - the OpenOS satellite: rbmk-display.lua on a second machine
+        must render the same picture. Then give it MORE SCREENS THAN
+        GPUs and confirm the time-slicing works and does not flicker
+        or reset resolutions.
+      - `mapInterval`: watch for per-tick component-budget warnings
+        on a real console. The map read is throttled separately from
+        the safety poll precisely because this is unknown; if a real
+        `getColumnData` is slow, this is the knob.
+      - colour on a TIER-2 GPU: the bands were chosen to survive 16
+        colours, unverified in-world.
+      - off-box tests cover the arithmetic, the wire and the painted
+        CELL CONTENTS (against a fake display that models state);
+        what needs a GPU is alignment, colour on real hardware, and
+        the multi-seat/multi-GPU behaviour.
+```
 
 ### Planned — Emulator checklist - editor horizontal scrolling
 
@@ -1198,110 +1259,6 @@ SPLIT TABS — two or more tabs sharing one screen. Operator
     Verify with: Desktop | Shell side-by-side, then Monitor |
     Shell (a live tab next to an interactive one), then a
     too-narrow region showing the notice.
-```
-
-## FROM AN EXTERNAL REVIEW (2026-09-04)
-
-### Planned — THE SIGNING KDF IS FAST AND UNSALTED
-
-```text
-THE SIGNING KDF IS FAST AND UNSALTED. seedFromPassphrase is
-    sha512("TOS-pkg-signing-key-v1 "..pass) then 512 iterations.
-    Modest on purpose -- it has to run on a 192 KB machine, and a
-    KDF that makes signing painful just pushes people to shorter
-    secrets, which is a real argument. But two consequences follow
-    and neither is written down anywhere a publisher would look:
-      1. 512 rounds is cheap on a PC, so passphrase ENTROPY is
-         doing all the work. A memorable phrase is brute-forceable
-         into the private key, and the private key is the identity.
-      2. There is no salt -- the domain separator is fixed for
-         every publisher -- so an attacker's work is shared across
-         all of them, and a table can be precomputed once.
-    Options: raise the iteration count for the OFF-BOX signer only
-    (the builder runs on a PC; the machine only ever VERIFIES, and
-    verification does not touch the KDF), or salt with the
-    publisher label, or both. Either changes derived keys, so it
-    needs a v2 domain separator and a migration note -- the "v1" in
-    the string suggests this was anticipated.
-    Meanwhile CONTRIBUTING should say plainly: generate the
-    passphrase, do not invent one.
-```
-
-### Planned — `pkg trust key &lt;passphrase&gt;` TAKES THE PASSPHRASE AS AN
-
-```text
-`pkg trust key <passphrase>` TAKES THE PASSPHRASE AS AN
-    ARGUMENT, so it lands in the shell history that up-arrow reads
-    back. build-disk.lua deliberately refuses a --sign flag for
-    exactly this reason ("argv lands in shell history, and this
-    passphrase IS the private key") -- the on-box path then does
-    the thing the off-box path refuses to. Prompt for it instead,
-    the way login does, or read it from an env var. Noted while
-    documenting the signing workflow; the doc currently warns the
-    reader to clear their history, which is a workaround, not a fix.
-```
-
-### Planned — DIGESTS IN system_manifest.lua. Every entry is
-
-```text
-DIGESTS IN system_manifest.lua. Every entry is
-    { path, critical } and nothing else, so `verify` and the boot
-    self-check confirm files are PRESENT, never that they are
-    UNMODIFIED. An edited kernel module passes. The asymmetry is
-    the embarrassing part: pkg requires a SHA-256 for every file
-    in a third-party package and supports ed25519 publisher
-    signatures, so add-on code is held to a higher integrity
-    standard than the OS itself.
-      Everything needed is already in the tree -- kernel/sha256.lua
-    was split out precisely so it works without a data card, and
-    build-release.sh already walks every emitted file. Shape:
-    build-release.sh writes a sha256 field per entry, `verify`
-    compares, SRM reports a mismatch as a fault. Watch the cost --
-    hashing 152 files at boot is not free on a T1 CPU, so this
-    probably wants to stay opt-in at boot (verify on demand,
-    critical-only on boot) rather than becoming a startup tax.
-```
-
-### Planned — BOOTSTRAP VERIFIES NOTHING IT DOWNLOADS
-
-```text
-BOOTSTRAP VERIFIES NOTHING IT DOWNLOADS. bootstrap.lua fetches
-    the whole OS over HTTPS and writes it to disk having checked
-    only that each file's SIZE matches what install.lua then
-    re-checks. No hash, no signature. It trusts TLS and it trusts
-    that the GitHub account has not been compromised, and it says
-    so nowhere. (What it DOES get right: the manifest is loaded
-    with load(src,"=manifest","t",{}) -- text mode, empty env --
-    so a hostile manifest cannot execute.)
-      Blocked on the digests above: once the manifest carries
-    them, fetch it first, verify every subsequent download against
-    it, abort loudly on mismatch. Signing the manifest with the
-    same ed25519 machinery pkg already uses would make the network
-    install strictly stronger than the floppy one, which is a nice
-    place to end up given it started as the weaker of the two.
-```
-
-### Planned — ONE-SECTOR CACHE IN blockfs. Measured, and the numbers are
-
-```text
-ONE-SECTOR CACHE IN blockfs. Measured, and the numbers are
-    not close: writing a 4 KB file costs 58 component calls (35
-    reads, 23 writes); 64 KB costs 1,389. The equivalent on a
-    managed filesystem is three, regardless of size. bitSet does
-    a full sector read + a three-way string concat + a full
-    sector write for EVERY block allocated, and readBlock builds
-    a fresh 512-byte string every call.
-      Caching the currently-addressed bitmap sector would collapse
-    the read side, and allocation is already locality-biased
-    (allocHint, the near+1 preference), so consecutive allocations
-    hit the same sector -- a single entry is enough. Do the
-    WRITE-THROUGH version first: mutate the cached copy and still
-    write it immediately, so crash semantics are unchanged and
-    the only thing removed is the redundant read. A write-back
-    cache in a filesystem driver is where data loss comes from,
-    and check()/defrag() read the drive directly in places, so
-    they would need the cache dropped or shared. The 81-assertion
-    test_blockfs.lua is the safety net; run it before and after.
 ```
 
 ## PLANNED (near future)

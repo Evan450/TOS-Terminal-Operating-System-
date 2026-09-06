@@ -79,6 +79,10 @@ do
   D.fill(1, 1, 80, 25, " ", T.fg, T.bg)
   tickStatusBar()
   eq("the bar starts correct on the glass", T.statusbar_bg, G.bgAt(40, STAT))
+  -- A second, fully-elided tick: this is the one that spends this
+  -- second's read-back (a draw that elides nothing audits nothing --
+  -- there is no belief in it to check), and it finds the glass honest.
+  tickStatusBar()
 
   -- Move the glass WITHOUT declaring it. Not via D.getGpu(), which declares
   -- the write and drops the shadow -- that is the case TOS already handles.

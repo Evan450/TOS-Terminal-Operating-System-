@@ -1,263 +1,108 @@
 -- ╔══════════════════════════════════════════════════════════╗
 -- ║  TOS Robot EEPROM — RC Pilot                             ║
 -- ║                                                          ║
--- ║  Burnable EEPROM payload for OC robots and drones.       ║
+-- ║  Burnable payload for OC robots and Computronics drones. ║
+-- ║  Pairs with the `rc-pilot` add-on: a TOS host turns      ║
+-- ║  WASD/arrow keys into frames on wireless port 7777 and   ║
+-- ║  this loop turns them into robot.* / drone.* calls.      ║
 -- ║                                                          ║
--- ║  The host (a TOS computer with a wireless modem) sends   ║
--- ║  movement intent packets; this EEPROM listens on a       ║
--- ║  fixed port and translates them into robot.* / drone.*   ║
--- ║  calls. The robot/drone itself has no shell, no kernel,  ║
--- ║  no auth — just a tight event loop. The host is where    ║
--- ║  WASD/arrow-key input becomes RC packets.                ║
+-- ║  Wire format (a Lua-literal string, parsed by pattern):  ║
+-- ║    {magic="RCPILOT1",op="..",arg=n,nonce="hex",mac="hex"}║
+-- ║    mac = HMAC-SHA256(secret, op.."|"..arg.."|"..nonce)   ║
+-- ║  ops: move:f/b/l/r turn:l/r up down use:f swing:f        ║
+-- ║       place:f select(arg=slot) stop ping (-> pong)       ║
 -- ║                                                          ║
--- ║  Why an EEPROM and not a full OS:                        ║
--- ║   * Robots boot from EEPROM (no disk on a fresh chassis).║
--- ║   * Every byte matters — EEPROM is 4 KB.                 ║
--- ║   * A small, single-purpose payload is auditable.        ║
+-- ║  Security: constant-time MAC check; a 64-nonce replay    ║
+-- ║  window; no secret configured means NOTHING moves. Seed  ║
+-- ║  the secret (16+ chars) with  eeprom.setData("...").     ║
 -- ║                                                          ║
--- ║  Wire format (modem broadcast, fixed port 7777):         ║
--- ║                                                          ║
--- ║    { magic="RCPILOT1", op=<string>, arg=<n>, mac=<hex> } ║
--- ║                                                          ║
--- ║  ops:                                                    ║
--- ║    move:f    move:b    move:l    move:r                  ║
--- ║    turn:l    turn:r                                      ║
--- ║    up        down       (drones only)                    ║
--- ║    use:f     swing:f    place:f   (slot held)            ║
--- ║    select:n  (set inventory slot 1..N)                   ║
--- ║    stop                  (cancel any pending move)       ║
--- ║    ping                  (reply with status)             ║
--- ║                                                          ║
--- ║  Security:                                               ║
--- ║   * `mac` field: HMAC-SHA1-ish over (op || arg || nonce) ║
--- ║     under a shared secret burned into the EEPROM as a    ║
--- ║     data field. setData/getData on the EEPROM stores the ║
--- ║     32-byte secret.                                      ║
--- ║   * The MAC verify rejects malformed or replayed packets.║
--- ║   * Without a configured secret, the robot accepts NO    ║
--- ║     commands (refuses to move) — fail-closed posture.    ║
--- ║                                                          ║
--- ║  Burn with: `flash eeprom-rc-pilot.lua` from TOS         ║
--- ║  Set secret: place the EEPROM in a TOS slot and run:     ║
--- ║      component.eeprom.setData("<32-byte-secret-hex>")    ║
+-- ║  SIZE IS THE CONSTRAINT. An EEPROM is 4096 bytes and     ║
+-- ║  `flash` refuses anything larger; the previous version   ║
+-- ║  was 6.9 KB with its comments stripped and could not be  ║
+-- ║  burned at all. Everything below is written for the      ║
+-- ║  stripped size (build/strip.lua --minify), which         ║
+-- ║  test_rc_pilot.lua pins under 4096. Burn the STRIPPED    ║
+-- ║  file: comments do not ship, but short names do.         ║
 -- ╚══════════════════════════════════════════════════════════╝
-
-local component = component or require("component")
-local computer  = computer  or require("computer")
-
-local PORT  = 7777
-local MAGIC = "RCPILOT1"
-
--- ============================================================
--- Locate hardware
--- ============================================================
-
-local function findOne(ctype)
-  for addr in component.list(ctype) do
-    return component.proxy(addr)
-  end
-  return nil
+local C,M=component,computer
+local function f(t)for a in C.list(t)do return C.proxy(a)end end
+local m,r,d,e=f("modem"),f("robot"),f("drone"),f("eeprom")
+if not m then M.beep(200,1.5)while true do M.pullSignal(60)end end
+-- Secret from the EEPROM data field; too short means unset, fail closed.
+local S=e and e.getData and e.getData()
+if type(S)~="string"or #S<16 then S=nil end
+-- SHA-256 round constants as one hex string (half the bytes of a table).
+local KS="428a2f9871374491b5c0fbcfe9b5dba53956c25b59f111f1923f82a4ab1c5ed5d807aa9812835b01243185be550c7dc372be5d7480deb1fe9bdc06a7c19bf174e49b69c1efbe47860fc19dc6240ca1cc2de92c6f4a7484aa5cb0a9dc76f988da983e5152a831c66db00327c8bf597fc7c6e00bf3d5a7914706ca63511429296727b70a852e1b21384d2c6dfc53380d13650a7354766a0abb81c2c92e92722c85a2bfe8a1a81a664bc24b8b70c76c51a3d192e819d6990624f40e3585106aa07019a4c1161e376c082748774c34b0bcb5391c0cb34ed8aa4a5b9cca4f682e6ff3748f82ee78a5636f84c878148cc7020890befffaa4506cebbef9a3f7c67178f2"
+local K={}for i=1,64 do K[i]=tonumber(KS:sub(i*8-7,i*8),16)end
+local function R(x,n)return((x>>n)|(x<<(32-n)))&0xFFFFFFFF end
+-- Raw 32-byte SHA-256. string.pack/unpack do the byte work.
+local function H(s)
+local l=#s
+s=s.."\128"..("\0"):rep((55-l)%64)..(">I8"):pack(l*8)
+local a0,b0,c0,d0,e0,f0,g0,h0=0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
+local w={}
+for p=1,#s,64 do
+for i=0,15 do w[i+1]=(">I4"):unpack(s,p+i*4)end
+for i=17,64 do
+local x,y=w[i-15],w[i-2]
+w[i]=(w[i-16]+(R(x,7)~R(x,18)~(x>>3))+w[i-7]+(R(y,17)~R(y,19)~(y>>10)))&0xFFFFFFFF
 end
-
-local modem = findOne("modem")
-local robot = findOne("robot")
-local drone = findOne("drone")    -- Computronics drones; nil for plain robots
-local eeprom = findOne("eeprom")
-
-if not modem then
-  -- Beep-and-halt: a robot without a modem can't be remote-piloted.
-  computer.beep(200, 1.5)
-  while true do computer.pullSignal(60) end
+local a,b,c,dd,ee,ff,g,h=a0,b0,c0,d0,e0,f0,g0,h0
+for i=1,64 do
+local t1=(h+(R(ee,6)~R(ee,11)~R(ee,25))+((ee&ff)~(~ee&g))+K[i]+w[i])&0xFFFFFFFF
+local t2=((R(a,2)~R(a,13)~R(a,22))+((a&b)~(a&c)~(b&c)))&0xFFFFFFFF
+h,g,ff,ee,dd,c,b,a=g,ff,ee,(dd+t1)&0xFFFFFFFF,c,b,a,(t1+t2)&0xFFFFFFFF
 end
-
--- ============================================================
--- Secret
--- ============================================================
-
-local secret = nil
-do
-  -- getData() returns the EEPROM data field; nil/empty means the
-  -- operator hasn't seeded the secret yet. We DO NOT make one up —
-  -- without a real secret the modem listener stays open but every
-  -- packet fails MAC verify and the robot doesn't move.
-  if eeprom and eeprom.getData then
-    local d = eeprom.getData()
-    if type(d) == "string" and #d >= 16 then
-      secret = d
-    end
-  end
+a0,b0,c0,d0,e0,f0,g0,h0=(a0+a)&0xFFFFFFFF,(b0+b)&0xFFFFFFFF,(c0+c)&0xFFFFFFFF,(d0+dd)&0xFFFFFFFF,(e0+ee)&0xFFFFFFFF,(f0+ff)&0xFFFFFFFF,(g0+g)&0xFFFFFFFF,(h0+h)&0xFFFFFFFF
 end
-
--- ============================================================
--- Minimal SHA-256 + HMAC
--- ============================================================
--- We can't `require("kernel.crypto")` — there's no kernel here. We
--- compile a stripped-down SHA-256 inline. ~1.5 KB of EEPROM budget.
--- This is the same algorithm kernel.crypto uses; we just don't ship
--- the niceties around it.
-
-local function rrot(x, n) return ((x >> n) | (x << (32 - n))) & 0xFFFFFFFF end
-
-local K = {
-  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
-  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
-  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
-  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
-  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
-  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
-  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
-  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
-}
-
-local function sha256hex(msg)
-  local bytes = { msg:byte(1, #msg) }
-  local bitLen = #bytes * 8
-  bytes[#bytes + 1] = 0x80
-  while (#bytes % 64) ~= 56 do bytes[#bytes + 1] = 0 end
-  local hi = math.floor(bitLen / 2^32); local lo = bitLen & 0xFFFFFFFF
-  bytes[#bytes + 1] = (hi >> 24) & 0xFF; bytes[#bytes + 1] = (hi >> 16) & 0xFF
-  bytes[#bytes + 1] = (hi >>  8) & 0xFF; bytes[#bytes + 1] = hi & 0xFF
-  bytes[#bytes + 1] = (lo >> 24) & 0xFF; bytes[#bytes + 1] = (lo >> 16) & 0xFF
-  bytes[#bytes + 1] = (lo >>  8) & 0xFF; bytes[#bytes + 1] = lo & 0xFF
-  local h0,h1,h2,h3,h4,h5,h6,h7 = 0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
-                                  0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19
-  local w = {}
-  for chunk = 1, #bytes, 64 do
-    for i = 0, 15 do
-      local j = chunk + i*4
-      w[i+1] = ((bytes[j]<<24)|(bytes[j+1]<<16)|(bytes[j+2]<<8)|(bytes[j+3])) & 0xFFFFFFFF
-    end
-    for i = 16, 63 do
-      local s0 = (rrot(w[i-15+1],7) ~ rrot(w[i-15+1],18) ~ (w[i-15+1]>>3)) & 0xFFFFFFFF
-      local s1 = (rrot(w[i-2+1],17) ~ rrot(w[i-2+1],19) ~ (w[i-2+1]>>10)) & 0xFFFFFFFF
-      w[i+1] = (w[i-16+1] + s0 + w[i-7+1] + s1) & 0xFFFFFFFF
-    end
-    local a,b,c,d,e,f,g,h = h0,h1,h2,h3,h4,h5,h6,h7
-    for i = 0, 63 do
-      local S1 = (rrot(e,6)~rrot(e,11)~rrot(e,25)) & 0xFFFFFFFF
-      local ch = ((e&f)~((~e)&g)) & 0xFFFFFFFF
-      local t1 = (h+S1+ch+K[i+1]+w[i+1]) & 0xFFFFFFFF
-      local S0 = (rrot(a,2)~rrot(a,13)~rrot(a,22)) & 0xFFFFFFFF
-      local maj = ((a&b)~(a&c)~(b&c)) & 0xFFFFFFFF
-      local t2 = (S0+maj) & 0xFFFFFFFF
-      h=g; g=f; f=e; e=(d+t1)&0xFFFFFFFF; d=c; c=b; b=a; a=(t1+t2)&0xFFFFFFFF
-    end
-    h0=(h0+a)&0xFFFFFFFF; h1=(h1+b)&0xFFFFFFFF; h2=(h2+c)&0xFFFFFFFF; h3=(h3+d)&0xFFFFFFFF
-    h4=(h4+e)&0xFFFFFFFF; h5=(h5+f)&0xFFFFFFFF; h6=(h6+g)&0xFFFFFFFF; h7=(h7+h)&0xFFFFFFFF
-  end
-  return string.format("%08x%08x%08x%08x%08x%08x%08x%08x", h0,h1,h2,h3,h4,h5,h6,h7)
+return(">I4I4I4I4I4I4I4I4"):pack(a0,b0,c0,d0,e0,f0,g0,h0)
 end
-
-local function hmac(key, msg)
-  if #key > 64 then
-    local hex = sha256hex(key)
-    local raw = {}
-    for i = 1, 32 do raw[i] = string.char(tonumber(hex:sub(i*2-1, i*2), 16)) end
-    key = table.concat(raw)
-  end
-  if #key < 64 then key = key .. string.rep("\0", 64 - #key) end
-  local ipad, opad = {}, {}
-  for i = 1, 64 do
-    local kb = key:byte(i)
-    ipad[i] = string.char(kb ~ 0x36); opad[i] = string.char(kb ~ 0x5C)
-  end
-  local innerHex = sha256hex(table.concat(ipad) .. msg)
-  local innerRaw = {}
-  for i = 1, 32 do innerRaw[i] = string.char(tonumber(innerHex:sub(i*2-1, i*2), 16)) end
-  return sha256hex(table.concat(opad) .. table.concat(innerRaw))
+-- HMAC-SHA256 as lowercase hex, matching kernel.crypto.hmac on the host.
+local function X(k,s)
+if #k>64 then k=H(k)end
+k=k..("\0"):rep(64-#k)
+local i,o="",""
+for j=1,64 do local b=k:byte(j)i=i..string.char(b~0x36)o=o..string.char(b~0x5C)end
+return(H(o..H(i..s)):gsub(".",function(c)return("%02x"):format(c:byte())end))
 end
-
-local function ctEquals(a, b)
-  if type(a) ~= "string" or type(b) ~= "string" or #a ~= #b then return false end
-  local diff = 0
-  for i = 1, #a do diff = diff | (a:byte(i) ~ b:byte(i)) end
-  return diff == 0
+-- Constant-time compare (no early exit on the first differing byte).
+local function Q(a,b)
+if #a~=#b then return false end
+local x=0 for i=1,#a do x=x|(a:byte(i)~b:byte(i))end return x==0
 end
-
--- ============================================================
--- Replay protection
--- ============================================================
-
-local seenNonces = {}
-local seenOrder  = {}
-local SEEN_MAX   = 64  -- robots have tight RAM; small window is fine
-
-local function nonceSeen(n)
-  if seenNonces[n] then return true end
-  seenNonces[n] = true
-  seenOrder[#seenOrder + 1] = n
-  if #seenOrder > SEEN_MAX then
-    local stale = table.remove(seenOrder, 1)
-    seenNonces[stale] = nil
-  end
-  return false
+-- Replay window: the last 64 nonces.
+local N,O={},{}
+local function seen(n)
+if N[n]then return true end
+N[n]=true O[#O+1]=n
+if #O>64 then N[table.remove(O,1)]=nil end
 end
-
--- ============================================================
--- Op dispatch
--- ============================================================
-
-local function safe(call, ...)
-  local ok = pcall(call, ...)
-  return ok
-end
-
-local DISPATCH = {
-  ["move:f"] = function() if drone then drone.move(0,0,1) else robot.forward() end end,
-  ["move:b"] = function() if drone then drone.move(0,0,-1) else robot.back() end end,
-  ["move:l"] = function() if drone then drone.move(-1,0,0) else robot.turnLeft(); robot.forward(); robot.turnRight() end end,
-  ["move:r"] = function() if drone then drone.move(1,0,0) else robot.turnRight(); robot.forward(); robot.turnLeft() end end,
-  ["turn:l"] = function() if drone then drone.move(0,0,0) else robot.turnLeft() end end,
-  ["turn:r"] = function() if drone then drone.move(0,0,0) else robot.turnRight() end end,
-  ["up"]     = function() if drone then drone.move(0,1,0) else robot.up() end end,
-  ["down"]   = function() if drone then drone.move(0,-1,0) else robot.down() end end,
-  ["use:f"]  = function() if robot then robot.use() end end,
-  ["swing:f"]= function() if robot then robot.swing() end end,
-  ["place:f"]= function() if robot then robot.place() end end,
-  ["stop"]   = function() if drone then drone.move(0,0,0) end end,
-}
-
-local function dispatch(op, arg)
-  if op == "select" then
-    if robot and robot.select and type(arg) == "number" then
-      safe(robot.select, math.max(1, math.min(arg, 16)))
-    end
-    return
-  end
-  local fn = DISPATCH[op]
-  if fn then safe(fn) end
-end
-
--- ============================================================
--- Main loop
--- ============================================================
-
-modem.open(PORT)
-
+-- Drone moves are vectors; robot moves are calls. Anything missing (a
+-- drone asked to swing, a robot asked to select with no arg) errors
+-- inside the pcall and is simply not done.
+local V={["move:f"]={0,0,1},["move:b"]={0,0,-1},["move:l"]={-1,0,0},["move:r"]={1,0,0},up={0,1,0},down={0,-1,0},["turn:l"]={0,0,0},["turn:r"]={0,0,0},stop={0,0,0}}
+local function go(op,g)pcall(function()
+if op=="select"then r.select(math.max(1,math.min(g,16)))
+elseif d then local v=V[op]if v then d.move(v[1],v[2],v[3])end
+elseif op=="move:f"then r.forward()elseif op=="move:b"then r.back()
+elseif op=="move:l"then r.turnLeft()r.forward()r.turnRight()
+elseif op=="move:r"then r.turnRight()r.forward()r.turnLeft()
+elseif op=="turn:l"then r.turnLeft()elseif op=="turn:r"then r.turnRight()
+elseif op=="up"then r.up()elseif op=="down"then r.down()
+elseif op=="use:f"then r.use()elseif op=="swing:f"then r.swing()
+elseif op=="place:f"then r.place()end end)end
+m.open(7777)
 while true do
-  local sig, _, sender, port, _, data = computer.pullSignal()
-  if sig == "modem_message" and port == PORT and type(data) == "string" then
-    -- Manually parse — we can't depend on kernel.serialize here.
-    -- Format: serialize.compact-style "{k=v,...}" minimal-Lua. We just
-    -- match the few fields we expect with patterns.
-    local op    = data:match('op="([^"]+)"')
-    local arg   = tonumber(data:match('arg=([%-%d]+)') or "")
-    local nonce = data:match('nonce="([^"]+)"')
-    local mac   = data:match('mac="([%x]+)"')
-    local mag   = data:match('magic="([^"]+)"')
-
-    if mag == MAGIC and op and nonce and mac and secret then
-      -- HMAC over op || arg || nonce
-      local body = op .. "|" .. tostring(arg or "") .. "|" .. nonce
-      if ctEquals(hmac(secret, body), mac) and not nonceSeen(nonce) then
-        dispatch(op, arg)
-        if op == "ping" then
-          -- Reply so the host knows we're alive.
-          modem.send(sender, port,
-            '{magic="RCPILOT1",op="pong",arg=' ..
-            tostring(math.floor(computer.uptime())) .. '}')
-        end
-      end
-    end
-  end
+local s,_,from,port,_,x=M.pullSignal()
+if s=="modem_message"and port==7777 and type(x)=="string"and S then
+local op=x:match('op="([^"]+)"')
+local g=tonumber(x:match('arg=([%-%d]+)')or"")
+local n=x:match('nonce="([^"]+)"')
+local c=x:match('mac="(%x+)"')
+if x:match('magic="([^"]+)"')=="RCPILOT1"and op and n and c
+and Q(X(S,op.."|"..tostring(g or"").."|"..n),c)and not seen(n)then
+go(op,g)
+if op=="ping"then m.send(from,port,'{magic="RCPILOT1",op="pong",arg='..math.floor(M.uptime())..'}')end
+end
+end
 end
