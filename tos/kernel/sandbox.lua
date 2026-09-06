@@ -55,6 +55,10 @@ local BLOCKED_MODULE_NAMES = {
   ["rbmk-cmd"]                = true,
   ["rbmk-controld"]           = true,
   ["rbmk.core"]               = true,
+
+  ["rbmk-skala"]              = true,
+  ["rbmk.skala"]              = true,
+  ["rbmk.wall"]               = true,
   ["shell.panels.takeover"]   = true,
   ["shell.login"]             = true,
   ["shell.chat"]              = true,
@@ -516,7 +520,8 @@ function sandbox.build(opts)
     local line = table.concat(parts, "\t")
     if opts.stdout then
       opts.stdout(line)
-    else
+    elseif type(print) == "function" then
+
       print(line)
     end
   end

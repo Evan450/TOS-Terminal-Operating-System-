@@ -133,7 +133,7 @@ local REGISTRY = {
   intercom = { category = "extras", tier = 1, help = "Announcement system (needs the 'intercom' add-on): say/play a tape cue + broadcast it" },
 
   ["cluster-setup"] = { category = "extras", tier = 3, help = "Set this machine up as a cluster Master or Manager (guided; works before anything is installed)" },
-  rbmk     = { category = "extras", tier = 1, help = "RBMK reactor supervisor (needs the 'rbmk-control' add-on): survey/status/limits/scram" },
+  rbmk     = { category = "extras", tier = 1, help = "RBMK reactor supervisor (needs the 'rbmk-control' add-on): survey/status/limits/scram/skala/wall" },
   rsh      = { category = "extras", tier = 2, help = "Remote shell client" },
   scp      = { category = "extras", tier = 1, help = "Network file copy" },
   screen   = { category = "extras", tier = 1, help = "Seat/screen info; 'screen res <auto|max|WxH>' sets resolution" },

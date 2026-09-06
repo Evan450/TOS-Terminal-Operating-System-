@@ -155,17 +155,34 @@ function ui.drawRampBar(D, th, y, W, left, right, fg, bg)
   fg = fg or th.statusbar_fg or th.bar_fg or th.fg
   bg = bg or th.statusbar_bg or th.bar_bg or th.bg
   local cap = th.dim or fg
-  D.fill(1, y, W, 1, "░", cap, bg)
+
   D.set(1, y, "▓▒░", cap, bg)
   if W > 6 then D.set(W - 2, y, "░▒▓", cap, bg) end
 
   local lt = ufit(tostring(left or ""), math.max(0, W - 9))
-  if uwidth(lt) > 0 then D.set(5, y, " " .. lt .. " ", fg, bg) end
+  local lw = uwidth(lt)
+  local labelEnd = 3
+  if lw > 0 then
+    D.set(5, y, " " .. lt .. " ", fg, bg)
+    labelEnd = 5 + lw + 1
+    D.set(4, y, "░", cap, bg)
+  end
+
+  local rightStart = (W > 6) and (W - 2) or (W + 1)
   if right and #right > 0 then
     local rt = " " .. right .. " "
     local rx = W - 3 - #rt
-    if rx > 5 + uwidth(lt) + 2 then D.set(rx, y, rt, fg, bg) end
+    if rx > 5 + lw + 2 then
+      D.set(rx, y, rt, fg, bg)
+
+      local fx = rx + #rt
+      if fx <= W - 3 then D.fill(fx, y, W - 2 - fx, 1, "░", cap, bg) end
+      rightStart = rx
+    end
   end
+
+  local fx = labelEnd + 1
+  if fx <= rightStart - 1 then D.fill(fx, y, rightStart - fx, 1, "░", cap, bg) end
 end
 
 function ui.tabChips(tabs, activeIdx, labelW)

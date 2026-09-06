@@ -456,7 +456,15 @@ return function(C, S, deps)
       o("Then:  rbmk survey   (identifies the console's real API)", T.dim)
       return
     end
-    rbmk.run(args, o)
+    --! The third argument is the shell context, and only the
+    --! full-screen subcommands (`rbmk skala`, `rbmk wall`) use it. The
+    --! line-based ones ignore it, so `rbmk status` keeps working from
+    --! a script or an rc shim where there is no screen to own.
+    local okScr, scrMod = pcall(require, "kernel.screen")
+    rbmk.run(args, o, {
+      display = D, event = E,
+      screen  = okScr and scrMod or nil,
+    })
   end
 
   C.robot = function(args, o)
@@ -848,6 +856,122 @@ return function(C, S, deps)
     local lib = bf()
     if not lib then o("The 'blockfs' package is required:  pkg install blockfs", T.error); return end
 
+    --! A mounted volume is being driven by ONE handle: the proxy F.mount
+    --! holds, with its own block cache, free count and open files. format,
+    --! check --repair and defrag open a SECOND handle on the same sectors
+    --! and rewrite the bitmap and inodes underneath the first, whose
+    --! cached copies then say things the drive no longer does -- the
+    --! next write through the mount allocates from a stale bitmap. That
+    --! is silent corruption.
+    --!
+    --! So the volume comes OUT for the duration. It does not need to be
+    --! the operator's problem: with nothing using the mount there is
+    --! nothing to decide, so the command unmounts, works, and remounts it
+    --! at the same path. It asks only when something would actually be
+    --! disturbed -- an open file handle, or a process sitting inside the
+    --! mount -- and then it says which. The remount runs on the way out
+    --! of a FAILED action too, so a drive is never left detached because
+    --! an fsck errored.
+    local function mountedAt(addr)
+      for _, m in ipairs(F.mounts and F.mounts() or {}) do
+        if m.address == addr then return m.mountPoint, m end
+      end
+      return nil
+    end
+
+    local function mountUsers(mp)
+      local reasons, unknown = {}, false
+      for _, mm in ipairs(F.mounts and F.mounts() or {}) do
+        if mm.mountPoint == mp then
+          if mm.openFiles == nil then unknown = true
+          elseif mm.openFiles > 0 then
+            reasons[#reasons + 1] = string.format("%d open file handle(s)", mm.openFiles)
+          end
+        end
+      end
+
+      local guard = (mp:sub(-1) == "/") and mp or (mp .. "/")
+      local okL, list = pcall(function() return P and P.list and P.list() or {} end)
+      for _, pr in ipairs(okL and list or {}) do
+        local cwd = pr.cwd
+        if type(cwd) == "string" and (cwd == mp or cwd:sub(1, #guard) == guard) then
+          reasons[#reasons + 1] = string.format("%s (pid %s) is in %s",
+            tostring(pr.name or "?"), tostring(pr.pid or "?"), cwd)
+        end
+      end
+      return reasons, unknown
+    end
+
+    local function withUnmounted(addr, px, verb, action)
+      local mp = mountedAt(addr)
+      if not mp then return action() end
+
+      local reasons, unknown = mountUsers(mp)
+      if #reasons > 0 or unknown then
+        local detail = (#reasons > 0) and ("\n  " .. table.concat(reasons, "\n  "))
+          or "\n  (the driver cannot say what is open)"
+        local msg = string.format(
+          "'%s' has to take %s out of the mount table while it works.\n"
+          .. "Something is using it right now:%s\n\n"
+          .. "Continuing will pull the volume out from under it. It is\n"
+          .. "remounted at %s afterwards.", verb, mp, detail, mp)
+        local go
+        if confirmBox then
+          go = confirmBox(msg, { title = "Unmount " .. mp .. "?",
+            severity = "danger", yes = "Unmount and continue", no = "Cancel" })
+        else
+          o(msg, T.warning)
+          local ans = promptInput and promptInput("Unmount " .. mp .. " and continue? [y/N]: ", 4) or "n"
+          go = (ans or ""):lower() == "y"
+        end
+        if not go then o("Cancelled; the drive is still mounted.", T.dim); return false end
+      else
+        o(string.format("Nothing is using %s — unmounting for the %s.", mp, verb), T.dim)
+      end
+
+      local sess = helpers.sessionOf(S)
+      local uok, uerr = F.unmount(mp, sess)
+      if uok == false then
+        o("Could not unmount " .. mp .. ": " .. tostring(uerr or "?"), T.error)
+        return false
+      end
+
+      local aok, aerr = pcall(action)
+
+      local nowfn = function() return math.floor(K.uptime and K.uptime() or 0) end
+      local proxy, mErr = lib.mount(px, { now = nowfn })
+      if proxy then
+        local rok, rerr = F.mount(mp, proxy, sess)
+        if rok == false then
+          o("Remount FAILED at " .. mp .. ": " .. tostring(rerr or "?"), T.error)
+          o("  Mount it by hand:  drive mount " .. addr:sub(1, 8) .. " " .. mp, T.dim)
+        else
+          o("Remounted at " .. mp .. ".", T.dim)
+          pcall(refreshBrowser)
+        end
+      else
+        o("Remount FAILED (" .. tostring(mErr) .. "); the drive is detached.", T.error)
+        o("  Mount it by hand:  drive mount " .. addr:sub(1, 8) .. " " .. mp, T.dim)
+      end
+
+      if not aok then error(aerr, 0) end
+      return aerr
+    end
+
+    if sub == "unmount" or sub == "umount" then
+      if not adminOnly(o) then return end
+      local px, addr = proxyFor(args[2])
+      if not px then o(tostring(addr), T.error); return end
+      local mp = mountedAt(addr)
+      if not mp then o("Drive " .. addr:sub(1, 8) .. "... is not mounted.", T.dim); return end
+      local sess = helpers.sessionOf(S)
+      local uok, uerr = F.unmount(mp, sess)
+      if uok == false then o(tostring(uerr or "unmount failed"), T.error); return end
+      o("Unmounted " .. mp .. " (volume marked clean).", T.highlight)
+      pcall(refreshBrowser)
+      return
+    end
+
     if sub == "format" then
       if not adminOnly(o) then return end
       local px, addr = proxyFor(args[2])
@@ -867,9 +991,14 @@ return function(C, S, deps)
         okFmt = (ans or ""):lower() == "y"
       end
       if not okFmt then o("Cancelled.", T.dim); return end
-      local ok2, err = lib.format(px, { label = label, now = function() return math.floor(K.uptime and K.uptime() or 0) end })
-      if ok2 then o('Formatted as TBFS "' .. label .. '". Mount with: drive mount ' .. addr:sub(1, 8), T.highlight)
-      else o("Format failed: " .. tostring(err), T.error) end
+      withUnmounted(addr, px, "format", function()
+        local ok2, err = lib.format(px, { label = label, now = function() return math.floor(K.uptime and K.uptime() or 0) end })
+        if ok2 then o('Formatted as TBFS "' .. label .. '".', T.highlight)
+        else o("Format failed: " .. tostring(err), T.error) end
+      end)
+      if not mountedAt(addr) then
+        o("Mount it with: drive mount " .. addr:sub(1, 8), T.dim)
+      end
       return
     end
 
@@ -904,8 +1033,27 @@ return function(C, S, deps)
       local px, addr = proxyFor(args[2])
       if not px then o(tostring(addr), T.error); return end
       local repair = args[3] == "--repair" or args[3] == "-r"
-      local res = lib.check(px, { repair = repair, yield = coopYield })
+      local res
+      if repair then
+
+        local done = withUnmounted(addr, px, "check --repair", function()
+          res = lib.check(px, { repair = true, yield = coopYield })
+        end)
+        if done == false then return end
+      else
+        res = lib.check(px, { repair = false, yield = coopYield })
+      end
       if not res then o("Not a TBFS volume.", T.error); return end
+
+      local mp = mountedAt(addr)
+      if mp and not repair then
+        local kept = {}
+        for _, p in ipairs(res.problems) do
+          if p ~= "volume was not cleanly unmounted" then kept[#kept + 1] = p end
+        end
+        res.problems = kept; res.ok = (#kept == 0)
+        o("(mounted at " .. mp .. ": the dirty flag is expected and not counted)", T.dim)
+      end
       if res.ok then o("TBFS clean: no problems.", T.highlight)
       else
         o((res.repaired and "Repaired. Findings:" or "Problems found:"), res.repaired and T.highlight or T.warning)
@@ -933,10 +1081,12 @@ return function(C, S, deps)
         end
       end
       o("Defragmenting...", T.title)
-      local dr, derr = lib.defrag(px, { now = function() return math.floor(K.uptime and K.uptime() or 0) end })
-      if not dr then o("Defrag failed: " .. tostring(derr), T.error); return end
-      o(string.format("Defragmented %d block(s): %d%% -> %d%% fragmented.",
-        dr.moved, math.floor(dr.before * 100 + 0.5), math.floor(dr.after * 100 + 0.5)), T.highlight)
+      withUnmounted(addr, px, "defrag", function()
+        local dr, derr = lib.defrag(px, { now = function() return math.floor(K.uptime and K.uptime() or 0) end })
+        if not dr then o("Defrag failed: " .. tostring(derr), T.error); return end
+        o(string.format("Defragmented %d block(s): %d%% -> %d%% fragmented.",
+          dr.moved, math.floor(dr.before * 100 + 0.5), math.floor(dr.after * 100 + 0.5)), T.highlight)
+      end)
       return
     end
 
@@ -964,7 +1114,8 @@ return function(C, S, deps)
     end
 
     o("Usage: drive [list | info <addr> | format <addr> [label] | mount <addr> [path]", T.dim)
-    o("             | check <addr> [--repair] | defrag <addr> [--if-over N] | read <addr> <sec>]", T.dim)
+    o("             | unmount <addr> | check <addr> [--repair] | defrag <addr> [--if-over N]", T.dim)
+    o("             | read <addr> <sec>]   (format/repair/defrag need the drive unmounted)", T.dim)
   end
 
   C.tape = function(args, o)

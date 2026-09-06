@@ -7,6 +7,282 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### The operator decides where cluster task code runs — cluster-manager 1.2.0
+
+An assignment carries Lua source. It comes from the Master this Manager
+paired with, so the question is not hostile code — it is what a *runaway*
+costs. Mid-task cancellation needs `debug.sethook`, which OpenComputers
+withholds, so a task that never returns cannot be stopped: inline, it holds a
+kernel timer callback until OC's watchdog reboots the whole computer, every
+seat with it. That was the only available behaviour, and it was not written
+down anywhere an operator would look.
+
+`task_execution` in `/etc/cluster-manager.cfg` now picks:
+
+- **`inline`** (default, unchanged behaviour) — tasks run on this Manager. A
+  runaway reboots this box. `start` warns once, loudly, that the bound is not
+  there.
+- **`bridge`** — never run task code here; hand every task to an OpenOS
+  worker, where a runaway takes out a machine whose only job is running
+  tasks. An assignment with no idle worker is rejected rather than quietly
+  run here.
+- **`refuse`** — run nothing. Assignments carrying task code are rejected at
+  ACK time with a reason, so the Master schedules around this node instead of
+  collecting a failure per task. The right setting for a Manager that
+  contributes storage or presence rather than compute.
+
+A typo'd policy falls back to `inline` with a warning rather than failing
+shut. `mgr.status().task_execution` reports the live setting.
+
+### `drive` unmounts, works, and remounts — asking only when it matters
+
+`format`, `check --repair` and `defrag` open a second driver handle on the
+sectors, so they cannot run while the volume is mounted. Refusing outright
+was correct and useless: it made the operator do the unmount, the work and
+the remount by hand every time, for a volume that usually has nothing at all
+using it.
+
+They now unmount the volume, do the work, and remount it at the same path.
+The question is asked *only* when something would actually be disturbed — an
+open file handle, or a process whose working directory is inside the mount —
+and it names what: "3 open file handle(s)", "edit (pid 12) is in
+/mnt/data/d". The remount runs on the way out of a failed action too, so a
+drive is never left detached because an fsck errored. A read-only `check`
+touches none of this.
+
+The driver reports its open handles (`blockfs.openHandles`), and
+`kernel.fs.mounts()` surfaces that as `openFiles` — nil, not zero, when a
+driver cannot say, because "unknown" is not "idle".
+
+### `tape store` on a directory restored nothing — tape 2.3.0
+
+The archive stores each path relative to the base by stripping the prefix as
+a string, which leaves the separator behind: with a base of `/home/docs`,
+`/home/docs/a.txt` became `/a.txt`, and the base directory itself became `/`.
+Restore's path guard refuses an absolute path by rewinding and *returning*,
+so the very first entry aborted the whole restore. A directory archive
+restored exactly nothing and explained itself only as "REFUSING
+absolute/tainted path from tape: /".
+
+Single files were fine, which is why it lasted: `fs.split` returns the parent
+*with* its trailing slash, so the same arithmetic came out clean, and the
+obvious manual test passed.
+
+Paths are now made relative properly, and the base directory is stored as
+`.`. Restore *strips* a leading slash rather than refusing it — the join
+under the destination plus the containment check is what actually confines a
+hostile path, so `/etc/users.dat` on a crafted tape lands under the
+destination instead of aborting the restore, `..` segments and NUL are still
+refused, and tapes written by the old code restore too.
+`test_tape_archive.lua` drives the real store and restore over a writable
+fake tape: 12 assertions fail against the old code.
+
+### Cluster pairing never worked, and a cancel could run the job anyway — cluster-manager 1.1.0
+
+`cluster pair` could not succeed. The Master verifies a Manager's
+`CLUSTER_PAIR_INIT` with a MAC over the *Manager's* address (what it saw on
+the wire) and signs its confirm the same way; the Manager computed both MACs
+over the *Master's* address. Every pairing died at "pair_init MAC mismatch",
+and the Manager's own comment named the right address while the code used
+the other. Neither side's tests could see it — each was checked against a
+hand-built packet by the same author. `test_cluster_pairing.lua` now runs the
+real Manager against the real Master pair module over a routed wire with the
+real `kernel.crypto`, and fails six assertions against the old code.
+
+A `CLUSTER_CANCEL` landing between an assignment's ACK and its dispatch (one
+event-loop cycle later) found nothing inflight, reported "cancelled", and the
+assignment then ran anyway and reported a second result. Assignments are
+inflight from the ACK. Also: `onCancel` checked the sender *after* the
+unknown-id branch, so any peer could make a node emit results to its Master;
+the Master's negotiated heartbeat interval was stored and never read (every
+Manager heartbeated at the 2 s floor); `tasks_inline` was not type-checked.
+`test_cluster_manager_lifecycle.lua` drives the daemon itself.
+
+Mid-task cancellation is another `debug.sethook` casualty: on OC the hook
+never installs, and an inline task in `while true do end` freezes every seat
+until the watchdog reboots the box. The comment now says so and
+`mgr.status().cancel_midtask` reports it; between-task cancellation works
+everywhere.
+
+### tape-authenticator: `init` wiped a card that held only a menu — 1.0.2
+
+The refusal to re-initialise a keycard looked at the log alone. A card whose
+log was empty but whose menu was not — the common shape, since the menu is
+what the launcher uses — was overwritten without a word. Both are checked
+now, and `info` reports the menu.
+
+### rc-pilot never worked end to end — rc-pilot 1.1.0
+
+The one add-on with no test, and it could not have passed one. The host put
+sixteen *raw* random bytes in the nonce of a frame the EEPROM parses with
+`nonce="([^"]+)"`, so one frame in sixteen carried a `"`, the robot saw a
+shorter nonce, the MAC failed, and the keystroke vanished — hex now. On a
+`modem_message` the host threw the payload away and blocked on a second
+`pullSignal()` with no timeout, losing the pong and hanging until a key was
+pressed. Prefix resolution called `net.listPeers`, which does not exist. And
+the EEPROM was 12 KB of source, 6.9 KB stripped, for a 4096-byte chip that
+`flash` refuses to overfill: it could not be burned at all. Rewritten
+compact with the same wire format, SHA-256/HMAC and replay window; 3,683
+bytes minified.
+
+`test_rc_pilot.lua` drives the real host module against the real EEPROM
+source with the real `kernel.crypto`: the robot moves for the host's MAC and
+not for a replay, a tampered MAC, a changed op, a wrong magic, a MAC-less
+frame, or a different or absent secret; ping is answered; the minified image
+fits the chip. `--secret` on the command line is called out as landing in
+history, and the host prompts masked when the keychain has no entry.
+
+### TBFS: the cost was writes, and there were two handles on one drive — blockfs 1.1.0
+
+Measured with a counting fake drive before touching anything: writing 64 KB
+cost 384 sector writes and 131 reads for 128 data blocks. Three writes per
+block — the data, the allocation bitmap rewritten for every *bit*, and the
+indirect pointer block rewritten for every *pointer* — and every block was
+read before it was written, to preserve bytes a freshly allocated block does
+not have. The 4-slot cache added earlier had fixed the read side of that
+shape and left the write side alone.
+
+Now 136 writes and 2 reads. A 4 KB file costs 18 sector calls instead of 35
+(the TODO's original figure was 58). Removing one file from a twenty-entry
+directory costs 7 writes instead of 25. Format halves.
+
+How, without giving up write-through: bitmap and pointer writes are
+**coalesced per operation** — pinned in the cache and flushed once when the
+outermost batch closes, before the caller is told anything was written. Data
+blocks are never deferred. A machine that dies mid-batch leaves data blocks
+the bitmap still calls free and no inode referencing them: the same window
+the old per-bit writes had, and the one `fsck --repair` already closes. A
+test tears a 64 KB write with a drive that vanishes after 40 writes and
+proves the repaired volume is structurally clean, with the neighbouring file
+intact and later writes working. Fully overwritten and just-allocated blocks
+skip the read. File data no longer streams through the cache and evicts the
+inode and bitmap sectors on every large read. Block counts are kept as
+blocks are gained instead of re-walking the map after every write.
+(`test_blockfs_perf.lua`, budgets pinned as loose ceilings)
+
+**Two handles on one drive.** `drive check --repair`, `drive defrag` and
+`drive format` opened a *second* driver handle on a drive that could still
+be mounted, and the mounted proxy has its own cache, free count and open
+files. A repair or defrag rewrote the bitmap and inodes under it; the next
+write through the mount would allocate from a stale bitmap. Silent
+corruption, and there was no `drive unmount`. Those three now refuse while
+the drive is mounted and say why; `drive unmount <addr>` exists; a read-only
+`check` of a mounted volume runs but does not count the dirty flag it is
+guaranteed to see.
+
+**The dirty flag was permanent.** `kernel.fs.unmount` dropped the mount
+entry and never told the proxy, so TBFS's clean bit — set at mount, cleared
+by the proxy's `unmount()` — was never cleared through `umount`, and every
+fsck of a used volume reported "not cleanly unmounted". The kernel now calls
+a proxy's `unmount` when it has one; managed OC disks do not, and are
+untouched. (`test_fs_unmount_hook.lua`)
+
+**Two gaps against the interface TBFS claims to match exactly.**
+`makeDirectory` did not create parents, which OpenComputers' does and
+`kernel.fs` relies on — `pkg` installing into a nested path failed on a TBFS
+root. And `rename` would move a directory into its own subtree, cutting the
+only path to it. Both fixed.
+
+The pack ships the driver source unstripped, so its size is RAM on the
+machine; the new test holds it under 52 KB, and stripping pack files the way
+the release tree is stripped is written down in the TODO.
+
+### The black status bar, seventh time: a page keeps its own colours
+
+Every OpenComputers GPU buffer — the screen and each video-RAM page — is
+its own `TextBuffer` with its own current foreground and background.
+`setBackground` while a page is active sets *the page's* colour and leaves
+the screen's alone; `bitblt` copies cells, never that state. Read off the
+emulator's own GPU classes with `javap`: `setBackground` dispatches through
+`screen(bufferIndex, f)` to whichever buffer is active, and `GpuTextBuffer`
+carries its own colour setters over its own data.
+
+The seat proxy kept **one** colour cache for both. A full redraw opens a
+frame, paints everything onto the page with the status bar last, and
+closes it — so the cache says "the GPU is at `statusbar_bg`". True of the
+page. The screen is still at the prompt row's black from the last draw
+outside a frame. The 1 Hz tick then re-emits the bar, skips `setBackground`
+as redundant, and every cell lands black while the shadow records
+`statusbar_bg`. That is the operator's log line (`screen=000000
+cache=<statusbar_bg>`), the screendump that showed the page holding a
+correct bar over a black glass with an honest blit, and the "sometimes":
+it needs the page's last colour to equal the next outside draw's, which a
+theme change reshuffles. Four rounds of writer-declaration fixes could not
+see it because nothing drew outside the proxy — the proxy's own arithmetic
+was wrong about what a buffer switch does.
+
+The cache now describes the *active* buffer and the other buffer's pair is
+stashed across `beginFrame`/`endFrame`. The shared test fixture and the new
+test give every buffer its own colours, because a fixture with one shared
+pair is exactly what kept this green for six rounds.
+(`test_screen_page_colors.lua`, `fixture_glass.lua`)
+
+Three things found beside it:
+
+- **The audit checked the wrong cell.** It spot-checked the origin of the
+  first draw each second; for the status bar that is column 1, the ramp
+  cap, inside the region every tick re-emits anyway. It now audits a cell
+  the draw is about to *trust* — an elided prefix or suffix, a corner
+  outside a fill's changed box — and a draw that elides nothing audits
+  nothing.
+- **The audit would have fired every second on a T3 GPU.** It compared
+  the cached colour against `gpu.get`, and a T3 stores cells in a 6×8×5
+  cube (`0x103C4E` reads back as `0x004940`). The proxy now reads one cell
+  back the first time a colour is emitted and remembers what the hardware
+  made of it, so the comparison is like against like on any tier. Not
+  seen on the operator's T2, where TOS snaps theme colours first;
+  unverified on a real T3.
+- **The status bar re-sent itself every second.** `drawRampBar` filled
+  the whole row with the filler glyph and wrote caps and label over it,
+  so the dirty-cell diff saw every cap and label cell change twice per
+  tick — four GPU calls a second per seat for an unchanged bar. Filler is
+  now painted only where filler ends up; an unchanged tick costs nothing.
+  Rendering pinned byte-for-byte against the old algorithm.
+  (`test_ui_rampbar.lua`)
+
+### A timer that cancelled another fired twice
+
+`kernel/event.lua` walked its timer array by index, in reverse, and removed
+a fired one-shot by that index *after* its callback returned. A callback
+that cancelled a timer registered earlier (a lower index) shifted the
+array under the walk: the one-shot fired again in the same pass, and the
+index removal then deleted a different, already-processed timer. A cron
+job cancelling its own retry, or the net layer cancelling a resend from
+inside its ack timer, is exactly that shape. TODO.txt had called it
+"survivable by argument" because "a fired one-shot is already gone" — it
+was not.
+
+Two passes now: collect what is due, then settle each timer's bookkeeping
+by identity *before* its callback runs, so a callback may add or cancel
+anything. In passing, a rescheduled interval now bounds the pull's wait
+(a 0.1 s interval used to wait the full 0.5 s default).
+(`test_event_timer_reentry.lua` — 4 of 14 fail against the old loop,
+including "fired once on the first pull: got 2")
+
+### The OC sandbox sweep, and what was already true
+
+Against the emulator jar's `assets/opencomputers/lua/machine.lua`: OC
+withholds `io` entirely, `os.execute/exit/remove/rename/tmpname`,
+`collectgarbage` (absent, not "not always"), `print` (nil until an OS
+defines one), every `debug.*` but `getinfo/traceback/getlocal/getupvalue`,
+and forces `load` to text mode. TOS already guarded all of it bar one: the
+sandbox's own `print` wrapper fell through to the global `print` when a
+program had no stdout, and on a low-RAM boot — compat skipped — that
+global is nil, so the wrapper meant to serve `print()` would have raised
+from inside it. Guarded.
+
+### Prose that said things the code no longer did
+
+README's Known Limitations still described hook-based preemption and the
+`preempt.txt` breadcrumb as working; both have been dead on OC since the
+`debug.sethook` finding. README and the MANUAL's `edit` entry still
+advertised `Ctrl+C` copy, removed when the clipboard landed. README
+counted 52 blockfs tests (85). And TODO.txt carried four external-review
+items as open — the KDF salt, `pkg trust key` reading masked, manifest
+digests, bootstrap verification — that this changelog had already recorded
+as done. All corrected; the blockfs one-sector cache is the one that is
+genuinely still open.
+
 ### The network install died on the hasher it had just downloaded
 
 First install onto a bare OpenOS machine, and it failed at

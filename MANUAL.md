@@ -637,6 +637,18 @@ hierarchical filesystem — onto the bare sectors:
 - `drive format <addr> [label]` — lay down a fresh TBFS (destroys all data).
 - `drive mount <addr> [path]` — mount it at `/mnt/<label>`; from then on it
   behaves like any managed disk (browse, `cp`, securefs ACLs — all unmodified).
+- `drive unmount <addr>` — unmount it and mark the volume clean (`umount
+  <path>` does the same).
+- **Format, `check --repair` and `defrag` need the volume out of the mount
+  table** — they rewrite the block map underneath the mount's own cache, and
+  the next write through it would allocate from a stale bitmap. You do not
+  have to do that yourself: each of them **unmounts the volume, does the
+  work, and remounts it at the same path**. It only *asks* first when
+  something would actually be disturbed — an open file handle, or a process
+  whose working directory is inside the mount — and it names what. The
+  remount happens even if the work fails, so a drive is never left detached.
+  A read-only `check` needs none of this and leaves the mount alone (it also
+  doesn't report the dirty flag a mounted volume is guaranteed to have).
 - `drive check <addr> [--repair]` — fsck: verify the block map and, with
   `--repair`, rebuild the free counts from what the files actually reference.
 - `drive defrag <addr> [--if-over N]` — compact each file's blocks into
@@ -2022,7 +2034,9 @@ Show disk usage of a path subtree. *See also:* `df`.
 **edit** — `edit <file>`
 Open the built-in text editor (undo, find/replace, clipboard, Lua syntax
 coloring); creates the file if missing. Keys: Ctrl+S save, Ctrl+Q close, Ctrl+F
-find, Ctrl+H replace, Ctrl+Z undo, Ctrl+G go-to-line, Ctrl+C/X/V copy/cut/paste.
+find, Ctrl+H replace, Ctrl+Z undo, Ctrl+G go-to-line, Ctrl+Insert copy,
+Shift+Delete/^X cut, Shift+Insert/^V paste (`^C` is the kernel interrupt and
+never reaches the editor — Chapter 4.3).
 *See also:* `man edit`, Chapter 4.3.
 
 ### F

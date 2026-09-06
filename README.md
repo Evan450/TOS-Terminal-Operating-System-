@@ -9,7 +9,7 @@ A Norton Commander-inspired OS with a tile Desktop, zero-trust networking, OpenO
 
 TOS is public and installable. v1.4.0 "Iris" is the current release — install it with the [network bootstrap](#over-the-network-no-disk-no-floppy), from an install disk, or from source. Bug reports and contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-[`ROADMAP.md`](ROADMAP.md) is what is actually open — 61 items, including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
+[`ROADMAP.md`](ROADMAP.md) is what is actually open — 66 items at the time of writing (the file's own header carries the current count), including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
 
 ## Three branches
 
@@ -94,7 +94,8 @@ See [`CHANGELOG.md`](CHANGELOG.md) for detail.
   sectors so `drive format` / `drive mount` make one behave like any other
   disk. Includes fsck (`drive check --repair`) and a **defragmenter**
   (`drive defrag`, manual or `--if-over N` for cron-driven upkeep). The driver
-  is pure and ships with 52 off-box unit tests.
+  is pure and ships with its own off-box test file (85 assertions at the time
+  of writing; `test_blockfs.lua` is the current count).
 
 Also folds in the previously-unreleased maintenance pass (dead-code prune, a
 security fix, JBOD as opt-in, the mouse add-on) — see the CHANGELOG.
@@ -661,10 +662,14 @@ chat    rsh <addr> <cmd>    scp <addr>:<path> <local>    screen [list|next|N]
 ### Editor Keybindings
 
 ```
-Ctrl+S  Save       Ctrl+Q  Close tab     Ctrl+F  Find
-Ctrl+H  Replace    Ctrl+Z  Undo          Ctrl+G  Go to line
-Ctrl+C  Copy line  Ctrl+X  Cut line      Ctrl+V  Paste
+Ctrl+S       Save         Ctrl+Q        Close tab     Ctrl+F  Find
+Ctrl+H       Replace      Ctrl+Z        Undo          Ctrl+G  Go to line
+Ctrl+Insert  Copy         Shift+Delete  Cut (^X)      Shift+Insert  Paste (^V)
 ```
+
+Copy is `Ctrl+Insert`, not `Ctrl+C`: the kernel takes `Ctrl+C` as the
+foreground interrupt and blanks the signal, so `^C` never reaches the editor
+(see MANUAL §4.3).
 
 ## File Structure
 
@@ -846,18 +851,22 @@ usr/lib/tests/                    Regression tests (dev tree only; not in a Rele
 - **Packages install verified by default.** `pkg install` refuses a package whose manifest doesn't declare a SHA-256 for every file — an unverified package is unchecked executable code. The Optional Utilities build generates these hashes, so first-party add-ons install (and are integrity-checked) with no friction; a third-party package without hashes needs an explicit `pkg install --allow-unverified` (logged, and flagged in the installed-package DB).
 - **Multi-seat needs stable GPU/screen bindings.** `screen.lua` snapshots bindings at boot and on hot-plug; renaming or swapping screens at runtime can leave a seat without input until the next reboot.
 - **Packages, not modules.** As of v1.3.1 the legacy module manager is gone; `pkg` is the single install/enable/uninstall + command-dispatch system. `pkg` does dependency resolution and SHA-256 hash verification (constant-time) at install, and runs package commands in a capability sandbox whose facets are allowlisted — a manifest can never request the `legacy` (raw os/io) cap. Still: a manifest *without* declared hashes installs unverified, so write access to `/usr/modules/<name>/` is code execution at next run. Treat third-party packages with the usual caution.
-- **Scheduler preemption can be trapped by hostile code.** The wall-clock
-  budget kills a runaway process by raising an error from a debug hook — a
-  process spinning inside its *own* `pcall` catches that error and never
-  returns control, so the whole machine eventually reboots via OC's
-  "too long without yielding" watchdog (this is a Lua limitation: a hook
-  cannot yield across the C boundary, so true preemption needs C-side support
-  OC doesn't provide). TOS shrinks the blast radius: once the budget blows,
-  the hook re-arms to raise on *every* instruction (the trap loop starves
-  instead of computing), and a breadcrumb at `/var/crash/preempt.txt` names
-  the culprit — `doctor` surfaces it after the reboot. Sandboxed user code
-  can still trigger the reboot deliberately; treat it as a (attributable)
-  denial-of-service, not a containment break.
+- **There is no scheduler preemption on OpenComputers.** The wall-clock
+  budget in `kernel/process.lua` and the remote-exec step budget in
+  `kernel/net/remote.lua` are both built on `debug.sethook`, and OC's
+  sandbox deliberately withholds it (the machine uses its own hook for the
+  "too long without yielding" deadline, and guest code that could call
+  `sethook` could disarm it). So on every real machine — and in the
+  emulator — neither budget is armed: a runaway process, or hostile Lua
+  arriving through `rsh`, runs until OC's watchdog reboots the *whole
+  computer*, and the `/var/crash/preempt.txt` breadcrumb that would name the
+  culprit is never written. `proc.preemptionAvailable()` and
+  `remote.stepBudgetAvailable()` report this honestly, and the first remote
+  command to run without a budget logs a warning. The hook code stays so the
+  off-box suite exercises it, and it would arm on a host that exports
+  `sethook`. Treat a runaway as an attributable denial-of-service, not a
+  containment break — and treat `rsh` as what it is: unbounded code
+  execution for TRUSTED peers, off by default.
 - **Boot chain integrity is not yet cryptographically anchored.** `/init.lua`, `/tos/system_manifest.lua`, `/var/pkg/installed/tos-core/package.lua`, and `/etc/critical.bak` are loaded as Lua at boot; the BIOS verifies that `/init.lua` parses but does not check file hashes. Anyone with write access to those paths (ADMIN+ via securefs) gets unconditional code execution before login.
 - **XOR fallback encryption is now MAC-protected and replay-protected on the wire.** When a data card is unavailable the net layer still falls back to XOR with a hashed shared key (XOR itself remains malleable cipher-only), but the HMAC over `(algo || nonce || ciphertext)` and per-peer nonce ring buffer apply to both `aes` and `xor` modes — a captured XOR packet cannot be replayed or trivially edited without breaking the MAC. Receivers with a data card refuse inbound `enc = "xor"` packets (no downgrade). The kernel log still emits a one-time warning when the local sender has to use XOR.
 

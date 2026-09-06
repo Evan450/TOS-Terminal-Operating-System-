@@ -72,7 +72,12 @@ function fs.unmount(path)
   path = fs.normalize(path)
   if not path then return false, "invalid path" end
   if path == "/" then return false, "Cannot unmount root" end
+  local proxy = mounts[path]
   mounts[path] = nil
+
+  if type(proxy) == "table" and type(proxy.unmount) == "function" then
+    pcall(proxy.unmount)
+  end
   return true
 end
 
@@ -393,12 +398,19 @@ function fs.mounts()
     local total, used = 0, 0
     pcall(function() total = proxy.spaceTotal() end)
     pcall(function() used = proxy.spaceUsed() end)
+
+    local openFiles = nil
+    if type(proxy) == "table" and type(proxy.openHandles) == "function" then
+      local okH, n = pcall(proxy.openHandles)
+      if okH and type(n) == "number" then openFiles = n end
+    end
     result[#result + 1] = {
       mountPoint = mp,
       label      = label,
       address    = proxy.address,
       total      = total,
       used       = used,
+      openFiles  = openFiles,
     }
   end
   return result

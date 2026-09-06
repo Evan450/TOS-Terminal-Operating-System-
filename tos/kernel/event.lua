@@ -158,34 +158,54 @@ function event.pull(timeout)
   local nextDeadline = now + timeout
 
   local procMod = getProc()
-  for i = #timers, 1, -1 do
+  --! Two passes, never one. A callback may add or cancel timers, and
+  --! `timers` is a plain array: cancelling an EARLIER entry shifts every
+  --! later one down by an index. The old single reverse walk removed the
+  --! fired one-shot by index AFTER its callback ran, so a callback that
+  --! cancelled an older timer left itself in the array one slot lower
+  --! (fired again -- same pass, then every pass) and the index removal
+  --! deleted a different, already-processed timer instead.
+  --! (test_event_timer_reentry.lua)
+
+  local due = nil
+  for i = 1, #timers do
     local t = timers[i]
     if now >= t.deadline then
+      due = due or {}
+      due[#due + 1] = t
+    elseif t.deadline < nextDeadline then
+      nextDeadline = t.deadline
+    end
+  end
 
-      local stale = t.regPid ~= nil and t.regGen ~= nil and procMod
-        and procMod.genOf and (procMod.genOf(t.regPid) ~= t.regGen)
-      if stale then
-        table.remove(timers, i)
-      else
-        if procMod and procMod.withListener and t.regPid then
-          local ok, err = pcall(procMod.withListener, t.regPid, t.callback)
-          if not ok then noteTimerError(t, err) end
-        else
-          local ok, err = pcall(t.callback)
-          if not ok then
-
-            noteTimerError(t, err)
-          end
-        end
-        if t.interval then
-          t.deadline = now + t.interval
-        else
-          table.remove(timers, i)
-        end
+  if due then
+    for _, t in ipairs(due) do
+      local idx = nil
+      for i = 1, #timers do
+        if timers[i] == t then idx = i; break end
       end
-    else
-      if t.deadline < nextDeadline then
-        nextDeadline = t.deadline
+      if idx then
+
+        local stale = t.regPid ~= nil and t.regGen ~= nil and procMod
+          and procMod.genOf and (procMod.genOf(t.regPid) ~= t.regGen)
+        if stale or not t.interval then
+          table.remove(timers, idx)
+        else
+          t.deadline = now + t.interval
+
+          if t.deadline < nextDeadline then nextDeadline = t.deadline end
+        end
+        if not stale then
+
+          local ok, err
+          if procMod and procMod.withListener and t.regPid then
+            ok, err = pcall(procMod.withListener, t.regPid, t.callback)
+          else
+            ok, err = pcall(t.callback)
+          end
+
+          if not ok then noteTimerError(t, err) end
+        end
       end
     end
   end
