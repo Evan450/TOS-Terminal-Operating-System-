@@ -439,7 +439,15 @@ local function pingTick()
     if w.state == "idle" then
       -- Send a ping if we haven't pinged recently.
       if not w.last_ping_sent or (now - w.last_ping_sent) >= pingInterval then
-        sendFrame(addr, { op = "PING", time = now })
+        --! INTEGER, not the raw float -- see the matching note in
+        --! cluster/openos/cluster-worker.lua's handlePing. The MAC covers
+        --! canonicalFrame, tostring renders an integral float as "100.0"
+        --! on Lua 5.3+ and "100" on 5.2, and OpenOS workers run on either
+        --! architecture. uptime moves in 0.05 steps, so about one ping in
+        --! twenty carried a value the other side canonicalized differently
+        --! and dropped. Nobody reads the field; flooring it needs no
+        --! lockstep upgrade. (test_cluster_worker_frames.lua)
+        sendFrame(addr, { op = "PING", time = math.floor(now) })
         w.last_ping_sent = now
       end
 

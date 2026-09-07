@@ -368,8 +368,12 @@ do
 end
 
 do
-  -- K4 — the disk boots but the kernel isn't on it.
-  local mfs = fakeManagedFS({ ["/init.lua"] = "_G._TEST_BOOTED = 'NOPE'" })
+  -- K4 — a TOS disk that boots but has lost its kernel. The init.lua has
+  -- to be recognisably TOS's, because that is now what the check keys on
+  -- (see the foreign-disk case below).
+  local mfs = fakeManagedFS({
+    ["/init.lua"] = "-- TOS init.lua\n_G._TEST_BOOTED = 'NOPE'",
+  })
   local log = faultCase("kernel missing", "K4", {
     eepromData = "fsss-3333-4444\n" .. ANCHOR_LINE,
     components = { ["fsss-3333-4444"] = { type = "filesystem", proxy = mfs } },
@@ -378,6 +382,67 @@ do
   eq("kernel missing: boot address preserved", "fsss-3333-4444", log.data:match("^[^\n]*"))
   eq("kernel missing: manifest anchor preserved",
     string.rep("b", 64), log.data:match("\nTOS1:(%x+)"))
+end
+
+-- ── Someone else's disk boots. ────────────────────────────────────
+--! Operator report, real emulator: with this EEPROM flashed, the machine
+--! would not boot OpenOS. The device scan picks a disk by /init.lua --
+--! which OpenOS has -- and the next line then demanded
+--! /tos/kernel/init.lua and HALTED when it was absent. A BIOS that
+--! refuses to boot a bootable disk is not a BIOS, and there is no way
+--! out of it from the machine: the fault screen says "run 'srm'", which
+--! needs the system that just refused to start.
+--!
+--! The kernel is owed by the /init.lua that cannot run without it. These
+--! pin that it is the FILE that decides, not the presence of a /tos
+--! directory -- a half-deleted install leaves one behind, and it must not
+--! go on condemning a disk that boots perfectly well.
+do
+  -- An OpenOS-shaped disk: a real /init.lua, no TOS anything.
+  local mfs = fakeManagedFS({
+    ["/init.lua"] = "_G._TEST_BOOTED = 'OPENOS'",
+  })
+  local ok, err, log = runBios({
+    eepromData = "fsss-3333-4444",
+    components = { ["fsss-3333-4444"] = { type = "filesystem", proxy = mfs } },
+  })
+  test("foreign disk: the BIOS ran it without error", ok, err)
+  eq("foreign disk: it actually booted", "OPENOS", _G._TEST_BOOTED)
+  eq("foreign disk: no fault was parked", 0, #log.setData)
+end
+
+do
+  -- The operator's exact machine: TOS was installed and then deleted,
+  -- leaving debris behind, and the disk's /init.lua is somebody else's.
+  local mfs = fakeManagedFS({
+    ["/init.lua"] = "_G._TEST_BOOTED = 'OPENOS-AFTER-CLEANUP'",
+    ["/tos/etc/leftover.cfg"] = "-- a file the delete missed",
+    ["/tos/usr/man/ls.txt"]   = "-- and another",
+  })
+  local ok, err, log = runBios({
+    eepromData = "fsss-3333-4444",
+    components = { ["fsss-3333-4444"] = { type = "filesystem", proxy = mfs } },
+  })
+  test("leftovers: the BIOS ran it without error", ok, err)
+  eq("leftovers: TOS debris does not block a foreign boot",
+    "OPENOS-AFTER-CLEANUP", _G._TEST_BOOTED)
+  eq("leftovers: no fault was parked", 0, #log.setData)
+end
+
+do
+  -- ...and the discrimination is not "any file mentioning TOS": a TOS
+  -- disk WITH its kernel boots exactly as before.
+  local mfs = fakeManagedFS({
+    ["/init.lua"] = "-- TOS init.lua\n_G._TEST_BOOTED = 'TOS-OK'",
+    ["/tos/kernel/init.lua"] = "-- present",
+  })
+  local ok, err, log = runBios({
+    eepromData = "fsss-3333-4444",
+    components = { ["fsss-3333-4444"] = { type = "filesystem", proxy = mfs } },
+  })
+  test("healthy TOS: booted", ok, err)
+  eq("healthy TOS: init ran", "TOS-OK", _G._TEST_BOOTED)
+  eq("healthy TOS: no fault parked", 0, #log.setData)
 end
 
 do

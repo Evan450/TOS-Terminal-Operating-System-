@@ -1,6 +1,6 @@
 # The TOS Operator's Guide & Reference
 
-*The Book of TOS — for Terminal Operating System v1.4.0 "Iris"*
+*The Book of TOS — for Terminal Operating System v1.5.0 "Aletheia"*
 
 ---
 
@@ -720,7 +720,8 @@ jbod on`; see Chapter 5 and `man jbod`.)
 `intercom` (add-on) `rsh` `scp` `screen`
 
 ### 6.6 Customization & resilience
-`theme` (= `colors`) `lang` `optimize` `battery` `audio` `profile` `tutorial`
+`theme` (= `colors`) `lang` `optimize` (incl. `optimize power`) `swap` `battery`
+`audio` `profile` `tutorial`
 `alias` / `unalias` (per-user command shorthand)
 
 ### 6.6a Working out what a name means
@@ -1497,7 +1498,7 @@ piece of storage that survives a machine whose disk is the problem.
 | `C1` | 1 | CPU architecture too old — TOS needs a Lua 5.3+ CPU |
 | `D2` | 2 | No boot device: no `/init.lua` disk, no TBFS drive |
 | `B3` | 3 | The TBFS boot blob would not compile |
-| `K4` | 4 | The kernel was missing (`/tos/kernel/init.lua`) |
+| `K4` | 4 | A **TOS** `/init.lua` is there but `/tos/kernel/init.lua` is not |
 | `I5` | 5 | `/init.lua` could not be opened |
 | `I6` | 6 | `/init.lua` would not compile |
 
@@ -1553,7 +1554,7 @@ OpenComputers has no transparent paging, so TOS offers *explicit* spill-to-disk
 for cold data, backed by `/var/swap`. A store API (`swap.store/fetch/free`) and a
 `swap.table{ hot = N }` proxy (a disk-backed table with a small in-RAM LRU cache)
 let a program offload large data and page it back on demand. It's size-capped
-(`swapMaxKB`) and volatile (wiped each boot). Inspect it with `optimize swap`.
+(`swapMaxKB`) and volatile (wiped each boot). Inspect it with `swap`.
 
 **The shell uses it for cold view buffers.** A `cat` of a large file, a long
 listing or a `watch` snapshot opens a view tab holding *every* line, and you
@@ -1566,9 +1567,12 @@ to spare. Tabs that regenerate themselves (`watch`) are left alone, small
 buffers aren't worth the round-trip, and if swap is full or unavailable the
 buffer simply stays in RAM.
 
-`optimize swap` reports how many tabs are currently paged and what the
-threshold is; `optimize swap now` pages every cold tab immediately, ignoring
+`swap` reports how many tabs are currently paged and what the
+threshold is; `swap now` pages every cold tab immediately, ignoring
 the pressure check, so you can see the mechanism work on a roomy machine.
+(`optimize swap …` is the same command; the standalone spelling came back
+after an operator pointed out that `optimize swap status` reads as
+"optimise the swap status".)
 
 When a **data card** is installed, swapped data is compressed (deflate) on the
 way to disk and inflated on the way back, so more fits under the cap — automatic
@@ -2227,17 +2231,46 @@ With no argument, reports what's pending and the current limits. *See also:*
 
 ### O
 
-**optimize** — `optimize [show | swap [status|keys|clear|on|off|auto] | buffer <on|off|auto>]` **(set: admin)**
-Show or toggle TOS's two performance optimizations. **swap** is the disk-swap
-"slow RAM" feature (Chapter 9.4): `optimize swap` (or `status`/`keys`) shows the
-live scratch store, `clear` wipes it now, and `on|off|auto` sets the boot toggle
-(applies on next boot). **buffer** is the runtime **dirty-cell display buffer**:
-it remembers what every screen cell holds and skips the GPU write when a redraw
-would change nothing — a large saving for live views like `monitor` and `watch`.
-`auto` (default) enables it only with memory headroom; `on` forces it whenever it
-fits; `off` always draws directly. `optimize show` reports each optimization's
-state and the buffer's session hit rate (cell-draws skipped). (v1.4.0 folded the
-old standalone `swap` command in here.) *See also:* `mem`, `monitor`, Chapter 9.4.
+**optimize** — `optimize [show | power <off|balanced|save> | buffer <on|off|auto> | swap …]` **(set: admin)**
+Show or toggle TOS's three optimizations. `optimize show` reports each one's state
+and the display buffer's session hit rate (cell-draws skipped).
+
+**power** is the conservation profile — see `optimize power` below. **buffer** is
+the runtime **dirty-cell display buffer**: it remembers what every screen cell
+holds and skips the GPU write when a redraw would change nothing — a large saving
+for live views like `monitor` and `watch`, in both time and energy. `auto`
+(default) enables it only with memory headroom; `on` forces it whenever it fits;
+`off` always draws directly. **swap** is the disk-swap "slow RAM" feature and has
+its own top-level command; `optimize swap …` and `swap …` run the same code.
+*See also:* `swap`, `mem`, `monitor`, Chapter 9.4.
+
+**optimize power** — `optimize power [show | off|balanced|save | blank <secs|off> | idle <secs>]` **(set: admin)**
+Trade responsiveness for energy. `optimize power` on its own reports the machine's
+**measured** energy (stored, and the draw rate between two runs of the command),
+the active profile, and what each lever does. The profiles set two knobs:
+
+| profile | idle repaint | screen blanks | display buffer |
+|---|---|---|---|
+| `off` | 1 s | never | `auto` |
+| `balanced` *(default)* | 1 s | after 10 min | `auto` |
+| `save` | 5 s | after 2 min | `on` |
+
+`blank <secs>` and `idle <secs>` tune one knob without switching profile
+(`blank off` disables blanking; the minimum is 10 s so it cannot blank while you
+read). A named profile resets both. Changes apply immediately on every seat and
+persist in `/etc/tos.cfg` (`powerProfile`); tablets default to `save`.
+
+*What this actually saves, and why these levers.* OpenComputers bills energy for
+four things TOS can influence: a computer costs an order of magnitude less per
+tick while **blocked in `pullSignal`** than while running (`sleepFactor`); a
+screen is billed **per non-blank character** on it per tick; **GPU writes** are
+billed per changed cell, with `set` the priciest; and **disk I/O** is billed per
+kilobyte, writes more than reads. So a longer idle cadence means fewer wake-ups
+and fewer clock repaints, blanking to spaces on black takes the screen's standing
+cost to about nothing (and is why the "screensaver" draws nothing — anything
+prettier would cost more than what it replaced), and the display buffer removes
+GPU writes outright. The one optimization that *costs* energy is swap: paging a
+cold tab out is a disk write. *See also:* `swap`, `battery`, `doctor`, `mem`.
 
 ### P
 
@@ -2354,6 +2387,20 @@ Chapter 9.
 **ssh** — `ssh <addr>` **(tier: modem; TRUSTED peer)**
 Open an interactive remote shell on a TRUSTED machine. *See also:* `rsh`, `scp`.
 
+**swap** — `swap [status | keys | now | clear | on | off | auto]` **(toggles: admin)**
+The disk-swap "slow RAM" store on `/var/swap` (Chapter 9.4). `swap` (or `status`)
+shows what it holds, how many view tabs are paged out, and the free-RAM threshold
+that triggers paging; `keys` lists the entries; `now` pages every cold tab
+immediately, ignoring the pressure threshold (the only way to confirm the wiring
+works on a roomy box); `clear` wipes the store; `on|off|auto` set the **boot**
+toggle and apply on the next boot. The store is volatile — wiped every boot —
+and size-capped by `swapMaxKB`.
+
+Paging spends disk writes to buy RAM, and OpenComputers bills disk I/O per
+kilobyte, so swap is the one optimization that *costs* energy; see
+`optimize power`. `optimize swap …` is the same command under the older
+spelling. *See also:* `optimize`, `mem`, Chapter 9.4.
+
 ### T
 
 **tail** — `tail <file> [lines]`
@@ -2454,10 +2501,16 @@ I refused?". *See also:* `why`, `alias`, `programs`, `pkg`.
 Print the current user and tier. *See also:* `logout`, `users`.
 
 **why** — `why [<command>]`
-Explain a "permission denied". With no argument it explains the LAST command this
-seat was blocked on, in plain English, with the fix. `why <command>` explains what
-that command needs (which tier) and whether your account can run it. *See also:*
-`whoami`, `users`.
+Explain the last refusal or error, in plain English, with the fix. With no
+argument it takes whatever just failed on this seat — a tier denial, a
+protected-path refusal, a trash refusal, an out-of-memory, an unknown command —
+quotes it back and explains it. A tier denial gets the fullest answer (which tier
+the command needs against the one you hold); everything else is matched against
+the refusals TOS knows how to explain. If it does not recognise the message it
+says so and points at `log`, rather than guessing. `why <command>` explains what
+that command needs and whether your account can run it. File-browser actions
+(F8 delete and friends) count too — you do not have to have typed a command.
+*See also:* `whoami`, `users`, `protect`, `log`.
 
 ---
 

@@ -38,6 +38,13 @@ package.loaded["shell.panels.helpers"] = {
   -- This test doesn't exercise either — identity/nil keeps it honest.
   expandAlias = function(_, parts) return parts end,
   resolveProgram = function() return nil end,
+  -- The executor forgets the last failure at dispatch and records
+  -- error-coloured output as it goes, so `why` can explain it. Recorded
+  -- here too (rather than no-oped) so the stub matches the real shape.
+  clearFailure = function(St) if St then St.lastFailure = nil end end,
+  noteFailure = function(St, cmd, text)
+    if St and not St.lastFailure then St.lastFailure = { cmd = cmd, text = text } end
+  end,
 }
 package.loaded["shell.panels.editor"] = { openViewTab = function() end }
 package.loaded["kernel.pkg"] = {

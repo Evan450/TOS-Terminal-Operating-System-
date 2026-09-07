@@ -384,20 +384,20 @@ end
 function M.rootOnly(S, o)
   if M.liveTier(S) < 3 then
     -- Record the denial so `why` (no args) can explain it after the fact.
+    -- Both records: lastDenial carries the tier numbers `why` prefers,
+    -- lastFailure is the generic one every other refusal writes.
+    local r = M.fail(S, "Permission denied: root only", o)
     S.lastDenial = { cmd = S.curCmd, need = 3, have = M.liveTier(S) }
-    local msg = "Permission denied: root only"
-    if o then o(msg, S.T.error) else S.lastOut = { msg, S.T.error } end
-    return false
+    return r
   end
   return true
 end
 
 function M.adminOnly(S, o)
   if M.liveTier(S) < 2 then
+    local r = M.fail(S, "Permission denied: admin access required", o)
     S.lastDenial = { cmd = S.curCmd, need = 2, have = M.liveTier(S) }
-    local msg = "Permission denied: admin access required"
-    if o then o(msg, S.T.error) else S.lastOut = { msg, S.T.error } end
-    return false
+    return r
   end
   return true
 end
@@ -441,6 +441,133 @@ function M.whyExplain(cmd, need, have, known)
     add("your account admin rights.", "fix")
   end
   return out
+end
+
+-- ── `why` for failures that are not tier denials ────────────────────
+--
+--! `why` had exactly ONE thing it could explain: the last tier gate that
+--! fired (rootOnly/adminOnly, which record S.lastDenial). Every other
+--! failure fell through to the else-branch and printed the command's own
+--! usage -- so the operator who most wanted an explanation got a help
+--! line. That is not a rare corner: the guard that refuses `rm -r /tos`
+--! is a protected-PATH check, not a tier check, and it is the single
+--! most likely thing a new operator runs into.
+--!
+--! Operator report, real emulator: "I tried deleting the TOS folder
+--! again and it correctly stopped me ... but when I tried using the why
+--! command on it it just showed its usage."
+--!
+--! So the shell now remembers the last thing it printed in the error
+--! colour (noteFailure, called from the executor's output sink, which
+--! every command's output funnels through) and `why` explains THAT.
+
+--- Record the first error-toned line of the command currently running.
+--- First only: a command that prints an error and then three lines of
+--- advice should be explained by the error, not by the last footnote.
+function M.noteFailure(S, cmd, text)
+  if not S or S.lastFailure then return end
+  text = tostring(text or "")
+  if text == "" then return end
+  S.lastFailure = { cmd = cmd, text = text }
+end
+
+--- Forget the previous command's failure. Called at dispatch, so `why`
+--- always describes the LAST thing that happened rather than the last
+--- thing that went wrong at some point in the session.
+function M.clearFailure(S)
+  if not S then return end
+  S.lastFailure = nil
+  S.lastDenial = nil
+end
+
+--- Refuse an operation: say so on whichever surface the caller has (a
+--- command's output sink, or the status row for a keypress-driven browser
+--- action) and remember it for `why`. This is the shape every refusal
+--- already had; routing it through one function is what lets `why`
+--- explain the ones that never went through a command at all — F8 in the
+--- file browser being the exact case the operator reported.
+function M.fail(S, msg, o, cmd)
+  msg = tostring(msg or "failed")
+  if S then S.lastFailure = nil end
+  M.noteFailure(S, cmd or (S and S.curCmd), msg)
+  if o then o(msg, S.T.error)
+  elseif S then S.lastOut = { msg, S.T.error } end
+  return false
+end
+
+-- Each entry: a substring the producing code really emits, and the lines
+-- to say when it appears. The substrings are not copied by hand into the
+-- test — test_why_failure.lua builds each message from the module that
+-- produces it and asserts this table recognises it, so rewording the
+-- message breaks the test rather than silently breaking `why`.
+local FAILURES = {
+  { key = "is a protected system path", lines = {
+      { "That is a guard, not a permission problem.", "err" },
+      { "TOS keeps its own files (/tos, /etc, /init.lua, /usr) behind a", "dim" },
+      { "check that sits ABOVE the user model, so a mistake — or a", "dim" },
+      { "tampered admin account — cannot overwrite the kernel and leave", "dim" },
+      { "the machine unbootable.", "dim" },
+      { "Fix: root can stand it down for one session with  protect off", "fix" },
+      { "(it lifts at logout, and every path it allows is logged). To", "fix" },
+      { "REMOVE TOS, boot another disk and delete it from there.", "fix" },
+    } },
+  { key = "Refusing to remove protected path without -r", lines = {
+      { "You named a system path, and rm will not touch one by accident.", "err" },
+      { "Fix: add -r if you really mean the whole tree. Note the", "fix" },
+      { "protected-path guard may still refuse it — that is a separate", "dim" },
+      { "check, and `why` will say so if it fires.", "dim" },
+    } },
+  { key = "Cannot remove directory without -r", lines = {
+      { "rm removes files; a directory needs the recursive flag.", "err" },
+      { "Fix:  rm -r <path>", "fix" },
+    } },
+  { key = "Not trashed:", lines = {
+      { "The delete was REFUSED, not performed — the file is still there.", "err" },
+      { "TOS routes rm through the trash so a delete is undoable. When", "dim" },
+      { "the trash will not take a file (too large for its cap, or the", "dim" },
+      { "cap is full) the delete stops rather than quietly becoming", "dim" },
+      { "permanent.", "dim" },
+      { "Fix: empty it (`trash empty`), raise the cap, or delete for good", "fix" },
+      { "with  rm --hard <path>", "fix" },
+    } },
+  { key = "not enough memory", lines = {
+      { "The machine ran out of RAM part-way through.", "err" },
+      { "Fix: close view tabs, `trash empty`, or reboot. `free` shows", "fix" },
+      { "what is left; more RAM sticks raise the ceiling.", "fix" },
+    } },
+  { key = "could not be loaded", lines = {
+      { "The command exists — its command group would not fit in memory.", "err" },
+      { "Fix: free RAM (close tabs, reboot) and run it again.", "fix" },
+    } },
+  { key = "Unknown command:", lines = {
+      { "No command by that name is registered on this machine.", "err" },
+      { "Fix: `help` lists what there is, Tab completes names, and", "fix" },
+      { "`pkg list` shows what an add-on would provide.", "fix" },
+    } },
+  -- Least specific LAST: several messages above also contain a denial
+  -- word, and the first match wins.
+  { key = "Permission denied", lines = {
+      { "Your account is not allowed to touch that path.", "err" },
+      { "This one IS the permission model: the file's owner and mode", "dim" },
+      { "decide, so it depends on who you are as much as what you ran.", "dim" },
+      { "Fix: `whoami` shows your account and tier; an admin can grant", "fix" },
+      { "access, or run it for you.", "fix" },
+    } },
+}
+
+--- Pure: explain a failure MESSAGE. Returns { {text=,tone=}, ... }, or
+--- nil when the message matches nothing known — callers show the message
+--- itself and point at the log rather than inventing an explanation.
+function M.explainFailure(text)
+  if type(text) ~= "string" then return nil end
+  for _, f in ipairs(FAILURES) do
+    if text:find(f.key, 1, true) then
+      local out = {}
+      for _, l in ipairs(f.lines) do out[#out + 1] = { text = l[1], tone = l[2] } end
+      return out
+    end
+  end
+  return nil
 end
 
 --! The ONE way to log a seat out.
@@ -527,9 +654,7 @@ function M.canAccess(S, path, mode, o)
       ok, reason = false, "access check unavailable"
     end
     if not ok then
-      local msg = "Permission denied: " .. (reason or path)
-      if o then o(msg, S.T.error) else S.lastOut = { msg, S.T.error } end
-      return false
+      return M.fail(S, "Permission denied: " .. (reason or path), o)
     end
     return true
   end
@@ -537,9 +662,7 @@ function M.canAccess(S, path, mode, o)
     for _, sp in ipairs({ "/tos", "/etc", "/var" }) do
       if path == sp or path:sub(1, #sp + 1) == sp .. "/" then
         if S.who ~= "root" then
-          local msg = "Permission denied: system path"
-          if o then o(msg, S.T.error) else S.lastOut = { msg, S.T.error } end
-          return false
+          return M.fail(S, "Permission denied: system path", o)
         end
       end
     end

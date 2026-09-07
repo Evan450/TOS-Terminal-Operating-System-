@@ -589,5 +589,10 @@ end
 -- Test hook (not part of the public API): the protected-target guard,
 -- exposed so the node-vs-subtree behavior can be unit-tested off-box.
 securefs._isProtectedTarget = function(p, s) return _isProtectedTarget(p, s) end
+-- Same, for the refusal TEXT. `why` recognises this message by substring
+-- to explain it, and a substring match against a message defined in
+-- another file is a seam that rots silently. test_why_failure.lua builds
+-- the real message from here and asserts the explainer still knows it.
+securefs._protectedMsg = function(v, h, s) return protectedMsg(v, h, s) end
 
 return securefs

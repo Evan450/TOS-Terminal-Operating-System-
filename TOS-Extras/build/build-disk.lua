@@ -437,6 +437,7 @@ local LEGACY_SOURCES = {
     ["/usr/lib/cluster/net.lua"]       = "cluster/master-skeleton/lib/cluster/net.lua",
     ["/usr/lib/cluster/api.lua"]       = "cluster/master-skeleton/lib/cluster/api.lua",
     ["/usr/lib/cluster/pair.lua"]      = "cluster/master-skeleton/lib/cluster/pair.lua",
+    ["/usr/lib/cluster/store_client.lua"] = "cluster/master-skeleton/lib/cluster/store_client.lua",
   },
 }
 

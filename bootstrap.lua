@@ -559,6 +559,42 @@ end
 
 local function kb(n) return string.format("%.0f KB", n / 1024) end
 
+--! REMOVE A TREE, LEAVES FIRST. OpenComputers' filesystem component does
+--! not recurse: the disk-backed one compiles down to Java's File.delete(),
+--! which refuses a non-empty directory, and OpenOS's filesystem.remove
+--! hands the path straight to it (its own `rm` implements -r itself, in
+--! the shell). So `fs.remove(stagingDir)` on a staging tree full of files
+--! has always returned false.
+--!
+--! Operator report, real emulator: the bootstrap "doesn't clean up after
+--! itself". It believed it did -- the cleanup below is written, and its
+--! comment explains why reclaiming ~1.2 MB matters on a 4 MB boot drive
+--! -- but the call could not work, so every install left a second full
+--! copy of the release behind, and the stale-directory sweep at the top
+--! of a retry could not clear it either.
+local function removeTree(path)
+  if not fs.exists(path) then return true end
+  if fs.isDirectory(path) then
+    local names = {}
+    -- OpenOS's fs.list returns an iterator; a plain table is also
+    -- tolerated so this does not depend on which one you get.
+    local okL, it = pcall(fs.list, path)
+    if okL and it then
+      if type(it) == "function" then
+        for name in it do names[#names + 1] = name end
+      elseif type(it) == "table" then
+        for _, name in ipairs(it) do names[#names + 1] = name end
+      end
+    end
+    for _, name in ipairs(names) do
+      local child = path .. "/" .. tostring(name):gsub("/$", "")
+      removeTree(child)
+    end
+  end
+  local okR = pcall(fs.remove, path)
+  return okR and not fs.exists(path)
+end
+
 --! Roughly what the payload needs. Not read from the manifest, which
 --! declares no sizes -- it is a floor for WARNING only, never a refusal,
 --! so an unusual layout that knows better is not blocked by our guess.
@@ -594,7 +630,7 @@ do
 end
 if fs.exists(stagingDir) then
   warn("Removing a stale staging directory from a previous run: " .. stagingDir)
-  pcall(fs.remove, stagingDir)
+  removeTree(stagingDir)
 end
 if not fs.makeDirectory(stagingDir) then
   fail("Cannot create staging directory: " .. stagingDir)
@@ -699,7 +735,7 @@ if outOfSpace then
   warn("    is the most room, so it will pick it up automatically.")
   warn("  - On a machine with only a small tmpfs, an installed HDD with")
   warn("    free space is enough -- it does not have to be the target.")
-  pcall(fs.remove, stagingDir)
+  removeTree(stagingDir)
   return
 end
 
@@ -745,7 +781,7 @@ do
     warn("Retry: these are usually transient. If the same file fails")
     warn("every time, the release is broken; install from a disk and")
     warn("report which file.")
-    pcall(fs.remove, stagingDir)
+    removeTree(stagingDir)
     return
   end
 end
@@ -837,7 +873,7 @@ end
 --! success there is nothing left to want from it.
 do
   local freed = stagingFree and freeSpace(stagingDir)
-  if pcall(fs.remove, stagingDir) then
+  if removeTree(stagingDir) then
     local after = freeSpace("/")
     if after and freed then
       ok("Removed the staging copy (" .. kb(after) .. " free now)")
@@ -848,5 +884,31 @@ do
     warn("Could not remove the staging copy at " .. stagingDir .. ".")
     warn("It is a full second copy of the release; delete it to reclaim")
     warn("the space: rm -r " .. stagingDir)
+  end
+end
+
+--! ...AND THE SCRIPT ITSELF, which is the other half of "it doesn't clean
+--! up after itself". This is downloaded to the filesystem ROOT (the
+--! documented one-liner saves it to /bootstrap.lua, and it has to be an
+--! absolute path because the root is not on OpenOS's PATH). It is dead
+--! weight the moment the install succeeds: the machine reboots into TOS,
+--! and a second install would re-download it in one line anyway.
+--!
+--! Only on SUCCESS, only the file we were actually run from, and only
+--! when that is a plain file at the root -- never a guess. Removing the
+--! running script is safe: it was read into memory before it ran.
+do
+  local self = nil
+  local a0 = (arg and arg[0]) or nil
+  if type(a0) == "string" and a0 ~= "" then
+    self = a0
+    if self:sub(1, 1) ~= "/" then self = "/" .. self end
+  end
+  if self and fs.exists(self) and not fs.isDirectory(self) then
+    if pcall(fs.remove, self) and not fs.exists(self) then
+      ok("Removed " .. self .. " (re-download it with the same one-liner)")
+    else
+      warn("Could not remove " .. self .. "; delete it when convenient.")
+    end
   end
 end

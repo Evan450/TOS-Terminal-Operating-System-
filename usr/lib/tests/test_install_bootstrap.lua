@@ -260,8 +260,25 @@ do
       bootstrapSrc:find("outOfSpace", 1, true) ~= nil)
     test("and the out-of-space message names space, not just the write",
       bootstrapSrc:find("OUT OF SPACE", 1, true) ~= nil)
-    test("a failed netinstall does not leave the staging tree behind",
-      bootstrapSrc:find("pcall(fs.remove, stagingDir)", 1, true) ~= nil)
+    --! This used to assert the presence of `pcall(fs.remove, stagingDir)`
+    --! -- a call that CANNOT do what the assertion's name claims. OC's
+    --! filesystem component does not recurse (the disk-backed one is
+    --! Java's File.delete(), which refuses a non-empty directory), so
+    --! every one of those calls returned false and the staging tree
+    --! survived. An operator reported exactly that: "the bootstrap
+    --! doesn't clean up after itself." The test passed throughout,
+    --! because it was checking that a line existed rather than that it
+    --! worked.
+    test("the staging tree is removed with a RECURSIVE delete",
+      bootstrapSrc:find("removeTree(stagingDir)", 1, true) ~= nil)
+    test("...and removeTree actually walks children",
+      bootstrapSrc:find("local function removeTree", 1, true) ~= nil
+      and bootstrapSrc:find("fs.list", 1, true) ~= nil)
+    test("no bare fs.remove is left on the staging directory",
+      bootstrapSrc:find("pcall(fs.remove, stagingDir)", 1, true) == nil)
+    test("the bootstrap removes ITSELF once the install succeeds",
+      bootstrapSrc:find("arg and arg%[0%]") ~= nil
+      and bootstrapSrc:find("re%-download it with the same one%-liner") ~= nil)
 
     -- A long wait must LOOK like a wait, not like a hang. The probe used
     -- to print "probing main ... " and then go silent for however long

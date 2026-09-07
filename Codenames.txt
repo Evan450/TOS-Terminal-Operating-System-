@@ -1,10 +1,11 @@
 Current:
-1.4.0: "Iris" (UI focus — the Desktop tile home screen, the Settings app,
-        and file-browser type glyphs. Iris: Greek goddess of the rainbow
-        and messenger of the gods — fitting for a colour/visual release —
-        and the mythology + astronomy streak holds (7 Iris is one of the
-        brightest asteroids). Also the part of the eye you LOOK with,
-        which is the whole point of this release.)
+1.5.0: "Aletheia" (Truth focus — an audit of TOS's own claims. Comments that
+        justified behaviour the code didn't have, prose describing renamed
+        commands, two config keys documented as saving power that nothing
+        read, and nine subsystems whose passing test file had never driven
+        both real sides. Aletheia: the Greek spirit of truth and the
+        un-concealed, which is the whole job here — and the mythology +
+        astronomy streak holds (259 Aletheia is an asteroid).)
 Future:
 N/A (so far)
 Previous:
@@ -22,3 +23,9 @@ Previous:
         hundred-eyed guardian of myth: fitting for a "watch everything" security
         pass, and it keeps the mythology + astronomy streak (there's an Argus
         constellation too). Continues the security-codename line after Aegis.)
+1.4.0: "Iris" (UI focus — the Desktop tile home screen, the Settings app,
+        and file-browser type glyphs. Iris: Greek goddess of the rainbow
+        and messenger of the gods — fitting for a colour/visual release —
+        and the mythology + astronomy streak holds (7 Iris is one of the
+        brightest asteroids). Also the part of the eye you LOOK with,
+        which is the whole point of this release.)

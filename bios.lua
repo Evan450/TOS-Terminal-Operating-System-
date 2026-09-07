@@ -240,7 +240,6 @@ end
 -- ── Managed-FS POST + boot ──────────────────────────────────
 -- (/init.lua presence was already the selection criterion; open+load
 -- below still catch removal/unreadability/corruption.)
-if not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing")end
 local q=f.open("/init.lua","r")
 if not q then F("I5","cannot open /init.lua")end
 -- Chunk list + table.concat, NOT z=z..chunk: repeated concat churns
@@ -249,9 +248,25 @@ if not q then F("I5","cannot open /init.lua")end
 local z={}
 repeat local x=f.read(q,4096)if x then z[#z+1]=x end until not x
 f.close(q)
+z=table.concat(z)
+-- K4 IS FOR A TOS DISK, AND ONLY A TOS DISK.
+--
+-- This check used to run before the file was even opened, on any disk the
+-- scan had picked -- and the scan picks by /init.lua alone, which OpenOS
+-- has too. So flashing this EEPROM made the machine refuse to boot
+-- OpenOS: /init.lua found, /tos/kernel/init.lua absent, halt. Operator
+-- report, and they were right to blame the BIOS. A BIOS that will not
+-- boot a bootable disk is not a BIOS.
+--
+-- The kernel is owed by the /init.lua that CANNOT run without it, which
+-- is ours; naming that fault before it becomes a panic is what SRM Basic
+-- is for. Testing the file we just read rather than a /tos directory
+-- also survives a half-deleted install, where leftovers would otherwise
+-- keep condemning a disk that boots fine.
+if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing")end
 -- Text mode only: reject bytecode so a tampered /init.lua can't smuggle
 -- in pre-compiled chunks (bytecode skips Lua's validity checks).
-local fn,er=load(table.concat(z),"=init.lua","t")
+local fn,er=load(z,"=init.lua","t")
 if not fn then F("I6",er)end
 -- The POST-OK beep, the way a 5150 told you the board came up. This is
 -- the branch almost every machine takes; the beep was originally added

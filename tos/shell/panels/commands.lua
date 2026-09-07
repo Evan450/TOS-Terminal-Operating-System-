@@ -164,7 +164,12 @@ local REGISTRY = {
   install  = { category = "admin", tier = 2, help = "Install a package (shortcut for 'pkg install')", alias = "pkg" },
   uninstall = { category = "admin", tier = 2, help = "Remove a package (shortcut for 'pkg uninstall')", alias = "pkg" },
   diag     = { category = "admin", tier = 1, help = "Runtime health", alias = "doctor" },
-  optimize = { category = "admin", tier = 1, help = "Optimizations: swap (status/clear/keys/on/off), display buffer" },
+  optimize = { category = "admin", tier = 1, help = "Optimizations: power profile, display buffer, disk swap" },
+  --! `swap` came BACK as a command after v1.4.0, when an operator used the
+  --! folded-in form and reported it reads wrong ("optimize swap status"
+  --! parses as optimising a status). Same function, two names; the
+  --! subcommand stays so nothing that documented it breaks.
+  swap     = { category = "admin", tier = 1, help = "Disk swap ('slow RAM' on /var/swap): status/keys/now/clear/on/off/auto" },
   bootsettings = { category = "admin", tier = 2, help = "Edit boot profile/verbosity/toggles (DEL during boot = visual editor)" },
   kiosk    = { category = "admin", tier = 2, help = "Kiosk-mode info (log in as 'kiosk' to activate)" },
   profile  = { category = "core",  tier = 0, help = "Per-user profile (theme, env, startup, prompt)" },
@@ -249,10 +254,11 @@ local NEEDS = {
   -- The Intercom needs the mesh to tell anyone; a tape drive only adds the
   -- voice, so `net` (not the drive) is what gates the command being useful.
   intercom = "net",
-  -- `swap` is gone from here: the command was folded into `optimize swap`
-  -- in v1.4.0, so NEEDS.swap keyed a name helpList can never look up. The
-  -- "swap" TOKEN is still live -- core.lua's help asks needMet("swap")
-  -- directly to decide whether to show the optimize row.
+  -- `swap` is a command again (post-1.4.0), so it keys a real name once more:
+  -- the row is hidden on a box with no swap store rather than advertising
+  -- a command whose every subcommand answers "Swap not available".
+  -- core.lua's help also asks needMet("swap") directly for the same reason.
+  swap = "swap",
   audio = "audio", compat = "compat", jbod = "jbod",
   -- netfs is useless without a mesh: both halves (serving an export,
   -- mounting someone else's) are network operations.

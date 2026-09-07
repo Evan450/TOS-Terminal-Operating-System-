@@ -198,12 +198,25 @@ function M.build(S, deps)
     -- Record the command being dispatched so the tier gates (helpers
     -- adminOnly/rootOnly) can name it when they record a denial for `why`.
     S.curCmd = name
+    -- ...and forget the PREVIOUS command's failure, so `why` explains the
+    -- last thing that happened rather than the last thing that ever went
+    -- wrong. `why` itself is exempt: clearing here would erase the very
+    -- failure it was typed to explain.
+    if name ~= "why" then helpers.clearFailure(S) end
     local args = {}
     for i = 2, #parts do args[#args + 1] = parts[i] end
 
     local buf = {}
     local function o(text, color)
       buf[#buf + 1] = { tostring(text), color or T.fg }
+      -- The one place every command's output passes through, which makes
+      -- it the one place that can remember what failed for `why`. Colour
+      -- is the signal because it is what commands already set: nothing
+      -- had to be re-plumbed to report an error, and a command added
+      -- tomorrow is covered without knowing `why` exists.
+      if color == T.error and name ~= "why" then
+        helpers.noteFailure(S, name, text)
+      end
       -- Cooperative slice for other seats (#REV multi-seat freeze):
       -- every command funnels output through here, so long printing
       -- commands (ls -R, du, find, verify) yield for free. Throttled

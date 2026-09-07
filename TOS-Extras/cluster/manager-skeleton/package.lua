@@ -15,7 +15,7 @@
 -- surface (printable terminals, easy file I/O).
 return {
   name        = "cluster-manager",
-  version     = "1.2.0",
+  version     = "1.2.1",
   kind        = "service",
   category    = "network",
   description = "Cluster Manager: registers with Master, accepts assignments, dispatches to workers.",
@@ -33,6 +33,19 @@ return {
     "/usr/lib/cluster/protocol.lua",
     "/usr/lib/cluster/worker.lua",
   },
+  --! cluster-storage declares `requires = { "cluster-protocol" }`, and no
+  --! package by that name has ever existed -- so `pkg install
+  --! cluster-storage` would fail resolution on a dependency nobody could
+  --! satisfy. It has not bitten yet only because cluster-storage is 0.1.0
+  --! and the pack excludes anything below 1.0.0.
+  --!
+  --! `provides` is the mechanism already used for tape/tape-storage, and
+  --! it makes the existing declaration resolve to the package that really
+  --! ships /usr/lib/cluster/protocol.lua -- this one. It is a bandage over
+  --! a packaging question, not an answer to it: a Storage Node should not
+  --! have to install a whole Manager daemon to get the wire format. The
+  --! real fix is a small `cluster-protocol` package, recorded in TODO.txt.
+  provides    = { "cluster-protocol" },
   -- No `commands` map: the operator CLI ships as /usr/bin/cluster-manager.lua
   -- and is run from PATH at full shell privilege (the package sandbox would
   -- withhold the live kernel net/component surface it needs). Omitted on

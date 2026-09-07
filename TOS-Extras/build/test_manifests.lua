@@ -52,6 +52,21 @@ for _, root in ipairs({ "modules", "cluster" }) do
 end
 test("found source manifests to lint", #manifests > 0)
 
+--! Every `requires` must name a package that EXISTS. cluster-storage asked
+--! for "cluster-protocol", which has never been the name of anything --
+--! `pkg install cluster-storage` would have failed resolution on a
+--! dependency nobody could satisfy. It never bit because that package is
+--! 0.1.0 and the pack excludes anything below 1.0.0, so the manifest was
+--! wrong in a place no test looked and no install reached.
+local knownPkg = {}
+for _, mpath in ipairs(manifests) do
+  local okN, mm = pcall(dofile, mpath)
+  if okN and type(mm) == "table" and type(mm.name) == "string" then
+    knownPkg[mm.name] = true
+    for _, alias in ipairs(mm.provides or {}) do knownPkg[tostring(alias)] = true end
+  end
+end
+
 -- Capabilities the package sandbox actually offers. A manifest asking for
 -- anything else has its request dropped at load, so flag it.
 --
@@ -147,6 +162,13 @@ for _, mpath in ipairs(manifests) do
     end
     test(label .. ": all capabilities are sandbox-grantable", capsValid)
 
+    -- (3a) dependencies must name a package that exists (or an alias some
+    -- package `provides`). See the note beside knownPkg above.
+    for _, req in ipairs(m.requires or {}) do
+      test(label .. ": dependency '" .. tostring(req) .. "' names a real package",
+        knownPkg[tostring(req)] == true)
+    end
+
     -- (3) service packages must ship an /etc/rc.d/<name>.lua to start.
     if m.kind == "service" then
       local hasRc = false
@@ -154,6 +176,66 @@ for _, mpath in ipairs(manifests) do
         if tostring(f):match("^/etc/rc%.d/.+%.lua$") then hasRc = true end
       end
       test(label .. ": service package ships an /etc/rc.d script", hasRc)
+    end
+
+    --! (4) EVERY SIBLING MODULE A SHIPPED FILE REQUIRES MUST ITSELF SHIP.
+    --!
+    --! cluster-master's clusterd.lua opens with an unguarded
+    --! `require("cluster.store_client")`, and store_client.lua was in
+    --! neither the manifest nor the builder's source map. The file sits
+    --! right beside the six that ARE listed, so everything worked in the
+    --! source tree; the INSTALLED package was missing it, and the Master
+    --! daemon died at load on the machine that installed it. Nothing
+    --! noticed, because every test loads the daemon from source.
+    --!
+    --! So: read each shipped Lua file, find what it requires from its own
+    --! package namespace, and check the manifest ships that too. Static,
+    --! which is the point -- it catches the file that is present here and
+    --! absent there without needing to install anything.
+    local declared, sourceOf = {}, {}
+    for _, f in ipairs(m.files or {}) do declared[tostring(f)] = true end
+    -- Where each declared target's source lives (mirror, then flat, then
+    -- the two skeleton layouts the builder also knows).
+    local function sourceFor(target)
+      for _, cand in ipairs({
+        dir .. target,
+        dir .. "/" .. target:match("([^/]+)$"),
+        dir .. "/lib/" .. (target:match("^/usr/lib/(.+)$") or "\1"),
+        dir .. "/usr/lib/" .. (target:match("^/usr/lib/(.+)$") or "\1"),
+      }) do
+        if readFile(cand) then return cand end
+      end
+      return nil
+    end
+    for _, f in ipairs(m.files or {}) do
+      local target = tostring(f)
+      if target:match("%.lua$") then
+        local src = sourceFor(target)
+        sourceOf[target] = src
+        if src then
+          local body = readFile(src) or ""
+          for req in body:gmatch('require%s*%(?%s*"([%w_%.%-]+)"') do
+            -- Only the package's OWN namespace: "cluster.store_client"
+            -- from a package whose files live under /usr/lib/cluster/.
+            local ns, leaf = req:match("^([%w_%-]+)%.([%w_%-]+)$")
+            if ns and leaf then
+              local wanted = "/usr/lib/" .. ns .. "/" .. leaf .. ".lua"
+              -- Only judge it when the package clearly OWNS that namespace
+              -- (it already ships at least one file under it) and the file
+              -- really is sitting in this package's source tree.
+              local ownsNs = false
+              for d in pairs(declared) do
+                if d:match("^/usr/lib/" .. ns .. "/") then ownsNs = true; break end
+              end
+              if ownsNs and sourceFor(wanted) then
+                test(label .. ": " .. target:match("([^/]+)$") .. " requires '"
+                  .. req .. "', so the manifest must ship " .. wanted,
+                  declared[wanted] == true)
+              end
+            end
+          end
+        end
+      end
     end
   end
 end

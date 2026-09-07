@@ -160,9 +160,11 @@ do
   }
   local stillMissing = {}
   for _, name in ipairs(WERE_MISSING) do
-    -- `swap` was folded into `optimize` in v1.4.0 and is legitimately
-    -- gone from the registry; skip anything the registry no longer
-    -- claims rather than asserting a command back into existence.
+    -- Skip anything the registry no longer claims, rather than asserting
+    -- a retired command back into existence. (`swap` was the example
+    -- here while it was folded into `optimize`; it is a command again,
+    -- so it is now checked like any other. `device` and `restore` are
+    -- the live cases.)
     if Cmds.entry(name) and type(C[name]) ~= "function" then
       stillMissing[#stillMissing + 1] = name
     end

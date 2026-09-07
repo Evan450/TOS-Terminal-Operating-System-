@@ -11,7 +11,7 @@ local defaults = {
   HOME     = "/",
   SHELL    = "/tos/shell/init.lua",
   TERM     = "tos",
-  TOS_VERSION = _G._TOS and _G._TOS.version or "1.4.0",
+  TOS_VERSION = _G._TOS and _G._TOS.version or "1.5.0",
 }
 
 --- Get the env table for the current process, or system defaults.

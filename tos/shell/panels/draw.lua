@@ -855,7 +855,7 @@ function M.shell(S, widgetDefs)
   -- legends re-mark it after they have actually drawn.
   if okH and home then home.markToggle(S, S.OUT_ROW, nil, nil) end
   if S.outLines and #S.outLines > 0 then M.outLines(S)
-  elseif S.lastOut then M.outRow(S, S.lastOut[1], S.lastOut[2])
+  elseif S.lastOut then M.outMessage(S, S.lastOut[1], S.lastOut[2])
   elseif tiles then
     local txt, ts, te = home.hintText(S, tab)
     M.outRow(S, txt, S.T.dim)
@@ -865,14 +865,38 @@ function M.shell(S, widgetDefs)
   M.statusBar(S, widgetDefs)
 end
 
+--! A one-line result that does not fit gets the rows it needs.
+--!
+--! Operator report, real emulator: an error ran off the right edge and
+--! stopped mid-word -- "Refused: removing /usr is a protected system
+--! path. This guard sit". The message was written to explain a refusal
+--! and the explanation is the half that got cut, which is the worst
+--! possible place to lose it.
+--!
+--! S.lastOut is one row by construction and outRow truncates to fit. The
+--! multi-row region already exists for command output (M.outLines, which
+--! grows upward and stops at the top of the content area), so a long
+--! message uses it instead of being cut. Short ones -- almost all of
+--! them -- still take exactly one row and look identical.
+--! (test_out_message_wrap.lua)
+function M.outMessage(S, text, color)
+  local W = S.W
+  local s = tostring(text or "")
+  if uwidthRow(s) <= W then return M.outRow(S, s, color) end
+  local wrapped = helpers.wrapLine(s, W)
+  local lines = {}
+  for _, l in ipairs(wrapped) do lines[#lines + 1] = { l, color } end
+  M.outLines(S, lines)
+end
+
 -- A short multi-line command result shown INLINE — a transient region just
 -- above the prompt, drawn over the bottom of the file list — instead of
 -- opening a whole tab for a few lines (the executor gates long output to a
 -- real scrollable tab). Cleared on the next keypress (events.lua), which
 -- redraws the list. Grows upward from OUT_ROW and never overruns the list top.
-function M.outLines(S)
+function M.outLines(S, override)
   local D, T, W = S.D, S.T, S.W
-  local lines = S.outLines
+  local lines = override or S.outLines
   if not lines or #lines == 0 then return end
   -- Never grow past the top of the CONTENT region. In the files view
   -- that is the list; on tiles it is one row lower, because the band

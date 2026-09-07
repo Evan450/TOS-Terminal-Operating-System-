@@ -109,8 +109,14 @@ do
     test("Confirm is the second", body:find('opts%.yes or "Confirm"') ~= nil)
     test("focus starts on Cancel", body:find("local buf, focus = \"\", 1") ~= nil)
     test("Esc returns false", body:find("if c == 1 or b == 17 then") ~= nil)
-    test("it reuses drawDialog rather than a new look",
-      body:find("drawDialog(S, style, title, lines, labels, focus", 1, true) ~= nil)
+    -- The point is that it renders through the SHARED dialog renderer
+    -- rather than growing a look of its own. It goes through framedDraw
+    -- now (which calls drawDialog inside the seat's frame, so a repaint
+    -- lands in one blit instead of flickering); either spelling satisfies
+    -- what this is actually guarding.
+    test("it reuses the shared dialog renderer rather than a new look",
+      body:find("framedDraw(S, style, title, lines, labels, focus", 1, true) ~= nil
+      or body:find("drawDialog(S, style, title, lines, labels, focus", 1, true) ~= nil)
     test("Confirm is inert until the word matches",
       body:find("elseif matched then", 1, true) ~= nil)
     test("no first-letter hotkeys (they would eat the typing)",

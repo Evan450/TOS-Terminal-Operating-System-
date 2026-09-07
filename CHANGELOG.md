@@ -5,7 +5,216 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ---
 
-## Unreleased — the OS that fits in the machine you have
+## v1.5.0 "Aletheia" — the OS that fits in the machine you have
+
+Named for the Greek spirit of truth, because that is what this release was
+about. It began as a TODO burn-down and turned into an audit of TOS's own
+claims: comments that justified behaviour the code did not have, prose that
+described commands that had been renamed, config keys documented as doing work
+that nothing read, and — over and over — packages with a passing test file that
+had never been run end to end. Nine subsystems were broken at a seam where two
+halves each looked correct alone: cluster pairing, the cluster Master's shipped
+package, the worker bridge, `tape store` on a directory, tape-authenticator's
+`init`, rc-pilot, the TBFS write path, `drive`'s mount handling, and the
+network installer's own hasher.
+
+The method that found them is worth stating, because the passing tests are what
+hid them: find a seam where two components must agree, write a test that drives
+**both real sides**, and prove it fails against the code as shipped. A test
+asserting that a line *exists* passes forever; three of the four bugs an
+operator found in the public build had exactly such a test standing guard.
+
+Also here: an operator ran the GitHub release in an emulator and reported six
+faults across two rounds — errors running off-screen, a bootstrap that never
+cleaned up, flickering dialogs, a trash that silently turned recoverable
+deletes into permanent ones, a BIOS that refused to boot anything but TOS, and
+a `why` command that could not explain the refusal it was reached for. All six
+are fixed. The suite went from 192 passing with 2 failing to 213 passing with
+none, and the new tests were each proved to fail against the code they replaced.
+
+### `why` could not explain the refusal it was reached for
+
+`why` with no argument printed its own usage after the operator hit the guard
+that stops `rm -r /tos`. It knew about exactly one kind of failure: a tier
+denial, recorded by `rootOnly`/`adminOnly`. The protected-path guard is not a
+tier check — it sits deliberately *above* the permission model — so the single
+most likely refusal on the system was the one `why` had nothing to say about.
+Neither did a trash refusal, an out-of-memory, or an unknown command.
+
+The shell now remembers the last thing it printed in the error colour and
+`why` explains that. The recording happens in the executor's output sink —
+the one place every command's output already passes through, and the reason a
+command written tomorrow is covered without knowing `why` exists — plus
+`helpers.fail`, which is the shape every refusal already had, so keypress-driven
+actions in the file browser (F8 being the reported one) are covered too. The
+explanations are matched against messages the producing code really emits, and
+`test_why_failure.lua` builds each one *from the module that produces it*
+rather than from a copy, so rewording a refusal breaks the test instead of
+silently breaking `why`. Where nothing matches, `why` says it has no
+explanation and points at `log` — a confident wrong answer being worse than
+the usage line it replaced.
+
+### `swap` is a command again, and `optimize` is a real umbrella
+
+Two things the operator asked for, from using the release rather than reading
+it. v1.4.0 had folded `swap` into `optimize swap`; the verdict after living
+with it was that it reads wrong — `optimize swap status` parses as "optimise
+the swap status". `swap` is back as a top-level command, and both spellings
+call one function, so the boot-config toggle cannot grow two implementations.
+
+`optimize` gained `power`. The hazard was obvious from the start: a power-saving
+mode is the easiest feature in the world to fake, and TOS was already carrying
+two config keys that claimed to do this job — `powerSave` ("reduce refresh rate
+when on battery") and `refreshRate` ("TUI refresh target") — that were read by
+nothing, anywhere, ever. Both are gone. `refreshRate` was deleted rather than
+wired, because the shell is event-driven and honouring it would have meant
+inventing a polling loop to make a documented knob true.
+
+What replaced them are levers OpenComputers actually bills for, checked against
+the config the mod ships rather than recalled: a computer costs a tenth as much
+per tick while blocked in `pullSignal` (`sleepFactor`), a screen is billed per
+*non-blank* character on it, GPU writes are billed per changed cell, and disk
+I/O per kilobyte. So `optimize power save` stretches the idle repaint cadence,
+blanks the screen after two idle minutes, and forces the dirty-cell display
+buffer on. The blanking draws spaces on black and nothing else — a prettier
+screensaver would cost more than the screen it replaced. `optimize power` on
+its own reports the machine's *measured* energy and draw rate rather than a
+figure computed from constants a server may have retuned.
+
+`swap`'s own report now says that paging spends disk writes, so the two
+features do not both claim to be the saving.
+
+### The BIOS refused to boot anything but TOS
+
+Flashing the TOS EEPROM stopped the machine booting OpenOS. The device scan
+picks a boot disk by `/init.lua` existing — which OpenOS satisfies — and the
+next line demanded `/tos/kernel/init.lua` and **halted** when it was absent.
+So any disk that was not a TOS install was found, rejected, and the machine
+stopped, on a fault screen advising the operator to run `srm`: a command on
+the system that had just refused to start.
+
+The kernel is owed by the `/init.lua` that cannot run without it, which is
+ours. The check now reads the file first and applies only when that file is
+TOS's own. Keying on the file rather than on a `/tos` directory also survives
+a half-deleted install, where leftovers would otherwise go on condemning a
+disk that boots perfectly well. Cost: 29 bytes of the 4 KiB EEPROM, leaving
+153 free.
+
+Reported by an operator who suspected leftover TOS files and doubted it was
+the BIOS. It was the BIOS. `test_bios.lua` grew the three cases that matter —
+a foreign disk boots, TOS debris does not block it, a healthy TOS install
+still boots — and all three fail against the old EEPROM.
+
+Two related things are written down rather than fixed: a broken TOS install
+on the *committed* boot device still loops (the fallback-approval prompt only
+appears when the saved address does not work at all), and installing TOS
+replaces `/init.lua` with nothing to put it back.
+
+### Four from an emulator round on the public build
+
+An operator ran the GitHub release in Ocelot and found four. Three of them
+had a test that passed throughout, because it checked that a line existed
+rather than that it worked.
+
+**Errors ran off the right edge.** Deleting `/usr` printed "Delete failed:
+Refused: removing /usr is a protected system path. This guard sit" and
+stopped mid-word at column 80 — the half of the message that explains the
+refusal is exactly the half that got cut. The single status row fits text to
+itself by construction; a message that does not fit now uses the multi-row
+output region that already existed, which grows upward and stops at the top
+of the content area. Short messages still take one row.
+
+**The bootstrap could not clean up after itself**, though it was written to.
+`fs.remove` cannot delete a non-empty directory: OpenComputers' filesystem
+component does not recurse (the disk-backed one is Java's `File.delete()`),
+and OpenOS hands the path straight to it — its own `rm` implements `-r` in
+the shell. So every network install left a second full copy of the release,
+about 1.2 MB, behind, and a retry's stale-directory sweep could not clear it
+either. There is a recursive remove now, used at all four sites. The other
+half of the report: the script left *itself* at the filesystem root, so on
+success it now removes the file it was run from and says the one-liner will
+fetch it again.
+
+**Dialog buttons flickered.** Both modal loops repainted the entire box —
+shadow, frame, title, message, buttons — for *any* signal that woke them, and
+a dialog waits inside `coroutine.yield()`, which returns on timers, modem
+messages and component events alike. None of those change the box. That is
+invisible where the dirty-cell shadow has room to elide identical cells, and
+plainly visible on a seat where memory pressure has gated it off. Measured
+against the old code: six full repaints where one was needed, 90 draw calls
+instead of 15. It now draws once and repaints only when the focused button or
+the typed text changes, inside the seat's frame so the repaint lands in one
+blit.
+
+**The trash, twice.** `rm` asked the trash to take the file, captured its
+refusal into a local it never read, fell through to a hard delete and printed
+"Removed". A file the operator expected to be recoverable was gone and the
+sentence explaining why — "file too large for trash" — had been computed and
+discarded. It now prints the reason and stops, naming `--hard` as the thing
+the operator can type. A session with no trash at all still falls through,
+which is what that path was always for: a guest's `rm` is the irreversible
+action they asked for. Separately, the file browser's F8 never used the trash
+at all — it called `fs.remove` directly, under a dialog reading "This cannot
+be undone", which was true only because of the bypass. It goes through the
+same door now, with the same system-path exceptions, and the prompt only
+claims permanence when that is true.
+
+### The cluster Master shipped without a file its daemon requires — cluster-master 1.0.1
+
+`clusterd.lua` opens with an unguarded `require("cluster.store_client")`, and
+`store_client.lua` was in neither the package manifest nor the builder's
+source map — the two places that would have had to know about it, both
+missed. It sits beside the six libraries that *are* listed, so everything
+works in the source tree and every test passes; the **installed** package was
+missing it, and the Master daemon died at load on the machine that installed
+it. `cluster-master` is one of the sixteen packages in the published pack, so
+this shipped. The pack now carries 44 files rather than 43.
+
+`cluster-storage` had the neighbouring bug: `requires = { "cluster-protocol" }`,
+and nothing has ever been named or provided that — `protocol.lua` ships inside
+`cluster-manager`. Installing it would have failed resolution on a dependency
+nobody could satisfy; it never bit because that package is 0.1.0 and the pack
+excludes anything below 1.0.0. `cluster-manager` now provides the alias, the
+way `tape` does for `tape-storage`. That is a bandage, and the manifest says
+so: a Storage Node should not install a whole Manager daemon to get the wire
+format.
+
+Both are linted now. `test_manifests.lua` checks that every module a shipped
+file requires from its own package namespace is itself shipped, and that every
+declared dependency names a package that exists.
+
+### The worker bridge dropped about one ping in twenty — cluster-manager 1.2.1
+
+`canonicalFrame` — the byte string a frame's MAC is taken over, duplicated in
+the Manager-side bridge and the OpenOS worker because the worker cannot
+require TOS code — renders numbers with `tostring`. Lua 5.3+ prints an
+integral float as `100.0`; Lua 5.2 prints it `100`. OpenComputers ships both
+CPU architectures and OpenOS runs on either, so a worker and a Manager on
+different CPUs canonicalized the same frame differently and the MAC failed.
+
+Both sides put `computer.uptime()` in their PING/PONG, and uptime advances in
+0.05 steps — so roughly every twentieth ping landed on a whole second and was
+silently dropped, and the worker was marked "unresponsive" for no reason an
+operator could see. Neither side reads the field, so both now floor it. No
+lockstep upgrade: a receiver canonicalizes whatever arrived, so an old worker
+and a new Manager still agree.
+
+Checked while there and found sound: the two `canonicalFrame` implementations
+agree byte-for-byte on ten shapes including raw bytes and nested tables; the
+worker's hand-rolled SHA-256 matches FIPS 180-4's own vector; and its HMAC
+matches `kernel.crypto`'s, including the past-block-size key path. The format
+itself is still architecture-dependent for any future float field, which is
+written down rather than fixed — that one changes every MAC and the OpenOS
+worker is hand-copied to each box.
+
+### PaneUI's nine themes are pinned to TOS's
+
+PaneUI runs on OpenOS and cannot require `kernel/theme.lua`, so it keeps a
+copy of the preset table with a comment saying it is "kept in sync" — and the
+README claims it renders TOS's themes "color-for-color". Nothing enforced
+either. They do agree today, nine presets and eighteen colours each;
+`test_paneui_themes.lua` is what keeps them agreeing, and it names the colour
+that moved when one does.
 
 ### Creating a directory creates its parents, and the reason it didn't was a false belief
 

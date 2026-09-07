@@ -85,7 +85,7 @@ end
 -- INSTALLER_VERSION constant; the banner reads it. Previously the
 -- header comment said v1.2.6 while the banner displayed v0.3.0 —
 -- two-place version drift caught in code review.
-local INSTALLER_VERSION = "1.4.0"
+local INSTALLER_VERSION = "1.5.0"
 
 -- Runtime directories TOS expects at first boot. Keep in sync with
 -- /tos/kernel/init.lua's coreDirs list (single source of truth lives

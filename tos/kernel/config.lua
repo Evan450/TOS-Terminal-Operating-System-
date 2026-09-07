@@ -17,7 +17,12 @@ local defaults = {
 
   -- Display
   compactUI    = false,        -- Use compact layout (auto for small screens)
-  refreshRate  = 10,           -- TUI refresh target (ticks/sec)
+  --! `refreshRate = 10` used to sit here, described as the "TUI refresh
+  --! target (ticks/sec)". Nothing read it, in any file, ever: the shell is
+  --! event-driven (it blocks in pullSignal and repaints on input), so there
+  --! is no frame rate to target. Removed rather than wired, because wiring
+  --! it would mean INVENTING a polling loop to make a documented knob true.
+  --! The real idle cadence is `optimize power` (kernel.power.PROFILES).
   -- Screen resolution policy (kernel.screen): "auto" picks a readable
   -- resolution from the screen's physical block size (so T3 GPUs on big
   -- screens don't render tiny text), falling back to ~80x25 when block size
@@ -27,10 +32,15 @@ local defaults = {
   screenColsPerBlock = 10,     -- auto: target columns per physical screen block
   screenRowsPerBlock = 4,      -- auto: target rows per physical screen block
 
-  -- Power (tablet only)
-  powerSave    = false,        -- Reduce refresh rate when on battery
-  lowBatWarn   = 15,           -- Warn at this battery %
-  critBatWarn  = 5,            -- Critical warning at this %
+  -- Power
+  --! `powerSave = false` ("Reduce refresh rate when on battery") was the
+  --! other dead knob: set on tablets at boot, read by nothing. It is now a
+  --! real profile with real consumers — the shell's idle repaint cadence,
+  --! the screen-blank timeout, and the display buffer mode. See
+  --! kernel.power.PROFILES for what each one changes and why it saves.
+  powerProfile = "balanced",   -- off | balanced | save   ('optimize power')
+  lowBatWarn   = 15,           -- Warn at this battery % (tablet)
+  critBatWarn  = 5,            -- Critical warning at this % (tablet)
   showBattery  = false,        -- Show battery in status bar
 
   -- Security
@@ -126,7 +136,12 @@ function config.init(fsModule)
 
   if profile == "tablet" then
     active.showBattery = true
-    active.powerSave   = true
+    -- A tablet runs off a battery it carries, so conservation is the
+    -- sensible default — unless the operator has already saved a choice,
+    -- which is theirs to keep.
+    if saved == nil or saved.powerProfile == nil then
+      active.powerProfile = "save"
+    end
   elseif profile == "server" then
     active.headless = true
   end

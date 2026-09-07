@@ -551,6 +551,12 @@ function kernel.boot(opts)
       if ok then
         powerMod.init({ log = log, config = sysconfig })
         _G._TOS.power = powerMod
+        -- Publish the conservation knobs the shell loop reads every tick
+        -- (idle repaint cadence, screen-blank timeout). Applied here rather
+        -- than in the shell so every seat on a multi-seat box agrees, and
+        -- so a headless server honours it with no shell at all.
+        pcall(powerMod.applyProfile,
+          (sysconfig and sysconfig.get("powerProfile")) or "balanced")
         if sysconfig and sysconfig.isTablet() then
           event.interval(10, function() powerMod.check() end, "kernel:power")
           powerMod.onLow(function(level)

@@ -439,7 +439,21 @@ end
 
 local function handlePing(addr, frame)
   if managerAddr and addr ~= managerAddr then return end
-  sendFrame(addr, { op = "PONG", time = computer.uptime() })
+  --! INTEGER, not the raw float. The MAC covers canonicalFrame, which
+  --! renders a number with tostring: Lua 5.3+ prints an integral float as
+  --! "100.0" and Lua 5.2 prints it as "100". OpenComputers offers both
+  --! architectures and OpenOS runs on either, so a worker and a Manager on
+  --! different CPUs canonicalize the same frame differently and the MAC
+  --! fails. computer.uptime() advances in 0.05 steps, so it lands on an
+  --! integral value about once a second -- roughly one ping in twenty
+  --! would have been dropped, and the worker marked unresponsive for no
+  --! reason anyone could see.
+  --!
+  --! Nobody reads this field (the Manager stamps its own last_seen), so
+  --! flooring it costs nothing and needs no lockstep upgrade: a receiver
+  --! canonicalizes whatever arrived, old or new. The underlying format
+  --! fragility is recorded in TODO.txt. (test_cluster_worker_frames.lua)
+  sendFrame(addr, { op = "PONG", time = math.floor(computer.uptime()) })
 end
 
 local DISPATCH = {

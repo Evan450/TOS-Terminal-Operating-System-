@@ -261,6 +261,34 @@ end
 -- move focus, Enter accepts, Esc picks `escIndex`, and any label's first
 -- letter is a hotkey. Touch: a click inside a button rect picks it.
 -- Returns the 1-based index of the chosen button.
+--! REPAINT ON CHANGE, NOT ON EVERY SIGNAL.
+--!
+--! These loops used to call drawDialog at the top of each iteration, so
+--! the whole box -- shadow, frame runs, title tab, every message line and
+--! every button -- was re-emitted for ANY signal that woke the loop. A
+--! modal dialog waits inside coroutine.yield(), which returns on whatever
+--! the scheduler resumes it with: a timer, a modem message, a component
+--! event. None of those change the box.
+--!
+--! On a machine with room for the dirty-cell shadow that was invisible
+--! (identical cells elide). The operator's box is not that machine: the
+--! shadow is memory-gated off on a tight seat, every repaint reaches the
+--! GPU, and the buttons visibly flickered while a dialog sat waiting.
+--!
+--! So: draw once, then only after something the box shows has actually
+--! moved. The repaint that does happen is wrapped in the seat's frame, so
+--! it lands in one blit instead of arriving cell by cell.
+--! (test_dialog_repaint.lua)
+local function framedDraw(S, ...)
+  local D = S.D
+  local framed = D and D.beginFrame and D.beginFrame()
+  if not framed then return drawDialog(S, ...) end
+  local ok, res = pcall(drawDialog, S, ...)
+  D.endFrame()
+  if not ok then error(res, 0) end
+  return res
+end
+
 local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow)
   -- Build a first-letter hotkey map (lowercased).
   local hot = {}
@@ -268,8 +296,9 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
     local c = l:sub(1, 1):lower()
     if c ~= "" and not hot[c] then hot[c] = i end
   end
+  local rects = framedDraw(S, style, title, lines, labels, focus, shadow)
   while true do
-    local rects = drawDialog(S, style, title, lines, labels, focus, shadow)
+    local lastFocus = focus
     local sig, _, b, c = pullSignal()
     if sig == "key_down" then
       if c == 28 then return focus                       -- Enter
@@ -288,6 +317,11 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
       for i, rt in ipairs(rects) do
         if c == rt.y and b >= rt.x1 and b <= rt.x2 then return i end
       end
+    end
+    -- Only the focused button can have changed; nothing else in the box
+    -- moves while it is up.
+    if focus ~= lastFocus then
+      rects = framedDraw(S, style, title, lines, labels, focus, shadow)
     end
   end
 end
@@ -335,7 +369,9 @@ function M.confirmTyped(S, message, word, opts)
   local buf, focus = "", 1
   local maxLen = math.max(#word + 8, 16)
 
-  while true do
+  -- See the note on framedDraw: repaint when the box CHANGES (the typed
+  -- text or the focused button), not on every signal that wakes the loop.
+  local function render()
     --! Constant line COUNT in every state. Adding or removing a line as
     --! the text matched would resize the box mid-typing, and a dialog
     --! that jumps under the cursor is how a misclick happens.
@@ -344,11 +380,15 @@ function M.confirmTyped(S, message, word, opts)
     lines[#lines + 1] = ""
     lines[#lines + 1] = 'Type  ' .. word .. '  to confirm:'
     lines[#lines + 1] = "  " .. buf .. "_"
-    local matched = (buf == word)
-    lines[#lines + 1] = matched and "  the word matches - choose Confirm"
-                                 or "  (Confirm stays inert until it matches)"
+    lines[#lines + 1] = (buf == word) and "  the word matches - choose Confirm"
+                                       or "  (Confirm stays inert until it matches)"
+    return framedDraw(S, style, title, lines, labels, focus, opts.shadow)
+  end
 
-    local rects = drawDialog(S, style, title, lines, labels, focus, opts.shadow)
+  local rects = render()
+  while true do
+    local lastFocus, lastBuf = focus, buf
+    local matched = (buf == word)
     local sig, _, b, c = pullSignal()
 
     if sig == "key_down" then
@@ -395,6 +435,7 @@ function M.confirmTyped(S, message, word, opts)
     elseif sig == "clipboard" and type(b) == "string" then
       buf = (buf .. b:gsub("\n", "")):sub(1, maxLen)
     end
+    if focus ~= lastFocus or buf ~= lastBuf then rects = render() end
   end
 end
 

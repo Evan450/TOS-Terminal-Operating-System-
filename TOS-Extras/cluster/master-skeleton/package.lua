@@ -13,7 +13,7 @@
 --     advertising itself.
 return {
   name        = "cluster-master",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "service",
   category    = "network",
   description = "Cluster control-plane Master: registers Managers, schedules jobs, owns persistent state.",
@@ -26,6 +26,11 @@ return {
     "/usr/lib/cluster/net.lua",
     "/usr/lib/cluster/api.lua",
     "/usr/lib/cluster/pair.lua",
+    -- clusterd.lua requires this at load, unguarded. Leaving it out of
+    -- the list did not break anything HERE, where it sits beside the
+    -- others in the source tree; it broke the INSTALLED package, whose
+    -- daemon died on `require("cluster.store_client")`.
+    "/usr/lib/cluster/store_client.lua",
     "/usr/bin/cluster.lua",
     "/etc/rc.d/clusterd.lua",
     "/etc/cluster-master.cfg",

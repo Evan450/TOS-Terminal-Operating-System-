@@ -41,7 +41,14 @@ test("tape-menu added", true, Cmds.entry("tape-menu") ~= nil)
 -- lazy-loader no longer knew it ("unknown command"). Restored as an alias.
 test("ver restored as an about alias", "about", (Cmds.entry("ver") or {}).alias)
 test("device folded into hostname", nil, Cmds.entry("device"))
-test("swap folded into optimize", nil, Cmds.entry("swap"))
+--! `swap` UNFOLDED again after v1.4.0. That consolidation was a guess about
+--! what reads well; the operator who then used it disagreed ("the
+--! `optimize swap` situation is a bit weird"), and the guess loses to the
+--! report. Both names dispatch the same function, so the property worth
+--! pinning is that BOTH exist — a later tidy-up that drops either one
+--! breaks a documented spelling.
+test("swap is a command again", true, Cmds.entry("swap") ~= nil)
+test("optimize still exists alongside it", true, Cmds.entry("optimize") ~= nil)
 test("restore folded into trash", nil, Cmds.entry("restore"))
 test("alias entries carry their canonical", "ls", (Cmds.entry("dir") or {}).alias)
 test("monitor added", true, Cmds.entry("monitor") ~= nil)

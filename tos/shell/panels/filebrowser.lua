@@ -125,22 +125,65 @@ end
 
 function M.doDelete(S, path, f)
   local T = S.T
+  -- This action is now the most recent thing that happened on the seat, so
+  -- whatever `why` was holding is stale. F8 is not a command and never
+  -- reaches the executor's dispatch, which is where typed commands clear it.
+  helpers.clearFailure(S)
   if not path then
     path, f = helpers.selPath(S)
     if not path then S.lastOut = { "Nothing selected", T.warning }; return end
   end
-  if path == "/" then S.lastOut = { "Cannot delete root", T.error }; return end
+  if path == "/" then return helpers.fail(S, "Cannot delete root", nil, "delete") end
   if not helpers.canWrite(S, path) then return end
   -- INTRUSIVE confirm. Deletion is destructive and irreversible, so it
   -- earns the modal box (danger-coloured, default focus on the safe
   -- [Cancel]) rather than a status-line (y/n) the operator can blow
   -- past on reflex. The caller's `draw = 3` repaints over the box after
   -- we return, so no redraw callback is needed here.
+  --! F8 GOES THROUGH THE TRASH, like `rm` does.
+  --!
+  --! It used to call fs.remove directly, so the same operation was
+  --! recoverable when typed and irreversible when pressed -- and the box
+  --! said "This cannot be undone", which was true only because of the
+  --! bypass. An operator who deleted from the browser and then looked in
+  --! the trash found nothing, which is one of the two halves of the
+  --! reported "the trash seems to be broken".
+  --!
+  --! The system paths that `rm` keeps out of a user's home trash are kept
+  --! out here too, and they are the paths this prompt still describes as
+  --! permanent. (test_browser_delete_trash.lua)
+  local sysSkip = path:match("^/tos") or path:match("^/etc")
+                  or path:match("^/var") or path:match("^/usr")
+  local trashMod
+  if not sysSkip then
+    local okT, m = pcall(require, "kernel.trash")
+    if okT and m and m.put then trashMod = m end
+  end
   local go = dialogs.confirm(S,
-    "Delete '" .. f.name .. "'?\nThis cannot be undone.",
+    "Delete '" .. f.name .. "'?\n" ..
+    (trashMod and "It goes to the trash; 'trash restore' brings it back."
+               or "This cannot be undone."),
     { title = "Delete File", severity = "danger",
       yes = "Delete", no = "Cancel", default = "no" })
   if not go then S.lastOut = { "Cancelled", T.dim }; return end
+
+  if trashMod then
+    local ok2, err2 = trashMod.put(path, helpers.sessionOf(S))
+    if ok2 then
+      helpers.refreshBrowser(S)
+      S.lastOut = { "Trashed: " .. f.name .. " (use 'trash restore' to undo)", T.highlight }
+      return
+    end
+    local why = tostring(err2 or "unknown reason")
+    if not why:find("no trash", 1, true) then
+      -- The trash exists and refused (too large, move failed). Do NOT
+      -- quietly turn a recoverable delete into a permanent one.
+      helpers.fail(S, "Not trashed: " .. why
+        .. " — still there; use  rm --hard  to force", nil, "delete")
+      return
+    end
+  end
+
   -- Capture and surface fs.remove's return value. An earlier version
   -- dropped it and always printed "Deleted: foo" — including for
   -- non-empty directories, where OC's filesystem.remove returns false,
@@ -150,7 +193,12 @@ function M.doDelete(S, path, f)
   if ok then
     S.lastOut = { "Deleted: " .. f.name, T.highlight }
   else
-    S.lastOut = { "Delete failed: " .. tostring(err or "is the directory non-empty?"), T.error }
+    -- Through helpers.fail so `why` can explain it. This is the message the
+    -- protected-path guard arrives in when F8 is pressed on /tos: securefs
+    -- returns its refusal as `err`, and it is long enough that the operator's
+    -- first instinct is to ask `why`.
+    helpers.fail(S, "Delete failed: "
+      .. tostring(err or "is the directory non-empty?"), nil, "delete")
   end
 end
 

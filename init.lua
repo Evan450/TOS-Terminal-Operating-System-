@@ -1,6 +1,6 @@
 -- ╔══════════════════════════════════════╗
 -- ║  TOS init.lua - System Bootstrap     ║
--- ║  Terminal Operating System v1.4.0    ║
+-- ║  Terminal Operating System v1.5.0    ║
 -- ╚══════════════════════════════════════╝
 -- Works with TOS BIOS (receives bootFS as arg)
 -- AND with standard Lua BIOS (finds bootFS itself)
@@ -412,8 +412,8 @@ end
 -- Global TOS state
 -- ============================================================
 _G._TOS = {
-  version    = "1.4.0",
-  codename   = "Iris",
+  version    = "1.5.0",
+  codename   = "Aletheia",
   bootFS     = bootFS,
   -- #REV (#8) — the boot filesystem's component address. The shell's
   -- auto-mount gate (shell.panels autoMount, #SEC H26) refuses to mount

@@ -1,4 +1,4 @@
-# TOS v1.4.0 "Iris"
+# TOS v1.5.0 "Aletheia"
 
 Terminal Operating System for OpenComputers (Minecraft).
 A Norton Commander-inspired OS with a tile Desktop, zero-trust networking, OpenOS compatibility, multi-seat support, named color themes, and a modular kernel.
@@ -7,9 +7,9 @@ A Norton Commander-inspired OS with a tile Desktop, zero-trust networking, OpenO
 
 ## Released
 
-TOS is public and installable. v1.4.0 "Iris" is the current release — install it with the [network bootstrap](#over-the-network-no-disk-no-floppy), from an install disk, or from source. Bug reports and contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+TOS is public and installable. v1.5.0 "Aletheia" is the current release — install it with the [network bootstrap](#over-the-network-no-disk-no-floppy), from an install disk, or from source. Bug reports and contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-[`ROADMAP.md`](ROADMAP.md) is what is actually open — 66 items at the time of writing (the file's own header carries the current count), including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
+[`ROADMAP.md`](ROADMAP.md) is what is actually open — 69 items at the time of writing (the file's own header carries the current count), including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
 
 ## Three branches
 
@@ -29,6 +29,66 @@ Installing from either branch works, since both carry the same tree shape and th
 bootstrap.lua                                            # main (release)
 bootstrap.lua Evan450/TOS-Terminal-Operating-System- dev  # dev (source)
 ```
+
+## What's New in v1.5.0 "Aletheia"
+
+A truth release. It began as a TODO burn-down and became an audit of TOS's own
+claims — and of its tests. See [`CHANGELOG.md`](CHANGELOG.md) for the detail.
+
+### Nine subsystems that had a passing test and did not work
+
+Cluster pairing, the cluster Master's shipped package, the worker bridge,
+`tape store` on a directory, tape-authenticator's `init`, rc-pilot, the TBFS
+write path, `drive`'s mount handling, and the network installer's own hasher
+were each broken at a seam where two halves looked correct alone. Every one had
+a test file; every one of those tests checked that a line *existed* rather than
+that it worked. They are fixed, and each fix ships with a test that drives
+**both real sides** and was proved to fail against the code it replaced.
+
+### Six faults an operator found running the public build
+
+Errors ran off the screen instead of wrapping; the network bootstrap left its
+staging directory and itself behind; dialog buttons flickered on every update;
+the trash silently turned a refused, recoverable delete into a permanent one;
+the BIOS refused to boot **any** disk that was not TOS (including OpenOS); and
+`why` printed its own usage instead of explaining the refusal it was reached
+for. All six fixed.
+
+### Power conservation that actually conserves
+
+- **`optimize power <off|balanced|save>`** — a real profile, built on what
+  OpenComputers actually bills for (checked against the mod's own shipped
+  config, not recalled): a computer costs a tenth as much per tick while
+  blocked in `pullSignal`, a screen is billed per *non-blank* character, GPU
+  writes per changed cell, disk I/O per kilobyte. `save` stretches the idle
+  repaint cadence, blanks the screen after two idle minutes, and forces the
+  dirty-cell display buffer on. `optimize power` reports **measured** energy
+  and draw rate rather than a number computed from constants your server may
+  have retuned.
+- Two config keys that claimed to do this job and were read by nothing
+  (`powerSave`, `refreshRate`) are gone. `refreshRate` was deleted rather than
+  wired, because honouring it would have meant inventing a polling loop to make
+  a documented knob true.
+
+### Commands that read the way you'd type them
+
+- **`swap` is a top-level command again** (v1.4.0 folded it into
+  `optimize swap`; an operator pointed out that `optimize swap status` parses
+  as "optimise the swap status"). Both spellings call one function.
+- **`why` explains any refusal**, not only a tier denial — protected paths, a
+  trash refusal, out-of-memory, an unknown command — including file-browser
+  actions that never went through a command. Where it doesn't recognise a
+  message it says so and points at `log` instead of guessing.
+- **`drive` unmounts, works, and remounts**, asking only when something is
+  actually using the disk.
+- **The operator chooses where cluster task code runs** — refuse untrusted
+  tasks outright, or accept them under the watchdog.
+
+### TBFS is no longer slower than a managed disk
+
+The block cache landed: writes coalesce inside a batch, a full-block overwrite
+skips the read it used to do first, and the superblock is written once per
+batch instead of once per operation.
 
 ## What's New in v1.4.0 "Iris"
 
@@ -824,7 +884,11 @@ usr/lib/tests/                    Regression tests (dev tree only; not in a Rele
 ## Boot Sequence
 
 1. **BIOS** — minimal EEPROM: finds the boot disk (managed filesystem or raw
-   TBFS drive — it reads the TBFS boot region directly), loads `/init.lua`
+   TBFS drive — it reads the TBFS boot region directly), loads `/init.lua`.
+   **It will boot a disk that has nothing to do with TOS**, OpenOS included:
+   a valid `/init.lua` is the whole requirement. The TOS-specific POST check
+   (`K4`, kernel missing) applies only when the `/init.lua` it just read is
+   TOS's own, since that is the one that cannot run without a kernel.
 2. **Stage 0** — locate boot filesystem (TOS BIOS pass-through, TBFS
    unmanaged root, or scan)
 3. **Stage 1** — build `require()` system, register `package.loaded`

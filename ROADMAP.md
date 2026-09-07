@@ -2,18 +2,70 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**66 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 48 | Planned or under investigation. Most contributions belong here. |
+| Planned | 51 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## THE BIOS REFUSED TO BOOT ANYTHING BUT TOS (2026-09-06)
+
+### Planned — A BROKEN TOS INSTALL ON THE COMMITTED BOOT DEVICE IS A LOOP
+
+```text
+A BROKEN TOS INSTALL ON THE COMMITTED BOOT DEVICE IS A LOOP.
+    Found while fixing the above, not reported. If the EEPROM's saved
+    address names a disk whose /init.lua loads but whose kernel is
+    gone, the BIOS boots it, init.lua reports the missing files and
+    reboots, and the BIOS boots it again. The fallback-approval
+    prompt (#SEC H1) only appears when the SAVED address does not
+    work at all, so it never offers a way out. Recoverable only by
+    moving the disk to another machine or re-flashing from one.
+      The fix is an escape hatch at POST -- a held key that forces
+    the device-selection prompt even when the saved address is
+    bootable. It is the same shape as the S-at-POST safe-mode
+    one-shot the kernel already has. Not done here: 153 bytes is
+    thin for a key-scan loop, and getting it wrong makes every boot
+    slower or, worse, stealable by a stray keypress.
+```
+
+### Planned — INSTALLING TOS REPLACES /init.lua AND NOTHING PUTS IT BACK
+
+```text
+INSTALLING TOS REPLACES /init.lua AND NOTHING PUTS IT BACK.
+    install.lua says so plainly before it starts ("Your /init.lua
+    will be replaced"), so this is disclosed rather than hidden --
+    but there is no uninstall, so a shared disk that had OpenOS on
+    it does not become bootable again by deleting /tos. The BIOS fix
+    above means ANOTHER disk now boots; this one is about the disk
+    TOS was installed onto. Options if it ever matters: keep the
+    displaced /init.lua as /init.lua.pre-tos and have a `tos
+    uninstall` restore it, or simply document the state.
+```
+
+## EXTRAS SWEEP 2: THE PACKAGING SEAM (2026-09-06)
+
+### Planned — THE CANONICAL NUMBER FORMAT IS STILL ARCHITECTURE-DEPENDENT
+
+```text
+THE CANONICAL NUMBER FORMAT IS STILL ARCHITECTURE-DEPENDENT. The
+    fix above removes the only float that crosses the wire; it does
+    not make the FORMAT safe for the next one. A field carrying an
+    integral float still canonicalizes differently on 5.2 and 5.3.
+    The fix is one line in each half -- render numbers with a
+    subtype-independent rule ("%d" when the value is integral, else
+    "%.14g") -- but it changes the MAC for every frame, so both sides
+    must be upgraded together AND the OpenOS worker is hand-copied to
+    each worker box. Worth doing at the next protocol version bump,
+    not on its own.
+```
 
 ## CLUSTER PAIRING NEVER WORKED, AND A CANCEL RACE (2026-09-06)
 
