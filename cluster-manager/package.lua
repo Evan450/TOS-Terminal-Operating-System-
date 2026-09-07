@@ -21,10 +21,10 @@ return {
     ["/usr/bin/cluster-manager.lua"] = "42fe6e70d165780f261f318b79f1e2932b8054049cd0752b666e4df7f04a9c2b",
     ["/usr/lib/cluster-manager.lua"] = "b60901dfd90721dbaa00589d7d319397e9d4469ff2654aa0fe961c5405ba0335",
     ["/usr/lib/cluster/protocol.lua"] = "c7ac7527a208066573fd3092dc96d5eb3860bae458b7622ba4777aa584548b93",
-    ["/usr/lib/cluster/worker.lua"] = "96343392cf5ce11c153fcd8e21c2ff5aeca82d04f093290053327d2e4590b200",
+    ["/usr/lib/cluster/worker.lua"] = "82ac5ce76d07628ca3da86341f916e8ff8fe077a2c1d8de231b6a71458804714",
   },
   name        = "cluster-manager",
-  version     = "1.2.0",
+  version     = "1.2.1",
   kind        = "service",
   category    = "network",
   description = "Cluster Manager: registers with Master, accepts assignments, dispatches to workers.",
@@ -42,6 +42,19 @@ return {
     "/usr/lib/cluster/protocol.lua",
     "/usr/lib/cluster/worker.lua",
   },
+  --! cluster-storage declares `requires = { "cluster-protocol" }`, and no
+  --! package by that name has ever existed -- so `pkg install
+  --! cluster-storage` would fail resolution on a dependency nobody could
+  --! satisfy. It has not bitten yet only because cluster-storage is 0.1.0
+  --! and the pack excludes anything below 1.0.0.
+  --!
+  --! `provides` is the mechanism already used for tape/tape-storage, and
+  --! it makes the existing declaration resolve to the package that really
+  --! ships /usr/lib/cluster/protocol.lua -- this one. It is a bandage over
+  --! a packaging question, not an answer to it: a Storage Node should not
+  --! have to install a whole Manager daemon to get the wire format. The
+  --! real fix is a small `cluster-protocol` package, recorded in TODO.txt.
+  provides    = { "cluster-protocol" },
   -- No `commands` map: the operator CLI ships as /usr/bin/cluster-manager.lua
   -- and is run from PATH at full shell privilege (the package sandbox would
   -- withhold the live kernel net/component surface it needs). Omitted on

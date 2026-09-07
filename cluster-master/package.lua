@@ -23,10 +23,11 @@ return {
     ["/usr/lib/cluster/pair.lua"] = "74802c4d28ff417173ea22a3638aecdc419bebf8ab16b0a3deeabaec6ede14c1",
     ["/usr/lib/cluster/scheduler.lua"] = "7d3ce7f9d345653e95e3124600d0a4c07a572f52fc2c46815cec480a65ea732d",
     ["/usr/lib/cluster/state.lua"] = "456ad8feccb5c1b96e1563cad460eaedda4b82ef925207f223ac409fe3a4eb50",
+    ["/usr/lib/cluster/store_client.lua"] = "d0b82dc2d98385c5d022db0140c8cc1f1a1f09373b212766f51ba8bc2da1be31",
     ["/usr/lib/clusterd.lua"] = "ddb9a7d4ccff6191d9ef6ff634f882db1bac224157926b7fc6cbc5235eabddfe",
   },
   name        = "cluster-master",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "service",
   category    = "network",
   description = "Cluster control-plane Master: registers Managers, schedules jobs, owns persistent state.",
@@ -39,6 +40,11 @@ return {
     "/usr/lib/cluster/net.lua",
     "/usr/lib/cluster/api.lua",
     "/usr/lib/cluster/pair.lua",
+    -- clusterd.lua requires this at load, unguarded. Leaving it out of
+    -- the list did not break anything HERE, where it sits beside the
+    -- others in the source tree; it broke the INSTALLED package, whose
+    -- daemon died on `require("cluster.store_client")`.
+    "/usr/lib/cluster/store_client.lua",
     "/usr/bin/cluster.lua",
     "/etc/rc.d/clusterd.lua",
     "/etc/cluster-master.cfg",
