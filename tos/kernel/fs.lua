@@ -169,12 +169,60 @@ function fs.list(path)
   return result or {}
 end
 
+--! CREATES PARENTS. The layer below does not, on any backend TOS runs on.
+--!
+--! OpenComputers' managed filesystem component is single-level: the
+--! disk-backed one calls Java's File.mkdir() (not mkdirs()), and the
+--! in-memory one resolves the parent and fails when it is absent. OpenOS
+--! is the same by construction -- lib/core/full_filesystem.lua hands the
+--! path straight to node.fs.makeDirectory, and OpenOS's own `mkdir` has
+--! no -p flag at all.
+--!
+--! Several places in TOS believed otherwise. pkg.init() said in a comment
+--! that "the OC proxy creates parents recursively, so a single call covers
+--! /var, /var/pkg, /var/pkg/installed" and then made exactly that call:
+--! on a fresh managed disk it failed and logged a warning, because
+--! /var/pkg did not exist yet. backup.lua hand-rolled the segment loop
+--! because it had found out. TBFS grew its own recursion for the same
+--! reason, which left the two backends disagreeing -- code written
+--! against a raw drive would break when moved to a managed one.
+--!
+--! So the guarantee lives HERE, once, where every caller already is.
+--! Below this line the proxies stay single-level and portable.
+--!
+--! The return value is unchanged: true when this call created the final
+--! directory, false when it was already there (what the OC proxy returns,
+--! and what callers test). (test_fs_mkdir_parents.lua)
 function fs.makeDirectory(path)
-  local proxy, rel = resolve(path)
-  if not proxy then return false, "No filesystem" end
-  local ok, result = pcall(proxy.makeDirectory, rel)
-  if not ok then return false, tostring(result) end
-  return result
+  local norm = fs.normalize(path)
+  if not norm then return false, "invalid path" end   -- #SEC M-1
+  if norm == "/" then return false, "already exists" end
+
+  local acc, created = "", false
+  for seg in norm:gmatch("[^/]+") do
+    acc = acc .. "/" .. seg
+    if fs.exists(acc) then
+      -- A FILE in the way is not a parent, and silently treating it as one
+      -- would have the caller write into a path that does not exist.
+      if not fs.isDirectory(acc) then
+        return false, "not a directory: " .. acc
+      end
+      created = false
+    else
+      local proxy, rel = resolve(acc)
+      if not proxy then return false, "No filesystem" end
+      local ok, result = pcall(proxy.makeDirectory, rel)
+      if not ok then return false, tostring(result) end
+      if result == false then
+        -- The backend refused a level we know is missing (read-only,
+        -- out of space). Report the level, not just "false".
+        return false, "could not create " .. acc
+      end
+      created = true
+    end
+  end
+  if not created then return false, "already exists" end
+  return true
 end
 
 function fs.remove(path)

@@ -52,9 +52,9 @@ cd TOS-Terminal-Operating-System-
 python run_tests.py
 ```
 
-The suite is ~185 files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
+The suite is a couple of hundred files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
 
-One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. The full suite should be green — roughly `PASS=187 FAIL=0`.
+One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. **`FAIL=0` is the contract, not any particular pass count** — the runner prints its own totals, and a number written down here only tells you how long ago someone edited this file. If it is red before you have changed anything, that is a bug in the tree and worth reporting on its own.
 
 > **Windows note.** Clone somewhere short, like `C:\src\tos`. Some package paths run to ~255 characters, and Windows' 260-character `MAX_PATH` will make the disk builder fail on a write with a path that *looks* fine.
 

@@ -34,7 +34,14 @@ end
 local here = (arg and arg[0]) or "modules/rc-pilot/test_rc_pilot.lua"
 local base = here:gsub("[^/\\]*$", "")
 local ROOT = base .. "../../"                      -- TOS-Extras root
-package.path = ROOT .. "../TOS-Dev/tos/?.lua;../TOS-Dev/tos/?.lua;TOS-Dev/tos/?.lua;" .. package.path
+-- The kernel sits in ONE of two places and both are correct (run_tests.py
+-- says the same about TOS-Extras itself): in the local monorepo TOS-Extras
+-- is a SIBLING of TOS-Dev, so the kernel is ../TOS-Dev/tos/; on the
+-- published dev branch TOS-Extras is nested INSIDE the source tree, so it
+-- is ../tos/. Listing only the first meant this test passed here and failed
+-- from a clean clone -- caught by an external reviewer, who had the clone.
+package.path = ROOT .. "../TOS-Dev/tos/?.lua;" .. ROOT .. "../tos/?.lua;"
+  .. "../TOS-Dev/tos/?.lua;../tos/?.lua;TOS-Dev/tos/?.lua;tos/?.lua;" .. package.path
 
 local function readFile(p) local f = io.open(p, "rb"); if not f then return nil end; local s = f:read("a"); f:close(); return s end
 local function firstOf(paths) for _, p in ipairs(paths) do if readFile(p) then return p end end end

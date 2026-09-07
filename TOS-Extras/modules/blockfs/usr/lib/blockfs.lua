@@ -797,9 +797,20 @@ function blockfs.mount(drive, opts)
     return out
   end
 
-  -- Creates parents as needed, as OC's managed filesystem does and as
-  -- kernel.fs (which passes makeDirectory straight through) expects;
-  -- pkg installing into a nested path failed on a TBFS root without it.
+  --! Creates parents as needed. NOT because the managed filesystem does --
+  --! it does not: OC's disk-backed component calls Java's File.mkdir()
+  --! and its in-memory one fails when the parent is absent, so a managed
+  --! disk is single-level and so is OpenOS above it. The guarantee TOS
+  --! relies on lives in kernel.fs.makeDirectory, which walks the chain for
+  --! every backend.
+  --!
+  --! This stays recursive anyway, and it is not redundant: kernel.fs hands
+  --! down one level at a time, but anything holding this proxy DIRECTLY --
+  --! the TBFS boot blob mounting the root before the kernel exists, and
+  --! `deploy drive`, which creates the whole manifest's directory chain --
+  --! calls it with a full path. Being a superset of the managed contract
+  --! is safe; relying on that from portable code is not, which is why the
+  --! guarantee is stated one layer up rather than here.
   function P.makeDirectory(path)
     local parts = splitPath(path)
     if #parts == 0 then return true end                 -- "/" already exists

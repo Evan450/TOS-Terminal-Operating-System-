@@ -7,6 +7,41 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased — the OS that fits in the machine you have
 
+### Creating a directory creates its parents, and the reason it didn't was a false belief
+
+`kernel.fs.makeDirectory` now walks the path and creates each missing level.
+Nothing below it does: OpenOS hands the path straight to
+`node.fs.makeDirectory` and its own `mkdir` has no `-p`, and the disk-backed
+OpenComputers component compiles down to Java's `File.mkdir()`, not
+`mkdirs()`. Single-level, every backend.
+
+TOS believed otherwise in writing, and it was costing something. `pkg.init()`
+carried a comment saying "the OC proxy creates parents recursively, so a
+single call covers /var, /var/pkg, /var/pkg/installed" — and then made that
+call. On a fresh *managed* disk it failed at `/var/pkg` and only logged a
+warning, so a first install had no package store until something else
+happened to create the parent. `backup.lua` had hand-rolled the segment loop.
+TBFS grew its own recursion, which is what left the two backends disagreeing:
+code written against a raw drive would break when moved to a managed one.
+
+So the guarantee lives in the kernel layer now, once, where every caller
+already is. It refuses a file standing in for a directory, names the level a
+backend refused rather than returning a bare `false`, and keeps the return
+contract callers test (`true` created, `false` already there). The proxies
+below stay single-level and portable; TBFS keeps its own recursion because
+the boot blob and `deploy drive` hold the proxy directly and pass whole
+paths, and its comment now says that is a superset rather than the contract.
+Found by an external reviewer who checked the OpenComputers source instead of
+taking the comment's word for it. (`test_fs_mkdir_parents.lua`)
+
+Also from that review: `test_rc_pilot.lua` passed here and failed from a
+clean clone — its module path listed only the monorepo layout, where
+`TOS-Extras` is a sibling of `TOS-Dev`, and not the published `dev` branch
+where it is nested inside the source tree. The full suite now runs green in
+both. And `CONTRIBUTING.md`'s "roughly `PASS=187 FAIL=0`" is gone in favour of
+the property that cannot go stale: `FAIL=0` is the contract, and the runner
+prints its own totals.
+
 ### The operator decides where cluster task code runs — cluster-manager 1.2.0
 
 An assignment carries Lua source. It comes from the Master this Manager

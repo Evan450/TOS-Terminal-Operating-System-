@@ -359,9 +359,13 @@ function pkg.init(deps)
 
   if not fs then return false, "fs module required" end
 
-  -- Ensure storage root exists. fs.makeDirectory in the kernel layer
-  -- delegates to the OC proxy which creates parents recursively, so a
-  -- single call covers /var, /var/pkg, /var/pkg/installed.
+  -- Ensure storage root exists. kernel.fs.makeDirectory creates the parent
+  -- chain itself, so one call covers /var, /var/pkg, /var/pkg/installed.
+  --! It says so because it DOES it: this comment used to claim the OC
+  --! proxy recursed, which is false on every backend (see the note on
+  --! fs.makeDirectory). On a fresh managed disk this call failed at
+  --! /var/pkg and only logged a warning, so a first install had no
+  --! package store until something else happened to create the parent.
   if not fs.exists(PKG_ROOT) then
     local ok, err = fs.makeDirectory(PKG_ROOT)
     if not ok and log then
