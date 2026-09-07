@@ -343,7 +343,10 @@ return function(C, S, deps)
       o("  theme [list|set|color|...]  Customize colors  (colors = alias)", T.fg)
       o("  tutorial      Replay the welcome walkthrough", T.fg)
       if S.userTier >= 1 and avail("swap") then
-      o("  optimize swap       Disk-swap status ('slow RAM' on /var/swap)", T.fg)
+      o("  swap                Disk-swap status ('slow RAM' on /var/swap)", T.fg)
+      end
+      if S.userTier >= 1 then
+      o("  optimize [power|buffer|swap]  Performance & power conservation", T.fg)
       end
       if S.userTier >= 2 then
       o("  bootsettings [..]   Edit boot profile/verbosity  (or DEL at boot)", T.fg)
@@ -777,6 +780,23 @@ return function(C, S, deps)
       end
     end
 
+    --! WHY THE TRASH WAS SKIPPED IS NOT A DETAIL TO DROP.
+    --!
+    --! Operator report, real emulator: "the trash seems to be broken (or,
+    --! if something's too large to put into the trash, it doesn't say
+    --! so)." Both halves were true here. trash.put returns (false,
+    --! reason) -- "file too large for trash (N > M)" among them -- and
+    --! this captured `err2` and never used it. The delete then fell
+    --! through to a HARD delete and printed a cheerful "Removed: x", so a
+    --! file the operator expected to be recoverable was gone, and the one
+    --! sentence explaining why was computed and thrown away.
+    --!
+    --! Falling through is right for a session that HAS no trash (a guest;
+    --! their `rm` is the irreversible thing they typed, which is what the
+    --! old comment meant). It is wrong when the trash exists and refused:
+    --! that is a recoverable delete silently becoming an unrecoverable
+    --! one. Those now refuse and name `--hard`, which is the operator's
+    --! to type. (test_rm_trash_report.lua)
     local trashOk = false
     local systemSkip = p:match("^/tos") or p:match("^/etc") or p:match("^/var") or p:match("^/usr")
     if not hard and not systemSkip then
@@ -784,7 +804,21 @@ return function(C, S, deps)
       if okT and trashMod and trashMod.put then
         local sess = helpers.sessionOf(S)
         local ok2, err2 = trashMod.put(p, sess)
-        if ok2 then trashOk = true; o("Trashed: " .. target .. " (use 'restore' to undo)", T.highlight) end
+        if ok2 then
+          trashOk = true
+          o("Trashed: " .. target .. " (use 'restore' to undo)", T.highlight)
+        else
+          local why = tostring(err2 or "unknown reason")
+          if why:find("no trash", 1, true) then
+
+            o("No trash for this session — deleting " .. target .. " outright.", T.warning)
+          else
+            o("Not trashed: " .. why, T.error)
+            o("It is still there. Delete it for good with:  rm " ..
+              (recursive and "-r " or "") .. "--hard " .. target, T.dim)
+            return
+          end
+        end
       end
     end
 
@@ -1630,14 +1664,39 @@ return function(C, S, deps)
       local d = S.lastDenial
       if d and d.cmd then
         emit(helpers.whyExplain(d.cmd, d.need, d.have or have, true))
+        return
       elseif d then
         o("Your last blocked action needed " .. helpers.tierName(d.need)
           .. "; you are " .. helpers.tierName(d.have or have) .. ".", T.error)
         o("Fix: run it on an admin/root account, or have an admin grant access.", tone.fix)
-      else
-        o("why <command>  — explain what a command needs and whether you can run it.", T.dim)
-        o("Run `why` with no argument right after a 'Permission denied' to explain it.", T.dim)
+        return
       end
+      --! NOT a tier denial -- and most refusals aren't. `why` used to stop
+      --! at lastDenial and print its own usage for everything else, which
+      --! is what the operator hit: the protected-path guard that refuses
+      --! `rm -r /tos` is not a tier check, so the one failure `why` was
+      --! reached for was the one it could not discuss.
+      local f = S.lastFailure
+      if f then
+        o((f.cmd and (f.cmd .. " failed:") or "The last action failed:"), tone.title)
+
+        o("  " .. f.text, T.error)
+        local lines = helpers.explainFailure(f.text)
+        if lines then
+          emit(lines)
+        else
+          --! No canned explanation for this one. Say so rather than
+          --! inventing a plausible cause -- a confident wrong answer is
+          --! worse than the usage line this replaced.
+          o("No canned explanation for that one.", T.dim)
+          o("`log` has the kernel's own record of it, and `doctor` checks", T.dim)
+          o("memory, disks, services and security for a cause.", T.dim)
+        end
+        return
+      end
+      o("Nothing has failed since the last command ran.", T.dim)
+      o("why            — explain the last refusal or error.", T.dim)
+      o("why <command>  — explain what a command needs and whether you can run it.", T.dim)
       return
     end
     local entry = commandsMod.entry(target)

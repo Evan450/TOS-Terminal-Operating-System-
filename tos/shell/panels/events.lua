@@ -25,6 +25,25 @@ end
 
 local M = {}
 
+--! POWER CONSERVATION — resolved lazily, and only on a box that has it.
+--!
+--! The kernel publishes the conservation knobs on _G._TOS when it loads
+--! kernel.power (see kernel/power.lua for what OpenComputers actually
+--! bills for). A low-memory boot skips that module on purpose, and the
+--! shell must not undo that saving by require()ing it anyway — so the
+--! globals are the gate: no knobs published, no module loaded, no
+--! blanking. Cached after the first resolution; this runs on every tick
+--! of every seat.
+local powerMod
+local function powerPolicy()
+  if powerMod ~= nil then return powerMod or nil end
+  local TOS = _G._TOS
+  if not (TOS and (TOS.powerIdleSec or TOS.screenBlankSec)) then return nil end
+  local ok, m = pcall(require, "kernel.power")
+  powerMod = (ok and type(m) == "table") and m or false
+  return powerMod or nil
+end
+
 local function pullSignal()
   if coroutine.isyieldable and coroutine.isyieldable() then
     return coroutine.yield()
@@ -45,6 +64,9 @@ function M.run(S, deps)
   local makeProgramEnv = deps.makeProgramEnv
   local widgetDefs = deps.widgetDefs
 
+  S._lastInputAt = computer.uptime()
+  S._blanked = nil
+
   local function drawAll()        drawMod.all(S, widgetDefs) end
   local function drawTopBar()     drawMod.topBar(S) end
   local function drawRail()       drawMod.rail(S) end
@@ -55,7 +77,8 @@ function M.run(S, deps)
 
   local function drawOutputArea()
     if S.outLines and #S.outLines > 0 then drawOutLines()
-    elseif S.lastOut then drawOutRow(S.lastOut[1], S.lastOut[2])
+
+    elseif S.lastOut then drawMod.outMessage(S, S.lastOut[1], S.lastOut[2])
     elseif homeMod.isTiles(S) then
 
       local t = S.tabs[S.activeTab]
@@ -264,6 +287,19 @@ function M.run(S, deps)
 
     local sig, a2, ch, co, e5 = pullSignal()
     local draw = 0
+
+    do
+      local isInput = sig == "key_down" or sig == "key_up" or sig == "touch"
+        or sig == "drag" or sig == "drop" or sig == "scroll" or sig == "clipboard"
+      if isInput then
+        S._lastInputAt = computer.uptime()
+        if S._blanked then
+          S._blanked = nil
+          drawAll()
+          sig, a2, ch, co, e5 = nil, nil, nil, nil, nil
+        end
+      end
+    end
 
     local isModKey = false
     if sig == "key_down" or sig == "key_up" then
@@ -971,14 +1007,36 @@ function M.run(S, deps)
             nf.settle(notice.id, okD and pick or 1)
 
             S._noticeShownAt = computer.uptime()
+
+            S._lastInputAt = S._noticeShownAt
+            S._blanked = nil
             drawAll()
           end
         end
       end
     end
 
+    --! OpenComputers bills a screen per tick scaled by the number of
+    --! NON-BLANK characters on it, and bills again for every GPU write.
+    --! A machine left showing a full TUI therefore draws continuously for
+    --! an audience of nobody. Blanking to SPACES on black is what the
+    --! billing rule actually rewards — a screensaver that draws something
+    --! pretty would cost more than the screen it replaced.
+    --!
+    --! Off unless the operator asked (`optimize power`), and never over an
+    --! open menu, a modal, or a seat another process is drawing to.
+    local pol = powerPolicy()
+    if pol and not S.suspendIdleDraw and not S.menuOpen and not S.ctxOpen
+       and pol.shouldBlank(computer.uptime(), S._lastInputAt, S._blanked) then
+      S._blanked = true
+
+      pcall(D.fill, 1, 1, S.W, S.H, " ", T.fg, 0x000000)
+    end
+
     local curTab = S.tabs[S.activeTab]
-    if S.suspendIdleDraw then
+    if S._blanked then
+
+    elseif S.suspendIdleDraw then
 
       local k = _G._TOS and _G._TOS.kernel
       if k and k.isForeground then
@@ -988,7 +1046,8 @@ function M.run(S, deps)
     elseif curTab and (curTab.type == nil or curTab.type == "shell")
        and not S.menuOpen and not S.ctxOpen then
       local now = computer.uptime()
-      if now - (S._lastStatusT or 0) >= 1 then
+
+      if now - (S._lastStatusT or 0) >= ((pol and pol.idleSeconds()) or 1) then
         S._lastStatusT = now
         drawStatusBar()
 
@@ -998,7 +1057,7 @@ function M.run(S, deps)
        and not S.menuOpen and not S.ctxOpen then
 
       local now = computer.uptime()
-      if now - (S._lastStatusT or 0) >= 1 then
+      if now - (S._lastStatusT or 0) >= ((pol and pol.idleSeconds()) or 1) then
         S._lastStatusT = now
         local dm = getDesktop()
         if dm then dm.drawHeader(S, curTab) end

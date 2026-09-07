@@ -10,13 +10,23 @@ local defaults = {
   hostname     = "tos",
 
   compactUI    = false,
-  refreshRate  = 10,
+  --! `refreshRate = 10` used to sit here, described as the "TUI refresh
+  --! target (ticks/sec)". Nothing read it, in any file, ever: the shell is
+  --! event-driven (it blocks in pullSignal and repaints on input), so there
+  --! is no frame rate to target. Removed rather than wired, because wiring
+  --! it would mean INVENTING a polling loop to make a documented knob true.
+  --! The real idle cadence is `optimize power` (kernel.power.PROFILES).
 
   screenRes         = "auto",
   screenColsPerBlock = 10,
   screenRowsPerBlock = 4,
 
-  powerSave    = false,
+  --! `powerSave = false` ("Reduce refresh rate when on battery") was the
+  --! other dead knob: set on tablets at boot, read by nothing. It is now a
+  --! real profile with real consumers — the shell's idle repaint cadence,
+  --! the screen-blank timeout, and the display buffer mode. See
+  --! kernel.power.PROFILES for what each one changes and why it saves.
+  powerProfile = "balanced",
   lowBatWarn   = 15,
   critBatWarn  = 5,
   showBattery  = false,
@@ -80,7 +90,10 @@ function config.init(fsModule)
 
   if profile == "tablet" then
     active.showBattery = true
-    active.powerSave   = true
+
+    if saved == nil or saved.powerProfile == nil then
+      active.powerProfile = "save"
+    end
   elseif profile == "server" then
     active.headless = true
   end

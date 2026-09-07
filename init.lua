@@ -330,8 +330,8 @@ do
 end
 
 _G._TOS = {
-  version    = "1.4.0",
-  codename   = "Iris",
+  version    = "1.5.0",
+  codename   = "Aletheia",
   bootFS     = bootFS,
 
   bootAddr   = bootFS and bootFS.address or nil,

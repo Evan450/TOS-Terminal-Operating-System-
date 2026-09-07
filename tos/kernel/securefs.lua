@@ -470,4 +470,6 @@ end
 
 securefs._isProtectedTarget = function(p, s) return _isProtectedTarget(p, s) end
 
+securefs._protectedMsg = function(v, h, s) return protectedMsg(v, h, s) end
+
 return securefs

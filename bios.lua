@@ -140,15 +140,17 @@ if blob then
  K()
 end
 
-if not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing")end
 local q=f.open("/init.lua","r")
 if not q then F("I5","cannot open /init.lua")end
 
 local z={}
 repeat local x=f.read(q,4096)if x then z[#z+1]=x end until not x
 f.close(q)
+z=table.concat(z)
 
-local fn,er=load(table.concat(z),"=init.lua","t")
+if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing")end
+
+local fn,er=load(z,"=init.lua","t")
 if not fn then F("I6",er)end
 
 P("POST OK",G)pcall(p.beep)

@@ -416,6 +416,9 @@ function kernel.boot(opts)
       if ok then
         powerMod.init({ log = log, config = sysconfig })
         _G._TOS.power = powerMod
+
+        pcall(powerMod.applyProfile,
+          (sysconfig and sysconfig.get("powerProfile")) or "balanced")
         if sysconfig and sysconfig.isTablet() then
           event.interval(10, function() powerMod.check() end, "kernel:power")
           powerMod.onLow(function(level)

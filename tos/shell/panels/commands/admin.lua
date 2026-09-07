@@ -1161,15 +1161,233 @@ return function(C, S, deps)
     end
   end
 
+  local function bootcfgIO()
+    local okC, bootcfg = pcall(require, "kernel.bootcfg")
+    local fsMod = _G._TOS and _G._TOS.fs
+    if okC and bootcfg and fsMod then return bootcfg, fsMod end
+  end
+
+  --! `swap` IS A COMMAND AGAIN.
+  --!
+  --! v1.4.0 folded it into `optimize swap` to shrink the command list.
+  --! Operator verdict after using it: "the `optimize swap` situation is a
+  --! bit weird, I'd suggest adding an alternative `swap` command". They
+  --! are right — `optimize` reads as a verb you run, not a namespace you
+  --! browse, so `optimize swap status` parses as "optimise the swap
+  --! status". The subcommand stays (nothing that documents it breaks);
+  --! `swap` is the same function under the name people reach for.
+  --!
+  --! ONE implementation, called from both names. Two copies of a
+  --! toggle that writes boot.cfg is how the two names drift apart.
+  local function doSwap(val, o)
+
+    local sw = K.getSwap and K.getSwap()
+
+    if val == "now" then
+      local okT, tabsMod = pcall(require, "shell.panels.tabs")
+      if not okT or not tabsMod.sweepCold then
+        o("tab paging unavailable", T.error); return
+      end
+      if not sw then o("Swap not available", T.error); return end
+      local n = tabsMod.sweepCold(S, true)
+      local paged, lines = tabsMod.pagedStats(S)
+      o(string.format("Paged out %d view tab(s) now.", n), T.highlight)
+      o(string.format("%d tab(s) on disk, %d lines held there.", paged, lines), T.dim)
+      o("They page back transparently the next time you open them.", T.dim)
+      return
+    end
+    if val == "" or val == "status" or val == "keys" or val == "clear" then
+      if not sw then o("Swap not available", T.error); return end
+      if val == "clear" then
+        if not adminOnly(o) then return end
+
+        local okT, tabsMod = pcall(require, "shell.panels.tabs")
+        if okT and tabsMod.isPaged then
+          for _, tb in ipairs(S.tabs or {}) do
+            if tabsMod.isPaged(tb) then local _ = tb.content end
+          end
+        end
+        sw.clear()
+        o("Swap cleared.", T.highlight)
+        return
+      end
+      local u = sw.usage()
+      local pct = (u.max and u.max > 0) and math.floor(u.bytes * 100 / u.max) or 0
+      o("=== Disk Swap (/var/swap) ===", T.title)
+      o(string.format("Used:    %s / %s (%d%%)", fmtSz(u.bytes), fmtSz(u.max), pct),
+        pct > 90 and T.warning or T.fg)
+      o(string.format("Entries: %d", u.count), T.dim)
+      if val == "keys" and sw.keys then
+        local keys = sw.keys()
+        if #keys == 0 then o("(no keys)", T.dim)
+        else for _, k in ipairs(keys) do o("  " .. k, T.dim) end end
+      end
+
+      do
+        local okT, tabsMod = pcall(require, "shell.panels.tabs")
+        if okT and tabsMod.pagedStats then
+          local paged, lines = tabsMod.pagedStats(S)
+          o(string.format("View tabs paged: %d (%d lines)", paged, lines),
+            paged > 0 and T.highlight or T.dim)
+        end
+        local pct2, cfg = 25, (K.getConfig and K.getConfig())
+        if cfg and cfg.get then pct2 = tonumber(cfg.get("swapPressurePct")) or 25 end
+        o(string.format("Cold view buffers page out below %d%% free RAM"
+          .. "  (swapPressurePct)", pct2), T.dim)
+      end
+      o("Volatile: cleared on every boot. 'swap clear' wipes now.", T.dim)
+      o("'swap now' pages cold tabs immediately (ignores pressure).", T.dim)
+      --! Swap is the one optimisation that COSTS energy: paging a cold
+      --! tab out is a disk write, and OpenComputers bills disk I/O per
+      --! kilobyte (`power.cost.hddWrite`, and writes cost more than
+      --! reads). Worth one line where the operator is already looking at
+      --! it, rather than letting `optimize power` and `swap` each claim
+      --! to be the saving.
+      o("Paging spends disk writes to save RAM — see 'optimize power'.", T.dim)
+      return
+    end
+
+    if not adminOnly(o) then return end
+    local bootcfg, fsMod = bootcfgIO()
+    if not bootcfg then o("bootcfg/fs unavailable", T.error); return end
+    local cfg = bootcfg.load(fsMod)
+    cfg.advanced = cfg.advanced or {}
+    if val == "auto" then cfg.advanced.swap = nil
+    elseif val == "on" then cfg.advanced.swap = true
+    elseif val == "off" then cfg.advanced.swap = false
+    else o("swap <status|keys|now|clear|on|off|auto>", T.error); return end
+    local ok, err = bootcfg.save(fsMod, cfg)
+    if ok then o("Disk swap set " .. val .. ". Applies on next boot.", T.highlight)
+    else o("Save failed: " .. tostring(err), T.error) end
+  end
+
+  --! POWER CONSERVATION — a real umbrella, or none at all.
+  --!
+  --! The operator asked for `optimize` to mean more than swap, and named
+  --! power as the example. The trap in that is obvious: a "power saving"
+  --! mode is the easiest thing in the world to fake, and this OS already
+  --! carried two config keys (`powerSave`, `refreshRate`) that claimed to
+  --! do exactly this and were read by nothing.
+  --!
+  --! So every lever here is one OpenComputers actually bills for, checked
+  --! against the config the mod ships (OpenComputers.conf, `power.cost`)
+  --! rather than recalled: time awake vs asleep (`sleepFactor` 0.1), lit
+  --! screen cells (`screen`, "per lit pixel"), GPU writes (`gpuSet`), and
+  --! disk I/O (`hddWrite`). The full note is in kernel/power.lua.
+  --!
+  --! And the report MEASURES rather than models. The costs above are
+  --! server-configurable, so a wattage computed from constants baked in
+  --! here would be a confident lie on any pack that tuned them.
+  local function doPower(val, arg3, o)
+    --! Require it, rather than reading _G._TOS.power and refusing when the
+    --! kernel skipped the module on a tight boot. The module is small, the
+    --! operator asked for it by name, and refusing would mean an operator
+    --! on the machine that most needs conservation is the one who cannot
+    --! turn it on. (Only a genuine load failure lands in the branch below.)
+    local okP, powerMod = pcall(require, "kernel.power")
+    if not okP or type(powerMod) ~= "table" or not powerMod.PROFILES then
+      o("Power control unavailable: " .. tostring(powerMod), T.error)
+      o("TOS behaves as profile 'off' — nothing is being conserved.", T.dim)
+      return
+    end
+    local okSc2, screenMod2 = pcall(require, "kernel.screen")
+    local cfg = K.getConfig and K.getConfig()
+
+    if val == "" or val == "show" or val == "status" then
+      local prof = powerMod.profile()
+      o("=== Power ===", T.title)
+
+      local okE, e, emax = pcall(powerMod.energy)
+      if okE and type(e) == "number" and type(emax) == "number" and emax > 0 then
+        local pct = math.floor(e * 100 / emax + 0.5)
+        o(string.format("  Stored     %d / %d  (%d%%)", math.floor(e), math.floor(emax), pct),
+          pct < 25 and T.warning or T.fg)
+
+        local last = S._pwrSample
+        local dt = last and last.t and (K.uptime() - last.t) or 0
+        if dt >= 1 then
+          local rate = (last.e - e) / dt
+          if rate > 0.05 then
+            o(string.format("  Draw       %.1f/s over the last %ds", rate, math.floor(dt)), T.fg)
+            if e > 0 then
+              o(string.format("             ~%d s of buffer left at that rate",
+                math.floor(e / rate)), T.dim)
+            end
+          elseif rate < -0.05 then
+            o(string.format("  Draw       charging (+%.1f/s)", -rate), T.highlight)
+          else
+
+            o(string.format("  Draw       level over the last %ds — supply is keeping up",
+              math.floor(dt)), T.fg)
+          end
+        else
+          o("  Draw       run 'optimize power' again in a few seconds for a rate", T.dim)
+        end
+        S._pwrSample = { t = K.uptime(), e = e }
+      else
+        o("  Stored     (this machine reports no energy buffer)", T.dim)
+      end
+      o("", T.dim)
+      o("  Profile    " .. prof, T.highlight)
+      local idleS, blankS = powerMod.idleSeconds(), powerMod.blankSeconds()
+      o(string.format("  Idle clock every %ds", idleS), T.fg)
+      o("    a status-bar repaint is a GPU write, which OC bills per cell", T.dim)
+      o("  Screen blank " .. (blankS > 0
+        and ("after " .. blankS .. "s idle") or "never"), T.fg)
+      o("    OC bills a screen per tick per NON-BLANK cell; blank costs ~0", T.dim)
+      local mode2 = (okSc2 and screenMod2.bufferMode and screenMod2.bufferMode()) or "?"
+      o("  Display buffer " .. mode2, T.fg)
+      o("    unchanged cells skip the GPU write entirely ('optimize buffer')", T.dim)
+      o("", T.dim)
+      o("optimize power <off|balanced|save>   off = no conservation", T.dim)
+      o("optimize power blank <secs|off>      screen blank timeout", T.dim)
+      o("optimize power idle <secs>           idle repaint cadence", T.dim)
+      return
+    end
+
+    if val == "blank" or val == "idle" then
+      if not adminOnly(o) then return end
+      local n = (arg3 == "off" or arg3 == "never") and 0 or tonumber(arg3)
+      local set, err = powerMod.setKnob(val, n)
+      if not set and set ~= 0 then o(tostring(err), T.error); return end
+      if val == "blank" then
+        o(set > 0 and ("Screen blanks after " .. set .. "s idle.")
+                   or "Screen blanking off.", T.highlight)
+      else
+        o("Idle repaint every " .. set .. "s.", T.highlight)
+      end
+
+      o("Profile is now custom (a named profile resets both knobs).", T.dim)
+      return
+    end
+
+    if not adminOnly(o) then return end
+    local key, err = powerMod.applyProfile(val)
+    if not key then
+      o(tostring(err), T.error)
+      o("Profiles: " .. table.concat(powerMod.PROFILE_ORDER, ", "), T.dim)
+      return
+    end
+    local p = powerMod.PROFILES[key]
+
+    if okSc2 and screenMod2.setBuffer then pcall(screenMod2.setBuffer, p.buffer) end
+    if cfg and cfg.set then
+      cfg.set("powerProfile", key)
+      local okS = pcall(cfg.save)
+      if not okS then o("(profile applied, but /etc/tos.cfg could not be saved)", T.warning) end
+    end
+    o("Power profile: " .. key, T.highlight)
+    o(string.format("  idle repaint %ds · screen blank %s · display buffer %s",
+      p.idleSec, p.blankSec > 0 and (p.blankSec .. "s") or "never", p.buffer), T.dim)
+    o("Applies now, on every seat, and persists across reboots.", T.dim)
+  end
+
+  C.swap = function(args, o) return doSwap((args[1] or ""):lower(), o) end
+
   C.optimize = function(args, o)
     local sub = (args[1] or ""):lower()
     local val = (args[2] or ""):lower()
     local okSc, screenMod = pcall(require, "kernel.screen")
-    local function bootcfgIO()
-      local okC, bootcfg = pcall(require, "kernel.bootcfg")
-      local fsMod = _G._TOS and _G._TOS.fs
-      if okC and bootcfg and fsMod then return bootcfg, fsMod end
-    end
 
     if sub == "" or sub == "show" or sub == "status" then
       o("=== Optimizations ===", T.title)
@@ -1206,86 +1424,33 @@ return function(C, S, deps)
           o("    (no draws measured yet)", T.dim)
         end
       end
+
+      do
+        local okPw, pw = pcall(require, "kernel.power")
+        if okPw and type(pw) == "table" and pw.profile then
+          local blankS = pw.blankSeconds()
+          o(string.format("  Power          %-14s [idle %ds, blank %s]",
+            pw.profile(), pw.idleSeconds(),
+            blankS > 0 and (blankS .. "s") or "never"), T.fg)
+          o("    fewer wake-ups and a blank screen are what OC bills less for", T.dim)
+        else
+          o("  Power          not loaded", T.dim)
+        end
+      end
       o("", T.dim)
-      o("optimize swap [status|keys|now|clear|on|off|auto]  boot toggle needs reboot", T.dim)
-      o("optimize buffer <on|off|auto>   display; applies immediately", T.dim)
+      o("swap [status|keys|now|clear|on|off|auto]  boot toggle needs reboot", T.dim)
+      o("optimize power  <off|balanced|save>       conservation profile", T.dim)
+      o("optimize buffer <on|off|auto>             display; applies immediately", T.dim)
       return
     end
 
     if sub == "swap" then
 
-      local sw = K.getSwap and K.getSwap()
+      return doSwap(val, o)
+    end
 
-      if val == "now" then
-        local okT, tabsMod = pcall(require, "shell.panels.tabs")
-        if not okT or not tabsMod.sweepCold then
-          o("tab paging unavailable", T.error); return
-        end
-        if not sw then o("Swap not available", T.error); return end
-        local n = tabsMod.sweepCold(S, true)
-        local paged, lines = tabsMod.pagedStats(S)
-        o(string.format("Paged out %d view tab(s) now.", n), T.highlight)
-        o(string.format("%d tab(s) on disk, %d lines held there.", paged, lines), T.dim)
-        o("They page back transparently the next time you open them.", T.dim)
-        return
-      end
-      if val == "" or val == "status" or val == "keys" or val == "clear" then
-        if not sw then o("Swap not available", T.error); return end
-        if val == "clear" then
-          if not adminOnly(o) then return end
-
-          local okT, tabsMod = pcall(require, "shell.panels.tabs")
-          if okT and tabsMod.isPaged then
-            for _, tb in ipairs(S.tabs or {}) do
-              if tabsMod.isPaged(tb) then local _ = tb.content end
-            end
-          end
-          sw.clear()
-          o("Swap cleared.", T.highlight)
-          return
-        end
-        local u = sw.usage()
-        local pct = (u.max and u.max > 0) and math.floor(u.bytes * 100 / u.max) or 0
-        o("=== Disk Swap (/var/swap) ===", T.title)
-        o(string.format("Used:    %s / %s (%d%%)", fmtSz(u.bytes), fmtSz(u.max), pct),
-          pct > 90 and T.warning or T.fg)
-        o(string.format("Entries: %d", u.count), T.dim)
-        if val == "keys" and sw.keys then
-          local keys = sw.keys()
-          if #keys == 0 then o("(no keys)", T.dim)
-          else for _, k in ipairs(keys) do o("  " .. k, T.dim) end end
-        end
-
-        do
-          local okT, tabsMod = pcall(require, "shell.panels.tabs")
-          if okT and tabsMod.pagedStats then
-            local paged, lines = tabsMod.pagedStats(S)
-            o(string.format("View tabs paged: %d (%d lines)", paged, lines),
-              paged > 0 and T.highlight or T.dim)
-          end
-          local pct, cfg = 25, (K.getConfig and K.getConfig())
-          if cfg and cfg.get then pct = tonumber(cfg.get("swapPressurePct")) or 25 end
-          o(string.format("Cold view buffers page out below %d%% free RAM"
-            .. "  (swapPressurePct)", pct), T.dim)
-        end
-        o("Volatile: cleared on every boot. 'optimize swap clear' wipes now.", T.dim)
-        o("'optimize swap now' pages cold tabs immediately (ignores pressure).", T.dim)
-        return
-      end
-
-      if not adminOnly(o) then return end
-      local bootcfg, fsMod = bootcfgIO()
-      if not bootcfg then o("bootcfg/fs unavailable", T.error); return end
-      local cfg = bootcfg.load(fsMod)
-      cfg.advanced = cfg.advanced or {}
-      if val == "auto" then cfg.advanced.swap = nil
-      elseif val == "on" then cfg.advanced.swap = true
-      elseif val == "off" then cfg.advanced.swap = false
-      else o("optimize swap <status|keys|now|clear|on|off|auto>", T.error); return end
-      local ok, err = bootcfg.save(fsMod, cfg)
-      if ok then o("Disk swap set " .. val .. ". Applies on next boot.", T.highlight)
-      else o("Save failed: " .. tostring(err), T.error) end
-      return
+    if sub == "power" then
+      return doPower(val, (args[3] or ""):lower(), o)
     end
 
     if sub == "buffer" or sub == "display" then
@@ -1299,7 +1464,9 @@ return function(C, S, deps)
       return
     end
 
-    o("Usage: optimize [show | swap <on|off|auto> | buffer <on|off|auto>]", T.dim)
+    o("Usage: optimize [show | power <off|balanced|save> | buffer <on|off|auto>"
+      .. " | swap <on|off|auto>]", T.dim)
+    o("       `swap` on its own is the same as `optimize swap`.", T.dim)
   end
 
   C.programs = function(args, o)

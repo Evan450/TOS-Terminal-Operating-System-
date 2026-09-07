@@ -155,12 +155,18 @@ function M.build(S, deps)
     local name = parts[1]:lower()
 
     S.curCmd = name
+
+    if name ~= "why" then helpers.clearFailure(S) end
     local args = {}
     for i = 2, #parts do args[#args + 1] = parts[i] end
 
     local buf = {}
     local function o(text, color)
       buf[#buf + 1] = { tostring(text), color or T.fg }
+
+      if color == T.error and name ~= "why" then
+        helpers.noteFailure(S, name, text)
+      end
 
       coopYield()
     end

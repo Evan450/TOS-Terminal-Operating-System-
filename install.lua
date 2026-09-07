@@ -58,7 +58,7 @@ local function confirm(question)
   return answer and (answer:lower() == "y" or answer:lower() == "yes")
 end
 
-local INSTALLER_VERSION = "1.4.0"
+local INSTALLER_VERSION = "1.5.0"
 
 local RUNTIME_DIRS = {
   "/tos", "/tos/kernel", "/tos/kernel/net", "/tos/shell",
