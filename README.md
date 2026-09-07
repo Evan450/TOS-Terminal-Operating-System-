@@ -22,9 +22,28 @@ hosts an admin wrote down, and there is no default repo.
 
 ## Verifying what you install
 
-This build is **unsigned**. Packages still carry a SHA-256 for every file
-they install and `pkg` refuses one whose hashes do not match, so corruption
-in transit is caught -- but nothing here proves who published it.
+Every package here is signed. Add the publisher key once, and from then on
+`pkg` tells you whether what arrived is what was published:
+
+```
+pkg trust add discover dcdafa5342333048be0ad519911a6bd1ecffefcffde73879a4e246fc20d7fd8b
+```
+
+With the key added, an install of a package signed by it reports `trusted`.
+Without it, signatures still verify but report `unknown` -- valid, from an
+unrecognised publisher. Tampering reports `invalid` either way: the
+signature covers the manifest's exact bytes, and the manifest carries a
+SHA-256 for every file it installs, so a single altered byte anywhere in a
+package fails the check.
+
+To refuse anything that is not signed by a key you have added:
+
+```
+pkg trust require on
+```
+
+That is off by default, because turning it on before adding a key would lock
+you out of your own packages.
 
 ## Install from a floppy instead
 
