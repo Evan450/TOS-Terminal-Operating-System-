@@ -2836,6 +2836,12 @@ pkg._validateManifest    = validateManifest
 pkg._isUnderPkgWriteRoot = isUnderPkgWriteRoot
 pkg._isServiceEtcTarget  = isServiceEtcTarget
 pkg.PKG_WRITE_ROOTS      = PKG_WRITE_ROOTS
+-- Reading a source directory in ALL four manifest formats, exposed because
+-- the OPPM index TOS publishes on its own `master` branch has to be checked
+-- against the parser TOS ships — the two are a seam, and the only honest
+-- checker for a programs.cfg we publish is our own programs.cfg reader.
+-- (test_oppm_index.lua)
+pkg._loadAnyManifest     = loadAnyManifest
 
 -- ============================================================
 -- #MEM — lazy self-initialization

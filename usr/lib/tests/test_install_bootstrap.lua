@@ -280,6 +280,46 @@ do
       bootstrapSrc:find("arg and arg%[0%]") ~= nil
       and bootstrapSrc:find("re%-download it with the same one%-liner") ~= nil)
 
+    --! ...and WHICH file it removes, run rather than grepped. The comment
+    --! above that block has always said "only when that is a plain file at
+    --! the root -- never a guess"; the code only prepended a slash to a
+    --! relative name and then deleted whatever arg[0] named, anywhere.
+    --!
+    --! Harmless while the one documented install put it at `/`. Not
+    --! harmless once the OPPM package exists: oppm installs this file to
+    --! /usr/bin and keeps an ownership record, so self-deleting from there
+    --! leaves the package manager certain it installed a file that is gone.
+    --!
+    --! The real function is LIFTED OUT OF bootstrap.lua and called, so this
+    --! exercises the shipped bytes. A pattern check here would pass against
+    --! a guard that had been rewritten to do nothing.
+    do
+      local body = bootstrapSrc:match(
+        "(local function selfPathToReclaim.-end)%s*%-%-%[%[/TEST%-EXTRACT%]%]")
+      test("selfPathToReclaim can be lifted out of bootstrap.lua", body ~= nil)
+      if body then
+        local chunk = load(body .. "\nreturn selfPathToReclaim", "=extract")
+        test("...and it loads", chunk ~= nil)
+        local fn = chunk and chunk()
+        if type(fn) == "function" then
+          test("the documented install path IS reclaimed",
+            fn("/bootstrap.lua") == "/bootstrap.lua")
+          test("a bare relative name is treated as the root file",
+            fn("bootstrap.lua") == "/bootstrap.lua")
+          -- The case the OPPM package creates.
+          test("a copy oppm owns in /usr/bin is LEFT ALONE",
+            fn("/usr/bin/bootstrap.lua") == nil)
+          test("...and so is one anywhere else", fn("/home/me/bootstrap.lua") == nil)
+          test("nested paths are never reclaimed", fn("/a/b") == nil)
+          test("no arg[0] means no removal", fn(nil) == nil)
+          test("an empty arg[0] means no removal", fn("") == nil)
+          test("a non-string arg[0] means no removal", fn(42) == nil)
+        else
+          test("selfPathToReclaim is a function", false)
+        end
+      end
+    end
+
     -- A long wait must LOOK like a wait, not like a hang. The probe used
     -- to print "probing main ... " and then go silent for however long
     -- the request took; the operator's only options were guess or reboot.

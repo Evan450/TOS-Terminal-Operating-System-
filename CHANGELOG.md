@@ -5,6 +5,81 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ---
 
+## Unreleased — findable
+
+An outside review of why nobody finds TOS, acted on where it is code and
+documentation rather than marketing.
+
+### The README was written for contributors who don't exist yet
+
+951 lines, and the order was backwards for everyone who is not already here.
+Line 14 was branch policy — a stranger learned which branch to open pull
+requests against before learning what TOS *is*. Five consecutive release-note
+sections ran from line 33 to line 330. System Requirements was at 332. The
+install command, which is genuinely one line and genuinely good, was at 557.
+
+Reordered, not rewritten: the hook, the requirements, the one-line install and
+the answer to "why not just use OpenOS" are now the first forty lines. The
+release notes moved to `CHANGELOG.md`; the two oldest were not duplicated
+there — the CHANGELOG *pointed back at the README* for them — so those were
+moved rather than deleted. The branch table moved to `CONTRIBUTING.md`, where
+the audience for it already is.
+
+**The Minecraft and OpenComputers versions are now stated literally**, in the
+first paragraph, where every forum reply will ask for them. "Lua 5.3/5.4
+architecture" was in there, decodable to OC 1.7+ by someone who already knew;
+an unanswered version question reads as abandonware.
+
+### TOS is invisible to OPPM, the package manager everyone already has
+
+`oppm` hardcodes the branch name `master` when it fetches a repository's
+`programs.cfg`. TOS's branches are `main`, `dev` and `optional-utilities`, so
+`oppm register` on this repo has always failed silently. TOS reads OPPM repos
+as one of its four manifest formats and is absent from one; the irony was worth
+two files.
+
+`build/oppm/programs.cfg` is the index for a stub `master` branch carrying
+nothing but itself and a copy of the bootstrap. It is validated from both ends
+by `test_oppm_index.lua`: it must parse the way *OpenOS* parses it (a bare
+table, in an environment with no functions — not merely the way Lua would), and
+TOS's own `programs.cfg` reader must accept it. Using our own parser as the
+checker is the only thing that keeps the index we publish and the reader we
+ship from drifting apart.
+
+### The bootstrap deleted files it did not own
+
+Writing that package surfaced a real bug. `bootstrap.lua` removes itself once
+the install succeeds, and the comment above that block has always said "only
+when that is a plain file at the root — never a guess." The code did not check:
+it prepended a slash to a relative name and deleted whatever `arg[0]` pointed
+at, anywhere on the disk.
+
+Harmless while the only documented install put it at `/`. Not harmless with an
+OPPM package, which installs it to `/usr/bin` and keeps an ownership record —
+self-deleting from there leaves the package manager certain it installed a file
+that is gone, and `oppm uninstall` then fails on a machine whose install
+worked. The guard now matches its own comment. The decision is a named function
+that `test_install_bootstrap.lua` **lifts out of the shipped file and calls**,
+because a pattern check would pass against a guard rewritten to do nothing.
+
+### Recorded, not rushed
+
+Reading an OPPM index with our own parser turned up a second discrepancy: the
+translator keeps the leading `master/` segment as an on-disk path, so it
+expects a directory literally named `master` inside the repo. A git checkout of
+that branch has no such directory — the segment belongs to the URL `oppm`
+builds, not to the tree. It costs nothing for the index published here, and
+whether treating the key literally was deliberate is not obvious, so it is in
+the ROADMAP with the existing test fixture that encodes the same assumption,
+and pinned as `[known gap]` so a fix fails loudly instead of passing silently.
+
+Still open, and the largest one: **there is not a single image in the
+repository.** `docs/screenshots/SHOTS.md` is the shot list, the capture method,
+and the publish prerequisite; the README carries the markup already, commented
+out, waiting for the files.
+
+---
+
 ## v1.5.0 "Aletheia" — the OS that fits in the machine you have
 
 Named for the Greek spirit of truth, because that is what this release was
@@ -5430,7 +5505,60 @@ work rather than re-patched (noted inline).
 
 ---
 
+<!-- Moved here from README.md when the README was cut down for
+     first-time readers. These two releases predate the practice of writing
+     the CHANGELOG entry first, so the README WAS their only record -- the
+     paragraph that used to sit here pointed at it. -->
+
 ## v1.2.6 "Beacon"
 
-See `README.md` for the v1.2.6 and v1.2.5 feature notes (themes, QoL commands,
-multi-seat, manifest completeness).
+### Themes & Customization
+
+- **Named color themes** — pick from `default`, `midnight`, `amber`, `green`, `classic`, `contrast`, `plasma`, `nord`, `solarized`, or override individual colors. Themes auto-snap to the nearest palette entry on Tier 2 GPUs and are skipped on monochrome Tier 1 GPUs.
+- **Per-user persistence** — your theme is saved to your home directory (`/root/.theme.cfg` for root, `/home/<user>/.theme.cfg` otherwise) and re-applied automatically on login.
+- **`theme` command** — `list`, `show`, `set`, `preview`, `color <key> <0xRRGGBB>`, `reset`, `clear`, `keys`. Aliased as `colors`.
+
+### QoL Commands
+
+- **`date [fmt]`** — wall-clock time using `os.date` formatting; respects the cosmetic `timezone` config offset. (`time` is an alias.)
+- **`tree [path] [depth]`** — visual recursive directory listing with depth control and a 400-entry safety cap.
+
+### Security & Correctness Fixes (carried over from the v1.2.5 review)
+
+- **`compat.filesystem.get()` no longer leaks a raw component proxy.** Sandboxed OpenOS code that called `filesystem.get(...)` previously got a raw filesystem component proxy whose `open`/`list`/`remove` methods bypassed `securefs` entirely. The compat layer now returns a metadata-only wrapper (`spaceTotal`, `spaceUsed`, `getLabel`, `isReadOnly`, `address`, `mountPoint`); every path-operation method returns a clear "raw filesystem access is disabled" error so bypass attempts fail loudly instead of silently.
+- **Sandbox stops issuing raw filesystem proxies.** `kernel.sandbox.makeSafeComponent()` removed `filesystem` from `ALLOWED_COMPONENT_TYPES`, closing the parallel bypass via `component.proxy(filesystem-addr)`. Sandboxed code uses the bound `fs` global or the compat shim — both routed through `securefs`.
+- **`share.lua` listener bug fixed.** Listeners now use the documented `(packet, fromAddr)` arg order (matching `kernel.net.init.dispatchToListeners`); the previous reversed order silently dropped every response. Listeners are also registered before `net.send()` so a fast peer can't beat the listener (same race already fixed in `ssh.lua`).
+
+### Manifest & Deployment
+
+- **`system_manifest.lua` now covers every runtime file.** Previously the manifest listed ~40 paths while the source tree had ~92 — fresh installs created from `deploy` were silently missing all 14 panel submodules, the full compat layer (`buffer`, `colors`, `event`, `keyboard`, `serialization`, `sides`, `term`, `text`), `kernel/audio.lua`, all peripherals, every `/etc/rc.d/` service, and every `/usr/bin` tool. The manifest now lists 116 paths covering everything that ships in a deployed image, including the `theme` module and the mesh `net/mail`, `net/mailctl`, and `net/mesh` stack.
+- **`/usr/lib/tests/test_manifest_completeness.lua`** — walks `/tos`, `/etc/rc.d`, `/usr/bin`, `/usr/modules`, plus root-level boot files, and diffs against the manifest. Reports both missing-from-manifest and missing-from-disk so the manifest can't drift again without the test catching it.
+
+## v1.2.5 "Atlas"
+
+### Multi-Seat / Multi-Screen
+
+- **Per-display shell sessions** — each GPU+Screen pair spawns its own independent shell process with its own login, cwd, and foreground tracking
+- **displayProxy** — full TUI proxy (box-drawing, menus, dialogs, themes) delegated per-display via `display.withContext()`; no drawing crosstalk between screens
+- **Correct input routing** — keyboard signals route via `displayForKeyboard()`, touch/drag/drop/scroll route via `displayForScreen()`; Ctrl+C interrupt targets the correct display's foreground process
+- **Terminal Server / Remote Terminal** support — OC Server Racks with Terminal Server expansions and wireless Remote Terminals work transparently as additional seats
+
+### Security Hardening (v1.2.5+)
+
+- **Module path traversal fix** — boundary-aware prefix matching prevents `/usr/modules/foobar` from passing a check for `/usr/modules/foo`
+- **Sandbox component filtering with per-type caps** — `makeSafeComponent()` splits component access into a base set (gpu/screen/keyboard/crafting/navigation/geolyzer/note_block/sign) granted by the generic `component` cap, and a gated set requiring per-type caps: `peripheral.modem`, `peripheral.redstone`, `peripheral.robot`, `peripheral.inventory`, `peripheral.tape`, `peripheral.tractor`, `peripheral.piston`, `peripheral.hologram`. A module with only `component` can no longer proxy the modem (and therefore can't sniff/forge network traffic). Modules requesting gated caps declare them in `module.cfg`. `eeprom`, `computer`, and `filesystem` remain unreachable from sandboxed code in any tier.
+- **Boot integrity** — BIOS syntax-checks `/init.lua` before execution and defaults to **halt** when the boot drive has changed (was: 10-second timeout default-yes). Operators must explicitly type `y` to update EEPROM, or hold Shift and press Enter for a one-time boot. Per-file hash or signature verification across the boot chain is still tracked work — anyone with write access to `/init.lua`, the system manifest, or `/etc/critical.bak` still gains code execution at next boot.
+- **Module integrity** — `module.cfg` may declare a `hashes = { ["init.lua"] = "<sha256-hex>", ... }` table. When present, the listed files are SHA-256-verified at install time AND at every `modules.enable` call; mismatches refuse to load. Manifests without hashes still load but emit a per-module warning.
+- **Restricted first-boot token** — `users.login()` itself enforces the firstBoot flag: a login on a firstBoot-flagged account mints a GUEST-tier token marked `passwordChangeOnly`, regardless of which path called it (regular login, autoLogin, emergency shell, minimalAuth). The login UI's first-boot dialog calls `users.promoteAfterFirstBoot(token)` once `changePassword` has cleared the flag in the DB to elevate the session to its real tier.
+- **Network MAC + nonce + downgrade guard** — encrypted TRUSTED-peer payloads carry a per-packet random nonce and an HMAC-SHA256 over `(algo || nonce || ciphertext)`. Receivers verify the MAC before any decryption work, refuse duplicate nonces (ring buffer of last 512 per peer), and refuse `enc = "xor"` packets when the receiver has a data card (no downgrade onto the no-MAC software cipher). Old peers without this fix fail the MAC check and get dropped — upgrade peers in lockstep.
+- **`flash` requires typed confirmation** — the BIOS-flash command prints the source path, file size, SHA-256 fingerprint, EEPROM label, and current boot address, then requires typing the literal word `flash` to commit. A stray `y` keystroke can no longer brick the machine.
+- **rc.d `_kernel_` allowlist** — services that declare `user = "_kernel_"` are only honored from a hardcoded allowlist (`10-discoveryd`, `20-chatrelay`, `20-fileshare`, `20-rshd`). Other services that match the regex peek (including matches inside comments) are demoted to the regular user-tier sandbox.
+- **Cluster Manager-Worker HMAC** — when a cluster shared secret is configured via `cluster_worker.setSecret()`, every WRK frame (REGISTER / RESULT / PROGRESS / PONG / TASK / CANCEL / PING) carries an HMAC-SHA256 over `(op || task_id || nonce)`. Frames missing or failing the MAC are dropped; replayed nonces are rejected via a ring buffer of the last 1024 accepted nonces. Re-REGISTER while a task is in flight is refused (closes an attacker-spoofed-worker abort vector).
+
+### Architecture (v1.2.5)
+
+- **Panels split** — `panels/init.lua` broken into 14 focused submodules: state, helpers, tabs, widgets, dialogs, draw, filebrowser, editor, context, commands, executor, menus, events, keymap
+
+## Earlier highlights (v0.2.1 → v1.2.5)
+
+Security hardening — `securefs` normalization, protected-path deletion, remote-shell sandbox tightening, trust-level clamping, cron sandbox, module sandbox, module install path traversal, remote execution wired into the TRUSTED tier, and dozens of bugfixes across the kernel, shell, compat, and networking modules. The full list is not recorded anywhere else; consult the source comments and `tos/kernel/sandbox.lua` for context on individual hardening decisions.

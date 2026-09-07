@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**72 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 51 | Planned or under investigation. Most contributions belong here. |
+| Planned | 54 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1373,6 +1373,42 @@ Per-command `-f`/`--live` shortcut (e.g. `ps -f`) on top of
 ```text
 Prose sync: MANUAL/README/CHANGELOG version + command lists
     (tests cover files, not prose - drift needs a human eye).
+```
+
+### Planned — OPPM checkout source paths: kernel.pkg's programs.cfg translator keeps
+
+```text
+OPPM checkout source paths: kernel.pkg's programs.cfg translator keeps
+    the leading branch segment ("master/gui/gui.lua") as an on-disk path,
+    so it expects a directory literally named `master` in the repo. A git
+    CHECKOUT of an OPPM master branch has no such directory - the segment
+    belongs to the raw URL oppm builds, not to the tree. Reading a cloned
+    OPPM repo from a floppy therefore looks one level too deep and finds
+    nothing. Harmless for OUR published index (oppm fetches by URL, where
+    the key is correct), which is why it is recorded rather than rushed:
+    confirm whether treating the key literally was deliberate before
+    changing it. test_pkg_lifecycle.lua's fixture encodes the same
+    assumption ("sources under master/<pkg>/"), and test_oppm_index.lua
+    pins the current behaviour as [known gap] so a fix fails loudly.
+```
+
+### Planned — Screenshots. There is not one image in the repository, and every venue
+
+```text
+Screenshots. There is not one image in the repository, and every venue
+    worth posting in is one where the screenshot IS the post. Six stills
+    plus a boot GIF; the shot list, the capture method and the publish
+    prerequisite are in docs/screenshots/SHOTS.md. The README already has
+    the markup, commented out, waiting for the files.
+```
+
+### Planned — Get listed in `oppm list`: a PR adding this repo to
+
+```text
+Get listed in `oppm list`: a PR adding this repo to
+    OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch
+    (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS
+    show up for people who never heard of it.
 ```
 
 ## FAR FUTURE / IDEAS
