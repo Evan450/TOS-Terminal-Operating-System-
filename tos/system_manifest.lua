@@ -8,7 +8,7 @@ return {
   { path = "/tos/kernel/hal.lua",             critical = true  , hash = "617c8be797d4a3d47628f3974d4faf6e32dcb3cfa4559947214f86acc1bb7ab2" },
   { path = "/tos/kernel/event.lua",           critical = true  , hash = "05f6f1caf6b7887cf7d920d33e41f489ba6e1e564256b3bf9b3f0f4e93b03d92" },
   { path = "/tos/kernel/process.lua",         critical = true  , hash = "d4bfcb031924b469fce9f8d5c79626190da118214ea5c85154c2c43b336b1f15" },
-  { path = "/tos/kernel/fs.lua",              critical = true  , hash = "5eebbb784d1eaa6794686a6e3a75033c56ef5f3beef85d18675adfce49098924" },
+  { path = "/tos/kernel/fs.lua",              critical = true  , hash = "f7b2a9275d905267440e2d7b6b70865ffecde382765ab29b31101bb084621cb7" },
   { path = "/tos/kernel/serialize.lua",       critical = true  , hash = "9b466afe83b746fc27b1e2c964f703398a838df9a2a81df49ed1d5f4de6996b3" },
   { path = "/tos/kernel/display.lua",         critical = true  , hash = "310af35643ca0a8e50bd85d500a7f00a3f5d7abfabc552b942aaf3dbc8d9fabd" },
 
@@ -29,7 +29,7 @@ return {
   { path = "/tos/kernel/audio.lua",           critical = false , hash = "c3bc801217c310bd2a3614b4d39258fc8af7dfac6b528c007e11dd59ce6c05bf" },
   { path = "/tos/kernel/theme.lua",           critical = false , hash = "a704ee8e8ed3fe6cb357d4c0c6b830fec497f0493c15db51d444bb6c95d3e089" },
   { path = "/tos/kernel/monitor.lua",         critical = false , hash = "27036d7cbb3712b554d3fb1af5b06f9010b3b0491695cd020a730a6eb5b27df2" },
-  { path = "/tos/kernel/pkg.lua",             critical = false , hash = "073083a7225a92b91cef7ae4124f8a6695c7bb9475d35a6ff9316eb972cee660" },
+  { path = "/tos/kernel/pkg.lua",             critical = false , hash = "ea977cc1c2b1d32651ccb018a851d278cbae4995d048a1bfd34615f7b57a2542" },
   { path = "/tos/kernel/swap.lua",            critical = false , hash = "c426adf41af0f98cf746b1df1ac0735b64437a4a2fa0e99f8a22edce6da3a836" },
   { path = "/tos/kernel/compress.lua",        critical = false , hash = "66f70614bd926b498e87114a20a458b2af1eb82819504a57eb90a7a4747b9f21" },
   { path = "/tos/kernel/sysinfo.lua",         critical = false , hash = "71a28f45aa5a38d09fc0ebda1c26b429ba6622b93b310cb5fb13e5ae8d7217fb" },
