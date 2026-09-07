@@ -4,7 +4,9 @@ NAME
 SYNOPSIS
     swap
     swap keys
+    swap now
     swap clear
+    swap on | off | auto
 
 DESCRIPTION
     OpenComputers has no transparent virtual memory, so TOS cannot magically
@@ -33,13 +35,33 @@ DESCRIPTION
     See 'man compress' for the file-level commands using the same mechanism.
 
 SUBCOMMANDS
-    (none)   Show used/cap/percent and entry count.
+    (none)   Show used/cap/percent, entry count, how many view tabs are
+             paged out, and the free-RAM threshold that triggers paging.
+    status   Same as no argument.
     keys     List the store keys currently held.
-    clear    Wipe all swap now (admin).
+    now      Page every cold view tab out immediately, ignoring the pressure
+             threshold. On a machine with RAM to spare paging correctly never
+             fires on its own, which makes this the only way to confirm the
+             mechanism works.
+    clear    Wipe all swap now (admin). Anything currently paged is restored
+             first, so a tab pointing at the store does not lose its buffer.
+    on       Enable the swap boot feature (admin). Applies on next boot.
+    off      Disable it (admin). Applies on next boot.
+    auto     Let the boot profile decide (admin, the default).
+
+    'optimize swap ...' is the same command under an older spelling.
+
+ENERGY
+    Swap is the one optimization that COSTS energy: paging a cold buffer out is
+    a disk write, and OpenComputers bills disk I/O per kilobyte (writes more
+    than reads). It buys RAM with power. See 'optimize power' for the levers
+    that go the other way.
 
 EXAMPLES
     swap
+    swap now
     swap clear
+    swap off
 
 SEE ALSO
-    man memory, man compress, MANUAL.md (Section 9.3)
+    man memory, man compress, MANUAL.md (Section 9.4)

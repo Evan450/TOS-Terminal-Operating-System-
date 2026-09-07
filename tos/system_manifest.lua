@@ -164,7 +164,7 @@ return {
   { path = "/usr/man/pkg.man",                critical = false , hash = "8ba1295afb638176f0a905ee936d38efc504fab0e56f098e8c39ffc1541e7a8e" },
   { path = "/usr/man/screen.man",             critical = false , hash = "d9c032bec59e3367b6cb5192d8c2eee764a170c1bf2501059b2ec898d1605f0a" },
   { path = "/usr/man/srm.man",                critical = false , hash = "d09d32707a22e0d86fb2ddd4ef95e4529d13a7cdc8aab4dc62eea48cc17f6dcd" },
-  { path = "/usr/man/swap.man",               critical = false , hash = "0575e2c18383e695e9f93008058f69d260532f1afddac12f767f1d82d2dbabcc" },
+  { path = "/usr/man/swap.man",               critical = false , hash = "d301cddd26e6ce0952448b43675d58d3da4121f34752ce003807cd900fca9bbf" },
   { path = "/usr/man/vault.man",              critical = false , hash = "62e8fb661c18b2c4d52c02c79763658528f951906d2a3927b291dbcdac478367" },
 
   { path = "/usr/lang/ru.lang",               critical = false , hash = "d69c32869d75db0b17e7ebcbedda17449e111a325d6e8fbf3c0cc87340054611" },
