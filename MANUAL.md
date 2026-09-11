@@ -2500,17 +2500,22 @@ I refused?". *See also:* `why`, `alias`, `programs`, `pkg`.
 **whoami** — `whoami`
 Print the current user and tier. *See also:* `logout`, `users`.
 
-**why** — `why [<command>]`
+**why** — `why [<code> | <command>]`
 Explain the last refusal or error, in plain English, with the fix. With no
 argument it takes whatever just failed on this seat — a tier denial, a
 protected-path refusal, a trash refusal, an out-of-memory, an unknown command —
-quotes it back and explains it. A tier denial gets the fullest answer (which tier
-the command needs against the one you hold); everything else is matched against
-the refusals TOS knows how to explain. If it does not recognise the message it
-says so and points at `log`, rather than guessing. `why <command>` explains what
-that command needs and whether your account can run it. File-browser actions
-(F8 delete and friends) count too — you do not have to have typed a command.
-*See also:* `whoami`, `users`, `protect`, `log`.
+quotes it back, names its error code, and explains it. A tier denial gets the
+fullest answer (which tier the command needs against the one you hold). A
+refusal that carries a code (`[E-402 ERR_PATH_PROTECTED]`) is identified by the
+code; older messages are matched against the refusals TOS knows how to explain.
+If it recognises neither, it says so and points at `log` rather than guessing.
+`why <code>` explains an error code in any spelling — `E-402`,
+`ERR_PATH_PROTECTED`, `0x00040002`, or an EEPROM beep code like `K4` — so a code
+read off a stop screen or a log can be looked up afterwards (Appendix C lists
+them). `why <command>` explains what that command needs and whether your account
+can run it. File-browser actions (F8 delete and friends) count too — you do not
+have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
+`crash`, Appendix C.
 
 ---
 
@@ -2588,6 +2593,16 @@ that command needs and whether your account can run it. File-browser actions
 - **Won't boot / missing files:** the BIOS POST lists missing critical files;
   `verify` checks the manifest; `critical.bak` and the hardcoded fallback list
   guard the boot file set.
+- **A blue STOP screen:** the kernel hit an error it could not recover from. The
+  `*** STOP:` line names it with an `E-` code and an `ERR_` symbol; the hex under
+  it is a machine reference you can ignore. The crash report is saved to
+  `/var/crash` — after the reboot, `crash` reads it, and `why E-201` (or
+  whichever code it showed) explains it. A Tier 1 monochrome screen draws the
+  same page in inverse video. Every code is listed in Appendix C.
+- **`SRM <code> - POST FAILED`:** the EEPROM caught a boot fault before the OS
+  could load. The two-character code is also the beep count (`K4` is four short
+  beeps after a long one). `srm status` reports it on the next successful boot,
+  and `why K4` explains it.
 - **A command vanished from `help`:** that's install-aware help — its hardware or
   package isn't present. Check `pkg list` / attach the peripheral.
 - **One slow login after upgrading from an early 1.3.1 build:** if an account's
@@ -2647,6 +2662,52 @@ entirely optional, since a Manager runs work inline perfectly well. See
 The protocol uses TOS's trust + encryption, with a required `shared_secret`
 (default-deny) on the worker bridge. Full details in
 `TOS-Extras/cluster/cluster-protocol-spec-draft.md`.
+
+## Appendix C — Error codes
+
+Every error TOS names has one entry in `tos/kernel/errors.lua`, and three
+spellings of it:
+
+- **`E-402`** — what you read, say and search for.
+- **`ERR_PATH_PROTECTED`** — what programs key on, and what `why` looks up.
+- **`0x00040002`** — a machine reference shown on the stop screen only. It is
+  computed from the E-number (subsystem × 65536 + index) and never stored, so
+  the two cannot disagree, and you never need to look it up.
+
+`why <code>` explains any of them, in any spelling, after the fact. A refusal
+that has a code ends with it in brackets — `[E-402 ERR_PATH_PROTECTED]` — and a
+bare `why` names it too.
+
+The hundreds digit is the subsystem: **1xx** boot and POST, **2xx** kernel,
+**3xx** files, **4xx** access, **5xx** network, **6xx** packages, **7xx**
+hardware, **8xx** the shell. A code is never renumbered or reused once it has
+shipped, so a log line or a forum post that quotes one means the same thing
+forever. Subsystems with no entries yet are reserved, not forgotten.
+
+Boot faults also carry the EEPROM's two-character code, which is what the
+`SRM <code> - POST FAILED` screen shows. Its digit is the number of short beeps
+after the long one, so a machine with no screen still tells you which fault it
+hit — and the E-number's last digit is that same beep count.
+
+| Code | Symbol | Meaning | EEPROM |
+|---|---|---|---|
+| E-101 | `ERR_CPU_ARCH` | CPU architecture is too old — TOS needs a Lua 5.3+ CPU | C1 |
+| E-102 | `ERR_NO_BOOT_DEVICE` | no boot device — no /init.lua disk and no TBFS drive was found | D2 |
+| E-103 | `ERR_TBFS_BOOT` | the TBFS boot blob would not compile (raw-drive boot region damaged) | B3 |
+| E-104 | `ERR_KERNEL_MISSING` | the kernel was missing — /tos/kernel/init.lua was not on the disk | K4 |
+| E-105 | `ERR_INIT_UNREADABLE` | /init.lua could not be opened (unreadable or the disk went away) | I5 |
+| E-106 | `ERR_INIT_SYNTAX` | /init.lua would not compile (truncated or corrupted write) | I6 |
+| E-201 | `ERR_KERNEL_PANIC` | the kernel hit an error it could not recover from | |
+| E-202 | `ERR_OUT_OF_MEMORY` | the machine ran out of RAM | |
+| E-301 | `ERR_NO_SPACE` | the disk is full | |
+| E-302 | `ERR_NEEDS_RECURSIVE` | that is a directory; removing it needs -r | |
+| E-303 | `ERR_RM_SYSTEM_PATH` | rm will not remove a system path without -r | |
+| E-304 | `ERR_TRASH_REFUSED` | the trash would not take it, so nothing was deleted | |
+| E-401 | `ERR_PERM_DENIED` | your account is not allowed to do that | |
+| E-402 | `ERR_PATH_PROTECTED` | that path is guarded against changes, even by an admin | |
+| E-403 | `ERR_TIER_REQUIRED` | that needs a higher account tier | |
+| E-801 | `ERR_UNKNOWN_CMD` | no command by that name | |
+| E-802 | `ERR_CMD_UNLOADABLE` | the command exists but would not fit in memory | |
 
 ---
 

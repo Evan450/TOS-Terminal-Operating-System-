@@ -1,32 +1,20 @@
 # Screenshots: what to capture, and where they go
 
-The repository has no images. That is the single largest thing standing between
-TOS and anyone finding it: on the OpenComputers forum, on Discord, on Reddit,
-**the screenshot is the post**. A wall of text about an OS gets scrolled past.
+The repository has no images. That is the single largest thing standing between TOS and anyone finding it: on the OpenComputers forum, on Discord, on Reddit, **the screenshot is the post**. A wall of text about an OS gets scrolled past.
 
 This file is the shot list so the capture session is mechanical.
 
 ## Where the files go
 
-`docs/screenshots/` on the **`dev`** branch, at the exact filenames below. The
-README references them by absolute `raw.githubusercontent.com` URL pinned to
-`dev`, so one copy renders correctly on every branch.
+`docs/screenshots/` on the **`dev`** branch, at the exact filenames below. The README references them by absolute `raw.githubusercontent.com` URL pinned to `dev`, so one copy renders correctly on every branch.
 
-**Before publishing, one prerequisite:** `publish.ps1` refuses any top-level
-directory that is not on its allowlist, and `docs` is not on it. Add it to the
-`$Dev` branch's `$AllowedDirs` (beside `build` and `TOS-Extras`) or the first
-`-Dev -Push` after adding images will stop with "Refusing to publish files that
-are not on the allowlist." Keep it out of the `main` allowlist: install payloads
-should not carry screenshots.
+`publish.ps1` refuses any top-level directory that is not on its allowlist. `docs` is on the `dev` list (so screenshots publish with the source) and deliberately **not** on `main`'s: that is the branch installers download, and a machine with ~450 KB free after a full install has no business carrying images it will never open.
 
-Then delete the `<!-- SCREENSHOTS ... -->` comment wrapper at the top of
-`README.md` — the markup inside it is already written.
+Then delete the `<!-- SCREENSHOTS ... -->` comment wrapper at the top of `README.md` — the markup inside it is already written.
 
 ## The shots
 
-Capture at a readable resolution (a Tier 2 GPU on an 80×25 screen reads well;
-Tier 3 at higher density looks better but shrinks the text in a thumbnail).
-Crop to the screen — no emulator chrome, no desktop wallpaper.
+Capture at a readable resolution (a Tier 2 GPU on an 80×25 screen reads well; Tier 3 at higher density looks better but shrinks the text in a thumbnail). Crop to the screen — no emulator chrome, no desktop wallpaper.
 
 | File | What is on screen | Why this one |
 |---|---|---|
@@ -40,23 +28,13 @@ Crop to the screen — no emulator chrome, no desktop wallpaper.
 
 ## Capturing
 
-TOS is developed against the Ocelot desktop emulator
-(`Documents\Ocelot Destop Emulator\`), which is the practical way to get a
-clean, croppable frame without launching Minecraft. Any screen recorder that
-can export a GIF will do for `boot.gif`.
+TOS is developed against the Ocelot desktop emulator (`Documents\Ocelot Destop Emulator\`), which is the practical way to get a clean, croppable frame without launching Minecraft. Any screen recorder that can export a GIF will do for `boot.gif`.
 
 Two things to check before shooting:
 
-- **Log in as a normal user, not root**, for `desktop.png` and `files.png`.
-  Root's landing view defaults to the file list and its Desktop is missing the
-  tiles a normal account sees.
-- **Set the theme deliberately.** The default is fine, but pick one and use the
-  same one for every still except `themes.png`, so the set looks like one
-  system rather than seven screenshots of different programs.
+- **Log in as a normal user, not root**, for `desktop.png` and `files.png`. Root's landing view defaults to the file list and its Desktop is missing the tiles a normal account sees.
+- **Set the theme deliberately.** The default is fine, but pick one and use the same one for every still except `themes.png`, so the set looks like one system rather than seven screenshots of different programs.
 
 ## What not to do
 
-Do not reconstruct these from `screendump` output or draw them by hand. A
-screendump is text plus a colour map — useful for bug reports, not a substitute
-for a capture. An image that looks like a screenshot but was generated is the
-same class of claim this project spent v1.5.0 removing.
+Do not reconstruct these from `screendump` output or draw them by hand. A screendump is text plus a colour map — useful for bug reports, not a substitute for a capture. An image that looks like a screenshot but was generated is the same class of claim this project spent v1.5.0 removing.

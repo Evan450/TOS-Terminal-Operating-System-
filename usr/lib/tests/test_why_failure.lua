@@ -225,7 +225,72 @@ do
     -- 5. `why <command>` is untouched.
     local named = whyOut({ "ls" })
     test("`why <command>` still works", named:find("ls", 1, true) ~= nil)
+
+    -- 6. `why <code>` through the real command: a code read off a stop
+    -- screen or a log, looked up after the reboot.
+    local byCode = whyOut({ "E-402" })
+    test("`why E-402` explains the code by name",
+      byCode and byCode:find("E-402 ERR_PATH_PROTECTED", 1, true) ~= nil)
+    test("...with the same explanation a live refusal gets",
+      byCode and byCode:find("protect off", 1, true) ~= nil)
+    local byBios = whyOut({ "K4" })
+    test("`why K4` explains an EEPROM beep code",
+      byBios and byBios:find("ERR_KERNEL_MISSING", 1, true) ~= nil)
+
+    -- 7. After a tagged refusal, bare `why` names the code as well.
+    helpers.clearFailure(S)
+    helpers.noteFailure(S, "rm", refusal)
+    local tagged = whyOut({})
+    test("`why` after a refusal names its code",
+      tagged and tagged:find("E-402 ERR_PATH_PROTECTED", 1, true) ~= nil, tagged)
   end
+end
+
+-- ── Keyed on codes: the tag decides, not the prose ──────────────────
+--! The point of giving refusals codes is that `why` stops depending on
+--! their wording. The proof is to reword one completely, keep its tag, and
+--! check the explanation does not move -- and that a tag outranks a keyword
+--! that would have matched something else.
+print("\n-- keyed on codes --")
+do
+  local function flat(ls)
+    local t = {}; for _, l in ipairs(ls or {}) do t[#t + 1] = l.text end
+    return table.concat(t, "\n")
+  end
+  local real = securefs and securefs._protectedMsg and securefs._protectedMsg("removing", "/tos", nil)
+  test("the real protected-path refusal carries its code",
+    real ~= nil and real:find("[E-402 ERR_PATH_PROTECTED]", 1, true) ~= nil)
+  local lines, _, label = helpers.explainFailure(real or "")
+  test("...and explainFailure names it", label == "E-402 ERR_PATH_PROTECTED", tostring(label))
+  local reworded = helpers.explainFailure(
+    "Entirely different words, none of the old ones  [E-402 ERR_PATH_PROTECTED]")
+  test("reworded prose, same tag: the SAME explanation",
+    reworded ~= nil and flat(reworded) == flat(lines))
+  local _, eMis = helpers.explainFailure("Permission denied: misleading  [E-402 ERR_PATH_PROTECTED]")
+  test("a tag outranks a keyword that would match something else",
+    eMis ~= nil and eMis.sym == "ERR_PATH_PROTECTED")
+  local _, eOom = helpers.explainFailure("tos/x.lua:1: not enough memory")
+  test("untagged OC text still maps to its code (the prose fallback)",
+    eOom ~= nil and eOom.sym == "ERR_OUT_OF_MEMORY")
+  local _, eShell = helpers.explainFailure("Permission denied: root only  [E-403 ERR_TIER_REQUIRED]")
+  test("the tier gate's own message is its own code, not the ACL one",
+    eShell ~= nil and eShell.sym == "ERR_TIER_REQUIRED")
+end
+
+-- ── `why <code>`: every spelling an operator might type ─────────────
+print("\n-- explainCode --")
+do
+  for _, q in ipairs({ "E-402", "e402", "402", "ERR_PATH_PROTECTED", "path_protected", "0x00040002" }) do
+    local _, e = helpers.explainCode(q)
+    test(string.format("explainCode(%q) -> E-402", q), e ~= nil and e.num == 402)
+  end
+  local bl = helpers.explainCode("K4")
+  local bt = ""
+  for _, l in ipairs(bl or {}) do bt = bt .. l.text .. "\n" end
+  test("an EEPROM code explains itself, beep count included",
+    bt:find("K4", 1, true) ~= nil and bt:find("4 short", 1, true) ~= nil, bt)
+  test("`why ls` is not mistaken for a code", helpers.explainCode("ls") == nil)
+  test("nor is an unknown number", helpers.explainCode("E-999") == nil)
 end
 
 print(string.format("\n%d passed, %d failed", passed, failed))

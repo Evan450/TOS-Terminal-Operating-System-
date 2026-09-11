@@ -360,7 +360,7 @@ function M.build(S, deps)
         local okReg, cmdsMod = pcall(require, "shell.panels.commands")
         local known = okReg and cmdsMod.entry and cmdsMod.entry(name) or nil
         if known then
-          o("'" .. name .. "' could not be loaded.", T.error)
+          o("'" .. name .. "' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
           if S.lastOut and S.lastOut[1] then
             o(S.lastOut[1], T.error)
           else
@@ -368,7 +368,7 @@ function M.build(S, deps)
           end
           o("Free some memory (close tabs, or reboot) and try again.", T.dim)
         else
-          o("Unknown command: " .. name, T.error)
+          o("Unknown command: " .. name .. "  [E-801 ERR_UNKNOWN_CMD]", T.error)
           o("Type 'help' for available commands.", T.dim)
         end
         if _G._TOS.audio then _G._TOS.audio.warning() end

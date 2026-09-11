@@ -298,7 +298,14 @@ do
   le("boot blob fits the 64 KB region test_blockfs.lua formats", 64 * 1024 - 4, #blob)
   -- The pack ships this file unstripped, so its size is RAM on a 192 KB
   -- machine. A ceiling, so growth is a decision rather than drift.
-  le("driver source stays under 52 KB", 52 * 1024, #src)
+  --! DECIDED 2026-09-10: 52 KB -> 54 KB. The ENOSPC fix (an allocation
+  --! journal and a two-pass write) and deploy's pre-flight (blockfs.plan,
+  --! blockfs.blocksFor) added ~2.4 KB of code. The comments that came with
+  --! it were cut first and the code tightened; the remainder still did not
+  --! fit, and the maintainer chose to raise the ceiling over golfing
+  --! readable code. The larger lever is stripping the pack's Lua at build
+  --! time, which would give back far more than this cost.
+  le("driver source stays under 54 KB", 54 * 1024, #src)
 end
 
 print()

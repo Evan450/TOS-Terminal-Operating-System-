@@ -540,6 +540,10 @@ do
   local srmSrc = findUp("tos/kernel/srm.lua")
   test("kernel/srm.lua readable", srmSrc ~= nil)
   if srmSrc then
+    -- srm reads its code text from kernel.errors (one table for SRM and
+    -- the stop screen); load it by path, the same way srm is loaded here.
+    local errSrc = findUp("tos/kernel/errors.lua")
+    if errSrc then package.loaded["kernel.errors"] = assert(load(errSrc, "=errors.lua", "t"))() end
     local srm = assert(load(srmSrc, "=srm.lua", "t"))()
     for code in biosSrc:gmatch('F%("(%u%d)"') do
       test("srm explains BIOS code " .. code,

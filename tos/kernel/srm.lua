@@ -71,14 +71,17 @@ srm.MAX_STORE_BYTES = 128 * 1024
 --! Keep in sync with the F() call sites in bios.lua. The digit is also the
 --! number of short beeps SRM Basic emits, so a screenless box is diagnosable
 --! by ear; test_bios.lua pins both halves of that contract.
-srm.BASIC_CODES = {
-  C1 = "CPU architecture is too old — TOS needs a Lua 5.3+ CPU",
-  D2 = "no boot device — no /init.lua disk and no TBFS drive was found",
-  B3 = "the TBFS boot blob would not compile (raw-drive boot region damaged)",
-  K4 = "the kernel was missing — /tos/kernel/init.lua was not on the disk",
-  I5 = "/init.lua could not be opened (unreadable or the disk went away)",
-  I6 = "/init.lua would not compile (truncated or corrupted write)",
-}
+--!
+--! The text lives in kernel.errors now, which also gives each code its
+--! E-number and symbol (C1 is E-101 ERR_CPU_ARCH). One table, so what SRM
+--! prints and what the stop screen shows cannot drift apart. If the registry
+--! will not load this degrades to "unrecognised code" instead of taking SRM
+--! down with it: SRM runs at exactly the moments things like that happen.
+do
+  local okE, errors = pcall(require, "kernel.errors")
+  srm.errors = (okE and type(errors) == "table") and errors or nil
+  srm.BASIC_CODES = srm.errors and srm.errors.biosTable() or {}
+end
 
 -- ============================================================
 -- Dependency resolution
@@ -231,9 +234,11 @@ function srm.readFault(deps)
   if not ok then return nil end
   local code = srm.parseFault(data)
   if not code then return nil end
+  local e = srm.errors and srm.errors.find(code)
   return {
     code = code,
     why  = srm.BASIC_CODES[code] or "unrecognised SRM Basic code (newer BIOS?)",
+    err  = e and srm.errors.label(e) or nil,     -- "E-104 ERR_KERNEL_MISSING"
   }
 end
 

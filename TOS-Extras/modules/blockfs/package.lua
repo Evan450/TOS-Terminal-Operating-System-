@@ -16,7 +16,7 @@
 -- carries no capabilities of its own.
 return {
   name        = "blockfs",
-  version     = "1.2.0",
+  version     = "1.2.1",
   kind        = "lib",
   category    = "storage",
   description = "TBFS: a real hierarchical filesystem for unmanaged drives (format/mount/fsck/defrag via the base `drive` command).",

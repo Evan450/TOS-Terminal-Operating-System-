@@ -386,7 +386,7 @@ function M.rootOnly(S, o)
     -- Record the denial so `why` (no args) can explain it after the fact.
     -- Both records: lastDenial carries the tier numbers `why` prefers,
     -- lastFailure is the generic one every other refusal writes.
-    local r = M.fail(S, "Permission denied: root only", o)
+    local r = M.fail(S, "Permission denied: root only  [E-403 ERR_TIER_REQUIRED]", o)
     S.lastDenial = { cmd = S.curCmd, need = 3, have = M.liveTier(S) }
     return r
   end
@@ -395,7 +395,7 @@ end
 
 function M.adminOnly(S, o)
   if M.liveTier(S) < 2 then
-    local r = M.fail(S, "Permission denied: admin access required", o)
+    local r = M.fail(S, "Permission denied: admin access required  [E-403 ERR_TIER_REQUIRED]", o)
     S.lastDenial = { cmd = S.curCmd, need = 2, have = M.liveTier(S) }
     return r
   end
@@ -495,13 +495,14 @@ function M.fail(S, msg, o, cmd)
   return false
 end
 
--- Each entry: a substring the producing code really emits, and the lines
--- to say when it appears. The substrings are not copied by hand into the
--- test — test_why_failure.lua builds each message from the module that
--- produces it and asserts this table recognises it, so rewording the
--- message breaks the test rather than silently breaking `why`.
+-- Each entry: the registry symbol it explains (kernel/errors.lua), and --
+-- for messages that predate the registry, or that OC writes itself -- a
+-- substring the producing code really emits. A TAGGED message is matched
+-- by its code alone, so its wording can change freely; the substring is
+-- only the fallback. test_why_failure.lua builds each message from the
+-- module that produces it and checks both paths.
 local FAILURES = {
-  { key = "is a protected system path", lines = {
+  { key = "is a protected system path", sym = "ERR_PATH_PROTECTED", lines = {
       { "That is a guard, not a permission problem.", "err" },
       { "TOS keeps its own files (/tos, /etc, /init.lua, /usr) behind a", "dim" },
       { "check that sits ABOVE the user model, so a mistake — or a", "dim" },
@@ -511,17 +512,17 @@ local FAILURES = {
       { "(it lifts at logout, and every path it allows is logged). To", "fix" },
       { "REMOVE TOS, boot another disk and delete it from there.", "fix" },
     } },
-  { key = "Refusing to remove protected path without -r", lines = {
+  { key = "Refusing to remove protected path without -r", sym = "ERR_RM_SYSTEM_PATH", lines = {
       { "You named a system path, and rm will not touch one by accident.", "err" },
       { "Fix: add -r if you really mean the whole tree. Note the", "fix" },
       { "protected-path guard may still refuse it — that is a separate", "dim" },
       { "check, and `why` will say so if it fires.", "dim" },
     } },
-  { key = "Cannot remove directory without -r", lines = {
+  { key = "Cannot remove directory without -r", sym = "ERR_NEEDS_RECURSIVE", lines = {
       { "rm removes files; a directory needs the recursive flag.", "err" },
       { "Fix:  rm -r <path>", "fix" },
     } },
-  { key = "Not trashed:", lines = {
+  { key = "Not trashed:", sym = "ERR_TRASH_REFUSED", lines = {
       { "The delete was REFUSED, not performed — the file is still there.", "err" },
       { "TOS routes rm through the trash so a delete is undoable. When", "dim" },
       { "the trash will not take a file (too large for its cap, or the", "dim" },
@@ -530,23 +531,41 @@ local FAILURES = {
       { "Fix: empty it (`trash empty`), raise the cap, or delete for good", "fix" },
       { "with  rm --hard <path>", "fix" },
     } },
-  { key = "not enough memory", lines = {
+  { key = "not enough memory", sym = "ERR_OUT_OF_MEMORY", lines = {
       { "The machine ran out of RAM part-way through.", "err" },
       { "Fix: close view tabs, `trash empty`, or reboot. `free` shows", "fix" },
       { "what is left; more RAM sticks raise the ceiling.", "fix" },
     } },
-  { key = "could not be loaded", lines = {
+  { key = "could not be loaded", sym = "ERR_CMD_UNLOADABLE", lines = {
       { "The command exists — its command group would not fit in memory.", "err" },
       { "Fix: free RAM (close tabs, reboot) and run it again.", "fix" },
     } },
-  { key = "Unknown command:", lines = {
+  { key = "Unknown command:", sym = "ERR_UNKNOWN_CMD", lines = {
       { "No command by that name is registered on this machine.", "err" },
       { "Fix: `help` lists what there is, Tab completes names, and", "fix" },
       { "`pkg list` shows what an add-on would provide.", "fix" },
     } },
   -- Least specific LAST: several messages above also contain a denial
   -- word, and the first match wins.
-  { key = "Permission denied", lines = {
+  { key = "out of space", sym = "ERR_NO_SPACE", lines = {
+      { "The disk is full.", "err" },
+      { "Fix: `df` shows which disk; `trash empty` and removing files free", "fix" },
+      { "it. The write that failed changed nothing, so retry after.", "fix" },
+    } },
+  -- Code-only: reached by a tag or `why E-403`, never by a prose match. A
+  -- tier refusal is already explained in full through lastDenial.
+  { sym = "ERR_TIER_REQUIRED", lines = {
+      { "Your account's tier is too low for that command.", "err" },
+      { "Fix: `why <command>` shows the tier it needs; an admin can run it,", "fix" },
+      { "or sign in on an account that has that tier.", "fix" },
+    } },
+  { sym = "ERR_KERNEL_PANIC", lines = {
+      { "The kernel hit an error it could not recover from, and stopped.", "err" },
+      { "The crash report is in /var/crash — `crash` reads it.", "dim" },
+      { "Fix: reboot. If it happens again, run  srm scan  (from another", "fix" },
+      { "disk, if this one will not boot).", "fix" },
+    } },
+  { key = "Permission denied", sym = "ERR_PERM_DENIED", lines = {
       { "Your account is not allowed to touch that path.", "err" },
       { "This one IS the permission model: the file's owner and mode", "dim" },
       { "decide, so it depends on who you are as much as what you ran.", "dim" },
@@ -555,19 +574,65 @@ local FAILURES = {
     } },
 }
 
---- Pure: explain a failure MESSAGE. Returns { {text=,tone=}, ... }, or
---- nil when the message matches nothing known — callers show the message
---- itself and point at the log rather than inventing an explanation.
-function M.explainFailure(text)
-  if type(text) ~= "string" then return nil end
+local function errorsMod()
+  local ok, errors = pcall(require, "kernel.errors")
+  return (ok and type(errors) == "table") and errors or nil
+end
+
+local function linesFor(sym)
   for _, f in ipairs(FAILURES) do
-    if text:find(f.key, 1, true) then
+    if f.sym == sym then
       local out = {}
       for _, l in ipairs(f.lines) do out[#out + 1] = { text = l[1], tone = l[2] } end
       return out
     end
   end
-  return nil
+end
+
+--- Explain a failure MESSAGE. Returns (lines, entry, label): lines is
+--- { {text=,tone=}, ... }; entry/label name its registry code when it has
+--- one. nil when the message matches nothing known -- callers show the
+--- message itself and point at the log rather than inventing a cause.
+---
+--! A TAGGED message ("... [E-402 ERR_PATH_PROTECTED]") is identified by its
+--! code alone, which is the point of having codes: its wording can change
+--! without breaking `why`. Prose matching is the fallback, for messages that
+--! predate the registry and for the ones OC itself writes.
+function M.explainFailure(text)
+  if type(text) ~= "string" then return nil end
+  local errors = errorsMod()
+  local entry = errors and errors.parse(text)
+  local lines
+  if entry then
+    lines = linesFor(entry.sym)
+      or { { text = entry.title:sub(1, 1):upper() .. entry.title:sub(2) .. ".", tone = "err" } }
+  else
+    for _, f in ipairs(FAILURES) do
+      if f.key and text:find(f.key, 1, true) then
+        lines = linesFor(f.sym)
+        entry = errors and errors.find(f.sym)
+        break
+      end
+    end
+  end
+  if not lines then return nil end
+  return lines, entry, entry and errors.label(entry) or nil
+end
+
+--- Explain an error CODE an operator typed -- E-402, ERR_PATH_PROTECTED,
+--- 0x00040002, 402, or an EEPROM beep code like K4. nil for anything that
+--- is not recognisably a code, so `why ls` still means the command.
+function M.explainCode(q)
+  local errors = errorsMod()
+  local e = errors and errors.find(q)
+  if not e then return nil end
+  local out = { { text = errors.label(e) .. " — " .. e.title, tone = "title" } }
+  for _, l in ipairs(linesFor(e.sym) or {}) do out[#out + 1] = l end
+  if e.bios then
+    out[#out + 1] = { text = string.format("The EEPROM reports this one as %s: a long beep, then %d "
+      .. "short. `srm status` shows the last one.", e.bios, e.num % 100), tone = "dim" }
+  end
+  return out, e
 end
 
 --! The ONE way to log a seat out.
@@ -654,7 +719,7 @@ function M.canAccess(S, path, mode, o)
       ok, reason = false, "access check unavailable"
     end
     if not ok then
-      return M.fail(S, "Permission denied: " .. (reason or path), o)
+      return M.fail(S, "Permission denied: " .. (reason or path) .. "  [E-401 ERR_PERM_DENIED]", o)
     end
     return true
   end
@@ -662,7 +727,7 @@ function M.canAccess(S, path, mode, o)
     for _, sp in ipairs({ "/tos", "/etc", "/var" }) do
       if path == sp or path:sub(1, #sp + 1) == sp .. "/" then
         if S.who ~= "root" then
-          return M.fail(S, "Permission denied: system path", o)
+          return M.fail(S, "Permission denied: system path  [E-401 ERR_PERM_DENIED]", o)
         end
       end
     end

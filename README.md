@@ -1,15 +1,10 @@
 # TOS — Terminal Operating System
 
-**A multi-user operating system for the OpenComputers Minecraft mod.** Logins,
-per-user permissions, a capability sandbox, signed packages and an encrypted
-mesh network — on a machine with 256 KB of RAM.
+**A multi-user operating system for the OpenComputers Minecraft mod.** Logins, per-user permissions, a capability sandbox, signed packages and an encrypted mesh network — on a machine with 256 KB of RAM.
 
-**Requires OpenComputers 1.7.5 or newer, on Minecraft 1.12.2**, with a CPU set
-to the **Lua 5.3 or 5.4 architecture** (sneak-click the CPU to switch) and a
-Tier 2 disk. Full requirements below.
+**Requires OpenComputers 1.7.5 or newer, on Minecraft 1.12.2**, with a CPU set to the **Lua 5.3 or 5.4 architecture** (sneak-click the CPU to switch) and a Tier 2 disk. Full requirements below.
 
-Current release: **v1.5.0 "Aletheia"** — see [`CHANGELOG.md`](CHANGELOG.md) for
-what changed.
+Current release: **v1.5.0 "Aletheia"** — see [`CHANGELOG.md`](CHANGELOG.md) for what changed.
 
 <!-- SCREENSHOTS -- see docs/screenshots/SHOTS.md for the shot list and how to
      capture them. Delete this comment wrapper once the files exist on `dev`;
@@ -32,50 +27,28 @@ On a bare OpenOS machine with an Internet Card, one line:
 wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
 ```
 
-**The leading slash is not optional** — `wget` saves to the filesystem root,
-and the root is not on OpenOS's `PATH`. No Internet Card? Install from a floppy
-or from source instead; see [Installation](#installation) for all three routes.
+**The leading slash is not optional** — `wget` saves to the filesystem root, and the root is not on OpenOS's `PATH`. No Internet Card? Install from a floppy or from source instead; see [Installation](#installation) for all three routes.
 
-Log in as `root` / `root`; the first boot makes you change it and offers a
-walkthrough.
+Log in as `root` / `root`; the first boot makes you change it and offers a walkthrough.
 
 ## Why not just use OpenOS?
 
-OpenOS gives you a shell. TOS gives you accounts and logins, per-user file
-permissions, a capability-based sandbox that user programs cannot escape,
-package signing, and an authenticated encrypted mesh between machines — on
-hardware OpenOS itself targets.
+OpenOS gives you a shell. TOS gives you accounts and logins, per-user file permissions, a capability-based sandbox that user programs cannot escape, package signing, and an authenticated encrypted mesh between machines — on hardware OpenOS itself targets.
 
-It is **keyboard-first and built to run infrastructure**: a base that has to
-keep working. It degrades to Tier 1 monochrome rather than requiring a big rig,
-runs a full independent session on every GPU+screen pair, survives power loss
-without corrupting its own filesystem, and ships a cluster scheduler and an
-RBMK reactor supervisor for bases that need one. If you want a graphical
-desktop on a maxed-out machine, MineOS is the better answer and this is not
-trying to be it.
+It is **keyboard-first and built to run infrastructure**: a base that has to keep working. It degrades to Tier 1 monochrome rather than requiring a big rig, runs a full independent session on every GPU+screen pair, survives power loss without corrupting its own filesystem, and ships a cluster scheduler and an RBMK reactor supervisor for bases that need one. If you want a graphical desktop on a maxed-out machine, MineOS is the better answer and this is not trying to be it.
 
 ## What's in it
 
-- **Accounts and permissions** — real logins, four tiers (guest/user/admin/root),
-  per-user home directories and ACLs, `sudo`, session timeouts, lockout backoff.
-- **A capability sandbox** — programs receive only what they declare and are
-  granted; no ambient `_G`, no raw `component`, no back door into the kernel.
-- **Signed packages** — `pkg` installs from a floppy, a directory, or over the
-  network, verifying an Ed25519 signature and a per-file hash on arrival.
-- **A zero-trust mesh** — peers are unknown until paired; TRUSTED traffic is
-  encrypted and MAC-authenticated with replay protection.
-- **A tile Desktop and a file browser**, nine named colour themes, and a full
-  reference manual — [`MANUAL.md`](MANUAL.md), *The Book of TOS*.
+- **Accounts and permissions** — real logins, four tiers (guest/user/admin/root), per-user home directories and ACLs, `sudo`, session timeouts, lockout backoff.
+- **A capability sandbox** — programs receive only what they declare and are granted; no ambient `_G`, no raw `component`, no back door into the kernel.
+- **Signed packages** — `pkg` installs from a floppy, a directory, or over the network, verifying an Ed25519 signature and a per-file hash on arrival.
+- **A zero-trust mesh** — peers are unknown until paired; TRUSTED traffic is encrypted and MAC-authenticated with replay protection.
+- **A tile Desktop and a file browser**, nine named colour themes, and a full reference manual — [`MANUAL.md`](MANUAL.md), *The Book of TOS*.
 - **OpenOS compatibility**, so much of what already exists still runs.
 
-Read [`CHANGELOG.md`](CHANGELOG.md) for what each release changed, and
-[`ROADMAP.md`](ROADMAP.md) for what is still open — it is generated, carries
-its own count, and includes the items deliberately *not* done and why. If you
-are looking for somewhere to start, start there.
+Read [`CHANGELOG.md`](CHANGELOG.md) for what each release changed, and [`ROADMAP.md`](ROADMAP.md) for what is still open — it is generated, carries its own count, and includes the items deliberately *not* done and why. If you are looking for somewhere to start, start there.
 
-Contributions welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) has the branch
-layout (work on `dev`, never `main`), the setup, and the house rules for
-writing code that has to fit in 192 KB.
+Contributions welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) has the branch layout (work on `dev`, never `main`), the setup, and the house rules for writing code that has to fit in 192 KB.
 
 ## System Requirements
 

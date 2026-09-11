@@ -69,6 +69,7 @@ return {
   { path = "/tos/kernel/bootsteps.lua",       critical = false },
   { path = "/tos/kernel/repair.lua",          critical = false },
   { path = "/tos/kernel/srm.lua",             critical = false },
+  { path = "/tos/kernel/errors.lua",          critical = false },
   { path = "/tos/kernel/notify.lua",          critical = false },
   { path = "/tos/kernel/sha256.lua",          critical = false },
   -- Package signing. All three are LAZILY loaded — nothing requires them

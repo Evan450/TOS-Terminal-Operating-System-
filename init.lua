@@ -1211,6 +1211,85 @@ if verbosity == "splash" and gpu then
   end
 end
 
+-- ============================================================
+-- The stop screen
+-- ============================================================
+--! A kernel panic draws a full-screen STOP page: solid blue, white text, the
+--! error's code in all three spellings (kernel/errors.lua), the failure
+--! itself, and the way out. An homage to the blue screen in TOS's own words:
+--! it reads as "this machine has crashed" from across a room, which a red
+--! line at the bottom of a black boot log never did.
+--!
+--! The colours are per tier, and not the obvious values. OC's Tier 2 draws
+--! from OC's OWN 16-entry palette, not VGA's, so VGA blue (0x0000AA) would
+--! snap somewhere unpredictable; that palette's blue is 0x333399 (checked
+--! against the emulator's PackedColor). Tier 1 is monochrome and has no blue
+--! at all, so it gets inverse video. Only Tier 3 can draw 0x0000AA.
+--!
+--! This file must stay Lua 5.2-parseable (the architecture guard at the top
+--! has to run on a 5.2 CPU to say so), so nothing here uses 5.3 syntax.
+--! test_stop_screen.lua lifts both functions out of this file and runs them.
+
+-- Pure: the page's lines for a W x H screen, each { text, role, prio }. On a
+-- short screen the lowest priority goes first -- blank spacers, the hex, the
+-- status, the traceback's tail -- and the STOP line and the error's own first
+-- line go last of all.
+local function stopScreenLines(info, W, H)   --[[TEST-EXTRACT]]
+  local lines = {}
+  local function put(text, role, prio, indent)
+    local pad = string.rep(" ", indent or 2)
+    local room = math.max(8, W - #pad - 1)
+    text = tostring(text or "")
+    if text == "" then lines[#lines + 1] = { "", role, prio }; return end
+    for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+      repeat
+        lines[#lines + 1] = { pad .. line:sub(1, room), role, prio }
+        line = line:sub(room + 1)
+      until line == ""
+    end
+  end
+  put("", "body", 1)
+  put("TOS has stopped to protect your data.", "title", 6)
+  put("", "body", 1)
+  put("*** STOP: " .. info.code .. "  " .. info.sym, "code", 9)
+  put(info.hex, "dim", 2, 6)
+  put("", "body", 1)
+  local first = true
+  for dl in (tostring(info.detail or "") .. "\n"):gmatch("([^\n]*)\n") do
+    dl = dl:gsub("\t", "  ")
+    if dl:find("%S") then put(dl, "body", first and 8 or 4); first = false end
+  end
+  put("", "body", 1)
+  put("1. Reboot." .. (info.report and (" The crash report is " .. info.report) or ""), "body", 5)
+  put("2. After boot: crash reads it, why " .. info.code .. " explains the code,", "body", 5)
+  put("   srm repairs. If it repeats, boot another disk and run srm scan.", "body", 5)
+  put("", "body", 1)
+  put(info.status, "dim", 3)
+  put("", "body", 1)
+  put("Press any key to reboot.", "title", 7)
+  while #lines > H do
+    local worst, at = math.huge, nil
+    for i = #lines, 1, -1 do                 -- ties: the LAST one goes first
+      if lines[i][3] < worst then worst, at = lines[i][3], i end
+    end
+    table.remove(lines, at)
+  end
+  return lines
+end                                           --[[/TEST-EXTRACT]]
+
+local function drawStopScreen(g, lines, W, H, depth)   --[[TEST-EXTRACT]]
+  local bg, fg, dim = 0x0000AA, 0xFFFFFF, 0xAAAAAA          -- Tier 3
+  if depth <= 1 then bg, fg, dim = 0xFFFFFF, 0x000000, 0x000000
+  elseif depth <= 4 then bg, fg, dim = 0x333399, 0xFFFFFF, 0xCCCCCC end
+  pcall(g.setBackground, bg)
+  pcall(g.setForeground, fg)
+  pcall(g.fill, 1, 1, W, H, " ")
+  for i = 1, math.min(#lines, H) do
+    pcall(g.setForeground, (lines[i][2] == "dim") and dim or fg)
+    pcall(g.set, 1, i, lines[i][1])
+  end
+end                                                     --[[/TEST-EXTRACT]]
+
 local ok, err = xpcall(function()
   local kernel = require("kernel")
   kernel.boot({
@@ -1231,44 +1310,61 @@ end, function(e)
 end)
 
 if not ok then
-  earlyClear()
-  earlyPrint("", tc(0xFF0000))
-  earlyPrint("======= KERNEL PANIC =======", tc(0xFF0000))
-  earlyPrint("", tc(0xFF6600))
-  -- Split error into visible lines. Wrap at screen width instead of
-  -- truncating so operators don't lose the tail of a long trace where
-  -- the actual source file:line usually lives.
   local errStr = tostring(err) or "Unknown error"
+
+  -- Which code. The literals cover the case where the registry itself is
+  -- what broke; test_stop_screen.lua pins them to kernel/errors.lua.
+  local STOP_FALLBACK = {
+    ERR_KERNEL_PANIC  = { "E-201", "0x00020001" },
+    ERR_OUT_OF_MEMORY = { "E-202", "0x00020002" },
+  }
+  local sym = errStr:find("not enough memory", 1, true) and "ERR_OUT_OF_MEMORY"
+    or "ERR_KERNEL_PANIC"
+  local code, hex = STOP_FALLBACK[sym][1], STOP_FALLBACK[sym][2]
+  local okE, errors = pcall(require, "kernel.errors")
+  local reg = okE and type(errors) == "table" and errors.find(sym)
+  if reg then code, hex = errors.code(reg), errors.hex(reg) end
+  local reason = "KERNEL PANIC [" .. code .. " " .. sym .. "]"
+
   -- Flight-recorder: persist the panic so the next boot can surface it and the
   -- operator can read the full trace AFTER rebooting. Prefer the kernel helper
   -- (if boot got far enough to expose it); otherwise write via the boot FS
   -- directly, since the kernel may have died before _G._TOS.kernel existed.
+  local report
   pcall(function()
     local K = _G._TOS and _G._TOS.kernel
-    if K and K.crashDump then K.crashDump("KERNEL PANIC", errStr); return end
+    if K and K.crashDump then report = K.crashDump(reason, errStr) or nil; return end
     if bootFS and bootFS.open then
       pcall(bootFS.makeDirectory, "/var/crash")
       local h = bootFS.open("/var/crash/crash-panic.txt", "w")
       if h then
-        bootFS.write(h, "=== TOS KERNEL PANIC ===\n" .. errStr
+        bootFS.write(h, "=== TOS " .. reason .. " ===\n" .. errStr
           .. "\nFree RAM: " .. math.floor(computer.freeMemory() / 1024) .. "KB\n")
         bootFS.close(h)
+        report = "/var/crash/crash-panic.txt"
       end
       local hm = bootFS.open("/var/crash/NEW", "w")
-      if hm then bootFS.write(hm, "KERNEL PANIC"); bootFS.close(hm) end
+      if hm then bootFS.write(hm, reason); bootFS.close(hm) end
     end
   end)
-  for line in errStr:gmatch("[^\n]+") do
-    while #line > screenW do
-      earlyPrint(line:sub(1, screenW), tc(0xFF6600))
-      line = line:sub(screenW + 1)
-    end
-    earlyPrint(line, tc(0xFF6600))
+
+  -- The stop page. The ACTIVE buffer is reset first: a panic that lands
+  -- mid-frame leaves the GPU drawing into an off-screen page, and the whole
+  -- screen would then be painted where nobody can see it. The resolution is
+  -- asked again because the kernel may have changed it since boot measured.
+  local W, H = screenW, screenH
+  if gpu then
+    pcall(gpu.setActiveBuffer, 0)
+    local okR, rw, rh = pcall(gpu.getResolution)
+    if okR and rw and rh then W, H = rw, rh end
+    local T = _G._TOS or {}
+    drawStopScreen(gpu, stopScreenLines({
+      code = code, sym = sym, hex = hex, detail = errStr, report = report,
+      status = string.format("uptime %ds | %d KB free | TOS %s",
+        math.floor(computer.uptime()), math.floor(computer.freeMemory() / 1024),
+        tostring(T.version or "?")),
+    }, W, H), W, H, gpuDepth)
   end
-  earlyPrint("", tc(0xAAAAAA))
-  earlyPrint("Free RAM: " .. math.floor(computer.freeMemory() / 1024) .. "KB", tc(0xAAAAAA))
-  earlyPrint("", tc(0xFFFF00))
-  earlyPrint("Press any key to reboot...", tc(0xFFFF00))
   -- Kernel panic beep code: three low beeps
   computer.beep(400, 0.15)
   computer.pullSignal(0.05)

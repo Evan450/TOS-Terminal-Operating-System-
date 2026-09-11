@@ -63,7 +63,7 @@ local function checkRead(path, session)
   local allowed, reason = usermod.canAccessAs(sess, path, "r")
   if not allowed then
     if log then log.warn("securefs", "READ denied: " .. path .. " (" .. (reason or "?") .. ")") end
-    return false, "Permission denied: " .. (reason or "access denied"), path
+    return false, "Permission denied: " .. (reason or "access denied") .. "  [E-401 ERR_PERM_DENIED]", path
   end
   return true, nil, path
 end
@@ -110,7 +110,7 @@ local function checkWrite(path, session)
   local allowed, reason = usermod.canAccessAs(sess, path, "w")
   if not allowed then
     if log then log.warn("securefs", "WRITE denied: " .. path .. " (" .. (reason or "?") .. ")") end
-    return false, "Permission denied: " .. (reason or "access denied"), path
+    return false, "Permission denied: " .. (reason or "access denied") .. "  [E-401 ERR_PERM_DENIED]", path
   end
   return true, nil, path
 end
@@ -385,10 +385,10 @@ function protectedMsg(verb, hit, session)
   if isRoot then
     return base .. "  You own this machine: `protect off` stands the guard " ..
       "down for THIS SESSION ONLY (it ends at logout, and every path it " ..
-      "allows is logged)."
+      "allows is logged).  [E-402 ERR_PATH_PROTECTED]"
   end
   return base .. "  Only root can lift it, with `protect off`, and only " ..
-    "for their own session."
+    "for their own session.  [E-402 ERR_PATH_PROTECTED]"
 end
 
 local function isProtectedTarget(path, session)
@@ -515,7 +515,7 @@ function securefs.mount(path, proxy, session)
   local ok, err = requireAdmin(session)
   if not ok then
     if log then log.warn("securefs", "MOUNT denied: " .. tostring(path) .. " (" .. err .. ")") end
-    return false, "Permission denied: " .. err
+    return false, "Permission denied: " .. err .. "  [E-401 ERR_PERM_DENIED]"
   end
   return fs.mount(path, proxy)
 end
@@ -525,7 +525,7 @@ function securefs.unmount(path, session)
   local ok, err = requireAdmin(session)
   if not ok then
     if log then log.warn("securefs", "UNMOUNT denied: " .. tostring(path) .. " (" .. err .. ")") end
-    return false, "Permission denied: " .. err
+    return false, "Permission denied: " .. err .. "  [E-401 ERR_PERM_DENIED]"
   end
   return fs.unmount(path)
 end

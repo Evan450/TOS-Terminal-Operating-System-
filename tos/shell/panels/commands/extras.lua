@@ -1303,6 +1303,98 @@ return function(C, S, deps)
       local blob = blockfs.bootBlob(blockfsSrc)
       local bootBytes = #blob + 4096   -- slack for the length header + growth
 
+      -- What is about to be written: every manifest file. Loaded BEFORE the
+      -- erase so the pre-flight below can check it against the drive.
+      local files = {}
+      local okM, manifest = pcall(require, "system_manifest")
+      if okM and type(manifest) == "table" then
+        for _, e in ipairs(manifest) do
+          if type(e) == "table" and type(e.path) == "string" then files[#files + 1] = e.path end
+        end
+      end
+      if #files == 0 then o("system_manifest not loadable — aborting.", T.error); return end
+
+      --! PRE-FLIGHT, BEFORE THE ERASE.
+      --!
+      --! This used to format first and discover afterwards: a drive too small
+      --! for the OS was wiped, then filled until it ran out, printing one
+      --! "FAIL <path>" line per file that didn't make it. An outside review
+      --! (2026-09-10) flagged the inode half -- the default one-inode-per-4-KB
+      --! gives a 1 MB drive 256, shared between 152 files and their directory
+      --! chain. The byte half is the one that actually bites first today
+      --! (the OS is ~1.6 MB), and nothing checked it at all.
+      --!
+      --! Both are knowable before touching the drive: blockfs.plan is the
+      --! layout format() will write, blockfs.blocksFor what each file costs
+      --! including its indirect pointer blocks. Inodes are FIXABLE -- deploy
+      --! knows exactly how many it needs, so it sizes the table for that
+      --! instead of guessing -- and bytes are not, so those refuse.
+      local inodeRatio = nil
+      if blockfs.plan and blockfs.blocksFor then
+        local plan, perr = blockfs.plan(drive, { bootBytes = bootBytes })
+        if not plan then
+          o("This drive cannot hold TOS: " .. tostring(perr) .. ". Nothing was erased.", T.error)
+          return
+        end
+        local function footprint(ss)
+          local blocks, inodes = 0, 1                    -- the root directory
+          local dirBytes, seen = { ["/"] = 0 }, {}
+          local function entry(parent, leaf)             -- nameLen + name + inode#
+            dirBytes[parent] = (dirBytes[parent] or 0) + 5 + #leaf
+          end
+          local function parentOf(p)
+            local d = p:match("^(.*)/[^/]+$"); return (d == nil or d == "") and "/" or d
+          end
+          for _, path in ipairs(files) do
+            local okS, sz = pcall(F.size, path)
+            blocks = blocks + blockfs.blocksFor((okS and tonumber(sz)) or 0, ss)
+            inodes = inodes + 1
+            entry(parentOf(path), path:match("([^/]+)$"))
+            local d = parentOf(path)
+            while d ~= "/" and not seen[d] do             -- each directory once
+              seen[d] = true; inodes = inodes + 1
+              entry(parentOf(d), d:match("([^/]+)$"))
+              d = parentOf(d)
+            end
+          end
+          for _, bytes in pairs(dirBytes) do blocks = blocks + blockfs.blocksFor(bytes, ss) end
+          return blocks, inodes
+        end
+        local needBlocks, needInodes = footprint(plan.ss)
+        if needInodes > plan.inodeCount then
+          -- A quarter spare for the logs, trash and packages that follow.
+          local want = math.ceil(needInodes * 1.25)
+          inodeRatio = math.max(512, math.floor(plan.ss * plan.totalBlocks / want))
+          local p2 = blockfs.plan(drive, { bootBytes = bootBytes, inodeRatio = inodeRatio })
+          if not p2 or p2.inodeCount < needInodes then
+            o(string.format("TOS needs %d inodes and this drive cannot hold that many. "
+              .. "Nothing was erased.", needInodes), T.error)
+            return
+          end
+          o(string.format("Sizing the inode table for this install: %d inodes (the default "
+            .. "would give %d, and TOS needs %d).", p2.inodeCount, plan.inodeCount, needInodes), T.dim)
+          plan = p2
+        end
+        if needBlocks > plan.dataBlocks then
+          o(string.format("TOS will not fit on this drive: it needs %s, and the drive holds "
+            .. "%s once the boot region and metadata are laid out.",
+            fmtSz(needBlocks * plan.ss), fmtSz(plan.dataBlocks * plan.ss)), T.error)
+          o("Nothing was erased. Use a larger drive, or a managed disk: deploy <mount-point>", T.dim)
+          return
+        end
+        local spare = (plan.dataBlocks - needBlocks) * plan.ss
+        o(string.format("Fits: %s of %s, leaving %s spare; %d of %d inodes.",
+          fmtSz(needBlocks * plan.ss), fmtSz(plan.dataBlocks * plan.ss), fmtSz(spare),
+          needInodes, plan.inodeCount), T.dim)
+        if spare < 64 * 1024 then
+          o("Under 64 KB will be free after the install — logs, trash and swap fill that fast.",
+            T.warning)
+        end
+      else
+        o("(This blockfs cannot check capacity before erasing — 'pkg upgrade blockfs' adds it.)",
+          T.warning)
+      end
+
       local okInst
       if confirmBox then
         okInst = confirmBox(
@@ -1320,20 +1412,14 @@ return function(C, S, deps)
 
       local nowfn = function() return math.floor((K.uptime and K.uptime()) or 0) end
       o("Formatting " .. addr:sub(1, 8) .. "... as bootable TBFS...", T.title)
-      local okF, ferr = blockfs.format(drive, { label = "tos", bootBytes = bootBytes, now = nowfn })
+      local okF, ferr = blockfs.format(drive,
+        { label = "tos", bootBytes = bootBytes, now = nowfn, inodeRatio = inodeRatio })
       if not okF then o("Format failed: " .. tostring(ferr) .. " (drive too small?)", T.error); return end
       local proxy, mErr = blockfs.mount(drive, { now = nowfn })
       if not proxy then o("Mount failed: " .. tostring(mErr), T.error); return end
 
-      -- Copy the OS: every manifest file, creating parent dirs as we go.
-      local files = {}
-      local okM, manifest = pcall(require, "system_manifest")
-      if okM and type(manifest) == "table" then
-        for _, e in ipairs(manifest) do
-          if type(e) == "table" and type(e.path) == "string" then files[#files + 1] = e.path end
-        end
-      end
-      if #files == 0 then o("system_manifest not loadable — aborting.", T.error); return end
+      -- Copy the OS: every manifest file (loaded before the pre-flight),
+      -- creating parent dirs as we go.
       local copied, failed = 0, 0
       for _, path in ipairs(files) do
         coopYield()   -- whole-OS copy: give other seats a slice per file

@@ -179,7 +179,7 @@ function M.doDelete(S, path, f)
       -- The trash exists and refused (too large, move failed). Do NOT
       -- quietly turn a recoverable delete into a permanent one.
       helpers.fail(S, "Not trashed: " .. why
-        .. " — still there; use  rm --hard  to force", nil, "delete")
+        .. " — still there; use  rm --hard  to force  [E-304 ERR_TRASH_REFUSED]", nil, "delete")
       return
     end
   end

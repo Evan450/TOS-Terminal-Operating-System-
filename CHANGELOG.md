@@ -5,6 +5,139 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ---
 
+## Unreleased — a crash you can read from across the room
+
+### The stop screen
+
+A kernel panic used to print a red `KERNEL PANIC` banner and the raw error into
+the black boot log. It now draws a full-screen STOP page: solid blue, white
+text, the error's code, the failure itself and the way out — an homage to the
+blue screen, in TOS's own words. It reads as "this machine has crashed" from
+across a room, which is most of what a crash screen is for.
+
+The colour is not the obvious one. OpenComputers' Tier 2 GPU draws from OC's
+own 16-colour palette, not VGA's, so the classic VGA blue (`0x0000AA`) would
+snap to whatever happened to be nearest. That palette's blue is `0x333399` —
+confirmed against the emulator's `PackedColor` — and that is what Tier 2 paints.
+Tier 1 is monochrome and has no blue at all, so it gets inverse video. Only
+Tier 3 draws `0x0000AA`.
+
+Two things the old screen could get wrong are handled on the way. A long
+traceback scrolled the error's own first line off the top of a small screen;
+the lines now carry priorities, so on a 50×16 Tier 1 screen the spacers, the
+hex and the traceback's tail give way first, and the STOP line and the error
+itself are the last to go. And the page resets the GPU to the visible buffer
+before drawing, since a panic landing mid-frame would otherwise paint it onto
+an off-screen page. `test_stop_screen.lua` lifts both functions out of
+`/init.lua` and runs them; that file has to stay Lua 5.2-parseable, so the test
+also checks the new code uses no 5.3-only operator.
+
+### Error codes, in three spellings
+
+Every error TOS names now has one entry in `tos/kernel/errors.lua` and three
+spellings: `E-402` for an operator to read, say and search for;
+`ERR_PATH_PROTECTED` for programs and for `why`; and `0x00040002`, a
+machine-only reference on the stop screen. The hex is computed from the
+E-number, never stored, so the two cannot disagree. Numbers group by subsystem
+— 1xx boot, 2xx kernel, 3xx files, 4xx access, through 8xx shell — and a code
+is never reused once it has shipped.
+
+The EEPROM's fault codes keep their two characters (`C1`, `K4`): the digit is
+the beep count, so a machine with no screen still says which fault it hit, and
+the BIOS has about 150 bytes to spare. Each maps to a registry entry whose
+index is that same beep count — `K4` is `E-104 ERR_KERNEL_MISSING`. SRM's
+explanations moved into the registry too, so what SRM says and what the stop
+screen shows come from one table.
+
+Refusals carry their code at the end of the message —
+`[E-402 ERR_PATH_PROTECTED]` — which survives every path a message travels
+without threading a second value through each of them. `test_error_registry.lua`
+scans every Lua file the manifest ships and fails on any tag naming a code the
+registry lacks, or the wrong symbol for a real one.
+
+### `why` reads codes
+
+`why` used to identify a refusal by matching words in its message — a substring
+match against text defined in another file, which needed its own test just to
+notice being reworded. A tagged refusal is now identified by its code alone, so
+its wording can change freely; prose matching stays only for messages that
+predate the registry and the ones OpenComputers writes itself. And `why` takes a
+code directly — `why E-402`, `why ERR_PATH_PROTECTED`, `why K4` — so a code read
+off a stop screen or a log can be looked up after the reboot. Anything that is
+not recognisably a code still means a command: `why ls` is unchanged.
+
+---
+
+## Unreleased — a failed write changes nothing
+
+From a follow-up review (2026-09-10) that re-checked every finding of the
+first against the code rather than the changelog — 12 of 14 fixed, one fixed
+better than suggested, two open — and found one new defect.
+
+### TBFS leaked blocks when a volume filled — blockfs 1.2.1
+
+A write that ran out of space returned false, which was right, and kept every
+block it had already allocated, which was not. `mapBlock` links each new block
+into the in-memory inode as it goes; the write bailed halfway, and `P.write`
+returned without writing that inode back. The bitmap held used-bits for blocks
+nothing referenced. On the reviewer's 256 KB reproduction, 8 blocks went each
+time the volume filled — recoverable with `fsck --repair`, which nobody has a
+reason to run after an ordinary disk-full error.
+
+Fixing it exposed a second, quieter fault in the same loop. It mapped and wrote
+one block at a time, so a write that ran out of space had *already overwritten*
+every existing block it passed on the way: a failed write into the middle of a
+file left the front of the target range changed and the size unchanged — data
+modified by a call that reported failure.
+
+Writes are now all-or-nothing, as OC's own managed filesystem is. A first pass
+maps every block the write needs and journals each allocation and link; if one
+fails, the journal is undone newest-first and no data has been touched. Then
+the data goes down. The I/O is identical — the reviewer's own harness reads
+1,096 sectors and writes 649 before and after — because the same `mapBlock`
+calls happen, just ahead of the data writes instead of between them, and
+metadata still lands after data, so the crash-ordering guarantee holds.
+
+`test_blockfs_enospc.lua` is the reviewer's reproduction, shipped as they wrote
+it, with an all-or-nothing section added. Against the old driver it fails
+twice: the 8 leaked blocks, and `last 100 now: NNNNNNNNNN...`.
+
+### `deploy drive` erased the drive before finding out TOS would not fit
+
+The review flagged that `deploy drive` never checked the inode budget against
+the manifest. Driving the real command against the real driver showed that was
+half of it. The command formatted first and found out afterwards: a drive too
+small for the OS was wiped — 890 sector writes in the test — and then filled
+until it ran out, printing a `FAIL <path>` line for each file that didn't make
+it. And a drive with room in bytes but too few inodes quietly lost every file
+past the inode limit: 50 of 300 in the test, on a 1 MB drive with space to
+spare.
+
+Both are knowable before touching the drive. `blockfs.plan()` is the layout
+`format()` will write, and `format()` is now built on it, so the two cannot
+disagree. `blockfs.blocksFor()` is what one file costs, indirect pointer blocks
+included. `test_blockfs_plan.lua` checks both against the real on-disk layout
+and the real allocator at every mapping-tier edge. `deploy` now refuses *before
+the erase prompt* when TOS will not fit, and says nothing was erased. Too few
+inodes is fixable rather than fatal: deploy knows exactly how many it needs, so
+it sizes the table for that instead of taking the one-per-4-KB default.
+`test_deploy_drive_preflight.lua` drives the real command against a fake drive
+that counts its sector writes, so "nothing was erased" is measured.
+
+For today's 152-file manifest, bytes run out first; the inode case needs
+roughly 250 files on a 1 MB drive. It is covered because the manifest grows.
+
+### Recorded, not done
+
+The review's install-profile item (`install.lua --profile minimal`) is in the
+ROADMAP with its measurements: the release grew ~102 KB in six days with the
+file count flat. So is its note on the network install — `bootstrap.lua`
+verifies downloads against a manifest fetched from the same host, proving
+consistency rather than provenance, and pinning an Ed25519 key in the bootstrap
+would move the root of trust to the one file an operator can read first.
+
+---
+
 ## Unreleased — findable
 
 An outside review of why nobody finds TOS, acted on where it is code and

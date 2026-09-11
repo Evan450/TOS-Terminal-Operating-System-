@@ -50,6 +50,9 @@ package.loaded["kernel.crypto"] = crypto
 local repairMod = loadMod("repair.lua")
 package.loaded["kernel.repair"] = repairMod
 
+-- srm reads its code text from kernel.errors (one table for SRM and the
+-- stop screen); load it by path, the same way srm is loaded here.
+package.loaded["kernel.errors"] = loadMod("errors.lua")
 local srm = loadMod("srm.lua")
 if not (srm and serialize and sha256 and repairMod) then
   print("FAIL: could not load srm/serialize/sha256/repair")
