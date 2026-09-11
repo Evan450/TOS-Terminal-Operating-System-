@@ -50,6 +50,15 @@ local MUST_EXCLUDE = {
   -- contributor running build-release would otherwise sweep every
   -- package's source into their OS image.
   "/TOS-Extras/",
+  -- The README's screenshots (2026-09-07). A new top-level DIRECTORY, which
+  -- nothing here checked for, so it walked into TOS-Release and was stopped
+  -- only at push time, by publish.ps1's main allowlist. The whole-root rule
+  -- at the end of this file is what would have caught it offline.
+  "/docs/",
+  -- Tool residue and repo metadata: pytest's cache, and the .gitignore and
+  -- .github/ that publish writes into the dev branch's root -- a contributor
+  -- building a release from a clone of dev would otherwise ship all three.
+  "/.pytest_cache/", "/.github/", "/.gitignore",
 }
 
 for _, script in ipairs({ "build/build-release.sh", "build/build-release.cmd" }) do
@@ -118,6 +127,82 @@ do
       end
     end
     test("found at least one top-level dev script to check", checked > 0)
+  end
+end
+
+-- ── Every top-level entry either ships or is excluded ───────────────
+--! The .py/.sh rule above pinned one CLASS of leak. `docs/` was another: a
+--! new top-level DIRECTORY, added for the README's screenshots. The build is
+--! a denylist -- whatever it is not told to skip, it ships -- so it went
+--! straight into TOS-Release and nothing here noticed. publish.ps1 did, at
+--! push time, because main's allowlist has no `docs`. So this pins the rule
+--! publish enforces, offline: the release carries only what main may carry,
+--! and every other top-level entry in TOS-Dev is excluded by BOTH build
+--! scripts. A new top-level anything now fails here, before a push.
+print()
+print("-- every top-level entry: ships, or is excluded --")
+do
+  -- publish.ps1's main allowlist, minus what publish adds by itself at
+  -- staging (the six docs and .github/), which never come from the release.
+  local SHIPS = {
+    ["bios.lua"] = true, ["bootstrap.lua"] = true, ["init.lua"] = true,
+    ["install.lua"] = true, ["LICENSE.txt"] = true,
+    ["tos"] = true, ["etc"] = true, ["usr"] = true,
+  }
+  local function listRoot(dir)
+    --! `dir /b /a` and `ls -A`, not the plain forms: without them a hidden
+    --! or dot-named entry is left out, and a dot-directory is exactly the
+    --! kind of thing that leaks unnoticed (.pytest_cache did).
+    local WINDOWS = package.config:sub(1, 1) == "\\"
+    local cmd = WINDOWS and ('dir /b /a "' .. dir:gsub("/", "\\") .. '" 2>nul')
+                         or ("ls -A '" .. dir .. "' 2>/dev/null")
+    local ok, pipe = pcall(io.popen, cmd)
+    if not ok or not pipe then return nil end
+    local names = {}
+    for line in pipe:lines() do
+      line = line:gsub("%s+$", "")
+      if line ~= "" then names[#names + 1] = line end
+    end
+    pipe:close()
+    return names
+  end
+  local function excluded(src, name)
+    if not src then return false end
+    local needle = "--exclude /" .. name
+    for _, tail in ipairs({ "/", " ", "\n", "\r" }) do
+      if src:find(needle .. tail, 1, true) then return true end
+    end
+    return src:sub(-#needle) == needle
+  end
+  local scripts = { ["build-release.sh"] = readFile("build/build-release.sh"),
+                    ["build-release.cmd"] = readFile("build/build-release.cmd") }
+  local root = listRoot(".")
+  if not root or #root == 0 then
+    print("  SKIP: cannot enumerate the TOS-Dev root")
+  else
+    local leaks, shipped = {}, 0
+    for _, name in ipairs(root) do
+      if SHIPS[name] then shipped = shipped + 1
+      else
+        for script, src in pairs(scripts) do
+          if not excluded(src, name) then leaks[#leaks + 1] = script .. " would ship /" .. name end
+        end
+      end
+    end
+    table.sort(leaks)
+    for _, l in ipairs(leaks) do print("    " .. l) end
+    test("every top-level entry ships or is excluded by BOTH build scripts", #leaks == 0)
+    test("the enumeration saw the shipped entries too (sanity)", shipped >= 6)
+  end
+  -- And the built tree itself, when one sits beside us: the check
+  -- publish.ps1 makes, made before anyone pushes.
+  if relRoot then
+    local extra = {}
+    for _, name in ipairs(listRoot(relRoot) or {}) do
+      if not SHIPS[name] then extra[#extra + 1] = name end
+    end
+    for _, e in ipairs(extra) do print("    TOS-Release carries /" .. e) end
+    test("the built TOS-Release carries nothing main's allowlist would refuse", #extra == 0)
   end
 end
 

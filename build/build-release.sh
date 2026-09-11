@@ -9,6 +9,14 @@
 #   /usr/lib/tests/    development unit tests (excluded from manifest too)
 #   /run_tests.sh      the dev test runner (don't ship a runner with no tests)
 #   /.claude/          editor/agent settings
+#   /docs/             the README's screenshots: they live on the dev branch only
+#   /.pytest_cache/, /.github/, /.gitignore   tool residue and repo metadata
+#
+# This is a DENYLIST: anything in TOS-Dev's root that is not named below
+# ships. usr/lib/tests/test_release_excludes.lua checks every top-level entry
+# against both build scripts, so a new one fails there before it reaches a
+# push -- `docs/` got as far as publish.ps1's main allowlist before that check
+# existed.
 #
 # After the walk, strip.lua auto-prunes /tos/system_manifest.lua so any
 # manifest entry whose target file isn't in the dist tree is dropped.
@@ -62,6 +70,10 @@ lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify \
     --exclude /todo_index.py \
     --exclude /tos.py \
     --exclude /.claude/ \
+    --exclude /.pytest_cache/ \
+    --exclude /.github/ \
+    --exclude /.gitignore \
+    --exclude /docs/ \
     --exclude /README.md \
     --exclude /CHANGELOG.md \
     --exclude /CONTRIBUTING.md \

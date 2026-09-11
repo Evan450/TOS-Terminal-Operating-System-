@@ -4,6 +4,9 @@ REM
 REM Usage:  TOS-Dev\build\build-release.cmd
 REM
 REM Excludes: /build/, /usr/lib/tests/, /run_tests.sh, /.claude/   (dev-only)
+REM This is a DENYLIST: anything in TOS-Dev's root not named below ships.
+REM Keep it identical to build-release.sh; test_release_excludes.lua checks
+REM every top-level entry against both.
 REM Post-pass: strip.lua auto-prunes system_manifest.lua against the dist tree.
 
 setlocal enableextensions
@@ -32,6 +35,10 @@ lua "%DEV_DIR%\build\strip.lua" "%DEV_DIR%" "%RELEASE_DIR%" --minify ^
     --exclude /todo_index.py ^
     --exclude /tos.py ^
     --exclude /.claude/ ^
+    --exclude /.pytest_cache/ ^
+    --exclude /.github/ ^
+    --exclude /.gitignore ^
+    --exclude /docs/ ^
     --exclude /README.md ^
     --exclude /CHANGELOG.md ^
     --exclude /CONTRIBUTING.md ^
