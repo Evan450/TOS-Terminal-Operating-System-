@@ -176,8 +176,9 @@ function kernel.boot(opts)
     end
     local fault = srmMod.readFault({ eeprom = ep })
     if not fault then return end
-    log.error("srm", "LAST BOOT FAILED POST — SRM " .. fault.code .. ": " .. fault.why)
-    bootEcho("  SRM " .. fault.code .. ": last boot failed POST", 0xFF6600)
+    local tagged = fault.code .. (fault.err and (" / " .. fault.err) or "")
+    log.error("srm", "LAST BOOT FAILED POST — SRM " .. tagged .. ": " .. fault.why)
+    bootEcho("  SRM " .. tagged .. ": last boot failed POST", 0xFF6600)
     bootEcho("    " .. fault.why, 0xFFAA00)
     bootEcho("    (run 'srm' for the full report)", 0xAAAAAA)
     local okC, errC = srmMod.clearFault({ eeprom = ep })

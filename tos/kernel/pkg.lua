@@ -2101,6 +2101,8 @@ pkg._isUnderPkgWriteRoot = isUnderPkgWriteRoot
 pkg._isServiceEtcTarget  = isServiceEtcTarget
 pkg.PKG_WRITE_ROOTS      = PKG_WRITE_ROOTS
 
+pkg._loadAnyManifest     = loadAnyManifest
+
 function remoteMod()
   local ok, m = pcall(require, "kernel.pkgremote")
   if not ok or type(m) ~= "table" then return nil, "remote package support unavailable" end

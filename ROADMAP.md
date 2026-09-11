@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**75 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 51 | Planned or under investigation. Most contributions belong here. |
+| Planned | 57 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 15 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1373,6 +1373,88 @@ Per-command `-f`/`--live` shortcut (e.g. `ps -f`) on top of
 ```text
 Prose sync: MANUAL/README/CHANGELOG version + command lists
     (tests cover files, not prose - drift needs a human eye).
+```
+
+### Planned — OPPM checkout source paths: kernel.pkg's programs.cfg translator keeps
+
+```text
+OPPM checkout source paths: kernel.pkg's programs.cfg translator keeps
+    the leading branch segment ("master/gui/gui.lua") as an on-disk path,
+    so it expects a directory literally named `master` in the repo. A git
+    CHECKOUT of an OPPM master branch has no such directory - the segment
+    belongs to the raw URL oppm builds, not to the tree. Reading a cloned
+    OPPM repo from a floppy therefore looks one level too deep and finds
+    nothing. Harmless for OUR published index (oppm fetches by URL, where
+    the key is correct), which is why it is recorded rather than rushed:
+    confirm whether treating the key literally was deliberate before
+    changing it. test_pkg_lifecycle.lua's fixture encodes the same
+    assumption ("sources under master/<pkg>/"), and test_oppm_index.lua
+    pins the current behaviour as [known gap] so a fix fails loudly.
+```
+
+### Planned — Screenshots. There is not one image in the repository, and every venue
+
+```text
+Screenshots. There is not one image in the repository, and every venue
+    worth posting in is one where the screenshot IS the post. Six stills
+    plus a boot GIF; the shot list, the capture method and the publish
+    prerequisite are in docs/screenshots/SHOTS.md. The README already has
+    the markup, commented out, waiting for the files.
+```
+
+### Planned — Get listed in `oppm list`: a PR adding this repo to
+
+```text
+Get listed in `oppm list`: a PR adding this repo to
+    OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch
+    (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS
+    show up for people who never heard of it.
+```
+
+### Planned — Install profiles: `install.lua --profile minimal|standard|full`, each
+
+```text
+Install profiles: `install.lua --profile minimal|standard|full`, each
+    writing a trimmed system_manifest.lua. From the 2026-09-10 follow-up
+    review, which measured the release at 1,619 KB of content (1,695 KB on
+    disk with fileCost) and ~353 KB free on a Tier 2 disk -- down ~102 KB
+    in six days with the file count flat, so this is content growth, not
+    new files. The architecture already allows it (41 pcall(require) sites
+    in kernel/init.lua, an 11-file critical set) and it composes with
+    `deploy drive`, which copies exactly what the manifest lists. Their
+    measured cut -- drop the installer, docs, networking, remote pkg, the
+    package manager, compat, peripherals and the `extras` commands --
+    leaves the full Commander UI at ~1,060 KB. Not urgent this week; the
+    growth curve decides when it becomes so, and this turns a deadline
+    into a knob.
+```
+
+### Planned — Anchor the network install to a KEY, not the transport. bootstrap.lua
+
+```text
+Anchor the network install to a KEY, not the transport. bootstrap.lua
+    verifies every download against the manifest, but the manifest comes
+    from the same host, so it proves "these are the bytes that repository
+    is serving" -- not "these are the bytes the publisher released". Its
+    own comment block says exactly that. Pin an Ed25519 public key in
+    bootstrap.lua and sign the release manifest with the machinery `pkg`
+    already has: the root of trust moves from the transport to the one
+    file an operator can read before running it. Every part is in the tree
+    already (2026-09-10 review, §2).
+```
+
+### Planned — Error registry: the rest of the migration. The first slice (2026-09-10)
+
+```text
+Error registry: the rest of the migration. The first slice (2026-09-10)
+    gave tos/kernel/errors.lua its codes and tagged the refusals `why`
+    already explained -- protected paths, permissions, the tier gates, rm's
+    guards, the trash, unknown and unloadable commands. Everything else TOS
+    prints in the error colour is still untagged prose: pkg, the network
+    layer, vault, the drive and deploy commands, hardware faults (5xx-7xx
+    are reserved and still empty). Tag them as they are touched, never
+    renumber, and let test_error_registry.lua's scan of every shipped file
+    keep each literal tag honest.
 ```
 
 ## FAR FUTURE / IDEAS

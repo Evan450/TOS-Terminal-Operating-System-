@@ -762,7 +762,7 @@ return function(C, S, deps)
     }
     for _, pat in ipairs(systemGuards) do
       if p:match(pat) and not recursive then
-        o("Refusing to remove protected path without -r: " .. p, T.error)
+        o("Refusing to remove protected path without -r: " .. p .. "  [E-303 ERR_RM_SYSTEM_PATH]", T.error)
         return
       end
     end
@@ -771,7 +771,7 @@ return function(C, S, deps)
 
     if F.isDirectory and F.isDirectory(p) then
       if not recursive then
-        o("Cannot remove directory without -r: " .. p, T.error)
+        o("Cannot remove directory without -r: " .. p .. "  [E-302 ERR_NEEDS_RECURSIVE]", T.error)
         return
       end
       local items = F.list and F.list(p)
@@ -813,7 +813,7 @@ return function(C, S, deps)
 
             o("No trash for this session — deleting " .. target .. " outright.", T.warning)
           else
-            o("Not trashed: " .. why, T.error)
+            o("Not trashed: " .. why .. "  [E-304 ERR_TRASH_REFUSED]", T.error)
             o("It is still there. Delete it for good with:  rm " ..
               (recursive and "-r " or "") .. "--hard " .. target, T.dim)
             return
@@ -1637,7 +1637,7 @@ return function(C, S, deps)
         local okP, pkgMod = pcall(require, "kernel.pkg")
         if okP and pkgMod and pkgMod.getCommand then fn = pkgMod.getCommand(cname) end
       end
-      if not fn then out[#out + 1] = { "Unknown command: " .. cname, T.error }; return out end
+      if not fn then out[#out + 1] = { "Unknown command: " .. cname .. "  [E-801 ERR_UNKNOWN_CMD]", T.error }; return out end
       local sink = function(text, color) out[#out + 1] = { tostring(text), color or T.fg } end
       local okR, err = pcall(fn, cargs, sink)
       if not okR then out[#out + 1] = { "Error: " .. tostring(err), T.error } end
@@ -1681,7 +1681,8 @@ return function(C, S, deps)
         o((f.cmd and (f.cmd .. " failed:") or "The last action failed:"), tone.title)
 
         o("  " .. f.text, T.error)
-        local lines = helpers.explainFailure(f.text)
+        local lines, _, label = helpers.explainFailure(f.text)
+        if label then o("  " .. label, tone.dim) end
         if lines then
           emit(lines)
         else
@@ -1696,9 +1697,13 @@ return function(C, S, deps)
       end
       o("Nothing has failed since the last command ran.", T.dim)
       o("why            — explain the last refusal or error.", T.dim)
+      o("why <code>     — explain an error code: E-402, ERR_PATH_PROTECTED, K4.", T.dim)
       o("why <command>  — explain what a command needs and whether you can run it.", T.dim)
       return
     end
+
+    local codeLines = helpers.explainCode(args[1])
+    if codeLines then emit(codeLines); return end
     local entry = commandsMod.entry(target)
     emit(helpers.whyExplain(target, entry and entry.tier or 0, have, entry ~= nil))
   end

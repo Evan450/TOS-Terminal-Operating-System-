@@ -155,7 +155,7 @@ function M.doDelete(S, path, f)
     if not why:find("no trash", 1, true) then
 
       helpers.fail(S, "Not trashed: " .. why
-        .. " — still there; use  rm --hard  to force", nil, "delete")
+        .. " — still there; use  rm --hard  to force  [E-304 ERR_TRASH_REFUSED]", nil, "delete")
       return
     end
   end

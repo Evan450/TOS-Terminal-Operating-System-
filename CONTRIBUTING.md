@@ -8,10 +8,21 @@ Thanks for looking. TOS is a Terminal Operating System for the OpenComputers Min
 
 | Branch | What it is | Edit it? |
 |---|---|---|
-| `main` | The release build. Comments stripped, tests and build tooling removed. This is what installers download. | **No.** Generated. |
-| `dev` | The source tree. Full comments, `usr/lib/tests/`, `build/`. | **Yes.** |
+| `main` | The **release build** — what installers download. Comments stripped, dev tests and build tooling removed, blank-line runs collapsed. | **No.** Generated. |
+| `dev` | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, and the add-on source in `TOS-Extras/`. One clone, suite green. | **Yes** — all work happens here. |
+| `optional-utilities` | The **add-on pack**, laid out as a `pkg` repository so a machine with an internet card installs from it directly. | **No.** Generated from `TOS-Extras/` on `dev`. |
+| `master` | A stub carrying only an OPPM index, so `oppm` can find TOS. OPPM hardcodes the branch name. | **No.** Two files. |
 
 `main` is produced from `dev` by `build/strip.lua`. A commit to `main` is not "a fix that skipped review" — it is a change that the next release build silently overwrites. If you have already done it, cherry-pick onto `dev` and open the PR there.
+
+The split exists because comments cost real memory on a machine that has 192 KB of it, and the BIOS is fighting a hard 4 KiB EEPROM budget — roughly a third of `bios.lua` is comments that must not ship, and must not be lost either. `strip.lua` keeps every `--!`-marked comment (security notes, cross-file invariants, license headers) and drops the rest.
+
+Installing from either branch works, since both carry the same tree shape and the same `tos/system_manifest.lua`:
+
+```
+bootstrap.lua                                            # main (release)
+bootstrap.lua Evan450/TOS-Terminal-Operating-System- dev  # dev (source)
+```
 
 ## Finding something to work on
 

@@ -4,7 +4,7 @@ local REGISTRY = {
 
   help     = { category = "core", tier = 0, help = "Quick help (install-aware); 'man' for detail" },
   man      = { category = "core", tier = 0, help = "Detailed manual page for a command/topic" },
-  why      = { category = "core", tier = 0, help = "Explain a 'permission denied' (or what a command needs)" },
+  why      = { category = "core", tier = 0, help = "Explain the last error, an error code (E-402, K4), or what a command needs" },
   screendump = { category = "core", tier = 1, help = "Capture this screen to a text file (for bug reports)" },
   crash    = { category = "core", tier = 2, help = "List/read crash post-mortems saved in /var/crash" },
   about    = { category = "core", tier = 0, help = "OS info: version, codename, hardware summary" },

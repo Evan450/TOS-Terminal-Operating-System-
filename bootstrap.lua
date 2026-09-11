@@ -793,13 +793,26 @@ end
 --! Only on SUCCESS, only the file we were actually run from, and only
 --! when that is a plain file at the root -- never a guess. Removing the
 --! running script is safe: it was read into memory before it ran.
+--! ...and "at the root" now MEANS at the root. The comment above has said
+--! so since this was written; the code only prepended a slash to a relative
+--! name and then removed whatever `arg[0]` pointed at, anywhere on the disk.
+--! Nothing hit it while the documented install was `wget -f … /bootstrap.lua`,
+--! because that always is at the root -- but the OPPM package installs this
+--! file to /usr/bin, where `oppm` keeps an ownership record. Deleting a file
+--! out from under a package manager leaves it certain it installed something
+--! that is no longer there, and `oppm uninstall` then fails on a machine
+--! whose install actually succeeded. A managed copy is not ours to remove.
+
+local function selfPathToReclaim(a0)
+  if type(a0) ~= "string" or a0 == "" then return nil end
+  local p = a0
+  if p:sub(1, 1) ~= "/" then p = "/" .. p end
+  if p:find("/", 2, true) then return nil end
+  return p
+end
+
 do
-  local self = nil
-  local a0 = (arg and arg[0]) or nil
-  if type(a0) == "string" and a0 ~= "" then
-    self = a0
-    if self:sub(1, 1) ~= "/" then self = "/" .. self end
-  end
+  local self = selfPathToReclaim((arg and arg[0]) or nil)
   if self and fs.exists(self) and not fs.isDirectory(self) then
     if pcall(fs.remove, self) and not fs.exists(self) then
       ok("Removed " .. self .. " (re-download it with the same one-liner)")

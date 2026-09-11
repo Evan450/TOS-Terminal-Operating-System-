@@ -1,333 +1,54 @@
-# TOS v1.5.0 "Aletheia"
+# TOS — Terminal Operating System
 
-Terminal Operating System for OpenComputers (Minecraft).
-A Norton Commander-inspired OS with a tile Desktop, zero-trust networking, OpenOS compatibility, multi-seat support, named color themes, and a modular kernel.
+**A multi-user operating system for the OpenComputers Minecraft mod.** Logins, per-user permissions, a capability sandbox, signed packages and an encrypted mesh network — on a machine with 256 KB of RAM.
 
-> **Operators:** the full reference is [`MANUAL.md`](MANUAL.md) — *The Book of TOS*, in two halves: **The Operator's Guide** (tutorial chapters) and **The Reference** (alphabetical command listing + appendices). Three depths of help: `help` gets you moving (install-aware), `man <topic>` is the in-system page, and the Manual is the long story.
+**Requires OpenComputers 1.7.5 or newer, on Minecraft 1.12.2**, with a CPU set to the **Lua 5.3 or 5.4 architecture** (sneak-click the CPU to switch) and a Tier 2 disk. Full requirements below.
 
-## Released
+Current release: **v1.5.0 "Aletheia"** — see [`CHANGELOG.md`](CHANGELOG.md) for what changed.
 
-TOS is public and installable. v1.5.0 "Aletheia" is the current release — install it with the [network bootstrap](#over-the-network-no-disk-no-floppy), from an install disk, or from source. Bug reports and contributions are welcome; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+<!-- SCREENSHOTS -- see docs/screenshots/SHOTS.md for the shot list and how to
+     capture them. Delete this comment wrapper once the files exist on `dev`;
+     the URLs are absolute so the same README renders on every branch.
 
-[`ROADMAP.md`](ROADMAP.md) is what is actually open — 69 items at the time of writing (the file's own header carries the current count), including the ones deliberately *not* done and why. If you are looking for somewhere to start, start there.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/desktop.png"  alt="The Desktop: a tile home screen" width="49%">
+  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/rbmk.png"     alt="The RBMK reactor supervisor" width="49%">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/boot.gif"     alt="Boot to login to Desktop to a theme switch" width="80%">
+</p>
+-->
 
-## Three branches
+## Install it
 
-| Branch | What it is | Edit it? |
-|---|---|---|
-| **`main`** | The **release build** — what installers download. Comments stripped, dev tests and build tooling removed, blank-line runs collapsed. | **No.** Generated. |
-| **`dev`** | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, and the add-on source in `TOS-Extras/`. One clone, suite green. | **Yes** — all work happens here. |
-| **`optional-utilities`** | The **add-on pack**, laid out as a `pkg` repository so a machine with an internet card installs from it directly. | **No.** Generated from `TOS-Extras/` on `dev`. |
-
-**`main` is a build artifact, not a source tree.** Every file on it is generated from `dev` by `build/strip.lua`, so a change committed to `main` is silently destroyed by the next release build. Open pull requests against **`dev`**.
-
-The split exists because comments cost real memory on a machine that has 192 KB of it, and the BIOS is fighting a hard 4 KiB EEPROM budget — roughly a third of `bios.lua` is comments that must not ship, and must not be lost either. `strip.lua` keeps every `--!`-marked comment (security notes, cross-file invariants, license headers) and drops the rest.
-
-Installing from either branch works, since both carry the same tree shape and the same `tos/system_manifest.lua`:
+On a bare OpenOS machine with an Internet Card, one line:
 
 ```
-bootstrap.lua                                            # main (release)
-bootstrap.lua Evan450/TOS-Terminal-Operating-System- dev  # dev (source)
+wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
 ```
 
-## What's New in v1.5.0 "Aletheia"
+**The leading slash is not optional** — `wget` saves to the filesystem root, and the root is not on OpenOS's `PATH`. No Internet Card? Install from a floppy or from source instead; see [Installation](#installation) for all three routes.
 
-A truth release. It began as a TODO burn-down and became an audit of TOS's own
-claims — and of its tests. See [`CHANGELOG.md`](CHANGELOG.md) for the detail.
+Log in as `root` / `root`; the first boot makes you change it and offers a walkthrough.
 
-### Nine subsystems that had a passing test and did not work
+## Why not just use OpenOS?
 
-Cluster pairing, the cluster Master's shipped package, the worker bridge,
-`tape store` on a directory, tape-authenticator's `init`, rc-pilot, the TBFS
-write path, `drive`'s mount handling, and the network installer's own hasher
-were each broken at a seam where two halves looked correct alone. Every one had
-a test file; every one of those tests checked that a line *existed* rather than
-that it worked. They are fixed, and each fix ships with a test that drives
-**both real sides** and was proved to fail against the code it replaced.
+OpenOS gives you a shell. TOS gives you accounts and logins, per-user file permissions, a capability-based sandbox that user programs cannot escape, package signing, and an authenticated encrypted mesh between machines — on hardware OpenOS itself targets.
 
-### Six faults an operator found running the public build
+It is **keyboard-first and built to run infrastructure**: a base that has to keep working. It degrades to Tier 1 monochrome rather than requiring a big rig, runs a full independent session on every GPU+screen pair, survives power loss without corrupting its own filesystem, and ships a cluster scheduler and an RBMK reactor supervisor for bases that need one. If you want a graphical desktop on a maxed-out machine, MineOS is the better answer and this is not trying to be it.
 
-Errors ran off the screen instead of wrapping; the network bootstrap left its
-staging directory and itself behind; dialog buttons flickered on every update;
-the trash silently turned a refused, recoverable delete into a permanent one;
-the BIOS refused to boot **any** disk that was not TOS (including OpenOS); and
-`why` printed its own usage instead of explaining the refusal it was reached
-for. All six fixed.
+## What's in it
 
-### Power conservation that actually conserves
+- **Accounts and permissions** — real logins, four tiers (guest/user/admin/root), per-user home directories and ACLs, `sudo`, session timeouts, lockout backoff.
+- **A capability sandbox** — programs receive only what they declare and are granted; no ambient `_G`, no raw `component`, no back door into the kernel.
+- **Signed packages** — `pkg` installs from a floppy, a directory, or over the network, verifying an Ed25519 signature and a per-file hash on arrival.
+- **A zero-trust mesh** — peers are unknown until paired; TRUSTED traffic is encrypted and MAC-authenticated with replay protection.
+- **A tile Desktop and a file browser**, nine named colour themes, and a full reference manual — [`MANUAL.md`](MANUAL.md), *The Book of TOS*.
+- **OpenOS compatibility**, so much of what already exists still runs.
 
-- **`optimize power <off|balanced|save>`** — a real profile, built on what
-  OpenComputers actually bills for (checked against the mod's own shipped
-  config, not recalled): a computer costs a tenth as much per tick while
-  blocked in `pullSignal`, a screen is billed per *non-blank* character, GPU
-  writes per changed cell, disk I/O per kilobyte. `save` stretches the idle
-  repaint cadence, blanks the screen after two idle minutes, and forces the
-  dirty-cell display buffer on. `optimize power` reports **measured** energy
-  and draw rate rather than a number computed from constants your server may
-  have retuned.
-- Two config keys that claimed to do this job and were read by nothing
-  (`powerSave`, `refreshRate`) are gone. `refreshRate` was deleted rather than
-  wired, because honouring it would have meant inventing a polling loop to make
-  a documented knob true.
+Read [`CHANGELOG.md`](CHANGELOG.md) for what each release changed, and [`ROADMAP.md`](ROADMAP.md) for what is still open — it is generated, carries its own count, and includes the items deliberately *not* done and why. If you are looking for somewhere to start, start there.
 
-### Commands that read the way you'd type them
-
-- **`swap` is a top-level command again** (v1.4.0 folded it into
-  `optimize swap`; an operator pointed out that `optimize swap status` parses
-  as "optimise the swap status"). Both spellings call one function.
-- **`why` explains any refusal**, not only a tier denial — protected paths, a
-  trash refusal, out-of-memory, an unknown command — including file-browser
-  actions that never went through a command. Where it doesn't recognise a
-  message it says so and points at `log` instead of guessing.
-- **`drive` unmounts, works, and remounts**, asking only when something is
-  actually using the disk.
-- **The operator chooses where cluster task code runs** — refuse untrusted
-  tasks outright, or accept them under the watchdog.
-
-### TBFS is no longer slower than a managed disk
-
-The block cache landed: writes coalesce inside a batch, a full-block overwrite
-skips the read it used to do first, and the superblock is written once per
-batch instead of once per operation.
-
-## What's New in v1.4.0 "Iris"
-
-A UI release: TOS gets a face that isn't a prompt — without moving the prompt.
-See [`CHANGELOG.md`](CHANGELOG.md) for detail.
-
-### The Desktop
-
-- **A tile home screen** (`desktop`, or System → Desktop): built-in apps
-  (Files, Monitor, Chat, Mail, Launcher, Settings, Help, Tutorial, Log Out)
-  plus a tile for every command an installed package provides — installed
-  programs are visible, not memorized. Tiles honor the command registry's
-  tier + hardware gates.
-- **It's a view of Home, not a second place to be.** Home is one tab; the tile
-  grid and the file list are two views of it and **F2 flips between them**. The
-  prompt is resident in both, on the row it has always been on, so a tile
-  launches through the same executor as typing the command *and* its output
-  lands on the same rows. Keyboard-first (arrows, Enter, `Alt+1-9`,
-  PgUp/PgDn), clickable with the mouse add-on, and it degrades to a numbered
-  list on Tier-1 mono screens.
-- **Per-user landing** — the `landing` profile field picks which view login
-  opens: root defaults to files, everyone else to tiles. Change it in
-  Settings → Home. Boot Settings → Interface → `split` restores the older
-  two-tab shape if you want it.
-
-### The Settings app
-
-- `settings` (or Settings → Settings App): **Appearance** (live theme preview
-  + save), **Status Bar** (widget checkboxes), **Desktop** (landing), and
-  **System** (bootsettings / users / doctor / about buttons, tier-gated) —
-  forms instead of memorized commands.
-
-### Browser polish + shared toolkit
-
-- **File-type glyphs** in the browser (`■` dir, `♦` lua, `≡` text, `§` config,
-  `▓` archive), and a new shared `ui.lua` widget toolkit (tiles, setting rows,
-  grid math — unit-tested off-box) that the Desktop and Settings app build on.
-
-### Translations (framework)
-
-- **Community-translatable UI** — language catalogs are plain data files in
-  `/usr/lang` (no code changes to translate; partial catalogs are fine —
-  untranslated strings keep their English default). `lang` lists/sets your
-  language, `lang dump` writes a translator template. Login + Desktop are the
-  first translated surfaces, with a Russian starter catalog included; width
-  math is unicode-aware so Cyrillic (and later CJK) render straight.
-
-### Fewer commands, same power
-
-- **Command consolidation** — overlapping commands merged into one obvious
-  door each: `ver`→`about`, `device`→`hostname`, `swap`→`optimize swap`,
-  `restore`→`trash restore`, `servers`→`net servers`; a dozen aliases now
-  collapse onto one `help` row (`ls (dir)`). The `launcher` command retired —
-  the Desktop is the menu surface (it tiles your `~/.launcher.cfg` entries
-  too), and the keycard menu lives on as `tape-menu`. Pick your language from
-  **Settings → Language**.
-
-### Unmanaged drives (raw block devices)
-
-- **TBFS** — TOS now uses *unmanaged* OC drives (raw `drive` components), not just managed disks. The base image detects them (shown as *Raw Drive* in
-  `lsdev`/`hw`/POST) and inspects them with `drive`; install the **`blockfs`**
-  Extras package and TBFS lays a real hierarchical filesystem onto the bare
-  sectors so `drive format` / `drive mount` make one behave like any other
-  disk. Includes fsck (`drive check --repair`) and a **defragmenter**
-  (`drive defrag`, manual or `--if-over N` for cron-driven upkeep). The driver
-  is pure and ships with its own off-box test file (85 assertions at the time
-  of writing; `test_blockfs.lua` is the current count).
-
-Also folds in the previously-unreleased maintenance pass (dead-code prune, a
-security fix, JBOD as opt-in, the mouse add-on) — see the CHANGELOG.
-
-## What's New in v1.3.2 "Argus"
-
-A focused security-and-usability release. See [`CHANGELOG.md`](CHANGELOG.md) for detail.
-
-### Security fixes
-
-- **Process control is admin-gated again** — `fg` and `kill` were missing their
-  in-body tier guard (the panels executor does no dispatch-level tier check), so
-  any logged-in user could invoke them. Restored to ADMIN, matching `bg`/`run`.
-- **Input-injection fix (#SEC H13)** — `proc.setForeground` now enforces
-  ownership of the *target* process, not just the seat. Without it, a low-tier
-  user could point their own seat at a higher-privileged process and have their
-  keystrokes delivered to it. Fixed in the kernel, so it covers every caller.
-- **File serving fails closed** — `kernel.net.transfer`'s FILE_REQ server no
-  longer defaults to armed at boot; it tracks the `fileshare` service lifecycle
-  like `rshd` does. Stock boots are unchanged.
-- **Lua REPL gates on the live tier (#SEC M-7)** — `lua` checked a cached tier
-  snapshot; it now uses the seat's current session like every other gate.
-
-### Shell usability (additive — no layout or keybinding changes)
-
-- **Function-key legend** on the shell's idle output row (`F1 Help · F3 View ·
-  F5 Copy …`), classic file-manager style; width-responsive, and it yields to
-  command output the moment there is any.
-- **Help menu** (rightmost): Quick Help, Keyboard Shortcuts, Manual Pages,
-  Tutorial, About — discovery for users who don't yet know the bindings.
-
-## What's New in v1.3.1 "Polaris"
-
-An internal-improvement release: a configurable boot process, resilience to
-unsafe power-loss, disk swap, a smarter help system, and a cleaner package
-story. No security regressions — the v1.3.0 audit posture is preserved and
-extended. See [`CHANGELOG.md`](CHANGELOG.md) for the full list.
-
-### Configurable boot ("everything → nothing")
-
-- **Boot spectrum** in `/etc/boot.cfg`: a `profile` (`minimal`/`normal`/`full`/
-  `diagnostic`/`safe`) controls *what loads*; a `verbosity` muter
-  (`silent`/`splash`/`text`/`verbose`) controls *what it says*; `advanced`
-  toggles override individual subsystems — including `services`, `cron`, and
-  `packages`, the stages that run third-party code. Fail-safe — a
-  missing/corrupt file boots `normal`, i.e. exactly as before.
-- **Safe Mode** — `profile safe` (or press **S** at the POST screen for a
-  one-time safe boot, config untouched): kernel + shell only, nothing
-  third-party runs, but `pkg` admin verbs still work so the broken add-on can
-  be removed. Boots loud with a SAFE MODE banner.
-- **Self-repair** — `bootsettings repair on`: the next boot runs a one-shot
-  repair pass (interrupted atomic writes, orphaned temps, stale `/var/run`,
-  oversized logs, corrupt `boot.cfg`) and reports what it can't safely fix.
-  The flag clears itself; a crashing repair can never loop.
-- **CLI startup** — `bootsettings ui cli` boots every seat straight to the
-  command line (lightest startup, and no loss of capability: the CLI runs the
-  same commands and loads them as you use them); `tui` opens the panels
-  interface on demand.
-- **Honest hardware overrides** — `cputier`/`datatier` correct the two tier
-  heuristics, `ramgate auto|plenty|tight` declares your RAM situation for the
-  optional stages. Reliably-detected hardware (GPU/screen/modem) deliberately
-  has no override.
-- **System Configuration POST screen** — a TOS-ified AMIBIOS screen showing
-  installed hardware **with tiers** (CPU detect/estimate/confirm, RAM, GPU,
-  crypto card, disks, peripherals). Shown briefly each boot.
-- **Boot Settings** — press **DEL** during the POST screen for the visual
-  editor, or run `bootsettings` from the shell. Edits `/etc/boot.cfg`.
-
-### Power-loss protection
-
-- **Unsafe-shutdown detection** — a dirty-bit marker flags a boot that follows
-  a power cut / forced off (vs. a clean `shutdown`), surfaced in the log, on
-  the login screen, and in `doctor`.
-- **Atomic writes** for the critical state DBs (`users.dat`, `trust.dat`,
-  config, cron, `critical.bak`) so a power cut mid-save can't corrupt them;
-  interrupted writes are repaired at boot.
-- A **critical battery** is converted into a clean shutdown to protect data.
-
-### Disk swap ("slow RAM")
-
-- Explicit spill-to-disk for cold data, backed by `/var/swap`: a store API and
-  a `swap.table{}` proxy (disk-backed table with an in-RAM LRU cache). Volatile,
-  size-capped. Inspect via the `swap` command.
-
-### Help, packaging & UI
-
-- **Install-aware help** — `help` shows only commands whose hardware/module is
-  actually present (no `chat` without a modem, no `robot` without the robot).
-- **Package commands run directly** — `pkg`-installed packages' commands now
-  dispatch through pkg's own sandboxed runner (the first step of retiring the
-  legacy module manager). `pkg` also gained the `command` kind and a narrow
-  `/etc/rc.d` + cfg exception for service packages.
-- **Optional Utilities disk** — a pick-and-choose installer (`TOS-Extras/build/`)
-  for the bundled add-ons, MS-DOS Supplemental-Utilities style.
-- **PaneUI** (OpenOS) now renders TOS's nine named themes color-for-color.
-- The cluster protocol + worker bridge **moved out of the base kernel** into the
-  optional cluster package — ~1240 LOC of dormant code no longer ships in every
-  install.
-
-## What's New in v1.3.0 "Aegis"
-
-A full security-audit pass — **every** consolidated finding across all four
-severity tiers is fixed (9 Critical, 21 High, 21 Medium, 7 Low). No new
-user-facing features; this is a correctness/security release. See
-[`CHANGELOG.md`](CHANGELOG.md) for the complete per-finding list.
-
-### Security highlights
-
-- **Cluster worker is default-deny** — the Manager↔Worker bridge refuses to bind without a `shared_secret` in `/etc/cluster.cfg`, closing the unauthenticated remote-code-execution path.
-- **Package manager hardened** — `pkg.install` verifies file hashes (constant-time) and confines writes to `/usr` and `/var/pkg`; install/uninstall/enable require an admin session; dependency-confusion and accept-all floppy installs are closed.
-- **rc.d kernel-tier services** get a gated `require` (no pulling in `kernel.process`/`kernel.users`/`kernel.sandbox`).
-- **Vault & keychain fail closed** without a data card (no XOR-"encrypted" secrets); the vault now uses domain-separated encryption/MAC subkeys (V2 format, V1 still readable).
-- **`term.gpu()` is seat-bound and capability-gated** — sandboxed programs can no longer draw to or rebind another seat's screen.
-- **Shell ACL checks use the bound seat principal** instead of a stale global session — fixing wrong-user reads/writes on multi-seat rigs.
-- **Network replay protection** now binds a per-peer monotonic sequence + per-boot epoch into the packet MAC; **session tokens** accumulate cross-boot entropy.
-- **`fs.normalize` fails closed** on tainted (NUL/malformed) paths instead of defaulting to the privileged root.
-- **Login hardening** — no username/lock-state enumeration, and the root account (exempt from permanent lockout) now has reboot-proof exponential backoff.
-
-> **Operator notes:** Cluster Managers must set a 16+ byte `shared_secret` in `/etc/cluster.cfg`; the keychain now requires a data card; network peers must be upgraded in lockstep (the packet MAC format changed).
-
-## What's New in v1.2.6 "Beacon"
-
-### Themes & Customization
-
-- **Named color themes** — pick from `default`, `midnight`, `amber`, `green`, `classic`, `contrast`, `plasma`, `nord`, `solarized`, or override individual colors. Themes auto-snap to the nearest palette entry on Tier 2 GPUs and are skipped on monochrome Tier 1 GPUs.
-- **Per-user persistence** — your theme is saved to your home directory (`/root/.theme.cfg` for root, `/home/<user>/.theme.cfg` otherwise) and re-applied automatically on login.
-- **`theme` command** — `list`, `show`, `set`, `preview`, `color <key> <0xRRGGBB>`, `reset`, `clear`, `keys`. Aliased as `colors`.
-
-### QoL Commands
-
-- **`date [fmt]`** — wall-clock time using `os.date` formatting; respects the cosmetic `timezone` config offset. (`time` is an alias.)
-- **`tree [path] [depth]`** — visual recursive directory listing with depth control and a 400-entry safety cap.
-
-### Security & Correctness Fixes (carried over from the v1.2.5 review)
-
-- **`compat.filesystem.get()` no longer leaks a raw component proxy.** Sandboxed OpenOS code that called `filesystem.get(...)` previously got a raw filesystem component proxy whose `open`/`list`/`remove` methods bypassed `securefs` entirely. The compat layer now returns a metadata-only wrapper (`spaceTotal`, `spaceUsed`, `getLabel`, `isReadOnly`, `address`, `mountPoint`); every path-operation method returns a clear "raw filesystem access is disabled" error so bypass attempts fail loudly instead of silently.
-- **Sandbox stops issuing raw filesystem proxies.** `kernel.sandbox.makeSafeComponent()` removed `filesystem` from `ALLOWED_COMPONENT_TYPES`, closing the parallel bypass via `component.proxy(filesystem-addr)`. Sandboxed code uses the bound `fs` global or the compat shim — both routed through `securefs`.
-- **`share.lua` listener bug fixed.** Listeners now use the documented `(packet, fromAddr)` arg order (matching `kernel.net.init.dispatchToListeners`); the previous reversed order silently dropped every response. Listeners are also registered before `net.send()` so a fast peer can't beat the listener (same race already fixed in `ssh.lua`).
-
-### Manifest & Deployment
-
-- **`system_manifest.lua` now covers every runtime file.** Previously the manifest listed ~40 paths while the source tree had ~92 — fresh installs created from `deploy` were silently missing all 14 panel submodules, the full compat layer (`buffer`, `colors`, `event`, `keyboard`, `serialization`, `sides`, `term`, `text`), `kernel/audio.lua`, all peripherals, every `/etc/rc.d/` service, and every `/usr/bin` tool. The manifest now lists 116 paths covering everything that ships in a deployed image, including the `theme` module and the mesh `net/mail`, `net/mailctl`, and `net/mesh` stack.
-- **`/usr/lib/tests/test_manifest_completeness.lua`** — walks `/tos`, `/etc/rc.d`, `/usr/bin`, `/usr/modules`, plus root-level boot files, and diffs against the manifest. Reports both missing-from-manifest and missing-from-disk so the manifest can't drift again without the test catching it.
-
-## What's New in v1.2.5 "Atlas"
-
-### Multi-Seat / Multi-Screen
-
-- **Per-display shell sessions** — each GPU+Screen pair spawns its own independent shell process with its own login, cwd, and foreground tracking
-- **displayProxy** — full TUI proxy (box-drawing, menus, dialogs, themes) delegated per-display via `display.withContext()`; no drawing crosstalk between screens
-- **Correct input routing** — keyboard signals route via `displayForKeyboard()`, touch/drag/drop/scroll route via `displayForScreen()`; Ctrl+C interrupt targets the correct display's foreground process
-- **Terminal Server / Remote Terminal** support — OC Server Racks with Terminal Server expansions and wireless Remote Terminals work transparently as additional seats
-
-### Security Hardening (v1.2.5+)
-
-- **Module path traversal fix** — boundary-aware prefix matching prevents `/usr/modules/foobar` from passing a check for `/usr/modules/foo`
-- **Sandbox component filtering with per-type caps** — `makeSafeComponent()` splits component access into a base set (gpu/screen/keyboard/crafting/navigation/geolyzer/note_block/sign) granted by the generic `component` cap, and a gated set requiring per-type caps: `peripheral.modem`, `peripheral.redstone`, `peripheral.robot`, `peripheral.inventory`, `peripheral.tape`, `peripheral.tractor`, `peripheral.piston`, `peripheral.hologram`. A module with only `component` can no longer proxy the modem (and therefore can't sniff/forge network traffic). Modules requesting gated caps declare them in `module.cfg`. `eeprom`, `computer`, and `filesystem` remain unreachable from sandboxed code in any tier.
-- **Boot integrity** — BIOS syntax-checks `/init.lua` before execution and defaults to **halt** when the boot drive has changed (was: 10-second timeout default-yes). Operators must explicitly type `y` to update EEPROM, or hold Shift and press Enter for a one-time boot. Per-file hash or signature verification across the boot chain is still tracked work — anyone with write access to `/init.lua`, the system manifest, or `/etc/critical.bak` still gains code execution at next boot.
-- **Module integrity** — `module.cfg` may declare a `hashes = { ["init.lua"] = "<sha256-hex>", ... }` table. When present, the listed files are SHA-256-verified at install time AND at every `modules.enable` call; mismatches refuse to load. Manifests without hashes still load but emit a per-module warning.
-- **Restricted first-boot token** — `users.login()` itself enforces the firstBoot flag: a login on a firstBoot-flagged account mints a GUEST-tier token marked `passwordChangeOnly`, regardless of which path called it (regular login, autoLogin, emergency shell, minimalAuth). The login UI's first-boot dialog calls `users.promoteAfterFirstBoot(token)` once `changePassword` has cleared the flag in the DB to elevate the session to its real tier.
-- **Network MAC + nonce + downgrade guard** — encrypted TRUSTED-peer payloads carry a per-packet random nonce and an HMAC-SHA256 over `(algo || nonce || ciphertext)`. Receivers verify the MAC before any decryption work, refuse duplicate nonces (ring buffer of last 512 per peer), and refuse `enc = "xor"` packets when the receiver has a data card (no downgrade onto the no-MAC software cipher). Old peers without this fix fail the MAC check and get dropped — upgrade peers in lockstep.
-- **`flash` requires typed confirmation** — the BIOS-flash command prints the source path, file size, SHA-256 fingerprint, EEPROM label, and current boot address, then requires typing the literal word `flash` to commit. A stray `y` keystroke can no longer brick the machine.
-- **rc.d `_kernel_` allowlist** — services that declare `user = "_kernel_"` are only honored from a hardcoded allowlist (`10-discoveryd`, `20-chatrelay`, `20-fileshare`, `20-rshd`). Other services that match the regex peek (including matches inside comments) are demoted to the regular user-tier sandbox.
-- **Cluster Manager-Worker HMAC** — when a cluster shared secret is configured via `cluster_worker.setSecret()`, every WRK frame (REGISTER / RESULT / PROGRESS / PONG / TASK / CANCEL / PING) carries an HMAC-SHA256 over `(op || task_id || nonce)`. Frames missing or failing the MAC are dropped; replayed nonces are rejected via a ring buffer of the last 1024 accepted nonces. Re-REGISTER while a task is in flight is refused (closes an attacker-spoofed-worker abort vector).
-
-### Architecture (v1.2.5)
-
-- **Panels split** — `panels/init.lua` broken into 14 focused submodules: state, helpers, tabs, widgets, dialogs, draw, filebrowser, editor, context, commands, executor, menus, events, keymap
-
-## Earlier Highlights (v0.2.1 → v1.2.5)
-
-Security hardening — `securefs` normalization, protected-path deletion, remote-shell sandbox tightening, trust-level clamping, cron sandbox, module sandbox, module install path traversal, remote execution wired into the TRUSTED tier, and dozens of bugfixes across the kernel, shell, compat, and networking modules. The full list lived in the previous README; consult the source comments and `tos/kernel/sandbox.lua` for context on individual hardening decisions.
+Contributions welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) has the branch layout (work on `dev`, never `main`), the setup, and the house rules for writing code that has to fit in 192 KB.
 
 ## System Requirements
 
@@ -370,46 +91,95 @@ same moment is not. For genuinely concurrent workloads, give each operator their
 own computer (a higher-tier CPU raises the shared budget but never makes it
 per-seat).
 
-## GPU Tier Support
+## Installation
 
-TOS detects your GPU tier and applies an appropriate base palette:
+### From Source
 
-- **Tier 1 (monochrome)**: Black background, white text, inverse for bars and selections. Themes are intentionally disabled — RGB collapses to 1-bit and the result would be unreadable.
-- **Tier 2 (16-color)**: Exact Minecraft dye palette values. Theme RGB values snap to the nearest dye on apply; you'll see the snapped result live.
-- **Tier 3 (256-color)**: Full RGB freedom. Themes apply exactly as configured.
+1. Run `install.lua` from OpenOS for guided setup
+2. Flash `bios.lua` to EEPROM: `flash bios.lua`
+3. Reboot — login as `root` / `root`, set new password on first boot
 
-All UI code references the theme system (`display.c("name")`) rather than hardcoded hex values, so every screen looks correct on any GPU.
+### From Install Disk
 
-## Themes
+1. On an existing TOS machine: `deploy /mnt/floppy` (root only)
+2. Move the floppy to the target OpenOS computer
+3. Run `/mnt/<disk>/install.lua` — the installer copies all files, runs setup, and offers to flash the BIOS
+4. Reboot — first-boot tutorial guides you through the system
 
-Nine built-in presets:
+The deploy command sources its file list from `/tos/system_manifest.lua`. As of v1.2.6 this manifest covers every runtime file, and `/usr/lib/tests/test_manifest_completeness.lua` enforces that property — run it before cutting a release to catch new files that were added but not listed.
 
-| Name | Description |
-|------|-------------|
-| `default` | TOS classic — teal frames, gold titles on black |
-| `midnight` | Tokyo night — indigo panels, neon accents |
-| `amber` | Retro CRT — warm amber phosphor |
-| `green` | Matrix — green phosphor on black |
-| `plasma` | Plasma display — neon red-orange on black (night-vision friendly) |
-| `classic` | Norton-style — white on blue, cyan bars |
-| `contrast` | High contrast — readability first |
-| `nord` | Nord — arctic blues and frost |
-| `solarized` | Solarized dark — muted teal + earth accents |
+### Over the Network (no disk, no floppy)
 
-Quick examples:
+For a bare OpenOS machine with an Internet Card but no TOS install disk at
+all — nothing has ever been copied onto it:
+
+1. Download and run it, in one line. No other TOS files are needed first:
+   ```
+   wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
+   ```
+   **The leading slash on `/bootstrap.lua` is not optional.** `wget` saves
+   it at the filesystem root, and the root is not on OpenOS's `PATH` — so
+   typing plain `bootstrap.lua` afterwards gets "command not found" no
+   matter which directory you are in. Running it by absolute path works
+   from anywhere and needs no `cd`.
+
+   If your shell does not chain with `&&`, it is two commands and the
+   second is still the absolute path:
+   ```
+   wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua
+   /bootstrap.lua
+   ```
+   (No `wget`? Any way of getting one file onto an OpenOS machine works —
+   `pastebin`, typing it in with `edit`, another disk. `bootstrap.lua`
+   itself needs nothing but the Internet Card from here on.)
+2. It downloads the release (bios.lua, install.lua, and every file
+   `/tos/system_manifest.lua` declares) from GitHub into a scratch
+   directory, then hands off to that install.lua exactly as if it were a
+   mounted floppy — the same FORCE-WIPE confirmation, BIOS fingerprint
+   check, and post-copy size verification run unchanged.
+3. Reboot — first-boot tutorial guides you through the system
+
+`bootstrap.lua` doesn't assume the repo's default branch or layout: it
+probes `main` then `master`, and a bare repo root then a `TOS-Release`
+subdirectory, before giving up. Point it at a fork or a specific
+branch/layout instead of the built-in defaults:
+```
+bootstrap.lua <owner>/<repo>
+bootstrap.lua <owner>/<repo> <branch>
+bootstrap.lua <owner>/<repo> <branch> <subdir>
+```
+No Internet Card on the target machine? Craft one (Tier 1 is enough) or
+fall back to the From Install Disk method above — a physical disk has no
+network dependency at all.
+
+### Optional Utilities (add-ons)
+
+Add-ons that run on TOS but aren't TOS itself — a spreadsheet, mail, games, a printer driver, TBFS, the cluster control plane. They ship separately from the OS and install two ways.
+
+**Over the network**, on a machine with an internet card, as an admin:
 
 ```
-theme list                       List presets and which one is active
-theme show                       Show active theme + per-user overrides
-theme set midnight               Apply 'midnight' and save preference
-theme preview amber              Apply 'amber' for the session, no save
-theme color title 0xFF8800       Override the title color (saves automatically)
-theme reset                      Drop overrides, keep current preset
-theme clear                      Wipe saved theme, revert to default
-theme keys                       List overridable color keys
+pkg repo add utils https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/optional-utilities
+pkg search
+pkg fetch calc
 ```
 
-Overridable keys: `bg`, `fg`, `border`, `title`, `highlight`, `dim`, `selected_bg`, `selected_fg`, `menubar_bg`, `menubar_fg`, `menubar_hot`, `statusbar_bg`, `statusbar_fg`, `error`, `warning`, `panel_bg`, `input_bg`, `input_fg`, `syn_keyword`, `syn_string`, `syn_comment`, `syn_number`, `syn_func`, `file_lua`, `dir_color`. Color values accept `0xRRGGBB`, `#RRGGBB`, plain `RRGGBB`, or decimal.
+A fetch downloads into a staging directory and then runs the **ordinary local install** against it, so hash verification, write-root confinement and the unverified-package gate are the same code as installing from a floppy. The configured repo list *is* the allowlist: there is no default repo and no discovery, so a machine reaches only hosts an admin wrote down.
+
+**From a floppy**, the MS-DOS Supplemental-Utilities way: build the disks with `TOS-Extras/build/build-disk.lua`, copy each `diskN/`'s contents onto its own floppy, insert one, and run `pkg install` to pick add-ons from a menu. The set manifest describes the whole set, so a machine with one disk in the drive still lists everything and can name the disk to ask for.
+
+Packages below version 1.0.0 are deliberately excluded from the published pack — an unfinished add-on that installs cleanly is worse than one you cannot reach. `cluster-storage` and `rbmk-control` are held back on that rule today.
+
+### Install-path fallbacks
+
+`install.lua`'s disk auto-detection no longer assumes a floppy is
+mounted at `/mnt/<name>` — it checks whatever directory actually
+contains the script (so a staged network download, a loop-mounted
+directory, or a non-standard mount point all work the same way a floppy
+does), and a scripted or chain-loaded install can also name its source
+directory explicitly as `install.lua`'s first argument instead of
+relying on path detection at all. `bootstrap.lua` uses that argument to
+hand off the directory it just downloaded.
 
 ## Features
 
@@ -554,96 +324,6 @@ is an **explicit** spill-to-disk layer for cold data, backed by `/var/swap`:
 - Caveat: values round-trip through `kernel.serialize`, so functions/userdata
   inside a stored value are dropped — use it for data, not closures.
 
-## Installation
-
-### From Source
-
-1. Run `install.lua` from OpenOS for guided setup
-2. Flash `bios.lua` to EEPROM: `flash bios.lua`
-3. Reboot — login as `root` / `root`, set new password on first boot
-
-### From Install Disk
-
-1. On an existing TOS machine: `deploy /mnt/floppy` (root only)
-2. Move the floppy to the target OpenOS computer
-3. Run `/mnt/<disk>/install.lua` — the installer copies all files, runs setup, and offers to flash the BIOS
-4. Reboot — first-boot tutorial guides you through the system
-
-The deploy command sources its file list from `/tos/system_manifest.lua`. As of v1.2.6 this manifest covers every runtime file, and `/usr/lib/tests/test_manifest_completeness.lua` enforces that property — run it before cutting a release to catch new files that were added but not listed.
-
-### Over the Network (no disk, no floppy)
-
-For a bare OpenOS machine with an Internet Card but no TOS install disk at
-all — nothing has ever been copied onto it:
-
-1. Download and run it, in one line. No other TOS files are needed first:
-   ```
-   wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
-   ```
-   **The leading slash on `/bootstrap.lua` is not optional.** `wget` saves
-   it at the filesystem root, and the root is not on OpenOS's `PATH` — so
-   typing plain `bootstrap.lua` afterwards gets "command not found" no
-   matter which directory you are in. Running it by absolute path works
-   from anywhere and needs no `cd`.
-
-   If your shell does not chain with `&&`, it is two commands and the
-   second is still the absolute path:
-   ```
-   wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua
-   /bootstrap.lua
-   ```
-   (No `wget`? Any way of getting one file onto an OpenOS machine works —
-   `pastebin`, typing it in with `edit`, another disk. `bootstrap.lua`
-   itself needs nothing but the Internet Card from here on.)
-2. It downloads the release (bios.lua, install.lua, and every file
-   `/tos/system_manifest.lua` declares) from GitHub into a scratch
-   directory, then hands off to that install.lua exactly as if it were a
-   mounted floppy — the same FORCE-WIPE confirmation, BIOS fingerprint
-   check, and post-copy size verification run unchanged.
-3. Reboot — first-boot tutorial guides you through the system
-
-`bootstrap.lua` doesn't assume the repo's default branch or layout: it
-probes `main` then `master`, and a bare repo root then a `TOS-Release`
-subdirectory, before giving up. Point it at a fork or a specific
-branch/layout instead of the built-in defaults:
-```
-bootstrap.lua <owner>/<repo>
-bootstrap.lua <owner>/<repo> <branch>
-bootstrap.lua <owner>/<repo> <branch> <subdir>
-```
-No Internet Card on the target machine? Craft one (Tier 1 is enough) or
-fall back to the From Install Disk method above — a physical disk has no
-network dependency at all.
-
-### Optional Utilities (add-ons)
-
-Add-ons that run on TOS but aren't TOS itself — a spreadsheet, mail, games, a printer driver, TBFS, the cluster control plane. They ship separately from the OS and install two ways.
-
-**Over the network**, on a machine with an internet card, as an admin:
-
-```
-pkg repo add utils https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/optional-utilities
-pkg search
-pkg fetch calc
-```
-
-A fetch downloads into a staging directory and then runs the **ordinary local install** against it, so hash verification, write-root confinement and the unverified-package gate are the same code as installing from a floppy. The configured repo list *is* the allowlist: there is no default repo and no discovery, so a machine reaches only hosts an admin wrote down.
-
-**From a floppy**, the MS-DOS Supplemental-Utilities way: build the disks with `TOS-Extras/build/build-disk.lua`, copy each `diskN/`'s contents onto its own floppy, insert one, and run `pkg install` to pick add-ons from a menu. The set manifest describes the whole set, so a machine with one disk in the drive still lists everything and can name the disk to ask for.
-
-Packages below version 1.0.0 are deliberately excluded from the published pack — an unfinished add-on that installs cleanly is worse than one you cannot reach. `cluster-storage` and `rbmk-control` are held back on that rule today.
-
-### Install-path fallbacks
-
-`install.lua`'s disk auto-detection no longer assumes a floppy is
-mounted at `/mnt/<name>` — it checks whatever directory actually
-contains the script (so a staged network download, a loop-mounted
-directory, or a non-standard mount point all work the same way a floppy
-does), and a scripted or chain-loaded install can also name its source
-directory explicitly as `install.lua`'s first argument instead of
-relying on path detection at all. `bootstrap.lua` uses that argument to
-hand off the directory it just downloaded.
-
 ## Shell Commands
 
 ### Files & Navigation
@@ -730,6 +410,47 @@ Ctrl+Insert  Copy         Shift+Delete  Cut (^X)      Shift+Insert  Paste (^V)
 Copy is `Ctrl+Insert`, not `Ctrl+C`: the kernel takes `Ctrl+C` as the
 foreground interrupt and blanks the signal, so `^C` never reaches the editor
 (see MANUAL §4.3).
+
+## Themes
+
+Nine built-in presets:
+
+| Name | Description |
+|------|-------------|
+| `default` | TOS classic — teal frames, gold titles on black |
+| `midnight` | Tokyo night — indigo panels, neon accents |
+| `amber` | Retro CRT — warm amber phosphor |
+| `green` | Matrix — green phosphor on black |
+| `plasma` | Plasma display — neon red-orange on black (night-vision friendly) |
+| `classic` | Norton-style — white on blue, cyan bars |
+| `contrast` | High contrast — readability first |
+| `nord` | Nord — arctic blues and frost |
+| `solarized` | Solarized dark — muted teal + earth accents |
+
+Quick examples:
+
+```
+theme list                       List presets and which one is active
+theme show                       Show active theme + per-user overrides
+theme set midnight               Apply 'midnight' and save preference
+theme preview amber              Apply 'amber' for the session, no save
+theme color title 0xFF8800       Override the title color (saves automatically)
+theme reset                      Drop overrides, keep current preset
+theme clear                      Wipe saved theme, revert to default
+theme keys                       List overridable color keys
+```
+
+Overridable keys: `bg`, `fg`, `border`, `title`, `highlight`, `dim`, `selected_bg`, `selected_fg`, `menubar_bg`, `menubar_fg`, `menubar_hot`, `statusbar_bg`, `statusbar_fg`, `error`, `warning`, `panel_bg`, `input_bg`, `input_fg`, `syn_keyword`, `syn_string`, `syn_comment`, `syn_number`, `syn_func`, `file_lua`, `dir_color`. Color values accept `0xRRGGBB`, `#RRGGBB`, plain `RRGGBB`, or decimal.
+
+## GPU Tier Support
+
+TOS detects your GPU tier and applies an appropriate base palette:
+
+- **Tier 1 (monochrome)**: Black background, white text, inverse for bars and selections. Themes are intentionally disabled — RGB collapses to 1-bit and the result would be unreadable.
+- **Tier 2 (16-color)**: Exact Minecraft dye palette values. Theme RGB values snap to the nearest dye on apply; you'll see the snapped result live.
+- **Tier 3 (256-color)**: Full RGB freedom. Themes apply exactly as configured.
+
+All UI code references the theme system (`display.c("name")`) rather than hardcoded hex values, so every screen looks correct on any GPU.
 
 ## File Structure
 
