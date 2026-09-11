@@ -6,7 +6,7 @@ return {
   set = "optional-utilities",
   disks = 2,
   packages = {
-    ["blockfs"] = { disk = 2, version = "1.2.0", category = "storage", kind = "lib",
+    ["blockfs"] = { disk = 2, version = "1.2.1", category = "storage", kind = "lib",
       description = "TBFS: a real hierarchical filesystem for unmanaged drives (format/mount/fsck/defrag via the base `drive` command).",
       requires = {  }, recommends = {  } },
     ["calc"] = { disk = 1, version = "1.0.0", category = "productivity", kind = "command",

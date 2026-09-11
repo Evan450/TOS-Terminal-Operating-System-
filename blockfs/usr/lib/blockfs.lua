@@ -383,6 +383,13 @@ local function writePtr(fs, blk, slot, val)
   writeBlock(fs, blk, sector:sub(1, at) .. string.pack("<I4", val) .. sector:sub(at + 5), true)
 end
 
+--! Journal for writeData's mapping pass: a failed write undoes every
+--! allocation + link newest-first (no leaked blocks; test_blockfs_enospc).
+local function jot(fs, op, a, b)
+  local j = fs.journal
+  if j then j[#j + 1] = { op, a, b } end
+end
+
 -- Physical block backing logical file-block `li`; when `alloc`, grows
 -- the file (allocating indirect blocks as needed) and keeps blocks near
 -- each other for a defrag-friendly, seek-cheap layout. Returns block#|nil,
@@ -394,14 +401,17 @@ local function mapBlock(fs, node, li, alloc)
   local function near() return fs.allocHint end
   local function take(nearBlk)
     local b = allocBlock(fs, nearBlk)
-    if b then node.blocks = (node.blocks or 0) + 1; node._dirty = true end
+    if b then
+      node.blocks = (node.blocks or 0) + 1; node._dirty = true
+      jot(fs, "blk", b)
+    end
     return b
   end
   if li < N_DIRECT then
     if node.direct[li + 1] == 0 and alloc then
       local b = take(li > 0 and node.direct[li] ~= 0 and node.direct[li] or near())
       if not b then return nil end
-      node.direct[li + 1] = b
+      node.direct[li + 1] = b; jot(fs, "direct", li + 1)
       return b, true
     end
     local d = node.direct[li + 1]
@@ -412,12 +422,13 @@ local function mapBlock(fs, node, li, alloc)
     if node.indirect == 0 then
       if not alloc then return nil end
       local ib = take(near()); if not ib then return nil end
-      writeBlock(fs, ib, string.rep("\0", fs.ss), true); node.indirect = ib
+      writeBlock(fs, ib, string.rep("\0", fs.ss), true)
+      node.indirect = ib; jot(fs, "ind")
     end
     local phys = readPtr(fs, node.indirect, li)
     if phys == 0 and alloc then
       phys = take(node.indirect); if not phys then return nil end
-      writePtr(fs, node.indirect, li, phys)
+      writePtr(fs, node.indirect, li, phys); jot(fs, "ptr", node.indirect, li)
       return phys, true
     end
     return phys ~= 0 and phys or nil
@@ -427,24 +438,38 @@ local function mapBlock(fs, node, li, alloc)
     if node.double == 0 then
       if not alloc then return nil end
       local db = take(near()); if not db then return nil end
-      writeBlock(fs, db, string.rep("\0", fs.ss), true); node.double = db
+      writeBlock(fs, db, string.rep("\0", fs.ss), true)
+      node.double = db; jot(fs, "dbl")
     end
     local l1, l2 = li // P, li % P
     local mid = readPtr(fs, node.double, l1)
     if mid == 0 then
       if not alloc then return nil end
       mid = take(node.double); if not mid then return nil end
-      writeBlock(fs, mid, string.rep("\0", fs.ss), true); writePtr(fs, node.double, l1, mid)
+      writeBlock(fs, mid, string.rep("\0", fs.ss), true)
+      writePtr(fs, node.double, l1, mid); jot(fs, "ptr", node.double, l1)
     end
     local phys = readPtr(fs, mid, l2)
     if phys == 0 and alloc then
       phys = take(mid); if not phys then return nil end
-      writePtr(fs, mid, l2, phys)
+      writePtr(fs, mid, l2, phys); jot(fs, "ptr", mid, l2)
       return phys, true
     end
     return phys ~= 0 and phys or nil
   end
   return nil   -- beyond double-indirect reach (multi-MB file)
+end
+
+-- Undo a journal newest-first: node map and bitmap as before the write.
+local function rollback(fs, node, j)
+  for k = #j, 1, -1 do
+    local op, a, b = j[k][1], j[k][2], j[k][3]
+    if op == "blk" then freeBlock(fs, a); node.blocks = node.blocks - 1
+    elseif op == "direct" then node.direct[a] = 0
+    elseif op == "ind" then node.indirect = 0
+    elseif op == "dbl" then node.double = 0
+    else writePtr(fs, a, b, 0) end   -- "ptr"
+  end
 end
 
 -- Visit every physical block a file owns (data + indirect metadata),
@@ -519,31 +544,54 @@ local function readData(fs, node, offset, count)
   return table.concat(out)
 end
 
+--! Map (allocating) every block, THEN write: all-or-nothing like OC's
+--! managed fs. Same I/O; metadata still lands after data.
 local function writeData(fs, node, offset, data)
-  local pos = offset
-  local i = 1
   local n = #data
   local ss = fs.ss
   beginBatch(fs)                 -- bitmap + pointer writes coalesce until the end
+
+  -- Pass 1: map. (A zero-length write maps nothing.)
+  local firstLi = offset // ss
+  local phys, fresh = {}, {}
+  if n > 0 then
+    local lastLi = (offset + n - 1) // ss
+    local journal = {}
+    fs.journal = journal
+    for li = firstLi, lastLi do
+      local p, f = mapBlock(fs, node, li, true)
+      if not p then
+        fs.journal = nil
+        rollback(fs, node, journal)
+        endBatch(fs)
+        return false, "out of space"
+      end
+      phys[li - firstLi + 1], fresh[li - firstLi + 1] = p, f
+    end
+    fs.journal = nil
+  end
+
+  -- Pass 2: data. Cannot fail for space now.
+  local pos, i = offset, 1
   while i <= n do
     local li = pos // ss
     local within = pos % ss
-    local phys, fresh = mapBlock(fs, node, li, true)
-    if not phys then endBatch(fs); return false, "out of space" end
+    local k = li - firstLi + 1
+    local blk = phys[k]
     local room = ss - within
     local chunk = data:sub(i, i + room - 1)
     local sector
     if #chunk == ss then
       sector = chunk                                   -- whole block: nothing to keep
-    elseif fresh then
+    elseif fresh[k] then
       -- Just allocated: nothing in it is ours to preserve, and the bytes
       -- around the chunk are what a read would have returned anyway.
       sector = string.rep("\0", within) .. chunk .. string.rep("\0", ss - within - #chunk)
     else
-      local old = readBlock(fs, phys, node.type == T_DIR)
+      local old = readBlock(fs, blk, node.type == T_DIR)
       sector = old:sub(1, within) .. chunk .. old:sub(within + #chunk + 1)
     end
-    writeBlock(fs, phys, sector)
+    writeBlock(fs, blk, sector)
     pos = pos + #chunk; i = i + #chunk
   end
   endBatch(fs)
@@ -653,15 +701,12 @@ end
 -- Format
 -- ============================================================
 
---- Lay a fresh TBFS onto a raw drive. opts = { label, inodeRatio,
---- bootBytes }. inodeRatio = data-bytes per inode (default 4 KB).
---- bootBytes > 0 reserves a contiguous BOOT region of that many bytes
---- (rounded up to a sector) between the inode table and the data region,
---- making the volume bootable (see blockfs.writeBoot). Default 0.
-function blockfs.format(drive, opts)
+--- Pure: the layout format() will write (table, or nil + reason). `deploy
+--- drive` checks it BEFORE erasing; format uses it, so they cannot disagree.
+function blockfs.plan(drive, opts)
   opts = opts or {}
   local ss, totalBlocks = driveGeom(drive)
-  if totalBlocks < 8 then return false, "drive too small for TBFS" end
+  if totalBlocks < 8 then return nil, "drive too small for TBFS" end
 
   local bitmapBlocks = math.max(1, math.ceil(totalBlocks / (ss * 8)))
   local cap = ss * totalBlocks
@@ -679,20 +724,44 @@ function blockfs.format(drive, opts)
   local inodeStart  = bitmapStart + bitmapBlocks
   local bootStart   = inodeStart + inodeBlocks
   local dataStart   = bootStart + bootBlocks
-  if dataStart >= totalBlocks then return false, "drive too small for metadata + boot region" end
-
-  local fs = {
-    drive = drive, ss = ss, totalBlocks = totalBlocks,
+  if dataStart >= totalBlocks then return nil, "drive too small for metadata + boot region" end
+  return {
+    ss = ss, totalBlocks = totalBlocks,
     bitmapStart = bitmapStart, bitmapBlocks = bitmapBlocks,
     inodeStart = inodeStart, inodeCount = inodeCount, inodeBlocks = inodeBlocks,
     bootStart = bootStart, bootBlocks = bootBlocks,
-    dataStart = dataStart, freeBlocks = 0, clean = true,
-    label = (opts.label or "tbfs"):sub(1, 32),
-    now = opts.now or function() return 0 end, allocHint = dataStart,
-    -- A cache so the bitmap marking below coalesces (see writeBlock);
-    -- this handle is dropped when format returns.
-    cache = { map = {}, n = 0, tick = 0 },
+    dataStart = dataStart, dataBlocks = totalBlocks - dataStart,
   }
+end
+
+--- Pure: blocks a file of `bytes` takes, indirect pointer blocks included.
+function blockfs.blocksFor(bytes, ss)
+  ss = ss or 512
+  local data = math.ceil((tonumber(bytes) or 0) / ss)
+  if data <= N_DIRECT then return data end
+  local P = ss // 4
+  local meta, rest = 1, data - N_DIRECT - P   -- 1: single indirect
+  if rest > 0 then meta = meta + 1 + math.ceil(rest / P) end   -- double + mids
+  return data + meta
+end
+
+--- Lay a fresh TBFS onto a raw drive. opts = { label, inodeRatio,
+--- bootBytes }. inodeRatio = data-bytes per inode (default 4 KB).
+--- bootBytes > 0 reserves a contiguous BOOT region of that many bytes
+--- (rounded up to a sector) between the inode table and the data region,
+--- making the volume bootable (see blockfs.writeBoot). Default 0.
+function blockfs.format(drive, opts)
+  opts = opts or {}
+  local fs, lerr = blockfs.plan(drive, opts)   -- the plan IS the handle
+  if not fs then return false, lerr end
+  local ss, totalBlocks, dataStart = fs.ss, fs.totalBlocks, fs.dataStart
+  fs.drive, fs.freeBlocks, fs.clean = drive, 0, true
+  fs.label = (opts.label or "tbfs"):sub(1, 32)
+  fs.now = opts.now or function() return 0 end
+  fs.allocHint = dataStart
+  -- A cache so the bitmap marking below coalesces (see writeBlock);
+  -- this handle is dropped when format returns.
+  fs.cache = { map = {}, n = 0, tick = 0 }
 
   -- Zero metadata (superblock + bitmap + inode table).
   for b = 0, dataStart - 1 do writeBlock(fs, b, string.rep("\0", ss)) end
@@ -904,7 +973,7 @@ function blockfs.mount(drive, opts)
     local st = handles[h]; if not st then return false, "bad handle" end
     if st.mode == "r" then return false, "read-only handle" end
     local ok, err = writeData(fs, st.node, st.pos, data)
-    if not ok then return false, err end
+    if not ok then writeSuperIfDirty(fs); return false, err end   -- rolled back
     st.pos = st.pos + #data
     writeInode(fs, st.node); writeSuperIfDirty(fs)
     return true
