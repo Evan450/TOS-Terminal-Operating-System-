@@ -223,6 +223,15 @@ do
   -- unsafe root and must keep resolving.
   test("dirIsSafe allows /tmpfiles", helpers.dirIsSafe("/tmpfiles") == true)
   test("dirIsSafe rejects an empty entry", helpers.dirIsSafe("") == false)
+  -- Sep 2026 pentest: judged as the probe's F.join resolves the entry.
+  -- A relative entry is rooted at "/", ".." is resolved, and a Windows or
+  -- macOS host folds case and drops a trailing dot -- all of these ARE /tmp
+  -- (or /home, /public) and every one used to pass as safe.
+  for _, dir in ipairs({ "tmp", "/usr/../tmp", "/TMP", "/tmp.", "./home/x", "/Public", "mnt/" }) do
+    test("dirIsSafe rejects " .. dir, helpers.dirIsSafe(dir) == false)
+  end
+  test("dirIsSafe still allows a relative usr/bin", helpers.dirIsSafe("usr/bin") == true)
+  test("dirIsSafe still allows /usr/../usr/bin", helpers.dirIsSafe("/usr/../usr/bin") == true)
 end
 
 do

@@ -289,15 +289,18 @@ do
   ctl.A:send({ svc = "mail", to = "C", payload = { body = "nobody home" } })
   drain()
   eq("undelivered message stays pending", 1, ctl.A:pending())
-  local floods = 0
+  local floods, last = 0, nil
   local ctl2 = meshctl.new({ myAddr = "A", clock = clock,
-    broadcast = function() floods = floods + 1 end,
+    broadcast = function(e) floods = floods + 1; last = e end,
     secretFor = function() return "k" end })
   ctl2:send({ svc = "mail", to = "C", payload = { body = "x" } })
   eq("initial flood", 1, floods)
+  ctl2:tick()
+  eq("no second flood before the retry interval", 1, floods)
   TIME = TIME + mesh.RETRY_EVERY + 1
   ctl2:tick()
-  eq("re-flooded after the retry interval", 2, floods)
+  eq("after the retry interval the origin asks again", 2, floods)
+  eq("...with a small probe, not the whole message", "probe", last and last.kind)
   TIME = 0
 end
 

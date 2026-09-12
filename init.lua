@@ -445,12 +445,19 @@ local loading = {}
 -- could not start at all). Single-file packages never noticed because pkg
 -- loads a command's entry by absolute PATH, not by module name.
 -- test_require_roots pins the two lists together.
+--! #SEC (pentest, Sep 2026) — /usr/bin is NOT a library root. It held
+--! package COMMAND files, which pkg runs by path inside the package's
+--! sandbox; on this list the same file was also a module this require
+--! loads into the kernel's own _G. The shell pcall-requires add-on names
+--! in kernel context (`require("mail")`), so any package shipping a
+--! command called mail.lua ran it unsandboxed at the next `mail`. The
+--! sandbox's USER_LIB_ROOTS never listed /usr/bin, so nothing sandboxed
+--! lost anything. test_pkg_protected_targets pins this.
 local searchPaths = {
   "/tos/?.lua",
   "/tos/?/init.lua",
   "/lib/?.lua",
   "/usr/lib/?.lua",
-  "/usr/bin/?.lua",
   "/usr/modules/?.lua",
   "/usr/modules/?/init.lua",
 }

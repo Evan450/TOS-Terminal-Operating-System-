@@ -36,6 +36,36 @@ meshctl.__index = meshctl
 meshctl.RELAY_BUDGET = 32     -- max relays per second through this node
 meshctl.MAX_PAYLOAD  = 8192   -- serialized payload cap (pre-seal)
 
+--! Reliability (Sep 2026: the operator's design, after the relay-flood fix).
+--!   * A relay keeps up to mesh.RELAY_HOLD_MAX passed-through copies while it
+--!     has the memory for them, and sheds them, oldest first, as soon as free
+--!     memory falls under RELAY_FLOOR. They are a courtesy, never a promise.
+--!   * The SENDER is the one that promises. It keeps its own copy until the
+--!     receiver acknowledges it, and instead of re-flooding the whole message
+--!     every retry window it floods a small PROBE ("do you have <id>?"). The
+--!     receiver answers ACK if it has it and WANT if it never saw it. Only a
+--!     WANT -- or FULL_EVERY probes with no answer, which is also how an
+--!     older node that ignores probes still gets its mail -- sends the whole
+--!     message again, under a new resend counter so that relays which saw the
+--!     first flood pass it on (mesh.seenKey).
+--!   * An ACK or WANT about a sealed message carries a MAC under the secret
+--!     the two ends share, so a node in between cannot say "delivered" for a
+--!     message that was not, and leave it a ghost.
+--!   * Both ends survive a reset: the sender's messages awaiting delivery and
+--!     the receiver's recently delivered ids live in `store` (the kernel keeps
+--!     them in /var/lib/mesh, admin-read-only). Message ids carry a per-boot
+--!     prefix: they used to restart at the same numbers after a reboot, and a
+--!     receiver that remembered the old ones dropped the new messages as
+--!     duplicates.
+--!   * Keeping its OWN side is enough for a node to hold a whole
+--!     conversation: the other side is what it received.
+--! (test_mesh_reliability.lua)
+meshctl.RELAY_FLOOR   = 48 * 1024  -- free memory a relay keeps back from its holds
+meshctl.FULL_EVERY    = 4          -- unanswered probes before the whole message again
+meshctl.ORIGIN_MAX    = 16         -- our own messages awaiting delivery at once
+meshctl.DELIVERED_MAX = 64         -- delivered ids remembered to answer probes
+meshctl.ORIGIN_TTL    = 3600       -- seconds a sender keeps trying
+
 -- Injected at init; defaulted so the pure logic still runs in tests.
 local crypto, serialize, log
 local clock = function() return 0 end
@@ -99,6 +129,16 @@ function meshctl.openEnv(env, secret)
   return parsed, "sealed"
 end
 
+-- The MAC on an ACK or WANT (see the reliability note above): the kind, the
+-- message it answers and both endpoints, under the secret the ends share.
+-- nil when they share none.
+local function replyMac(secret, kind, msgId, from, to)
+  if not (crypto and crypto.hmac and secret and secret ~= "") then return nil end
+  return crypto.hmac(secret, table.concat({
+    tostring(kind), tostring(msgId), tostring(from), tostring(to) }, "\0"))
+end
+meshctl._replyMac = replyMac   -- test hook
+
 -- ============================================================
 -- Compose
 -- ============================================================
@@ -128,19 +168,20 @@ end
 -- ============================================================
 
 -- Process an arriving envelope at `selfAddr` (mirrors the old mail.ingest).
--- Returns { dup, forward, out, deliver, kind, svc, message, ack, ackId }:
---   forward/out          re-broadcast `out`
---   deliver + kind=="msg"  dispatch `message` to the svc handler, then
---                          flood `ack` (unicast only) once handled
---   deliver + kind=="ack"  ackId was delivered; stop retrying it
+-- Returns { dup, forward, out, deliver, kind, svc, message, ackId, ackTo }:
+--   forward/out            re-broadcast `out`
+--   deliver + kind=="msg"  dispatch `message` to the svc handler, then ACK
+--                          it to `ackTo` (unicast only) once handled
+--   deliver + kind=="ack" / "probe" / "want"  a reply about one of our
+--                          messages, or a question about one we received
 function meshctl.ingest(env, selfAddr, isForMe, seen, secretFor)
   local r = mesh.route(env, selfAddr, isForMe, seen)
   local act = { dup = r.dup, forward = r.forward, out = r.out, deliver = false }
   if r.dup or not r.deliver then return act end
 
-  if env.kind == "ack" then
+  if env.kind == "ack" or env.kind == "probe" or env.kind == "want" then
     act.deliver = true
-    act.kind = "ack"
+    act.kind = env.kind
     act.ackId = env.ackId
     return act
   end
@@ -163,7 +204,7 @@ function meshctl.ingest(env, selfAddr, isForMe, seen, secretFor)
   end
   -- Acknowledge unicast messages back to the origin (broadcasts aren't ACKed).
   if env.to ~= mesh.BROADCAST and env.to ~= nil then
-    act.ack = mesh.newAck(env, selfAddr, { ts = clock() })
+    act.ackTo = env.from
   end
   return act
 end
@@ -172,12 +213,23 @@ end
 -- Live controller
 -- ============================================================
 
+-- A prefix for this boot's message ids (see the reliability note).
+local function bootEpoch()
+  local raw = crypto and crypto.salt and crypto.salt(4)
+  if type(raw) == "string" and #raw >= 4 then
+    return (raw:sub(1, 4):gsub(".", function(c) return string.format("%02x", c:byte()) end))
+  end
+  return string.format("%08x", math.floor((os.time and os.time() or 0) + clock() * 1000) % 0x100000000)
+end
+
 --- Create a controller. `deps`:
 ---   myAddr      string                       this node's modem address
 ---   broadcast   function(envelope)           flood an envelope to neighbours
 ---   secretFor   function(addr) -> secret|nil shared secret with a peer
 ---   clock       function() -> number         monotonic seconds
 ---   isForMe     function(env)  -> bool        (optional) does env.to target us
+---   freeMemory  function() -> bytes           (optional) sizes the relay holds
+---   store       { load = fn() -> state, save = fn(state) }  (optional)
 ---   log         table                         (optional)
 function meshctl.new(deps)
   deps = deps or {}
@@ -190,11 +242,16 @@ function meshctl.new(deps)
   self.isForMe    = deps.isForMe or function(env)
     return env.to == self.myAddr
   end
+  self.freeMemory = deps.freeMemory
+  self.store      = deps.store
   self.seen       = mesh.newSeen()
   self.outbox     = mesh.newOutbox()
+  self.delivered  = { set = {}, order = {} }
   self._handlers  = {}          -- svc name -> fn(message, env) -> handled
   self._seq       = 0
+  self._epoch     = bootEpoch()
   self._relayWindow, self._relayCount = -1, 0
+  self:_load()
   return self
 end
 
@@ -216,7 +273,8 @@ end
 
 function meshctl:_nextId(prefix)
   self._seq = self._seq + 1
-  return (prefix or "x") .. ":" .. tostring(self.myAddr) .. ":" .. tostring(self._seq)
+  return (prefix or "x") .. ":" .. tostring(self.myAddr) .. ":" .. self._epoch
+    .. ":" .. tostring(self._seq)
 end
 
 -- Token-bucket-ish relay cap: at most RELAY_BUDGET relays per wall second.
@@ -228,6 +286,160 @@ function meshctl:_mayRelay()
   if self._relayCount >= meshctl.RELAY_BUDGET then return false end
   self._relayCount = self._relayCount + 1
   return true
+end
+
+-- Free memory, or nil when there is no probe (tests, the pure layer).
+local function freeOf(self)
+  if not self.freeMemory then return nil end
+  local ok, free = pcall(self.freeMemory)
+  if ok and type(free) == "number" then return free end
+  return nil
+end
+
+-- May a relay hold `bytes` more? "As many as it can physically hold": what
+-- would be left must stay over RELAY_FLOOR. Without a probe, mesh's cap.
+function meshctl:_canHold(bytes)
+  local free = freeOf(self)
+  if free == nil then return bytes <= mesh.RELAY_HOLD_BYTES end
+  return free - bytes >= meshctl.RELAY_FLOOR
+end
+
+function meshctl:_memoryLow()
+  local free = freeOf(self)
+  return free ~= nil and free < meshctl.RELAY_FLOOR
+end
+
+-- Remember that `id` was delivered here, for probes that ask later.
+function meshctl:_noteDelivered(id)
+  local d = self.delivered
+  if d.set[id] then return end
+  d.set[id] = true
+  d.order[#d.order + 1] = id
+  while #d.order > meshctl.DELIVERED_MAX do
+    d.set[table.remove(d.order, 1)] = nil
+  end
+end
+
+-- What a reset must not lose: our own messages still awaiting delivery
+-- (relay copies are not ours to keep) and the ids we delivered. A deadline
+-- is saved as time LEFT, because the clock restarts with the machine.
+function meshctl:_save()
+  local st = self.store
+  if not (st and st.save) then return end
+  local now = self.clock()
+  local out = {}
+  for _, it in pairs(self.outbox.items) do
+    if not it.relay then
+      out[#out + 1] = { env = it.env, rs = it.rs, probes = it.probes,
+        left = it.deadline and (it.deadline - now) or nil }
+    end
+  end
+  local okS, err = pcall(st.save, { outbox = out, delivered = self.delivered.order })
+  if not okS and self.log then
+    self.log.warn("mesh", "could not save mesh state: " .. tostring(err))
+  end
+end
+
+function meshctl:_load()
+  local st = self.store
+  if not (st and st.load) then return end
+  local okL, state = pcall(st.load)
+  if not okL or type(state) ~= "table" then return end
+  local now = self.clock()
+  for _, rec in ipairs(type(state.outbox) == "table" and state.outbox or {}) do
+    local env = type(rec) == "table" and rec.env or nil
+    if type(env) == "table" and type(env.id) == "string" then
+      local left = tonumber(rec.left) or meshctl.ORIGIN_TTL
+      mesh.enqueue(self.outbox, env, { interval = mesh.RETRY_EVERY, deadline = now + left }, now)
+      local it = self.outbox.items[env.id]
+      if it then it.rs = tonumber(rec.rs); it.probes = tonumber(rec.probes) or 0 end
+      mesh.sawBefore(self.seen, env.id)
+    end
+  end
+  for _, id in ipairs(type(state.delivered) == "table" and state.delivered or {}) do
+    if type(id) == "string" then self:_noteDelivered(id) end
+  end
+end
+
+-- Answer about message `msgId` to `to`: ACK ("I have it") or WANT ("I do
+-- not"), MACed under the secret we share with `to` when there is one.
+function meshctl:_reply(kind, msgId, to)
+  local env = mesh.newEnvelope(self.myAddr, to, {
+    id = self:_nextId(kind:sub(1, 1)), kind = kind, ts = self.clock() })
+  if kind == "ack" then env.ackId = msgId else env.wantId = msgId end
+  env.mac = replyMac(self.secretFor(to), kind, msgId, self.myAddr, to)
+  mesh.sawBefore(self.seen, env.id)
+  self.broadcast(env)
+  return env
+end
+
+-- Does a reply of `kind` about our message `it` come from its receiver?
+-- For a sealed message it must carry the MAC only the receiver could make.
+function meshctl:_verifyReply(kind, it, env)
+  if env.from ~= it.env.to then return false end
+  if not it.env.sealed then return true end
+  local expect = replyMac(self.secretFor(it.env.to), kind, it.env.id, env.from, env.to)
+  local eq = (crypto and crypto.ctEquals) or function(a, b) return a == b end
+  return expect ~= nil and type(env.mac) == "string" and eq(expect, env.mac)
+end
+
+-- Our message, again, in full: a new resend counter so relays that saw the
+-- earlier flood carry it (mesh.seenKey), same id so the receiver dedups it.
+function meshctl:_resend(it)
+  it.rs = (it.rs or 0) + 1
+  it.probes = 0
+  it.lastSent = self.clock()
+  local out = {}
+  for k, v in pairs(it.env) do out[k] = v end
+  out.rs = it.rs
+  out.path = {}
+  mesh.sawBefore(self.seen, mesh.seenKey(out))
+  self.broadcast(out)
+end
+
+function meshctl:_probe(it)
+  local env = mesh.newEnvelope(self.myAddr, it.env.to, {
+    id = self:_nextId("p"), kind = "probe", ts = self.clock() })
+  env.probeId = it.env.id
+  mesh.sawBefore(self.seen, env.id)
+  self.broadcast(env)
+end
+
+-- An ACK for one of ours: clears it only if it verifies.
+function meshctl:_onAck(env)
+  local it = type(env.ackId) == "string" and self.outbox.items[env.ackId]
+  if not it or it.relay then return end
+  if not self:_verifyReply("ack", it, env) then
+    if self.log then
+      self.log.warn("mesh", "ignored an ACK that does not verify: " .. tostring(env.ackId))
+    end
+    return
+  end
+  mesh.ack(self.outbox, env.ackId)
+  self:_save()
+end
+
+-- A probe about a message sent to us: ACK if we have it, WANT if we never
+-- saw it. Seen but not delivered (no service took it): say nothing -- a
+-- re-send would meet the same refusal, and the sender's FULL_EVERY re-send
+-- covers the service coming back.
+function meshctl:_onProbe(env)
+  local id = env.probeId
+  if type(id) ~= "string" or #id > mesh.MAX_ID then return end
+  if self.delivered.set[id] then
+    self:_reply("ack", id, env.from)
+  elseif not self.seen.set[id] then
+    self:_reply("want", id, env.from)
+  end
+end
+
+-- The receiver says it never got one of ours: send it whole, once a window.
+function meshctl:_onWant(env)
+  local it = type(env.wantId) == "string" and self.outbox.items[env.wantId]
+  if not it or it.relay then return end
+  if not self:_verifyReply("want", it, env) then return end
+  if it.lastSent and self.clock() - it.lastSent < mesh.RETRY_EVERY / 2 then return end
+  self:_resend(it)
 end
 
 --- Compose, seal, queue and flood a new message. `opts`:
@@ -252,6 +464,14 @@ function meshctl:send(opts)
     end
     return nil, "broadcasts can't be sealed — allow plaintext explicitly"
   end
+  -- The sender is what promises delivery, so what it holds is bounded: past
+  -- ORIGIN_MAX a new message is refused, not queued.
+  if unicast then
+    local waiting = self:pending()
+    if waiting >= meshctl.ORIGIN_MAX then
+      return nil, "mesh outbox full: " .. waiting .. " messages are still awaiting delivery"
+    end
+  end
   local id = self:_nextId(opts.svc:sub(1, 1))
   local env = meshctl.compose({
     from = self.myAddr, to = opts.to, svc = opts.svc,
@@ -259,11 +479,17 @@ function meshctl:send(opts)
     payload = opts.payload,
     secret = secret, id = id, ttl = opts.ttl, ts = self.clock(),
   })
-  -- Keep a copy in the outbox for retry until ACKed (bulletins aren't
-  -- ACKed, so don't pin them — flood once and let them go).
+  -- Keep a copy until the receiver confirms it (bulletins aren't ACKed, so
+  -- don't pin them — flood once and let them go). The first probe waits a
+  -- full interval: the flood below IS the first attempt, and the next tick
+  -- used to flood it all over again.
   if unicast then
+    local now = self.clock()
     mesh.enqueue(self.outbox, env, { interval = mesh.RETRY_EVERY,
-      deadline = self.clock() + 3600 }, self.clock())
+      deadline = now + meshctl.ORIGIN_TTL }, now)
+    local it = self.outbox.items[id]
+    if it then it.nextAt = now + mesh.RETRY_EVERY; it.lastSent = now end
+    self:_save()
   end
   -- Mark our own id seen so a returning flood doesn't echo back into us.
   mesh.sawBefore(self.seen, id)
@@ -272,48 +498,71 @@ function meshctl:send(opts)
 end
 
 --- Handle an envelope handed up by the net layer (already past the trust
---- gate). Relays / delivers / processes ACKs. Returns the action table.
+--- gate). Relays / delivers / answers probes / processes ACKs. Returns the
+--- action table.
 function meshctl:onPacket(env)
-  local unicast = (env.to ~= mesh.BROADCAST and env.to ~= nil)
+  local unicast = type(env) == "table" and env.to ~= mesh.BROADCAST and env.to ~= nil
   local act = meshctl.ingest(env, self.myAddr, self.isForMe, self.seen, self.secretFor)
 
-  -- Snoop ACKs that pass through us: stop re-flooding what they acknowledge.
-  if env.kind == "ack" and env.ackId then mesh.ack(self.outbox, env.ackId) end
+  -- Snoop ACKs that pass through us: a relay copy of what they acknowledge
+  -- need not be re-flooded. Our OWN copies wait for an ACK we can verify.
+  if type(env) == "table" and env.kind == "ack" and type(env.ackId) == "string" then
+    mesh.ackRelay(self.outbox, env.ackId)
+  end
 
-  -- Relay onward (rate-limited), with the store-and-forward relay hold.
+  -- Relay onward (rate-limited), holding a copy while there is room for it.
   if act.forward and act.out then
     if self:_mayRelay() then
       self.broadcast(act.out)
       if env.kind == "msg" and unicast then
-        mesh.enqueue(self.outbox, act.out, { relay = true }, self.clock())
+        mesh.enqueue(self.outbox, act.out, { relay = true,
+          canHold = function(b) return self:_canHold(b) end }, self.clock())
       end
     elseif self.log then
       self.log.warn("mesh", "relay budget exceeded; dropping a forward")
     end
   end
 
+  -- The same message again, already delivered here: the sender cannot have
+  -- had our ACK, so say it again. The service is not asked twice.
+  if act.dup and unicast and env.kind == "msg" and self.delivered.set[env.id]
+     and self.isForMe(env) then
+    self:_reply("ack", env.id, env.from)
+  end
+
   if act.deliver then
     if act.kind == "ack" then
-      mesh.ack(self.outbox, act.ackId)          -- our message reached its target
+      self:_onAck(env)
+    elseif act.kind == "probe" then
+      self:_onProbe(env)
+    elseif act.kind == "want" then
+      self:_onWant(env)
     elseif act.kind == "msg" and act.message then
-      local h = self._handlers[act.svc or ""]
       local handled = false
-      if h then
-        local ok, res = pcall(h, act.message, env)
-        handled = ok and res and true or false
-        if not ok and self.log then
-          self.log.warn("mesh", "'" .. tostring(act.svc) .. "' handler error: " .. tostring(res))
+      if act.ackTo and self.delivered.set[env.id] then
+        handled = true                       -- a re-send of what we already have
+      else
+        local h = self._handlers[act.svc or ""]
+        if h then
+          local ok, res = pcall(h, act.message, env)
+          handled = ok and res and true or false
+          if not ok and self.log then
+            self.log.warn("mesh", "'" .. tostring(act.svc) .. "' handler error: " .. tostring(res))
+          end
+        elseif self.log then
+          self.log.warn("mesh", "no local service for mesh kind '"
+            .. tostring(act.svc) .. "' (message from "
+            .. tostring(env.from):sub(1, 8) .. " dropped, not ACKed)")
         end
-      elseif self.log then
-        self.log.warn("mesh", "no local service for mesh kind '"
-          .. tostring(act.svc) .. "' (message from "
-          .. tostring(env.from):sub(1, 8) .. " dropped, not ACKed)")
+        if handled and act.ackTo then
+          self:_noteDelivered(env.id)
+          self:_save()
+        end
       end
       -- ACK only what a service actually accepted: the sender keeps
       -- retrying otherwise, which is honest — nothing stored it here.
-      if act.ack and handled then
-        mesh.sawBefore(self.seen, act.ack.id)   -- don't echo our own ACK back in
-        self.broadcast(act.ack)
+      if act.ackTo and handled then
+        self:_reply("ack", env.id, act.ackTo)
       end
       act.handled = handled
     end
@@ -321,18 +570,37 @@ function meshctl:onPacket(env)
   return act
 end
 
---- Re-flood any message still awaiting an ACK whose retry interval has
---- come (and drop those past their deadline). Call periodically.
+--- Probe for (or, now and then, re-send) our messages still awaiting an ACK
+--- whose interval has come, re-flood relay copies, drop what is past its
+--- deadline, and shed relay copies under memory pressure. Call periodically.
 function meshctl:tick(now)
   now = now or self.clock()
-  for _, env in ipairs(mesh.due(self.outbox, now)) do
-    self.broadcast(env)
+  -- Relay copies are a courtesy: when memory runs short they all go.
+  if self:_memoryLow() then mesh.shedRelays(self.outbox, 0) end
+  local items, dropped = mesh.dueItems(self.outbox, now)
+  for _, it in ipairs(items) do
+    if it.relay then
+      self.broadcast(it.env)
+    else
+      it.probes = (it.probes or 0) + 1
+      if it.probes >= meshctl.FULL_EVERY then
+        self:_resend(it)          -- nothing answered for a while: the whole message
+      else
+        self:_probe(it)
+      end
+    end
   end
+  if dropped > 0 then self:_save() end
 end
 
---- How many of our sent messages are still unacknowledged.
+--- How many of our own sent messages are still unacknowledged (relay copies
+--- are not ours).
 function meshctl:pending()
-  return mesh.pending(self.outbox)
+  local n = 0
+  for _, it in pairs(self.outbox.items) do
+    if not it.relay then n = n + 1 end
+  end
+  return n
 end
 
 return meshctl

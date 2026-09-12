@@ -56,10 +56,11 @@ function M.execute(S, action, makeProgramEnv)
 
   if action == "ctx_view" then
     if not helpers.canRead(S, S.ctxPath) then return end
-    local content = F.readFile(S.ctxPath)
-    if not content then S.lastOut = { "Cannot read: " .. S.ctxFile.name, T.error }; return end
+    -- Streamed, with a memory floor (#MEM — see helpers.readLinesCapped).
     local buf = { { " Viewing: " .. S.ctxFile.name, T.title } }
-    for l in content:gmatch("([^\n]*)\n?") do buf[#buf + 1] = { l, T.fg } end
+    local ok, shown, stopped = helpers.readLinesCapped(F, S.ctxPath, function(l) buf[#buf + 1] = { l, T.fg } end)
+    if not ok then S.lastOut = { "Cannot read: " .. S.ctxFile.name, T.error }; return end
+    if stopped then buf[#buf + 1] = { string.format(helpers.VIEW_STOPPED, shown), T.warning } end
     editor.openViewTab(S, buf, S.ctxFile.name)
   elseif action == "ctx_edit" then
     editor.openEditTab(S, S.ctxPath)
@@ -80,7 +81,7 @@ function M.execute(S, action, makeProgramEnv)
     if #buf > 0 then
       local wrapped = helpers.expandBuf(S, buf)
       if #wrapped == 1 then S.lastOut = wrapped[1]
-      else editor.openViewTab(S, wrapped, S.ctxFile.name) end
+      else editor.openViewTab(S, wrapped, S.ctxFile.name, true) end   -- already wrapped (#MEM)
     end
   elseif action == "ctx_copy" then
     if not helpers.canRead(S, S.ctxPath) then return end

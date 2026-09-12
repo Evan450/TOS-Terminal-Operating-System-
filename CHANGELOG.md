@@ -5,6 +5,199 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ---
 
+## Unreleased — the ADMIN/ROOT split made real
+
+An ADMIN could become root two ways, so every ROOT-only line elsewhere — the shadow file's write, root-level accounts, `protect off`, mounting over a protected path — was a courtesy an admin could walk around. Both are closed, and command packages, the common case, still install on ADMIN.
+
+- **Installing a service package now needs ROOT.** A service is trusted with the machine: rc.d runs it as the principal it declares, and as root when it declares none, through the kernel loader — outside the capability sandbox that confines a command package (MANUAL §15). `pkg install` gated only on ADMIN, so any admin could run code as root at the next boot. `pkg.install` and `pkg.upgrade` now require ROOT for a `service` manifest, checked before any file is written, and a service pulled in as a dependency hits the same gate (the batch rolls back). Command, app, lib, runtime, theme and driver packages stay ADMIN — they run sandboxed with only their declared capabilities. The kernel/boot session (the installer) is exempt. (`test_pkg_service_root.lua`)
+- **`cron.add` cannot schedule above your tier.** `opts.user` sets the identity a job runs as, and the tick mints that user's own session, so a tier-2 admin passing `user = "root"` ran the job as root. You may now schedule as an account only if you at least match its tier, so scheduling as root needs root. (`test_cron_actor_tier.lua`)
+
+Still recorded, not changed:
+- **A headless machine keeps its boot session.** `kernel.headlessMain` binds `bootSession` to the kernel session and never sets `bootCompleted`. So on a machine with no screen, `users.currentSession()` and `securefs.sessionOf()` answer "kernel" to any caller that has no process principal, for the machine's whole uptime. Nothing found runs user code outside a process principal: event callbacks are bound to their process, and OpenComputers disables `__gc` by default. This is a missing line of defence, not a hole found. `users.currentSession()` also ignores `bootCompleted`, which `securefs.sessionOf()` checks.
+- **Remote exec leaks `string.dump`.** The sandbox's `string` copy drops `dump`, but `("").dump` reaches the real one through the string metatable. TOS is open source and `load` is not exposed, so a dump gives nothing away. Noted in case either changes.
+
+---
+
+## Unreleased — a mesh message is delivered, or still held
+
+The operator's design, following the relay-flood fix: relays hold copies only while they can afford to, and the sender is the one that promises delivery.
+
+- **Relay copies follow free memory.** A relay keeps up to 8 passed-through copies while holding one would still leave 48 KB free, and drops them all, oldest first, as soon as free memory falls under that. They are a courtesy, not a promise.
+- **The sender keeps its copy and asks.** Every 30 s it floods a small probe ("do you have this?") instead of the whole message. The receiver answers ACK if it has the message and WANT if it never saw it. Only a WANT, or four probes with no answer, sends the whole message again. The second case is how a node too old to answer probes still gets its mail.
+- **A re-send now actually arrives.** The sender used to re-flood under the same id, and every relay that had seen the first flood dropped it as a duplicate. A receiver that was offline for the first flood never got the message unless a relay still held a copy: in a three-node line, HEAD never delivered it. A re-send now carries a resend counter that relays treat as new, and the receiver still dedups delivery by the message id.
+- **Message ids no longer repeat after a reboot.** They restarted at the same numbers, so a receiver that remembered the old ones dropped a rebooted sender's first messages as duplicates. Ids now carry a per-boot prefix.
+- **Nobody in between can mark a message delivered.** Any node could clear a sender's copy with a bare ACK. An ACK or WANT about a sealed message now carries a MAC under the pair's shared secret, and must come from the receiver. Relays still drop their own copies on seeing any ACK, which costs only the courtesy copy.
+- **Both ends survive a reset.** The sender's messages awaiting delivery and the receiver's last 64 delivered ids are kept in `/var/lib/mesh/state.dat`. That directory is now admin-read-only, because a message sent with `allowPlaintext` is stored as written. A restarted sender picks up where it was, and a restarted receiver answers a probe with ACK instead of taking the message twice.
+- **Smaller:**
+  - the tick after a send no longer floods it a second time;
+  - a sender holds at most 16 messages awaiting delivery, and a 17th is refused;
+  - `meshPending` counts only the sender's own messages, not relay copies.
+
+(`test_mesh_reliability.lua` fails 21 of its 29 checks against HEAD.)
+
+On keeping conversations: each computer needs only its own side, because the other side is what it received. Mail keeps received messages only. A sent folder in the signed mail package would give each end the whole conversation, and waits for a re-pack.
+
+---
+
+## Unreleased — a mount lands where TOS says, not where the disk says
+
+- **`drive mount` took its mount point from the disk.** Without an explicit mount point it joined the TBFS volume's own label onto `/mnt/`, and a label is whatever the disk's author wrote. So `../../var/pkg/secrets` put the disk over that directory when an admin mounted it. The hot-plug mount had always sanitised labels; this path did not. It now uses the same sanitiser, `helpers.safeMountName`.
+- **A mount point was checked for ADMIN and nothing else.** `fs.mount` takes any empty or absent directory, so an admin could put a disk where the protected-path guard stops even an admin writing, and so could a label, as above. Two examples: an empty `/var/pkg/secrets`, whose files `crypto.secret()` reads back raw, or an empty `/etc/rc.d`. `securefs.mount` now holds the mount point to that guard, case-folded, with root's `protect off` override as for a write.
+
+  `/mnt`, homes and `/tmp` are unaffected, and `jbod` and `netfs` already kept to `/mnt`. The kernel's own `require` reads the boot disk directly, so no mount reached kernel code. (`test_mount_points.lua`)
+
+Recorded, not done:
+- On a USER seat the hot-plug mount is refused, because `securefs.mount` needs ADMIN. `autoMount` ignores what `mount` returns, so the shell still announces the disk at `/mnt/<label>` with nothing mounted there.
+
+---
+
+## Unreleased — a redirect that failed said it had written
+
+- `cmd > file` checked the ACL, wrote through securefs and then reported "Output written to …" whatever the write returned. The ACL lets an ADMIN into `/etc`, but the protected-path guard behind it does not, so `ls > /etc/passwd` was announced as a success and the file was never touched. A full disk or a directory target went the same way. The shell now shows the refusal. (`test_redirect_result.lua`)
+
+Also checked this round and found sound: the three command-line tokenizers (`pipe.parse`, `syntax.tokenize`, compat `text.tokenize`) raised on none of 20,000 fuzzed lines and took under 50 ms on 8 KB pathological ones. Chat pairing (a 24-character code, about 119 bits, one attempt per address per window), `transfer.lua`'s and netfs's path confinement, and the OpenOS compat filesystem, which goes through securefs, all held.
+
+---
+
+## Unreleased — a trusted neighbour cannot fill a relay
+
+- **Mesh relays held whatever they were sent.** A relay keeps a copy of each unicast envelope it passes on and re-floods it for two minutes, and nothing bounded how many it kept. Measured with the real `mesh` and `meshctl`: 40 unique 7 KB envelopes a second for two minutes left a relay holding 3,840 of them, 28 MB. It re-flooded them 13,440 times for 4,800 received. The dedup cache kept 512 ids of any length, so 7 KB ids made it 3.5 MB, and a `ttl` of 1e9 was honoured. Mesh traffic comes only from TRUSTED neighbours, but every relay forwards to its own, so one bad node anywhere in the mesh could exhaust every relay.
+  - An envelope must carry a short string id (at most 96 bytes), a list for its path, and a numeric `ttl`, which is clamped to 16. A `ttl` sent as a string used to raise.
+  - A relay holds at most 8 copies, the oldest going first, and none over 4 KB. A bigger envelope, or one carrying a plaintext payload table, is relayed once and not held. The origin still retries its own messages until they are acknowledged.
+
+  The same flood now leaves the relay holding nothing and 79 KB in all, with one broadcast per relayed packet. Most of those 79 KB is the dedup cache itself, full at 512 short ids: a real cost on a busy mesh, left as it is because a smaller cache means more duplicate deliveries. (`test_mesh_bounds.lua`)
+
+---
+
+## Unreleased — /var/pkg belongs to the package manager
+
+- **One package could rewrite another.** A package's `files[]` was confined to `/usr/` and `/var/pkg/`, but `/var/pkg/` also holds the manager's own trees, and nothing kept a package out of them.
+  - `/var/pkg/installed/<name>/package.lua` is every installed package's manifest: its commands, its capabilities, and the signature verdict `pkg.scan` believes because only `install()` is meant to write it. A package shipping `/var/pkg/installed/mail/package.lua` replaced mail's manifest. After a rescan, `pkg info mail` showed the replacement as signed by "TOS Project", with mail's command running the writer's code. A package could also plant a manifest for one that was never installed.
+  - `/var/pkg/secrets/<name>` is each package's `crypto.secret()`, read back raw, so a package could plant or overwrite another package's key.
+  - `/var/pkg/remote/` is the remote-fetch staging area.
+
+  All three are refused now, case-folded like every other target check, with a message that says why. The rest of `/var/pkg/` stays package space, and no shipped package writes under `/var/pkg/` at all. (`test_pkg_reserved_targets.lua` drives the real `pkg.install` and fails 9 checks against HEAD.)
+
+---
+
+## Unreleased — one 8 KB packet, 240 KB of heap
+
+- **A packet could fill the machine before anyone looked at it.** `net.handleIncoming` decodes every packet first: before `protocol.validate`, before the BLOCKED check, before any trust decision. So any modem in range reaches the decoder. The M14 comment in `protocol.deserialize` promised a much tighter entry ceiling for network packets, but only `maxBytes` was ever passed, and the decoder's own caps apply per table and are generous. Measured through the real decoder, one 8 KB packet built:
+
+  | Packet | Heap |
+  |---|---|
+  | `{{},{},…}` (2730 tables) | 215 KB |
+  | `{{{}},…}` | 240 KB |
+  | distinct keys | 83 KB |
+  | distinct strings | 70 KB |
+  | `{1,1,…}` | 66 KB |
+
+  The first two are more than a 192 KB machine has. Whether OpenComputers halts, or the decode's `pcall` catches the out-of-memory error, was not tested on a real box.
+
+  `serialize.decode` now takes an optional budget:
+  - `opts.maxCost` charges what the decoded value will hold, weighted from Lua 5.3's sizes.
+  - `opts.maxKeys` caps distinct string keys, so a field name repeated on every row is paid for once.
+
+  `protocol.deserialize` passes 48 KB and 256 keys. Every hostile shape above is refused after 27–39 KB. The costliest real packets still decode: a storage page that fits one packet is charged 39 KB of the 48, and a 256-name netfs listing 27 KB. Decoding without `opts`, as config files do, is unchanged. (`test_net_decode_budget.lua`)
+- **A repo index or a floppy's manifest could do the same at 128 KB.** `pkgremote.index` decodes a `programs.cfg` fetched from a configured repo URL. pkg reads `package.lua` and `programs.cfg` off floppies and network mounts before any signature is checked. Both had only a byte cap, and a hostile 128 KB index built 805 KB of tables (`{{},…}`) or 1.5 MB (`{{{}},…}`) before the per-table entry cap refused it. Whoever runs a configured repo could take down every machine that ran `pkg search` against it. Both now decode under a 64 KB budget, which refuses those after 34–53 KB, and pkg checks a manifest's size (at most 64 KB) before reading it at all. The largest real manifest, Optional Utilities' 8.6 KB `programs.cfg`, is charged 26 KB. (`test_untrusted_index_budget.lua`)
+
+Recorded, not done:
+- **storaged's default page does not fit in a packet.** `cluster-storaged` answers `STORE_LIST` with up to 128 rows, and 128 rows fit in 8 KB only when every key is 4 characters or shorter. With 20-character keys the reply is 10,204 bytes, `net.send` refuses anything over 8,192, and the master hears nothing. The fix is to page by bytes or send fewer rows. It lives in the signed cluster add-on, so it waits for a re-pack.
+
+---
+
+## Unreleased — the disk folds what the ACL compares
+
+The third pentest round (2026-09-11) threw generated path spellings at the real ACL instead of reading it again: 4000 of them, then case, Kelvin-sign and trailing-dot variants of every secret and protected path.
+
+- **On a Windows or macOS host every read rule could be walked around.** OpenComputers' default buffered filesystem goes case-insensitive there. Ocelot Brain's `FileSystemAPI.isCaseInsensitive` probes the save directory with `oc_rox` / `OC_ROX`, and `BufferedFileSystem.segments` then resolves each segment with Java's `toLowerCase`. `users.checkAccess` and securefs's protected set compared exact strings, so any USER read `/ETC/USERS.DAT` (every password hash), `/Home/bob`, `/VAR/MAIL/bob`, `/VAR/LOG` and `/ROOT` through the default "a USER may read" rule. An ADMIN could write `/ETC/USERS.DAT`, which is ROOT's alone, and `/TOS/kernel` past the protected-path guard. The Kelvin sign, which `toLowerCase` sends to `k`, did the same with no capital letter: `/var/pKg/secrets`. `ls /HOME` listed every home, and a PATH entry of `/TMP` ran planted programs.
+  - `users.pathKey` folds every spelling the disk may merge: ASCII case, the Kelvin sign, U+0130 (Turkish locale), and a trailing dot or space, which a Windows host drops. `checkAccess` decides on the path as written and on its key, and grants only when both do. The key can take access away, never add it, so a case-sensitive host loses nothing.
+  - securefs's protected check, its `/home` and `/var/mail` listing filters, and compat `shell.execute`'s unsafe-root check use the same key.
+  - `users.create` refuses a name that differs from an existing one only by case, because the two would share a home and a mailbox. (`test_path_acl_properties.lua`)
+- **`canAccessAs` failed open on a non-path.** A number, table or boolean became `"/"`, which any USER may read, so the check said yes; a NUL byte made it raise; `securefs.writeFile` with a NUL raised in the protected check. All are refused now, before the root shortcut, and securefs names them "invalid path".
+- **`dirIsSafe` judged a PATH entry as typed.** `tmp`, `/usr/../tmp`, `./home/x` and `mnt/` all probe user-writable roots (the probe's join roots a relative entry at `/`), and every one passed as safe. The entry is resolved and folded first now. (`test_alias_which.lua`)
+
+Recorded, not done:
+- securefs copy's "into itself" check still compares exact strings. On a case-insensitive disk, `cp /home/a/d /HOME/A/d/sub` should recurse into its own output until Lua's C-stack limit. Not reproduced. Folding the check would refuse legitimate copies between case-distinct directories on a case-sensitive host.
+- Accounts made before this change can already differ only by case, and on a case-insensitive host each pair shares one home. `users.create` stops new pairs; existing ones need an operator.
+- Trailing-dot folding is defensive. The buffered filesystem keeps `etc.` distinct in memory, and whether its save to disk (or `bufferChanges=false`) merges it with `etc` on Windows was not verified.
+
+---
+
+## Unreleased — the RAM pass: measured, then fixed
+
+A second pentest round (2026-09-11) aimed at memory, because on a 192–256 KB machine running out of it is both the commonest failure and a denial of service anyone can cause. Every figure below was measured off-box (Lua 5.4, `collectgarbage("count")`), and every fix has a test that pins the number and fails against the pre-fix code.
+
+- **A dead program was never freed.** `kernel.event` refused to *run* a dead process's listeners and timers (the M-11 generation check) but never *removed* them, and each entry pins its program's whole environment. `proc.kill` removed the source `proc:<pid>`, which `compat.event` never uses, and a natural exit removed nothing. Every run of a program that listened and exited leaked it: about 257 KB per run in the test, on every route. `event.purgeOwner` now runs on both death paths. (`test_event_owner_purge.lua`)
+- **Decoding a packet cost 16–26× the packet.** `serialize.decode` built every string one byte per table slot: 138 KB for one 8 KB packet, and every packet from every peer is decoded before its trust is checked. Strings now copy whole runs between escapes: 1.3–2.6×. `crypto`'s XOR fallback had the same per-byte shape on exactly the card-less machines with the least RAM: 138 KB → 32 KB per 8 KB payload. (`test_serialize_alloc.lua` — with a round-trip property test and a mutation fuzz — and `test_crypto_xor_alloc.lua`)
+- **Copying a file needed the file.** `fs.copy` read the whole source into one string, so a 150 KB file could not be copied on a 256 KB machine. `fs.copyFile` streams 4 KB blocks (peak 203 KB → two blocks), and `grep`, `wc`, `head` and `tail` read a line at a time through `helpers.eachLine` (peak 0.9 KB for a 187 KB file; `head` reads one block). (`test_fs_copy_stream.lua`, `test_helpers_eachline.lua`)
+- **Showing a file held it up to three times.** `cat` read the whole file into one string and made a `{ line, colour }` table per line. The executor wrapped that into a second table per line, and the view tab wrapped the result into a third. A 32 KB file peaked at 305 KB, more than a 256 KB machine has, and an 8 KB one at 76 KB. `more`, the browser's View and the context menu's View read files whole too.
+  - `expandBuf` passes a line that already fits through as the same entry, and a view tab no longer re-wraps output the executor has already wrapped.
+  - All four stream the file through `helpers.readLinesCapped`, which stops while 32 KB is still free and says what to use instead.
+
+  The 32 KB file now peaks at 152 KB, the 8 KB one at 39 KB. A view tab still keeps about 170 bytes a line. (`test_view_memory.lua`)
+- **Deploying the OS read every file whole.** `deploy <mount>` (an install disk) and `deploy drive` (a raw TBFS drive) each read every OS file into one string before writing it out. The largest are 67–120 KB (`extras`, `init`, `pkg`, `core`, `admin`), and with the panels shell running a 192 KB machine has less than that free.
+  - The install disk copies through `F.copy`, which streams 4 KB blocks.
+  - The raw drive gets each file in 4 KB pieces, which blockfs appends at the handle's position. Each piece is still all-or-nothing, and the capacity pre-flight runs before anything is erased.
+
+  (`test_deploy_mount_streams.lua`; case D of `test_deploy_drive_preflight.lua` compares 10 KB files on the drive byte for byte.) Two smaller ones have no test of their own: `bg` kept a script's whole source alive for as long as the task ran, and `flash` read a file whole before checking it against the EEPROM's 4 KB.
+- **Every package command stayed loaded forever.** Measured on the real add-ons, one cached entry costs 20–82 KB (tetris 69, calc 82, write 82, tape 76, printer 60), so tetris, calc and a document pinned about 230 KB until an uninstall. The two most recently used stay; with under 48 KB free, only the one in use. (`test_pkg_cache_bound.lua`)
+- `net`'s discovered-peer table grew by one entry per distinct address that ever pinged; it is capped at 64, evicting an UNKNOWN before anyone trusted.
+
+Measured and left alone: the kernel log ring (64 entries, 16 or 32 on small machines), SHA-256 (one schedule table per call, reused per block), and `srm` and `pkg`, which do not load at boot. The panels shell's transitive heap (`shell.panels.events` ≈ 374 KB off-box) is why the CLI exists and is not a leak.
+
+---
+
+## Unreleased — a pentest, and the sandbox's side doors
+
+An adversarial pass (2026-09-10/11) over the sandbox, securefs and accounts, the shell's command gates, the network stack, and the package manager and boot chain. Every fix below has a regression test that fails against the pre-fix code; the pre-fix run was done by hand for each, against `git show HEAD:` copies. Suite after: FAIL=0.
+
+### The sandbox had a door for everything
+
+- **A program could name its own principal.** `securefs.forSession` appended the bound session *after* the caller's arguments, so `fs.readFile(p, { tier = 3 })` ran as root from any program holding `fs.read`. The proxy now has fixed arity. (`test_securefs_session_bind.lua`)
+- **An open file was the whole disk.** `securefs.open` returned `kernel.fs`'s handle, `proxy` field and all — the raw filesystem component, no ACL below it. A handle is now read/write/seek/close and nothing else.
+- **Open modes are a closed set.** Anything without `w`/`a`/`+` counted as a read, and TBFS opens every mode but `"r"` writable, so `open(p, "x")` wrote files the caller could only read — on a raw-drive boot disk, the kernel. Only `r rb w wb a ab` pass.
+- **`compat.component` was the raw component bus.** Every sandbox could `require` it — `.filesystem`, `.eeprom`, `.proxy` — with no capability consulted. It is now the same shape over the sandbox's filtered component table and needs the `component` cap. `compat.internet` now needs the `internet` cap (its header claimed it did; the card was reached through the kernel's own component library). A sandbox's `compat` has no `init`/`setProcSleep`, which could replace the `os.sleep` other programs share. `shell.ext` — command code, not an API — left the allow list. (`test_sandbox_compat_caps.lua`)
+- **An installed library ran as the kernel.** A sandboxed `require` of a `/usr/lib` library went to the kernel loader, which compiles in the real `_G`, so any package could ship a library beside its command and have it run unconfined, whatever its manifest declared. A library now loads inside the sandbox that required it; rc.d services keep the kernel loader. (`test_sandbox_userlib_env.lua`)
+- **A module table was everyone's.** `shell.keys`, `peripheral.*`, `compat.io`, `compat.filesystem` and `kernel.net` came back as the very tables the shell and kernel use: `require("shell.keys").is = f` ran `f` inside every seat's shell, on every keystroke. Every module is now a per-sandbox view that reads through and keeps its own writes. (`test_sandbox_module_isolation.lua`)
+- **The `net` capability is a facade.** It was the whole of `kernel.net`: `getTrust()` (set any peer's level, read any secret), `handleIncoming` (inject a packet from anyone), `setServiceArm` (arm rshd), `shutdown`, and the live discovery records, whose `.addr` a program could rewrite to redirect everyone else's `ssh`. Programs get send/listen/find-peers and copies; services keep the module. (`test_sandbox_net_facade.lua`)
+- **`computer.pushSignal` forged input.** Only the `tos_*` signals were dropped, so a program holding `component` could push `key_down` or `touch` into another seat's foreground — typing into a root shell. Hardware input and `modem_message` are now refused too; `notify.result()` answers only for a program's own notices. (`test_sandbox_push.lua`)
+- The shell's fallback environment (used when `kernel.sandbox` fails to load, which on 192 KB can be memory) handed over the real `string` library and `getmetatable`.
+
+### Files, secrets and accounts
+
+- **Copying a directory skipped every ACL below its top.** `cp /home /tmp/x` took every home and `cp /etc ~/x` took the shadow file. Each entry is now checked as the caller. `kernel.fs` also recursed forever copying `/` into itself.
+- **Secrets at rest were world-readable.** "`/etc` and `/var` are readable by any session" covered `/etc/trust.dat` (every peer's shared secret), `/etc/elevate.dat` (the sudo hash), `/etc/entropy` (the software RNG pool), `worker_bridge_secret`, the kernel log (whose auth entries the log command hides from users), crash reports, swap and `/var/pkg/secrets`. All are ADMIN-read now, and so is an atomic save's `.tos-tmp` copy.
+- **An admin could take root.** `changePassword` let any admin reset root's password; `setLocked`, `setTier` and `delete` never compared against the target's tier. Nobody may now change an account that outranks them. The login screen's principal could name any actor and create a root account; it now manages only its own password. Tiers are validated.
+
+### The shell's tiers were only advice
+
+The tier each command declares was read by `help` and nothing else, so any command without its own check ran for a guest. The shared executor now enforces it. `drive read` (raw sectors, under every ACL on a TBFS volume) is admin-only, `date tz` no longer lets a guest change the machine's clock, and the low-memory rescue power-off no longer mistook the GPU tier for the user's. (`test_dispatch_tier.lua`)
+
+### Network
+
+- **AES never engaged.** The data card is AES-128 and refuses any key that is not 16 bytes; TOS passed the 32-character peer secret, so every encrypt failed silently to XOR — which a carded receiver then refused as a downgrade. The key is now the first 16 bytes of SHA-256(secret) on both ends. (`test_crypto_aes_key.lua`)
+- `netfs` passed a peer's open mode to the backend unchecked (`"x"` created files on a read-only TBFS export; a number crashed the handler). `net pair` installs a shared secret and now needs admin. A peer's claimed hostname is a short printable string or nothing; a numeric one crashed `net peers` for everyone. (`test_netfs_open_mode.lua`, `test_net_pair_gate.lua`, `test_net_peer_claims.lua`)
+
+### Packages and the boot chain
+
+- A service package could install `/etc/rc.d/20-rshd.lua` — the kernel-tier allowlist is by file name — or any `/etc/*.cfg`, including `component_caps.cfg` and `pkg_trust.cfg`. Package targets are now shape-checked, system rc.d stems and system configs are refused, and an existing file no package owns is never clobbered. `/usr/bin` is no longer a kernel library root: the shell requires add-on names in kernel context, so a command file named `mail.lua` ran unconfined. (`test_pkg_protected_targets.lua`)
+- `pkg` parsed `package.lua` and verified its signature on two separate reads, so storage that answers each read differently (a netfs mount) could pass a forged manifest as trusted past `pkg trust require on`. It reads once. (`test_pkg_manifest_read_once.lua`)
+- A 404 or 500 body came back from a fetch as success, and a failed append truncated a download that was then renamed into place. (`test_internet_transport.lua`)
+
+### A fresh Windows clone was red
+
+Git on Windows defaults to `core.autocrlf`, and there is no `.gitattributes`, so a clone checks out CRLF. Two tests pattern-match source text across lines and failed before anyone changed anything. Both normalise line endings now.
+
+### Recorded, not done
+
+- **Service packages are full trust** (above, and MANUAL §15). Making them confinable means a separate principal per service and library loading that does not need kernel context; recorded rather than half-done.
+- **blockfs accepts any open mode** and treats it as a write. Every TOS caller now checks first; fixing the driver itself changes a signed package, so it waits for a signed re-pack: `if mode ~= "r" and mode ~= "w" and mode ~= "a" then return nil, "unsupported mode" end`.
+- **Network, from the auditor's notes, unverified:** the mesh seal's MAC omits the sender and user fields, so a relay could rename the sender of sealed mail; a TRUSTED peer's packet without `enc` skips the MAC; a relay's outbox and seen-cache are unbounded against a TRUSTED neighbour; one pairing window's secret is reused for every peer paired in it; `findPeer(name)` takes the first match rather than the most trusted.
+- **Other notes:** a guest can read everything under `/etc` except the secrets above; `/tmp` and `/public` have no sticky bit; the Settings app's status-bar choice is machine-wide and writable by any user; the redirect cap in `kernel.internet` is dead code, since the card follows same-scheme redirects itself; `ed25519.verify` accepts small-order keys (no path reaches it without an operator trusting a degenerate key); `users.currentSession()` still falls back to the legacy global the emergency shell sets. A registry of sessions `users.lua` minted would retire the whole "any table with `.tier` is a principal" class; it would touch most of the suite's fixtures, so it is recorded here.
+
+---
+
 ## Unreleased — a crash you can read from across the room
 
 ### The stop screen

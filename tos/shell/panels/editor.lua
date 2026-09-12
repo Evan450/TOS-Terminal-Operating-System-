@@ -8,8 +8,11 @@ local tabs = require("shell.panels.tabs")
 
 local M = {}
 
-function M.openViewTab(S, rawBuf, label)
-  local content = helpers.expandBuf(S, rawBuf)
+--! `wrapped`: the caller has already run helpers.expandBuf over rawBuf (the
+--! executor does, to choose status row vs inline vs tab). Wrapping it again
+--! copied every line a third time -- see expandBuf (#MEM, pentest Sep 2026).
+function M.openViewTab(S, rawBuf, label, wrapped)
+  local content = wrapped and rawBuf or helpers.expandBuf(S, rawBuf)
   if #content == 0 then return end
   label = label or "Output"
   if #label > 16 then label = label:sub(1, 15) .. "~" end

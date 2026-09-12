@@ -580,7 +580,9 @@ do
   local src
   for _, pre in ipairs({ "rbmk/", base, "" }) do
     local h = io.open(pre .. "openos/rbmk-display.lua", "rb")
-    if h then src = h:read("*a"); h:close(); break end
+    -- CRLF from a Windows autocrlf checkout would break the function
+    -- extraction below, which matches source text across lines.
+    if h then src = (h:read("*a"):gsub("\r\n", "\n")); h:close(); break end
   end
   test("the satellite is readable", src ~= nil)
 

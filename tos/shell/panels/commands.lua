@@ -524,6 +524,18 @@ function M.build(S, deps)
     local function err(o, msg) o(msg, (S.T and S.T.error) or nil) end
     local function dim(o, msg) o(msg, (S.T and S.T.dim) or nil) end
 
+    --! The seat's USER tier, failing closed. Not S.tier: that field is the
+    --! GPU tier (state.lua, cli.lua), so the fallback below used to let any
+    --! user power the box off from a Tier 2 or 3 screen. Not S.userTier
+    --! either: panels seeds it to 3 until the session resolves.
+    local function seatTier()
+      if S and S.U and S.st and S.U.getSession then
+        local okS, s = pcall(S.U.getSession, S.st)
+        if okS and type(s) == "table" and type(s.tier) == "number" then return s.tier end
+      end
+      return 0
+    end
+
     -- The same gate the real commands use, with a fallback that does not
     -- need a module load: helpers is normally already in package.loaded, but
     -- "normally" is not a safety argument when we are here because a load
@@ -535,7 +547,7 @@ function M.build(S, deps)
         if not ok then err(o, tostring(reason)); return false end
         return true
       end
-      if ((S and S.tier) or 0) < 2 then
+      if seatTier() < 2 then
         err(o, "Admin tier required to power off.")
         return false
       end
@@ -571,7 +583,7 @@ function M.build(S, deps)
     RESCUE.help = function(_, o)
       err(o, "Command help is running in rescue mode: the full listing needs")
       err(o, "memory that is not free. Names only, from the registry.")
-      local groups = M.helpList((S and S.tier) or 0)
+      local groups = M.helpList(seatTier())
       for _, cat in ipairs({ "core", "admin", "extras" }) do
         local g = groups[cat]
         if g and #g > 0 then

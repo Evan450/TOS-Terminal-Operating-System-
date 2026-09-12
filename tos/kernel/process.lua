@@ -438,6 +438,10 @@ function proc.kill(pid, opts)
   end
   local event = require("kernel.event")
   event.removeSource("proc:" .. pid)
+  -- #MEM — and whatever it registered under any other source (see
+  -- event.purgeOwner); flagged so the scheduler's sweep does not repeat it.
+  if event.purgeOwner then event.purgeOwner(pid) end
+  p._purged = true
   return true
 end
 
@@ -1024,10 +1028,22 @@ function proc.tick(signal)
     end
   end
 
-  -- Free coroutine refs on dead processes so they can be GC'd immediately
-  for _, p in pairs(processes) do
-    if p.state == STATE.DEAD and p.coroutine then
-      p.coroutine = nil
+  -- Free coroutine refs on dead processes so they can be GC'd immediately,
+  -- and, once, whatever listeners and timers they registered: a natural
+  -- exit never goes through proc.kill, and the event dispatcher only ever
+  -- SKIPPED a dead process's entries, each one pinning that program's
+  -- environment. (#MEM, pentest Sep 2026 -- see event.purgeOwner.)
+  local okEv, evMod = nil, nil
+  for pid, p in pairs(processes) do
+    if p.state == STATE.DEAD then
+      if p.coroutine then p.coroutine = nil end
+      if not p._purged then
+        p._purged = true
+        if okEv == nil then okEv, evMod = pcall(require, "kernel.event") end
+        if okEv and type(evMod) == "table" and evMod.purgeOwner then
+          evMod.purgeOwner(pid)
+        end
+      end
     end
   end
   -- GC dead processes (keep last 3)

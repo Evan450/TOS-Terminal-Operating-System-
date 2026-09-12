@@ -2525,10 +2525,25 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   the kernel layer; reboot-proof exponential backoff; no user/lock enumeration.
 - **Sandbox** (capability-based): user programs see only what was granted -
   no ambient `_G`, no raw `computer`/`component`/`io`, no back-door `require` into
-  `kernel.*`. The `legacy` cap (full os/io) is opt-in by hand-written caller code
-  only and is *never* grantable from a package manifest.
+  `kernel.*`. Every module a program requires is its own view, so it cannot rewrite
+  one that another program or the shell is using; an installed library runs inside
+  the sandbox that required it, with that caller's authority; `net` is a facade
+  (send, listen, find peers) that never reaches the trust manager. The `legacy`
+  cap (full os/io) is opt-in by hand-written caller code only and is *never*
+  grantable from a package manifest.
 - **securefs** mediates every user-level FS op; raw component filesystem proxies
-  are denied to sandboxed code.
+  are denied to sandboxed code, and an open file handle is its four methods and
+  nothing more. Secret-bearing files — `/etc/users.dat`, `/etc/elevate.dat`,
+  `/etc/trust.dat`, `/etc/entropy`, the logs, crash reports, swap and package
+  secrets — are readable by ADMIN and above only.
+- **A service package is trusted with the machine.** Its rc.d glue runs as the
+  principal it declares (root when it declares none) and its libraries load in
+  kernel context. A `kind = "command"` package is confined to its capabilities;
+  a service package is not, whatever its manifest lists. Install one the way you
+  would hand over the root password.
+- **Command tiers are enforced where commands are dispatched.** The tier each
+  command declares is checked by the executor both shells share, so a command
+  never runs below it even where its body forgot a check of its own.
 - **Network:** zero-trust tiers, per-packet MAC + nonce + epoch/sequence replay
   protection, challenge-response binding trust to possession of the shared secret
   (not just a modem address), and no XOR downgrade on AES-capable receivers.

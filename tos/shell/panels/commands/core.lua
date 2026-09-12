@@ -684,13 +684,14 @@ return function(C, S, deps)
   end
   C.dir = C.ls
 
+  -- Streamed, with a memory floor (#MEM — see helpers.readLinesCapped).
   C.cat = function(args, o)
     if not args[1] then o("Usage: cat <file>", T.dim); return end
     local p = rp(args[1])
     if not canRead(p, o) then return end
-    local c = F.readFile(p)
-    if c then for l in c:gmatch("([^\n]*)\n?") do o(l, T.fg) end
-    else o("Cannot read: " .. args[1], T.error) end
+    local ok, shown, stopped = helpers.readLinesCapped(F, p, function(l) o(l, T.fg) end)
+    if not ok then o("Cannot read: " .. args[1], T.error)
+    elseif stopped then o(string.format(helpers.VIEW_STOPPED, shown), T.warning) end
   end
   C.type = C.cat
 
@@ -698,10 +699,10 @@ return function(C, S, deps)
     if not args[1] then o("Usage: more <file>", T.dim); return end
     local path = rp(args[1])
     if not canRead(path, o) then return end
-    local content = F.readFile(path)
-    if not content then o("Cannot read: " .. args[1], T.error); return end
     local buf = { { " " .. path, T.title } }
-    for l in content:gmatch("([^\n]*)\n?") do buf[#buf+1] = {l, T.fg} end
+    local ok, shown, stopped = helpers.readLinesCapped(F, path, function(l) buf[#buf + 1] = { l, T.fg } end)
+    if not ok then o("Cannot read: " .. args[1], T.error); return end
+    if stopped then buf[#buf + 1] = { string.format(helpers.VIEW_STOPPED, shown), T.warning } end
     openViewTab(buf, args[1]:match("[^/]+$") or args[1])
   end
 
@@ -1362,17 +1363,17 @@ return function(C, S, deps)
     local pat = args[1]
     local path    = rp(args[2])
     if not canRead(path, o) then return end
-    local content = F.readFile(path)
-    if not content then o("Cannot read: " .. args[2], T.error); return end
+    -- Streamed a line at a time (#MEM — see helpers.eachLine).
     local count = 0
     local ln    = 0
-    for line in content:gmatch("([^\n]*)\n?") do
+    local okR = helpers.eachLine(F, path, function(line)
       ln = ln + 1
       if line:find(pat, 1, true) then
         o(string.format("%4d: %s", ln, line), T.fg)
         count = count + 1
       end
-    end
+    end)
+    if not okR then o("Cannot read: " .. args[2], T.error); return end
     o(count > 0 and (count .. " match(es)") or "No matches", T.dim)
   end
 
@@ -1380,13 +1381,13 @@ return function(C, S, deps)
     if not args[1] then o("Usage: wc <file>", T.dim); return end
     local p = rp(args[1])
     if not canRead(p, o) then return end
-    local content = F.readFile(p)
-    if not content then o("Cannot read: " .. args[1], T.error); return end
-    local wlines, words, bytes = 0, 0, #content
-    for line in content:gmatch("([^\n]*)\n?") do
+    -- Streamed (#MEM — see helpers.eachLine).
+    local wlines, words = 0, 0
+    local okR, bytes = helpers.eachLine(F, p, function(line)
       wlines = wlines + 1
       for _ in line:gmatch("%S+") do words = words + 1 end
-    end
+    end)
+    if not okR then o("Cannot read: " .. args[1], T.error); return end
     o(string.format(" Lines: %d  Words: %d  Bytes: %d  -- %s",
       wlines, words, bytes, args[1]), T.fg)
   end
@@ -1399,13 +1400,14 @@ return function(C, S, deps)
     if not args[1] then o("Usage: head <file> [lines]", T.dim); return end
     local p = rp(args[1])
     if not canRead(p, o) then return end
-    local content = F.readFile(p)
-    if not content then o("Cannot read: " .. args[1], T.error); return end
+    -- Streamed, and it stops reading once it has N lines (#MEM).
     local n, shown = tonumber(args[2]) or 10, 0
-    for line in content:gmatch("([^\n]*)\n?") do
-      if shown >= n then break end
+    if n < 1 then return end
+    local okR = helpers.eachLine(F, p, function(line)
       o(line, T.fg); shown = shown + 1
-    end
+      if shown >= n then return false end
+    end)
+    if not okR then o("Cannot read: " .. args[1], T.error) end
   end
 
   -- `head`'s missing other half. The reason it earns its place over
@@ -1415,19 +1417,21 @@ return function(C, S, deps)
     if not args[1] then o("Usage: tail <file> [lines]", T.dim); return end
     local p = rp(args[1])
     if not canRead(p, o) then return end
-    local content = F.readFile(p)
-    if not content then o("Cannot read: " .. args[1], T.error); return end
     local n = tonumber(args[2]) or 10
     if n < 1 then return end
-    local lines = {}
-    for line in content:gmatch("([^\n]*)\n?") do lines[#lines + 1] = line end
-    -- A file ending in a newline yields a trailing empty match on some Lua
-    -- versions and not others (5.4 changed the empty-match rule). Dropping
-    -- it here makes `tail` print the same last line either way, instead of
-    -- spending one of the N lines on a blank.
-    if #lines > 1 and lines[#lines] == "" then lines[#lines] = nil end
-    for i = math.max(1, #lines - n + 1), #lines do
-      o(lines[i], T.fg)
+    -- Streamed into a ring of the last N lines (#MEM): memory is N lines,
+    -- not the file. The ring IS the memory, so N is bounded too. The
+    -- trailing-empty-line rule (5.4 changed gmatch's empty match) no longer
+    -- arises: eachLine never produces one.
+    if n > 1000 then n = 1000 end
+    local ring, count = {}, 0
+    local okR = helpers.eachLine(F, p, function(line)
+      count = count + 1
+      ring[(count - 1) % n + 1] = line
+    end)
+    if not okR then o("Cannot read: " .. args[1], T.error); return end
+    for i = math.max(1, count - n + 1), count do
+      o(ring[(i - 1) % n + 1], T.fg)
     end
   end
 
@@ -2060,6 +2064,12 @@ return function(C, S, deps)
         return
       end
       if n < -23 or n > 23 then o("Offset must be between -23 and 23.", T.error); return end
+      --! #SEC (pentest, Sep 2026) — reading the offset is for everyone; SETTING
+      --! it rewrites /etc/tos.cfg for every user, through the kernel config
+      --! store (no securefs check below it), so it is an admin action -- the
+      --! same line `internet on|off` and `lang system` already hold. `date`
+      --! is tier 0, so without this any guest could change the machine clock.
+      if not adminOnly(o) then return end
       if not (cfg and cfg.set) then o("No writable config available.", T.error); return end
       cfg.set("timezone", n)
       if cfg.save then cfg.save() end

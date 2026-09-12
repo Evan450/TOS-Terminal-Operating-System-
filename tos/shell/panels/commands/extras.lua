@@ -1120,7 +1120,9 @@ return function(C, S, deps)
       local nowfn = function() return math.floor(K.uptime and K.uptime() or 0) end
       local proxy, fsOrErr = lib.mount(px, { now = nowfn })
       if not proxy then o("Mount failed: " .. tostring(fsOrErr), T.error); return end
-      local label = proxy.getLabel() or ("disk_" .. addr:sub(1, 4))
+      -- The label belongs to whoever formatted the volume: sanitised the
+      -- way the hot-plug mount does it (#SEC — see helpers.safeMountName).
+      local label = helpers.safeMountName(proxy.getLabel and proxy.getLabel(), addr)
       local mnt = args[3] or ("/mnt/" .. label)
       if mnt:sub(1, 1) ~= "/" then mnt = "/mnt/" .. mnt end
       if not F.exists("/mnt") then pcall(F.makeDirectory, "/mnt") end
@@ -1206,6 +1208,11 @@ return function(C, S, deps)
     end
 
     if sub == "read" then
+      --! #SEC (pentest, Sep 2026) — admin, like every other subcommand past
+      --! `info`. A raw sector read goes under the filesystem, so it goes under
+      --! every ACL on it: on a TBFS volume -- a raw-drive boot disk included --
+      --! a plain user could page through /etc/users.dat and other homes.
+      if not adminOnly(o) then return end
       local px, addr = proxyFor(args[2])
       if not px then o(tostring(addr), T.error); return end
       local sec = tonumber(args[3])
@@ -1421,10 +1428,15 @@ return function(C, S, deps)
       -- Copy the OS: every manifest file (loaded before the pre-flight),
       -- creating parent dirs as we go.
       local copied, failed = 0, 0
+      --! #MEM (pentest, Sep 2026) — streamed in 4 KB pieces, not read whole:
+      --! the largest OS files are 67-120 KB, more than a 192 KB machine has
+      --! free with the shell running. blockfs writes each piece at the
+      --! handle's position, and each piece is still all-or-nothing; the
+      --! capacity pre-flight above has already checked that everything fits.
       for _, path in ipairs(files) do
         coopYield()   -- whole-OS copy: give other seats a slice per file
-        local content = F.readFile(path)
-        if content then
+        local src = F.open(path, "r")
+        if src then
           -- Create the parent directory chain.
           local dir = path:match("^(.*)/[^/]+$")
           if dir and dir ~= "" then
@@ -1435,8 +1447,16 @@ return function(C, S, deps)
             end
           end
           local h = proxy.open(path, "w")
-          if h and proxy.write(h, content) then proxy.close(h); copied = copied + 1
-          else if h then proxy.close(h) end; failed = failed + 1; o("  FAIL " .. path, T.error) end
+          local ok = h ~= nil
+          while ok do
+            local chunk = src:read(4096)
+            if not chunk then break end
+            ok = proxy.write(h, chunk) and true or false
+          end
+          pcall(src.close, src)
+          if h then proxy.close(h) end
+          if ok then copied = copied + 1
+          else failed = failed + 1; o("  FAIL " .. path, T.error) end
         end
       end
       -- Write the stage-2 boot blob into the reserved boot region.
@@ -1534,11 +1554,14 @@ return function(C, S, deps)
       end
     end
 
+    --! #MEM (pentest, Sep 2026) — copied, not read whole and written back:
+    --! F.copy streams 4 KB blocks (fs.copyFile). The largest files this
+    --! carries are 67-120 KB (extras, init, pkg, core, admin), and with the
+    --! panels shell running a 192 KB machine has less than that free.
     local copied, failed, skipped = 0, 0, 0
     for _, path in ipairs(files) do
-      local content = F.readFile(path)
-      if content then
-        local ok2, werr = F.writeFile(target .. path, content)
+      if F.exists(path) then
+        local ok2, werr = F.copy(path, target .. path)
         if ok2 then copied = copied + 1
         else o("  FAIL " .. path .. ": " .. tostring(werr), T.error); failed = failed + 1 end
       else skipped = skipped + 1 end
@@ -1546,20 +1569,16 @@ return function(C, S, deps)
 
     -- Copy bios.lua
     if F.exists("/bios.lua") then
-      local bc = F.readFile("/bios.lua")
-      if bc then
-        if F.writeFile(target .. "/bios.lua", bc) then copied = copied + 1
-        else failed = failed + 1 end
-      end
+      if F.copy("/bios.lua", target .. "/bios.lua") then copied = copied + 1
+      else failed = failed + 1 end
     end
 
     -- Copy install.lua — the unified installer that auto-detects
     -- the install disk, copies files, runs the setup questionnaire,
     -- and offers to flash the BIOS on the target machine.
     if F.exists("/install.lua") then
-      local ic = F.readFile("/install.lua")
-      if ic then
-        local ok3, werr = F.writeFile(target .. "/install.lua", ic)
+      do   -- streamed, as above
+        local ok3, werr = F.copy("/install.lua", target .. "/install.lua")
         if ok3 then
           copied = copied + 1
           o("  Copied install.lua (automated installer)", T.highlight)

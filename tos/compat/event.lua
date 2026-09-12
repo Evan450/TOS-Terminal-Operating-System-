@@ -49,6 +49,18 @@ local function isSensitive(name)
   return type(name) == "string" and SENSITIVE_SIGNALS[name] == true
 end
 
+-- #SEC — pointer input a sandboxed program must not be able to INJECT via
+-- event.push, even though it may still LISTEN for its own (touch/drag/drop
+-- are legitimate OpenOS GUI events, so they stay off SENSITIVE_SIGNALS and
+-- remain listenable). key_down/key_up/clipboard/modem/tos_* are already
+-- refused by isSensitive on the push path; these four close the gap for the
+-- pointer events, so a program can't forge a click or scroll into another
+-- seat's foreground the way it can't forge a keystroke. Mirrors
+-- kernel.sandbox's PUSH_DROP for the OpenOS-compat route.
+local UNPUSHABLE_INPUT = {
+  touch = true, drag = true, drop = true, scroll = true,
+}
+
 --- Pull a signal with optional timeout and filter.
 -- OpenOS signature: event.pull([timeout: number], [name: string], ...) -> ...
 -- If first arg is a number, it's timeout. If first arg is a string, it's filter name.
@@ -175,7 +187,9 @@ function event.push(name, ...)
   -- signals (tos_login_complete, tos_shutdown, etc.). Permitting the push
   -- would let the kernel main loop honour an attacker-supplied token or
   -- shut the machine down at will. Pushing a regular signal still works.
-  if isSensitive(name) then return false, "signal '" .. tostring(name) .. "' cannot be pushed by user programs" end
+  if isSensitive(name) or (type(name) == "string" and UNPUSHABLE_INPUT[name]) then
+    return false, "signal '" .. tostring(name) .. "' cannot be pushed by user programs"
+  end
   kEvent.push(name, ...)
   return true
 end

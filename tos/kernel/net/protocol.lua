@@ -188,6 +188,8 @@ function protocol.serialize(packet)
 end
 
 --- Deserialize a string back to a packet table
+protocol.MAX_DECODE_COST = 48 * 1024  -- heap one decoded packet may build
+protocol.MAX_DECODE_KEYS = 256        -- distinct string keys in one packet
 function protocol.deserialize(str)
   if not str or #str < 10 then return nil, "Too short" end
   if #str > protocol.MAX_SIZE then return nil, "Too large" end
@@ -197,7 +199,14 @@ function protocol.deserialize(str)
   -- can never legitimately carry that many entries. Override with a much
   -- tighter ceiling so a hostile peer can't cause MAX_SIZE-sized parse
   -- traffic to allocate large internal arrays.
-  local result, err = serialize.decode(str, { maxBytes = protocol.MAX_SIZE })
+  --! #SEC (pentest, Sep 2026) — the ceiling described above was never
+  --! passed: only maxBytes was, and 8 KB of "{{},{},...}" decoded into
+  --! 215 KB of tables, before any trust check. MAX_DECODE_COST bounds what
+  --! a packet may build (see serialize.decode); the largest real packets,
+  --! a 128-row storage page and a 256-name netfs listing, cost about 39
+  --! and 20 KB of it. (test_net_decode_budget.lua)
+  local result, err = serialize.decode(str, { maxBytes = protocol.MAX_SIZE,
+    maxCost = protocol.MAX_DECODE_COST, maxKeys = protocol.MAX_DECODE_KEYS })
   if not result then return nil, err end
   if type(result) ~= "table" then return nil, "Not a table" end
 

@@ -40,7 +40,6 @@ local KERNEL_MODULE_PREFIX = "kernel."
 -- securefs when the install happens).
 local ALLOWED_MODULE_PREFIXES = {
   "compat.",
-  "shell.ext",  -- only the user extension API, not internal shell modules
   "peripheral.",
 }
 
@@ -49,7 +48,6 @@ local ALLOWED_MODULE_PREFIXES = {
 -- full unsandboxed require, so it must be safe to expose unconditionally.
 local ALLOWED_MODULE_NAMES = {
   compat        = true,
-  ["shell.ext"] = true,
   -- The shared keybind table. Exposed to package code deliberately: a
   -- standard that only the base image can read standardises nothing, and
   -- the whole point is that a bundled package and the shell agree on
@@ -79,6 +77,15 @@ local BLOCKED_MODULE_NAMES = {
   ["computer"]                = true,  -- raw computer.shutdown/eeprom
   ["filesystem"]              = true,  -- raw FS bypasses securefs
   ["shell.init"]              = true,
+  --! #SEC (pentest, Sep 2026) — shell.ext is not an extension API; it is
+  --! the lazy-loaded body of the net/ping/hostname/config/audio commands,
+  --! and the unsandboxed shell (commands/extras.lua) is its only caller.
+  --! It sat on the ALLOWED list under a stale description, and parts of it
+  --! reach _G._TOS directly (the peer-alias table, audio) instead of going
+  --! through a capability the program was granted. The alias writers do
+  --! re-check the live principal's tier; nothing else about it belongs in
+  --! a sandbox either.
+  ["shell.ext"]               = true,
   ["shell.panels.init"]       = true,
   ["shell.panels.commands"]   = true,
   ["shell.panels.events"]     = true,
@@ -188,7 +195,27 @@ end
 -- Trimmed computer table — no shutdown/beep/eeprom mutation.
 -- pushSignal is wrapped to filter dangerous internal signals.
 -- ============================================================
-local DANGEROUS_SIGNALS = {
+--! #SEC — signals a sandboxed program must never SYNTHESIZE via
+--! computer.pushSignal. The old wrapper dropped only the tos_* control set,
+--! which left every HARDWARE INPUT signal pushable:
+--! a program holding the `component` cap could push("key_down", kbAddr,
+--! char, code) — or touch/clipboard/scroll — and proc.tick routes an input
+--! signal to the FOREGROUND process of the seat that owns that address, or
+--! to the GLOBAL foreground when the address doesn't resolve. That is
+--! keystroke/pointer injection into another seat's (or another user's)
+--! session: a guest could type a command into a root shell on another seat.
+--! modem_message is here too, so a program can't forge inbound network
+--! traffic other processes' listeners trust. Input arrives from real
+--! hardware and the kernel — never from a guest program — so refusing to
+--! re-emit it costs honest code nothing (custom app signals still push).
+--! (test_sandbox_push.lua)
+local PUSH_DROP = {
+  -- hardware input (mirrors proc.INPUT_SIGNALS)
+  key_down = true, key_up = true, clipboard = true,
+  touch = true, drag = true, drop = true, scroll = true,
+  -- inbound network traffic
+  modem_message = true,
+  -- kernel control signals (shutdown/logout/login spoofing)
   tos_shutdown = true, tos_logout = true,
   tos_login_complete = true, tos_seat_changed = true,
   tos_shell_exited = true,
@@ -262,8 +289,12 @@ local function makeSafeComputer()
     address     = computer.address,
     pullSignal  = safePullSignal,
     pushSignal  = function(name, ...)
-      if type(name) == "string" and DANGEROUS_SIGNALS[name] then
-        return  -- silently drop synthesized control signals
+      -- #SEC — drop synthesized input / network / control signals. A
+      -- sandboxed program may push its OWN custom signals for coordination,
+      -- but never forge the hardware input or modem traffic the scheduler
+      -- routes as genuine input to real foreground processes.
+      if type(name) == "string" and PUSH_DROP[name] then
+        return  -- silently drop
       end
       return computer.pushSignal(name, ...)
     end,
@@ -582,36 +613,94 @@ local function resolveUserLibPath(name)
   return nil
 end
 
--- #SEC H4 — shallow-copy compat.* modules per sandbox so one sandbox
--- can't monkey-patch event.listen / filesystem.list / shell.execute for
--- everyone else (including the kernel). Names listed here get a fresh
--- shallow copy on every require; all other allowed modules pass through
--- unchanged (their behaviour is already kernel-managed and per-sandbox
--- isolation would break call dispatch).
-local COMPAT_COPY_NAMES = {
-  ["compat"]               = true,
-  ["compat.event"]         = true,
-  ["compat.filesystem"]    = true,
-  ["compat.io"]            = true,
-  ["compat.term"]          = true,
-  ["compat.keyboard"]      = true,
-  ["compat.serialization"] = true,
-  ["compat.sides"]         = true,
-  ["compat.colors"]        = true,
-  ["compat.text"]          = true,
-  ["compat.buffer"]        = true,
-  ["shell.ext"]            = true,
-}
+-- #SEC H4 — one sandbox must not be able to monkey-patch event.listen /
+-- filesystem.list / shell.execute for everyone else (including the
+-- kernel). H4 did it with a shallow copy of a listed set of compat.*
+-- names; isolatedModule below now covers every module a sandbox gets.
 
-local function shallowCopyModule(mod)
+--! #SEC (pentest, Sep 2026) — EVERY module table a sandbox receives is its
+--! own view, not only the compat.* names H4 listed. The rest came back as
+--! the very table the kernel and the shell use: shell.keys (every seat's
+--! shell calls keys.is on each keystroke), peripheral.*, compat.shell_api
+--! and compat.internet, every installed library (blockfs, whose mount()
+--! the `drive` command hands a raw drive proxy), and -- through build()
+--! below -- compat.io, compat.filesystem and kernel.net themselves.
+--! `require("shell.keys").is = f` made f run inside every other seat's
+--! shell process, as that seat's principal, seeing its keystrokes;
+--! `net.send = f` did the same inside kernel services running as _kernel_.
+--! A view reads through to the real module (so it never goes stale, unlike
+--! a copy) and keeps its own writes; its metatable is locked, and pairs()
+--! walks the module without ever handing the original table back.
+--! (test_sandbox_module_isolation.lua)
+local function isolatedModule(mod)
   if type(mod) ~= "table" then return mod end
-  local copy = {}
-  for k, v in pairs(mod) do copy[k] = v end
-  return copy
+  return setmetatable({}, {
+    __index = mod,
+    __len   = function() return #mod end,
+    __pairs = function()
+      local k
+      return function()
+        local v
+        k, v = next(mod, k)
+        return k, v
+      end
+    end,
+    __call  = function(_, ...) return mod(...) end,
+    __metatable = false,
+  })
 end
 
-local function makeSafeRequire(opts, prebound)
+--! #SEC (pentest, Sep 2026) — what the `net` capability means for a
+--! program: send and receive, find peers, ask to be trusted. It used to be
+--! the whole kernel.net module, which also carries getTrust() (the trust
+--! manager: setLevel/setSecret/getSecret), handleIncoming() (inject a
+--! packet "from" any address), setServiceArm() (arm rshd), shutdown(), and
+--! the _-prefixed internals. And the peer lookups returned the LIVE
+--! discovery records, so `findPeer("server").addr = me` redirected every
+--! other user's ssh/share. A program now gets an allowlist, and copies.
+local NET_FACADE = {
+  "send", "broadcast", "on", "off", "onceFrom", "offAll", "waitFor",
+  "sendMessage", "requestTrust", "discover", "getAddress", "getHostname",
+  "isAvailable", "modemCount",
+}
+local function copyPeer(p)
+  if type(p) ~= "table" then return p end
+  return { addr = p.addr, lastSeen = p.lastSeen, hostname = p.hostname,
+           device = p.device, trust = p.trust }
+end
+local function netFacade(net)
+  local f = {}
+  for _, k in ipairs(NET_FACADE) do
+    if type(net[k]) == "function" then f[k] = net[k] end
+  end
+  local function copyList(list)
+    local out = {}
+    for i, p in ipairs(type(list) == "table" and list or {}) do out[i] = copyPeer(p) end
+    return out
+  end
+  if type(net.peers) == "function" then f.peers = function() return copyList(net.peers()) end end
+  if type(net.scan) == "function" then f.scan = function(t) return copyList(net.scan(t)) end end
+  if type(net.findPeer) == "function" then
+    f.findPeer = function(q) return copyPeer(net.findPeer(q)) end
+  end
+  if type(net.getProtocol) == "function" then
+    f.getProtocol = function() return isolatedModule(net.getProtocol()) end
+  end
+  if type(net.status) == "function" then
+    f.status = function()
+      local s, out = net.status(), {}
+      for k, v in pairs(type(s) == "table" and s or {}) do
+        if type(v) ~= "table" then out[k] = v end
+      end
+      return out
+    end
+  end
+  return f
+end
+
+local function makeSafeRequire(opts, prebound, envRef)
   local cache = {}
+  local loading = {}
   if prebound then
     for k, v in pairs(prebound) do cache[k] = v end
   end
@@ -623,6 +712,57 @@ local function makeSafeRequire(opts, prebound)
 
     if isKernelModule(name) then
       error("sandbox: cannot require kernel module '" .. name .. "'", 2)
+    end
+
+    --! #SEC (pentest, Sep 2026) — two compat names are CAPABILITIES, not
+    --! libraries, and the "compat." prefix below admitted both for anyone:
+    --!   compat.component  OpenOS-style field access built over the RAW
+    --!     component library: .proxy, .list, and a raw proxy for any type
+    --!     (`.filesystem.remove("/init.lua")`, `.eeprom.set(...)`), with no
+    --!     cap consulted -- the whole C4 component split, undone by one
+    --!     require. It is now the same shape over THIS sandbox's filtered
+    --!     component table, and needs the `component` cap.
+    --!   compat.internet  reaches the card through the real component
+    --!     library; "the capability is the gate" held only for the
+    --!     component route. It now needs the `internet` cap.
+    --! (test_sandbox_compat_caps.lua)
+    if name == "compat.component" then
+      local safeC = prebound and prebound.component
+      if not safeC then
+        error("sandbox: 'compat.component' needs the component capability", 2)
+      end
+      local view = setmetatable({}, {
+        __index = function(_, key)
+          local v = safeC[key]
+          if v ~= nil then return v end
+          if type(key) == "string" then
+            local okP, px = pcall(safeC.getPrimary, key)
+            if okP then return px end
+          end
+          return nil
+        end,
+        __newindex  = function() error("component view is read-only", 2) end,
+        __metatable = false,
+      })
+      cache[name] = view
+      return view
+    end
+    if name == "compat.internet" and not (opts.caps and opts.caps["internet"]) then
+      error("sandbox: 'compat.internet' needs the internet capability", 2)
+    end
+    --! #SEC (pentest, Sep 2026) — `compat` itself is the layer's LOADER.
+    --! init() re-run after boot forwards opts.procSleep into the os.sleep
+    --! that every real-`os` caller shares, and setProcSleep() does it
+    --! outright, so a sandbox could make its function run inside whichever
+    --! process next slept. A sandbox gets the read-only part: has(), list().
+    if name == "compat" then
+      local okC, cm = pcall(require, "compat")
+      if not okC or type(cm) ~= "table" then
+        error("sandbox: the compat layer is unavailable", 2)
+      end
+      local view = { has = cm.has, list = cm.list }
+      cache[name] = view
+      return view
     end
 
     if BLOCKED_MODULE_NAMES[name] then
@@ -649,18 +789,15 @@ local function makeSafeRequire(opts, prebound)
 
     -- Explicit whitelist (prefix or exact name).
     if ALLOWED_MODULE_NAMES[name] or isAllowedPrefix(name) then
-      local mod = require(name)
-      -- #SEC H4 — return a per-sandbox shallow copy for compat.* so a
-      -- mutation in this sandbox doesn't leak to others or the kernel.
-      if COMPAT_COPY_NAMES[name] then
-        mod = shallowCopyModule(mod)
-        -- #SEC CR-8 — bind term.gpu() to THIS sandbox's capabilities so a
-        -- mutation-capable GPU proxy is only handed to processes that hold
-        -- a display cap. Without it, term.gpu() stays read-only.
-        if name == "compat.term" and type(mod._gpuForCaps) == "function" then
-          local sbCaps = opts and opts.caps
-          mod.gpu = function() return mod._gpuForCaps(sbCaps) end
-        end
+      -- #SEC H4 / pentest — this sandbox's own view (isolatedModule).
+      local mod = isolatedModule(require(name))
+      -- #SEC CR-8 — bind term.gpu() to THIS sandbox's capabilities so a
+      -- mutation-capable GPU proxy is only handed to processes that hold
+      -- a display cap. Without it, term.gpu() stays read-only.
+      if name == "compat.term" and type(mod) == "table"
+         and type(mod._gpuForCaps) == "function" then
+        local sbCaps = opts and opts.caps
+        mod.gpu = function() return mod._gpuForCaps(sbCaps) end
       end
       cache[name] = mod
       return mod
@@ -686,9 +823,52 @@ local function makeSafeRequire(opts, prebound)
             error("sandbox: access denied loading user lib '" .. name .. "'", 2)
           end
         end
-        local mod = require(name)
-        cache[name] = mod
-        return mod
+        -- An rc.d service (allowUserLibs) loads through the kernel loader
+        -- and keeps the real table: it is the package's own admin-installed
+        -- glue, already running as the service's principal (root when it
+        -- declares none), and a package's service and library share state
+        -- through it.
+        if opts.allowUserLibs then
+          local mod = require(name)
+          cache[name] = mod
+          return mod
+        end
+        --! #SEC (pentest, Sep 2026) — everyone else loads the library INSIDE
+        --! this sandbox. require(name) is the kernel loader, which compiles
+        --! the file with no environment -- the real _G -- so any package
+        --! could ship /usr/lib/x.lua beside a command that says require("x")
+        --! and have x run as the kernel: its declared capabilities, the
+        --! legacy ban and securefs all bypassed by one require. A library
+        --! now runs with exactly the authority of the code that required it,
+        --! one instance per sandbox, so it also cannot be shared and
+        --! poisoned. The first-party libraries reached this way (mouse,
+        --! printer, printerfmt) use only what a sandbox provides.
+        --! (test_sandbox_userlib_env.lua)
+        local env = envRef and envRef.env
+        if type(env) ~= "table" then
+          error("sandbox: no environment to load user lib '" .. name .. "' into", 2)
+        end
+        if loading[name] then
+          error("sandbox: circular require of '" .. name .. "'", 2)
+        end
+        local okF, kfs = pcall(require, "kernel.fs")
+        local src = okF and type(kfs) == "table" and kfs.readFile and kfs.readFile(resolved)
+        if type(src) ~= "string" then
+          error("sandbox: cannot read user lib '" .. name .. "'", 2)
+        end
+        local fn, lerr = load(src, "=" .. resolved, "t", env)
+        if not fn then
+          error("sandbox: cannot load user lib '" .. name .. "': " .. tostring(lerr), 2)
+        end
+        loading[name] = true
+        local okR, result = pcall(fn, name)
+        loading[name] = nil
+        if not okR then
+          error("sandbox: user lib '" .. name .. "' failed: " .. tostring(result), 2)
+        end
+        if result == nil then result = true end
+        cache[name] = result
+        return result
       end
     end
 
@@ -824,6 +1004,9 @@ function sandbox.build(opts)
   local prebound = {}
   if safeComp  then prebound.component = safeComp  end
   if safeCompr then prebound.computer  = safeCompr end
+  -- A user library loads INSIDE this env, and the require below is built
+  -- before the env exists, so it reaches the env through this box.
+  local envRef = {}
 
   local env = {
     -- Base Lua — safe pure functions.
@@ -855,9 +1038,10 @@ function sandbox.build(opts)
 
     -- Bound I/O
     print       = sandboxPrint,
-    require     = makeSafeRequire(opts, prebound),
+    require     = makeSafeRequire(opts, prebound, envRef),
   }
 
+  envRef.env = env
   env._G = env
   env._ENV = env
   env._VERSION = _VERSION
@@ -890,10 +1074,10 @@ function sandbox.build(opts)
   -- compat.io cap: expose io + trimmed os + filesystem compat module.
   if caps["compat.io"] then
     local ok, compatIo = pcall(require, "compat.io")
-    if ok then env.io = compatIo end
+    if ok then env.io = isolatedModule(compatIo) end
     env.os = makeSafeOs()
     local okFs, compatFs = pcall(require, "compat.filesystem")
-    if okFs then env.filesystem = compatFs end
+    if okFs then env.filesystem = isolatedModule(compatFs) end
   end
 
   -- Legacy cap: unlock the full os/io libraries for ported OpenOS
@@ -969,6 +1153,15 @@ function sandbox.build(opts)
   if caps["notify"] then
     local okN, nf = pcall(require, "kernel.notify")
     if okN and nf and nf.post then
+      -- #SEC — result() is scoped to THIS sandbox's OWN notices. Notice ids
+      -- are a single global monotonic sequence and nf.result reads a shared
+      -- table, so forwarding an arbitrary id let a program read the
+      -- operator's button choice for ANY notice — including ones another
+      -- program or another seat's user posted — by walking the id space.
+      -- kernel.notify's header and this cap's own contract both say a
+      -- program may "read its OWN answers"; hold to that literally by only
+      -- answering for ids that post() handed back through this wrapper.
+      local ownIds = {}
       env.notify = {
         post = function(spec)
           if type(spec) ~= "table" then return nil, "spec must be a table" end
@@ -982,9 +1175,14 @@ function sandbox.build(opts)
           local pkgName = opts.pkgName
           copy.from = (type(pkgName) == "string"
             and pkgName:match("^[%w][%w%-]*$")) and pkgName or "package"
-          return nf.post(copy)
+          local id, err = nf.post(copy)
+          if id ~= nil then ownIds[id] = true end
+          return id, err
         end,
-        result = function(id) return nf.result(id) end,
+        result = function(id)
+          if not ownIds[id] then return nil end  -- not ours: no answer
+          return nf.result(id)
+        end,
       }
     end
   end
@@ -993,7 +1191,11 @@ function sandbox.build(opts)
   -- check per-call permissions in a later phase.
   if caps["net"] then
     local ok, net = pcall(require, "kernel.net")
-    if ok then env.net = net end
+    if ok then
+      -- rc.d services keep the whole module: they arm themselves
+      -- (setServiceArm) and run the transfer/remote handlers.
+      env.net = opts.allowUserLibs and isolatedModule(net) or netFacade(net)
+    end
   end
 
   -- internet cap: outbound access to the real world.

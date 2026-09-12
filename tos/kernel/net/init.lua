@@ -240,6 +240,25 @@ function net.init(modules)
   -- end-to-end using the per-peer trust secret, so relays pass an opaque
   -- blob; the trust gate (TRUSTED-only, like the relay path) is the
   -- transport-level protection.
+  -- Mesh state that survives a reset (see meshctl's reliability note). Kept
+  -- in /var/lib/mesh, which users.lua makes admin-read-only: a message
+  -- waiting here may have been sent unsealed.
+  local function meshStore(kfs)
+    local DIR, PATH = "/var/lib/mesh", "/var/lib/mesh/state.dat"
+    local ser = require("kernel.serialize")
+    return {
+      load = function()
+        if not (kfs and kfs.exists and kfs.exists(PATH)) then return nil end
+        return ser.loadFile(kfs, PATH)
+      end,
+      save = function(state)
+        if not kfs then return end
+        if not kfs.exists(DIR) then kfs.makeDirectory(DIR) end
+        ser.saveFile(kfs, PATH, state)
+      end,
+    }
+  end
+
   local okMesh, meshctlMod = pcall(require, "kernel.net.meshctl")
   if okMesh and meshctlMod then
     meshctlMod.init({ crypto = crypto, serialize = require("kernel.serialize"),
@@ -248,6 +267,10 @@ function net.init(modules)
     net._meshctl = meshctlMod.new({
       myAddr = myAddr,
       clock  = function() return computer.uptime() end,
+      -- Relay copies are held while memory allows (meshctl.RELAY_FLOOR), and
+      -- what a reset must not lose is kept on disk (meshStore, above).
+      freeMemory = computer.freeMemory,
+      store  = meshStore(modules and modules.fs or (_G._TOS and _G._TOS.fs)),
       broadcast = function(env)
         local t = (env.kind == "ack") and protocol.TYPE.MESH_ACK or protocol.TYPE.MESH
         net.broadcast(protocol.makePacket(t, env))
@@ -1230,23 +1253,52 @@ end
 -- and the optional discoveryd service. Entries:
 --   { addr, lastSeen, device, hostname, trust }
 local discoveredPeers = {}
+--! #MEM (pentest, Sep 2026) — bounded. An entry was added for every
+--! distinct address that answered or sent a ping and nothing ever removed
+--! one, so on a busy network the table only grew until the next reboot.
+--! Same ceiling the trust manager puts on UNKNOWN peers.
+local MAX_DISCOVERED = 64
+
+--! #SEC (pentest, Sep 2026) — a PING/PONG payload is an UNKNOWN peer's
+--! claim about itself: any type, any length, any bytes. A number as the
+--! hostname crashed the sort in net.peers() for every later caller (`net
+--! peers`, `net scan`, discovery), and control characters went straight to
+--! the screen. Keep a short printable string or nothing.
+--! (test_net_peer_claims.lua)
+local function cleanClaim(v)
+  if type(v) ~= "string" then return nil end
+  v = v:gsub("%c", ""):sub(1, 32)
+  if v == "" then return nil end
+  return v
+end
 
 --- Internal: record a peer from a pong response.
 function net._recordPeer(addr, payload)
+  if type(addr) ~= "string" then return end
   local now = computer.uptime()
   local trust = trustMgr and trustMgr.getLevel(addr) or 0
   local hostname2 = nil
   local device2 = nil
   if type(payload) == "table" then
-    hostname2 = payload.hostname
-    device2   = payload.device
+    hostname2 = cleanClaim(payload.hostname)
+    device2   = cleanClaim(payload.device)
   end
   -- Merge with trust manager data if available
   if trustMgr then
     local peer = trustMgr.getPeer(addr)
     if peer then
-      hostname2 = hostname2 or peer.hostname
+      hostname2 = hostname2 or cleanClaim(peer.hostname)
     end
+  end
+  if discoveredPeers[addr] == nil then
+    -- Full: drop an UNKNOWN before anyone we trust, and the stalest first.
+    local count, victim, victimKey = 0, nil, nil
+    for a, p in pairs(discoveredPeers) do
+      count = count + 1
+      local key = (((p.trust or 0) > 0) and 1e12 or 0) + (p.lastSeen or 0)
+      if not victimKey or key < victimKey then victim, victimKey = a, key end
+    end
+    if count >= MAX_DISCOVERED and victim then discoveredPeers[victim] = nil end
   end
   discoveredPeers[addr] = {
     addr      = addr,
@@ -1269,6 +1321,8 @@ end
 
 --- Look up a specific peer by address or hostname.
 function net.findPeer(query)
+  -- A non-string raised in the prefix match below; "" matched everyone.
+  if type(query) ~= "string" or query == "" then return nil end
   -- Exact address match
   if discoveredPeers[query] then return discoveredPeers[query] end
   -- Hostname search

@@ -162,6 +162,20 @@ eq("modem_message cannot be listened for", false, (event.listen("modem_message",
 eq("tos_shutdown cannot be pushed", false, (event.push("tos_shutdown")))
 eq("an ordinary signal can still be pushed", true, (event.push("my_signal")))
 
+-- ── #SEC pointer input can be LISTENED for (OpenOS GUI compat) but NOT
+--    INJECTED via push: a sandboxed program must not be able to forge a
+--    click/scroll into another seat's foreground the way it can't forge a
+--    keystroke. touch/drag/drop stay off the LISTEN denylist (asserted
+--    above) yet are refused on the PUSH path. --
+print()
+print("-- pointer events: listenable, not injectable --")
+eq("key_down cannot be pushed (already sensitive)", false, (event.push("key_down")))
+for _, sig in ipairs({ "touch", "drag", "drop", "scroll" }) do
+  eq("push('" .. sig .. "') is refused (no input injection)", false, (event.push(sig)))
+  eq("listen('" .. sig .. "') still works (GUI compat)", true,
+    (event.listen(sig, function() end)))
+end
+
 -- ── Bad arguments are refused, not crashed on ──────────────────────
 eq("listen with a non-function is refused", false, (event.listen("touch", "nope")))
 eq("listen with a non-string name is refused", false, (event.listen(42, f)))

@@ -9,6 +9,9 @@
 -- ║  chain. The byte half is the one that bites first today, since   ║
 -- ║  the OS is ~1.6 MB, and nothing checked it at all.               ║
 -- ║                                                                  ║
+-- ║  Case D (Sep 2026 pentest, RAM pass): each OS file is copied in  ║
+-- ║  4 KB pieces. It was read whole, and the largest are 67-120 KB.  ║
+-- ║                                                                  ║
 -- ║  Drives the REAL C.deploy (TOS-Dev) against the REAL blockfs     ║
 -- ║  (TOS-Extras) on a fake raw drive that counts sector writes, so   ║
 -- ║  "nothing was erased" is measured rather than read off a message. ║
@@ -73,12 +76,29 @@ local function fakeDrive(cap)
   }, function() return writes end
 end
 
--- The running system's files, as deploy reads them.
+-- The running system's files, as deploy reads them: whole (readFile, which
+-- counts) or through a handle a piece at a time (open), as securefs gives.
 local FILES = {}
+local wholeReads = 0   -- whole-file reads of anything but the driver itself
 local F = {
   exists   = function(p) return FILES[p] ~= nil end,
-  readFile = function(p) return FILES[p] end,
+  readFile = function(p)
+    if p ~= "/usr/lib/blockfs.lua" and FILES[p] then wholeReads = wholeReads + 1 end
+    return FILES[p]
+  end,
   size     = function(p) return FILES[p] and #FILES[p] or 0 end,
+  open     = function(p)
+    local s = FILES[p]
+    if not s then return nil, "no such file" end
+    local pos = 1
+    return {
+      read  = function(_, n)
+        if pos > #s then return nil end
+        local c = s:sub(pos, pos + n - 1); pos = pos + n; return c
+      end,
+      close = function() return true end,
+    }
+  end,
 }
 local function manifestOf(n, size, dirs)
   FILES = { ["/usr/lib/blockfs.lua"] = blockfsSrc }
@@ -185,6 +205,38 @@ do
     text:find("Sizing the inode table", 1, true) == nil)
   test("C: it asked once", asked == 1, "asked " .. asked)
   test("C: the install was written", text:find("TBFS install written", 1, true) ~= nil, text)
+end
+
+-- ── D. Big files: copied in pieces, and arrive intact ──────────────
+print("\n-- D: files larger than one piece --")
+do
+  local m = manifestOf(6, 10000, { "/tos/kernel" })
+  for i, e in ipairs(m) do   -- distinct bytes, so a misplaced piece would show
+    FILES[e.path] = (("%d:"):format(i) .. string.rep("abcdefghij", 1000)):sub(1, 10000)
+  end
+  local d = fakeDrive(2 * 1024 * 1024)
+  DRIVES = { ["dddd4444"] = d }
+  wholeReads = 0
+  local ok, err, text = deploy("dddd")
+  test("D: the install was written", ok and text:find("TBFS install written", 1, true) ~= nil, text or err)
+  test("D: no OS file was read whole", wholeReads == 0, wholeReads .. " whole reads")
+  local p = blockfs.mount(d, {})
+  local same = 0
+  for _, e in ipairs(m) do
+    local h = p and p.open(e.path, "r")
+    if h then
+      local parts = {}
+      while true do
+        local c = p.read(h, 4096)
+        if not c then break end
+        parts[#parts + 1] = c
+      end
+      p.close(h)
+      if table.concat(parts) == FILES[e.path] then same = same + 1 end
+    end
+  end
+  test("D: every 10 KB file on the drive matches its source, byte for byte", same == #m, same .. "/" .. #m)
+  if p then p.unmount() end
 end
 
 print(string.format("\n%d passed, %d failed", passed, failed))

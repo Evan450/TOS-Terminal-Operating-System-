@@ -40,12 +40,20 @@ function M.builder(S)
       -- component, no computer, no fs — a program gets arithmetic and
       -- its own stdout, which is the correct amount of authority to
       -- grant when the thing that enforces authority did not load.
+      --! #SEC (pentest, Sep 2026) — and its OWN copies of math/string/table,
+      --! with no getmetatable. This handed over the real libraries and the
+      --! real getmetatable, so getmetatable("").__index was the VM-wide
+      --! string library: `string.format = f` ran f inside the kernel on its
+      --! next log line. It is also the path taken when kernel.sandbox fails
+      --! to load -- which on a 192 KB box can simply be memory -- and the
+      --! failure is cached for the life of the shell.
+      local function copy(t) local c = {}; for k, v in pairs(t) do c[k] = v end; return c end
       local env = {
         assert = assert, error = error, pcall = pcall, xpcall = xpcall,
         type = type, tostring = tostring, tonumber = tonumber,
         pairs = pairs, ipairs = ipairs, next = next, select = select,
-        setmetatable = setmetatable, getmetatable = getmetatable,
-        math = math, string = string, table = table,
+        setmetatable = setmetatable,
+        math = copy(math), string = copy(string), table = copy(table),
         print = opts.stdout or print,
       }
       env._G = env

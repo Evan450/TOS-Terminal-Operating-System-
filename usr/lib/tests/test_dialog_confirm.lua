@@ -102,6 +102,10 @@ do
     if not src then local h = io.open(p, "rb"); if h then src = h:read("*a"); h:close() end end
     if src then break end
   end
+  -- A Windows checkout with core.autocrlf (git's default there, and there
+  -- is no .gitattributes) hands us CRLF; the source scans below match
+  -- across lines. Normalise, or a fresh clone is red before any change.
+  if src then src = src:gsub("\r\n", "\n") end
   test("dialogs.lua readable", src ~= nil)
   if src then
     local body = src:match("function M%.confirmTyped.-\nend\n") or src
@@ -221,7 +225,7 @@ do
   local function slurp(rel)
     for _, pre in ipairs({ "", "../", "../../", "../../../" }) do
       local h = io.open(pre .. rel, "rb")
-      if h then local s = h:read("*a"); h:close(); return s end
+      if h then local s = h:read("*a"); h:close(); return (s:gsub("\r\n", "\n")) end
     end
   end
   local admin  = slurp("tos/shell/panels/commands/admin.lua")

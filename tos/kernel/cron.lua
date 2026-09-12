@@ -162,6 +162,22 @@ function cron.add(name, intervalSec, script, opts)
     return nil, "cron: tier " .. tostring(callerTier) ..
       " cannot schedule jobs as '" .. tostring(actorUser) .. "'"
   end
+  --! #SEC (pentest, Sep 2026) — nor as a user who OUTRANKS you. ADMIN was the
+  --! whole bar, so a tier-2 admin could set opts.user = "root" and the job ran
+  --! as root at tick time (sessionForJob mints the actor's own session): the
+  --! same ADMIN-to-root escalation the service-install gate closes. You may
+  --! schedule as an account only if you at least match its tier, so scheduling
+  --! as root needs root. (test_cron_actor_tier.lua)
+  if actorUser ~= callerUser then
+    local okU, usersmod = pcall(require, "kernel.users")
+    local rec = okU and usersmod and usersmod.getUser and usersmod.getUser(actorUser)
+    local actorTier = type(rec) == "table" and rec.tier or nil
+    if type(actorTier) == "number" and actorTier > callerTier then
+      return nil, "cron: tier " .. tostring(callerTier)
+        .. " cannot schedule jobs as '" .. tostring(actorUser)
+        .. "' (that account outranks you)"
+    end
+  end
 
   -- #SEC H12 — if `script` is a path, validate canRead AT INSERTION
   -- time as the caller (not the actor). A USER scheduling a job as

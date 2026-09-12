@@ -1890,6 +1890,10 @@ return function(C, S, deps)
       -- Build sandboxed env with custom print for background output
       local taskEnv = makeProgramEnv{ name = args[1], stdout = bgPrint }
       local taskFn = load(data, "=" .. args[1], "t", taskEnv)
+      -- #MEM — the source was only needed to compile it; as an upvalue of
+      -- this closure it would otherwise stay resident for as long as the
+      -- task runs.
+      data = nil
       if taskFn then
         local tok, terr = pcall(taskFn, table.unpack(runArgs))
         if not tok then
@@ -2319,9 +2323,16 @@ return function(C, S, deps)
       o("EEPROM detected.", T.highlight)
     end
     local eeprom = component.proxy(eepromAddr)
+    local maxSize = eeprom.getSize()
+    -- #MEM — measured before it is read: an EEPROM holds 4 KB, and reading
+    -- a large file whole only to refuse it could run the machine out.
+    local sz = F.size and F.size(path)
+    if type(sz) == "number" and sz > maxSize then
+      o(string.format("File too large: %d bytes (EEPROM max: %d)", sz, maxSize), T.error)
+      return
+    end
     local data, err = F.readFile(path)
     if not data then o("Cannot read: " .. tostring(err), T.error); return end
-    local maxSize = eeprom.getSize()
     if #data > maxSize then
       o(string.format("File too large: %d bytes (EEPROM max: %d)", #data, maxSize), T.error)
       return

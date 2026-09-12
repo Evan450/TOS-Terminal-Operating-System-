@@ -74,6 +74,37 @@ local function validatePassword(pw)
   return true
 end
 
+--! #SEC (pentest, Sep 2026) — a tier is one of four numbers. create() and
+--! setTier() stored whatever they were handed: a 99 made an account that
+--! every `tier >= ROOT` test treats as root, and a string raised on the
+--! first comparison, halfway through the mutation.
+local VALID_TIER = {
+  [TIER.GUEST] = true, [TIER.USER] = true, [TIER.ADMIN] = true, [TIER.ROOT] = true,
+}
+
+--! #SEC (pentest, Sep 2026) — nobody changes an account that outranks
+--! them. setTier already refused to GRANT root to a non-root caller, yet an
+--! admin could reset root's password ("admins can change anyone's"), lock
+--! root, or demote or delete any other root-tier account -- each of them
+--! root with extra steps. The shell gates useradd/userdel/usermod at root;
+--! this is the kernel API holding the same line.
+local function outranks(targetRec, actorTier)
+  return type(targetRec) == "table" and type(targetRec.tier) == "number"
+    and type(actorTier) == "number" and targetRec.tier > actorTier
+end
+
+--! #SEC (pentest, Sep 2026) — the login screen's principal manages no
+--! accounts. The carve-outs below that honour a caller-named `actor` for
+--! synthetic sessions exist for kernel code and for the first-boot password
+--! change, and they let anything running as the login principal name
+--! "root" as its actor: create a root account, reset any password, lock
+--! anyone. That principal is guest-tier precisely so a compromised login
+--! UI holds nothing (#135); it may change its OWN password, with the old
+--! one, and that is all.
+local function isLoginPrincipal(sess)
+  return type(sess) == "table" and sess.isLogin == true
+end
+
 -- #SEC H-5 — login backoff. The literal "root" account is exempt from
 -- the permanent auto-lock (it is the rescue account), which previously
 -- meant an attacker could brute-force root online with unlimited,
@@ -443,6 +474,7 @@ function users.create(creator, username, password, tier)
   -- it MUST match (or be subordinate to) the session's user. Boot code
   -- runs under the synthetic _kernel_ root session and so always passes.
   local sess = users.currentSession()
+  if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
   if sess and not sess.isKernel and not sess.isLogin then
     -- A real session: ignore `creator` and use the session's principal.
     creator = sess.user
@@ -476,12 +508,23 @@ function users.create(creator, username, password, tier)
   if userDB[username] then
     return false, "Username already exists"
   end
+  --! #SEC (pentest, Sep 2026) — nor as another case of an existing name.
+  --! On a Windows or macOS host the disk folds case, so "Alice" and
+  --! "alice" would share /home/alice and /var/mail/alice, each the
+  --! other's owner by every rule in checkAccess.
+  local folded = username:lower()
+  for existing in pairs(userDB) do
+    if type(existing) == "string" and existing:lower() == folded then
+      return false, "Username already exists"
+    end
+  end
 
   -- Validate password (#SEC L — centralized policy)
   local okPw, pwErr = validatePassword(password)
   if not okPw then return false, pwErr end
 
   tier = tier or TIER.USER
+  if not VALID_TIER[tier] then return false, "Invalid tier" end
 
   -- Can't create root-level users
   if tier >= TIER.ROOT and (not creator or creator ~= "root") then
@@ -528,6 +571,7 @@ end
 function users.delete(actor, username)
   -- #SEC C8: session takes precedence over caller-supplied `actor`.
   local sess = users.currentSession()
+  if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
   if sess and not sess.isKernel and not sess.isLogin then
     actor = sess.user
     if sess.tier < TIER.ADMIN then
@@ -543,6 +587,9 @@ function users.delete(actor, username)
   end
   if not userDB[username] then
     return false, "User not found"
+  end
+  if outranks(userDB[username], actorUser.tier) then
+    return false, "Cannot delete an account that outranks you"
   end
 
   -- Invalidate sessions BEFORE saving the DB: even if saveDB fails,
@@ -598,12 +645,20 @@ function users.changePassword(actor, username, oldPassword, newPassword)
   if sess and not sess.isKernel and not sess.isLogin then
     actor = sess.user
   end
+  -- The login principal changes only its own password, with the old one.
+  if isLoginPrincipal(sess) and actor ~= username then
+    return false, "Insufficient privileges"
+  end
 
-  -- Users can change their own password, admins can change anyone's
+  -- Users can change their own password; admins can change the password
+  -- of any account that does not outrank them.
   local actorUser = userDB[actor]
   if actor ~= username then
     if not actorUser or actorUser.tier < TIER.ADMIN then
       return false, "Insufficient privileges"
+    end
+    if outranks(user, actorUser.tier) then
+      return false, "Cannot change the password of an account that outranks you"
     end
   else
     -- Verify old password for self-change
@@ -657,6 +712,7 @@ end
 function users.setTier(actor, username, newTier)
   -- #SEC C8: see users.create. Session is canonical.
   local sess = users.currentSession()
+  if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
   if sess and not sess.isKernel and not sess.isLogin then
     actor = sess.user
     if sess.tier < TIER.ADMIN then return false, "Insufficient privileges" end
@@ -671,8 +727,12 @@ function users.setTier(actor, username, newTier)
   if username == "root" then
     return false, "Cannot change root tier"
   end
+  if not VALID_TIER[newTier] then return false, "Invalid tier" end
   local user = userDB[username]
   if not user then return false, "User not found" end
+  if outranks(user, effTier) then
+    return false, "Cannot change the tier of an account that outranks you"
+  end
 
   -- Only ROOT-effective callers may grant ROOT (an ADMIN — stored or
   -- elevated-capped-at-admin — cannot).
@@ -705,6 +765,7 @@ end
 function users.setLocked(actor, username, locked)
   -- #SEC C8: session is canonical.
   local sess = users.currentSession()
+  if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
   if sess and not sess.isKernel and not sess.isLogin then
     actor = sess.user
     if sess.tier < TIER.ADMIN then return false, "Insufficient privileges" end
@@ -715,6 +776,9 @@ function users.setLocked(actor, username, locked)
   end
   local user = userDB[username]
   if not user then return false, "User not found" end
+  if outranks(user, actorUser.tier) then
+    return false, "Cannot lock or unlock an account that outranks you"
+  end
   -- #SEC M-20 — refuse to lock the last usable administrator (this
   -- includes locking root when it is the only unlocked privileged
   -- account), which would otherwise lock out all administration.
@@ -1177,67 +1241,107 @@ local SHADOW_PATHS = {
   ["/var/shadow"]    = true,
 }
 
--- Internal: access check that takes an explicit session. This is the
--- canonical implementation; users.canAccess() is a thin back-compat
--- wrapper that resolves the current session itself.
-local function checkAccess(session, path, mode)
-  -- No session = no access (except during boot)
-  if not session then
-    return false, "Not logged in"
-  end
+--! #SEC (pentest, Sep 2026) — secrets at rest that the generic rule below
+--! ("/etc and /var: read OK for any session") handed to every logged-in
+--! account, guest included. READ needs ADMIN; writes keep their normal
+--! rules (and the kernel writes all of these through the raw fs anyway).
+--!   /etc/elevate.dat  the sudo password's salt+hash; cracking it offline
+--!                     is elevation to whatever cap root configured
+--!   /etc/trust.dat    every paired peer's shared secret, in the clear
+--!   /etc/entropy      the software RNG pool, re-exported ~1/s: reading it
+--!                     predicts the salts/tokens/nonces a card-less box mints
+--!   /etc/cluster-manager.cfg  worker_bridge_secret
+local ADMIN_READ_PATHS = {
+  ["/etc/elevate.dat"]         = true,
+  ["/etc/trust.dat"]           = true,
+  ["/etc/entropy"]             = true,
+  ["/etc/cluster-manager.cfg"] = true,
+}
+--! Whole trees, same rule:
+--!   /var/log          the log ring hides auth/users/trust/securefs entries
+--!                     from USER tier; the file it flushes to did not
+--!   /var/crash        post-mortems (the `crash` command is admin-only)
+--!   /var/swap         whatever any program paged out
+--!   /var/pkg/secrets  per-package machine secrets: crypto.secret() is
+--!                     admin-gated, the file behind it was not
+--!   /var/lib/mesh     mesh messages awaiting delivery; one sent with
+--!                     allowPlaintext is stored as it was written
+local ADMIN_READ_TREES = { "/var/log", "/var/crash", "/var/swap", "/var/pkg/secrets", "/var/lib/mesh" }
+--! fs.writeFileAtomic stages every save as <path>.tos-tmp. The staged copy
+--! holds the same bytes, so it takes the same rule: it sits there for the
+--! whole write, and after a crash until the next boot repairs it.
+local ATOMIC_TMP_SUFFIX = "%.tos%-tmp$"
 
-  -- Root can do anything
-  if session.tier >= TIER.ROOT then
-    return true
+--! #SEC (pentest, Sep 2026) — the rules below match exact strings, and the
+--! disk under them does not always. OpenComputers' default (buffered)
+--! filesystem goes case-INSENSITIVE on a Windows or macOS host: it probes
+--! the save directory with oc_rox / OC_ROX, then resolves every path
+--! segment with Java's toLowerCase. So "/ETC/USERS.DAT" opened the shadow
+--! file while these rules saw an unknown path and applied the default --
+--! any USER may read -- and "/Home/bob", "/VAR/MAIL/bob" and "/Var/Log"
+--! fell through the same way; an ADMIN could write "/ETC/USERS.DAT",
+--! which is ROOT's alone. toLowerCase also folds the Kelvin sign (U+212A)
+--! to "k", and under a Turkish locale U+0130 to "i". A Windows host drops
+--! a trailing dot or space from a name, too ("/etc./users.dat").
+--!
+--! pathKey folds every spelling the disk may treat as one file to a single
+--! form. checkAccess decides on the path as written AND on its key, and
+--! grants only when both do: the key can take access away, never add it,
+--! so a case-sensitive host loses nothing. (test_path_acl_properties.lua)
+local function pathKey(p)
+  if not p:find("[%u\128-\255]") and not p:find("[%. ]/") and not p:find("[%. ]$") then
+    return p
   end
+  local k = p:gsub("\226\132\170", "k"):gsub("\196\176", "i"):lower()
+  k = (k .. "/"):gsub("[%. ]+/", "/"):gsub("//+", "/")
+  if #k > 1 then k = k:sub(1, -2) end
+  return k
+end
+users.pathKey = pathKey   -- securefs folds its protected set the same way
 
-  -- #SEC H11 — canonicalize the path BEFORE any prefix/ACL matching.
-  -- The old code only guaranteed a leading slash and left ".."/"." in
-  -- place. securefs normalizes before it calls us, but the public
-  -- users.canAccess / users.canAccessAs entry points do NOT — so a
-  -- direct caller could pass "/home/<me>/../../etc/users.dat": the
-  -- home-prefix branch below would match "<me>" and grant access while
-  -- the real target was the shadow file. Resolve the path to its true
-  -- target here and fail closed on anything that isn't a usable string.
-  if type(path) ~= "string" or path == "" then
-    path = "/"
-  end
-  if fs and fs.normalize then
-    path = fs.normalize(path)
-  else
-    -- Self-contained fallback for early boot before fs is wired in.
-    path = path:gsub("\\", "/")
-    if path:find("\0", 1, true) then
-      path = "/"
-    else
-      if path:sub(1, 1) ~= "/" then path = "/" .. path end
-      local parts = {}
-      for seg in path:gmatch("[^/]+") do
-        if seg == ".." then parts[#parts] = nil
-        elseif seg ~= "." then parts[#parts + 1] = seg end
-      end
-      path = "/" .. table.concat(parts, "/")
-    end
-  end
+-- Helper: check if path is exactly prefix or starts with prefix/
+local function pathUnder(p, prefix)
+  return p == prefix or p:sub(1, #prefix + 1) == prefix .. "/"
+end
 
+-- System paths (read-only for non-admin; admin+ may write).
+-- Kept in rough sync with securefs REMOVE_PROTECTED so users can't
+-- shadow or rewrite OS binaries via paths the ACL doesn't cover.
+local SYSTEM_PATHS = { "/tos", "/etc", "/var", "/usr" }
+
+-- The rules, on a normalised path. `user` is the name a home directory or
+-- mailbox must carry to be the caller's own.
+local function decide(session, path, mode, user)
   -- World-readable carve-outs (read only)
   if mode == "r" and WORLD_READABLE[path] then
     return true
   end
 
+  -- The rules below also cover an atomic save's staged copy.
+  local basePath = (path:gsub(ATOMIC_TMP_SUFFIX, ""))
+
   -- #SEC H7: shadow files require ADMIN tier for read, ROOT for write.
   -- Checked BEFORE the generic /etc system-path branch (which would
   -- otherwise return true for any read by any logged-in user).
-  if SHADOW_PATHS[path] then
+  if SHADOW_PATHS[basePath] then
     if mode == "r" then
       return session.tier >= TIER.ADMIN, "Shadow file (admin required)"
     end
     return session.tier >= TIER.ROOT, "Shadow file (root required)"
   end
 
-  -- Helper: check if path is exactly prefix or starts with prefix/
-  local function pathUnder(p, prefix)
-    return p == prefix or p:sub(1, #prefix + 1) == prefix .. "/"
+  -- #SEC (pentest, Sep 2026) — secrets at rest; see ADMIN_READ_PATHS.
+  -- Checked before the /var/mail and generic system-path branches, both
+  -- of which would say "read OK".
+  if mode == "r" then
+    if ADMIN_READ_PATHS[basePath] then
+      return session.tier >= TIER.ADMIN, "Secret-bearing file (admin required)"
+    end
+    for _, tree in ipairs(ADMIN_READ_TREES) do
+      if pathUnder(path, tree) then
+        return session.tier >= TIER.ADMIN, "Admin-only area (admin required)"
+      end
+    end
   end
 
   -- #SEC — /var/mail/<username> is PRIVATE to its owner (+ADMIN).
@@ -1249,7 +1353,7 @@ local function checkAccess(session, path, mode)
   -- securefs); writes keep the system-path posture (ADMIN+).
   local mailUser = path:match("^/var/mail/([^/]+)")
   if mailUser then
-    if session.user ~= mailUser and session.tier < TIER.ADMIN then
+    if user ~= mailUser and session.tier < TIER.ADMIN then
       return false, "Access denied: not your mailbox"
     end
     if mode == "w" then
@@ -1258,11 +1362,8 @@ local function checkAccess(session, path, mode)
     return true
   end
 
-  -- System paths (read-only for non-admin; admin+ may write).
-  -- Kept in rough sync with securefs REMOVE_PROTECTED so users can't
-  -- shadow or rewrite OS binaries via paths the ACL doesn't cover.
-  local systemPaths = {"/tos", "/etc", "/var", "/usr"}
-  for _, sp in ipairs(systemPaths) do
+  -- System paths: SYSTEM_PATHS, above.
+  for _, sp in ipairs(SYSTEM_PATHS) do
     if pathUnder(path, sp) then
       if mode == "w" then
         return session.tier >= TIER.ADMIN, "System path (admin required)"
@@ -1287,7 +1388,7 @@ local function checkAccess(session, path, mode)
   -- /home/<username> - only the owner (or admin+)
   local homeMatch = path:match("^/home/([^/]+)")
   if homeMatch then
-    if homeMatch == session.user then
+    if homeMatch == user then
       return true  -- Own home directory
     end
     if session.tier >= TIER.ADMIN then
@@ -1306,6 +1407,67 @@ local function checkAccess(session, path, mode)
     return session.tier >= TIER.ADMIN, "Admin privileges required"
   end
   return session.tier >= TIER.USER, "User account required"
+end
+
+-- Internal: access check that takes an explicit session. This is the
+-- canonical implementation; users.canAccess() is a thin back-compat
+-- wrapper that resolves the current session itself.
+local function checkAccess(session, path, mode)
+  -- No session = no access (except during boot)
+  if not session then
+    return false, "Not logged in"
+  end
+
+  -- #SEC H11 — canonicalize the path BEFORE any prefix/ACL matching.
+  -- The old code only guaranteed a leading slash and left ".."/"." in
+  -- place. securefs normalizes before it calls us, but the public
+  -- users.canAccess / users.canAccessAs entry points do NOT — so a
+  -- direct caller could pass "/home/<me>/../../etc/users.dat": the
+  -- home-prefix branch would match "<me>" and grant access while the
+  -- real target was the shadow file. Resolve the path to its true
+  -- target here.
+  --! #SEC (pentest, Sep 2026) — and fail closed on anything that is not
+  --! a usable path, which this comment promised and the code did not do:
+  --! a non-string became "/", which any USER may read, so canAccessAs(s,
+  --! 42, "r") said yes, and a NUL byte made fs.normalize return nil and
+  --! the rules raise. nil and "" still mean "/", as in fs.normalize.
+  --! Checked before the root shortcut, so root gets the same answer.
+  if path == nil or path == "" then
+    path = "/"
+  elseif type(path) ~= "string" then
+    return false, "Invalid path"
+  elseif fs and fs.normalize then
+    path = fs.normalize(path)
+  elseif path:find("\0", 1, true) then
+    path = nil
+  else
+    -- Self-contained fallback for early boot before fs is wired in.
+    path = path:gsub("\\", "/")
+    if path:sub(1, 1) ~= "/" then path = "/" .. path end
+    local parts = {}
+    for seg in path:gmatch("[^/]+") do
+      if seg == ".." then parts[#parts] = nil
+      elseif seg ~= "." then parts[#parts + 1] = seg end
+    end
+    path = "/" .. table.concat(parts, "/")
+  end
+  if not path then return false, "Invalid path" end
+
+  -- Root can do anything
+  if session.tier >= TIER.ROOT then
+    return true
+  end
+
+  -- The path as written, then as the disk may fold it (pathKey, above).
+  local ok, why = decide(session, path, mode, session.user)
+  if not ok then return false, why end
+  local key = pathKey(path)
+  if key ~= path then
+    local u = session.user
+    ok, why = decide(session, key, mode, type(u) == "string" and u:lower() or nil)
+    if not ok then return false, why end
+  end
+  return true
 end
 
 --- Check if an explicit session can access a path.

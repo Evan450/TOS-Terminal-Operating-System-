@@ -201,6 +201,15 @@ end
 -- ============================================================
 local indexCache = {}   -- repoName -> { at = uptime, index = table }
 
+--! #SEC / #MEM (pentest, Sep 2026) — the byte bound was the only one. A
+--! 128 KB index of "{{},{},...}" built 805 KB of tables before the decoder's
+--! per-table entry cap stopped it, and "{{{}},...}" 1.5 MB: whoever runs a
+--! configured repo could take down every machine that ran `pkg search`
+--! against it. The budget stops either at 64 KB of heap; the largest real
+--! index (Optional Utilities', 8.6 KB) is charged 26 KB of it.
+--! (test_untrusted_index_budget.lua)
+local MAX_INDEX_COST = 64 * 1024
+
 --- Fetch and parse a repo's programs.cfg. Cached for the session so a
 --- multi-package install doesn't re-download the index per package.
 --- Returns index, err.
@@ -220,7 +229,8 @@ function pkgremote.index(repo, opts)
   --! bound — never `load()`ed. A repo index is a table written by a
   --! stranger; running it as Lua would be handing them the machine before
   --! they had even shipped a package.
-  local ok, raw = pcall(serialize.decode, body, { maxBytes = MAX_INDEX_BYTES })
+  local ok, raw = pcall(serialize.decode, body, { maxBytes = MAX_INDEX_BYTES,
+    maxCost = MAX_INDEX_COST, maxKeys = 1024 })
   if not ok or type(raw) ~= "table" then
     return nil, "repo '" .. repo.name .. "' returned an index that is not a table"
   end
