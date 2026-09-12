@@ -58,10 +58,31 @@ local MAX_DECODE_DEPTH = MAX_DEPTH
 
 local MAX_TABLE_ENTRIES = 10000
 
-local function makeParser(str)
+--! #SEC / #MEM (pentest, Sep 2026) — an optional whole-decode budget, for
+--! input nobody vouches for. protocol.deserialize decodes every packet
+--! from every peer, BLOCKED ones included, before its trust is checked,
+--! and the caps above are per table and generous: 8 KB of "{{},{},...}"
+--! passed all of them while building 2730 tables -- 215 KB of heap, more
+--! than a 192 KB machine has. opts.maxCost charges what the decoded value
+--! will hold, weighted from Lua 5.3's sizes (a table ~56 bytes, an array
+--! slot 16 with growth slack, a hash node 32, a short string 24 plus its
+--! length), and stops the parse once the sum passes the cap. opts.maxKeys
+--! caps DISTINCT string keys: a field name repeated on every row is paid
+--! for once, while a flood of different keys stops early. Without opts
+--! nothing changes. (test_net_decode_budget.lua)
+local COST_TABLE, COST_ITEM, COST_KEYED, COST_STRING = 72, 32, 48, 32
+
+local function makeParser(str, opts)
   local pos = 1
   local len = #str
   local depth = 0
+  local budget  = opts and opts.maxCost
+  local maxKeys = opts and opts.maxKeys
+  local cost, keyCount, keySeen = 0, 0, nil
+  local function charge(n)
+    cost = cost + n
+    if cost > budget then error("Decode budget exceeded (" .. budget .. ")") end
+  end
 
   local function skipWhitespace()
     while pos <= len do
@@ -141,13 +162,30 @@ local function makeParser(str)
       error("Expected string at position " .. pos)
     end
     pos = pos + 1
-    local parts = {}
-    while pos <= len do
-      local ch = str:sub(pos, pos)
-      if ch == quote then
-        pos = pos + 1
+    --! #MEM (pentest, Sep 2026) — copy RUNS of ordinary characters, not
+    --! single bytes. Every byte used to become its own slot in a fresh
+    --! parts table (16 bytes a slot, plus the copies as it grew), so
+    --! decoding cost 16-26x the input: an 8 KB string in a packet took
+    --! ~138 KB of heap, and every packet from every peer, UNKNOWN ones
+    --! included, is decoded before its trust is checked. A string with no
+    --! escapes is now one sub(); only an escape adds a part.
+    --! (test_serialize_alloc.lua)
+    local stopAt = (quote == '"') and '["\\]' or "['\\]"
+    local parts = nil
+    while true do
+      local e = str:find(stopAt, pos)
+      if not e then pos = len + 1; break end
+      local run = (e > pos) and str:sub(pos, e - 1) or nil
+      if str:byte(e) ~= 92 then
+        pos = e + 1
+        if not parts then return run or "" end
+        if run then parts[#parts + 1] = run end
         return table.concat(parts)
-      elseif ch == "\\" then
+      end
+      parts = parts or {}
+      if run then parts[#parts + 1] = run end
+      pos = e
+      do
         pos = pos + 1
         if pos > len then error("Unterminated escape") end
         local esc = str:sub(pos, pos)
@@ -179,9 +217,6 @@ local function makeParser(str)
         else
           parts[#parts+1] = esc
         end
-        pos = pos + 1
-      else
-        parts[#parts+1] = ch
         pos = pos + 1
       end
     end
@@ -260,6 +295,7 @@ local function makeParser(str)
     if depth > MAX_DECODE_DEPTH then
       error("Max table nesting depth exceeded (" .. MAX_DECODE_DEPTH .. ")")
     end
+    if budget then charge(COST_TABLE) end
     local tbl = {}
     local arrayIdx = 1
     local entries = 0
@@ -270,6 +306,7 @@ local function makeParser(str)
         error("Max table entries exceeded (" .. MAX_TABLE_ENTRIES .. ")")
       end
       local key, val
+      local isItem = false
 
       if peek() == "[" then
         consume("[")
@@ -291,11 +328,27 @@ local function makeParser(str)
           val = parseValue()
           key = arrayIdx
           arrayIdx = arrayIdx + 1
+          isItem = true
         end
       end
 
       if key ~= nil and rawget(tbl, key) ~= nil then
         error("Duplicate key in table literal at position " .. pos)
+      end
+      if budget then
+        charge(isItem and COST_ITEM or COST_KEYED)
+        if type(val) == "string" then charge(COST_STRING + #val) end
+        if type(key) == "string" then
+          keySeen = keySeen or {}
+          if not keySeen[key] then
+            keySeen[key] = true
+            keyCount = keyCount + 1
+            if maxKeys and keyCount > maxKeys then
+              error("Too many distinct keys (" .. maxKeys .. ")")
+            end
+            charge(COST_STRING + 32 + #key)
+          end
+        end
       end
       tbl[key] = val
 
@@ -360,9 +413,10 @@ function serialize.decode(str, opts)
   end
 
   if str:match("^%s*$") then return nil, "empty input" end
-  local data = str:match("^%s*return%s+(.+)$") or str
+
+  local data = str
   local ok, result = pcall(function()
-    local parser = makeParser(data)
+    local parser = makeParser(data, opts)
     return parser.parse()
   end)
   if not ok then return nil, tostring(result) end

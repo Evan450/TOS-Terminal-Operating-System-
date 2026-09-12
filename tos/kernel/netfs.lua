@@ -237,7 +237,19 @@ function netfs._dispatch(op, p, fromAddr)
 
   if op == "open" then
     local mode = p.mode or "r"
-    local wantWrite = mode:find("[wa+]") ~= nil
+    --! #SEC (pentest, Sep 2026) — the mode comes off the wire, so only the
+    --! six OpenComputers accepts get through, and only a WRITE mode counts as
+    --! a write. The old test searched for w/a/+ and called everything else a
+    --! read: mode "x" on a READ-ONLY export passed the access check, and a
+    --! TBFS-backed export (blockfs opens every mode but "r" writable, and
+    --! creates the file) handed the peer a writer. A non-string mode raised.
+    --! Same closed set as securefs.open. (test_netfs_open_mode.lua)
+    local READ_MODES  = { r = true, rb = true }
+    local WRITE_MODES = { w = true, wb = true, a = true, ab = true }
+    if type(mode) ~= "string" or not (READ_MODES[mode] or WRITE_MODES[mode]) then
+      return { err = "bad_mode" }
+    end
+    local wantWrite = WRITE_MODES[mode] == true
     local e = netfs._findExport(p.share)
     local ok, err = netfs._accessOk(e, fromAddr, wantWrite)
     if not ok then return { err = err } end

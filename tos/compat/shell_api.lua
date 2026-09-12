@@ -9,6 +9,8 @@ local workingDir = "/"
 
 local aliases = {}
 
+local UNSAFE_PREFIXES = { "/mnt/", "/tmp/", "/public/", "/home/" }
+
 local function getPathDirs(process)
   local path = env.read(process, "PATH") or "/usr/bin:/bin"
   local dirs = {}
@@ -62,9 +64,14 @@ function shell.execute(command, ...)
 
   local resolvedViaPath = (command:sub(1, 1) ~= "/")
   if resolvedViaPath then
-    local UNSAFE_PREFIXES = { "/mnt/", "/tmp/", "/public/", "/home/" }
+    --! #SEC (pentest, Sep 2026) — compared as the disk resolves it. On a
+    --! Windows or macOS host "/TMP/x" is /tmp/x, so a PATH entry spelled
+    --! that way ran a planted file. users.pathKey folds case and a
+    --! trailing dot, the same key the ACL checks.
+    local users = _G._TOS and _G._TOS.users
+    local key = (users and users.pathKey) and users.pathKey(path) or path:lower()
     for _, p in ipairs(UNSAFE_PREFIXES) do
-      if path:sub(1, #p) == p then
+      if key:sub(1, #p) == p then
         return false, "Refusing to PATH-resolve to user-writable location: " .. path
       end
     end

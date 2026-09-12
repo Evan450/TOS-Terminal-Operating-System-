@@ -22,6 +22,10 @@ local function isSensitive(name)
   return type(name) == "string" and SENSITIVE_SIGNALS[name] == true
 end
 
+local UNPUSHABLE_INPUT = {
+  touch = true, drag = true, drop = true, scroll = true,
+}
+
 function event.pull(...)
   local args = table.pack(...)
   local timeout = math.huge
@@ -120,7 +124,9 @@ end
 
 function event.push(name, ...)
 
-  if isSensitive(name) then return false, "signal '" .. tostring(name) .. "' cannot be pushed by user programs" end
+  if isSensitive(name) or (type(name) == "string" and UNPUSHABLE_INPUT[name]) then
+    return false, "signal '" .. tostring(name) .. "' cannot be pushed by user programs"
+  end
   kEvent.push(name, ...)
   return true
 end

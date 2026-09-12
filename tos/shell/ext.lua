@@ -333,6 +333,16 @@ function X.net(a,ctx)
     local CP = NM.getChatPair and NM.getChatPair() or nil
     if not CP then ctx.o("chat-pair unavailable",0xFF0000) return end
     local sub2 = a[2]
+    --! #SEC (pentest, Sep 2026) — opening a pairing window or completing a
+    --! pair INSTALLS A SHARED SECRET, which trust.setSecret reserves for
+    --! ADMIN -- but chatpair calls it as the kernel, and `net` is a tier-1
+    --! command. Every other trust-changing `net` subcommand hands the
+    --! caller's tier to the trust manager; this one checked nothing, so a
+    --! plain user could key this machine to a peer. `status` stays open.
+    if sub2 ~= "status" then
+      local _, tier = getActor(ctx)
+      if (tier or 0) < 2 then ctx.o("net pair requires admin",0xFF0000) return end
+    end
     if sub2 == "start" then
       local code, expiresAt = CP.startWindow()
       if not code then

@@ -326,6 +326,49 @@ function fs.recoverAtomic(paths)
   return recovered, cleaned
 end
 
+--! #MEM (pentest, Sep 2026) — copy a FILE a block at a time. fs.copy read
+--! the whole source into one string (holding every chunk AND the joined
+--! copy while readFile concatenated) and wrote it back out, so copying a
+--! file needed its size in heap, more than once: a 150 KB file could not be
+--! copied on a 256 KB machine at all, and `cp` of a big log could take the
+--! kernel down with it. This holds one 4 KB block. Copying a path onto
+--! itself is a no-op, because opening the destination "w" would truncate
+--! the source before the first read. (test_fs_copy_stream.lua)
+local COPY_BLOCK = 4096
+function fs.copyFile(src, dst)
+  src = fs.normalize(src)
+  dst = fs.normalize(dst)
+  if not src or not dst then return false, "invalid path" end
+  if src == dst then return true end
+  local sProxy, sRel = resolve(src)
+  local dProxy, dRel = resolve(dst)
+  if not sProxy or not dProxy then return false, "No filesystem" end
+  local okE, exists = pcall(sProxy.exists, sRel)
+  if not okE or not exists then return false, "File not found: " .. src end
+  local dir = dRel:match("^(.+)/[^/]+$")
+  if dir and dir ~= "" then
+    local ok0, isDir = pcall(dProxy.isDirectory, dir)
+    if not ok0 or not isDir then pcall(dProxy.makeDirectory, dir) end
+  end
+  local hin, ierr = sProxy.open(sRel, "r")
+  if not hin then return false, ierr end
+  local hout, oerr = dProxy.open(dRel, "w")
+  if not hout then pcall(sProxy.close, hin); return false, oerr end
+  local ok, err = pcall(function()
+    while true do
+      local chunk = sProxy.read(hin, COPY_BLOCK)
+      if not chunk then return end
+      local okW, w, werr = pcall(dProxy.write, hout, chunk)
+      if not okW or w == false then error(tostring(werr or w or "write failed"), 0) end
+      coopYield()
+    end
+  end)
+  pcall(sProxy.close, hin)
+  pcall(dProxy.close, hout)
+  if not ok then return false, tostring(err) end
+  return true
+end
+
 function fs.copy(src, dst)
   src = fs.normalize(src)
   dst = fs.normalize(dst)
@@ -334,9 +377,7 @@ function fs.copy(src, dst)
   if fs.isDirectory(src) then
     return fs.copyRecursive(src, dst)
   end
-  local content, err = fs.readFile(src)
-  if not content then return false, err end
-  return fs.writeFile(dst, content)
+  return fs.copyFile(src, dst)
 end
 
 function fs.copyRecursive(src, dst)
@@ -352,7 +393,7 @@ function fs.copyRecursive(src, dst)
     return fs.copy(src, dst)
   end
 
-  if dst:sub(1, #src) == src and (#dst == #src or dst:sub(#src + 1, #src + 1) == "/") then
+  if src == "/" or dst == src or dst:sub(1, #src + 1) == src .. "/" then
     return false, "Cannot copy a directory into itself"
   end
 
@@ -377,13 +418,7 @@ function fs.copyRecursive(src, dst)
         local ok, err = fs.copyRecursive(srcPath, dstPath)
         if ok then copied = copied + 1 else failed = failed + 1 end
       else
-        local content = fs.readFile(srcPath)
-        if content then
-          local ok = fs.writeFile(dstPath, content)
-          if ok then copied = copied + 1 else failed = failed + 1 end
-        else
-          failed = failed + 1
-        end
+        if fs.copyFile(srcPath, dstPath) then copied = copied + 1 else failed = failed + 1 end
       end
     end
   end

@@ -1,11 +1,13 @@
 --! This shim reaches the internet card DIRECTLY, exactly as the OpenOS
 --! library does — an OpenOS program's `internet.request` is expected to
 --! stream, and routing it through kernel.internet's bounded string reader
---! would change its semantics. Reaching it at all still requires the
---! `internet` capability: without it the sandbox does not expose the
---! component type, `component.isAvailable("internet")` is false, and this
---! library reports no card. The capability is the gate; this file is the
---! shape.
+--! would change its semantics. The `internet` capability is the gate, and it
+--! is enforced where this module is REQUIRED: kernel.sandbox refuses
+--! `compat.internet` to a sandbox without the cap. It has to be there,
+--! because this file resolves the card through the kernel's own component
+--! library, not the sandbox's filtered one -- until the pentest (Sep 2026)
+--! the claim that the cap gated this was simply untrue. This file is the
+--! shape; it holds no authority check of its own.
 
 local component = require("component")
 

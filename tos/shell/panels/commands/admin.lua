@@ -1652,6 +1652,8 @@ return function(C, S, deps)
 
       local taskEnv = makeProgramEnv{ name = args[1], stdout = bgPrint }
       local taskFn = load(data, "=" .. args[1], "t", taskEnv)
+
+      data = nil
       if taskFn then
         local tok, terr = pcall(taskFn, table.unpack(runArgs))
         if not tok then
@@ -2053,9 +2055,15 @@ return function(C, S, deps)
       o("EEPROM detected.", T.highlight)
     end
     local eeprom = component.proxy(eepromAddr)
+    local maxSize = eeprom.getSize()
+
+    local sz = F.size and F.size(path)
+    if type(sz) == "number" and sz > maxSize then
+      o(string.format("File too large: %d bytes (EEPROM max: %d)", sz, maxSize), T.error)
+      return
+    end
     local data, err = F.readFile(path)
     if not data then o("Cannot read: " .. tostring(err), T.error); return end
-    local maxSize = eeprom.getSize()
     if #data > maxSize then
       o(string.format("File too large: %d bytes (EEPROM max: %d)", #data, maxSize), T.error)
       return

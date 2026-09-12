@@ -107,10 +107,11 @@ function M.run(S, deps)
     local fpath, f = selPath()
     if not (fpath and f) or f.dir then return end
     if not canRead(fpath) then return end
-    local content = F.readFile(fpath)
-    if not content then S.lastOut = { "Cannot read: " .. f.name, T.error }; return end
+
     local vbuf = { { " Viewing: " .. f.name, T.title } }
-    for l in content:gmatch("([^\n]*)\n?") do vbuf[#vbuf + 1] = { l, T.fg } end
+    local ok, shown, stopped = helpers.readLinesCapped(F, fpath, function(l) vbuf[#vbuf + 1] = { l, T.fg } end)
+    if not ok then S.lastOut = { "Cannot read: " .. f.name, T.error }; return end
+    if stopped then vbuf[#vbuf + 1] = { string.format(helpers.VIEW_STOPPED, shown), T.warning } end
     openViewTab(vbuf, f.name)
   end
   local function navigateUp()     return fbMod.navigateUp(S) end

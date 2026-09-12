@@ -295,6 +295,9 @@ function proc.kill(pid, opts)
   end
   local event = require("kernel.event")
   event.removeSource("proc:" .. pid)
+
+  if event.purgeOwner then event.purgeOwner(pid) end
+  p._purged = true
   return true
 end
 
@@ -677,9 +680,17 @@ function proc.tick(signal)
     end
   end
 
-  for _, p in pairs(processes) do
-    if p.state == STATE.DEAD and p.coroutine then
-      p.coroutine = nil
+  local okEv, evMod = nil, nil
+  for pid, p in pairs(processes) do
+    if p.state == STATE.DEAD then
+      if p.coroutine then p.coroutine = nil end
+      if not p._purged then
+        p._purged = true
+        if okEv == nil then okEv, evMod = pcall(require, "kernel.event") end
+        if okEv and type(evMod) == "table" and evMod.purgeOwner then
+          evMod.purgeOwner(pid)
+        end
+      end
     end
   end
 

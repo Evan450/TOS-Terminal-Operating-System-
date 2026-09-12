@@ -246,14 +246,55 @@ function M.expandBuf(S, rawBuf)
 
   local reserve = (S.tier and S.tier >= 2) and 6 or 0
   local wrapW = math.max(8, S.W - reserve)
+  --! #MEM (pentest, Sep 2026) — a line that already fits is passed through
+  --! as the SAME entry, not copied into a fresh { text, colour } table (nor
+  --! sent through wrapLine first, which built a one-line table for it too).
+  --! The executor wraps every command's output and a view tab then wrapped
+  --! it again, so `cat` of a 32 KB file held three tables per line and
+  --! peaked at 305 KB. Entries are only read after this -- by the draw
+  --! code, search and selection -- so sharing one is safe; only a line
+  --! that is actually wrapped costs anything. (test_view_memory.lua)
   for _, e in ipairs(rawBuf) do
-    local txt = type(e) == "table" and e[1] or tostring(e)
-    local col = type(e) == "table" and e[2] or S.T.fg
-    for _, l in ipairs(M.wrapLine(txt, wrapW)) do
-      out[#out + 1] = { l, col }
+    local isT = type(e) == "table"
+    local txt = isT and e[1] or e
+    if type(txt) ~= "string" then txt = tostring(txt) end
+    local col = isT and e[2] or S.T.fg
+    if #txt <= wrapW then
+      if isT and e[1] == txt and e[2] ~= nil then out[#out + 1] = e
+      else out[#out + 1] = { txt, col } end
+    else
+      for _, l in ipairs(M.wrapLine(txt, wrapW)) do
+        out[#out + 1] = { l, col }
+      end
     end
   end
   return out
+end
+
+--! #MEM (pentest, Sep 2026) — every "show me this file" (cat, more, the
+--! browser's View, the context menu's View) read the whole file into one
+--! string and then split it into a { line, colour } per line, so a file was
+--! held twice before a view tab kept 100-160 bytes of it per line. A 150 KB
+--! log could not be viewed on a 256 KB machine at all; asking ran it out of
+--! memory. They stream now, a line at a time, and stop while VIEW_FLOOR of
+--! memory is still free, leaving the rest on disk with a note saying how to
+--! read it. (test_view_memory.lua)
+local VIEW_FLOOR = 32 * 1024
+M.VIEW_STOPPED = "-- stopped after %d lines: memory is low. Read the rest with head, tail or grep."
+
+function M.readLinesCapped(F, path, add)
+  local shown, stopped = 0, false
+  local okR, err = M.eachLine(F, path, function(line)
+
+    if shown % 64 == 0 then
+      local free = computer.freeMemory and computer.freeMemory() or math.huge
+      if free < VIEW_FLOOR + shown * 16 then stopped = true; return false end
+    end
+    add(line)
+    shown = shown + 1
+  end)
+  if not okR then return false, err end
+  return true, shown, stopped
 end
 
 local lineNumFmtCache = {}
@@ -549,6 +590,47 @@ function M.canPowerOff(S)
     .. "or wait for the others to log out."
 end
 
+--! #MEM (pentest, Sep 2026) — read a file a LINE at a time through a
+--! handle. grep, wc, head and tail each read the whole file into one string
+--! first (and readFile held it twice while joining its chunks), so `grep`
+--! over a 200 KB file needed ~400 KB on a 256 KB machine and `head` read
+--! all of a file to show ten lines. This holds one 4 KB block plus the line
+--! being assembled; a line longer than LINE_CAP is handed over in pieces
+--! rather than grown without bound. `fn(line)` returning false stops early.
+--! Lines split on "\n" only, with no phantom empty line after a final
+--! newline. Returns (true, bytesRead) or (false, err).
+--! (test_helpers_eachline.lua)
+local LINE_CAP = 64 * 1024
+function M.eachLine(F, path, fn)
+  local h, err = F.open(path, "r")
+  if not h then return false, err end
+  local bytes, pending = 0, ""
+  local ok, perr = pcall(function()
+    while true do
+      local chunk = h:read(4096)
+      if not chunk then break end
+      bytes = bytes + #chunk
+      local data = (pending ~= "") and (pending .. chunk) or chunk
+      local start = 1
+      while true do
+        local nl = data:find("\n", start, true)
+        if not nl then break end
+        if fn(data:sub(start, nl - 1)) == false then pending = ""; return end
+        start = nl + 1
+      end
+      pending = data:sub(start)
+      if #pending > LINE_CAP then
+        if fn(pending) == false then pending = ""; return end
+        pending = ""
+      end
+    end
+    if pending ~= "" then fn(pending) end
+  end)
+  pcall(h.close, h)
+  if not ok then return false, tostring(perr) end
+  return true, bytes
+end
+
 function M.sessionOf(S)
   if S and S.U then
     if S.st and S.U.getSession then
@@ -615,9 +697,25 @@ M.UNSAFE_PREFIXES  = { "/mnt/", "/tmp/", "/public/", "/home/", "/root/" }
 --! correctly all along, which is why it survived: the shape people
 --! actually write in a PATH is the bare root.
 --! Normalizing to a trailing slash before comparing closes it.
+--!
+--! #SEC (pentest, Sep 2026) — the entry is compared as resolveProgram's
+--! F.join will resolve it, not as written. "tmp" and "/usr/../tmp" both
+--! probe /tmp (join roots a relative entry at "/", not the cwd) and both
+--! passed as safe; so did "/TMP" and "/tmp.", which a Windows or macOS
+--! host resolves to /tmp. Segments are resolved, case-folded and
+--! stripped of a trailing dot or space, as users.pathKey does.
 function M.dirIsSafe(dir)
   local d = tostring(dir or "")
   if d == "" then return false end
+  local parts = {}
+  for seg in d:gsub("\\", "/"):gmatch("[^/]+") do
+    if seg == ".." then parts[#parts] = nil
+    elseif seg ~= "." then
+      seg = seg:gsub("\226\132\170", "k"):gsub("\196\176", "i"):lower():gsub("[%. ]+$", "")
+      if seg ~= "" then parts[#parts + 1] = seg end
+    end
+  end
+  d = "/" .. table.concat(parts, "/")
   if d:sub(-1) ~= "/" then d = d .. "/" end
   for _, p in ipairs(M.UNSAFE_PREFIXES) do
     if d:sub(1, #p) == p then return false end
@@ -673,6 +771,22 @@ function M.tokenizeSimple(s)
   local t = {}
   for word in tostring(s):gmatch("%S+") do t[#t + 1] = word end
   return t
+end
+
+--! A disk's label is chosen by whoever formatted the disk, so it is never a
+--! path: only letters, digits, _, - and spaces survive, and "." / ".." or
+--! nothing at all become disk_<addr>. The hot-plug auto-mount always did
+--! this; `drive mount` joined the raw label onto /mnt/ (#SEC, pentest Sep
+--! 2026), so a TBFS volume labelled "../../var/pkg/secrets" went wherever
+--! its author said when an admin mounted it. (test_mount_points.lua)
+function M.safeMountName(raw, addr)
+  local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
+  if type(raw) ~= "string" then return fallback end
+  local cleaned = raw:gsub("[^%w_%- ]", "_")
+  cleaned = cleaned:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+  if cleaned == "" or cleaned == "." or cleaned == ".." then return fallback end
+  if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
+  return cleaned
 end
 
 function M.resolveProgram(F, name)

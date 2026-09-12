@@ -194,7 +194,11 @@ end
 
 local VERIFIED_STATES = { trusted = true, unknown = true }
 
-function pkgsign.verifyManifest(manifestPath)
+--! `body`, when given, is the manifest as the caller already read and
+--! PARSED it, and is what gets verified. Re-reading the path here let the
+--! parsed copy and the verified copy differ (#SEC, pentest Sep 2026; see
+--! pkg.lua readManifestFile). Omitted, the file is read as before.
+function pkgsign.verifyManifest(manifestPath, body)
   local verdict = { state = "unsigned" }
   if not fs then verdict.reason = "no filesystem"; return verdict end
 
@@ -210,7 +214,7 @@ function pkgsign.verifyManifest(manifestPath)
     return { state = "invalid", reason = err }
   end
 
-  local body = fs.readFile(manifestPath)
+  if type(body) ~= "string" then body = fs.readFile(manifestPath) end
   if not body then
     return { state = "invalid", reason = "cannot read the manifest the signature covers" }
   end

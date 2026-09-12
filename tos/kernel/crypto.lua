@@ -305,14 +305,26 @@ function crypto.token()
     .. tostring(_tokenCounter))
 end
 
+--! #MEM (pentest, Sep 2026) — a BLOCK at a time, not a byte. One
+--! string.char per byte, each in its own result slot, cost ~16x the payload
+--! in heap for every XOR packet on a machine without a data card -- the
+--! machines with the least RAM. Now 256 bytes per string.char, with the
+--! key's bytes read once per call. (test_crypto_xor_alloc.lua)
 local function xorCipher(data, key)
-  local result = {}
   local keyLen = #key
-  for i = 1, #data do
-    local keyByte = key:byte(((i - 1) % keyLen) + 1)
-    result[i] = string.char(data:byte(i) ~ keyByte)
+  local kb = { key:byte(1, keyLen) }
+  local out, buf = {}, {}
+  local n = #data
+  for i = 1, n, 256 do
+    local j = (i + 255 < n) and (i + 255) or n
+    local k = 0
+    for idx = i, j do
+      k = k + 1
+      buf[k] = data:byte(idx) ~ kb[((idx - 1) % keyLen) + 1]
+    end
+    out[#out + 1] = string.char(table.unpack(buf, 1, k))
   end
-  return table.concat(result)
+  return table.concat(out)
 end
 
 local _xorWarned = false
@@ -336,13 +348,28 @@ local function makeIv16()
 end
 crypto._makeIv16 = makeIv16
 
+--! #SEC (pentest, Sep 2026) — the data card's AES is AES-128. Ocelot's
+--! DataCard$Tier2 refuses anything but a 16-byte key ("expected a 128-bit
+--! AES key") and a 16-byte IV. Peer secrets are 32 characters
+--! (trust.generateSecret -> crypto.salt(32)), so every hardware encrypt
+--! raised, the pcall below swallowed it, and every "encrypted" packet went
+--! out as XOR -- which a receiver WITH a data card then refuses as a
+--! downgrade (#SEC C10), so two carded machines could not talk encrypted
+--! at all, and a carded-to-uncarded link was XOR while reporting AES
+--! hardware. The AES key is the first 16 bytes of SHA-256(secret), derived
+--! identically on both ends. (test_crypto_aes_key.lua)
+local function aesKey16(secret)
+  local hex = sha256_hex(secret)
+  return (hex:sub(1, 32):gsub("..", function(h) return string.char(tonumber(h, 16)) end))
+end
+
 function crypto.encrypt(data, key)
   if dataCard then
 
     local ok, result = pcall(function()
 
       local iv = makeIv16()
-      local encrypted = dataCard.encrypt(data, key, iv)
+      local encrypted = dataCard.encrypt(data, aesKey16(key), iv)
 
       return iv .. encrypted
     end)
@@ -374,7 +401,7 @@ function crypto.decrypt(data, key, method)
     local ok, result = pcall(function()
       local iv = data:sub(1, 16)
       local ciphertext = data:sub(17)
-      return dataCard.decrypt(ciphertext, key, iv)
+      return dataCard.decrypt(ciphertext, aesKey16(key), iv)
     end)
     if ok and result then return result end
     return nil

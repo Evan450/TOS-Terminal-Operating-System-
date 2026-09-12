@@ -165,6 +165,22 @@ function net.init(modules)
     log.warn("net", "chatpair module unavailable: "..tostring(chatpairMod))
   end
 
+  local function meshStore(kfs)
+    local DIR, PATH = "/var/lib/mesh", "/var/lib/mesh/state.dat"
+    local ser = require("kernel.serialize")
+    return {
+      load = function()
+        if not (kfs and kfs.exists and kfs.exists(PATH)) then return nil end
+        return ser.loadFile(kfs, PATH)
+      end,
+      save = function(state)
+        if not kfs then return end
+        if not kfs.exists(DIR) then kfs.makeDirectory(DIR) end
+        ser.saveFile(kfs, PATH, state)
+      end,
+    }
+  end
+
   local okMesh, meshctlMod = pcall(require, "kernel.net.meshctl")
   if okMesh and meshctlMod then
     meshctlMod.init({ crypto = crypto, serialize = require("kernel.serialize"),
@@ -173,6 +189,9 @@ function net.init(modules)
     net._meshctl = meshctlMod.new({
       myAddr = myAddr,
       clock  = function() return computer.uptime() end,
+
+      freeMemory = computer.freeMemory,
+      store  = meshStore(modules and modules.fs or (_G._TOS and _G._TOS.fs)),
       broadcast = function(env)
         local t = (env.kind == "ack") and protocol.TYPE.MESH_ACK or protocol.TYPE.MESH
         net.broadcast(protocol.makePacket(t, env))
@@ -823,22 +842,51 @@ function net.getTrust()
 end
 
 local discoveredPeers = {}
+--! #MEM (pentest, Sep 2026) — bounded. An entry was added for every
+--! distinct address that answered or sent a ping and nothing ever removed
+--! one, so on a busy network the table only grew until the next reboot.
+--! Same ceiling the trust manager puts on UNKNOWN peers.
+local MAX_DISCOVERED = 64
+
+--! #SEC (pentest, Sep 2026) — a PING/PONG payload is an UNKNOWN peer's
+--! claim about itself: any type, any length, any bytes. A number as the
+--! hostname crashed the sort in net.peers() for every later caller (`net
+--! peers`, `net scan`, discovery), and control characters went straight to
+--! the screen. Keep a short printable string or nothing.
+--! (test_net_peer_claims.lua)
+local function cleanClaim(v)
+  if type(v) ~= "string" then return nil end
+  v = v:gsub("%c", ""):sub(1, 32)
+  if v == "" then return nil end
+  return v
+end
 
 function net._recordPeer(addr, payload)
+  if type(addr) ~= "string" then return end
   local now = computer.uptime()
   local trust = trustMgr and trustMgr.getLevel(addr) or 0
   local hostname2 = nil
   local device2 = nil
   if type(payload) == "table" then
-    hostname2 = payload.hostname
-    device2   = payload.device
+    hostname2 = cleanClaim(payload.hostname)
+    device2   = cleanClaim(payload.device)
   end
 
   if trustMgr then
     local peer = trustMgr.getPeer(addr)
     if peer then
-      hostname2 = hostname2 or peer.hostname
+      hostname2 = hostname2 or cleanClaim(peer.hostname)
     end
+  end
+  if discoveredPeers[addr] == nil then
+
+    local count, victim, victimKey = 0, nil, nil
+    for a, p in pairs(discoveredPeers) do
+      count = count + 1
+      local key = (((p.trust or 0) > 0) and 1e12 or 0) + (p.lastSeen or 0)
+      if not victimKey or key < victimKey then victim, victimKey = a, key end
+    end
+    if count >= MAX_DISCOVERED and victim then discoveredPeers[victim] = nil end
   end
   discoveredPeers[addr] = {
     addr      = addr,
@@ -859,6 +907,8 @@ function net.peers()
 end
 
 function net.findPeer(query)
+
+  if type(query) ~= "string" or query == "" then return nil end
 
   if discoveredPeers[query] then return discoveredPeers[query] end
 

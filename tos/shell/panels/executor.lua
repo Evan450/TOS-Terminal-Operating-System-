@@ -188,6 +188,33 @@ function M.build(S, deps)
     end
 
     local fn = C[name]
+    --! #SEC (pentest, Sep 2026) — the REGISTRY tier is enforced here, at the
+    --! one dispatch point both shells share (cli.lua builds this executor
+    --! too). It used to be read only by `help`, so any command whose body
+    --! had no adminOnly/rootOnly of its own ran for anyone below its declared
+    --! tier: a GUEST, or a first-boot restricted token, could `drive read`
+    --! raw sectors, `redstone set`, `robot`, `tape`, `chat`. In-body gates
+    --! stay -- they carry the finer per-subcommand rules -- but nothing runs
+    --! below the tier the registry declares. Aliases carry their own entry.
+    --! Resolved through the seat token (helpers.liveTier), so sudo's swapped
+    --! token counts and an expired one drops to GUEST. (test_dispatch_tier.lua)
+    if fn then
+      local okReg, cmdsMod = pcall(require, "shell.panels.commands")
+      local meta = okReg and type(cmdsMod) == "table" and cmdsMod.entry
+        and cmdsMod.entry(name) or nil
+      local need = meta and tonumber(meta.tier) or 0
+      if need > 0 then
+        local have = helpers.liveTier and helpers.liveTier(S) or 0
+        if have < need then
+          local msg = "Permission denied: '" .. name .. "' needs "
+            .. (helpers.tierName and helpers.tierName(need) or ("tier " .. need))
+            .. "  [E-403 ERR_TIER_REQUIRED]"
+          if helpers.fail then helpers.fail(S, msg, o) else o(msg, T.error) end
+          S.lastDenial = { cmd = name, need = need, have = have }
+          return buf
+        end
+      end
+    end
     local screenReq = nil
     local foreignDraw = false
     local fullscreen, bgPolicy = false, "drowsy"
@@ -293,7 +320,7 @@ function M.build(S, deps)
       S.outLines = wrapped
     elseif route == "tab" then
       local ed = getEditor()
-      if ed then ed.openViewTab(S, wrapped, label or "output")
+      if ed then ed.openViewTab(S, wrapped, label or "output", true)
       else S.outLines = wrapped end
     end
   end
@@ -319,13 +346,22 @@ function M.build(S, deps)
           if seg.stdout and seg.stdout.type == "file" then
             local outPath = rp(seg.stdout.path)
             if helpers.canWrite(S, outPath) then
+              --! Say what happened (pentest, Sep 2026). The write's result
+              --! was dropped, so a refusal the ACL check above cannot see --
+              --! the protected-path guard, a full disk, a directory -- still
+              --! reported "Output written" for a file that never changed.
+              local okW, werr
               if seg.stdout.append then
-                F.appendFile(outPath, prevOutput .. "\n")
+                okW, werr = F.appendFile(outPath, prevOutput .. "\n")
               else
-                F.writeFile(outPath, prevOutput .. "\n")
+                okW, werr = F.writeFile(outPath, prevOutput .. "\n")
               end
               helpers.refreshBrowser(S)
-              S.lastOut = { "Output written to " .. seg.stdout.path, T.highlight }
+              if okW then
+                S.lastOut = { "Output written to " .. seg.stdout.path, T.highlight }
+              else
+                S.lastOut = { "Not written: " .. tostring(werr or seg.stdout.path), T.error }
+              end
             end
             return
           end

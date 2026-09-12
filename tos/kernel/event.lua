@@ -87,6 +87,30 @@ function event.removeSource(source)
   end
 end
 
+--! #MEM/#SEC (pentest, Sep 2026) — drop every listener and timer a process
+--! registered, once it is dead. The dispatcher already refused to RUN them
+--! (the M-11 generation check), but nothing removed them, and each entry's
+--! callback keeps its program's whole environment alive. compat.event
+--! registers under "compat:event", which proc.kill's removeSource never
+--! matched, and a natural exit called nothing at all -- so every run of a
+--! program that listened and exited leaked that program for good, and a
+--! user could run a two-line program in a loop until the heap was gone.
+--! process.lua calls this on both death paths. (test_event_owner_purge.lua)
+function event.purgeOwner(pid)
+  if pid == nil then return 0 end
+  local n = 0
+  for signal, list in pairs(listeners) do
+    for i = #list, 1, -1 do
+      if list[i].regPid == pid then table.remove(list, i); n = n + 1 end
+    end
+    if #list == 0 then listeners[signal] = nil end
+  end
+  for i = #timers, 1, -1 do
+    if timers[i].regPid == pid then table.remove(timers, i); n = n + 1 end
+  end
+  return n
+end
+
 local function captureRegPid()
   local procMod = getProc()
   if procMod and procMod.current then

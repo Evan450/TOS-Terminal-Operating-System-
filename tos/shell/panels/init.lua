@@ -54,15 +54,7 @@ function M.run(ctx)
   local widgetDefs = widgetsMod.makeWidgetDefs(S)
   pcall(widgetsMod.loadCustomWidgets, S, widgetDefs)
 
-  local function sanitizeMountLabel(raw, addr)
-    local fallback = "disk_" .. addr:sub(1, 4)
-    if type(raw) ~= "string" then return fallback end
-    local cleaned = raw:gsub("[^%w_%- ]", "_")
-    cleaned = cleaned:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if cleaned == "" or cleaned == "." or cleaned == ".." then return fallback end
-    if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
-    return cleaned
-  end
+  local function sanitizeMountLabel(raw, addr) return helpers.safeMountName(raw, addr) end
   local function autoMount(addr)
     local ok, px = pcall(component.proxy, addr)
     if not ok or not px then return nil, nil end

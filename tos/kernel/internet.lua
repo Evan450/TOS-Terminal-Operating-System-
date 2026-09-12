@@ -188,6 +188,15 @@ local function requestInto(url, sink, opts)
       shut(); return false, "read failed: " .. tostring(chunk)
     end
     grabMeta()
+    --! #SEC (pentest, Sep 2026) — a non-2xx reply is not the resource. The
+    --! status was recorded and never looked at, so a 404 page, a 500 body or
+    --! an unfollowed (cross-scheme) redirect page came back as ok=true: the
+    --! repo index "failed to decode", a package file was saved as HTML and
+    --! only a declared hash stood between it and the disk.
+    if type(meta.status) == "number" and (meta.status < 200 or meta.status > 299) then
+      shut()
+      return false, "HTTP " .. meta.status .. " " .. tostring(meta.message or ""), meta
+    end
     if chunk == nil then
 
       shut()
@@ -244,8 +253,13 @@ function internet.download(url, destPath, opts)
     if bufLen == 0 then return true end
     local data = table.concat(buf)
     buf, bufLen = {}, 0
-    local okW = fs.appendFile and fs.appendFile(tmp, data)
-      or fs.writeFile(tmp, data)
+    --! #SEC (pentest, Sep 2026) — append or fail. `appendFile(..) or
+    --! writeFile(..)` fell through to writeFile whenever an append FAILED
+    --! (disk full), truncating the .part to the latest chunk and carrying
+    --! on; with no appendFile every flush replaced the last. Either way a
+    --! short file was renamed into place as if the whole body had arrived.
+    local okW = false
+    if fs.appendFile then okW = fs.appendFile(tmp, data) end
     if not okW then writeFailed = true end
     return okW and true or false
   end

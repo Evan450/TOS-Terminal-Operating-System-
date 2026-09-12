@@ -29,9 +29,16 @@ local function sessionOf(explicit)
   return nil
 end
 
+--! #SEC (pentest, Sep 2026) — a path fs.normalize rejects (a NUL byte, a
+--! non-string) is refused here, by name. It used to reach the ACL as nil,
+--! which read it as "/" and said yes, and a write raised in the
+--! protected-path check instead of refusing.
+local INVALID_PATH = "Permission denied: invalid path  [E-401 ERR_PERM_DENIED]"
+
 local function checkRead(path, session)
   if not fs or not usermod then return false, "securefs not initialized" end
   path = fs.normalize(path)
+  if not path then return false, INVALID_PATH end
   local sess = sessionOf(session)
   local allowed, reason = usermod.canAccessAs(sess, path, "r")
   if not allowed then
@@ -50,6 +57,7 @@ local protectedMsg
 local function checkWrite(path, session)
   if not fs or not usermod then return false, "securefs not initialized" end
   path = fs.normalize(path)
+  if not path then return false, INVALID_PATH end
   --! Resolve the principal BEFORE the protected check, not after. The
   --! shell supplies its session through the process, not as an explicit
   --! argument, so `session` here is usually nil -- and an override armed
@@ -98,8 +106,11 @@ function securefs.list(path, session)
 
   local rawList = fs.list(norm)
   local sess = sessionOf(session)
+  --! #SEC (pentest, Sep 2026) — matched on the folded key: "/HOME" lists
+  --! /home on a case-insensitive disk, and skipped both filters below.
+  local key = usermod.pathKey and usermod.pathKey(path) or path
 
-  if path == "/home" or path == "/home/" then
+  if key == "/home" then
     if not sess or sess.tier < usermod.TIER.ADMIN then
       local filtered = {}
       if type(rawList) == "table" and sess and sess.user then
@@ -114,7 +125,7 @@ function securefs.list(path, session)
     end
   end
 
-  if path == "/var/mail" or path == "/var/mail/" then
+  if key == "/var/mail" then
     if not sess or sess.tier < usermod.TIER.ADMIN then
       local filtered = {}
       if type(rawList) == "table" and sess and sess.user then
@@ -300,21 +311,13 @@ function protectedMsg(verb, hit, session)
     "for their own session.  [E-402 ERR_PATH_PROTECTED]"
 end
 
-local function isProtectedTarget(path, session)
-  --! An armed root session sees no protected targets at all. Logged at
-  --! the point of use so the record names the path, not just the arming.
-  if hasOverride(session) then
-    if log then
-      log.warn("securefs", "Operator override: allowing protected path " .. tostring(path))
-    end
-    return nil
-  end
+local TREE_EXEMPT = {
+  "/var/log/", "/var/run/", "/var/lib/", "/var/cluster/", "/etc/widgets/",
+}
+
+local function protectedHit(path)
 
   if WRITE_PROTECTED_EXEMPT[path] then return nil end
-
-  local TREE_EXEMPT = {
-    "/var/log/", "/var/run/", "/var/lib/", "/var/cluster/", "/etc/widgets/",
-  }
   for _, prefix in ipairs(TREE_EXEMPT) do
     if path:sub(1, #prefix) == prefix then return nil end
   end
@@ -330,11 +333,34 @@ local function isProtectedTarget(path, session)
   end
   return nil
 end
+
+--! #SEC (pentest, Sep 2026) — checked as written AND as users.pathKey
+--! folds it, because the disk may be case-insensitive (see pathKey in
+--! kernel/users.lua): "/TOS/kernel/init.lua" was not "/tos", so an admin
+--! could rewrite the kernel through it. Not a string: refused -- a NUL
+--! byte makes fs.normalize return nil, and this used to raise on it.
+local function isProtectedTarget(path, session)
+  if type(path) ~= "string" then return "(invalid path)" end
+  --! An armed root session sees no protected targets at all. Logged at
+  --! the point of use so the record names the path, not just the arming.
+  if hasOverride(session) then
+    if log then
+      log.warn("securefs", "Operator override: allowing protected path " .. tostring(path))
+    end
+    return nil
+  end
+  local hit = protectedHit(path)
+  if hit then return hit end
+  local key = usermod and usermod.pathKey and usermod.pathKey(path)
+  if key and key ~= path then return protectedHit(key) end
+  return nil
+end
 _isProtectedTarget = isProtectedTarget
 
 function securefs.remove(path, session)
 
   path = fs.normalize(path)
+  if not path then return false, INVALID_PATH end
   local hit = isProtectedTarget(path, sessionOf(session))
   if hit then
     return false, protectedMsg("removing", hit, sessionOf(session))
@@ -348,6 +374,7 @@ function securefs.rename(from, to, session)
 
   local nFrom = fs.normalize(from)
   local nTo   = fs.normalize(to)
+  if not nFrom or not nTo then return false, INVALID_PATH end
 
   local hitFrom = isProtectedTarget(nFrom, sessionOf(session))
   if hitFrom then
@@ -364,27 +391,104 @@ function securefs.rename(from, to, session)
   return fs.rename(normFrom, normTo)
 end
 
+local coopProc = nil
+local function coopYield()
+  if coopProc == nil then
+    local okP, m = pcall(require, "kernel.process")
+    coopProc = (okP and type(m) == "table" and m.yieldCooperative) and m or false
+  end
+  if coopProc then coopProc.yieldCooperative() end
+end
+
+local function isUnder(p, root)
+  return p == root or root == "/" or p:sub(1, #root + 1) == root .. "/"
+end
+
+--! #SEC (pentest, Sep 2026) — a DIRECTORY copy is checked per entry, as
+--! the caller. It used to check the top path only and hand the tree to
+--! kernel.fs.copyRecursive, which walks the raw filesystem. "/home" and
+--! "/etc" are readable as directory NODES by any user, so `cp /home ~/x`
+--! copied every other user's home and `cp /etc ~/x` copied
+--! /etc/users.dat. Each entry now goes back through securefs.copy: the
+--! same read check, the same filtered listing (/home and /var/mail show a
+--! user only their own), the same write check on the destination.
+--! (test_securefs_session_bind.lua)
+local function copyTree(src, dst, session)
+  if isUnder(dst, src) then
+    return false, "Cannot copy a directory into itself"
+  end
+  if not fs.exists(dst) then
+    local ok, err = fs.makeDirectory(dst)
+    if not ok then return false, "Cannot create directory: " .. tostring(err) end
+  end
+  local copied, failed = 0, 0
+  for _, name in ipairs(securefs.list(src, session)) do
+    coopYield()
+    local clean = name:match("^(.-)/?$") or name
+    if clean ~= "" then
+      if securefs.copy(fs.join(src, clean), fs.join(dst, clean), session) then
+        copied = copied + 1
+      else
+        failed = failed + 1
+      end
+    end
+  end
+  if failed > 0 then
+    return false, string.format("Copied %d items, %d failed", copied, failed)
+  end
+  return true
+end
+
 function securefs.copy(src, dst, session)
   local ok1, err1, normSrc = checkRead(src, session)
   if not ok1 then return false, err1 end
   local ok2, err2, normDst = checkWrite(dst, session)
   if not ok2 then return false, err2 end
-  return fs.copy(normSrc, normDst)
+  if fs.isDirectory(normSrc) then
+    return copyTree(normSrc, normDst, session)
+  end
+
+  if fs.copyFile then return fs.copyFile(normSrc, normDst) end
+  local content, err = fs.readFile(normSrc)
+  if not content then return false, err end
+  return fs.writeFile(normDst, content)
 end
+
+--! #SEC (pentest, Sep 2026) — the mode is matched against the closed set
+--! OpenComputers' managed filesystem accepts, not searched for "w"/"a"/"+".
+--! Anything without those letters used to count as a READ, and a backend
+--! decides for itself what an odd mode means: TBFS (blockfs) opens every
+--! mode except exactly "r" writable, so open(p, "x") passed the read check
+--! and came back with a handle that writes. On a machine booted from a raw
+--! drive, that was any user rewriting /tos/kernel.
+local READ_MODES  = { r = true, rb = true }
+local WRITE_MODES = { w = true, wb = true, a = true, ab = true }
 
 function securefs.open(path, mode, session)
   mode = mode or "r"
-  local norm
-  if mode:find("w") or mode:find("a") or mode:find("+") then
-    local ok, err, n = checkWrite(path, session)
-    if not ok then return nil, err end
-    norm = n
-  else
-    local ok, err, n = checkRead(path, session)
-    if not ok then return nil, err end
-    norm = n
+  if not (READ_MODES[mode] or WRITE_MODES[mode]) then
+    return nil, "Unsupported open mode: " .. tostring(mode)
   end
-  return fs.open(norm, mode)
+  local ok, err, norm
+  if WRITE_MODES[mode] then
+    ok, err, norm = checkWrite(path, session)
+  else
+    ok, err, norm = checkRead(path, session)
+  end
+  if not ok then return nil, err end
+  local h, herr = fs.open(norm, mode)
+  if not h then return nil, herr end
+  --! #SEC (pentest, Sep 2026) — return the four methods and nothing else.
+  --! kernel.fs's handle also carries `proxy` -- the raw filesystem
+  --! component -- and this table goes straight to sandboxed code, so one
+  --! fs.open("/etc/motd") handed a program the whole disk with no ACL at
+  --! all: h.proxy.remove("/init.lua"). (test_securefs_session_bind.lua)
+  return {
+    read  = function(_, n) return h:read(n) end,
+    write = function(_, data) return h:write(data) end,
+    seek  = function(_, whence, offset) return h:seek(whence, offset) end,
+    close = function() return h:close() end,
+  }
 end
 
 function securefs.normalize(path) return fs.normalize(path) end
@@ -403,6 +507,13 @@ local function requireAdmin(session)
   return sess
 end
 
+--! #SEC (pentest, Sep 2026) — a mount point is held to the protected-path
+--! guard, as a write is. A mount replaces what a path resolves to, and
+--! fs.mount takes an empty or absent directory anywhere, so an admin -- or
+--! a drive's label, before `drive mount` sanitised it -- could put a disk of
+--! their choosing at an empty /var/pkg/secrets or /etc/rc.d, where the guard
+--! stops even an admin writing. /mnt, homes and /tmp are unaffected, and
+--! root lifts it with `protect off` like any other. (test_mount_points.lua)
 function securefs.mount(path, proxy, session)
   if not fs then return false, "securefs not initialized" end
   local ok, err = requireAdmin(session)
@@ -410,7 +521,14 @@ function securefs.mount(path, proxy, session)
     if log then log.warn("securefs", "MOUNT denied: " .. tostring(path) .. " (" .. err .. ")") end
     return false, "Permission denied: " .. err .. "  [E-401 ERR_PERM_DENIED]"
   end
-  return fs.mount(path, proxy)
+  local norm = fs.normalize(path)
+  if not norm then return false, INVALID_PATH end
+  local hit = isProtectedTarget(norm, ok)
+  if hit then
+    if log then log.warn("securefs", "MOUNT denied (protected system path " .. hit .. "): " .. norm) end
+    return false, protectedMsg("mounting over", hit, ok)
+  end
+  return fs.mount(norm, proxy)
 end
 
 function securefs.unmount(path, session)
@@ -438,22 +556,31 @@ end
 
 function securefs.forSession(session)
   local proxy = {}
-
-  local bound = {
-    "exists", "isDirectory", "list", "readFile", "writeFile", "appendFile",
-    "makeDirectory", "remove", "rename", "copy", "open", "size", "lastModified",
-    "home", "resolve",
+  --! #SEC (pentest, Sep 2026) — FIXED ARITY. Every method takes exactly
+  --! the arguments its securefs counterpart declares, and the bound session
+  --! always lands in the session slot. The old proxy appended the session
+  --! AFTER whatever the caller passed, so one extra argument moved into the
+  --! session slot: fs.readFile(p, { tier = 3 }) ran with the CALLER's table
+  --! as its principal (the bound session landed one past it, unread), and
+  --! users.checkAccess trusts any table's .tier. Any sandboxed program with
+  --! fs.read could read /etc/users.dat; with fs.write, rewrite it. This
+  --! proxy is handed straight to untrusted code, so it must never forward
+  --! caller-supplied arguments past the ones it names.
+  --! (test_securefs_session_bind.lua)
+  local ONE_ARG = {
+    "exists", "isDirectory", "list", "readFile", "makeDirectory", "remove",
+    "size", "lastModified", "resolve",
   }
-  for _, name in ipairs(bound) do
+  for _, name in ipairs(ONE_ARG) do
     local fn = securefs[name]
-    proxy[name] = function(...)
-      local nargs = select("#", ...)
-      local args = {...}
-
-      args[nargs + 1] = session
-      return fn(table.unpack(args, 1, nargs + 1))
-    end
+    proxy[name] = function(a) return fn(a, session) end
   end
+  local TWO_ARGS = { "writeFile", "appendFile", "open", "rename", "copy" }
+  for _, name in ipairs(TWO_ARGS) do
+    local fn = securefs[name]
+    proxy[name] = function(a, b) return fn(a, b, session) end
+  end
+  proxy.home = function() return securefs.home(session) end
 
   proxy.normalize   = securefs.normalize
   proxy.split       = securefs.split
@@ -462,9 +589,6 @@ function securefs.forSession(session)
   proxy.spaceUsed   = securefs.spaceUsed
   proxy.spaceFree   = securefs.spaceFree
   proxy.mounts      = securefs.mounts
-
-  proxy.copy = function(from, to) return securefs.copy(from, to, session) end
-  proxy.rename = function(from, to) return securefs.rename(from, to, session) end
   return proxy
 end
 

@@ -11,6 +11,7 @@ local users     = nil
 local installed = {}
 
 local ADMIN_TIER = 2
+local ROOT_TIER  = 3
 local function adminGate(opts)
   if not users then return true end
   local session = (type(opts) == "table" and opts.session) or nil
@@ -20,6 +21,32 @@ local function adminGate(opts)
   if type(session.tier) == "number" and session.tier >= ADMIN_TIER then return true end
   return false, "Insufficient privileges: admin required"
 end
+
+--! #SEC (pentest, Sep 2026) — a service package is trusted with the whole
+--! machine, and installing one is a ROOT act, not merely ADMIN. rc.d runs a
+--! service as the principal it declares and as ROOT when it declares none,
+--! through the KERNEL loader (allowUserLibs), OUTSIDE the capability sandbox
+--! that confines a command package (MANUAL §15). So an ADMIN who could
+--! install a service could run code as root at the next boot -- which made
+--! every ROOT-only line elsewhere (the shadow file's write, root accounts,
+--! `protect off`, mounting over a protected path) a courtesy an ADMIN could
+--! walk around. The other kinds stay ADMIN: command/app/lib/runtime/theme run
+--! sandboxed with only their declared capabilities, and a `driver` reaches
+--! raw hardware but only the component types its caps name, still inside the
+--! sandbox. A kernel/boot session (the installer) is exempt; the login
+--! principal, which adminGate lets through, is NOT -- it is guest-tier and has
+--! no business installing anything. (test_pkg_service_root.lua)
+local function serviceInstallGate(m, opts)
+  if type(m) ~= "table" or m.kind ~= "service" then return true end
+  if not users then return true end
+  local session = (type(opts) == "table" and opts.session) or nil
+  if not session and users.currentSession then session = users.currentSession() end
+  if session and session.isKernel then return true end
+  if session and type(session.tier) == "number" and session.tier >= ROOT_TIER then return true end
+  return false, "installing a service package runs its code as root at boot; "
+    .. "only root may install a service (this one runs outside the package sandbox)"
+end
+pkg._serviceInstallGate = serviceInstallGate
 
 local VALID_KINDS = {
   app     = true,
@@ -52,9 +79,47 @@ local function pathHasTraversal(p)
   return false
 end
 
+--! #SEC (pentest, Sep 2026) — an install TARGET is compared as a STRING
+--! (against system files, other packages' files, reserved names), but the
+--! HOST decides which file it names. OpenComputers keeps each disk as a
+--! directory on the Minecraft host; on Windows and default macOS that is
+--! case-insensitive, and Win32 silently drops a trailing dot or space. So
+--! "/usr/lib/MailApp.lua." and "/usr/lib/mailapp.lua" are two strings and
+--! one file. Targets are held to a plain character set with no empty
+--! segment and no trailing dot, and every comparison goes through targetKey.
+local function targetShapeOk(p)
+  if p:find("//", 1, true) or p:sub(-1) == "/" then return false end
+  for seg in p:gmatch("[^/]+") do
+    if not seg:match("^[%w_%.%+%-]+$") or seg:sub(-1) == "." then return false end
+  end
+  return true
+end
+local function targetKey(p) return (tostring(p):lower()) end
+
 local PKG_WRITE_ROOTS = { "/usr/", "/var/pkg/" }
+--! #SEC (pentest, Sep 2026) — /var/pkg/ is package space, but three trees in
+--! it belong to the package MANAGER, and files[] could name any of them:
+--!   /var/pkg/installed/<name>/  every package's manifest: its commands, its
+--!       capabilities, and the signature verdict pkg.scan believes because
+--!       only install() writes it. A package could rewrite another's (so
+--!       that package's command ran the writer's code) or plant one for a
+--!       package never installed, "signed by a trusted publisher".
+--!   /var/pkg/secrets/<name>     each package's crypto.secret(), read back
+--!       raw: plant or overwrite one and that package's key is the writer's.
+--!   /var/pkg/remote/            the remote-fetch staging area.
+--! Refused case-folded, like every other target comparison (targetKey).
+--! (test_pkg_reserved_targets.lua)
+local PKG_RESERVED_ROOTS = { "/var/pkg/installed", "/var/pkg/secrets", "/var/pkg/remote" }
+local function isReservedTarget(p)
+  local key = targetKey(p)
+  for _, r in ipairs(PKG_RESERVED_ROOTS) do
+    if key == r or key:sub(1, #r + 1) == r .. "/" then return true end
+  end
+  return false
+end
 local function isUnderPkgWriteRoot(p)
   if type(p) ~= "string" or p == "" then return false end
+  if isReservedTarget(p) then return false end
   for _, root in ipairs(PKG_WRITE_ROOTS) do
 
     if p:sub(1, #root) == root and #p > #root then return true end
@@ -62,10 +127,45 @@ local function isUnderPkgWriteRoot(p)
   return false
 end
 
+--! #SEC (pentest, Sep 2026) — this comment used to say the rc.d service a
+--! package installs "runs in the user-tier sandbox". It does not: rc.lua runs
+--! a service as the principal it DECLARES and as root when it declares none,
+--! and a service's libraries load through the kernel loader (allowUserLibs).
+--! A service package is trusted with the machine; only command packages are
+--! confined to their capabilities. MANUAL section 15 says so to operators.
+
+--! #SEC (pentest, Sep 2026) — the exception was enforced as a SHAPE, and
+--! the shape matched the system's own files. Two of them made a service
+--! package the kernel:
+--!   * /etc/rc.d/<stem>.lua with <stem> on rc.lua's KERNEL_SERVICE_ALLOWLIST.
+--!     rc grants `_kernel_` by FILENAME and no package owns the shipped
+--!     scripts, so findConflicts never fired: a package replacing
+--!     20-rshd.lua with `user = "_kernel_"` ran in buildKernelEnv at the
+--!     next boot, where require("component") is the raw component API.
+--!   * /etc/<name>.cfg for a config the SYSTEM reads: component_caps.cfg
+--!     (base = {"filesystem"} hands every sandbox holding `component` a raw
+--!     disk proxy), pkg_trust.cfg (trust the attacker's key), boot.cfg ...
+--! Both are refused by name, case-folded (20-RSHD.lua IS 20-rshd.lua on a
+--! case-insensitive host). Add-on cfgs (cluster-master.cfg, rbmk.cfg) stay
+--! writable; a cfg the kernel starts reading goes in SYSTEM_ETC_CFG in the
+--! same commit. KERNEL_TIER_RC mirrors rc.lua; test_pkg_protected_targets
+--! reads rc.lua's list and fails on any stem this one does not refuse.
+local KERNEL_TIER_RC = {
+  ["10-discoveryd"] = true, ["20-chatrelay"] = true,
+  ["20-fileshare"]  = true, ["20-rshd"]      = true,
+}
+local SYSTEM_ETC_CFG = {
+  ["tos"] = true, ["boot"] = true, ["pkg_trust"] = true, ["pkg_caps"] = true,
+  ["pkg-repos"] = true, ["component_caps"] = true, ["netfs-exports"] = true,
+  ["kiosk"] = true, ["menu"] = true, ["keys"] = true, ["jbod"] = true,
+  ["chat-groups"] = true,
+}
 local function isServiceEtcTarget(p)
   if type(p) ~= "string" then return false end
-  if p:match("^/etc/rc%.d/[%w_%-]+%.lua$") then return true end
-  if p:match("^/etc/[%w_%-]+%.cfg$")        then return true end
+  local stem = p:match("^/etc/rc%.d/([%w_%-]+)%.lua$")
+  if stem then return not KERNEL_TIER_RC[stem:lower()] end
+  local cfg = p:match("^/etc/([%w_%-]+)%.cfg$")
+  if cfg then return not SYSTEM_ETC_CFG[cfg:lower()] end
   return false
 end
 
@@ -89,6 +189,14 @@ local function validateManifest(m)
     end
     if pathHasTraversal(p) then
       return false, "files[" .. i .. "] contains an unsafe path segment"
+    end
+    if not targetShapeOk(p) then
+      return false, "files[" .. i .. "] must use only letters, digits and _ . + - "
+        .. "with no empty segment or trailing dot (got " .. p .. ")"
+    end
+    if isReservedTarget(p) then
+      return false, "files[" .. i .. "] is the package manager's own space (" .. p
+        .. "): installed manifests, package secrets and remote staging are not a package's to write"
     end
 
     if not isUnderPkgWriteRoot(p)
@@ -383,6 +491,31 @@ function pkg.ownerOfCommand(name)
 end
 
 local pkgActive = {}
+--! #MEM (pentest, Sep 2026) — the cache is BOUNDED. A package command's
+--! entry and sandbox stayed resident for good once it had run, and one
+--! entry costs 20-82 KB (measured: tetris 69, calc 82, write 82, tape 76,
+--! printer 60 -- its own library copies included), so playing tetris and
+--! then opening calc and a document pinned ~230 KB on a 256 KB machine
+--! until an uninstall. The PKG_CACHE_MAX most recently used entries stay;
+--! with free memory under PKG_LOW_MEM, only the one in use. Eviction drops
+--! only the cache's reference: a command already running keeps its
+--! closures, and the next call recompiles the entry from disk.
+--! (test_pkg_cache_bound.lua)
+local PKG_CACHE_MAX = 2
+local PKG_LOW_MEM   = 48 * 1024
+local pkgUse, pkgUseTick = {}, 0
+local function lowMemory()
+  local okC, comp = pcall(require, "computer")
+  return okC and type(comp) == "table" and type(comp.freeMemory) == "function"
+    and comp.freeMemory() < PKG_LOW_MEM
+end
+local function trimCache(limit)
+  local names = {}
+  for n in pairs(pkgActive) do names[#names + 1] = n end
+  if #names <= limit then return end
+  table.sort(names, function(a, b) return (pkgUse[a] or 0) > (pkgUse[b] or 0) end)
+  for i = limit + 1, #names do pkgActive[names[i]] = nil; pkgUse[names[i]] = nil end
+end
 
 local PKG_RUN_CAPS = {
   ["fs.read"] = true, ["fs.write"] = true, component = true,
@@ -469,7 +602,12 @@ function pkg.capAllowed(pkgName, facet)
 end
 
 local function loadPkgEntry(pkgName, m, entryPath)
-  if pkgActive[pkgName] then return pkgActive[pkgName] end
+  if pkgActive[pkgName] then
+    pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
+    return pkgActive[pkgName]
+  end
+
+  trimCache(lowMemory() and 0 or (PKG_CACHE_MAX - 1))
   if not fs.exists(entryPath) then return nil end
   local source = fs.readFile(entryPath)
   if not source then return nil end
@@ -525,6 +663,7 @@ local function loadPkgEntry(pkgName, m, entryPath)
   result.commands = scoped
 
   pkgActive[pkgName] = result
+  pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
   return result
 end
 
@@ -590,7 +729,8 @@ function pkg.getCommandBackground(name)
 end
 
 function pkg.flushCommandCache(pkgName)
-  if pkgName then pkgActive[pkgName] = nil else pkgActive = {} end
+  if pkgName then pkgActive[pkgName] = nil; pkgUse[pkgName] = nil
+  else pkgActive = {}; pkgUse = {} end
 end
 
 function pkg.capabilities(name)
@@ -900,6 +1040,36 @@ local function translateProgramsEntry(name, inner, srcBase)
   return m
 end
 
+--! #SEC (pentest, Sep 2026) — a manifest is READ ONCE. The signature
+--! layer verifies raw bytes and used to re-read the file for them, after
+--! this reader had parsed its own copy. On storage that answers each read
+--! afresh (a network mount, which repo discovery walks like any other
+--! mount) the far end could hand the parser its own files and hashes and
+--! the verifier a trusted publisher's signed manifest, and the package
+--! installed as "trusted", past `pkg trust require on`. The bytes parsed
+--! here are returned with the table, and signGate verifies exactly those.
+--!
+--! #SEC / #MEM (pentest, Sep 2026) — and bounded. A manifest comes off a
+--! floppy or a network mount and is parsed before any signature is
+--! checked. It was read whole and decoded with only the default 256 KB
+--! byte cap, so a package.lua of "{{{}},{{}},...}" made `pkg list` build
+--! 1.5 MB of tables before the per-table entry cap refused it. The largest
+--! real manifest (Optional Utilities' programs.cfg, 8.6 KB) is charged 26
+--! KB of the budget below. (test_untrusted_index_budget.lua)
+local MANIFEST_MAX_BYTES = 64 * 1024
+local MANIFEST_MAX_COST  = 64 * 1024
+local function readManifestFile(path)
+  local sz = fs.size and fs.size(path)
+  if type(sz) == "number" and sz > MANIFEST_MAX_BYTES then
+    return nil, "manifest too large (" .. sz .. " bytes; at most " .. MANIFEST_MAX_BYTES .. ")"
+  end
+  local bytes, err = fs.readFile(path)
+  if type(bytes) ~= "string" then return nil, err end
+  local m, dErr = serialize.decode(bytes, { maxBytes = MANIFEST_MAX_BYTES,
+    maxCost = MANIFEST_MAX_COST, maxKeys = 1024 })
+  return m, dErr, bytes
+end
+
 local function loadFromProgramsCfg(srcDir)
   local base = basenameOf(srcDir)
   if not base then return nil end
@@ -912,7 +1082,7 @@ local function loadFromProgramsCfg(srcDir)
 
   for _, cand in ipairs(candidates) do
     if fs.exists(cand.path) then
-      local raw, err = serialize.loadFile(fs, cand.path)
+      local raw, err, bytes = readManifestFile(cand.path)
       if type(raw) ~= "table" then
         return nil, "programs.cfg parse error: " .. tostring(err)
       end
@@ -931,7 +1101,7 @@ local function loadFromProgramsCfg(srcDir)
 
         local tm, tErr = translateProgramsEntry(base, entry, cand.root)
         if not tm then return nil, tErr end
-        return tm, nil, cand.path
+        return tm, nil, cand.path, bytes
       end
     end
   end
@@ -948,7 +1118,7 @@ local function loadAnyManifest(srcDir)
   --! this function chose itself. Clearing it on every on-disk form is what
   --! keeps that true — otherwise a hand-written package.lua could declare
   --! one and have its files sourced from anywhere on the machine.
-  local function fromDisk(m, kind, path)
+  local function fromDisk(m, kind, path, bytes)
     if type(m) == "table" then
       m._srcBase = nil
       --! Same rule, and for a sharper reason: `_sigState`/`_sigKey`/
@@ -959,18 +1129,18 @@ local function loadAnyManifest(srcDir)
       --! actual verification and are stripped from every on-disk form.
       m._sigState, m._sigKey, m._sigLabel = nil, nil, nil
     end
-    return m, kind, path
+    return m, kind, path, bytes
   end
 
   local nativePath = fs.join(srcDir, "package.lua")
   if fs.exists(nativePath) then
-    local m, err = serialize.loadFile(fs, nativePath)
-    if m then return fromDisk(m, "native", nativePath) end
+    local m, err, bytes = readManifestFile(nativePath)
+    if m then return fromDisk(m, "native", nativePath, bytes) end
     return nil, "package.lua parse error: " .. tostring(err)
   end
   local oppmPath = fs.join(srcDir, "package.oppm.lua")
   if fs.exists(oppmPath) then
-    local raw, err = serialize.loadFile(fs, oppmPath)
+    local raw, err, oppmBytes = readManifestFile(oppmPath)
     if not raw then return nil, "package.oppm.lua parse error: " .. tostring(err) end
 
     local outerName, inner = next(raw)
@@ -1003,14 +1173,14 @@ local function loadAnyManifest(srcDir)
     end
 
     translated.requires = translateDeps(inner.dependencies)
-    return fromDisk(translated, "oppm", oppmPath)
+    return fromDisk(translated, "oppm", oppmPath, oppmBytes)
   end
 
   local base = srcDir:match("([^/]+)/?$")
   if base then
     local cfgPath = fs.join(srcDir, base .. ".cfg")
     if fs.exists(cfgPath) then
-      local raw, err = serialize.loadFile(fs, cfgPath)
+      local raw, err, cfgBytes = readManifestFile(cfgPath)
       if not raw then return nil, base .. ".cfg parse error: " .. tostring(err) end
 
       local inner, outerName = raw, base
@@ -1040,12 +1210,12 @@ local function loadAnyManifest(srcDir)
         end
       end
       translated.requires = translateDeps(inner.dependencies)
-      return fromDisk(translated, "oppm", cfgPath)
+      return fromDisk(translated, "oppm", cfgPath, cfgBytes)
     end
   end
 
-  local m, cfgErr, cfgPath2 = loadFromProgramsCfg(srcDir)
-  if m then return m, "oppm", cfgPath2 end
+  local m, cfgErr, cfgPath2, idxBytes = loadFromProgramsCfg(srcDir)
+  if m then return m, "oppm", cfgPath2, idxBytes end
   if cfgErr then return nil, cfgErr end
 
   return nil, "no package.lua, package.oppm.lua, <name>.cfg or programs.cfg entry for "
@@ -1119,17 +1289,94 @@ function pkg.findConflicts(m, ignoreName)
   local owner = {}
   for otherName, other in pairs(installed) do
     if otherName ~= m.name and otherName ~= ignoreName then
-      for _, f in ipairs(other.files or {}) do owner[f] = otherName end
+      for _, f in ipairs(other.files or {}) do owner[targetKey(f)] = otherName end
     end
   end
   for _, f in ipairs(m.files or {}) do
-    if owner[f] then
-      out[#out + 1] = { kind = "file", other = owner[f], detail = f,
-        path = f }
+    local o = owner[targetKey(f)]
+    if o then
+      out[#out + 1] = { kind = "file", other = o, detail = f, path = f }
     end
   end
   return out
 end
+
+--! #SEC (pentest, Sep 2026) — findConflicts protects one PACKAGE's files
+--! from another. Nothing protected the SYSTEM's: no package owns
+--! /usr/bin/ssh.lua or /etc/rc.d/20-netfsd.lua, so writing over them was
+--! not a conflict at all and needed no --force. This refusal has no
+--! --force; an admin who means to replace a system file has an editor.
+--! Refused, for every target:
+--!   * any path /tos/system_manifest.lua lists (read as DATA);
+--!   * a module the KERNEL would load. require() searches /tos and then
+--!     /usr/lib and /usr/modules, and runs what it finds in the kernel's
+--!     own _G. /usr/lib/kernel/* etc. would answer any kernel.* or shell.*
+--!     name /tos lacks, and the add-on names the SHELL requires in kernel
+--!     context (KERNEL_CONTEXT_LIBS) run unsandboxed at shell start, so
+--!     only the first-party package of that name may ship them.
+--!     test_pkg_protected_targets rescans the shell for new ones;
+--!   * an existing /etc file no installed package owns: an operator's own
+--!     rc.d script or config is not a package's to replace.
+local SYSTEM_MANIFEST = "/tos/system_manifest.lua"
+local RESERVED_LIB_NAMESPACES = {
+  kernel = true, shell = true, compat = true, peripheral = true,
+  system_manifest = true,
+}
+local KERNEL_CONTEXT_LIBS = {
+  mail = { mail = true }, mailapp = { mail = true },
+  intercom = { intercom = true }, intercomapp = { intercom = true },
+  blockfs = { blockfs = true }, mouse = { mouse = true },
+  ["cluster-manager"] = { ["cluster-manager"] = true },
+  cluster = { ["cluster-manager"] = true, ["cluster-master"] = true,
+              ["cluster-storage"] = true },
+  ["rbmk-cmd"] = { ["rbmk-control"] = true },
+}
+local KERNEL_LIB_ROOTS = { "/usr/lib/", "/usr/modules/" }
+
+local function protectedTargetRefusal(m, prior)
+  if type(m) ~= "table" or type(m.files) ~= "table" then return nil end
+  local sys = {}
+  local list = serialize and serialize.loadFile(fs, SYSTEM_MANIFEST)
+  if type(list) == "table" then
+    for _, e in ipairs(list) do
+      if type(e) == "table" and type(e.path) == "string" then sys[targetKey(e.path)] = true end
+    end
+  elseif log then
+    log.warn("pkg", "cannot read " .. SYSTEM_MANIFEST .. "; system files are not protected from packages")
+  end
+  local owned = {}
+  for _, other in pairs(installed) do
+    for _, f in ipairs(other.files or {}) do owned[targetKey(f)] = true end
+  end
+  for _, f in ipairs(prior or {}) do owned[targetKey(f)] = true end
+  for _, target in ipairs(m.files) do
+    local key = targetKey(target)
+    if sys[key] then return tostring(target) .. " is a TOS system file" end
+    for _, root in ipairs(KERNEL_LIB_ROOTS) do
+      if key:sub(1, #root) == root then
+        local mod = (key:sub(#root + 1):match("^([^/]+)") or ""):gsub("%.lua$", "")
+        if RESERVED_LIB_NAMESPACES[mod] then
+          return tostring(target) .. " would be loaded by the kernel as its own '"
+            .. mod .. "' module"
+        end
+        local owners = KERNEL_CONTEXT_LIBS[mod]
+        if owners and not owners[m.name] then
+          local names = {}
+          for n in pairs(owners) do names[#names + 1] = n end
+          table.sort(names)
+          return tostring(target) .. " is the '" .. mod .. "' library, which the shell "
+            .. "runs with full system authority; only " .. table.concat(names, " / ")
+            .. " may provide it"
+        end
+      end
+    end
+    if key:sub(1, 5) == "/etc/" and not owned[key] and fs.exists(target) then
+      return tostring(target) .. " already exists and no installed package owns it"
+    end
+  end
+  return nil
+end
+pkg._protectedTargetRefusal = protectedTargetRefusal
 
 --! There was no update path at all: `pkg.install` refused over an existing
 --! package ("uninstall first"), and nothing ever compared what is installed
@@ -1196,6 +1443,17 @@ function pkg.upgrade(name, opts)
   if #conflicts > 0 and not opts.force then
     return false, "conflicts: " .. pkg.describeConflicts(conflicts)
   end
+  --! #SEC (pentest, Sep 2026) — refusals install() would make AFTER the old
+  --! version is gone are made here, while it is still installed. A candidate
+  --! that fails validation or targets a protected path otherwise costs the
+  --! operator the working version it was meant to replace.
+  local vmOk, vmErr = validateManifest(m)
+  if not vmOk then return false, "invalid manifest: " .. tostring(vmErr) end
+
+  local svcOk, svcErr = serviceInstallGate(m, opts)
+  if not svcOk then return false, "refusing to upgrade '" .. name .. "': " .. svcErr end
+  local prot = protectedTargetRefusal(m)
+  if prot then return false, "refusing to upgrade '" .. name .. "': " .. prot end
 
   local wasEnabled = pkg.isEnabled(name)
   local markers = {}
@@ -1220,6 +1478,7 @@ function pkg.upgrade(name, opts)
   local inOk, inErr = pkg.install(pkgDir, {
     session = opts.session, upgrading = true, force = opts.force,
     allowUnverified = opts.allowUnverified, licenseKey = opts.licenseKey,
+    _priorFiles = cur.files,
   })
   if not inOk then
     return false, "upgrade FAILED after removing " .. name .. ": " .. tostring(inErr)
@@ -1292,7 +1551,7 @@ end
 --! `pkgsign` is required lazily. A machine that never meets a signed
 --! package never loads the signature layer, and never loads the several
 --! hundred lines of field arithmetic underneath it.
-local function signGate(manifestPath, opts)
+local function signGate(manifestPath, opts, manifestBytes)
   if not manifestPath then
     return { state = "unsigned", reason = "manifest path unknown" }, nil
   end
@@ -1301,7 +1560,8 @@ local function signGate(manifestPath, opts)
     return { state = "unsigned", reason = "signature support unavailable" }, nil
   end
   ps.init({ fs = fs, serialize = serialize, log = log })
-  local verdict = ps.verifyManifest(manifestPath)
+
+  local verdict = ps.verifyManifest(manifestPath, manifestBytes)
 
   if verdict.state == "invalid" then
     return verdict, "refusing to install '" .. tostring(manifestPath)
@@ -1368,7 +1628,7 @@ function pkg.install(srcDir, opts)
   end
   srcDir = fs.normalize(srcDir)
 
-  local m, source, manifestPath = loadAnyManifest(srcDir)
+  local m, source, manifestPath, manifestBytes = loadAnyManifest(srcDir)
   if not m then return false, "no manifest in " .. srcDir .. ": " .. tostring(source) end
   if source == "oppm" then
 
@@ -1394,6 +1654,9 @@ function pkg.install(srcDir, opts)
   local ok, vErr = validateManifest(m)
   if not ok then return false, "invalid manifest: " .. vErr end
 
+  local svcOk, svcErr = serviceInstallGate(m, opts)
+  if not svcOk then return false, svcErr end
+
   if installed[m.name] and not opts.upgrading then
     local cur = installed[m.name].version
     local cmp = pkg.compareVersion(m.version or "0.0.0", cur or "0.0.0")
@@ -1403,6 +1666,11 @@ function pkg.install(srcDir, opts)
         m.name, tostring(cur), tostring(m.version), m.name)
     end
     return false, "already installed (uninstall first): " .. m.name
+  end
+
+  do
+    local why = protectedTargetRefusal(m, opts._priorFiles)
+    if why then return false, "refusing to install '" .. tostring(m.name) .. "': " .. why end
   end
 
   local conflicts = pkg.findConflicts(m, opts.upgrading and m.name or nil)
@@ -1425,7 +1693,7 @@ function pkg.install(srcDir, opts)
 
   local sigVerdict
   do
-    local verdict, refusal = signGate(manifestPath, opts)
+    local verdict, refusal = signGate(manifestPath, opts, manifestBytes)
     if refusal then return false, refusal end
     sigVerdict = verdict
     if log then
@@ -2154,9 +2422,9 @@ end
 function pkg.checkSignature(srcDir)
   if type(srcDir) ~= "string" or srcDir == "" then return nil, "invalid directory" end
   local ps, e = withSign(); if not ps then return nil, e end
-  local m, source, manifestPath = loadAnyManifest(fs.normalize(srcDir))
+  local m, source, manifestPath, bytes = loadAnyManifest(fs.normalize(srcDir))
   if not m then return nil, "no manifest in " .. srcDir .. ": " .. tostring(source) end
-  return ps.verifyManifest(manifestPath), m
+  return ps.verifyManifest(manifestPath, bytes), m
 end
 
 --! `opts.signer` is REQUIRED: it is the KDF salt, not decoration. Signing
