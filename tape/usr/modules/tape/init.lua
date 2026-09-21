@@ -61,6 +61,38 @@ local function findDrive(addr)
   return nil, "No tape drive found"
 end
 
+--! #BUG (mod-source verification round, 2026-09-20) — THE TAPE DRIVE HAS NO
+--! GETTER FOR SPEED OR VOLUME. Computronics' TileTapeDrive.java declares
+--! exactly these @Callbacks, and this is the whole Lua surface:
+--!   getLabel getPosition getSize getState isEnd isReady play read seek
+--!   setLabel setSpeed setVolume stop write
+--! setSpeed and setVolume are there; getSpeed and getVolume do not exist,
+--! at any tier, in any version of that file. `tape state`, `tape speed` and
+--! `tape volume` all called them inside a pcall, so the pcall failed on
+--! EVERY machine: state printed no Speed or Volume line at all, and the two
+--! bare commands answered "Current speed: ?" forever. The pcall is why it
+--! looked like a hardware quirk instead of a typo.
+--!   So TOS remembers what TOS SET, per drive address, and labels it as
+--! such. That is deliberately narrower than a getter: a value set by
+--! another computer on the same drive, or set before this reboot, is
+--! reported as unknown rather than guessed at. Reporting a number nobody
+--! asked the drive for would be the same class of mistake as the pcall
+--! that hid this one.
+local lastSet = {}   -- drive address -> { speed = n, volume = n }
+
+local function noteSet(drive, key, value)
+  local a = drive and drive.address
+  if not a then return end
+  lastSet[a] = lastSet[a] or {}
+  lastSet[a][key] = value
+end
+
+local function recalled(drive, key)
+  local a = drive and drive.address
+  local rec = a and lastSet[a]
+  return rec and rec[key] or nil
+end
+
 --- Encode uint16 big-endian.
 local function enc16(n)
   return string.char(math.floor(n / 256) % 256, n % 256)
@@ -1033,18 +1065,22 @@ local function cmdState(args, o)
       fmtSize(pos), fmtSize(sz),
       math.floor(pos * 100 / sz)), 0xFFFFFF)
   end
-  local okSp, sp = pcall(drive.getSpeed)
-  if okSp and sp then o(string.format("Speed:    %.2fx", sp), 0xFFFFFF) end
-  local okV, v = pcall(drive.getVolume)
-  if okV and v then o(string.format("Volume:   %.2f", v), 0xFFFFFF) end
+  local sp = recalled(drive, "speed")
+  if sp then o(string.format("Speed:    %.2fx (set here)", sp), 0xFFFFFF)
+  else o("Speed:    not reported by the drive", 0xAAAAAA) end
+  local v = recalled(drive, "volume")
+  if v then o(string.format("Volume:   %.2f (set here)", v), 0xFFFFFF)
+  else o("Volume:   not reported by the drive", 0xAAAAAA) end
 end
 
 local function cmdSpeed(args, o)
   local drive, err = findDrive(nil)
   if not drive then o(err, 0xFF0000); return end
   if not args[2] then
-    local ok, v = pcall(drive.getSpeed)
-    o("Current speed: " .. (ok and tostring(v) or "?"), 0xFFFFFF); return
+    local sp = recalled(drive, "speed")
+    if sp then o(string.format("Speed set here: %.2fx", sp), 0xFFFFFF)
+    else o("The drive does not report its speed (setter only).", 0xAAAAAA) end
+    return
   end
   local n = tonumber(args[2])
   if not n or n < 0.25 or n > 2.0 then
@@ -1052,6 +1088,7 @@ local function cmdSpeed(args, o)
   end
   local ok, err2 = pcall(drive.setSpeed, n)
   if not ok then o("setSpeed failed: " .. tostring(err2), 0xFF0000); return end
+  noteSet(drive, "speed", n)
   o(string.format("Speed set to %.2fx", n), 0x00FF00)
 end
 
@@ -1059,8 +1096,10 @@ local function cmdVolume(args, o)
   local drive, err = findDrive(nil)
   if not drive then o(err, 0xFF0000); return end
   if not args[2] then
-    local ok, v = pcall(drive.getVolume)
-    o("Current volume: " .. (ok and tostring(v) or "?"), 0xFFFFFF); return
+    local v = recalled(drive, "volume")
+    if v then o(string.format("Volume set here: %.2f", v), 0xFFFFFF)
+    else o("The drive does not report its volume (setter only).", 0xAAAAAA) end
+    return
   end
   local n = tonumber(args[2])
   if not n or n < 0 or n > 1 then
@@ -1068,6 +1107,7 @@ local function cmdVolume(args, o)
   end
   local ok, err2 = pcall(drive.setVolume, n)
   if not ok then o("setVolume failed: " .. tostring(err2), 0xFF0000); return end
+  noteSet(drive, "volume", n)
   o(string.format("Volume set to %.2f", n), 0x00FF00)
 end
 

@@ -39,7 +39,7 @@ return {
     ["stock"] = { disk = 1, version = "1.0.0", category = "automation", kind = "command",
       description = "Inventory monitor: totals every adjacent chest, warns on low stock.",
       requires = {  }, recommends = { "mouse" } },
-    ["tape"] = { disk = 2, version = "2.3.0", category = "storage", kind = "command",
+    ["tape"] = { disk = 2, version = "2.3.1", category = "storage", kind = "command",
       description = "General Computronics tape control: data archive/restore + audio playback + raw I/O + device state.",
       requires = {  }, recommends = {  } },
     ["tape-authenticator"] = { disk = 2, version = "1.0.2", category = "security", kind = "command",
