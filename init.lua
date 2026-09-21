@@ -163,6 +163,14 @@ end
 do
   local bootTotal = bootFS.spaceTotal()
   local FLOPPY_THRESHOLD = 524288  -- 512KB (floppies are ~512KB)
+  --! #FIX (loot disk, 2026-09-13) — a READ-ONLY boot disk gets the offer
+  --! at any size. OpenComputers mounts a loot disk (the TOS floppy from a
+  --! dungeon chest) through ReadOnlyWrapper, whose spaceTotal() returns
+  --! spaceUsed() — the size of its contents, ~1.8 MB for TOS (verified in
+  --! OC 1.8.10). So the disk that most needed this offer never passed the
+  --! size test, and booted into a root that cannot keep a password
+  --! (Stage 0a). test_init_readonly_install pins this.
+  local bootReadOnly = _G._TOS_ROOT_READONLY
   -- #SEC H1 — a one-time boot (operator chose Shift+Enter at the BIOS for a
   -- changed/fallback drive) explicitly declined to touch boot config. The
   -- migration flow below can re-flash the EEPROM via setBootAddress, so honour
@@ -171,14 +179,17 @@ do
   if _G._BIOS_ONETIME then
     bootTotal = nil
   end
-  if bootTotal and bootTotal <= FLOPPY_THRESHOLD then
+  if bootTotal and (bootTotal <= FLOPPY_THRESHOLD or bootReadOnly) then
     -- Look for a larger disk to install onto
     local largerDisk = nil
     local largerTotal = 0
     for addr in component.list("filesystem") do
       if addr ~= bootFS.address then
         local ok2, px = pcall(component.proxy, addr)
-        if ok2 and px then
+        --! A read-only disk is never a target, however large: a second loot
+        --! disk would otherwise beat the hard drive and fail the copy on its
+        --! first write.
+        if ok2 and px and not safeReadOnly(px) then
           local t2 = px.spaceTotal()
           if t2 and t2 > bootTotal and t2 > largerTotal then
             largerDisk = px
@@ -206,7 +217,9 @@ do
         end
         local bKB = math.floor(bootTotal / 1024)
         local dKB = math.floor(largerTotal / 1024)
-        gp(2, "TOS is running from a floppy disk (" .. bKB .. "KB)", 0xFFFF00)
+        -- Every line here fits a Tier 1 screen (50 columns).
+        gp(2, (bootReadOnly and "TOS is running from a read-only disk ("
+          or "TOS is running from a floppy disk (") .. bKB .. "KB)", 0xFFFF00)
         gp(3, "A larger drive was detected (" .. dKB .. "KB)", 0xFFFF00)
         gp(4, "  source:  " .. (bootFS.address or "?"):sub(1, 12) .. "...", 0xAAAAAA)
         gp(5, "  target:  " .. (largerDisk.address or "?"):sub(1, 12) .. "...", 0xAAAAAA)
@@ -214,7 +227,8 @@ do
         -- can confirm what's about to happen before approving an
         -- irreversible disk overwrite + EEPROM reflash.
         gp(7, "1. Install TOS to the hard drive (recommended)", 0x00FF00)
-        gp(8, "2. Continue booting from floppy (limited space)", 0xAAAAAA)
+        gp(8, bootReadOnly and "2. Continue read-only (nothing is saved)"
+          or "2. Continue booting from floppy (limited space)", 0xAAAAAA)
         gp(10, "Press 1 or 2:", 0xFFFFFF)
         -- Wait for keypress
         while true do
@@ -566,6 +580,7 @@ local OPENOS_SHIMS = {
   sides = true, colors = true, keyboard = true, text = true,
   serialization = true, buffer = true, term = true, filesystem = true,
   event = true, shell = true, io = true, internet = true,
+  robot = true, process = true, note = true,
 }
 
 local function tosRequireBody(name)

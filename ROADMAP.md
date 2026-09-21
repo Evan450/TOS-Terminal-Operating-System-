@@ -2,18 +2,930 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**75 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**109 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 6 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 57 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 15 | Idea, no commitment. Discuss before building. |
+| Planned | 82 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## THE MOD SOURCE IS THE AUTHORITY (2026-09-20)
+
+### Planned — REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK
+
+```text
+REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK. Needs the
+    OPERATOR: TOS-Extras/dist ships package.sig beside every
+    package.lua, and signing takes TOS_SIGNING_PASSPHRASE and
+    TOS_SIGNING_NAME from the environment — a secret, deliberately
+    never in argv or in a file (build/README.md). So the tape fix
+    above is in modules/ and NOT in dist/, and
+    test_build_disk.lua's "the published pack matches a fresh build"
+    check is RED until the pack is rebuilt:
+      TOS_SIGNING_PASSPHRASE='...' TOS_SIGNING_NAME='...' \
+        lua TOS-Extras/build/build-disk.lua --sign
+    That red check is the guard doing its job, not a break. Do NOT
+    hand-copy the file into dist/ to silence it: the signature
+    covers the manifest, which covers the hashes, which cover the
+    files, so a hand-patched dist would carry a signature that no
+    longer verifies — strictly worse than a stale one, because pkg
+    would reject it.
+```
+
+## SECOND PASS: THE COMPAT NUMBER (2026-09-20)
+
+### Planned — PUT THE COMPAT NUMBER IN THE README
+
+```text
+PUT THE COMPAT NUMBER IN THE README, or decide not to. The
+    shims above make the measured failure rate zero on both corpora,
+    so "OpenOS compatibility, so much of what already exists still
+    runs" can become a number. It is an EDITORIAL call, deliberately
+    left to the operator, because the number needs its caveats
+    alongside it or it overstates:
+      * a require() that resolves is not a program that works — caps,
+        paths and terminal behaviour still differ;
+      * the corpora are the nine loot disks (80 programs) and three
+        OpenPrograms repos (60 files), which is what exists and is
+        still not everything;
+      * some community code targets PLAN9K, not OpenOS (magik6k's
+        process.rt / process.globalSignals calls are Plan9k's API).
+        Those files were never going to run here and are not counted
+        as compat gaps.
+    Honest phrasing is something like "every program on the nine
+    OpenComputers loot disks loads; the OpenOS names we do not provide
+    were required by none of them". Then re-run the scan when the
+    claim is made, so the number in the README is one somebody can
+    reproduce.
+```
+
+### Planned — THE HEADLESS BOOT TEST HAS A WORKING RECIPE
+
+```text
+THE HEADLESS BOOT TEST HAS A WORKING RECIPE. This is the missing
+    half of IN-EMULATOR BOOT SMOKE TEST (OCOS survey, [~]), not a new
+    item. OCOS runs the whole thing unattended under ocvm
+    (tools/test-boot.sh) and the shape is what our battery already
+    produces:
+      * wipe every uuid-shaped dir in the emulator instance first, so
+        a MISSING log is detectable instead of reading a stale one --
+        the same failure sync-emulator.py exists to prevent;
+      * stage a real package into the writable fs so the self-test
+        exercises a genuine install, not a synthetic one;
+      * timeout 240 script -qc tools/run-emu.sh -- `script` gives
+        ocvm a REAL PTY, without which the GPU comes up 0x0. That one
+        line is what makes headless work;
+      * the OS writes /selftest.log and SHUTS ITSELF DOWN, so the
+        outer timeout is only a stuck-boot guard;
+      * exit 0 pass, 2 if the log has ^FAIL, 1 if no log was written
+        at all -- and on 1 it dumps the last 30 lines of the emulator
+        log to stderr.
+      We already do the wipe, already write /var/selftest.log, and
+    already have nine checks. MISSING: an emulator that can be driven
+    headlessly (ocvm, not Ocelot's GUI), the script -qc PTY trick, and
+    a self-test mode that powers the machine OFF when it finishes.
+    The README calls powering on "the one manual step" -- this is how
+    it stops being one.
+      Their 240 s budget has a reason worth keeping: pure-Lua
+    1024-bit RSA verify takes 10-30 s on a simulated T1 CPU. Ed25519
+    is cheaper, but budget for crypto on a SIMULATED cpu.
+```
+
+### Planned — DRY-RUN CAPABILITY ENFORCEMENT
+
+```text
+DRY-RUN CAPABILITY ENFORCEMENT. Upgrades AUDIT LOG FOR CAPABILITY
+    DENIALS (OCOS survey, [*]) from an idea to a shape. Their
+    cap.check has an `enforce` flag: when false it ALWAYS RETURNS TRUE
+    but writes a denial record to the audit log; when true it denies
+    and the caller raises EPERM (src/sys/k/cap.lua).
+      That is the safe way to tighten a sandbox on a live base: turn
+    enforcement off, run the workload, read what WOULD have broken,
+    then turn it on. It is also an excellent test fixture -- run the
+    OpenOS compat corpus above in audit mode and the log says exactly
+    which capabilities real programs need, which is the empirical
+    version of guessing.
+      SECOND, SMALLER IDEA from the same file: their caps are
+    namespaced and GLOB-MATCHED -- syscall:write:/var/log/*,
+    component:<type>:<addr> -- so a service is granted write access to
+    a PATH PREFIX rather than to the filesystem. Ours are flat
+    booleans and write scoping is securefs per USER, which is the
+    better answer for humans. For a sandboxed DAEMON with no human
+    behind it, a path-scoped write cap is strictly tighter than "can
+    write as this user". First use is rc.d services, whose caps are
+    already declared and already gated (ALLOWED_SERVICE_CAPS).
+```
+
+### Planned — SPLIT THE BIOS
+
+```text
+SPLIT THE BIOS: MINIMAL EEPROM, RECOVERY UI IN STAGE 2. Refines
+    the item above and the 2026-09-06 BIOS pair. MineOS proves a full
+    menu FITS in 4 KiB; OCOS argues you should not put it there
+    anyway. Their EFI is 4,164 B of source, 3,109 B minified, and its
+    own comment says the boot-mode menu, recovery flows and splash
+    "live in /sys/boot.lua, where they have room to breathe". The
+    EEPROM does the minimum: find a medium, read config, load stage 2,
+    and on ANY failure draw a full-screen panic naming the reason.
+      Nearly the shape we already have -- bios.lua is a POST +
+    loader, /init.lua is stage 2. The split:
+      * EEPROM: timed hotkey, BOOT-DEVICE chooser, panic screen that
+        names the reason. Small enough to keep the manifest anchor.
+      * Stage 2: the rich recovery menu -- boot profiles, safe mode,
+        srm restore, doctor, disk utility -- using the kernel's own
+        modules.
+      * THE SPLIT'S WEAKNESS, stated plainly: if the DISK is what
+        broke, stage 2 is gone and only the EEPROM half is left.
+        Which is exactly why the EEPROM half must still be able to
+        pick a DIFFERENT disk, and why the emergency terminal stays.
+      Two behaviours from the small bootloaders, both cheap: GEBL's
+    QUICK BOOT (exactly one bootable OS found -> boot it, no prompt)
+    and its INIT FINDER (config missing or unreadable -> search the
+    filesystem root for a bootable file instead of giving up). Zorya
+    adds the third: a SELECTION TIMEOUT that falls through to the
+    default.
+```
+
+### Planned — IF WE BUILD THE ARCHIVE MOUNT
+
+```text
+IF WE BUILD THE ARCHIVE MOUNT, USE mtar -- DO NOT INVENT A
+    FORMAT. Refines MOUNT PACKAGES AS READ-ONLY ARCHIVES above. mtar
+    is ~100 lines and the header is trivial:
+      \255\255 <version:u8> <nameLen> <name> <fileLen>
+    version 0 uses >I2 for the length, version 1 >I8. Entries stream,
+    so an iterator walks the archive without loading it, and
+    cleanPath strips . and .. segments AT PARSE TIME -- a traversal
+    guard we would otherwise have to write.
+      The reason beyond saving work: four implementations already
+    read it (PsychOS' libmtar, ULOS 2's mtarldr boots FROM one,
+    Zorya's reader, plus the writers), so a TOS package archive would
+    be readable by other systems and we could read theirs. This is
+    the one place we lose nothing by being compatible: a package
+    archive has no trust properties of its own -- the Ed25519
+    signature over it is where the security lives, and that stays
+    ours.
+```
+
+### Planned — rc.lua: TWO NARROW THINGS, AND A CORRECTED ASSUMPTION. OCOS'
+
+```text
+rc.lua: TWO NARROW THINGS, AND A CORRECTED ASSUMPTION. OCOS'
+    service framework (declarative units, topo-sorted startup,
+    supervised restart, per-service caps) reads like a clear lead.
+    IT IS NOT -- rc.lua has all of it: topoSort at :135,
+    dependency-ordered start at :423, restart supervision at :516,
+    per-service caps and user. Recorded so the next survey does not
+    re-raise it. The DETAILS are worth having:
+      * SERVICE METADATA IS RECOVERED BY REGEX OVER SOURCE TEXT.
+        rc.lua:237 does src:match("restart%s*=%s*true"). The returned
+        table is consulted too (:403 uses result.restart), so this is
+        a pre-scan rather than the only path -- but a COMMENT that
+        mentions restart = true, or a value computed rather than
+        written literally, is read wrong. Fix that fits our idiom:
+        keep the file, drop the regex, have the pre-scan load the
+        table in a bare environment.
+      * restartCount NEVER DECAYS. tryRestart stops at maxRestart and
+        logs -- good, no thrash -- but the count is per-LIFETIME, so
+        a service that crashes once a week eventually exhausts its
+        budget and stays down with a log line as the only trace.
+        Could be as small as resetting the count after the service
+        has stayed up N minutes. OCOS' answer is exponential backoff
+        plus a tri-state policy (always / on_failure / one_shot), and
+        their one_shot comment names the case worth stealing: a
+        missing GPU should not make the supervisor thrash.
+```
+
+### Planned — A PROVENANCE LINT
+
+```text
+A PROVENANCE LINT. KittenOS' compliance.lua walks the repository
+    and prints "File wasn't accounted for" for anything not claimed
+    by an author manifest. We have the same SHAPE for runtime files
+    (test_manifest_completeness.lua) and an accidental-global lint
+    besides; what is missing is the LICENSING half. We are GPL v3,
+    we vendor an OpenOS tree under Reference/, and Extras ships
+    separately authored modules. A lint that every .lua under tos/
+    and TOS-Extras/modules/ carries a license header, and that
+    nothing under Reference/ is reachable from a release manifest, is
+    cheap and protects the part of the project that is hardest to
+    repair after the fact.
+```
+
+### Idea / far future — MESH
+
+```text
+MESH: THE ROUTE INFORMATION IS ALREADY IN THE PACKETS. Plan9k
+    does real networking -- IPv4, subnets, RIP v2 in `routed`,
+    address autoconfiguration in ohcp that installs routes on lease.
+    We deliberately do not: no routing table, neighbours only,
+    controlled flooding with DEFAULT_TTL 8, MAX_TTL 16, a 512-id
+    dedup cache and store-and-forward retries. That is the right
+    trade for OC-sized networks and the module is already hardened
+    against flood amplification. NOT A GAP.
+      The one thing worth writing down: flooding costs scale with
+    network size, and our own packets already carry the fix. Every
+    mesh message has a `path` field -- the node addresses it has
+    traversed -- so a node that relays a message ALREADY KNOWS a
+    working route back to the origin, for free, with no protocol
+    change. If a base ever gets big enough that flooding hurts,
+    opportunistic route learning from `path` (try the learned next
+    hop, fall back to flooding) is available without adopting
+    anyone's routing protocol. Not now; recorded so it is not
+    re-derived under pressure.
+```
+
+### Idea / far future — LINE DISCIPLINES -- direction, not a task, and expensive. Their
+
+```text
+LINE DISCIPLINES -- direction, not a task, and expensive. Their
+    comment is the clearest statement of it (Cynosure 2,
+    src/disciplines/main.lua): a line discipline is "a middle layer
+    between the raw stream and the character device... the TTY line
+    discipline is what makes ctrl-C, ctrl-\, and ctrl-Z work. This
+    line discipline can be put over a network socket, a serial
+    connection, or a virtual TTY provided by the kernel - and the
+    application (ideally the user, too) will see no difference in
+    behavior."
+      THREE OF OUR PROBLEMS ARE ONE PROBLEM IN THAT FRAMING:
+      * H-04 (open): term.read() takes signals off the machine-wide
+        queue. A per-stream input queue with a discipline in front is
+        where that read should get its characters.
+      * H-06 (open): two sandboxes share compat.term's cursor. A
+        discipline instance per stream owns its own line state.
+      * rsh has no pty. A remote shell is a socket; with a discipline
+        over it the remote side behaves like a local terminal and rsh
+        knows nothing about terminals.
+      This is NOT a proposal to rewrite the terminal layer. It is a
+    note that the next time one of those is patched, the patch should
+    move TOWARD one input-stream abstraction with a discipline,
+    instead of adding a fourth special case to compat.term.
+      OTHER ROUND-2 NOT-GAPS, recorded so they are not
+    re-investigated: OCOS' SEMVER PACKAGE DEPS -- pkg.lua already
+    takes { name = ..., version = ">=1.0", optional = ... } and has
+    compareVersion (:1072, :1157). OCOS' DOUBLE-BUFFERED COMPOSITOR
+    -- our shadow buffer; their README names MineOS as the source.
+    Cynosure 2's PLUGGABLE BINFMT (src/exec/{lua,cle,shebang}.lua) --
+    we run .lua and that is the whole population. ULOS 2's LUAPOSIX
+    COMPATIBILITY PUSH -- their target is *nix programs; ours is
+    OpenOS programs, which is the population that actually exists.
+```
+
+## WHAT THE REST OF THE FIELD DOES BETTER (2026-09-20)
+
+### Planned — A 4 KiB EEPROM FITS A RECOVERY MENU, AND MineOS PROVES IT
+
+```text
+A 4 KiB EEPROM FITS A RECOVERY MENU, AND MineOS PROVES IT.
+    This is evidence for the two entries in THE BIOS REFUSED TO
+    BOOT ANYTHING BUT TOS (2026-09-06), not a new item: the
+    objection there was byte budget, and the objection is wrong.
+    MineOS' EFI/Minified.lua is 3,865 bytes -- inside the 4 KiB
+    limit with 231 to spare -- and it holds ALL of:
+      * a TIMED hotkey (hold Alt for one second) so the recovery
+        path costs a healthy boot nothing;
+      * a boot-source menu listing every filesystem component with
+        label, HDD/FDD/SYS class, read-only flag, used-percent and
+        address;
+      * per-disk set-bootable / rename / erase;
+      * internet recovery and URL boot, both gated on a card;
+      * a candidate boot-file list (/OS.lua, then /init.lua) so it
+        boots its own OS or an OpenOS-shaped one, and a fallback
+        that walks every filesystem when the committed address is
+        gone, re-scanning on component_added.
+      Fuchas' dualboot_init.lua is the /init.lua half in ~40 lines
+    and is the cheaper thing to copy first: a stub that checks for
+    /lib/core/boot.lua and /Fuchas/Kernel/boot.lua, boots whichever
+    exists ALONE with no prompt, and asks only when both are there.
+      OUR CONSTRAINT THEY DO NOT HAVE: the EEPROM data field is
+    already spoken for. bios.lua keeps the boot address on line 1
+    and the kernel anchors its manifest hash after a newline (#SEC
+    C1). A menu that writes the data field must preserve line 2+.
+      Internet recovery inherits the pkgsign question -- fetching
+    and running a script from a URL is exactly what signing exists
+    to stop. Scope it to "download bootstrap.lua and stop", which
+    is the documented network install path anyway, or check a
+    signature.
+      OTHER ROUTE, decide one and not both: ship a loader_tos
+    module for Zorya NEO (Extras) instead of growing bios.lua.
+    Their loaders are ~40 lines (mods/loader_openos/init.lua
+    returns function(addr) that builds an env and loads the OS's
+    init) and they already carry loader_openos, loader_fuchas,
+    loader_cynosure, loader_monolith, loader_tsuki. But Zorya then
+    owns the EEPROM, runs the OS in its own thread under a
+    synthesized _G, and offers virtual components -- and our boot
+    chain has opinions about all three (the Lua-5.3 feature probe,
+    the manifest anchor, component_caps).
+```
+
+### Planned — MOUNT PACKAGES AS READ-ONLY ARCHIVES INSTEAD OF EXTRACTING
+
+```text
+MOUNT PACKAGES AS READ-ONLY ARCHIVES INSTEAD OF EXTRACTING
+    THEM. PsychOS' pkgfs (lib/pkgfs.lua) installs a package by
+    REGISTERING its archive: a filesystem-component-shaped table
+    over an mtar file, optionally lz16-compressed, with a path
+    index, where write/rename/makeDirectory/seek return false.
+    activatePackage is one line. Fuchas does the same at boot with
+    nitrofs; Zorya reads arcfs/romfs/cpio from the BOOTLOADER.
+      WHY IT IS WORTH MORE TO US THAN TO THEM: OC charges fileCost
+    (512 B) per file on top of content, and a full install leaves
+    ~260 KB free on an empty T2. Measured on
+    TOS-Extras/dist/optional-utilities as shipped:
+      all 16 packages   76 files   745,015 B   38,912 B fileCost
+      cluster-master    13 files   140,631 B    6,656 B
+      blockfs            3 files    55,343 B    1,536 B
+    Archive-mounting all 16 recovers ~23 KB of pure fileCost before
+    compression, and data-card deflate on Lua source usually halves
+    the content. Call it 350-400 KB back on a disk with 260 KB to
+    give: four installed packages becomes a dozen.
+      WE ALREADY OWN THE THREE HARD PARTS:
+      * fs.mount(path, proxy) takes anything filesystem-component-
+        shaped, and netfs.lua and jbod.lua are existing producers
+        of exactly that shape.
+      * compress.lua already frames deflate as INDEPENDENTLY
+        inflatable chunks (nChunks(u16), then cLen/cData pairs).
+        That is random access at chunk granularity, which is what
+        an archive mount needs. Written for swap and backups; the
+        property generalises for free.
+      * OC filesystem handles support seek (Reference/OpenOS:
+        lib/devfs.lua:329, lib/core/full_buffer.lua:12), so a mount
+        seeks to a chunk instead of reading a 140 KB package whole
+        on a 192 KB box.
+      SIGNING GETS SIMPLER, NOT HARDER: pkgsign signs a manifest of
+    per-file hashes today; one archive is one hash and one
+    signature, the archive is immutable after install, and srm scan
+    stops walking a package's files. Uninstall becomes one remove.
+      COST, and compress.lua's own header already says it: a data-
+    card call draws a per-tick budget and can sleep the machine a
+    tick, so this is for COLD data. Package code is read once per
+    require, which fits; a package whose data files are read in a
+    hot loop does not. Per-package flag, not a global mode.
+      No data card -> compress.lua falls back to a stored blob, so
+    the fileCost win survives without compression.
+      securefs must still mediate the mount point, exactly as the
+    jbod header says ("a TRANSPORT, not an access layer").
+```
+
+### Planned — COPY-ON-WRITE OVERLAY MOUNTS
+
+```text
+COPY-ON-WRITE OVERLAY MOUNTS. Plan9k's pipes/06_cowfs.lua is
+    ~120 lines: cowfs.new(readfs, writefs) returns one proxy, reads
+    fall through to the read-only side unless the write side has
+    the file, writes always land on the write side, and deletes are
+    recorded as <dir>/.cfsdel.<name> whiteouts so a delete can
+    shadow a file that exists only on the read-only side.
+      Three things we cannot do today and would get:
+      * RUN from read-only media. HEAD already offers to install
+        from a read-only boot disk; an overlay is the other answer
+        -- run NOW, writes on any writable disk, install later or
+        never.
+      * A kiosk or LOG WALL appliance that RESETS on reboot. Point
+        the write side at a scratch volume and wipe it at boot.
+        kiosk.cfg gates commands; the filesystem is still
+        permanently mutable. This is the missing half.
+      * TRY-BEFORE-COMMIT: pkg install or an srm experiment on an
+        overlay, inspect, then merge or drop the write layer. A
+        weaker form of `srm baseline --full`, reached without
+        media.
+      WHITEOUTS ARE A NAMESPACE HAZARD and Plan9k does not guard
+    it: a real file named .cfsdel.x must not be able to hide x.
+    fs.lua already refuses to mount over a non-empty directory
+    (#SEC H27) and refuses to remove mount points, so naming and
+    blocking this class is house style. Needs its own test.
+```
+
+### Planned — A DRIVER REGISTRY WITH PER-DEVICE PROBING
+
+```text
+A DRIVER REGISTRY WITH PER-DEVICE PROBING. Fuchas resolves a
+    device to a driver instead of hardcoding one: drivers live at
+    Drivers/<component type>/<name>.lua along a DRV_PATH search
+    path, each returns a spec with isCompatible(addr),
+    findBestDriver(type, addr) probes candidates, changeDriver
+    pins a specific driver to a specific address, and in SAFE_MODE
+    only a basicDrivers set (drive, gpu) may load at all. Two
+    printer drivers ship side by side -- openprinter.lua and
+    ccprinter.lua -- which is the whole point.
+      WE ARE ALREADY HAND-ROLLING THE SPECIAL CASES THIS
+    GENERALISES. The printer checklist in the PRINTER round says
+    "a 1.7-era printer: width/maxWidth absent, printer must say
+    'older build: no width' and still print" -- that is
+    isCompatible(addr) written by hand inside one module. `rbmk
+    survey` ("does anything bind") is the same shape again. Third
+    instance is coming; the second is where the abstraction gets
+    built.
+      A NEW DEVICE NEEDS A KERNEL EDIT today: hal.lua is a fixed
+    type -> {address, proxy, tier, label} registry and
+    tos/peripheral/ is three kernel modules. Extras ships mouse and
+    printer as ordinary libraries in a "drivers" category, outside
+    the cap system. A pkg-installed driver the kernel FINDS is
+    strictly better, and etc/component_caps.cfg + `component
+    reload-caps` is already the authority half of the design.
+      DO NOT COPY THEIR AUTHORITY RULE: "a process must use drivers
+    unless it is admin" means root bypasses the abstraction. Our
+    sandbox has no such escape and must not grow one. A driver is a
+    BINDING mechanism (which code drives this device); the cap
+    check stays where peripheral/redstone.lua:requireCap puts it.
+```
+
+### Planned — ADDRESSABLE LOCAL IPC
+
+```text
+ADDRESSABLE LOCAL IPC. Fuchas' Libraries/ipc.lua (OETF #18)
+    gives a process a socket to another PID -- ipc.socket(target,
+    id) with write/read/closed, async in write, sync in read, built
+    on per-process signals rather than the global queue. Plan9k has
+    pipes/17_ipc.lua.
+      We have two things and neither is this: pipe.create() is an
+    anonymous in-memory stream handed to a child at spawn (shell
+    pipelines and redirection, 64 KB cap, #SEC M2), and notify.post
+    is one-way to whichever human is looking. An rc.d service and
+    an unrelated process cannot talk at all -- which is why the LOG
+    WALL item has to ask "is the feed LOCAL or REMOTE?", and why
+    the mesh gets reached for when both ends are on one machine.
+    cluster-manager and mail's inbox tab are the same shape.
+      event.lua is most of the way there: it already records the
+    registering PID and spawn generation (#SEC H13, H31, M-11) and
+    fires each listener under that PID's context. A targeted push
+    is a small addition to machinery that already thinks in PIDs.
+      IT MUST BE CAPABILITY-GATED, which theirs is not. "Send to
+    any PID" is authority a sandboxed program should not have:
+    unsolicited messages to a privileged service are an injection
+    surface and PID scanning is an information leak. Shape: a
+    service REGISTERS a named endpoint, callers hold an
+    ipc.connect(<name>) cap. Never raw PIDs.
+      Do not build it on the compat event queue: compat/event.lua
+    deliberately blocks sensitive signal names, and IPC must not
+    become the way around that filter.
+      NOT A GAP, recorded so it is not re-investigated: Fuchas'
+    PER-PROCESS SIGNAL QUEUES (computer.pushProcessSignal). The
+    security half -- one process reading another's events -- is
+    already handled at a different layer, where compat/event.lua
+    blocks sensitive names outright and names keystroke-logging
+    other seats and clipboard sniffing as the attacks. Only the
+    addressable-IPC half above is missing.
+```
+
+### Planned — GENERATED API REFERENCE
+
+```text
+GENERATED API REFERENCE, AND PERMISSION ANNOTATIONS THAT CAN
+    BE TESTED. PsychOS generates its reference every build: build.sh
+    runs finddesc.lua and gendoc.lua over lib/ and module/ and
+    emits doc/*.md plus an all-in-one apidoc.md, from a one-line
+    comment on the function line giving arg types, return types and
+    a description.
+      This is NOT a proposal to replace MANUAL.md. The manual is
+    the operator's book and stays written. What is missing is a
+    REFERENCE for the kernel API that cannot silently disagree with
+    37,054 lines of Lua -- and build/make_roadmap.py already makes
+    generated docs an established idiom here.
+      THE SHARPER HALF IS FUCHAS': annotate each function with the
+    permission it requires, at the definition (-- @permission
+    security.revoke). For us: every kernel entry point carries the
+    capability it enforces, and then a TEST THAT ANNOTATION AND
+    ENFORCEMENT AGREE. That is the missing verification half of
+    CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS
+    survey): one policy function makes the policy readable,
+    annotation-vs-enforcement makes it checkable. Fuchas writes the
+    annotations and never checks them; we would be the first to.
+```
+
+### Planned — STAMP THE BUILD WITH THE COMMIT
+
+```text
+STAMP THE BUILD WITH THE COMMIT. PsychOS' build.sh:
+    _OSVERSION="PsychOS 2.0a3-$(git rev-parse --short HEAD)-$KVAR".
+    We set _TOS.version and codename by hand at init.lua:430 and
+    build-release.sh stamps nothing, so a screenshot, a
+    selftest.log or a doctor dump from a box that has been up a
+    week cannot say which tree produced it -- and telling you what
+    the code actually did is the whole point of the on-box battery.
+    sync-emulator.py exists because "the boot disk was eleven files
+    behind" was a real round that reported a stale answer; a build
+    stamp is the cheap detector for that class.
+      Add build (short hash + dirty marker) and the strip variant
+    to _TOS, set by build-release.sh, printed by colophon and in
+    the self-test header. Keep the hand-set version -- the release
+    conventions already move version, README and CHANGELOG
+    together.
+```
+
+### Planned — THE RESERVED-PORT REGISTRY
+
+```text
+THE RESERVED-PORT REGISTRY: 42 IS FINE, AND UNDOCUMENTED. The
+    ecosystem keeps a list (GERT repo, now GlobalEmpire/OC-
+    Programs): 14 Ethernet-over-OC, 148 GUI service, 4096
+    MultICE/Minitel, 4378-4379 GERTi, 4662 short messages, 9100
+    network print service, 9900 Zorya BIOS LAN boot.
+      Our default (config.lua:54, net/init.lua:94) is 42, which is
+    unclaimed -- the default needs no change. The gap is the two
+    things around it:
+      * listenPort is operator-settable with NO advice. An operator
+        who sets 4096 puts TOS traffic onto a Minitel network:
+        our net rejects their frames cleanly, theirs may not.
+        net should refuse, or warn once, when the configured port
+        is a registered one, and NAME the protocol it belongs to.
+      * 42 should be registered and documented. One message to the
+        registry maintainer, one line in the manual -- it is how
+        the NEXT OS avoids colliding with us.
+      This is also the cheap, correct form of MINITEL: DECIDE,
+    DON'T DEFAULT (Cynosure survey): we stay bespoke and DOCUMENT
+    the port, so coexistence works without a bridge.
+```
+
+### Planned — NAME WHAT IS ON A DRIVE BEFORE ERASING IT
+
+```text
+NAME WHAT IS ON A DRIVE BEFORE ERASING IT. TBFS writes its own
+    "TBFS" magic at sector 1 and blockfs.format zeroes the metadata
+    region unconditionally. The install path does gate this behind
+    a danger confirm box ("Anything on it now is gone",
+    commands/extras.lua:1405), so nothing is destroyed silently --
+    this is calibrated small. What it CANNOT do is say what is
+    there: the only answer TBFS can give about a foreign volume is
+    "not a TBFS volume".
+      * Probe known magics before formatting -- TBFS, OSDI, OCGPT
+        (sectors 2-9), MTPT, msdos -- and name the finding in the
+        confirmation. "This drive holds an OSDI partition table" is
+        a different decision from "this drive looks blank", and
+        read-only probing cannot break anything.
+      * A READ-ONLY foreign-volume reader is worth a line, not a
+        round: recovering files off another OS's disk is a real
+        base-admin task and we cannot see such a drive at all.
+      Our unmanaged-drive story stays bespoke on purpose -- TBFS'
+    boot region, bootBlob and the EEPROM stage-2 loader are tied to
+    how we boot. This is about RECOGNISING other formats, not
+    adopting one.
+```
+
+### Planned — LOCALISE THE INSTALLER
+
+```text
+LOCALISE THE INSTALLER, NOT JUST THE OS. MineOS ships ~20
+    Localizations/*.lang packs AND a separate
+    Installer/Localizations/ set, and the installer asks for a
+    language as step one. Their format is what makes community
+    translation happen: one file per language, a flat Lua table of
+    short keys, no tooling to contribute. Ours (usr/lang/, i18n.lua)
+    is already that shape and holds exactly one pack, ru.lang.
+      The transferable half is the installer: install.lua and
+    bootstrap.lua are English-only and they are the first, and
+    sometimes only, screens a new operator reads. Routing their
+    strings through i18n and asking for a language first is
+    bounded, and it is what turns one ru.lang into a reason for
+    someone to send a second pack.
+```
+
+### Planned — DECLARED RUNTIME IN THE PACKAGE MANIFEST -- the cheap half of
+
+```text
+DECLARED RUNTIME IN THE PACKAGE MANIFEST -- the cheap half of
+    VELX. Fuchas' VELX (Libraries/velx.lua, spec in Adorable-
+    Catgirl/Random-OC-Docs) is a container: magic \27VelX, format
+    version, compression id, LUA VERSION, OS ID with a library
+    flag, archive type, then sized program / OS-dependent /
+    signature sections and a cpio archive. Zorya can execute one
+    from the bootloader.
+      WE DO NOT WANT THE CONTAINER. pkg is directory-based, signs
+    an Ed25519 manifest and hashes every file, which is stronger
+    than VELX as implemented (see the calibration note above).
+      WE DO WANT THE DECLARED RUNTIME: a manifest field naming the
+    Lua architecture and the OS the package was built for. We
+    require the 5.3/5.4 architecture and both the BIOS and
+    /init.lua probe for it, but a PACKAGE built against the wrong
+    arch fails at load with a syntax error instead of a sentence.
+    One field, one check at install time, and the failure becomes
+    "this package needs the Lua 5.3 architecture; sneak-click the
+    CPU".
+```
+
+### Idea / far future — RUN-THIS-ONCE CONFINEMENT
+
+```text
+RUN-THIS-ONCE CONFINEMENT. Plan9k composes namespaces at
+    launch from the command line: `sandbox wl fc0 wl fcd component
+    spawn /bin/a.lua` (exactly two components), `sandbox module
+    spawn ...` (fresh module namespace), quietin/quietout/quieterr.
+    Their cgroup kinds are signal, filesystem (a root, i.e.
+    chroot), network, module (its own package.loaded/preload) and
+    component (whitelist/blacklist, parent-chained allow(addr)),
+    inherited from the spawning thread.
+      Our caps are declared in a package manifest and accepted by
+    an admin at install; progenv.lua already builds a process env
+    from an opts.caps table. What is missing is the operator verb:
+    run THIS program, right now, with no network -- the thing you
+    want when someone hands you a script and you are not installing
+    it as a package. A front-end over progenv and the existing cap
+    vocabulary, not new mechanism.
+      [*] and not [ ] because the one genuinely new primitive in
+    their list -- the FILESYSTEM cgroup, a per-process root -- is a
+    design question we have not answered. securefs' per-user ACLs
+    are a different and mostly better answer; a confined root is
+    still the natural thing to hand an untrusted one-off, and it
+    composes with the COW overlay above. Decide that before
+    building.
+      NOT GAPS from this pair, recorded so they are not re-
+    investigated: Plan9k's MODULE CGROUPS shadow module tables with
+    setmetatable({}, {__index = kernel.modules.x}) per group -- we
+    already do that AND lock the metatable, filter pairs(), and (in
+    the H-01 work) mask kernel-only hook keys so a sandbox cannot
+    reach compat.term._gpuForCaps. Ours is strictly stricter.
+    Fuchas' SJF SCHEDULER needs job-length estimates nobody in this
+    ecosystem has; our wall-clock + per-resume instruction budget
+    (process.lua:960) is a harder guarantee than any scheduling
+    policy. MineOS' DOUBLE-BUFFERED GUI is our shadow buffer, and
+    the workload-specific second renderer is already scoped in LOG
+    WALL. MineOS' desktop, app market, IDE, FTP client and 3D
+    library are a different product, as the README already says.
+    Plan9k's procfs/sysfs/devfs is the Cynosure survey's decision
+    unchanged. MineOS hand-maintains EFI/Full.lua AND
+    EFI/Minified.lua; we generate the flashable BIOS through
+    strip.lua --minify with a test on the budget -- ours is better,
+    do not copy theirs.
+```
+
+## AUDIT 5: KERNEL &amp; COMPAT, OFF-BOX (2026-09-18)
+
+### Open bug — H-01
+
+```text
+H-01: ANY SANDBOX CAN FORGE A DISPLAY CAPABILITY AND DRIVE THE
+    REAL GPU. compat/term.lua:221 exposes _gpuForCaps(caps), which
+    returns a MUTATION-capable GPU proxy when the caps table it is
+    handed contains gpu or display. sandbox.lua:800 is meant to be
+    its only caller: it overrides .gpu on the per-sandbox module
+    view with a closure carrying that sandbox's real caps.
+      But the view is isolatedModule (sandbox.lua:635), a
+    read-through __index onto the real module -- so _gpuForCaps is
+    still reachable right beside the overridden .gpu. And
+    `compat.` is an allowed require PREFIX (sandbox.lua:41), so
+    reaching it needs no capability at all. Reproduced against the
+    real sandbox.build with caps = { ["compat.io"] = true } and no
+    display cap: term.gpu().setBackground() correctly returned
+    false, and term._gpuForCaps({gpu=true}).setBackground() reached
+    the hardware.
+      test_sandbox_module_isolation.lua:107 already asserts that
+    term.gpu() honours caps, which is exactly why this survived --
+    nothing ever tried the builder directly.
+      Fix: _gpuForCaps must not be reachable from a sandbox. Either
+    rawset it under a key the view cannot see, or -- cleaner --
+    have sandbox.lua hold the builder and never publish it on the
+    module at all. Severity HIGH. Pin: extend
+    test_sandbox_module_isolation.lua.
+```
+
+### Open bug — CHANGING A LOGIN PASSWORD ORPHANS THE KEYCHAIN
+
+```text
+CHANGING A LOGIN PASSWORD ORPHANS THE KEYCHAIN, PERMANENTLY.
+    kernel/keychain.lua's header states as fact that
+    "users.changePassword fires keychain.rekey if loaded".
+    keychain.rekey HAS NO CALLERS. Across TOS-Dev and TOS-Extras
+    the only three matches for "rekey" are its own definition, that
+    comment, and its own error string; users.changePassword
+    (users.lua:627) never touches the keychain.
+      So ~/.keychain.vault stays encrypted under the OLD password.
+    vault.decrypt MAC-verifies, so the next `keychain unlock` fails
+    cleanly and every stored passphrase is gone -- no warning at
+    password-change time, no recovery offered. When an ADMIN resets
+    another account's password it is unrecoverable even in
+    principle: the admin never held the old password.
+      Two things to settle before wiring rekey up, both live in it
+    today. loadDisk returns a truthy {} when no vault exists, so
+    rekey would CREATE an empty vault for users who never used the
+    keychain. And saveDisk passes requireStrong = true, so on a box
+    with no data card that write fails -- which would make `passwd`
+    itself fail, for a feature the user never touched.
+      Severity HIGH (silent loss of user secrets). Pin: a test that
+    changes a password and then unlocks.
+```
+
+### Open bug — H-03
+
+```text
+H-03: compat.keyboard.isKeyDown CANNOT WORK, AND RAISES RATHER
+    THAN RETURNING false. RE-GRADED: the review reads this as a
+    seat-boundary bypass, and the boundary is the smaller half.
+      keyboard.lua:39 calls component.keyboard.isKeyDown(code). THE
+    OC KEYBOARD COMPONENT HAS NO SUCH METHOD. Checked against
+    Ocelot's totoro/ocelot/brain/entity/Keyboard.class: its entire
+    surface is signal emission -- keyboard.keyDown -> key_down,
+    keyboard.keyUp -> key_up, keyboard.clipboard. Real OpenOS
+    tracks it in SOFTWARE from those events, in pressedChars and
+    pressedCodes (Reference/OpenOS/openos/lib/keyboard.lua:46).
+      So the call indexes nil and RAISES on any machine that has a
+    keyboard; the `return false` fallback only ever runs on a
+    machine that does not. isAltDown, isControlDown and isShiftDown
+    all route through it, and OpenOS's own event.lua uses
+    isControlDown() for Ctrl-C -- so a ported program crashes on
+    its interrupt path.
+      The seat half is real too, and survives that fix:
+    component.keyboard is the PRIMARY keyboard, so on a multi-seat
+    box a program reads another seat's modifiers. Both go away
+    together if pressedCodes is tracked per seat from key_down /
+    key_up, the way OpenOS does it. Severity HIGH -- it is broken,
+    not merely leaky. Pin: a test asserting isControlDown() returns
+    a boolean on a machine that has a keyboard.
+```
+
+### Open bug — H-04
+
+```text
+H-04: term.read() TAKES SIGNALS OFF THE MACHINE-WIDE QUEUE AND
+    FREEZES EVERY OTHER SEAT WHILE IT WAITS. compat/term.lua:260 is
+    `local ev = {computer.pullSignal()}` -- raw and untimed.
+    compat/term.lua loads OUTSIDE the sandbox, so its `computer`
+    upvalue is the real one: term.read() is a hole in
+    BLOCKED_MODULE_NAMES["computer"], reachable with no capability
+    through the `compat.` prefix.
+      Two consequences, and the second is the worse one. The signal
+    is popped before proc.tick can route it, so a keystroke meant
+    for another seat's foreground is consumed here -- the review's
+    "cross-seat impact likely" is certain; that is what the pop
+    does. And because pullSignal with no timeout blocks in C INSIDE
+    the coroutine, coroutine.resume never returns, proc.tick's loop
+    stalls, and nothing else on the machine runs until a key is
+    pressed somewhere on it.
+      Severity HIGH. Fix: route term.read through kernel.event and
+    the scheduler's own pull, as the rest of the shell does. Pin: a
+    test that term.read yields instead of calling pullSignal.
+```
+
+### Open bug — H-06
+
+```text
+H-06: TWO SANDBOXES STILL SHARE compat.term's CURSOR. The other
+    half of H-05 above, same root cause, NOT fixed this round --
+    deliberately, and the reason is worth recording.
+      The state is compat/term.lua:39-40 (curX, curY, curBlink),
+    read or written at 34 sites. Reproduced with two sandbox.build()
+    envs: after A called term.setCursor(40,12), B's term.getCursor()
+    returned 40,12 and B's term.write landed at (40,12).
+      The fix is NOT the same shape as H-05's. Default streams are a
+    process property, like an fd table, so per-process is right
+    there. A cursor is a property of the GLASS: there is one
+    physical terminal per seat, and two programs on one seat having
+    private cursors would be a different lie from the one we have.
+    So this wants per-SEAT, keyed on screen.callerSeat() -- which
+    already exists and already returns nil (= fall back to today's
+    single shared pair) for kernel, boot and off-box contexts.
+      Held over because it is 34 sites in the file with the worst
+    regression history in the tree -- "the black status bar,
+    seventh time" lives in this exact path -- and the payoff cannot
+    be confirmed off-box. It should land in a round that ends at an
+    Ocelot power-on, not at the end of one. Severity HIGH. Pin:
+    extend test_sandbox_module_isolation.lua with two envs and a
+    setCursor.
+```
+
+### Planned — THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS
+
+```text
+THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS.
+    kernel/screen.lua's proxy.set is UTF-8 correct: it splits on
+    "[\0-\127\194-\255][\128-\191]*" and maps one character to one
+    cell (screen.lua:1290). The editor's syntax path does its
+    column arithmetic in BYTES -- panels/draw.lua:741-755 uses
+    #tokText for token width and tokText:sub() to clip. Driving the
+    real modules on  local s = "café"  -- naïve : draw.lua thinks
+    the line is 28 columns and screen.lua paints 26. So the clip
+    window, the horizontal scroll, the ">" overflow marker and the
+    byte-indexed selection overlay are all off from the first
+    non-ASCII character onward.
+      In CODE position it is worse. Bytes >= 0x80 match none of %a,
+    %w, %d or %s, so shell/syntax.lua emits one `op` token per
+    BYTE; the lead byte paints as a lone garbage cell, and the
+    continuation bytes match nothing in the UTF-8 gmatch, so
+    _diffWindow returns nil and proxy.set counts them as SKIPPED --
+    they vanish. On  local café = 1 , byte C3 is drawn and A9 is
+    dropped. Comments and strings survive as single tokens, which
+    is why the box-drawing in our own headers still renders, drift
+    and all.
+      Fix: have syntax.tokenize return characters rather than
+    bytes, and have draw.lua advance by cell count. Severity
+    MEDIUM. Pin: a test comparing draw.lua's column total against
+    the screen's cell count. [?] the visual half has not been seen
+    on hardware.
+```
+
+### Planned — EVERY BEEP STOPS THE MACHINE
+
+```text
+EVERY BEEP STOPS THE MACHINE, AND THE GAPS BETWEEN THEM BUSY-
+    SPIN. kernel/audio.lua:46, gap(), is `while computer.uptime() <
+    target do end` for 50 ms. Not calling pullSignal is RIGHT -- it
+    would eat the operator's keystrokes -- but it never yields
+    either, so on a cooperative scheduler it hard-freezes every
+    other seat and burns execution budget where a sleep costs
+    nothing.
+      The tones block too. Ocelot's Machine.beep(Context,
+    Arguments) calls Context.pause(D) with the duration after
+    emitting the tone; that is read off the bytecode, not assumed.
+    So audio.chat() is 0.18 s on EVERY incoming chat message
+    (shell/chat.lua:322), audio.warning() 0.25 s on every
+    command-not-found, audio.bootComplete() 0.36 s, and
+    audio.critical() 0.55 s -- over the scheduler's own
+    PROC_WALL_BUDGET of 0.5 s. A chat flood is a system-wide stall.
+      The fix is already in the API: Ocelot shows a beep(String)
+    overload, so computer.beep("..-") plays the whole pattern in
+    one call, no gaps and no spin.
+      Separately, setVolume only scales DURATION, and tone() drops
+    anything under 0.01 s -- so setVolume(0.1) silently mutes
+    notify, tick and chat while leaving error audible. Severity
+    MEDIUM.
+```
+
+### Planned — H-07
+
+```text
+H-07: term.screen() AND THE GPU FALLBACK ANSWER FOR THE WRONG
+    SEAT. compat/term.lua:226 returns component.list("screen")() --
+    the first screen on the machine, not the caller's. The same
+    pattern is in resolveSeatGpu's fallback (term.lua:165) when
+    display.getGpu() returns nil. Agreed with the review on impact:
+    LOW standing alone, because component.proxy is blocked, so the
+    address by itself buys little. It stops being low the moment
+    anything accepts a screen address as a target. Severity LOW.
+```
+
+### Planned — A FAILED SAVE LEAVES MEMORY AND DISK DISAGREEING
+
+```text
+A FAILED SAVE LEAVES MEMORY AND DISK DISAGREEING. keychain.set
+    (keychain.lua:159) and aliases.set / aliases.remove
+    (net/aliases.lua:124, :157) mutate the in-memory table and THEN
+    persist, returning the save error without rolling back. The
+    caller is told it failed; get / list say it worked; the change
+    vanishes at reboot. users.changePassword already gets this
+    right -- it reverts salt, hash and firstBoot when saveDB fails,
+    and says why (users.lua:680) -- so the shape to copy is already
+    in the tree. Note this gets MORE likely now, not less: the
+    first entry in this round makes a refused write actually report
+    itself. Severity LOW.
+```
+
+### Planned — THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
+
+```text
+THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
+    LEAK IS ALREADY THROUGH. test_global_leaks.lua is good and its
+    scope is stated honestly -- system_manifest.lua entries only.
+    Running the same luac -p -l -l analysis over everything it
+    skips: the TOS-Dev files outside the manifest are clean, but
+    TOS-Extras/selftest/checks/80-pkg-signing.lua:128 writes a
+    global `_` (`_ = v6`, the mark-as-used idiom). Exactly the
+    class the lint exists to catch.
+      Widening it is not just a longer file list. Extras module
+    code legitimately reads `fs`, `vault` and `crypto`, which the
+    sandbox injects per capability (sandbox.lua:1068, :1252,
+    :1282), so the lint would have to know the module ENVIRONMENT
+    and not only STDLIB. Severity LOW. Pin: the widened lint is its
+    own pin.
+```
+
+### Planned — THE PACKET MAC HAS NO LENGTH FRAMING
+
+```text
+THE PACKET MAC HAS NO LENGTH FRAMING. net/init.lua:482 (send)
+    and :669 (receive) tag a \0-joined concat of variable-length,
+    attacker-influenced fields: type, to, enc, epoch, seq, nonce,
+    payload. Adjacent fields can be re-split without changing the
+    joined string, so a captured packet can be reshaped across the
+    type/to or nonce/payload boundary and keep a valid tag; moving
+    one byte out of nonce into payload defeats the nonce ring.
+      NOT currently exploitable -- the H-3 sequence check refuses
+    the replay, which is precisely the defence-in-depth it was
+    added for. Recorded because the nonce ring is documented as a
+    second layer and this quietly removes it. Fix: length-prefix
+    each field. Severity LOW, and it rises the day the seq check is
+    relaxed.
+```
+
+### Idea / far future — `rm`'s SYSTEM-PATH GUARD IS DISABLED BY THE FLAG ITS OWN
+
+```text
+`rm`'s SYSTEM-PATH GUARD IS DISABLED BY THE FLAG ITS OWN
+    MESSAGE RECOMMENDS. panels/commands/core.lua:832 fires only
+    when `p:match(pat) and not recursive`, so `rm -r /tos` skips it
+    entirely -- and the comment above it describes a second
+    condition ("explicit system path typed out, not a wildcard or
+    expansion") that is not implemented at all. securefs's
+    REMOVE_PROTECTED is the real backstop and it does hold, so this
+    is a confusing two-step error rather than a hole: the shell
+    suggests -r, then securefs refuses with a different message.
+    Worth tidying next time that file is open; not worth a commit
+    of its own.
+```
 
 ## THE BIOS REFUSED TO BOOT ANYTHING BUT TOS (2026-09-06)
 

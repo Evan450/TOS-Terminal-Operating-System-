@@ -1812,9 +1812,18 @@ Chapter 4.3). Use `man edit` for its keys.
 What a script can `require`:
 
 - The **compat APIs** (`filesystem`, `term`, `event`, `serialization`,
-  `keyboard`, `io`, `text`, `colors`, `sides`, `component`, `computer`) — these
-  are the OpenOS-style names, backed by TOS's sandbox. This is the portable way
-  to write tools that also run under OpenOS.
+  `keyboard`, `io`, `text`, `colors`, `sides`, `shell`, `buffer`, `internet`,
+  `robot`, `process`, `note`, `component`, `computer`) — these are the
+  OpenOS-style names, backed by TOS's sandbox. This is the portable way to write
+  tools that also run under OpenOS.
+  - `robot` needs the `peripheral.robot` capability; without it every call
+    answers `nil, "no robot component"`. `robot.level()` always returns 0: the
+    experience upgrade is a separate component type, and this capability does
+    not cover it.
+  - `process` provides `info()` and `running()` only, and `info().path` is the
+    path your script was launched from — the answer programs want when they
+    look for a file beside themselves. Spawning belongs to the kernel, so
+    `process.load()` is deliberately absent.
 - Nothing under `kernel.*` — that namespace is not reachable from sandboxed code.
 
 ### 13.3 Packaging a script as a command

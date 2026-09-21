@@ -115,6 +115,38 @@ print("-- an rc.d service keeps its own library's real table --")
 local svc = sandbox.build({ caps = { ["fs.read"] = true }, allowUserLibs = true })
 test("allowUserLibs: require('blockfs') is the shared table", svc.require("blockfs") == real["blockfs"])
 
+--! #SEC (AUDIT 5, H-01) — a kernel-only hook must be MASKED, not merely
+--! overridden. The check above ("gpu() is still bound to the sandbox's
+--! caps") passed the whole time the bypass was live, because it only ever
+--! asked the sanctioned door. _gpuForCaps gates on a caps table passed as
+--! an ARGUMENT, and the view reads through to the real module -- so the
+--! builder sat right beside the override and `_gpuForCaps({gpu=true})`
+--! handed a capless program a mutation-capable GPU proxy. Authority passed
+--! as data is only authority if the caller cannot forge the data.
+print("-- a kernel-only hook is not reachable from the sandbox --")
+local FORGE = [[
+  local t = require("compat.term")
+  builder = t._gpuForCaps
+  forged = t._gpuForCaps and t._gpuForCaps({ gpu = true }) or "unreachable"
+  seen = 0
+  for k in pairs(t) do if k == "_gpuForCaps" then seen = seen + 1 end end
+]]
+local noCap = build()
+local okF = pcall(assert(load(FORGE, "=forge", "t", noCap)))
+test("the forge script ran without the builder", okF)
+test("term._gpuForCaps reads as nil inside a sandbox", noCap.builder == nil)
+test("...so no forged caps table reaches the builder", noCap.forged == "unreachable")
+test("...and it does not show up in pairs() either", noCap.seen == 0)
+test("the kernel still holds the real hook",
+  type(real["compat.term"]._gpuForCaps) == "function")
+
+-- The sanctioned door must keep working, both ways round.
+local capped = build({ caps = { ["compat.io"] = true, gpu = true } })
+test("a sandbox WITHOUT a display cap still gets the read-only proxy",
+  build().require("compat.term").gpu() == "ro")
+test("a sandbox WITH a display cap still gets the mutating proxy",
+  capped.require("compat.term").gpu() == "rw")
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

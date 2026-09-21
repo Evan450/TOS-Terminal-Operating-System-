@@ -210,7 +210,7 @@ do
   local shimNames = {
     "sides", "colors", "keyboard", "text", "serialization",
     "buffer", "term", "filesystem", "event", "shell_api", "io",
-    "internet",
+    "internet", "robot", "process", "note",
   }
   -- Derived, not hardcoded: this count and the two below used to be three
   -- separate literal 11s, so adding a shim failed the suite in a way that

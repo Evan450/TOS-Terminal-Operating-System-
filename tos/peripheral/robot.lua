@@ -113,34 +113,81 @@ end
 -- Interaction
 -- ============================================================
 
+--! #BUG (compat round, 2026-09-20) — WHAT THE MOD ACTUALLY TAKES. Checked
+--! against OpenComputers' own Agent.scala @Callback docs, which are the
+--! only authority here:
+--!   swing(side:number[, face:number=side[, sneaky:boolean=false]])
+--!   use  (side:number[, face:number=side[, sneaky:boolean=false
+--!                                        [, duration:number=0]]])
+--!   place(side:number[, face:number=side[, sneaky:boolean=false]])
+--! `face` is a NUMBER (a finer click target on the block, defaulting to the
+--! side) and `sneaky` is the boolean AFTER it. robot.use passed `sneaking`
+--! in slot 2 — a boolean where the mod checks for an integer — and because
+--! it wrote `sneaking or false`, it passed `false` there on EVERY call,
+--! including calls that named no sneaking at all. So `use` raised a bad-
+--! argument error on a real robot whatever you asked it, and the off-box
+--! tests could not see it: a mock proxy accepts any argument list.
+--!   Fixed by never putting a boolean in the face slot. `face` is optional
+--! and resolved like any other side; when nothing needs slots 2+ we pass
+--! the side alone and let the mod apply its own defaults.
+local function faceArg(face)
+  if face == nil then return nil end
+  return resolveSide(face)
+end
+
 --- Swing (break block / attack entity).
 -- @param side number|string  Side to swing at (default: front)
-function robot.swing(side)
+-- @param face number|string  Finer click target (default: same as side)
+-- @param sneaky boolean      Sneak while swinging (default: false)
+function robot.swing(side, face, sneaky)
   local p = getProxy()
   if not p then return nil, "no robot component" end
   local s, err = resolveSide(side)
   if not s then return nil, err end
+  local f, ferr = faceArg(face)
+  if face ~= nil and not f then return nil, ferr end
+  if f or sneaky then return p.swing(s, f or s, sneaky and true or false) end
   return p.swing(s)
 end
 
---- Use (right-click / place).
+--- Use (right-click).
 -- @param side number|string  Side (default: front)
 -- @param sneaking boolean    Sneak while using (default: false)
-function robot.use(side, sneaking)
+-- @param face number|string  Finer click target (default: same as side)
+-- @param duration number     Hold the click this long, seconds (default: 0)
+--! Argument ORDER departs from the mod's on purpose: `sneaking` has been
+--! this function's second parameter since it was written, and moving it
+--! would silently change the meaning of every existing call. face and
+--! duration are appended instead. compat/robot.lua reorders for the
+--! OpenOS-shaped API.
+function robot.use(side, sneaking, face, duration)
   local p = getProxy()
   if not p then return nil, "no robot component" end
   local s, err = resolveSide(side)
   if not s then return nil, err end
-  return p.use(s, sneaking or false)
+  local f, ferr = faceArg(face)
+  if face ~= nil and not f then return nil, ferr end
+  if duration ~= nil then
+    local d = tonumber(duration)
+    if not d or d ~= d or d < 0 then return nil, "invalid duration" end
+    return p.use(s, f or s, sneaking and true or false, d)
+  end
+  if f or sneaking then return p.use(s, f or s, sneaking and true or false) end
+  return p.use(s)
 end
 
 --- Place block from selected inventory slot.
 -- @param side number|string  Side (default: front)
-function robot.place(side)
+-- @param face number|string  Finer click target (default: same as side)
+-- @param sneaky boolean      Sneak while placing (default: false)
+function robot.place(side, face, sneaky)
   local p = getProxy()
   if not p then return nil, "no robot component" end
   local s, err = resolveSide(side)
   if not s then return nil, err end
+  local f, ferr = faceArg(face)
+  if face ~= nil and not f then return nil, ferr end
+  if f or sneaky then return p.place(s, f or s, sneaky and true or false) end
   return p.place(s)
 end
 
@@ -181,11 +228,18 @@ function robot.suck(side, count)
   return p.suck(s, count or 64)
 end
 
---- Select an inventory slot.
--- @param slot number  Slot number (1-based)
+--- Select an inventory slot, or read which one is selected.
+-- @param slot number  Slot number (1-based). Omit to read the current slot.
+--! Omitting the slot used to return nil, "invalid slot". The mod's own
+--! select() answers with the CURRENT slot when called with no argument, and
+--! `robot.select()` is how an OpenOS program asks "which slot am I on" —
+--! count() below has always relied on that raw behaviour internally. A
+--! caller that passed nil got an error before and gets the slot number
+--! now; nothing in the tree passed nil.
 function robot.select(slot)
   local p = getProxy()
   if not p then return nil, "no robot component" end
+  if slot == nil then return p.select() end
   local vs, e = vSlot(slot); if not vs then return nil, e end  -- #SEC M-14
   return p.select(vs)
 end
@@ -242,12 +296,127 @@ end
 -- ============================================================
 
 --- Get tool durability (0.0 - 1.0).
+--! #BUG (compat round, 2026-09-20) — the method is `durability`. There is
+--! no `durabilityLevel` anywhere in OpenComputers: the callbacks on
+--! Robot.scala/Agent.scala are durability, name, move, turn, swing, use,
+--! place, detect, drop, suck, select, count, space, inventorySize,
+--! compare, compareTo, transferTo, tankCount, tankLevel, tankSpace,
+--! selectTank, get/setLightColor. So the pcall here ALWAYS failed on real
+--! hardware and every robot reported "no tool equipped" — including robots
+--! holding a tool. Off-box tests pass either way because a mock proxy
+--! answers to any method name.
+--!   The "no tool equipped" message is kept for the case it was written
+--! for: the mod returns nil plus a reason when the tool slot is empty.
+--! A missing METHOD is now reported as itself rather than mistranslated.
 function robot.durability()
   local p = getProxy()
   if not p then return nil, "no robot component" end
-  local ok, result = pcall(p.durabilityLevel)
-  if not ok then return nil, "no tool equipped" end
+  if type(p.durability) ~= "function" then
+    return nil, "robot component has no durability()"
+  end
+  local ok, result, reason = pcall(p.durability)
+  if not ok then return nil, tostring(result) end
+  if result == nil then return nil, reason or "no tool equipped" end
   return result
+end
+
+-- ============================================================
+-- Comparison and transfer
+-- ============================================================
+
+--- Compare the block on `side` with the selected slot's item.
+-- @param side number|string  Side (default: front)
+function robot.compare(side)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  local s, err = resolveSide(side)
+  if not s then return nil, err end
+  return p.compare(s)
+end
+
+--- Compare the selected slot with another slot.
+-- @param slot number  Slot to compare against (1-based)
+function robot.compareTo(slot)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  local vs, e = vSlot(slot); if not vs then return nil, e end  -- #SEC M-14
+  return p.compareTo(vs)
+end
+
+--- Move items from the selected slot into another slot.
+-- @param slot number   Destination slot (1-based)
+-- @param count number  How many (default: the whole stack)
+function robot.transferTo(slot, count)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  local vs, e = vSlot(slot); if not vs then return nil, e end  -- #SEC M-14
+  if count ~= nil then
+    local c = tonumber(count)
+    if not c or c ~= c or c < 0 then return nil, "invalid count" end
+    return p.transferTo(vs, math.floor(c))
+  end
+  return p.transferTo(vs)
+end
+
+-- ============================================================
+-- Tanks (fluid upgrades)
+-- ============================================================
+
+--- Number of internal tanks.
+function robot.tankCount()
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  return p.tankCount()
+end
+
+--- Select a tank.
+function robot.selectTank(tank)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  local vt, e = vSlot(tank); if not vt then return nil, "invalid tank" end
+  return p.selectTank(vt)
+end
+
+--- Fluid amount in a tank (default: the selected one).
+function robot.tankLevel(tank)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  if tank ~= nil then
+    local vt = vSlot(tank); if not vt then return nil, "invalid tank" end
+    return p.tankLevel(vt)
+  end
+  return p.tankLevel()
+end
+
+--- Remaining space in a tank (default: the selected one).
+function robot.tankSpace(tank)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  if tank ~= nil then
+    local vt = vSlot(tank); if not vt then return nil, "invalid tank" end
+    return p.tankSpace(vt)
+  end
+  return p.tankSpace()
+end
+
+-- ============================================================
+-- Status light
+-- ============================================================
+
+--- Read the robot's status-light colour (0xRRGGBB).
+function robot.getLightColor()
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  return p.getLightColor()
+end
+
+--- Set the robot's status-light colour (0xRRGGBB).
+function robot.setLightColor(value)
+  local p = getProxy()
+  if not p then return nil, "no robot component" end
+  local v = tonumber(value)
+  if not v or v ~= v then return nil, "invalid colour" end
+  return p.setLightColor(math.floor(v))
 end
 
 --- Get robot name.

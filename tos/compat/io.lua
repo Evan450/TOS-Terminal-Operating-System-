@@ -82,8 +82,48 @@ io.stdout = makeTermOutput()
 io.stderr = makeTermOutput()
 io.stdin  = makeTermInput()
 
-local defaultInput  = io.stdin
-local defaultOutput = io.stdout
+--! #SEC (AUDIT 5, H-05) — THE DEFAULT STREAMS ARE PER PROCESS, not one
+--! pair for the machine. They used to be two module upvalues, and
+--! sandbox.lua's isolatedModule() isolates a module's TABLE while handing
+--! out the ORIGINAL closures -- so every sandbox on the box shared these.
+--! One program calling io.output(f) redirected EVERY other program's
+--! io.write into its own file, and io.input(f) fed them its own bytes;
+--! safeClose made it worse by closing whatever the previous holder had
+--! open. Reproduced with two sandbox.build() envs: B's io.write landed in
+--! A's sink.
+--!
+--! Keyed on the PROCESS TABLE rather than the pid, for two reasons: pids
+--! are reused once a process is reaped (see the #SEC M-11 generation
+--! counter in kernel/process.lua), so a pid key would hand a dead
+--! program's redirections to whoever claims that number next; and a weak
+--! key lets the record die with the process instead of leaking one entry
+--! per program ever run.
+--!
+--! No process context -- kernel code, early boot, the off-box suite --
+--! falls back to a shared pair, which is exactly the old behaviour and is
+--! the same convention screen.callerSeat() uses for an unresolvable seat.
+--! (test_compat_io_per_process.lua)
+local sharedDefaults = { input = io.stdin, output = io.stdout }
+local perProcess = setmetatable({}, { __mode = "k" })
+
+local function defaults()
+  local okP, proc = pcall(require, "kernel.process")
+  if not okP or type(proc) ~= "table" or type(proc.current) ~= "function" then
+    return sharedDefaults
+  end
+  local okC, p = pcall(proc.current)
+  if not okC or type(p) ~= "table" then return sharedDefaults end
+  local rec = perProcess[p]
+  if not rec then
+    -- A new process starts on the terminal, as it always did. It does NOT
+    -- inherit the parent's redirection: proc.spawn already carries
+    -- stdin/stdout/stderr for callers that want that, and silently handing
+    -- a child someone else's open file is the bug above in miniature.
+    rec = { input = sharedDefaults.input, output = sharedDefaults.output }
+    perProcess[p] = rec
+  end
+  return rec
+end
 
 ---------------------------------------------------------------------------
 -- io.input / io.output - get or set default streams
@@ -106,53 +146,58 @@ local function safeClose(stream)
 end
 
 function io.input(file)
+  local D = defaults()
   if file then
     if type(file) == "string" then
       local f, err = io.open(file, "r")
       if not f then error(err, 2) end
-      safeClose(defaultInput)
-      defaultInput = f
+      safeClose(D.input)
+      D.input = f
     else
-      if file ~= defaultInput then safeClose(defaultInput) end
-      defaultInput = file
+      if file ~= D.input then safeClose(D.input) end
+      D.input = file
     end
   end
-  return defaultInput
+  return D.input
 end
 
 function io.output(file)
+  local D = defaults()
   if file then
     if type(file) == "string" then
       local f, err = io.open(file, "w")
       if not f then error(err, 2) end
-      safeClose(defaultOutput)
-      defaultOutput = f
+      safeClose(D.output)
+      D.output = f
     else
-      if file ~= defaultOutput then safeClose(defaultOutput) end
-      defaultOutput = file
+      if file ~= D.output then safeClose(D.output) end
+      D.output = file
     end
   end
-  return defaultOutput
+  return D.output
 end
 
 ---------------------------------------------------------------------------
 -- io.read(...) - read from default input
 ---------------------------------------------------------------------------
 function io.read(...)
-  return defaultInput:read(...)
+  local D = defaults()
+  return D.input:read(...)
 end
 
 ---------------------------------------------------------------------------
 -- io.write(...) - write to default output
 ---------------------------------------------------------------------------
 function io.write(...)
-  return defaultOutput:write(...)
+  local D = defaults()
+  return D.output:write(...)
 end
 
 ---------------------------------------------------------------------------
 -- io.lines(path) - iterate lines of a file, or default input
 ---------------------------------------------------------------------------
 function io.lines(path)
+  local D = defaults()
   if path then
     local f, err = io.open(path, "r")
     if not f then error(err, 2) end
@@ -183,7 +228,7 @@ function io.lines(path)
     local refKeeper = { iter = iter, guard = guard }
     return function() local _ = refKeeper; return iter() end
   else
-    return defaultInput:lines()
+    return D.input:lines()
   end
 end
 
@@ -191,10 +236,11 @@ end
 -- io.close(file) - close a file, or default output
 ---------------------------------------------------------------------------
 function io.close(file)
+  local D = defaults()
   if file then
     return file:close()
   else
-    return defaultOutput:close()
+    return D.output:close()
   end
 end
 
@@ -202,8 +248,9 @@ end
 -- io.flush() - flush default output
 ---------------------------------------------------------------------------
 function io.flush()
-  if defaultOutput.flush then
-    defaultOutput:flush()
+  local D = defaults()
+  if D.output.flush then
+    D.output:flush()
   end
 end
 

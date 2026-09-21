@@ -632,16 +632,40 @@ end
 --! a copy) and keeps its own writes; its metatable is locked, and pairs()
 --! walks the module without ever handing the original table back.
 --! (test_sandbox_module_isolation.lua)
-local function isolatedModule(mod)
+--! #SEC (AUDIT 5, H-01) — `hidden` masks kernel-only hooks. A view reads
+--! THROUGH to the real module, so a function the kernel puts on a module
+--! purely so sandbox.lua can call it is reachable by the sandbox too. That
+--! is how compat.term._gpuForCaps became a display-capability generator:
+--! the caps it gates on arrive as an ARGUMENT, and below we override .gpu
+--! with a closure carrying the real ones — but the builder itself sat
+--! right beside the override, so `term._gpuForCaps({gpu=true})` handed any
+--! capless program a mutation-capable GPU proxy. Authority passed as data
+--! is only authority if the caller cannot forge the data.
+--! Masked keys read as nil and do not appear in pairs(), so the sandbox
+--! cannot see the hook at all; the kernel keeps the REAL module table and
+--! calls it directly. (test_sandbox_module_isolation.lua)
+local function isolatedModule(mod, hidden)
   if type(mod) ~= "table" then return mod end
+  -- Nothing to mask (every module but compat.term): keep the plain table
+  -- __index. A function __index would put a Lua call on EVERY field read a
+  -- sandboxed program makes, which on a 192 KB box is not free.
+  local index = mod
+  if hidden then
+    index = function(_, k)
+      if hidden[k] then return nil end
+      return mod[k]
+    end
+  end
   return setmetatable({}, {
-    __index = mod,
+    __index = index,
     __len   = function() return #mod end,
     __pairs = function()
       local k
       return function()
         local v
-        k, v = next(mod, k)
+        repeat
+          k, v = next(mod, k)
+        until k == nil or not (hidden and hidden[k])
         return k, v
       end
     end,
@@ -649,6 +673,18 @@ local function isolatedModule(mod)
     __metatable = false,
   })
 end
+
+--! Per-module keys a sandbox must never reach. Keyed by require() name.
+local HIDDEN_MODULE_KEYS = {
+  ["compat.term"] = { _gpuForCaps = true },
+  --! compat.process._forProgram is the same shape of hook: the kernel
+  --! calls it to bind info()/running() to THIS sandbox's launch path
+  --! (below), so the sandbox must not be able to call it and answer its own
+  --! question. Forging a path is not authority here — file access still
+  --! goes through securefs with the caller's ACLs — but an unmasked hook on
+  --! a compat module is how H-01 happened, so the rule stays uniform.
+  ["compat.process"] = { _forProgram = true },
+}
 
 --! #SEC (pentest, Sep 2026) — what the `net` capability means for a
 --! program: send and receive, find peers, ask to be trusted. It used to be
@@ -790,14 +826,34 @@ local function makeSafeRequire(opts, prebound, envRef)
     -- Explicit whitelist (prefix or exact name).
     if ALLOWED_MODULE_NAMES[name] or isAllowedPrefix(name) then
       -- #SEC H4 / pentest — this sandbox's own view (isolatedModule).
-      local mod = isolatedModule(require(name))
+      local real = require(name)
+      local mod = isolatedModule(real, HIDDEN_MODULE_KEYS[name])
       -- #SEC CR-8 — bind term.gpu() to THIS sandbox's capabilities so a
       -- mutation-capable GPU proxy is only handed to processes that hold
       -- a display cap. Without it, term.gpu() stays read-only.
-      if name == "compat.term" and type(mod) == "table"
-         and type(mod._gpuForCaps) == "function" then
+      --! #SEC (AUDIT 5, H-01) — close over the REAL module, not the view:
+      --! _gpuForCaps is masked on the view (HIDDEN_MODULE_KEYS above), so
+      --! the sandbox cannot call the builder with caps of its own
+      --! invention, and this closure is the only way to a mutating proxy.
+      if name == "compat.term" and type(real) == "table"
+         and type(real._gpuForCaps) == "function" then
         local sbCaps = opts and opts.caps
-        mod.gpu = function() return mod._gpuForCaps(sbCaps) end
+        mod.gpu = function() return real._gpuForCaps(sbCaps) end
+      end
+      --! Bind compat.process to THIS program. An OpenOS program calls
+      --! process.running() for one reason — to find the directory its own
+      --! script lives in — and the only thing that knows the answer is the
+      --! launcher, which handed us opts.name. envRef.env is this sandbox's
+      --! own globals, i.e. exactly the table the program already has as _G,
+      --! so returning it as info().env leaks nothing.
+      if name == "compat.process" and type(real) == "table"
+         and type(real._forProgram) == "function" then
+        local bound = real._forProgram(opts and opts.name,
+                                       envRef and envRef.env)
+        if type(bound) == "table" then
+          mod.info    = bound.info
+          mod.running = bound.running
+        end
       end
       cache[name] = mod
       return mod

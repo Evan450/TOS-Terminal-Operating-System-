@@ -48,6 +48,21 @@ function compat.init(opts)
     -- SANDBOXED caller can reach the card is decided by the `internet`
     -- capability, not by this table.
     ["internet"]      = "compat.internet",
+    -- Measured 2026-09-20 against the nine OpenComputers loot disks and the
+    -- OpenPrograms corpus: `robot`, `process` and `note` were the ONLY
+    -- OpenOS module names that real programs require and we did not answer
+    -- to. thread, uuid, rc, bit32, tty, sh, vt100, devfs, transforms,
+    -- package and pipe were required by no program in either corpus, so
+    -- they stay unshimmed until something asks. (docs/OS-SURVEY-2026-09.md)
+    --
+    -- Same reasoning as `internet` above for a machine with no robot: the
+    -- library loads and every call reports "no robot component". Whether a
+    -- SANDBOXED caller reaches the robot is decided by the
+    -- `peripheral.robot` capability, checked per call inside
+    -- kernel.peripheral.robot, not by this table.
+    ["robot"]         = "compat.robot",
+    ["process"]       = "compat.process",
+    ["note"]          = "compat.note",
   }
 
   local loaded = 0
