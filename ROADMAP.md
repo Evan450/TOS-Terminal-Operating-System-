@@ -2,11 +2,11 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**109 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**108 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 6 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 5 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
 | Planned | 82 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
@@ -655,34 +655,6 @@ RUN-THIS-ONCE CONFINEMENT. Plan9k composes namespaces at
 ```
 
 ## AUDIT 5: KERNEL &amp; COMPAT, OFF-BOX (2026-09-18)
-
-### Open bug — H-01
-
-```text
-H-01: ANY SANDBOX CAN FORGE A DISPLAY CAPABILITY AND DRIVE THE
-    REAL GPU. compat/term.lua:221 exposes _gpuForCaps(caps), which
-    returns a MUTATION-capable GPU proxy when the caps table it is
-    handed contains gpu or display. sandbox.lua:800 is meant to be
-    its only caller: it overrides .gpu on the per-sandbox module
-    view with a closure carrying that sandbox's real caps.
-      But the view is isolatedModule (sandbox.lua:635), a
-    read-through __index onto the real module -- so _gpuForCaps is
-    still reachable right beside the overridden .gpu. And
-    `compat.` is an allowed require PREFIX (sandbox.lua:41), so
-    reaching it needs no capability at all. Reproduced against the
-    real sandbox.build with caps = { ["compat.io"] = true } and no
-    display cap: term.gpu().setBackground() correctly returned
-    false, and term._gpuForCaps({gpu=true}).setBackground() reached
-    the hardware.
-      test_sandbox_module_isolation.lua:107 already asserts that
-    term.gpu() honours caps, which is exactly why this survived --
-    nothing ever tried the builder directly.
-      Fix: _gpuForCaps must not be reachable from a sandbox. Either
-    rawset it under a key the view cannot see, or -- cleaner --
-    have sandbox.lua hold the builder and never publish it on the
-    module at all. Severity HIGH. Pin: extend
-    test_sandbox_module_isolation.lua.
-```
 
 ### Open bug — CHANGING A LOGIN PASSWORD ORPHANS THE KEYCHAIN
 
