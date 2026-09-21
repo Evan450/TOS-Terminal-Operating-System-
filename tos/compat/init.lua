@@ -24,6 +24,10 @@ function compat.init(opts)
     ["io"]            = "compat.io",
 
     ["internet"]      = "compat.internet",
+
+    ["robot"]         = "compat.robot",
+    ["process"]       = "compat.process",
+    ["note"]          = "compat.note",
   }
 
   local loaded = 0

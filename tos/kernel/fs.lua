@@ -258,6 +258,30 @@ function fs.readFile(path)
   return result
 end
 
+--! A FAILED WRITE HAS TWO SHAPES, AND pcall ONLY SEES ONE. OC hands soft
+--! errors back as VALUES, not raises: OpenOS reports a full disk as
+--! `write() -> nil, "not enough space"` (lib/buffer.lua), and some proxies
+--! answer `false, err`. `local ok = pcall(proxy.write, ...)` sees ok=true
+--! for both and threw the reason away, so writeFile returned true having
+--! written nothing -- and open(path,"w") had ALREADY truncated the file.
+--!
+--! writeFileAtomic is built on this, so the guard whose whole job is
+--! "either the intact old file or the intact new one" removed the good
+--! file and renamed an empty temp over it, reporting success. On a full
+--! disk that is how /etc/users.dat, the elevate DB and the trust DB get
+--! zeroed. init.lua's copier already caught both shapes ("#REV finding
+--! #5"); this brings the kernel's own writers in line.
+--! (test_fs_write_full.lua)
+local function writeAll(proxy, h, content)
+  local ok, res, werr = pcall(proxy.write, h, content)
+  if not ok then return false, tostring(res) end
+
+  if res == false or (res == nil and werr ~= nil) then
+    return false, tostring(werr or "write refused")
+  end
+  return true
+end
+
 function fs.writeFile(path, content)
   local proxy, rel = resolve(path)
   if not proxy then return false, "No filesystem" end
@@ -269,9 +293,9 @@ function fs.writeFile(path, content)
   end
   local h, err = proxy.open(rel, "w")
   if not h then return false, err end
-  local ok = pcall(proxy.write, h, content)
+  local ok, werr = writeAll(proxy, h, content)
   proxy.close(h)
-  if not ok then return false, "Write failed" end
+  if not ok then return false, "Write failed: " .. tostring(werr) end
   return true
 end
 
@@ -280,9 +304,9 @@ function fs.appendFile(path, content)
   if not proxy then return false, "No filesystem" end
   local h, err = proxy.open(rel, "a")
   if not h then return false, err end
-  local ok = pcall(proxy.write, h, content)
+  local ok, werr = writeAll(proxy, h, content)
   proxy.close(h)
-  if not ok then return false, "Write failed" end
+  if not ok then return false, "Write failed: " .. tostring(werr) end
   return true
 end
 
@@ -358,8 +382,12 @@ function fs.copyFile(src, dst)
     while true do
       local chunk = sProxy.read(hin, COPY_BLOCK)
       if not chunk then return end
-      local okW, w, werr = pcall(dProxy.write, hout, chunk)
-      if not okW or w == false then error(tostring(werr or w or "write failed"), 0) end
+      --! `w == false` alone missed the shape OpenOS actually produces on a
+      --! full disk -- write() -> nil, "not enough space" -- so the copy ran
+      --! to completion and reported success having written nothing. Share
+      --! the same two-shape test as writeFile. (test_fs_write_full.lua)
+      local okW, werr = writeAll(dProxy, hout, chunk)
+      if not okW then error(tostring(werr), 0) end
       coopYield()
     end
   end)
