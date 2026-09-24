@@ -34,13 +34,33 @@ do
     if keyboard.keys[code] == nil then keyboard.keys[code] = name end
   end
 end
-
-function keyboard.isKeyDown(code)
-  local component = require("component")
-  if component.isAvailable("keyboard") then
-    return component.keyboard.isKeyDown(code)
+--! #SEC (AUDIT 5, H-03) — this called component.keyboard.isKeyDown, a
+--! method the OC keyboard component does not have (it only emits key_down
+--! and key_up; OpenOS tracks held keys in software). So it RAISED on every
+--! machine with a keyboard, and isControlDown -- OpenOS's Ctrl-C test --
+--! crashed a ported program on its interrupt path. It also asked the
+--! PRIMARY keyboard: another seat's, on a multi-seat box.
+--! kernel.process now tracks held keys per keyboard from the signals it
+--! routes; this answers for the keyboards of the CALLER's seat, and for
+--! every keyboard only when the caller has no seat (kernel, boot, a seatless
+--! daemon -- a single-seat machine either way). (test_compat_keyboard.lua)
+local function seatKeyboards()
+  local okS, scr = pcall(require, "kernel.screen")
+  if not okS or type(scr) ~= "table" or not scr.callerSeat or not scr.seatDevices then
+    return nil
   end
-  return false
+  local okI, idx = pcall(scr.callerSeat)
+  if not okI or idx == nil then return nil end
+  local okD, dev = pcall(scr.seatDevices, idx)
+
+  if not okD or type(dev) ~= "table" then return {} end
+  return dev.keyboards or {}
+end
+
+function keyboard.isKeyDown(charOrCode)
+  local okP, P = pcall(require, "kernel.process")
+  if not okP or type(P) ~= "table" or type(P.keyDown) ~= "function" then return false end
+  return P.keyDown(charOrCode, seatKeyboards()) == true
 end
 
 function keyboard.isAltDown() return keyboard.isKeyDown(keyboard.keys.lmenu) or keyboard.isKeyDown(keyboard.keys.rmenu) end

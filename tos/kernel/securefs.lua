@@ -166,6 +166,13 @@ function securefs.writeFile(path, content, session)
   return fs.writeFile(norm, content)
 end
 
+function securefs.writeFileAtomic(path, content, session)
+  local ok, err, norm = checkWrite(path, session)
+  if not ok then return false, err end
+  if not fs.writeFileAtomic then return fs.writeFile(norm, content) end
+  return fs.writeFileAtomic(norm, content)
+end
+
 function securefs.appendFile(path, content, session)
   local ok, err, norm = checkWrite(path, session)
   if not ok then return false, err end

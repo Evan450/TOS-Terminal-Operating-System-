@@ -58,7 +58,17 @@ local PERMISSIONS = {
                        ch_pair_conf  = true,
 
                        mesh          = true,
-                       mesh_ack      = true },
+                       mesh_ack      = true,
+                       --! Remote filesystem shares (kernel.netfs). Missing
+                       --! from this table since netfs shipped -- the #CLUSTER-1
+                       --! bug again: every NETFS_REQ was refused HERE, at
+                       --! TRUSTED, before netfs.handleRequest (which does its
+                       --! own arm/trust/verifyPeer/ACL checks) ever saw it, so
+                       --! `netfs mount` timed out against every real host.
+                       --! test_netfs.lua drove a fake net and could not see it;
+                       --! test_net_trusted_gate.lua now pins every wire type.
+                       nfs_req       = true,
+                       nfs_res       = true },
 }
 
 local peers = {}
@@ -93,6 +103,17 @@ local function saveDB()
   return (fs.writeFileAtomic or fs.writeFile)(DB_PATH, serialize.encode(saveData))
 end
 
+--! A peer's hostname is its own claim about itself. net.lua cleans it on
+--! the way in (cleanClaim: a printable string of at most 32, or nil); this
+--! holds the same line for any other caller and for names an older build
+--! already saved into trust.dat raw.
+local function cleanHostname(v)
+  if type(v) ~= "string" then return nil end
+  v = v:gsub("%c", ""):sub(1, 32)
+  if v == "" then return nil end
+  return v
+end
+
 local VALID_LEVELS = {
   [LEVEL.BLOCKED] = true, [LEVEL.UNKNOWN] = true,
   [LEVEL.KNOWN]   = true, [LEVEL.TRUSTED] = true,
@@ -110,6 +131,7 @@ local function loadDB()
     if not VALID_LEVELS[peer.level] then
       peer.level = LEVEL.UNKNOWN
     end
+    peer.hostname = cleanHostname(peer.hostname)
     peer.firstSeen = peer.firstSeen or 0
     peer.lastSeen = peer.lastSeen or 0
   end
@@ -378,6 +400,7 @@ local function expirePendingRequests()
 end
 
 function trust.addPendingRequest(address, hostname)
+  hostname = cleanHostname(hostname)
   expirePendingRequests()
 
   if pendingRequests[address] then

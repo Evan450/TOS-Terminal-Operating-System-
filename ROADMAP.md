@@ -2,18 +2,41 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**108 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**103 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 5 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 82 | Planned or under investigation. Most contributions belong here. |
+| Planned | 81 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## THE FERMI IMPORT: A CLOUD SESSION'S 15 FIXES (2026-09-23)
+
+### Planned — OCELOT CHECK FOR THE FERMI IMPORT
+
+```text
+OCELOT CHECK FOR THE FERMI IMPORT. Two things off-box tests
+    cannot settle. (1) H-06's per-seat cursor: two seats, each
+    running an OpenOS program that writes and reads a line; watch
+    the status bar, since that is where this file regresses. (2) The
+    sealed-traffic gate: a peer with encryptComms OFF talking to one
+    that has it ON and holds a secret for it now has its unsealed
+    packets dropped, with a log line, where they used to be accepted.
+```
+
+### Planned — BUMP THE CLUSTER PACKAGE VERSIONS
+
+```text
+BUMP THE CLUSTER PACKAGE VERSIONS. The Master fixes above did not
+    bump them, so `pkg upgrade` will not offer them to installed
+    Masters. Goes with REBUILD AND RE-SIGN THE OPTIONAL UTILITIES
+    PACK, which has to happen for them to ship at all.
+```
 
 ## THE MOD SOURCE IS THE AUTHORITY (2026-09-20)
 
@@ -656,110 +679,6 @@ RUN-THIS-ONCE CONFINEMENT. Plan9k composes namespaces at
 
 ## AUDIT 5: KERNEL &amp; COMPAT, OFF-BOX (2026-09-18)
 
-### Open bug — CHANGING A LOGIN PASSWORD ORPHANS THE KEYCHAIN
-
-```text
-CHANGING A LOGIN PASSWORD ORPHANS THE KEYCHAIN, PERMANENTLY.
-    kernel/keychain.lua's header states as fact that
-    "users.changePassword fires keychain.rekey if loaded".
-    keychain.rekey HAS NO CALLERS. Across TOS-Dev and TOS-Extras
-    the only three matches for "rekey" are its own definition, that
-    comment, and its own error string; users.changePassword
-    (users.lua:627) never touches the keychain.
-      So ~/.keychain.vault stays encrypted under the OLD password.
-    vault.decrypt MAC-verifies, so the next `keychain unlock` fails
-    cleanly and every stored passphrase is gone -- no warning at
-    password-change time, no recovery offered. When an ADMIN resets
-    another account's password it is unrecoverable even in
-    principle: the admin never held the old password.
-      Two things to settle before wiring rekey up, both live in it
-    today. loadDisk returns a truthy {} when no vault exists, so
-    rekey would CREATE an empty vault for users who never used the
-    keychain. And saveDisk passes requireStrong = true, so on a box
-    with no data card that write fails -- which would make `passwd`
-    itself fail, for a feature the user never touched.
-      Severity HIGH (silent loss of user secrets). Pin: a test that
-    changes a password and then unlocks.
-```
-
-### Open bug — H-03
-
-```text
-H-03: compat.keyboard.isKeyDown CANNOT WORK, AND RAISES RATHER
-    THAN RETURNING false. RE-GRADED: the review reads this as a
-    seat-boundary bypass, and the boundary is the smaller half.
-      keyboard.lua:39 calls component.keyboard.isKeyDown(code). THE
-    OC KEYBOARD COMPONENT HAS NO SUCH METHOD. Checked against
-    Ocelot's totoro/ocelot/brain/entity/Keyboard.class: its entire
-    surface is signal emission -- keyboard.keyDown -> key_down,
-    keyboard.keyUp -> key_up, keyboard.clipboard. Real OpenOS
-    tracks it in SOFTWARE from those events, in pressedChars and
-    pressedCodes (Reference/OpenOS/openos/lib/keyboard.lua:46).
-      So the call indexes nil and RAISES on any machine that has a
-    keyboard; the `return false` fallback only ever runs on a
-    machine that does not. isAltDown, isControlDown and isShiftDown
-    all route through it, and OpenOS's own event.lua uses
-    isControlDown() for Ctrl-C -- so a ported program crashes on
-    its interrupt path.
-      The seat half is real too, and survives that fix:
-    component.keyboard is the PRIMARY keyboard, so on a multi-seat
-    box a program reads another seat's modifiers. Both go away
-    together if pressedCodes is tracked per seat from key_down /
-    key_up, the way OpenOS does it. Severity HIGH -- it is broken,
-    not merely leaky. Pin: a test asserting isControlDown() returns
-    a boolean on a machine that has a keyboard.
-```
-
-### Open bug — H-04
-
-```text
-H-04: term.read() TAKES SIGNALS OFF THE MACHINE-WIDE QUEUE AND
-    FREEZES EVERY OTHER SEAT WHILE IT WAITS. compat/term.lua:260 is
-    `local ev = {computer.pullSignal()}` -- raw and untimed.
-    compat/term.lua loads OUTSIDE the sandbox, so its `computer`
-    upvalue is the real one: term.read() is a hole in
-    BLOCKED_MODULE_NAMES["computer"], reachable with no capability
-    through the `compat.` prefix.
-      Two consequences, and the second is the worse one. The signal
-    is popped before proc.tick can route it, so a keystroke meant
-    for another seat's foreground is consumed here -- the review's
-    "cross-seat impact likely" is certain; that is what the pop
-    does. And because pullSignal with no timeout blocks in C INSIDE
-    the coroutine, coroutine.resume never returns, proc.tick's loop
-    stalls, and nothing else on the machine runs until a key is
-    pressed somewhere on it.
-      Severity HIGH. Fix: route term.read through kernel.event and
-    the scheduler's own pull, as the rest of the shell does. Pin: a
-    test that term.read yields instead of calling pullSignal.
-```
-
-### Open bug — H-06
-
-```text
-H-06: TWO SANDBOXES STILL SHARE compat.term's CURSOR. The other
-    half of H-05 above, same root cause, NOT fixed this round --
-    deliberately, and the reason is worth recording.
-      The state is compat/term.lua:39-40 (curX, curY, curBlink),
-    read or written at 34 sites. Reproduced with two sandbox.build()
-    envs: after A called term.setCursor(40,12), B's term.getCursor()
-    returned 40,12 and B's term.write landed at (40,12).
-      The fix is NOT the same shape as H-05's. Default streams are a
-    process property, like an fd table, so per-process is right
-    there. A cursor is a property of the GLASS: there is one
-    physical terminal per seat, and two programs on one seat having
-    private cursors would be a different lie from the one we have.
-    So this wants per-SEAT, keyed on screen.callerSeat() -- which
-    already exists and already returns nil (= fall back to today's
-    single shared pair) for kernel, boot and off-box contexts.
-      Held over because it is 34 sites in the file with the worst
-    regression history in the tree -- "the black status bar,
-    seventh time" lives in this exact path -- and the payoff cannot
-    be confirmed off-box. It should land in a round that ends at an
-    Ocelot power-on, not at the end of one. Severity HIGH. Pin:
-    extend test_sandbox_module_isolation.lua with two envs and a
-    setCursor.
-```
-
 ### Planned — THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS
 
 ```text
@@ -788,62 +707,10 @@ THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS.
     MEDIUM. Pin: a test comparing draw.lua's column total against
     the screen's cell count. [?] the visual half has not been seen
     on hardware.
-```
-
-### Planned — EVERY BEEP STOPS THE MACHINE
-
-```text
-EVERY BEEP STOPS THE MACHINE, AND THE GAPS BETWEEN THEM BUSY-
-    SPIN. kernel/audio.lua:46, gap(), is `while computer.uptime() <
-    target do end` for 50 ms. Not calling pullSignal is RIGHT -- it
-    would eat the operator's keystrokes -- but it never yields
-    either, so on a cooperative scheduler it hard-freezes every
-    other seat and burns execution budget where a sleep costs
-    nothing.
-      The tones block too. Ocelot's Machine.beep(Context,
-    Arguments) calls Context.pause(D) with the duration after
-    emitting the tone; that is read off the bytecode, not assumed.
-    So audio.chat() is 0.18 s on EVERY incoming chat message
-    (shell/chat.lua:322), audio.warning() 0.25 s on every
-    command-not-found, audio.bootComplete() 0.36 s, and
-    audio.critical() 0.55 s -- over the scheduler's own
-    PROC_WALL_BUDGET of 0.5 s. A chat flood is a system-wide stall.
-      The fix is already in the API: Ocelot shows a beep(String)
-    overload, so computer.beep("..-") plays the whole pattern in
-    one call, no gaps and no spin.
-      Separately, setVolume only scales DURATION, and tone() drops
-    anything under 0.01 s -- so setVolume(0.1) silently mutes
-    notify, tick and chat while leaving error audible. Severity
-    MEDIUM.
-```
-
-### Planned — H-07
-
-```text
-H-07: term.screen() AND THE GPU FALLBACK ANSWER FOR THE WRONG
-    SEAT. compat/term.lua:226 returns component.list("screen")() --
-    the first screen on the machine, not the caller's. The same
-    pattern is in resolveSeatGpu's fallback (term.lua:165) when
-    display.getGpu() returns nil. Agreed with the review on impact:
-    LOW standing alone, because component.proxy is blocked, so the
-    address by itself buys little. It stops being low the moment
-    anything accepts a screen address as a target. Severity LOW.
-```
-
-### Planned — A FAILED SAVE LEAVES MEMORY AND DISK DISAGREEING
-
-```text
-A FAILED SAVE LEAVES MEMORY AND DISK DISAGREEING. keychain.set
-    (keychain.lua:159) and aliases.set / aliases.remove
-    (net/aliases.lua:124, :157) mutate the in-memory table and THEN
-    persist, returning the save error without rolling back. The
-    caller is told it failed; get / list say it worked; the change
-    vanishes at reboot. users.changePassword already gets this
-    right -- it reverts salt, hash and firstBoot when saveDB fails,
-    and says why (users.lua:680) -- so the shape to copy is already
-    in the tree. Note this gets MORE likely now, not less: the
-    first entry in this round makes a refused write actually report
-    itself. Severity LOW.
+      HALF FIXED 2026-09-23 (350fd87, fermi import). syntax.tokenize,
+    and PaneUI's port of it, keep a UTF-8 character as one token, so
+    the garbage cell in code position is gone. What remains is the
+    column model: draw.lua still advances by bytes.
 ```
 
 ### Planned — THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
@@ -863,6 +730,9 @@ THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
     :1282), so the lint would have to know the module ENVIRONMENT
     and not only STDLIB. Severity LOW. Pin: the widened lint is its
     own pin.
+      The `_ = v6` leak is gone (fc2c4da, fermi import); widening the
+    lint is what remains. It did gain one thing: it now follows
+    global accesses past a function's 256th constant (59efe90).
 ```
 
 ### Planned — THE PACKET MAC HAS NO LENGTH FRAMING

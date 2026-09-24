@@ -35,18 +35,31 @@ local function getNet()
   return netMod
 end
 
-local function generateCode()
+--! crypto.salt returns CHARACTERS, uniform over its 62-symbol alphabet --
+--! not uniform bytes. The byte-level rejection sampling below was written
+--! for bytes: over the 62 ASCII codes that salt actually emits, `b % 31`
+--! reaches only 27 of the 31 code characters, unevenly, so a code carried
+--! about 113 bits rather than the ~119 the header states. A salt symbol's
+--! POSITION is uniform over 62 = 2 * 31, so position mod 31 is exact. The
+--! byte path stays for any source that does hand back raw bytes.
+local SALT62 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+local function generateCode()
   local out, n = {}, #CODE_ALPHABET
   while #out < CODE_LEN do
     local raw = crypto.salt(64)
     for i = 1, #raw do
       if #out >= CODE_LEN then break end
-      local b = raw:byte(i)
-      if b < 248 then
-        local idx = (b % n) + 1
-        out[#out + 1] = CODE_ALPHABET:sub(idx, idx)
+      local ch = raw:sub(i, i)
+      local pos = SALT62:find(ch, 1, true)
+      local idx
+      if pos then
+        idx = ((pos - 1) % n) + 1
+      else
+        local b = raw:byte(i)
+        if b < 248 then idx = (b % n) + 1 end
       end
+      if idx then out[#out + 1] = CODE_ALPHABET:sub(idx, idx) end
     end
   end
   return table.concat(out)
@@ -61,6 +74,54 @@ local function macForCode(secret, addrA, addrB, ts)
   local lo, hi = tostring(addrA or ""), tostring(addrB or "")
   if lo > hi then lo, hi = hi, lo end
   return crypto.hmac(secret, lo .. "|" .. hi .. "|" .. tostring(ts or 0))
+end
+
+--! #SEC — v1 installed the CODE-DERIVED secret itself on both ends, so
+--! every peer that paired during one `net pair start` window (the window
+--! allows several, and `net pair status` counts them) held the SAME secret
+--! with this machine. The mesh seals a message end-to-end with the secret
+--! its sender shares with the recipient, and opens it with the secret for
+--! the envelope's CLAIMED origin (meshctl.ingest), while every node relays
+--! every envelope. So peer X, paired in the same window as Y, could read
+--! Y's mail to us as it relayed it, and forge mail to us "from" Y.
+--!
+--! Deriving per link from the code and the two addresses would not help:
+--! X typed the same code and knows both addresses. Each side therefore
+--! adds a fresh nonce -- the initiator's in INIT, ours in CONFIRM -- and the
+--! installed secret is HMAC(codeSecret, both addresses, both nonces). Both
+--! packets are unicast and MAC'd under the code-derived secret, so the
+--! nonces cannot be altered without the code, and a third machine that
+--! has the code never sees them.
+--!
+--! Compatible both ways: v2 fields ride beside the unchanged v1 MAC. An
+--! older receiver ignores them and confirms v1; an older initiator sends
+--! none and is paired v1. Either way both ends install the same secret,
+--! and the v1 case is logged: that peer shares the window secret with any
+--! other older peer paired in the same window, until it is updated and
+--! paired again. (test_chatpair.lua)
+local PAIR_V2 = 2
+
+local function nonceHex()
+
+  return (crypto.salt(16):gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+
+local function mac2(secret, addrA, addrB, ts, initNonce, confNonce)
+  local lo, hi = tostring(addrA or ""), tostring(addrB or "")
+  if lo > hi then lo, hi = hi, lo end
+  return crypto.hmac(secret, table.concat({ "v2", lo, hi, tostring(ts or 0),
+    tostring(initNonce or ""), tostring(confNonce or "") }, "|"))
+end
+
+local function linkSecret(secret, addrA, addrB, initNonce, confNonce)
+  local lo, hi = tostring(addrA or ""), tostring(addrB or "")
+  if lo > hi then lo, hi = hi, lo end
+  return crypto.hmac(secret, table.concat({ DOMAIN, "link", lo, hi,
+    tostring(initNonce), tostring(confNonce) }, "|"))
+end
+
+local function validNonce(n)
+  return type(n) == "string" and #n >= 16 and #n <= 64 and not n:find("[^%x]")
 end
 
 local function ensureTrustedOrFail(addr)
@@ -145,19 +206,39 @@ function chatpair.onPairInit(packet, from)
     return
   end
 
-  local okS, sErr = trustMod.setSecret(PAIR_ACTOR, from, _window.secret, TIER_ROOT)
+  local v2 = (p.v == PAIR_V2)
+  if v2 and not (validNonce(p.nonce) and type(p.mac2) == "string"
+      and crypto.ctEquals(mac2(_window.secret, ourAddr, from, p.ts, p.nonce, nil), p.mac2)) then
+    if log then log.warn(LOG_TAG, "pair_init v2 MAC mismatch from "..tostring(from):sub(1,8)) end
+    return
+  end
+  local confNonce = v2 and nonceHex() or nil
+  local installed = v2 and linkSecret(_window.secret, ourAddr, from, p.nonce, confNonce)
+    or _window.secret
+
+  local okS, sErr = trustMod.setSecret(PAIR_ACTOR, from, installed, TIER_ROOT)
   if not okS then
     if log then log.warn(LOG_TAG, "setSecret failed for "..tostring(from):sub(1,8)..": "..tostring(sErr)) end
     return
   end
   _window.paired_with[#_window.paired_with + 1] = from
-  if log then log.info(LOG_TAG, "paired with "..tostring(from):sub(1,12).."...") end
+  if log then
+    log.info(LOG_TAG, "paired with "..tostring(from):sub(1,12).."...")
+    if not v2 then
+      log.warn(LOG_TAG, tostring(from):sub(1,8).." paired with the older (v1) handshake: "
+        .. "it shares this window's secret with any other v1 peer paired in it. "
+        .. "Update it and pair again.")
+    end
+  end
 
   local ts = computer.uptime()
-  local confirm = protocol.makePacket(protocol.TYPE.CHAT_PAIR_CONFIRM, {
-    mac = macForCode(_window.secret, ourAddr, from, ts),
-    ts  = ts,
-  }, { to = from })
+  local payload = { mac = macForCode(_window.secret, ourAddr, from, ts), ts = ts }
+  if v2 then
+    payload.v     = PAIR_V2
+    payload.nonce = confNonce
+    payload.mac2  = mac2(_window.secret, ourAddr, from, ts, p.nonce, confNonce)
+  end
+  local confirm = protocol.makePacket(protocol.TYPE.CHAT_PAIR_CONFIRM, payload, { to = from })
   if net and net.send then pcall(net.send, from, confirm) end
 end
 
@@ -191,9 +272,13 @@ function chatpair.connect(peer, code, timeout)
     got = true
   end)
 
+  local initNonce = nonceHex()
   local pkt = protocol.makePacket(protocol.TYPE.CHAT_PAIR_INIT, {
-    mac = macForCode(secret, ourAddr, peer, ts),
-    ts  = ts,
+    mac   = macForCode(secret, ourAddr, peer, ts),
+    ts    = ts,
+    v     = PAIR_V2,
+    nonce = initNonce,
+    mac2  = mac2(secret, ourAddr, peer, ts, initNonce, nil),
   }, { to = peer })
   local sent, sErr = net.send(peer, pkt)
   if not sent then
@@ -213,12 +298,29 @@ function chatpair.connect(peer, code, timeout)
     return false, "malformed confirm"
   end
 
-  local expected = macForCode(secret, ourAddr, peer, confirmPayload.ts)
-  if not crypto.ctEquals(expected, confirmPayload.mac) then
-    return false, "confirm MAC mismatch (wrong code or attacker on wire)"
+  local installed
+  if confirmPayload.v == PAIR_V2 then
+
+    if not (validNonce(confirmPayload.nonce) and type(confirmPayload.mac2) == "string"
+        and crypto.ctEquals(mac2(secret, ourAddr, peer, confirmPayload.ts,
+          initNonce, confirmPayload.nonce), confirmPayload.mac2)) then
+      return false, "confirm MAC mismatch (wrong code or attacker on wire)"
+    end
+    installed = linkSecret(secret, ourAddr, peer, initNonce, confirmPayload.nonce)
+  else
+    local expected = macForCode(secret, ourAddr, peer, confirmPayload.ts)
+    if not crypto.ctEquals(expected, confirmPayload.mac) then
+      return false, "confirm MAC mismatch (wrong code or attacker on wire)"
+    end
+
+    installed = secret
+    if log then
+      log.warn(LOG_TAG, peer:sub(1,8).." answered with the older (v1) handshake; "
+        .. "the link uses the pairing window's shared secret. Update it and pair again.")
+    end
   end
 
-  local okI, iErr = trustMod.setSecret(PAIR_ACTOR, peer, secret, TIER_ROOT)
+  local okI, iErr = trustMod.setSecret(PAIR_ACTOR, peer, installed, TIER_ROOT)
   if not okI then return false, "local setSecret failed: "..tostring(iErr) end
 
   if log then log.info(LOG_TAG, "paired with "..peer:sub(1,12).."...") end

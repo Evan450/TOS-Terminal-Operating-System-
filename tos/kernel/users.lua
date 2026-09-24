@@ -55,6 +55,20 @@ local function outranks(targetRec, actorTier)
     and type(actorTier) == "number" and targetRec.tier > actorTier
 end
 
+--! #SEC (sudo) — the tier an account-management call is authorised at.
+--! A real session carries it (sudo elevation may have raised it: password-
+--! verified, capped); kernel and login pseudo-sessions name their actor, so
+--! it falls back to that account's stored tier. create() and setTier() were
+--! moved to this rule when sudo landed; delete, setLocked and changePassword
+--! kept the stored tier, so `sudo userdel` / `sudo passwd bob` were refused
+--! by the kernel after the shell's own tier gate had let them through.
+local function effectiveTier(sess, actorRec)
+  if sess and not sess.isKernel and not sess.isLogin then
+    return tonumber(sess.tier) or 0
+  end
+  return type(actorRec) == "table" and tonumber(actorRec.tier) or 0
+end
+
 --! #SEC (pentest, Sep 2026) — the login screen's principal manages no
 --! accounts. The carve-outs below that honour a caller-named `actor` for
 --! synthetic sessions exist for kernel code and for the first-boot password
@@ -210,6 +224,47 @@ function users.registerSession(sess)
   local token = crypto.token()
   sessions[token] = sess
   return token
+end
+
+--! #SEC — a session is a SNAPSHOT of the account taken at login: its tier
+--! was copied in, and nothing wrote it again. The shell's tier gate
+--! (helpers.liveTier) reads the session, and so does securefs, because a
+--! seat's shell process holds that same table as its principal. So an
+--! admin demoted by root kept every admin power until they chose to log
+--! out (for good, with sessionTimeout = 0), and a LOCKED account's open
+--! session carried on as if nothing had happened -- while M-7's comment
+--! in helpers.lua described the demotion as taking effect at once.
+--! (test_session_follows_account.lua)
+
+local function syncSessionTier(username, newTier)
+  for _, s in pairs(sessions) do
+    if type(s) == "table" and s.user == username and not s.isGuest then
+      s.realTier = newTier
+      if s.passwordChangeOnly then
+
+      elseif s.elevated then
+
+        if newTier < TIER.USER then s.tier = TIER.GUEST
+        else s.tier = math.max(newTier, tonumber(s.elevatedCap) or newTier) end
+      else
+        s.tier = newTier
+      end
+    end
+  end
+end
+
+local function revokeSessionsOf(username)
+  local doomed = {}
+  for token, s in pairs(sessions) do
+    if type(s) == "table" and s.user == username then doomed[#doomed + 1] = token end
+  end
+  for _, token in ipairs(doomed) do
+    local s = sessions[token]
+    sessions[token] = nil
+    if token == currentSession then currentSession = nil end
+    s.tier, s.revoked = TIER.GUEST, true
+  end
+  return #doomed
 end
 
 function users.init(modules)
@@ -443,7 +498,8 @@ function users.delete(actor, username)
     end
   end
   local actorUser = userDB[actor]
-  if not actorUser or actorUser.tier < TIER.ADMIN then
+  local effTier = effectiveTier(sess, actorUser)
+  if not actorUser or effTier < TIER.ADMIN then
     return false, "Insufficient privileges"
   end
   if username == "root" then
@@ -452,19 +508,11 @@ function users.delete(actor, username)
   if not userDB[username] then
     return false, "User not found"
   end
-  if outranks(userDB[username], actorUser.tier) then
+  if outranks(userDB[username], effTier) then
     return false, "Cannot delete an account that outranks you"
   end
 
-  local toRemove = {}
-  for token, session in pairs(sessions) do
-    if session.user == username then
-      toRemove[#toRemove + 1] = token
-    end
-  end
-  for _, token in ipairs(toRemove) do
-    sessions[token] = nil
-  end
+  revokeSessionsOf(username)
 
   local deletedRecord = userDB[username]
   userDB[username] = nil
@@ -479,6 +527,40 @@ function users.delete(actor, username)
     log.info("users", string.format("User '%s' deleted by %s", username, actor))
   end
   return true
+end
+
+--! #SEC (AUDIT 5) — the keychain's master IS the login password, and
+--! keychain.lua said changePassword re-keyed it while nothing called
+--! keychain.rekey at all: the vault stayed locked to the old password, the
+--! next `keychain unlock` failed its MAC, and every stored passphrase was
+--! gone with no warning at passwd time.
+--!   * Only when ~/.keychain.vault exists -- checked on the raw fs first,
+--!     so a user who never touched the keychain loads nothing and gets no
+--!     empty vault (and a card-less box cannot fail their passwd over it).
+--!   * A SELF change re-keys, as that user (their own home, their ACL).
+--!   * A RESET by an admin cannot: the old password is not known.
+--!   * Neither case fails the password change, which has already been
+--!     saved. The vault is untouched on failure, so it still opens with the
+--!     OLD password, and the returned note says exactly that.
+--! Returns nil when there is nothing to say, else a note for the operator.
+--! (test_keychain_rekey.lua)
+local function rekeyKeychain(username, home, isSelf, oldPassword, newPassword)
+  if type(home) ~= "string" or home == "" or home == "/" then return nil end
+  if not (fs and fs.exists and fs.exists(home .. "/.keychain.vault")) then return nil end
+  if not isSelf then
+    return "'" .. tostring(username) .. "' has a keychain; a reset cannot re-key it, "
+      .. "so it still opens with their OLD password."
+  end
+  local km = _G._TOS and _G._TOS.keychain
+  local ok, err = false, "keychain module unavailable"
+  if km and km.rekey then
+    local okP, r1, r2 = pcall(km.rekey, oldPassword, newPassword, users.sessionFor(username))
+    if okP then ok, err = r1, r2 else err = r1 end
+  end
+  if ok then return nil end
+  if log then log.warn("users", "Keychain re-key failed for '" .. tostring(username) .. "': " .. tostring(err)) end
+  return "Your keychain could not be re-keyed (" .. tostring(err)
+    .. "); it still opens with your OLD password."
 end
 
 function users.changePassword(actor, username, oldPassword, newPassword)
@@ -496,10 +578,11 @@ function users.changePassword(actor, username, oldPassword, newPassword)
 
   local actorUser = userDB[actor]
   if actor ~= username then
-    if not actorUser or actorUser.tier < TIER.ADMIN then
+    local effTier = effectiveTier(sess, actorUser)
+    if not actorUser or effTier < TIER.ADMIN then
       return false, "Insufficient privileges"
     end
-    if outranks(user, actorUser.tier) then
+    if outranks(user, effTier) then
       return false, "Cannot change the password of an account that outranks you"
     end
   else
@@ -529,7 +612,7 @@ function users.changePassword(actor, username, oldPassword, newPassword)
   if log then
     log.info("users", string.format("Password changed for '%s' by %s", username, actor))
   end
-  return true
+  return true, rekeyKeychain(username, user.home, actor == username, oldPassword, newPassword)
 end
 
 local function otherUsablePrivileged(excludeName)
@@ -584,6 +667,8 @@ function users.setTier(actor, username, newTier)
     return false, "Persist failed: " .. tostring(sErr)
   end
 
+  syncSessionTier(username, newTier)
+
   if log then
     log.info("users", string.format("User '%s' tier set to %d by %s",
       username, newTier, actor))
@@ -600,12 +685,13 @@ function users.setLocked(actor, username, locked)
     if sess.tier < TIER.ADMIN then return false, "Insufficient privileges" end
   end
   local actorUser = userDB[actor]
-  if not actorUser or actorUser.tier < TIER.ADMIN then
+  local effTier = effectiveTier(sess, actorUser)
+  if not actorUser or effTier < TIER.ADMIN then
     return false, "Insufficient privileges"
   end
   local user = userDB[username]
   if not user then return false, "User not found" end
-  if outranks(user, actorUser.tier) then
+  if outranks(user, effTier) then
     return false, "Cannot lock or unlock an account that outranks you"
   end
 
@@ -622,6 +708,13 @@ function users.setLocked(actor, username, locked)
   if not okS then
     user.locked, user.failedAttempts, user.lastFailedAt = oldLocked, oldFA, oldLF
     return false, "Persist failed: " .. tostring(sErr)
+  end
+
+  if locked then
+    local n = revokeSessionsOf(username)
+    if n > 0 and log then
+      log.warn("auth", string.format("Locked '%s': ended %d live session(s)", username, n))
+    end
   end
   return true
 end

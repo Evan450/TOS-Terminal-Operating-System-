@@ -2081,7 +2081,9 @@ shallowest of the three help depths (`help` → `man` → this Manual). *See als
 
 **hostname** — `hostname [name]` **(admin to set)**
 With no argument, shows the device type + hostname; `hostname <name>` sets the
-name (`/etc/hostname`). (v1.4.0 folded the old `device` command in here.)
+name (the `hostname` key in `/etc/tos.cfg`; 1-32 printable characters) and peers
+hear it at the next handshake, no reboot needed. (v1.4.0 folded the old `device`
+command in here.)
 *See also:* `hw`, `net`.
 
 **hw** — `hw`
@@ -2287,8 +2289,11 @@ cold tab out is a disk write. *See also:* `swap`, `battery`, `doctor`, `mem`.
 Change your password (or another user's, as admin). First-boot password change is
 enforced by the kernel. *See also:* `users`.
 
-**ping** — `ping <addr>` **(tier: modem)**
-Probe a peer for reachability. *See also:* `net`, `hostname`.
+**ping** — `ping [peer]` **(tier: modem)**
+Probe a peer for reachability and report the reply time (3-second timeout). The
+peer can be a full address, an alias, or an index from `net scan`.
+With no argument, broadcasts a discovery ping; `net peers` lists who answered.
+*See also:* `net`, `hostname`.
 
 **sudo** — `sudo <command>` | `sudo -s` | `sudo -k` | `sudo setup [admin|root]` |
 `sudo off` **(USER+; guests cannot elevate)**

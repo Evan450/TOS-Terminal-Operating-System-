@@ -66,6 +66,7 @@ local config = nil
 local event  = nil
 
 local dispatchToListeners
+local cleanClaim
 
 function net.init(modules)
   log    = modules.log
@@ -273,6 +274,14 @@ function net.getHostname()
   return hostname
 end
 
+function net.setHostname(name)
+  if type(name) ~= "string" or name == "" or #name > 32 or name:find("%c") then
+    return false, "hostname must be 1-32 printable characters"
+  end
+  hostname = name
+  return true
+end
+
 function net.modemCount()
   return #modems
 end
@@ -286,6 +295,15 @@ local PUBLIC_PACKET_TYPES = {
   ch_pair_init = true, ch_pair_conf = true,
 
   cl_pair_init = true, cl_pair_conf = true,
+}
+
+--! Types carried by net.broadcast, which never seals: a broadcast has no
+--! single recipient whose secret could key it. The mesh seals its payload
+--! end-to-end for the final recipient instead (net/meshctl.lua). The
+--! receive path's unsealed-packet rule exempts these, as it does the public
+--! set above; a new broadcast-carried type belongs here as well.
+local BROADCAST_PACKET_TYPES = {
+  mesh = true, mesh_ack = true,
 }
 
 function net.send(address, packet, port)
@@ -396,7 +414,13 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
   if not trustMgr.isAllowed(remoteAddr, packet.type) then
 
     if packet.type == protocol.TYPE.TRUST_REQ then
-      local peerHostname = packet.payload and packet.payload.hostname or nil
+      --! #SEC — a TRUST_REQ comes from ANY peer, UNKNOWN included, and its
+      --! hostname is that stranger's claim: the same rule as PING/PONG
+      --! (cleanClaim). Raw, a table raised inside the trust manager after
+      --! the record was stored, and 8 KB of escape codes reached
+      --! `net requests`. (test_net_peer_claims.lua)
+      local peerHostname = cleanClaim(type(packet.payload) == "table"
+        and packet.payload.hostname or nil)
       trustMgr.addPendingRequest(remoteAddr, peerHostname)
 
       dispatchToListeners(protocol.TYPE.TRUST_REQ, packet, remoteAddr)
@@ -428,6 +452,8 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
     packet.payload = nil
     return
   end
+
+  local sealed = false
 
   if packet.enc and packet.enc ~= false and peerLevel >= trustMgr.LEVEL.TRUSTED then
 
@@ -509,6 +535,7 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
           else
             packet.payload = parsed
             packet.enc = false
+            sealed = true
           end
         end
       end
@@ -519,6 +546,42 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
         log.warn("net", string.format(
           "Dropped enc packet from %s (%s): %s",
           remoteAddr:sub(1, 8), packet.type or "?", dropWhy))
+      end
+      return
+    end
+  end
+
+  --! #SEC — THE MAC WAS OPTIONAL FOR THE SENDER. Everything above runs only
+  --! when a packet SAYS it is encrypted, so a TRUSTED peer's packet that
+  --! simply left `enc` off skipped the MAC, the sequence check and the
+  --! nonce ring, and was dispatched as if it had passed them. The threat
+  --! those checks exist for is the one net.verifyPeer's comments name: a
+  --! trusted peer's modem moved to an attacker's machine. It keeps its
+  --! address -- and so its TRUSTED level -- but not the shared secret, so
+  --! it cannot produce a valid MAC... and did not need one. Every listener
+  --! that does not run its own challenge (chat MSG, TRUST_REVOKE, the
+  --! cluster Manager's CLUSTER_ASSIGN, which runs the Master's tasks) took
+  --! plaintext from it as genuine.
+  --!
+  --! Mirror of the send side, exactly: with encryptComms on, net.send seals
+  --! every non-public packet to a TRUSTED peer it has a secret with, and
+  --! refuses to send it otherwise (#47). So a plaintext non-public packet
+  --! from a TRUSTED peer we share a secret with is not one a correctly
+  --! configured peer sends. Exempt: PUBLIC_PACKET_TYPES (never sealed, by
+  --! design), and the mesh pair, which travels by net.broadcast (never
+  --! sealed at this layer) and is sealed end-to-end inside the envelope.
+  --! A TRUSTED peer with NO shared secret is unchanged -- nothing here could
+  --! verify it either way. (test_net_trusted_gate.lua)
+  if not sealed and encryptComms and peerLevel >= trustMgr.LEVEL.TRUSTED
+     and not PUBLIC_PACKET_TYPES[packet.type]
+     and not BROADCAST_PACKET_TYPES[packet.type] then
+    local secret = trustMgr._internalGetSecret(remoteAddr, net._trustToken)
+    if secret and secret ~= "" then
+      if log then
+        log.warn("net", string.format(
+          "Dropped unsealed %s from TRUSTED peer %s: we share a secret, so it "
+          .. "must arrive encrypted (a peer with encryptComms off, or a moved modem)",
+          tostring(packet.type), remoteAddr:sub(1, 8)))
       end
       return
     end
@@ -543,11 +606,14 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
 
   end
 
+  --! HELLO / HELLO_ACK hostnames are persisted into /etc/trust.dat and
+  --! shown by `net peers`, so they get the same cleanClaim as PING/PONG.
+  --! A KNOWN peer is one an admin met, not one whose bytes are trusted.
   if packet.type == protocol.TYPE.HELLO and peerLevel >= trustMgr.LEVEL.KNOWN then
 
     local peer = trustMgr.getPeer(remoteAddr)
-    if peer and packet.payload then
-      peer.hostname = packet.payload.hostname
+    if peer and type(packet.payload) == "table" then
+      peer.hostname = cleanClaim(packet.payload.hostname)
     end
     local ack = protocol.helloAck(hostname, _G._TOS.version)
     net.send(remoteAddr, ack)
@@ -557,8 +623,8 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
   if packet.type == protocol.TYPE.HELLO_ACK and peerLevel >= trustMgr.LEVEL.KNOWN then
 
     local peer = trustMgr.getPeer(remoteAddr)
-    if peer and packet.payload then
-      peer.hostname = packet.payload.hostname
+    if peer and type(packet.payload) == "table" then
+      peer.hostname = cleanClaim(packet.payload.hostname)
     end
   end
 
@@ -854,7 +920,9 @@ local MAX_DISCOVERED = 64
 --! peers`, `net scan`, discovery), and control characters went straight to
 --! the screen. Keep a short printable string or nothing.
 --! (test_net_peer_claims.lua)
-local function cleanClaim(v)
+--! Also applied to TRUST_REQ and HELLO / HELLO_ACK hostnames in
+--! handleIncoming, above (forward-declared there).
+function cleanClaim(v)
   if type(v) ~= "string" then return nil end
   v = v:gsub("%c", ""):sub(1, 32)
   if v == "" then return nil end

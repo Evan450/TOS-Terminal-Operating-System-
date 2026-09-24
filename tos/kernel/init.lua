@@ -601,10 +601,16 @@ function kernel.boot(opts)
 
         local okAl, aliasesMod = pcall(require, "kernel.net.aliases")
         if okAl and aliasesMod and aliasesMod.init then
+          --! From _TOS, not `securefs`/`usersmod`: those were locals of the
+          --! stage-2 block and are out of scope here, so both names read
+          --! nil GLOBALS -- and aliases' tier gate treats a missing users
+          --! module as early boot and lets every caller through. Any user
+          --! could repoint the machine's peer aliases. (test_net_aliases.lua;
+          --! test_global_leaks.lua now sees names past the 256th constant.)
           aliasesMod.init({
             fs        = fs,
-            securefs  = securefs,
-            users     = usersmod,
+            securefs  = _G._TOS.securefs,
+            users     = _G._TOS.users,
             log       = log,
             serialize = require("kernel.serialize"),
           })
