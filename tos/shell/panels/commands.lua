@@ -224,7 +224,7 @@ local REGISTRY = {
   -- ext stubs (lazy-load via shell.ext on first use):
   net      = { category = "extras", tier = 1, help = "Network admin (trust, peers, servers, ports)" },
   ping     = { category = "extras", tier = 1, help = "Network ping" },
-  hostname = { category = "extras", tier = 0, help = "Show device type + hostname; set the name with 'hostname <name>'" },
+  hostname = { category = "extras", tier = 0, help = "Show device type + hostname; 'hostname <name>' sets it (admin)" },
   config   = { category = "extras", tier = 2, help = "Edit /etc/tos.cfg" },
   battery  = { category = "extras", tier = 0, help = "Power management info" },
   internet = { category = "extras", tier = 1, help = "Internet card: status, a test fetch, and the machine-wide on/off" },

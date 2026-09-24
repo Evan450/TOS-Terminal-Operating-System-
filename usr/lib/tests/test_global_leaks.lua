@@ -126,6 +126,61 @@ test("the manifest listed a plausible number of Lua files (" .. #files .. ")",
 
 -- -p so nothing is written to disk; -l -l for the full listing including
 -- the constant each _ENV access names.
+--!
+--! THE NAME IS NOT ALWAYS ON THE _ENV LINE. An instruction operand can
+--! only address the first 256 constants of a function. Past that, the
+--! compiler LOADKs the name into a register and indexes _ENV with the
+--! register, and luac prints the access with no name at all:
+--!   5.3   LOADK 30 -316 ; "usersmod"    GETTABUP 30 3 30 ; _ENV
+--!   5.4   GETUPVAL 1 0 ; _ENV   LOADK 2 300 ; "x"   GETTABLE 1 1 2
+--! Matching only `_ENV "name"` skipped every global touched late in a
+--! big function, which is how kernel/init.lua handed aliases.init two nil
+--! globals (securefs, usersmod) past this lint -- the ONE file most
+--! likely to have that many constants. So the listing is walked, and the
+--! string each register was last loaded with is remembered per function.
+local function listingEnvNames(out)
+  local seen, order = {}, {}
+  local function add(name)
+    if name and not seen[name] then seen[name] = true; order[#order + 1] = name end
+  end
+  local kreg, envreg = {}, {}   -- register -> LOADKed string / holds _ENV
+  for line in out:gmatch("[^\n]+") do
+    if line:match("^%s*main <") or line:match("^%s*function <") then
+      kreg, envreg = {}, {}
+    end
+    local op, args, comment = line:match("^%s*%d+%s+%[[^%]]*%]%s+(%u[%u%d]*)%s*([^;]*);?%s*(.*)$")
+    if op then
+      local r = {}
+      for n in args:gmatch("%-?%d+") do r[#r + 1] = tonumber(n) end
+      local a, b, c = r[1], r[2], r[3]
+      local named = comment:match('^_ENV%s+"([A-Za-z_][A-Za-z0-9_]*)"')
+      local str = comment:match('^"(.*)"$')
+      if named then
+        add(named)
+      elseif comment == "_ENV" and op == "GETTABUP" and c and c >= 0 then
+        add(kreg[c])                                  -- 5.3, key in R[C]
+      elseif comment == "_ENV" and op == "SETTABUP" and b and b >= 0 then
+        add(kreg[b])                                  -- 5.3, key in R[B]
+      elseif op == "GETTABLE" and envreg[b] then
+        add(kreg[c])                                  -- 5.4, _ENV in R[B]
+      elseif op == "SETTABLE" and envreg[a] then
+        add(kreg[b])                                  -- 5.4, _ENV in R[A]
+      elseif op == "GETFIELD" and envreg[b] then
+        add(str)
+      elseif op == "SETFIELD" and envreg[a] then
+        add(comment:match('^"([A-Za-z_][A-Za-z0-9_]*)"'))
+      end
+      -- Every op but the stores writes R[A]; forget what it held.
+      if a and not op:match("^SET") then
+        kreg[a], envreg[a] = nil, nil
+        if op == "LOADK" and str then kreg[a] = str end
+        if op == "GETUPVAL" and comment == "_ENV" then envreg[a] = true end
+      end
+    end
+  end
+  return order
+end
+
 local function envNames(relPath)
   local cmd = 'luac -p -l -l "' .. root .. relPath .. '" 2>&1'
   local pipe = io.popen(cmd, "r")
@@ -133,11 +188,7 @@ local function envNames(relPath)
   local out = pipe:read("*a") or ""
   local ok = pipe:close()
   if not ok or out:find("luac:", 1, true) then return nil, out end
-  local seen, order = {}, {}
-  for name in out:gmatch('_ENV%s+"([A-Za-z_][A-Za-z0-9_]*)"') do
-    if not seen[name] then seen[name] = true; order[#order + 1] = name end
-  end
-  return order
+  return listingEnvNames(out)
 end
 
 -- Probe once so a missing luac is reported as itself rather than as 150
@@ -208,6 +259,36 @@ do
     test("the lint still detects a deliberately leaked global", found)
   else
     test("the lint could write its self-check probe", false)
+  end
+end
+
+-- And past the 256th constant, where the name leaves the _ENV line (see
+-- listingEnvNames). A read, a write, and a read inside a table
+-- constructor, which is exactly the shape of the kernel/init.lua bug.
+do
+  local tmp = root .. "usr/lib/tests/.global_leak_probe_big.lua"
+  local fh = io.open(tmp, "w")
+  if fh then
+    local parts = { "local t = {" }
+    for i = 1, 300 do parts[#parts + 1] = string.format('  "k%d",', i) end
+    parts[#parts + 1] = "}"
+    parts[#parts + 1] = "local x = late_read_probe"
+    parts[#parts + 1] = "late_write_probe = 1"
+    parts[#parts + 1] = "local y = { users = late_field_probe }"
+    parts[#parts + 1] = "return t, x, y"
+    fh:write(table.concat(parts, "\n"), "\n")
+    fh:close()
+    local got = {}
+    for _, n in ipairs(envNames("usr/lib/tests/.global_leak_probe_big.lua") or {}) do
+      got[n] = true
+    end
+    os.remove(tmp)
+    test("...and one read past the 256th constant", got.late_read_probe == true)
+    test("...and one written past the 256th constant", got.late_write_probe == true)
+    test("...and one read inside a table constructor", got.late_field_probe == true)
+    test("...without reporting the constants themselves", not got.k1 and not got.k300)
+  else
+    test("the lint could write its big-function probe", false)
   end
 end
 

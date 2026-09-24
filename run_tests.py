@@ -105,6 +105,25 @@ def needs_extras(test: Path) -> bool:
     except OSError:
         return False
 
+# ── Tests that need the vendored mod API table ───────────────────────
+# Same situation, one tree over. test_component_api.lua checks every
+# component call against Reference/oc-component-api/oc_api.lua, which is
+# vendored in the monorepo as a SIBLING of TOS-Dev and is not on the
+# published dev branch -- so on a fresh clone that test was the one red
+# line in an otherwise green suite. The test's own rule stands: where
+# Reference/ exists, a missing table is still a loud failure (deleted or
+# moved). Only a Reference/ tree absent from both places is a skip.
+_SIBLING_REFERENCE = DEV_DIR.parent / "Reference"
+_NESTED_REFERENCE = DEV_DIR / "Reference"
+REFERENCE_ABSENT = not (_SIBLING_REFERENCE.is_dir() or _NESTED_REFERENCE.is_dir())
+
+
+def needs_reference(test: Path) -> bool:
+    try:
+        return "Reference/oc-component-api" in test.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+
 # ── Isolation ────────────────────────────────────────────────────────
 # Almost every test is a pure function of its source tree: it spawns its
 # own `lua`, reads files, and writes nothing. `test_build_disk.lua` is the
@@ -237,6 +256,8 @@ def run_one(test: Path, cwd: Path, timeout: int) -> Result:
         # only when the sibling tree genuinely is not there.
         if status == "fail" and EXTRAS_ABSENT and needs_extras(test):
             status = "skip"
+        if status == "fail" and REFERENCE_ABSENT and needs_reference(test):
+            status = "skip"
     except subprocess.TimeoutExpired as e:
         out = (e.stdout or "") if isinstance(e.stdout, str) else ""
         out += f"\n*** TIMED OUT after {timeout}s ***"
@@ -331,7 +352,12 @@ def main() -> int:
 
     print()
     print("-" * 43)
-    label = "SKIP(needs TOS-Extras)" if EXTRAS_ABSENT else "SKIP(needs-TOS)"
+    if EXTRAS_ABSENT:
+        label = "SKIP(needs TOS-Extras)"
+    elif REFERENCE_ABSENT and skipped:
+        label = "SKIP(needs Reference)"
+    else:
+        label = "SKIP(needs-TOS)"
     print(f"PASS={passed} FAIL={len(failed)} {label}={skipped}"
           f"   in {elapsed:.1f}s")
     if failed:
@@ -347,6 +373,11 @@ def main() -> int:
         print("      that drive add-on packages were skipped rather than failed.")
         print("      That tree is not published yet; see CONTRIBUTING.md. Everything")
         print("      testable without it ran.")
+    elif REFERENCE_ABSENT and skipped:
+        print()
+        print("note: Reference/oc-component-api/ is not present (it is vendored in the")
+        print(f"      maintainer's monorepo, not on the dev branch), so {skipped} test(s)")
+        print("      that check component calls against it were skipped, not failed.")
 
     # Slowest few — worth knowing which tests dominate the wall clock.
     if args.verbose or not failed:

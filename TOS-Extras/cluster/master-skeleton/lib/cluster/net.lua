@@ -262,10 +262,30 @@ function netmod.register(handlers)
 
   -- RELAY_FORWARD arrives at Master when a Manager's relay path
   -- terminates here. We unwrap the inner packet and re-dispatch by type.
+  --! #SEC — REFUSED, until a relayed packet can prove where it came from.
+  --! The inner packet is `serialize.encode(pkt)`: no encryption, no MAC
+  --! (cluster/protocol.lua's "end-to-end encrypted by the caller with its
+  --! Master secret" describes a design, not this code). Its origin was
+  --! read from the inner packet's own `from`, so ANY trusted Manager could
+  --! wrap a CLUSTER_RESULT / HEARTBEAT / REGISTER "from" another Manager
+  --! and have it accepted as that Manager's, and rewrite that Manager's
+  --! remembered return path so the Master's next assignment for it went
+  --! to the relay instead. Nothing legitimate is lost: no Manager sends
+  --! RELAY_FORWARD (cluster.relayHandle has no caller), so the only
+  --! relayed packet this handler has ever seen is a hand-made one. To turn
+  --! relaying on, MAC the inner with the ORIGIN's Master secret and verify
+  --! it here before trusting inner.from or recording a path.
+  --! (test_cluster_relay_refused.lua)
+  local RELAY_UNAUTHENTICATED = true
   add(TYPE.RELAY_FORWARD, function(packet, from)
     local p = packet and packet.payload
     if type(p) ~= "table" or not p.inner then
       log.warn(LOG_TAG, "malformed RELAY_FORWARD from " .. tostring(from))
+      return
+    end
+    if RELAY_UNAUTHENTICATED then
+      log.warn(LOG_TAG, "refusing RELAY_FORWARD from " .. tostring(from):sub(1, 8)
+        .. ": relayed packets carry no origin authentication yet")
       return
     end
     local inner, derr = serialize.decode(p.inner)

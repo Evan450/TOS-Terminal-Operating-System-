@@ -153,6 +153,31 @@ fs.mount("/quiet", quiet)
 test("a proxy whose write() returns nothing is still treated as success",
   fs.writeFile("/quiet/q.txt", "silent") == true and store["/q.txt"] == "silent")
 
+-- ── 7. A target that will not be removed ────────────────────────────
+-- fs.remove reports a refusal as `false, err` and never raises, so the
+-- old `pcall(fs.remove, path)` guard was always true: the refusal surfaced
+-- later as "rename failed" (rename will not overwrite on a Windows host)
+-- and the temp was left for the next boot to clean up.
+local stubborn = {}
+for k, v in pairs(disk) do stubborn[k] = v end
+stubborn.address = "d2"
+stubborn.remove = function(p)
+  if p == "/pinned.dat" then return false end
+  store[p] = nil; return true
+end
+stubborn.rename = function(a, b)
+  if store[b] ~= nil then return false end   -- no overwrite, as on Windows
+  store[b] = store[a]; store[a] = nil; return true
+end
+fs.mount("/stubborn", stubborn)
+refuse = nil
+store["/pinned.dat"] = "KEEP"
+local sok, serr = fs.writeFileAtomic("/stubborn/pinned.dat", "NEW")
+test("an unremovable target is reported as such (" .. tostring(serr) .. ")",
+  sok == false and tostring(serr):find("cannot replace target", 1, true) ~= nil)
+test("...the target is untouched", store["/pinned.dat"] == "KEEP")
+test("...and no temp is left behind", store["/pinned.dat.tos-tmp"] == nil)
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

@@ -213,6 +213,19 @@ function securefs.writeFile(path, content, session)
   return fs.writeFile(norm, content)
 end
 
+--- writeFile with kernel.fs's temp-then-rename guarantee: a power cut or a
+--- refused write leaves the old file or the new one, never a truncated one.
+--- For per-user state that is costly to lose (the keychain vault). The
+--- staged `<path>.tos-tmp` sits in the same directory and users.decide
+--- applies the same rule to it, so checking `path` covers both. Kernel-only:
+--- not on the forSession proxy handed to sandboxed code.
+function securefs.writeFileAtomic(path, content, session)
+  local ok, err, norm = checkWrite(path, session)
+  if not ok then return false, err end
+  if not fs.writeFileAtomic then return fs.writeFile(norm, content) end
+  return fs.writeFileAtomic(norm, content)
+end
+
 function securefs.appendFile(path, content, session)
   local ok, err, norm = checkWrite(path, session)
   if not ok then return false, err end

@@ -5,6 +5,34 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ---
 
+## Unreleased — fifteen fixes from a cloud session, re-verified before landing
+
+A cloud session worked from a fresh clone of `dev` and pushed fifteen commits as `claude/wonderful-fermi-xdomgd`. Each was checked again before it landed: the new tests were run against the previous tree, where 18 of the 19 new or changed test files fail or hang, with the counts the commits give. The full suite passes (271 tests). Two changes still need an in-game check: H-06, and the sealed-traffic rule below. The add-on fixes (cluster Master, PaneUI, selftest) reach installed machines with the next signed utilities pack.
+
+**Security**
+
+- **#SEC — any account allowed to run `net` could rewrite the machine's peer aliases.** The kernel handed the alias module a nil user system, and its admin check read that as early boot. Aliases are admin-only again, and a missing user system now fails closed. The accidental-global lint missed the cause because it did not follow globals past a function's 256th constant; it does now.
+- **#SEC — a trusted peer's packet could skip the MAC by leaving `enc` off.** With `encryptComms` on, a non-public packet from a TRUSTED peer we share a secret with must now arrive sealed, which is exactly when a correctly configured sender seals. **Worth checking on a mixed network:** a peer with `encryptComms` off, talking to one that has it on, now has its unsealed packets dropped (with a log line) instead of accepted.
+- **#SEC — open sessions now follow the account.** Demoting an admin takes effect in their live sessions at once, and locking an account ends its sessions. `sudo userdel`, `sudo usermod <user> lock` and `sudo passwd <user>` now work; the kernel had checked the stored tier, not the sudo tier.
+- **#SEC — chat pairing gives each link its own secret.** Every peer paired in one `net pair start` window used to hold the same secret, so one could read and forge another's mesh mail. Each side now adds a nonce. An older peer still pairs, with a logged warning to update it and pair again. Pairing codes also carry the full ~119 bits again (they had ~113), here and in the cluster Master.
+- **#SEC — a guest could rename the machine.** Setting the hostname is admin-only and limited to 1–32 printable characters. Hostnames arriving in TRUST_REQ and HELLO are cleaned the way PING/PONG's already were, and names an older build saved raw are cleaned when `trust.dat` loads.
+- **#SEC (cluster add-on) — the Master refuses RELAY_FORWARD.** A relayed packet carried no proof of where it came from, so any trusted Manager could speak for another. No Manager sends relays today.
+
+**Fixed**
+
+- **Changing your password no longer loses your keychain.** `passwd` re-keys `~/.keychain.vault`. When it cannot, or when an admin reset the password, the vault stays on the old password and `passwd` says so. Keychain and alias saves are atomic, and a refused save no longer leaves memory and disk disagreeing.
+- **OpenOS compat: `keyboard.isKeyDown` works.** It raised on every machine with a keyboard, which crashed a ported program's Ctrl-C check. It answers for the caller's seat. **`term.read()` no longer freezes the machine** while it waits for a key (H-04), and **the cursor, `term.screen()` and the GPU fallback are per seat** (H-06, H-07). H-06 has not been seen in-game yet.
+- **Beeps no longer stall every seat.** The gaps between tones yield. Each sound has a one-second cooldown (critical alerts excepted), so a chat flood plays one chime. A low volume no longer mutes the short sounds.
+- **A key typed while a long command runs (`cp` over a tree, say) is no longer lost.**
+- **`ping <peer>` works.** It sent a packet no receiver accepted; now it reports the reply time, and takes an alias or a `net scan` index. A new `hostname` reaches peers without a reboot.
+- **`netfs` works between two real machines.** Its packets were refused at the trust gate.
+- **The syntax highlighter keeps UTF-8 characters whole**, in the shell's editor and in PaneUI.
+- **PaneUI's Move reports a refused rename** instead of claiming success, and **`fs.writeFileAtomic` reports a target it cannot replace** instead of a misleading rename error.
+- **Cluster: a Manager booted more than five minutes apart from the Master can now pair.**
+- **Development:** a fresh clone of `dev` runs green. The release build excludes `.git/`, and the one test that needs the vendored `Reference/` tree is skipped when it is absent.
+
+---
+
 ## Unreleased — every component call checked against the mod's own source
 
 A systematic pass over every OpenComputers component method TOS calls, verified against the declarations in the mod's source rather than against memory or the wiki: `@Callback` annotations across 83 component classes (362 distinct Lua-visible names), plus Computronics' `TileTapeDrive.java` and OpenPrinter's `PrinterTE.java` for the two non-OC components TOS drives. The motive was `robot.durabilityLevel` in the entry below — a method name that does not exist, hidden behind a `pcall`, invisible to off-box tests because a mock proxy answers to anything.

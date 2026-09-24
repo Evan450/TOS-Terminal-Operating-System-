@@ -393,9 +393,18 @@ function fs.writeFileAtomic(path, content)
   end
   -- Remove-then-rename: OC's rename is not guaranteed to overwrite an
   -- existing destination across host platforms, so clear it first.
+  --! Judged by whether the file is GONE, not by pcall: fs.remove reports a
+  --! refusal as `false, err` and never raises, so `pcall(fs.remove, path)`
+  --! was always true and this branch could not run. A target that would
+  --! not go (read-only disk, a mount point) then failed later as a
+  --! misleading "rename failed", with the temp left behind until the next
+  --! boot's recoverAtomic. (test_fs_write_full.lua)
   if fs.exists(path) then
-    local rok = pcall(fs.remove, path)
-    if not rok then pcall(fs.remove, tmp); return false, "cannot replace target" end
+    pcall(fs.remove, path)
+    if fs.exists(path) then
+      pcall(fs.remove, tmp)
+      return false, "cannot replace target"
+    end
   end
   local mok, merr = fs.rename(tmp, path)
   if not mok then return false, "rename failed: " .. tostring(merr) end

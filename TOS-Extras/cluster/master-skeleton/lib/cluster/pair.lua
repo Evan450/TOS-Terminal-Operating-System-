@@ -86,21 +86,31 @@ end
 -- Code + key derivation
 -- ============================================================
 
+--! crypto.salt returns CHARACTERS, uniform over a 62-symbol alphabet, not
+--! uniform bytes. `b % 31` over those 62 ASCII codes reaches only 27 of the
+--! 31 code characters, unevenly (~113 bits per code, not ~119). A salt
+--! symbol's POSITION is uniform over 62 = 2 * 31, so position mod 31 is
+--! exact; the byte path stays for a source that returns raw bytes. Same
+--! fix as kernel/net/chatpair.lua.
+local SALT62 = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
 local function generateCode()
-  -- Use crypto.salt for high-entropy bytes, then map to our restricted
-  -- alphabet via rejection sampling (M10-style).
   local out = {}
   local n = #CODE_ALPHABET
   while #out < CODE_LEN do
     local raw = crypto.salt(64)  -- always plenty
     for i = 1, #raw do
       if #out >= CODE_LEN then break end
-      local b = raw:byte(i)
-      -- 248 = 31 * 8, largest multiple of 31 ≤ 256. Reject above.
-      if b < 248 then
-        local idx = (b % n) + 1
-        out[#out + 1] = CODE_ALPHABET:sub(idx, idx)
+      local pos = SALT62:find(raw:sub(i, i), 1, true)
+      local idx
+      if pos then
+        idx = ((pos - 1) % n) + 1
+      else
+        local b = raw:byte(i)
+        -- 248 = 31 * 8, largest multiple of 31 ≤ 256. Reject above.
+        if b < 248 then idx = (b % n) + 1 end
       end
+      if idx then out[#out + 1] = CODE_ALPHABET:sub(idx, idx) end
     end
   end
   return table.concat(out)
@@ -181,14 +191,16 @@ function pair.onPairInit(packet, from)
     log.warn(LOG_TAG, "malformed pair_init from " .. tostring(from):sub(1, 8))
     return
   end
-  -- Timestamp must be within the window. Manager's clock is its own
-  -- uptime; we trust it for freshness but bound the window so a
-  -- captured init can't replay outside.
-  if math.abs(computer.uptime() - p.ts) > PAIRING_WINDOW_SEC then
-    log.warn(LOG_TAG, "pair_init timestamp out of window from " ..
-      tostring(from):sub(1, 8))
-    return
-  end
+  --! p.ts is the MANAGER's uptime and is NOT compared with ours. The two
+  --! machines' clocks are independent: this check refused every Manager
+  --! booted more than PAIRING_WINDOW_SEC before or after the Master --
+  --! silently, as "timestamp out of window". It is the same defect chat
+  --! pairing already removed (#SEC M-21, net/chatpair.lua), still live on
+  --! this side because test_cluster_pairing.lua runs both ends off one
+  --! clock. Replay stays bounded without it: the window must be open, one
+  --! init per address per window (below), and the MAC is over THIS
+  --! window's code-derived secret AND ts, so an init from another window,
+  --! or with its ts edited, fails the MAC.
   -- Reject duplicate pair_inits from the same address inside this window.
   for _, paddr in ipairs(_window.paired_with) do
     if paddr == from then

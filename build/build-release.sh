@@ -11,6 +11,8 @@
 #   /.claude/          editor/agent settings
 #   /docs/             the README's screenshots: they live on the dev branch only
 #   /.pytest_cache/, /.github/, /.gitignore   tool residue and repo metadata
+#   /.git/             a contributor's clone of `dev` (CONTRIBUTING's setup);
+#                      without it the whole object store shipped, EOL-mangled
 #
 # This is a DENYLIST: anything in TOS-Dev's root that is not named below
 # ships. usr/lib/tests/test_release_excludes.lua checks every top-level entry
@@ -71,6 +73,7 @@ lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify \
     --exclude /tos.py \
     --exclude /.claude/ \
     --exclude /.pytest_cache/ \
+    --exclude /.git/ \
     --exclude /.github/ \
     --exclude /.gitignore \
     --exclude /docs/ \

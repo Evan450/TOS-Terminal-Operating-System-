@@ -2409,7 +2409,10 @@ return function(C, S, deps)
     local s = U.getSession(st)
     local w2 = s and s.user or "root"
     local ok2, err2 = U.changePassword(w2, w2, old, new)
-    if ok2 then S.lastOut = { "Password changed.", T.highlight }
+    -- On success the second value is a note about the keychain, when it
+    -- could not follow the new password (see users.changePassword).
+    if ok2 and err2 then S.lastOut = { "Password changed. " .. tostring(err2), T.warning }
+    elseif ok2 then S.lastOut = { "Password changed.", T.highlight }
     else        S.lastOut = { tostring(err2), T.error } end
   end
   -- ── sudo / doas — temporary privilege elevation ──────────

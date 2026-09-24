@@ -106,6 +106,58 @@ proc.tick(nil)
 eq("fast work finishes in ONE resume (yield throttled away)", 5, fastProgress)
 eq("fast worker resumed once for the whole job", 1, fastResumes)
 
+-- ── A key typed DURING a slice is kept, not dropped ────────────────
+-- The "typed-ahead" case above only ever tested a signal that was already
+-- QUEUED. A key arriving as the tick's own signal while the foreground
+-- process was mid-slice was neither delivered nor queued: it vanished.
+local slowKeys, slowDone = {}, false
+local pidK = proc.spawn("slow-typist", function()
+  while true do
+    local a, b = coroutine.yield()
+    if a == "go" then
+      for _ = 1, 3 do clock = clock + 0.06; proc.yieldCooperative() end
+      slowDone = true
+    elseif a == "key_down" then
+      slowKeys[#slowKeys + 1] = b
+    end
+  end
+end)
+proc.tick(nil)
+proc.setForeground(pidK, nil, { kernel = true })
+proc.signalKernel(pidK, "go")
+proc.tick(nil)                                   -- work starts, slices
+proc.tick(table.pack("key_down", "kb-typed-mid-work"))
+proc.tick(table.pack("modem_message", "noise"))
+proc.tick(nil); proc.tick(nil); proc.tick(nil)
+eq("the sliced work still completes", true, slowDone)
+eq("a key typed mid-slice reaches the process afterwards", "kb-typed-mid-work", slowKeys[1])
+
+-- proc.pause: a wait that takes nothing from the process's input.
+local pausedKeys, pauseReturned = {}, nil
+local pidP = proc.spawn("pauser", function()
+  while true do
+    local a, b = coroutine.yield()
+    if a == "go" then
+      pauseReturned = proc.pause(0.05)
+    elseif a == "key_down" then
+      pausedKeys[#pausedKeys + 1] = b
+    end
+  end
+end)
+proc.tick(nil)
+proc.setForeground(pidP, nil, { kernel = true })
+proc.signalKernel(pidP, "go")
+proc.tick(nil)                                   -- pause begins (yields)
+eq("proc.pause yields rather than returning at once", nil, pauseReturned)
+proc.tick(table.pack("key_down", "kb-during-pause"))
+eq("a key during the pause is not delivered into the pause", 0, #pausedKeys)
+clock = clock + 0.06
+proc.tick(nil)                                   -- deadline passed: returns
+eq("proc.pause returns true once the time is up", true, pauseReturned)
+proc.tick(nil)
+eq("...and the key typed during it arrives afterwards", "kb-during-pause", pausedKeys[1])
+eq("proc.pause outside a process is a no-op", false, proc.pause(0.05))
+
 -- ── Outside any process: harmless no-op ────────────────────────────
 eq("kernel-context call is a no-op", false, (proc.yieldCooperative()))
 

@@ -516,6 +516,20 @@ local function synTokenize(line)
       tokens[#tokens + 1] = { type = "space", text = line:sub(i, j - 1) }
       i = j
 
+    --! A UTF-8 character in code position stays one token (lead byte plus
+    --! its continuation bytes). One byte per `op` token painted the lead
+    --! byte as a garbage glyph and dropped the rest: `local café` lost its
+    --! é. Same fix as /tos/shell/syntax.lua. (test_paneui_syntax_utf8.lua)
+    elseif ch:byte() >= 0x80 then
+      local j = i + 1
+      while j <= len do
+        local b = line:byte(j)
+        if b < 0x80 or b > 0xBF then break end
+        j = j + 1
+      end
+      tokens[#tokens + 1] = { type = "ident", text = line:sub(i, j - 1) }
+      i = j
+
     else
       tokens[#tokens + 1] = { type = "op", text = ch }
       i = i + 1
@@ -1420,8 +1434,13 @@ local function moveSelected()
   end
   -- fs.rename works only same-fs; on cross-fs OpenOS returns
   -- false+err and we fall back to copy+remove.
-  local renameOk = pcall(fs.rename, f.path, dst)
-  if not renameOk or not fs.exists(dst) then
+  -- Judged by rename's RESULT and by the source being gone. pcall alone is
+  -- true for a rename that answered false, and `fs.exists(dst)` is already
+  -- true when the user just confirmed an overwrite -- so a refused rename
+  -- onto an existing file (a Windows host will not overwrite) reported
+  -- "Moved" and changed nothing.
+  local okR, renamed = pcall(fs.rename, f.path, dst)
+  if not (okR and renamed) or fs.exists(f.path) then
     local cok, cerr = copyFile(f.path, dst)
     if not cok then
       State.out = "Move failed: " .. tostring(cerr)

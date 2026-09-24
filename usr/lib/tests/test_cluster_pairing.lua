@@ -200,7 +200,28 @@ wire.tamper = function(pkt)
 end
 local ok5 = mgr.pair(MASTER, code5)
 wire.tamper = nil
-test("an init whose timestamp is outside the window is refused", false, ok5)
+test("an init whose timestamp was edited is refused (the MAC covers it)", false, ok5)
+
+-- ── Two machines, two clocks ─────────────────────────────────────
+-- The Master compared the Manager's uptime with its own and refused
+-- anything more than the window apart -- so a Manager booted an hour
+-- after the Master could never pair. One shared clock stands in for two:
+-- the Master opens its window at its own time, the Manager stamps its init
+-- an hour earlier on ITS clock, and the Master's time is back in force by
+-- the time the init arrives.
+print()
+print("-- clocks far apart --")
+masterPair.closeWindow()
+local code6 = masterPair.startWindow()
+local masterNow = clock
+clock = masterNow - 3600                       -- the Manager's uptime
+wire.tamper = function(pkt)
+  if pkt.type == "T_CLUSTER_PAIR_INIT" then clock = masterNow + 1 end
+end
+local ok6, msg6 = mgr.pair(MASTER, code6)
+wire.tamper = nil
+test("a Manager whose uptime differs from the Master's by an hour pairs", true, ok6)
+test("...with the message 'paired'", "paired", msg6)
 
 -- ── Refusals before any packet ───────────────────────────────────
 print()

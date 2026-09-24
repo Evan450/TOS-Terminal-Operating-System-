@@ -28,8 +28,13 @@
 --
 -- The "master password = login password" choice is deliberate:
 --   * One password to remember (the login one).
---   * Changing the login password re-keys the vault automatically
---     (users.changePassword fires keychain.rekey if loaded).
+--   * Changing your OWN login password re-keys the vault: users.
+--     changePassword calls keychain.rekey when ~/.keychain.vault exists.
+--     (This line used to say so while rekey had no caller at all, so the
+--     vault stayed locked to the old password and every slot was lost at
+--     the next unlock -- AUDIT 5.) An admin RESET cannot re-key: the old
+--     password is not known. passwd says so when it happens; the vault
+--     still opens with the old password.
 --   * After logout the in-memory map is unreachable; a fresh login
 --     re-unlocks from disk.
 
@@ -104,7 +109,9 @@ local function saveDisk(session, slotsTable, masterPass)
   -- card is present.
   local blob, info = vault.encrypt(encoded, masterPass, { requireStrong = true })
   if not blob then return false, "encrypt failed: " .. tostring(info) end
-  return securefs.writeFile(path, blob, session)
+  -- Atomic: every save REWRITES the whole vault, so a truncating write that
+  -- fails halfway (full disk, power cut) would lose every slot at once.
+  return (securefs.writeFileAtomic or securefs.writeFile)(path, blob, session)
 end
 
 -- ============================================================
@@ -172,9 +179,13 @@ function keychain.set(name, passphrase, session)
   if not session then return false, "no session" end
   local rec, err = requireUnlocked(session)
   if not rec then return false, err end
+  -- A refused save must not leave the slot in memory: get/list would
+  -- report it until the next unlock quietly lost it (AUDIT 5, "a failed
+  -- save leaves memory and disk disagreeing").
+  local prev = rec.slots[name]
   rec.slots[name] = passphrase
   local ok, sErr = saveDisk(session, rec.slots, rec.master)
-  if not ok then return false, sErr end
+  if not ok then rec.slots[name] = prev; return false, sErr end
   if log then log.info("keychain", "Set slot '" .. name .. "' for " .. session.user) end
   return true
 end
@@ -194,8 +205,11 @@ function keychain.remove(name, session)
   if not session then return false, "no session" end
   local rec, err = requireUnlocked(session)
   if not rec then return false, err end
+  local prev = rec.slots[name]
   rec.slots[name] = nil
-  return saveDisk(session, rec.slots, rec.master)
+  local ok, sErr = saveDisk(session, rec.slots, rec.master)
+  if not ok then rec.slots[name] = prev; return false, sErr end
+  return true
 end
 
 --- List slot names (no passphrases).
@@ -213,16 +227,35 @@ end
 --- Re-key: decrypt with old master, re-encrypt with new master. Used
 --- by users.changePassword so the keychain stays usable after the
 --- login password rotates.
+--!
+--! Three things the first version got wrong, all of which matter now that
+--! it has a caller:
+--!   * No vault on disk is NOT a failure and creates nothing. loadDisk
+--!     answers {} for "no file", and saving that minted an empty vault for
+--!     every user who had never touched the keychain -- or failed outright
+--!     on a box with no data card (requireStrong), failing their passwd.
+--!   * The in-memory master moved BEFORE the save, so a failed save left an
+--!     unlocked keychain whose next `set` wrote under the new password over
+--!     a vault the disk still had under the old one.
+--!   * Only the session passed in was updated. The caller's session is not
+--!     the one that ran `keychain unlock` (that is the seat's shell), and an
+--!     unlocked copy still holding the OLD master re-encrypts the vault back
+--!     under it at its next `set`. Every unlocked copy for the user moves.
+--! (test_keychain_rekey.lua)
 function keychain.rekey(oldMaster, newMaster, session)
   session = session or (usermod and usermod.currentSession()) or nil
   if not session then return false, "no session" end
+  if not vault or not securefs then return false, "keychain not initialized" end
+  local path = keychainPathFor(session)
+  if not path or not securefs.exists(path, session) then return true end
   local slots, err = loadDisk(session, oldMaster)
   if not slots then return false, "rekey: " .. tostring(err) end
-  -- Update the in-memory record too if currently unlocked.
-  if unlocked[session] then
-    unlocked[session].master = newMaster
+  local ok, sErr = saveDisk(session, slots, newMaster)
+  if not ok then return false, "rekey: " .. tostring(sErr) end
+  for s, rec in pairs(unlocked) do
+    if type(s) == "table" and s.user == session.user then rec.master = newMaster end
   end
-  return saveDisk(session, slots, newMaster)
+  return true
 end
 
 return keychain

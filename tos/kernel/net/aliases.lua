@@ -78,7 +78,21 @@ end
 
 local function _save()
   if not fs then return false, "fs unavailable" end
-  return fs.writeFile(ALIAS_PATH, serialize.encode(_byName))
+  -- Atomic where the fs offers it, like users.dat and trust.dat: a power
+  -- cut mid-save otherwise leaves a truncated file that _load discards.
+  return (fs.writeFileAtomic or fs.writeFile)(ALIAS_PATH, serialize.encode(_byName))
+end
+
+--! A refused save must not leave the change in memory. set/remove used to
+--! mutate both tables and THEN persist, so a failed write reported an
+--! error while resolve()/list() went on answering with the new mapping
+--! until the reboot quietly dropped it. The tables are a few dozen entries
+--! at most, so a shallow copy before the change is the whole rollback.
+local function _snapshot()
+  local n, a = {}, {}
+  for k, v in pairs(_byName) do n[k] = v end
+  for k, v in pairs(_byAddr) do a[k] = v end
+  return n, a
 end
 
 -- ============================================================
@@ -86,13 +100,19 @@ end
 -- ============================================================
 
 local function requireAdmin(opName)
-  if not users or not users.currentSession or not users.TIER then
-    return true  -- early boot / minimal env: trust the caller
+  --! Injected at init, and read from _TOS when the injection is missing.
+  --! "No users module" is taken to mean early boot and lets the caller
+  --! through, so a WIRING slip must not look like that: kernel/init.lua
+  --! once passed this module a nil `users` for its whole life, and every
+  --! account could rewrite the machine's aliases. (test_net_aliases.lua)
+  local u = users or (_G._TOS and _G._TOS.users)
+  if not u or not u.currentSession or not u.TIER then
+    return true  -- no user system at all (early boot / minimal env)
   end
-  local sess = users.currentSession()
+  local sess = u.currentSession()
   if not sess then return false, "no session" end
   if sess.isKernel then return true end
-  if (sess.tier or 0) < (users.TIER.ADMIN or 2) then
+  if (sess.tier or 0) < (u.TIER.ADMIN or 2) then
     return false, "alias " .. opName .. " requires admin tier"
   end
   return true
@@ -135,6 +155,7 @@ function aliases.set(alias, address)
   local okD, derr = validAddress(address)
   if not okD then return false, derr end
   local key = alias:lower()
+  local keepN, keepA = _snapshot()
 
   -- If the alias was previously bound to a different address, remove
   -- the stale reverse entry.
@@ -151,7 +172,10 @@ function aliases.set(alias, address)
   _byName[key] = { alias = alias, address = address }
   _byAddr[address] = key
   local ok, err = _save()
-  if not ok then return false, "persist: " .. tostring(err) end
+  if not ok then
+    _byName, _byAddr = keepN, keepA
+    return false, "persist: " .. tostring(err)
+  end
   if log then
     log.info("aliases", string.format("aliased %s -> %s",
       alias, address:sub(1, 12) .. "..."))
@@ -167,10 +191,14 @@ function aliases.remove(alias)
   local key = alias:lower()
   local entry = _byName[key]
   if not entry then return false, "no such alias" end
+  local keepN, keepA = _snapshot()
   _byName[key] = nil
   _byAddr[entry.address] = nil
   local ok, err = _save()
-  if not ok then return false, "persist: " .. tostring(err) end
+  if not ok then
+    _byName, _byAddr = keepN, keepA
+    return false, "persist: " .. tostring(err)
+  end
   if log then log.info("aliases", "removed alias " .. alias) end
   return true
 end

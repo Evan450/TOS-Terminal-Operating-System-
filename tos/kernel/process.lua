@@ -36,6 +36,82 @@ local INPUT_SIGNALS = {
   touch = true, drag = true, drop = true, scroll = true,
 }
 
+-- ============================================================
+-- Held-key state, per keyboard (compat.keyboard.isKeyDown)
+-- ============================================================
+--! #SEC (AUDIT 5, H-03) — OpenComputers' keyboard component has NO
+--! isKeyDown method: it only emits key_down / key_up. OpenOS tracks held
+--! keys in software from those signals, and compat.keyboard called
+--! component.keyboard.isKeyDown -- which raised on every machine that HAS a
+--! keyboard (isAltDown/isControlDown/isShiftDown with it; OpenOS's own
+--! Ctrl-C test is isControlDown()), and would have answered for the
+--! PRIMARY keyboard, another seat's on a multi-seat box.
+--!
+--! Tracked HERE because proc.tick is the one place that sees every input
+--! signal from boot on, in kernel context: no listener to register, none
+--! that dies with whichever program happened to load compat first.
+--! Per keyboard ADDRESS, so compat.keyboard can answer for the caller's
+--! seat only. A key_up that never arrives (hold a key, close the screen
+--! GUI, release it elsewhere) would wedge a key down forever, so a
+--! keyboard idle for KEY_STALE seconds reads as all-released -- the same
+--! rule, for the same reason, as shell.keys' modifier state.
+--! (test_compat_keyboard.lua)
+local KEY_STALE     = 15
+local MAX_KEYBOARDS = 16
+local keyState = {}   -- keyboard address -> { codes = {}, chars = {}, at = uptime }
+local keyboardCount = 0
+
+local function trackKey(sigType, kb, ch, code)
+  if type(kb) ~= "string" then return end
+  local st = keyState[kb]
+  if not st then
+    if keyboardCount >= MAX_KEYBOARDS then keyState, keyboardCount = {}, 0 end
+    st = { codes = {}, chars = {}, at = 0 }
+    keyState[kb] = st
+    keyboardCount = keyboardCount + 1
+  end
+  local now = computer.uptime()
+  if st.at > 0 and now - st.at > KEY_STALE then st.codes, st.chars = {}, {} end
+  st.at = now
+  local down = (sigType == "key_down") or nil
+  if type(code) == "number" then st.codes[code] = down end
+  if type(ch) == "number" and ch > 0 then st.chars[ch] = down end
+end
+
+--- Is `charOrCode` held on any of `keyboards` (a list of addresses)? With
+--- no list, on any keyboard at all -- the caller could not be placed on a
+--- seat (kernel, boot, a seatless daemon), which on a one-seat machine is
+--- the same answer. A string asks by character, a number by scancode, as
+--- OpenOS's keyboard.isKeyDown does.
+function proc.keyDown(charOrCode, keyboards)
+  local want, byChar
+  if type(charOrCode) == "number" then
+    want = charOrCode
+  elseif type(charOrCode) == "string" and charOrCode ~= "" then
+    local okC, cp = pcall(utf8.codepoint, charOrCode, 1)
+    if not okC then return false end
+    want, byChar = cp, true
+  else
+    return false
+  end
+  local now = computer.uptime()
+  local function held(st)
+    if not st or (st.at > 0 and now - st.at > KEY_STALE) then return false end
+    return (byChar and st.chars or st.codes)[want] == true
+  end
+  if type(keyboards) == "table" then
+    for _, kb in ipairs(keyboards) do
+      if held(keyState[kb]) then return true end
+    end
+    return false
+  end
+  for _, st in pairs(keyState) do
+    if held(st) then return true end
+  end
+  return false
+end
+proc.KEY_STALE = KEY_STALE
+
 -- Screen module reference (lazy-loaded to avoid circular deps at boot)
 local screenMod = nil
 local function getScreen()
@@ -308,6 +384,24 @@ end
 -- Exposed for the regression test (drives the 5.2 fallback with isyieldable
 -- temporarily nil'd).
 proc._canYield = canYield
+
+--- Wait `seconds` without taking anyone's signals: every resume is a
+--- cooperative one, so nothing is delivered to us mid-wait, and whatever
+--- arrives stays queued for this process's next ordinary yield (see the
+--- coop-resume branch in proc.tick). For short pauses in the middle of
+--- other work -- audio's gaps between tones -- where proc.sleep would
+--- swallow a keystroke. False (and no wait) outside a process; the caller
+--- decides what to do there.
+function proc.pause(seconds)
+  local p = currentPID and processes[currentPID]
+  if not p or not canYield() then return false end
+  local deadline = computer.uptime() + (tonumber(seconds) or 0)
+  repeat
+    p._coopYield = true
+    coroutine.yield()
+  until computer.uptime() >= deadline
+  return true
+end
 
 --- Declare (or clear, with nil) the CALLING process's signal interests
 --- at runtime — same forms as opts.signalInterest at spawn. Self-service
@@ -797,6 +891,9 @@ function proc.tick(signal)
 
   -- Determine if this is an input signal (keyboard/mouse)
   local isInput = signal and signal[1] and INPUT_SIGNALS[signal[1]]
+  if isInput and (signal[1] == "key_down" or signal[1] == "key_up") then
+    trackKey(signal[1], signal[2], signal[3], signal[4])
+  end
 
   -- Multi-screen: resolve which display this input belongs to, and
   -- which process is foreground on that display.
@@ -853,6 +950,24 @@ function proc.tick(signal)
           -- the signal queue alone (see proc.yieldCooperative). The
           -- command picks up exactly where it left off.
           p._coopYield = false
+          --! ...but THIS tick's signal is kept, not dropped. It used to fall
+          --! on the floor: a key typed while `cp` walked a tree, or while a
+          --! beep sequence paused, was neither delivered nor queued, so the
+          --! "typed-ahead keys reach the shell later" promise held only for
+          --! signals that were ALREADY queued. Queued now if the process
+          --! would have received it -- input when it is in front on its
+          --! seat, a broadcast it has not declared uninterest in -- which is
+          --! exactly what it would have got at its next yield had the work
+          --! not been sliced at all. (test_coop_yield.lua)
+          if signal and signal[1] ~= nil then
+            local wanted
+            if isInput then
+              wanted = (pid == inputFgPID)
+            else
+              wanted = not (p.signalInterest and not p.signalInterest[signal[1]])
+            end
+            if wanted then enqueueSignal(p, table.unpack(signal, 1, signal.n)) end
+          end
         elseif p.sigTail >= p.sigHead then
           -- Process has queued signals - deliver those first. O(1) pop
           -- from the head of the ring; compaction handled in proc.signal.

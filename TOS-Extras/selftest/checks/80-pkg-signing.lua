@@ -123,9 +123,8 @@ return function(t)
       t.eq("...but is NOT refused", nil, refusal5)
 
       pkgsign.setRequireSignature(false)
-      local v6, refusal6 = pkg._signGate(unsigned, {})
+      local _, refusal6 = pkg._signGate(unsigned, {})
       t.eq("require=off: the same unsigned manifest passes through", nil, refusal6)
-      _ = v6
     else
       t.skip("require-signature gate", "kernel.pkg._signGate unavailable")
     end

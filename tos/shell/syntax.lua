@@ -122,6 +122,25 @@ function syntax.tokenize(line)
       i = j
       goto next
 
+    --! A UTF-8 character in CODE position stays one token. Bytes >= 0x80
+    --! match none of the classes above, so each fell to the operator branch
+    --! as its own one-byte token: kernel.screen draws text by CHARACTER, so
+    --! the lead byte painted as a garbage cell and the continuation bytes,
+    --! which are no character on their own, were dropped -- `local café`
+    --! showed a stray glyph where é belonged (AUDIT 5). Strings and comments
+    --! were never split, so they were never hit. The editor's column model
+    --! is still bytes; that is a separate, larger change. (test_syntax_utf8.lua)
+    elseif ch:byte() >= 0x80 then
+      local j = i + 1
+      while j <= len do
+        local b = line:byte(j)
+        if b < 0x80 or b > 0xBF then break end   -- stop at the next non-continuation byte
+        j = j + 1
+      end
+      tokens[#tokens + 1] = { type = "ident", text = line:sub(i, j - 1) }
+      i = j
+      goto next
+
     -- Operators and punctuation
     else
       tokens[#tokens + 1] = { type = "op", text = ch }

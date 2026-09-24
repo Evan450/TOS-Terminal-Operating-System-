@@ -83,10 +83,11 @@ test("A's write went to A only",
 
 -- Input side: the same separation, and no cross-feeding.
 --! Never call io.read() while the default input is the TERMINAL one here.
---! That path is term.read(), which blocks on a raw computer.pullSignal()
---! (AUDIT 5, H-04) and hangs the whole suite rather than failing it. Both
---! processes get an explicit stream first, which is what we are testing
---! anyway. Remove this note when H-04 is fixed.
+--! That path is term.read(), which waits for a keystroke: inside a process
+--! it yields to the scheduler (AUDIT 5, H-04, fixed), and outside one --
+--! as here -- it waits on the machine, and this file's computer stub never
+--! delivers a key. Both processes get an explicit stream first, which is
+--! what we are testing anyway. (term.read itself: test_compat_term_seat.lua)
 current = procA
 io2.input(aSink)
 current = procB

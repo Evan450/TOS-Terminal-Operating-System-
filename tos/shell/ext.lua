@@ -15,9 +15,31 @@ end
 
 -- (v1.4.0 consolidation: `device` folded in — one identity command.
 -- No args: show device type + hostname; with an arg: set the hostname.)
+--! #SEC — SETTING is admin. The consolidation gave the whole command
+--! `device`'s tier 0, so a guest could rename the machine: the name is
+--! written to /etc/tos.cfg (which `config` guards at admin) and is what
+--! HELLO announces to every KNOWN peer. Showing it stays open to anyone.
+--! The name is held to what a peer will keep of it anyway (net.lua's
+--! cleanClaim: printable, at most 32).
 function X.hostname(a,ctx)
   local SC=ctx.K.getConfig() if not SC then ctx.o("No config",0xFF0000) return end
-  if a[1] then SC.set("hostname",a[1]) SC.save() end
+  if a[1] then
+    local _, tier = getActor(ctx)
+    if (tier or 0) < 2 then
+      ctx.o("Setting the hostname requires admin (it is this machine's name on the network).",0xFF0000)
+      return
+    end
+    local name = a[1]
+    if #name > 32 or name:find("%c") then
+      ctx.o("Hostname must be 1-32 printable characters.",0xFF0000)
+      return
+    end
+    SC.set("hostname",name) SC.save()
+    -- net caches the name at boot; without this peers heard the old one
+    -- until the next restart.
+    local NM = ctx.K.getNet and ctx.K.getNet()
+    if NM and NM.setHostname then NM.setHostname(name) end
+  end
   ctx.o("Device: "..SC.deviceType().." | Host: "..(SC.get("hostname") or "?"))
 end
 
@@ -411,10 +433,38 @@ function X.net(a,ctx)
   else ctx.o("Unknown: net "..s,0xFF0000) end
 end
 
+--! `ping <peer>` sent {type="PING"}: no protocol magic, and the wire type is
+--! lower-case "ping", so every receiver dropped it in protocol.validate and
+--! the command answered "Ping sent." to a packet nobody could read. It now
+--! sends protocol.ping(), accepts an alias or scan index like `net`, and
+--! waits briefly for the PONG so it can say whether anything answered.
 function X.ping(a,ctx)
   local NM=ctx.K.getNet() if not NM then ctx.o("No network",0xFF0000) return end
-  if a[1] then NM.send(a[1],{type="PING"}) else NM.discover() end
-  ctx.o("Ping sent.",0x00FF00)
+  if not a[1] then
+    NM.discover()
+    ctx.o("Discovery ping broadcast. 'net peers' lists who answered.",0x00FF00)
+    return
+  end
+  local protocol = NM.getProtocol and NM.getProtocol()
+  if not protocol then ctx.o("Network protocol unavailable",0xFF0000) return end
+  local addr = resolvePeer(a[1])
+  local got, t0 = false, computer.uptime()
+  local lid = NM.onceFrom and NM.onceFrom(protocol.TYPE.PONG, addr, function() got = true end)
+  local ok, err = NM.send(addr, protocol.ping())
+  if not ok then
+    if lid then NM.off(protocol.TYPE.PONG, lid) end
+    ctx.o("Ping failed: "..tostring(err or "send error"),0xFF0000)
+    return
+  end
+  if not lid then ctx.o("Ping sent.",0x00FF00) return end
+  NM.waitFor(function() return got end, 3)
+  NM.off(protocol.TYPE.PONG, lid)
+  if got then
+    ctx.o(string.format("Reply from %s in %d ms.", fmtAddr(addr),
+      math.floor((computer.uptime() - t0) * 1000 + 0.5)),0x00FF00)
+  else
+    ctx.o("No reply from "..fmtAddr(addr).." within 3s.",0xFFFF00)
+  end
 end
 
 function X.audio(a,ctx)
@@ -449,16 +499,25 @@ function X.audio(a,ctx)
     A.success()
     ctx.o("Volume: "..string.format("%.0f%%",A.getVolume()*100),0x00FF00)
   elseif s=="test" then
+    --! The gaps were raw computer.pullSignal(0.3): inside the shell process
+    --! that POPS whatever signal arrives next -- another seat's keystroke, a
+    --! modem packet -- before the scheduler can route it, nine times over.
+    --! proc.sleep yields instead (and falls back to a raw wait only where
+    --! there is no scheduler to yield to).
+    local okP, P = pcall(require, "kernel.process")
+    local function pause(t)
+      if okP and P and P.sleep then P.sleep(t) else computer.pullSignal(t) end
+    end
     ctx.o("Testing beep codes...",0xFFFF00)
-    ctx.o("  success (1 beep):",0xAAAAAA) A.success() computer.pullSignal(0.3)
-    ctx.o("  confirm (2 ascending):",0xAAAAAA) A.confirm() computer.pullSignal(0.3)
-    ctx.o("  warning (2 beeps):",0xAAAAAA) A.warning() computer.pullSignal(0.3)
-    ctx.o("  error (1 long low):",0xAAAAAA) A.error() computer.pullSignal(0.3)
-    ctx.o("  critical (3 low):",0xAAAAAA) A.critical() computer.pullSignal(0.3)
-    ctx.o("  notify (1 quick high):",0xAAAAAA) A.notify() computer.pullSignal(0.3)
-    ctx.o("  chat (2-tone chime):",0xAAAAAA) A.chat() computer.pullSignal(0.3)
-    ctx.o("  shutdown (2 descending):",0xAAAAAA) A.shutdown() computer.pullSignal(0.3)
-    ctx.o("  boot complete (3 ascending):",0xAAAAAA) A.bootComplete() computer.pullSignal(0.3)
+    ctx.o("  success (1 beep):",0xAAAAAA) A.success() pause(0.3)
+    ctx.o("  confirm (2 ascending):",0xAAAAAA) A.confirm() pause(0.3)
+    ctx.o("  warning (2 beeps):",0xAAAAAA) A.warning() pause(0.3)
+    ctx.o("  error (1 long low):",0xAAAAAA) A.error() pause(0.3)
+    ctx.o("  critical (3 low):",0xAAAAAA) A.critical() pause(0.3)
+    ctx.o("  notify (1 quick high):",0xAAAAAA) A.notify() pause(0.3)
+    ctx.o("  chat (2-tone chime):",0xAAAAAA) A.chat() pause(0.3)
+    ctx.o("  shutdown (2 descending):",0xAAAAAA) A.shutdown() pause(0.3)
+    ctx.o("  boot complete (3 ascending):",0xAAAAAA) A.bootComplete() pause(0.3)
     ctx.o("Test complete.",0x00FF00)
   else
     ctx.o("Unknown: audio "..s,0xFF0000)

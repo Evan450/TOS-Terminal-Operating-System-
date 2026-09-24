@@ -179,6 +179,113 @@ CB.startWindow()
 now.B = now.B + 301          -- receiver's clock passes its own window
 test("expired window reports closed", CB.windowOpen() == false)
 
+-- ── 6. Several peers in ONE window get DIFFERENT secrets ───────────
+-- v1 installed the code-derived secret itself, so every peer paired in
+-- one window shared it with B -- and the mesh opens a sealed envelope
+-- with the secret for its CLAIMED origin, while every node relays every
+-- envelope: peer C could read A's mail to B and forge mail "from" A.
+-- Each side now adds a nonce, sent only in its own unicast packet.
+print()
+print("-- several peers, one window --")
+local saltN = 0
+crypto.salt = function(n)
+  saltN = saltN + 1
+  local t = {}
+  for i = 1, n do t[i] = string.char((i * 37 + saltN * 11) % 200) end
+  return table.concat(t)
+end
+ADDR.C = "cccc-3333-cccc-3333"
+local trustBmany = {
+  LEVEL = { UNKNOWN = 0, KNOWN = 1, TRUSTED = 2, BLOCKED = -1 }, secrets = {},
+  getLevel = function() return 2 end,
+}
+trustBmany.setSecret = function(_a, addr, s) trustBmany.secrets[addr] = s; return true end
+local trustC = makeTrust(ADDR.B, 2)
+local netC = makeNet(ADDR.C, function(to, pkt, from) return deliver(to, pkt, from) end)
+local CC = loadChatpair()
+CC.init({ crypto = crypto, protocol = protocol, trust = trustC, net = netC })
+CB.init({ crypto = crypto, protocol = protocol, trust = trustBmany, net = netB })
+local prevDeliver = deliver
+deliver = function(to, pkt, from)
+  if to == ADDR.C then
+    local prev = current; current = "A"
+    netC._dispatch(pkt, from); current = prev
+    return true
+  end
+  return prevDeliver(to, pkt, from)
+end
+trustA.secrets = {}
+current = "B"; CB.closeWindow(); now.B = 42
+local code6 = CB.startWindow()
+current = "A"
+test("A pairs in the window", (CA.connect(ADDR.B, code6, 1)))
+test("C pairs in the SAME window", (CC.connect(ADDR.B, code6, 1)))
+local windowSecret = crypto.hashPassword(code6, "tos-chat-pair-v1")
+test("A and B agree on their link", trustA.secrets[ADDR.B] ~= nil
+  and trustA.secrets[ADDR.B] == trustBmany.secrets[ADDR.A])
+test("C and B agree on theirs", trustC.secrets[ADDR.B] ~= nil
+  and trustC.secrets[ADDR.B] == trustBmany.secrets[ADDR.C])
+test("A's link and C's link are DIFFERENT secrets",
+  trustBmany.secrets[ADDR.A] ~= trustBmany.secrets[ADDR.C])
+test("neither is the code-derived window secret C also holds",
+  trustBmany.secrets[ADDR.A] ~= windowSecret and trustBmany.secrets[ADDR.C] ~= windowSecret)
+
+-- ── 7. An OLDER initiator (v1 fields only) still pairs ─────────────
+print()
+print("-- older peers --")
+trustBmany.secrets = {}
+current = "B"; CB.closeWindow()
+local code7 = CB.startWindow()   -- A already paired in the last one
+windowSecret = crypto.hashPassword(code7, "tos-chat-pair-v1")
+local confirmSeen
+netA._once[#netA._once + 1] = { type = protocol.TYPE.CHAT_PAIR_CONFIRM, addr = ADDR.B,
+  cb = function(pkt) confirmSeen = pkt.payload end }
+current = "A"
+local tsOld = now.A
+deliver(ADDR.B, protocol.makePacket(protocol.TYPE.CHAT_PAIR_INIT, {
+  mac = crypto.hmac(windowSecret, (ADDR.A < ADDR.B and (ADDR.A .. "|" .. ADDR.B) or (ADDR.B .. "|" .. ADDR.A))
+    .. "|" .. tostring(tsOld)),
+  ts = tsOld,
+}), ADDR.A)
+test("an older initiator is paired", trustBmany.secrets[ADDR.A] == windowSecret)
+test("...and answered in the older form (no v2 fields)",
+  type(confirmSeen) == "table" and confirmSeen.v == nil and confirmSeen.mac2 == nil)
+
+-- ── 8. An OLDER receiver (ignores v2 fields) still pairs ───────────
+-- Simulated by stripping the v2 fields before B sees the init: B then
+-- answers v1, exactly as a receiver that predates them would.
+trustA.secrets = {}
+current = "B"; CB.closeWindow()
+local code8 = CB.startWindow()
+deliver = function(to, pkt, from)
+  if to == ADDR.B and pkt.type == protocol.TYPE.CHAT_PAIR_INIT then
+    pkt.payload.v, pkt.payload.nonce, pkt.payload.mac2 = nil, nil, nil
+  end
+  return prevDeliver(to, pkt, from)
+end
+current = "A"
+test("pairing with an older receiver still completes", (CA.connect(ADDR.B, code8, 1)))
+test("...on the window secret both ends can derive",
+  trustA.secrets[ADDR.B] == crypto.hashPassword(code8, "tos-chat-pair-v1")
+  and trustA.secrets[ADDR.B] == trustBmany.secrets[ADDR.A])
+
+-- ── 9. A tampered v2 nonce is refused, not quietly downgraded ──────
+trustA.secrets = {}
+current = "B"; CB.closeWindow()
+local code9 = CB.startWindow()
+deliver = function(to, pkt, from)
+  if to == ADDR.A and pkt.type == protocol.TYPE.CHAT_PAIR_CONFIRM and pkt.payload.v then
+    pkt.payload.nonce = string.rep("0", 32)
+  end
+  return prevDeliver(to, pkt, from)
+end
+current = "A"
+local ok9, err9 = CA.connect(ADDR.B, code9, 1)
+test("a confirm whose nonce was altered is refused", ok9 == false
+  and tostring(err9):find("MAC mismatch", 1, true) ~= nil, err9)
+test("...and nothing was installed", trustA.secrets[ADDR.B] == nil)
+deliver = prevDeliver
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
