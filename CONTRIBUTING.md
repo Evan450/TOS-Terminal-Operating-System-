@@ -76,6 +76,7 @@ Add-ons live under `TOS-Extras/`, install through `pkg`, and run in the capabili
 ```
 TOS-Extras/modules/mything/
   package.lua          the manifest: name, version, kind, files, capabilities
+                       (and lua = "5.4" / tos = ">=1.5.0" if it needs them: MANUAL 7.3)
   init.lua             your code
   test_mything.lua     picked up automatically by run_tests.py
 ```

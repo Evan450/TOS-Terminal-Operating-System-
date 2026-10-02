@@ -261,6 +261,13 @@ local function validateManifest(m)
     end
   end
 
+  if m.lua ~= nil and (type(m.lua) ~= "string" or not m.lua:match("^%d+%.%d+$")) then
+    return false, 'lua must be a Lua version like "5.3" if present'
+  end
+  if m.tos ~= nil and (type(m.tos) ~= "string" or not m.tos:match("^%s*[<>=~%^]*%s*%d")) then
+    return false, 'tos must be a version constraint like ">=1.5.0" if present'
+  end
+
   if m.hashes ~= nil then
     if type(m.hashes) ~= "table" then
       return false, "hashes must be a table if present"
@@ -1882,6 +1889,12 @@ function pkg.install(srcDir, opts)
   local svcOk, svcErr = serviceInstallGate(m, opts)
   if not svcOk then return false, svcErr end
 
+  do
+    local rt = pkg.runtimeRefusal(m)
+    if rt and not opts.force then return false, rt end
+    if rt and log then log.warn("pkg", "Installing past a runtime requirement (force): " .. rt) end
+  end
+
   if installed[m.name] and not opts.upgrading then
     local cur = installed[m.name].version
     local cmp = pkg.compareVersion(m.version or "0.0.0", cur or "0.0.0")
@@ -2063,6 +2076,32 @@ end
 --! on the way. installWithDeps refuses a plan with contradictions unless
 --! forced, so a refusal costs nothing. (docs/FEDERATED-REPOS.md)
 
+--! A package written for a newer Lua than the CPU runs used to fail at
+--! LOAD, as a syntax error naming a line of someone else's code. The
+--! manifest can say what it needs (`lua = "5.4"`, `tos = ">=1.5.0"`), and
+--! the refusal then says what to do about it. (test_pkg_runtime.lua)
+function pkg.runtimeRefusal(m)
+  if type(m) ~= "table" then return nil end
+  local name = tostring(m.name or "this package")
+  if type(m.lua) == "string" then
+    local want = m.lua:match("^(%d+%.%d+)$")
+    local have = tostring(_VERSION or ""):match("(%d+%.%d+)")
+    if want and have and pkg.compareVersion(have, want) < 0 then
+      return string.format("'%s' needs the Lua %s architecture; this CPU runs Lua %s. "
+        .. "Sneak-right-click the CPU (or APU) to switch its architecture, then reboot.",
+        name, want, have)
+    end
+  end
+  if type(m.tos) == "string" then
+    local T = rawget(_G, "_TOS")
+    local have = T and T.version
+    if have and not pkg.satisfiesConstraint(have, m.tos) then
+      return string.format("'%s' needs TOS %s; this is TOS %s.", name, m.tos, have)
+    end
+  end
+  return nil
+end
+
 function pkg.describeContradictions(list)
   local out = {}
   for _, c in ipairs(list or {}) do out[#out + 1] = tostring(c.text) end
@@ -2197,6 +2236,10 @@ function pkg.plan(repoDir, targetName, opts)
     if pm then
       for _, c in ipairs(brokenDependents(pm, claimedKey(chosenPath[pname]))) do
         plan.contradictions[#plan.contradictions + 1] = c
+      end
+      if not installed[pname] then
+        local rt = pkg.runtimeRefusal(pm)
+        if rt then contradiction("runtime", pname, rt) end
       end
     end
   end

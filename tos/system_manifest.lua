@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "1b13997586a5c7ce3baa7f08528b25936b30d99a9804ecf26f9f48ec4bc97e49" },
+  { path = "/init.lua",                       critical = true  , hash = "09017b50da867795d4efad7afa3a84a57b18628343b3a2a9c23e38416178cb33" },
   { path = "/install.lua",                    critical = false , hash = "303de0f21d4afd4deb71d6ede9764cf58ad866d4871b71e21446a85450a4a942" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "3af6ff4ebdc3e4564a88526dabb0e11dc8c592e9bc765350260b14a510dcf29f" },
@@ -29,7 +29,7 @@ return {
   { path = "/tos/kernel/audio.lua",           critical = false , hash = "ecdb6283d79b02e7308f7d6459ec8d4a0142ec8a9549ae93b9cb0bfad3f92ead" },
   { path = "/tos/kernel/theme.lua",           critical = false , hash = "a704ee8e8ed3fe6cb357d4c0c6b830fec497f0493c15db51d444bb6c95d3e089" },
   { path = "/tos/kernel/monitor.lua",         critical = false , hash = "27036d7cbb3712b554d3fb1af5b06f9010b3b0491695cd020a730a6eb5b27df2" },
-  { path = "/tos/kernel/pkg.lua",             critical = false , hash = "7fbdb3540b2572332191dfcc3529782987c0838d163dfa44eb073359257f89e1" },
+  { path = "/tos/kernel/pkg.lua",             critical = false , hash = "19c07a9a9ca14445c0b41c6e483abe2f5747273c821fb647035ab31933d89b88" },
   { path = "/tos/kernel/swap.lua",            critical = false , hash = "c426adf41af0f98cf746b1df1ac0735b64437a4a2fa0e99f8a22edce6da3a836" },
   { path = "/tos/kernel/compress.lua",        critical = false , hash = "aa78b1b52ce846b206b6c04b8ca011952aca2a9774e490ed4def76d54032daa9" },
   { path = "/tos/kernel/sysinfo.lua",         critical = false , hash = "ecaa31ab95e89711c51801d72b3f8d9e2dfbdc22e558d7978421f78747de394d" },
@@ -117,7 +117,7 @@ return {
   { path = "/tos/shell/panels/chatapp.lua",   critical = false , hash = "510692d6764d18613b664b47711d93f85a4c4143dec8b4347a7778d9692704bb" },
 
   { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "b4e72b7ffcd1fa44fadbb063512e603c2f86c924b74ffb94b62d201b1c3196f4" },
-  { path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "f5a40d4c0b2876ee24035c06f6b505aaf0f5954c32e7fb78bc45a797511072c1" },
+  { path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "6f3c2e5f9bfb788a67ec3fccb6883c2bdd9c90785cc82e0724faa4514aed64dd" },
   { path = "/tos/shell/panels/commands/extras.lua", critical = false , hash = "9563671de4ae3ac314dbd1a849356ae6640d6369a8d437c9c366334fea8f706b" },
 
   { path = "/tos/compat/init.lua",            critical = false , hash = "478c512d563b85c8bbe854c2b1140ca3c5425476cfcd0cad85c2f87737490df7" },

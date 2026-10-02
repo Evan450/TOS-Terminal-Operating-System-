@@ -1056,6 +1056,21 @@ also refuses an install that would **overwrite another package's files**,
 which needs no declaration at all: two authors picking the same install path
 is enough. `--force` overrides either, loudly.
 
+Two optional fields say what a package needs to **run**:
+
+```lua
+  lua = "5.4",        -- the oldest Lua architecture it works on
+  tos = ">=1.5.0",    -- the TOS versions it works on (same constraints as requires)
+```
+
+Without them, a package written for a newer Lua than the CPU runs fails when it
+loads, with a syntax error in someone else's code. With them, the install is
+refused before anything is written, and the refusal says what to do: "needs
+the Lua 5.4 architecture; this CPU runs Lua 5.3. Sneak-right-click the CPU (or
+APU) to switch its architecture, then reboot." The same check runs for every
+dependency in the install plan, so `--dry-run` shows it. `pkg info` lists
+both fields, and `--force` goes past them.
+
 ### 7.4 Updating packages
 
 ```

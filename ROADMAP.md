@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**106 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**105 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 83 | Planned or under investigation. Most contributions belong here. |
+| Planned | 82 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -703,29 +703,6 @@ LOCALISE THE INSTALLER, NOT JUST THE OS. MineOS ships ~20
     strings through i18n and asking for a language first is
     bounded, and it is what turns one ru.lang into a reason for
     someone to send a second pack.
-```
-
-### Planned — DECLARED RUNTIME IN THE PACKAGE MANIFEST -- the cheap half of
-
-```text
-DECLARED RUNTIME IN THE PACKAGE MANIFEST -- the cheap half of
-    VELX. Fuchas' VELX (Libraries/velx.lua, spec in Adorable-
-    Catgirl/Random-OC-Docs) is a container: magic \27VelX, format
-    version, compression id, LUA VERSION, OS ID with a library
-    flag, archive type, then sized program / OS-dependent /
-    signature sections and a cpio archive. Zorya can execute one
-    from the bootloader.
-      WE DO NOT WANT THE CONTAINER. pkg is directory-based, signs
-    an Ed25519 manifest and hashes every file, which is stronger
-    than VELX as implemented (see the calibration note above).
-      WE DO WANT THE DECLARED RUNTIME: a manifest field naming the
-    Lua architecture and the OS the package was built for. We
-    require the 5.3/5.4 architecture and both the BIOS and
-    /init.lua probe for it, but a PACKAGE built against the wrong
-    arch fails at load with a syntax error instead of a sentence.
-    One field, one check at install time, and the failure becomes
-    "this package needs the Lua 5.3 architecture; sneak-click the
-    CPU".
 ```
 
 ### Idea / far future — RUN-THIS-ONCE CONFINEMENT
