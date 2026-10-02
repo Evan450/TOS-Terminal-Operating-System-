@@ -1992,8 +1992,8 @@ bootsettings`, Chapter 2.
 
 ### C
 
-**cat** — `cat <file>`
-Print a file to the screen. *Error:* `no such file`.
+**cat** — `cat <file...>`
+Print each file to the screen in turn. *Error:* `no such file` (the other files are still printed).
 
 **cd** — `cd [dir]`
 Change the working directory; `cd` with no argument goes home, `cd -` to the
@@ -2256,8 +2256,8 @@ The memory report: RAM used/total with a usage bar, the RAM tier, swap usage, an
 a warning near the ~16 KB danger zone (Chapter 9, `man memory`). *See also:* `hw`,
 `monitor`, `doctor`, `optimize`.
 
-**mkdir** — `mkdir <dir>`
-Create a directory (parents as needed). *Error:* `already exists`.
+**mkdir** — `mkdir [-p] <dir...>`
+Create each directory (parents as needed). *Error:* `already exists`, which `-p` turns into a quiet success.
 
 **monitor** — `monitor` (alias `top`; also **Ctrl+T**)
 Opens the live System Monitor as a **full-screen app tab**: every process (kernel
@@ -2507,8 +2507,8 @@ there as tiles. The launcher engine still powers the locked guest `kiosk`.)
 Show or set the color theme; saved per-user to `~/.theme.cfg` (Chapter 10). *See
 also:* `tutorial`.
 
-**touch** — `touch <file>`
-Create an empty file or update its timestamp.
+**touch** — `touch <file...>`
+Create each file that does not exist yet, empty. An existing file is left as it is: OpenComputers has no way to set a timestamp.
 
 **tree** — `tree [path]`
 Show a directory as an indented tree. *See also:* `ls`, `find`.

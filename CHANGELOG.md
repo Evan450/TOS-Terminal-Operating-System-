@@ -5,6 +5,14 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ---
 
+## Unreleased — the open queue, worked through
+
+Fixes and loose ends from the TODO queue, one at a time, each with a test that fails on the code before it.
+
+- **`cat`, `mkdir` and `touch` take every path they are given.** Each read only its first argument and ignored the rest without a word: `touch a b c` made `a` and said "Touched: a", `mkdir x y` made `x`, and `cat a b` printed `a` alone. `rm` had the same bug until the keller import. Each path now gets the checks the single path always did, and a refusal on one is shown while the rest go on. `mkdir -p` is accepted (parents were always made; it used to create a directory called `-p`), and an existing directory now says "Already exists" instead of "Could not create", or nothing with `-p`. `cat` stops at the memory floor rather than starting the next file. `test_multi_path_cmds.lua`: 17 of 26 checks fail on the previous code.
+
+---
+
 ## Unreleased — package identity, and dependencies across sources
 
 Slice 1 of federated package repos (`docs/FEDERATED-REPOS.md`). Scoping it turned up bugs in today's `pkg`, each reproduced by driving the real modules before it was fixed.
