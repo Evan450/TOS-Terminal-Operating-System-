@@ -13,7 +13,7 @@
 --     advertising itself.
 return {
   name        = "cluster-master",
-  version     = "1.0.1",
+  version     = "1.0.2",
   kind        = "service",
   category    = "network",
   description = "Cluster control-plane Master: registers Managers, schedules jobs, owns persistent state.",

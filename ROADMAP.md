@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**98 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**97 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 75 | Planned or under investigation. Most contributions belong here. |
+| Planned | 74 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -198,15 +198,6 @@ OCELOT CHECK FOR THE FERMI IMPORT. Two things off-box tests
     COULD ONLY TIME OUT FROM KERNEL CONTEXT, above.
 ```
 
-### Planned — BUMP THE CLUSTER PACKAGE VERSIONS
-
-```text
-BUMP THE CLUSTER PACKAGE VERSIONS. The Master fixes above did not
-    bump them, so `pkg upgrade` will not offer them to installed
-    Masters. Goes with REBUILD AND RE-SIGN THE OPTIONAL UTILITIES
-    PACK, which has to happen for them to ship at all.
-```
-
 ## THE MOD SOURCE IS THE AUTHORITY (2026-09-20)
 
 ### Planned — REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK
@@ -228,11 +219,15 @@ REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK. Needs the
     files, so a hand-patched dist would carry a signature that no
     longer verifies — strictly worse than a stale one, because pkg
     would reject it.
-      DONE once on 2026-09-23 (the pack published 09-24 is signed and
-    current with that day's sources). RE-OPENED 2026-10-02 for the
-    queue sweep's add-on changes, to be signed ONCE when they are all
-    in: the new `selftest` package so far (test_build_disk.lua is red on
-    it until then). The operator runs, from Minecraft/TOS-Dev:
+      DONE once on 2026-09-23 (the pack published 09-24 00:18 UTC is
+    signed). CORRECTION 2026-10-02: it was not current with that day's
+    sources. The two cluster Master fixes landed 40 minutes after it;
+    dist/ was re-signed with them at 03:38 UTC and never pushed.
+    RE-OPENED 2026-10-02 for the queue sweep's add-on changes, to be
+    signed ONCE when they are all in. So far: the new `selftest`
+    package, and cluster-master 1.0.2 (the fixes, under a number
+    `pkg upgrade` will offer). test_build_disk.lua is red on them until
+    then. The operator runs, from Minecraft/TOS-Dev:
       python tos.py pack --sign
     then publishes the utils branch:  publish.ps1 -Utils -Push
 ```
