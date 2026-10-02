@@ -9,6 +9,13 @@
 -- ║    internet.open(address, [port])    -> buffered stream     ║
 -- ╚══════════════════════════════════════════════════════════╝
 --
+--! PROVENANCE. Parts of this file follow OpenOS's lib/internet.lua (MIT
+--! licence, the OpenComputers project) line for line: the checkArg
+--! contract of request/socket/open, and the loop that form-encodes a table
+--! `data` into a POST body. They are kept identical on purpose -- a ported
+--! program must see the same behaviour -- and credited here for that
+--! reason. The rest is TOS's own. (build/test_provenance.py)
+--
 -- Faithful to OpenOS's contract, including the parts that are awkward:
 -- `request` ERRORS (rather than returning nil, err) when there is no card
 -- or the request is refused, because that is what OpenOS does and porting
