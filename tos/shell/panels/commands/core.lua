@@ -1898,6 +1898,21 @@ return function(C, S, deps)
       o("Can't watch '" .. name .. "' — it's interactive/screen-driven.", T.error)
       return
     end
+    --! #SEC — the watched command meets the tier the registry gives it.
+    --! The executor gates the name it dispatches, which here is `watch`
+    --! (tier 0); the watched command ran through C[name] with no gate, so a
+    --! GUEST could `watch redstone set left 15`, drive a robot, eject a
+    --! disk or mount a remote share. Checked when the tab opens AND on
+    --! every refresh: a sudo token can expire while the tab is live.
+    --! (helpers.tierRefusal; test_watch_tier.lua)
+    do
+      local refusal, need, have = helpers.tierRefusal(S, name)
+      if refusal then
+        o(refusal, T.error)
+        S.lastDenial = { cmd = name, need = need, have = have }
+        return
+      end
+    end
     if not deps.openLiveTab then o("Live tabs aren't available in this shell.", T.error); return end
     -- Refresh closure: run the command, capturing its output as the tab content.
     -- Reuses the live command table `C` (lazy-resolved) + package commands.
@@ -1909,6 +1924,8 @@ return function(C, S, deps)
       local cname = parts[1]:lower()
       local cargs = {}
       for i = 2, #parts do cargs[#cargs + 1] = parts[i] end
+      local refusal = helpers.tierRefusal(S, cname)
+      if refusal then out[#out + 1] = { refusal, T.error }; return out end
       local fn = C[cname]
       if not fn then
         local okP, pkgMod = pcall(require, "kernel.pkg")
@@ -2728,6 +2745,12 @@ return function(C, S, deps)
       local name = parts[1]
       local cargs = {}
       for i = 2, #parts do cargs[#cargs + 1] = parts[i] end
+      --! #SEC — "at your tier" has to mean the registry's tier too: the
+      --! toolbox calls commands by name, past the executor, so a USER's
+      --! card could carry `disk eject` or `netfs mount` and run them.
+      --! (helpers.tierRefusal; test_watch_tier.lua)
+      local refusal = helpers.tierRefusal(S, name:lower())
+      if refusal then out[#out + 1] = { refusal, T.error }; return out end
       if not CTable then
         CTable = require("shell.panels.commands").build(S, deps)
       end
