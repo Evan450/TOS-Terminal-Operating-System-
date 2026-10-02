@@ -1096,19 +1096,99 @@ for _, path in ipairs(criticalFiles) do
     missingFiles[#missingFiles + 1] = path
   end
 end
+
+--! THE WAY OUT OF A BOOT LOOP. The EEPROM boots its saved disk without
+--! asking, so a disk whose install is broken was booted, refused below,
+--! rebooted and booted again -- recoverable only by moving the disk to
+--! another machine or reflashing from one. From this screen the operator
+--! can pick another bootable disk (the TOS installer floppy, an OpenOS
+--! disk) and the EEPROM is pointed at it: the same commit the BIOS's own
+--! "Save it? Y" makes, chosen with two deliberate keys at the console.
+--! Any other key reboots, as before. The BIOS's own halts (K4 and the
+--! like) loop the same way and need the EEPROM's own escape; that is the
+--! split-BIOS item, not this. Returns the address chosen, or nil.
+--! (test_boot_elsewhere.lua)
+local function bootElsewhere(comp, skip, say, pull, setBoot)   --[[TEST-EXTRACT]]
+  -- Only a real key: component and network signals would otherwise act
+  -- for the operator (#118/#99/#101).
+  local function key()
+    while true do
+      local ev, _, ch = pull()
+      if ev == "key_down" then return tonumber(ch) or 0 end
+    end
+  end
+  if type(setBoot) ~= "function" then
+    say("Press any key to reboot...")
+    key()
+    return nil
+  end
+  -- What the BIOS can boot: a filesystem with an /init.lua, or a raw
+  -- drive carrying a TBFS superblock. Never the disk that just failed.
+  local function scan()
+    local out = {}
+    local function add(addr, px)
+      local okL, lbl = pcall(px.getLabel)
+      out[#out + 1] = { addr = addr, label = (okL and type(lbl) == "string") and lbl or "" }
+    end
+    for addr in comp.list("filesystem") do
+      if not skip[addr] then
+        local okP, px = pcall(comp.proxy, addr)
+        if okP and px then
+          local okE, has = pcall(px.exists, "/init.lua")
+          if okE and has then add(addr, px) end
+        end
+      end
+    end
+    for addr in comp.list("drive", true) do
+      if not skip[addr] then
+        local okP, px = pcall(comp.proxy, addr)
+        if okP and px and px.readSector then
+          local okS, sec = pcall(px.readSector, 1)
+          if okS and type(sec) == "string" and sec:sub(1, 4) == "TBFS" then add(addr, px) end
+        end
+      end
+    end
+    return out
+  end
+  say("Any key reboots. B: boot another disk instead.")
+  local ch = key()
+  while ch == 66 or ch == 98 do                    -- B / b
+    local disks = scan()
+    if #disks == 0 then
+      say("No other bootable disk. Insert one (the TOS")
+      say("installer floppy will do), then press B.")
+    else
+      for i = 1, math.min(#disks, 9) do
+        say(" " .. i .. ") " .. disks[i].addr:sub(1, 8) .. " " .. disks[i].label:sub(1, 30))
+      end
+      say("Its number boots it from now on. B rescans.")
+    end
+    say("Any other key reboots.")
+    ch = key()
+    local n = ch - 48
+    if n >= 1 and n <= 9 and disks[n] then
+      setBoot(disks[n].addr)
+      say("Boot disk set to " .. disks[n].addr:sub(1, 8) .. ". Rebooting.")
+      return disks[n].addr
+    end
+  end
+  return nil
+end                                                              --[[/TEST-EXTRACT]]
+
 if #missingFiles > 0 then
   earlyPrint("MISSING " .. #missingFiles .. " FILES:", tc(0xFF0000))
   for _, path in ipairs(missingFiles) do
     earlyPrint("  " .. path, tc(0xFF6600))
   end
-  earlyPrint("Press any key to reboot...", tc(0xAAAAAA))
   computer.beep(400, 0.5)
-  -- Wait for an actual key press, not any signal. Component/network
-  -- events would otherwise reboot immediately (#118/#99/#101).
-  while true do
-    local ev = computer.pullSignal(math.huge)
-    if ev == "key_down" then break end
-  end
+  local skip = {}
+  if bootFS.address then skip[bootFS.address] = true end
+  if _G._TBFS_BOOT_DRIVE then skip[_G._TBFS_BOOT_DRIVE] = true end
+  pcall(function() skip[computer.tmpAddress()] = true end)
+  pcall(bootElsewhere, component, skip,
+    function(t) earlyPrint(t, tc(0xAAAAAA)) end,
+    function() return computer.pullSignal(math.huge) end,
+    computer.setBootAddress)
   computer.shutdown(true)
 end
 
