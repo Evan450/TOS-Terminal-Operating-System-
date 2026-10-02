@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "ae3920969112497126b9da77be33cca53da54d484ad4f68efe96320c6aa02ebc" },
+  { path = "/init.lua",                       critical = true  , hash = "76b9ff62881f670b246f82644c5e1136cfd19e00fce44ec0d8f417e5769f3309" },
   { path = "/install.lua",                    critical = false , hash = "bc9d02fb08842903e22001a4ef0892863c2924151984e7b5d2ea821a200981c1" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "62fca79a65a453bb03980760276b1a4e5c312914c6aa91e7ebf112daf96524a4" },
@@ -117,7 +117,7 @@ return {
   { path = "/tos/shell/panels/monitorapp.lua", critical = false , hash = "4ba94c0321f2198a13cfa95b29c71594ae6f66ab0fb0dd464ae12764a6782c5f" },
   { path = "/tos/shell/panels/chatapp.lua",   critical = false , hash = "510692d6764d18613b664b47711d93f85a4c4143dec8b4347a7778d9692704bb" },
 
-  { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "b4e72b7ffcd1fa44fadbb063512e603c2f86c924b74ffb94b62d201b1c3196f4" },
+  { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "137ac5a7e8bbffb48814b80d0aea29896a3d65bd8db3641ee7e72b1944ab136d" },
   { path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "85ffb861f463090bae3fa9b004eef2d648c3cac7388094e0b99fcaa063fd1944" },
   { path = "/tos/shell/panels/commands/extras.lua", critical = false , hash = "de83fa556ea6f1e5f1a33b651fe3571d883e5398c6af014ce79ded1adcd9c455" },
 
@@ -172,7 +172,7 @@ return {
   { path = "/usr/man/screen.man",             critical = false , hash = "d9c032bec59e3367b6cb5192d8c2eee764a170c1bf2501059b2ec898d1605f0a" },
   { path = "/usr/man/srm.man",                critical = false , hash = "c39b0b760fd071c8ba95c2da66d124e14723e1b5afd74349fbec1a56b271dd68" },
   { path = "/usr/man/swap.man",               critical = false , hash = "d301cddd26e6ce0952448b43675d58d3da4121f34752ce003807cd900fca9bbf" },
-  { path = "/usr/man/vault.man",              critical = false , hash = "62e8fb661c18b2c4d52c02c79763658528f951906d2a3927b291dbcdac478367" },
+  { path = "/usr/man/vault.man",              critical = false , hash = "466db53c3d7f4773ad9985fe8038bc21f0095df053bf80915c1e4ffd8ef2eae4" },
 
   { path = "/usr/lang/ru.lang",               critical = false , hash = "d69c32869d75db0b17e7ebcbedda17449e111a325d6e8fbf3c0cc87340054611" },
 

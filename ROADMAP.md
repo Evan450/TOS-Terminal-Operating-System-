@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**95 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**94 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 71 | Planned or under investigation. Most contributions belong here. |
+| Planned | 70 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1962,16 +1962,6 @@ OPERATOR DECISION: `pkg` AND `service` READ-ONLY SUBCOMMANDS ARE
     `optimize` show the other pattern (tier 1, mutating subcommands gate
     themselves in-body). Documented as admin now; a deliberate choice
     either way.
-```
-
-### Planned — `vault` TAKES ITS PASSPHRASE ON THE COMMAND LINE (encrypt/decrypt
-
-```text
-`vault` TAKES ITS PASSPHRASE ON THE COMMAND LINE (encrypt/decrypt,
-    the in-place forms, tape), so it lands in the seat's history: the
-    finding fixed for tape-auth (a "-" that asks, masked) and `pkg
-    trust key`. Same fix fits: "-" prompts through promptInput with a
-    mask, twice when it sets one. Found writing its manual entry.
 ```
 
 ### Planned — Screenshots. There is not one image in the repository, and every venue

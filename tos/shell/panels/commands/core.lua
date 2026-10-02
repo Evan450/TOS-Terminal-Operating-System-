@@ -948,20 +948,50 @@ return function(C, S, deps)
       return false, "securefs unavailable (refusing unchecked write)"
     end
 
+    --! A passphrase typed as an argument stays in this seat's command
+    --! history (`history`, the up arrow) -- the finding closed for tape-auth
+    --! and `pkg trust key`. Leave it off, or give "-", and it is asked for
+    --! without echo: twice when it is being SET (encrypting), because a
+    --! typo nobody saw would lock the data for good. A typed one still works
+    --! for scripts, and says what it costs. (test_vault_prompt.lua)
+    local function passphraseFor(given, setting)
+      if given ~= nil and given ~= "-" then
+        o("Note: a typed passphrase stays in this seat's command history;", T.dim)
+        o("leave it off, or use -, to be asked for it instead.", T.dim)
+        return given
+      end
+      if not promptInput then
+        o("Cannot ask for a passphrase here: give it as the last argument.", T.error)
+        return nil
+      end
+      local a = promptInput("Passphrase: ", 256, true)
+      if not a or a == "" then o("Cancelled.", T.dim); return nil end
+      if setting then
+        local b = promptInput("Again, to confirm: ", 256, true)
+        if b ~= a then
+          o(b and "The two did not match; nothing was changed." or "Cancelled.", T.error)
+          return nil
+        end
+      end
+      return a
+    end
+
     if sub == "encrypt" or sub == "decrypt" then
-      local src, dst, passphrase = args[2], args[3], args[4]
-      if not src or not dst or not passphrase then
-        o("Usage: vault " .. sub .. " <src> <dst> <passphrase>", T.dim); return
+      local src, dst = args[2], args[3]
+      if not src or not dst then
+        o("Usage: vault " .. sub .. " <src> <dst> [passphrase | -]", T.dim); return
       end
       local data = readBytes(rp(src))
       if not data then o("Cannot read: " .. src, T.error); return end
+      if sub == "decrypt" and not vmod.isEncrypted(data) then
+        o("Source is not a TOS vault blob.", T.warning); return
+      end
+      local passphrase = passphraseFor(args[4], sub == "encrypt")
+      if not passphrase then return end
       local out, info
       if sub == "encrypt" then
         out, info = vmod.encrypt(data, passphrase)
       else
-        if not vmod.isEncrypted(data) then
-          o("Source is not a TOS vault blob.", T.warning); return
-        end
         out, info = vmod.decrypt(data, passphrase)
       end
       if not out then o("Failed: " .. tostring(info), T.error); return end
@@ -972,23 +1002,25 @@ return function(C, S, deps)
         #data, #out, tostring(info.algo)), T.highlight)
 
     elseif sub == "encrypt-in-place" or sub == "decrypt-in-place" then
-      local file, passphrase = args[2], args[3]
-      if not file or not passphrase then
-        o("Usage: vault " .. sub .. " <file> <passphrase>", T.dim); return
+      local file = args[2]
+      if not file then
+        o("Usage: vault " .. sub .. " <file> [passphrase | -]", T.dim); return
       end
       local path = rp(file)
       local data = readBytes(path)
       if not data then o("Cannot read: " .. file, T.error); return end
+      local encrypting = sub:sub(1, 7) == "encrypt"
+      if encrypting and vmod.isEncrypted(data) then
+        o("Already encrypted — refusing to double-encrypt.", T.warning); return
+      elseif not encrypting and not vmod.isEncrypted(data) then
+        o("Not a vault blob — nothing to decrypt.", T.warning); return
+      end
+      local passphrase = passphraseFor(args[3], encrypting)
+      if not passphrase then return end
       local out, info
-      if sub:sub(1, 7) == "encrypt" then
-        if vmod.isEncrypted(data) then
-          o("Already encrypted — refusing to double-encrypt.", T.warning); return
-        end
+      if encrypting then
         out, info = vmod.encrypt(data, passphrase)
       else
-        if not vmod.isEncrypted(data) then
-          o("Not a vault blob — nothing to decrypt.", T.warning); return
-        end
         out, info = vmod.decrypt(data, passphrase)
       end
       if not out then o("Failed: " .. tostring(info), T.error); return end
@@ -1019,23 +1051,28 @@ return function(C, S, deps)
 
       local tapeSub = args[2]
       if tapeSub ~= "encrypt" and tapeSub ~= "decrypt" then
-        o("Usage: vault tape encrypt|decrypt <passphrase>", T.dim); return
+        o("Usage: vault tape encrypt|decrypt [passphrase | -]", T.dim); return
       end
 
       local tapeCmd = C.tape
       if not tapeCmd then
         o("Tape module not installed (run `pkg install tape`).", T.warning); return
       end
-      tapeCmd({ tapeSub, args[3] }, o)
+
+      local passphrase = passphraseFor(args[3], tapeSub == "encrypt")
+      if not passphrase then return end
+      tapeCmd({ tapeSub, passphrase }, o)
 
     else
       o("Usage: vault [encrypt|decrypt|encrypt-in-place|decrypt-in-place|info|tape] ...", T.dim)
-      o("  vault encrypt <src> <dst> <passphrase>", T.dim)
-      o("  vault decrypt <src> <dst> <passphrase>", T.dim)
-      o("  vault encrypt-in-place <file> <passphrase>", T.dim)
-      o("  vault decrypt-in-place <file> <passphrase>", T.dim)
+      o("  vault encrypt <src> <dst> [passphrase]", T.dim)
+      o("  vault decrypt <src> <dst> [passphrase]", T.dim)
+      o("  vault encrypt-in-place <file> [passphrase]", T.dim)
+      o("  vault decrypt-in-place <file> [passphrase]", T.dim)
       o("  vault info <file>", T.dim)
-      o("  vault tape encrypt|decrypt <passphrase>", T.dim)
+      o("  vault tape encrypt|decrypt [passphrase]", T.dim)
+      o("  Leave the passphrase off (or use -) to be asked for it, unechoed:", T.dim)
+      o("  a typed one stays in this seat's command history.", T.dim)
     end
   end
 
