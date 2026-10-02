@@ -2170,8 +2170,12 @@ integrity — for that, run `verify`.) *See also:* `verify`, `log`, `man memory`
 **drive** — `drive [list | info <addr> | format <addr> [label] | mount <addr> [path] | check <addr> [--repair] | defrag <addr> [--if-over N] | read <addr> <sector>]` **(format/mount/check/defrag: admin)**
 Manage **unmanaged (raw) drives** — `drive` components with no filesystem. `list`
 and `info`/`read` work on the base image; `format`/`mount`/`check`/`defrag`
-need the **`blockfs`** package (TBFS). See Chapter 5.4. *See also:* `disk`
-(managed removable media), `df`, `mount`.
+need the **`blockfs`** package (TBFS). `info`, and the confirmations of `format`
+and `deploy drive`, say what a drive holds before anything is erased: TBFS, an
+OSDI, OCGPT or MTPT partition table (with partition names where the table has
+them), SimpleFS, an MS-DOS boot record, a blank drive, or data TOS does not
+recognise. TOS only recognises those formats; it cannot read them. See Chapter
+5.4. *See also:* `disk` (managed removable media), `df`, `mount`.
 
 **du** — `du [path]`
 Show disk usage of a path subtree. *See also:* `df`.
