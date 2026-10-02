@@ -430,6 +430,9 @@ else
             if src then
               if cmdTargets[target] then
                 classOf[src], whyOf[src] = envFor(caps), "command entry of " .. tostring(m.name)
+              elseif target:lower():match("^/usr/lib/selftest/") then
+                -- kernel/selftest.lua load()s these into the kernel's _G.
+                classOf[src], whyOf[src] = STANDALONE, "self-test check (kernel _G)"
               elseif target:match("^/usr/bin/") then
                 classOf[src], whyOf[src] = envFor(PATH_CAPS), "PATH program " .. target
               elseif target:match("^/etc/rc%.d/") then
@@ -449,8 +452,6 @@ else
     if not classOf[rel] then
       if rel:match("^robot/eeprom%-") then
         classOf[rel], whyOf[rel] = STANDALONE, "EEPROM (OC BIOS env)"
-      elseif rel:match("^selftest/checks/") then
-        classOf[rel], whyOf[rel] = STANDALONE, "self-test check (kernel _G)"
       else
         -- OpenOS satellites and tools, and anything a package does not
         -- install: the standard library, plus OC's own globals.

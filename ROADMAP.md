@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**109 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**108 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 86 | Planned or under investigation. Most contributions belong here. |
+| Planned | 85 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -63,32 +63,6 @@ ONLINE REPAIR: fetch a damaged or missing system file from the
       OPERATOR CALLS before building: base image or add-on (it is a
     recovery tool, which argues base); `srm repair --online` or its own
     verb; whether the publish-side tags are wanted.
-```
-
-### Planned — THE BATTERY AS A PACKAGE
-
-```text
-THE BATTERY AS A PACKAGE, so developers can test what they add. The
-    runner is already in the base (kernel/selftest.lua) and already
-    searches /usr/lib/selftest as well as test disks; what is missing is
-    a way to install checks and drive the battery without a host:
-      * a `selftest` package (Optional Utilities, dev category) that
-        installs the shipped checks into /usr/lib/selftest/ and a
-        `selftest` command: arm [shutdown] [screen] [only=<prefix>],
-        disarm, status, list (what would run, from where), log;
-      * arming stays ROOT (securefs guards /etc) and running stays at
-        BOOT: several checks exist precisely to test kernel context
-        before the TUI, so a `run now` from a shell would test a
-        different thing and must not pretend otherwise;
-      * a check is `return function(t) ... end` -- document t (ok, skip,
-        note) in the package README, with a template, so a developer's
-        own package can ship checks next to its code;
-      * the README says what the shipped checks touch (80-pkg-signing
-        swaps and restores the trust policy, 93-audio beeps, 40 and 94
-        write temp files): run it on a machine you can reboot.
-    PREREQUISITE, filed next: checks run as the kernel, so installing
-    one must be a ROOT act. Related: IN-EMULATOR BOOT SMOKE TEST and
-    THE HEADLESS BOOT TEST (they automate the same battery for CI).
 ```
 
 ## THE OPEN QUEUE, WORKED THROUGH (2026-10-01)
@@ -297,6 +271,13 @@ REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK. Needs the
     files, so a hand-patched dist would carry a signature that no
     longer verifies — strictly worse than a stale one, because pkg
     would reject it.
+      DONE once on 2026-09-23 (the pack published 09-24 is signed and
+    current with that day's sources). RE-OPENED 2026-10-02 for the
+    queue sweep's add-on changes, to be signed ONCE when they are all
+    in: the new `selftest` package so far (test_build_disk.lua is red on
+    it until then). The operator runs, from Minecraft/TOS-Dev:
+      python tos.py pack --sign
+    then publishes the utils branch:  publish.ps1 -Utils -Push
 ```
 
 ## SECOND PASS: THE COMPAT NUMBER (2026-09-20)

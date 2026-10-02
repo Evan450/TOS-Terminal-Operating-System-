@@ -57,9 +57,14 @@ rmrf(OUT); rmrf(OUT2)
 -- "whatever discovery found": that way a package silently dropping off the
 -- disk (renamed dir, broken manifest) FAILS here instead of quietly
 -- shrinking the product.
+--! Hand-kept, so it is checked below against the set the build actually
+--! produces: stock, printer, write and intercom shipped for weeks without
+--! being here, which meant "the published pack matches a fresh build" never
+--! compared a byte of them.
 local EXPECTED = { "tetris", "tape", "rc-pilot", "mouse",
                    "tape-authenticator", "cluster-manager", "cluster-master",
-                   "blockfs", "mail", "calc", "snake", "ttt" }
+                   "blockfs", "mail", "calc", "snake", "ttt",
+                   "stock", "printer", "write", "intercom", "selftest" }
 
 -- The other half of the same guarantee. build-disk.lua's SKIP table holds
 -- packages below 1.0.0 back off the public pack, and an exclusion is only
@@ -100,6 +105,20 @@ test("assembler exits cleanly", true, run('"' .. OUT .. '" --limit 0'))
 test("set manifest on disk root", true, exists(OUT .. "/optutil-set.lua"))
 test("README on disk root", true, exists(OUT .. "/README.txt"))
 test("no picker copy shipped", false, exists(OUT .. "/install.lua"))
+
+-- Every package the build put in the set must be one this file checks,
+-- or a new add-on ships without the content comparison further down.
+do
+  local chunk = loadfile(OUT .. "/optutil-set.lua", "t", {})
+  local okS, set = false, nil
+  if chunk then okS, set = pcall(chunk) end
+  local listed, unlisted = {}, nil
+  for _, n in ipairs(EXPECTED) do listed[n] = true end
+  for name in pairs((okS and type(set) == "table" and set.packages) or {}) do
+    if not listed[name] then unlisted = unlisted or name end
+  end
+  test("every package in the set is listed in EXPECTED", nil, unlisted)
+end
 
 for _, name in ipairs(EXPECTED) do
   local mpath = OUT .. "/" .. name .. "/package.lua"

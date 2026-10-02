@@ -40,7 +40,8 @@ HERE = Path(__file__).resolve().parent
 DEV = HERE.parent
 ROOT = DEV.parent
 RELEASE = ROOT / "TOS-Release"
-CHECKS = ROOT / "TOS-Extras" / "selftest" / "checks"
+# The battery is the `selftest` package now, laid out at its install path.
+CHECKS = ROOT / "TOS-Extras" / "modules" / "selftest" / "usr" / "lib" / "selftest"
 
 # MIRRORED: TOS-Release owns every byte, so a file it no longer has is stale
 # and must go. This is the kernel; a module left behind after a rename is
