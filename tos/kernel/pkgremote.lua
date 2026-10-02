@@ -150,6 +150,7 @@ local function safeRepoPath(p)
 end
 
 local indexCache = {}
+local sigCache = {}
 
 --! #SEC / #MEM (pentest, Sep 2026) — the byte bound was the only one. A
 --! 128 KB index of "{{},{},...}" built 805 KB of tables before the decoder's
@@ -185,7 +186,45 @@ function pkgremote.index(repo, opts)
   return raw
 end
 
-function pkgremote.clearCache() indexCache = {} end
+function pkgremote.clearCache() indexCache = {}; sigCache = {} end
+
+--! pkgsign's own bound on a .sig: a real one is about 300 bytes.
+local MAX_SIG_BYTES = 4096
+
+--! Absent and broken are different verdicts (pkgsign: a signature that
+--! will not parse is evidence, and is refused), so what counts as "the
+--! repo has no signature" is decided here, narrowly:
+--!   * the server said so: any 4xx;
+--!   * it sent something that is not a signature at all -- a body that
+--!     does not decode as a table, or more bytes than a signature can be.
+--!     An OpenComputers card without handle.response() cannot report a
+--!     404, so a host's error page arrives as the body; staging that would
+--!     refuse every package from every unsigned repo.
+--! A body that IS a table is the repo's signature, and pkgsign judges it.
+--! No answer at all (a timeout, a 5xx, a dropped transfer) is not "none":
+--! guessing "none" records a signed package as unsigned, which is the bug
+--! this exists to fix. The fetch is refused and the next one asks again,
+--! as it already is when any of the package's own files fails to arrive.
+local function indexSignature(im, repo, opts)
+  if not opts.refresh and sigCache[repo.name] ~= nil then return sigCache[repo.name] end
+  local body, err, meta = im.get(repo.url .. "/programs.sig", { maxBytes = MAX_SIG_BYTES })
+  local answer
+  if type(body) == "string" then
+    local okD, rec = pcall(serialize.decode, body, { maxBytes = MAX_SIG_BYTES })
+    answer = (okD and type(rec) == "table") and body or false
+  else
+    meta = type(meta) == "table" and meta or {}
+    local status = tonumber(meta.status) or tonumber(tostring(err):match("^HTTP (%d%d%d)"))
+    if (status and status >= 400 and status < 500) or (meta.bytes or 0) > MAX_SIG_BYTES then
+      answer = false
+    else
+      return nil, "could not ask repo '" .. repo.name .. "' whether it signs its index: "
+        .. tostring(err)
+    end
+  end
+  sigCache[repo.name] = answer
+  return answer
+end
 
 function pkgremote.search(opts)
   local out = {}
@@ -234,6 +273,39 @@ function pkgremote.fetch(name, opts)
       unusable[#unusable + 1] = tostring(iErr)
     end
   end
+  --! A repo may sign its WHOLE index: programs.sig beside programs.cfg,
+  --! covering the index's raw bytes. Staging a re-encoded one-entry index
+  --! (below) threw that signature away, so a package from a publisher the
+  --! machine trusts was recorded as `unsigned`. When the repo serves a
+  --! signature, the index is fetched again at that moment -- so the bytes
+  --! and the signature are a pair -- and this package's entry is taken
+  --! from THOSE bytes, the ones the signature covers. A repo with no
+  --! signature costs one request per session and is staged as before.
+  --! (test_pkgremote_signed_index.lua)
+  local signedIndex, sigBody
+  if entry then
+    local sig, sErr = indexSignature(im, repo, opts)
+    if sig == nil then return nil, sErr end
+    if sig then
+      local fresh, fErr = im.get(repo.url .. "/programs.cfg", { maxBytes = MAX_INDEX_BYTES })
+      local okD, freshIdx = false, nil
+      if type(fresh) == "string" then
+        okD, freshIdx = pcall(serialize.decode, fresh, { maxBytes = MAX_INDEX_BYTES,
+          maxCost = MAX_INDEX_COST, maxKeys = 1024 })
+      end
+      --! The session's cached copy may predate the signature, so this read
+      --! is the only copy the signature can cover. Without it, refuse.
+      if not (okD and type(freshIdx) == "table") then
+        return nil, "repo '" .. repo.name .. "' signs its index, and re-reading it failed: "
+          .. tostring(fErr or "it did not decode")
+      end
+      if type(freshIdx[name]) ~= "table" then
+        return nil, "package '" .. tostring(name) .. "' is no longer in repo '"
+          .. repo.name .. "''s signed index"
+      end
+      signedIndex, sigBody, entry = fresh, sig, freshIdx[name]
+    end
+  end
   if not entry then
     --! A repo whose index would not load used to vanish from the answer:
     --! "not in any configured repo" when the truth was "that repo's index
@@ -273,8 +345,14 @@ function pkgremote.fetch(name, opts)
     return nil, msg
   end
 
-  local okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
-    serialize.encode({ [name] = entry }))
+  local okIdx
+  if signedIndex then
+    okIdx = fs.writeFile(fs.join(root, "programs.cfg"), signedIndex)
+      and fs.writeFile(fs.join(root, "programs.sig"), sigBody)
+  else
+    okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
+      serialize.encode({ [name] = entry }))
+  end
   if not okIdx then return fail("could not stage the package index") end
 
   local count, total = 0, 0
