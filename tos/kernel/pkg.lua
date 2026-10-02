@@ -1980,6 +1980,21 @@ function pkg.install(srcDir, opts)
     local src
     if mapped then
       src = fs.normalize((m._srcBase or srcDir) .. "/" .. mapped)
+      --! An OPPM key's first segment is the BRANCH ("master/gui/gui.lua"):
+      --! OPPM appends the key to a raw URL, where that is right, and `pkg
+      --! fetch` stages files the same way, so the literal path is tried
+      --! first and still wins when it exists. A git CHECKOUT of that branch
+      --! has no such directory -- the file is gui/gui.lua -- so a cloned
+      --! OPPM repo on a floppy read as "missing source file". Only for a
+      --! translated programs.cfg (_srcBase), and the hash check below
+      --! applies to whichever copy is read. (test_oppm_index.lua)
+      if m._srcBase and not fs.exists(src) then
+        local rest = mapped:match("^[^/]+/(.+)$")
+        if rest then
+          local alt = fs.normalize(m._srcBase .. "/" .. rest)
+          if fs.exists(alt) then src = alt end
+        end
+      end
     else
 
       src = fs.normalize(srcDir .. target)
