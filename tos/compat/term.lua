@@ -189,6 +189,20 @@ local function resolveSeatGpu()
   return nil
 end
 
+--! A component method on real OpenComputers is a CALLABLE TABLE, not a
+--! function: machine.lua builds each one as setmetatable({address, name},
+--! componentCallback). `type(v) == "function"` was false for every real GPU
+--! method, so the branch below that wraps mutating calls in markGlassDirty
+--! never ran on hardware -- a display-cap program's setBackground went
+--! straight to the GPU behind both caches, the black-status-bar path. Every
+--! off-box stub uses plain functions, so only the boot battery could see it
+--! (92-term, 2026-09-25). (test_component_callable.lua)
+local function callable(v)
+  if type(v) == "function" then return true end
+  local mt = type(v) == "table" and getmetatable(v)
+  return type(mt) == "table" and mt.__call ~= nil
+end
+
 local function makeGpuProxy(allowMutate)
   if not resolveSeatGpu() then return nil end
   return setmetatable({}, {
@@ -201,7 +215,7 @@ local function makeGpuProxy(allowMutate)
       local g = resolveSeatGpu()
       if not g then return nil end
       local v = g[key]
-      if type(v) == "function" then
+      if callable(v) then
 
         if GPU_MUTATING[key] then
 

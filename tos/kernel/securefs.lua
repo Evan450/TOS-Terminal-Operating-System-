@@ -191,6 +191,18 @@ local REMOVE_PROTECTED = {
 
   "/var/pkg", "/var/pkg/installed",
   "/usr/modules", "/usr/lib", "/usr/bin",
+  --! #SEC — the two CODE roots C18 missed, both OpenOS's and both searched
+  --! AHEAD of the TOS roots they shadow:
+  --!   /lib  init.lua's require looks here before /usr/lib, and runs what it
+  --!         finds in the kernel's own _G. The shell pcall-requires add-on
+  --!         names in kernel context (`mouse` at every shell start), so an
+  --!         ADMIN writing /lib/mouse.lua ran as the kernel at the next login.
+  --!   /bin  the first of the shell's trusted SYSTEM_BIN_DIRS, ahead of
+  --!         /usr/bin: /bin/ssh.lua ran instead of /usr/bin/ssh.lua, with the
+  --!         session and fs.write of whoever typed `ssh` -- root included.
+  --! Either walked around every ROOT-only line. test_code_roots_protected
+  --! reads both lists from source, so a new code root must be added here.
+  "/lib", "/bin",
 }
 
 local NODE_PROTECTED = {

@@ -734,26 +734,37 @@ function kernel.boot(opts)
   if _G._TOS.audio then _G._TOS.audio.bootComplete() end
 
   do
-    local okS, st = pcall(function()
+    local okS, st, unarmedDisk = pcall(function()
       local fsMod = _G._TOS and _G._TOS.fs
       if not (fsMod and fsMod.exists) then return nil end
+      --! #SEC — only the MACHINE arms the battery: /etc/selftest.on. A
+      --! selftest.on on an inserted disk used to arm it too, and the battery
+      --! runs that disk's .lua files inside the kernel, so any floppy was
+      --! kernel code execution at the next boot. The disk still chooses
+      --! which checks run; see selftest.enabled. (test_selftest.lua)
+      if fsMod.exists("/etc/selftest.on") then
+        return require("kernel.selftest")
+      end
 
-      local armed = fsMod.exists("/etc/selftest.on")
-      if not armed and fsMod.mounts then
+      if fsMod.mounts then
         local okM, list = pcall(fsMod.mounts)
         if okM and type(list) == "table" then
           for _, m in ipairs(list) do
             local mp = m.mountPoint
             if mp and mp ~= "/" and (fsMod.exists(mp .. "/selftest.on")
                or fsMod.exists(mp .. "/selftest/selftest.on")) then
-              armed = true; break
+              return false, mp
             end
           end
         end
       end
-      if not armed then return nil end
-      return require("kernel.selftest")
+      return nil
     end)
+    if okS and st == false and unarmedDisk then
+      log.warn("kernel", "self-test disk at " .. tostring(unarmedDisk)
+        .. " ignored: this machine is not armed (create /etc/selftest.on)")
+      bootEcho("  Self-test disk ignored: create /etc/selftest.on to allow it", 0xFFFF00)
+    end
     if okS and st then
       log.info("kernel", "selftest marker present - running boot battery")
       bootEcho("  Running self-test battery...", 0xFFFF00)

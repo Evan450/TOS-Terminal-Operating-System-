@@ -184,6 +184,30 @@ end
 function users.elevate(session, password)
   local s = session or (currentSession and sessions[currentSession])
   local rec = loadElevation()
+  --! #SEC — the elevation password gets login's backoff (#SEC H-5). It had
+  --! none: every wrong guess was answered at once, and a guess costs 256
+  --! pure-Lua KDF rounds, not a delay. With cap = root this password IS a
+  --! root password, and any USER may try it -- the exact "brute-force root
+  --! online with unlimited, undelayed attempts" H-5 closed at the login
+  --! screen. Same curve (loginCooldown), counted per ACCOUNT in the user DB
+  --! rather than per session, so a second seat or a reboot -- which a lone
+  --! USER may do -- does not reset it. The caller is already signed in, so
+  --! it is told plainly that it is waiting: there is no one to hide it from.
+  --! (test_elevation.lua)
+  local acct = s and type(s.user) == "string" and userDB[s.user] or nil
+  local cd = acct and loginCooldown(acct.elevFailed) or 0
+  if cd > 0 then
+    local elapsed = wallClock() - (tonumber(acct.elevFailedAt) or 0)
+
+    if elapsed < cd then
+      if log then
+        log.warn("auth", string.format("Elevation throttled for '%s' (cooldown %ds)",
+          tostring(s.user), cd))
+      end
+      return nil, string.format("Too many failed attempts; try again in %ds",
+        math.ceil(cd - math.max(elapsed, 0)))
+    end
+  end
 
   local DUMMY_SALT = "elevate-timing-dummy"
   local probeSalt = (rec and rec.salt) or DUMMY_SALT
@@ -197,8 +221,17 @@ function users.elevate(session, password)
   if (s.tier or 0) < TIER.USER then return nil, "Guests cannot elevate" end
   if not rec then return nil, "Elevation is not configured" end
   if not ok then
+    if acct then
+      acct.elevFailed = (tonumber(acct.elevFailed) or 0) + 1
+      acct.elevFailedAt = wallClock()
+      saveDB()
+    end
     if log then log.warn("auth", "Failed elevation attempt by " .. tostring(s.user)) end
     return nil, "Incorrect elevation password"
+  end
+  if acct and (acct.elevFailed or acct.elevFailedAt) then
+    acct.elevFailed, acct.elevFailedAt = nil, nil
+    saveDB()
   end
 
   local newTier = math.max(s.tier or 0, rec.cap)
@@ -1009,6 +1042,16 @@ local SHADOW_PATHS = {
   ["/var/shadow"]    = true,
 }
 
+--! #SEC — ROOT writes these, as it writes the shadow file: each hands kernel
+--! authority to whatever it points at, so an ADMIN who could write one could
+--! walk around every ROOT-only line (the same reasoning that made installing
+--! a service package a ROOT act; see pkg.lua's serviceInstallGate).
+--!   /etc/selftest.on  arms the boot battery, which runs every check on a
+--!                     mounted test disk INSIDE the kernel (kernel/selftest.lua)
+local ROOT_WRITE_PATHS = {
+  ["/etc/selftest.on"] = true,
+}
+
 --! #SEC (pentest, Sep 2026) — secrets at rest that the generic rule below
 --! ("/etc and /var: read OK for any session") handed to every logged-in
 --! account, guest included. READ needs ADMIN; writes keep their normal
@@ -1086,6 +1129,9 @@ local function decide(session, path, mode, user)
       return session.tier >= TIER.ADMIN, "Shadow file (admin required)"
     end
     return session.tier >= TIER.ROOT, "Shadow file (root required)"
+  end
+  if mode == "w" and ROOT_WRITE_PATHS[basePath] then
+    return session.tier >= TIER.ROOT, "Grants kernel authority (root required)"
   end
 
   if mode == "r" then

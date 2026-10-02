@@ -244,7 +244,10 @@ end
 function robot.durability()
   local p = getProxy()
   if not p then return nil, "no robot component" end
-  if type(p.durability) ~= "function" then
+  --! nil, not `type(...) ~= "function"`: a real component method is a
+  --! callable TABLE (machine.lua's componentCallback), so the type test
+  --! answered "no durability()" on every real robot. (test_component_callable.lua)
+  if p.durability == nil then
     return nil, "robot component has no durability()"
   end
   local ok, result, reason = pcall(p.durability)

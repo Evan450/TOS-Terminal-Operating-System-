@@ -574,8 +574,12 @@ return function(C, S, deps)
     if not args[2] then
 
       local methods = {}
+
       for k, v in pairs(proxy) do
-        if type(v) == "function" then methods[#methods+1] = k end
+        local mt = type(v) == "table" and getmetatable(v)
+        if type(v) == "function" or (type(mt) == "table" and mt.__call) then
+          methods[#methods+1] = k
+        end
       end
       table.sort(methods)
       for _, m in ipairs(methods) do o("  " .. m .. "()", T.fg) end

@@ -48,35 +48,59 @@ function selftest.markerPaths(fsMod)
   return out
 end
 
+function selftest.diskMarkers(fsMod)
+  fsMod = fsMod or fs
+  local out = {}
+  if not (fsMod and fsMod.exists) then return out end
+  for _, p in ipairs(selftest.markerPaths(fsMod)) do
+    if p ~= selftest.MARKER and fsMod.exists(p) then out[#out + 1] = p end
+  end
+  return out
+end
+
+--! #SEC — THE MACHINE ARMS THE BATTERY; A DISK NEVER DOES. Every check is
+--! loaded with no environment and run inside the kernel -- deliberately,
+--! because checks audit the live kernel -- and every non-boot disk is
+--! mounted at boot. So when a selftest.on ON A DISK armed it, a floppy
+--! carrying that file plus any .lua was full kernel code execution at the
+--! next boot: no login, no root, nothing typed. Inserted media is hostile
+--! everywhere else in TOS (the BIOS boot prompt, sanitised mount labels,
+--! pkg's hash gate); here it was trusted outright.
+--!
+--! /etc/selftest.on takes ROOT to create (users.lua ROOT_WRITE_PATHS: arming
+--! is granting kernel authority, which an ADMIN does not hold) or, on Ocelot
+--! and ocvm, the host: the machine's disk is an ordinary host directory
+--! there. The disk still decides WHICH checks run and with what options.
+--! (test_selftest.lua)
+
 function selftest.enabled(fsMod)
   fsMod = fsMod or fs
   if not (fsMod and fsMod.exists) then return false end
-  for _, p in ipairs(selftest.markerPaths(fsMod)) do
-    if fsMod.exists(p) then return true end
-  end
-  return false
+  return fsMod.exists(selftest.MARKER) and true or false
 end
 
 function selftest.activeMarker(fsMod)
-  fsMod = fsMod or fs
-  if not (fsMod and fsMod.exists) then return nil end
-  for _, p in ipairs(selftest.markerPaths(fsMod)) do
-    if fsMod.exists(p) then return p end
-  end
-  return nil
+  return selftest.enabled(fsMod) and selftest.MARKER or nil
 end
 
 function selftest.readMarker(fsMod)
   fsMod = fsMod or fs
   local cfg = { shutdown = false, only = nil, screen = false }
-  local marker = selftest.activeMarker(fsMod)
-  if not marker then return cfg end
-  local body = fsMod.readFile and fsMod.readFile(marker) or ""
-  for line in tostring(body or ""):gmatch("[^\r\n]+") do
-    local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-    if k == "shutdown" then cfg.shutdown = (v == "true" or v == "1")
-    elseif k == "screen" then cfg.screen = (v == "true" or v == "1")
-    elseif k == "only" and v ~= "" then cfg.only = v end
+  if not (fsMod and fsMod.exists) then return cfg end
+  local set = {}
+  for _, marker in ipairs(selftest.markerPaths(fsMod)) do
+    if fsMod.exists(marker) then
+      local body = fsMod.readFile and fsMod.readFile(marker) or ""
+      local mine = {}
+      for line in tostring(body or ""):gmatch("[^\r\n]+") do
+        local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+        if k == "shutdown" or k == "screen" then mine[k] = (v == "true" or v == "1")
+        elseif k == "only" and v ~= "" then mine[k] = v end
+      end
+      for k, v in pairs(mine) do
+        if not set[k] then cfg[k] = v; set[k] = true end
+      end
+    end
   end
   return cfg
 end
@@ -134,6 +158,11 @@ local function makeT(state)
     state.skips[#state.skips + 1] = name .. " :: " .. tostring(why or "n/a")
     return true
   end
+
+  function t.note(text)
+    state.notes[#state.notes + 1] = tostring(text)
+    return true
+  end
   return t
 end
 
@@ -166,7 +195,7 @@ function selftest.run(opts)
   local files = opts.files or selftest.discover(fsMod)
 
   local state = { n = 0, pass = 0, fail = 0, skip = 0, failures = {}, skips = {},
-                  cfg = cfg }
+                  notes = {}, cfg = cfg }
   local t = makeT(state)
   local started = comp and comp.uptime() or 0
 
@@ -218,6 +247,7 @@ function selftest.run(opts)
 
   for _, f in ipairs(state.failures) do appendLine(fsMod, "  - " .. f) end
   for _, s in ipairs(state.skips)    do appendLine(fsMod, "  ~ " .. s) end
+  for _, n in ipairs(state.notes)    do appendLine(fsMod, "  i " .. n) end
 
   local dur = (comp and comp.uptime() or 0) - started
   appendLine(fsMod, string.format(

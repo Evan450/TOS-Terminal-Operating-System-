@@ -856,11 +856,20 @@ function M.run(opts)
     --! downloads it, verifies the signature and hashes, and then runs the
     --! ordinary local install on the staged copy, so every gate the disk
     --! path has still applies.
+    --! The overrides the operator typed (`pkg install --allow-unsigned`,
+    --! --allow-unverified, --force) are carried to every package they pick.
+    --! They were dropped here, so the refusal's own advice could not work
+    --! from the picker. Carried, never granted: without the flag each check
+    --! refuses as before. (test_pkg_flags.lua)
+    local installOpts = { session = session,
+                          allowUnverified = opts.allowUnverified == true,
+                          allowUnsigned = opts.allowUnsigned == true,
+                          force = opts.force == true }
     local ok, res
     if e.remote then
-      ok, res = pkg.installRemote(e.name, { session = session })
+      ok, res = pkg.installRemote(e.name, installOpts)
     else
-      ok, res = pkg.installByName(e.name, { session = session })
+      ok, res = pkg.installByName(e.name, installOpts)
     end
     if ok then
       okCount = okCount + 1

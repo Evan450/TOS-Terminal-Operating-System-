@@ -262,6 +262,19 @@ end
 
 proc._canYield = canYield
 
+--!
+--! Not the same question as coroutine.isyieldable(), and on real hardware
+--! the two disagree. OpenComputers runs the whole kernel inside
+--! machine.lua's coroutine, so isyieldable() is TRUE in kernel context as
+--! well -- the boot battery measured it (92-term, 2026-09-25). A yield
+--! there goes to the HOST, which resumes the kernel with the next queued
+--! signal: nothing dispatches it, and a caller that ignores the yield's
+--! return value has thrown it away. Code that means "am I in a process?"
+--! must ask this. (test_inprocess_waitfor.lua)
+function proc.inProcess()
+  return currentPID ~= nil and processes[currentPID] ~= nil and canYield()
+end
+
 function proc.pause(seconds)
   local p = currentPID and processes[currentPID]
   if not p or not canYield() then return false end

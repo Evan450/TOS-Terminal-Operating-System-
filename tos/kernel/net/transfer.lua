@@ -109,9 +109,13 @@ function transfer.request(address, remotePath, localPath, opts)
         else
 
           local writeOk, writeErr
+          --! securefs.writeFile's third argument IS the session. This passed
+          --! { session = session }, a table with no tier, which the ACL
+          --! raised on -- inside a pcall'd listener, so every documented
+          --! opts.session caller got "Timeout waiting for response" for a
+          --! reply that had arrived. (test_transfer_paths.lua)
           if securefs and session and securefs.writeFile then
-            writeOk, writeErr = securefs.writeFile(localPath, payload.data,
-              { session = session })
+            writeOk, writeErr = securefs.writeFile(localPath, payload.data, session)
           else
             writeOk, writeErr = fs.writeFile(localPath, payload.data)
           end
@@ -156,7 +160,8 @@ function transfer.request(address, remotePath, localPath, opts)
     return false, errMsg
   end
 
-  return result, result and nil or errMsg
+  if result then return true end
+  return false, errMsg
 end
 
 function transfer.handleRequest(packet, fromAddr)
@@ -204,7 +209,8 @@ function transfer.handleRequest(packet, fromAddr)
   end
 
   local normalized = fs.normalize(path)
-  if normalized:sub(1, 8) ~= "/public/" and normalized ~= "/public" then
+  if type(normalized) ~= "string"
+     or (normalized:sub(1, 8) ~= "/public/" and normalized ~= "/public") then
     local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
       reason = "Access restricted to /public/",
     }, { to = fromAddr })

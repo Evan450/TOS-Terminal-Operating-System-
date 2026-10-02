@@ -24,7 +24,8 @@ function datacard.capsOf(p, addr)
   end
   local function has(m)
     if methodSet then return methodSet[m] == true end
-    return type(p) == "table" and type(p[m]) == "function"
+
+    return type(p) == "table" and p[m] ~= nil
   end
   if not methodSet and type(p) ~= "table" then return {} end
   return {

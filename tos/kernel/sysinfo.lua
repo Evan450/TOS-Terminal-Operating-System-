@@ -64,7 +64,7 @@ local function dataCardTier(p, overrides, addr)
     return 0, "present (unknown tier)", "unknown"
   end
 
-  local function has(m) return type(p[m]) == "function" end
+  local function has(m) return p[m] ~= nil end
   if has("generateKeyPair") or has("ecdsa") or has("ecdh") then
     return 3, DATA_TIER_NAMES[3], "detected"
   elseif has("sha256") or has("encrypt") then

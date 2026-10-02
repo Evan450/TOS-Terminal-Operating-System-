@@ -22,9 +22,21 @@ local function isSensitive(name)
   return type(name) == "string" and SENSITIVE_SIGNALS[name] == true
 end
 
-local UNPUSHABLE_INPUT = {
-  touch = true, drag = true, drop = true, scroll = true,
-}
+--! #SEC — what event.push refuses is kernel.event.reservedSignal: the whole
+--! tos_ namespace and everything the machine itself raises (input, modem,
+--! hot-plug, screen_resized, OpenOS's interrupted). This route needs no
+--! capability at all, and its own list missed tos_interrupt, tos_focus,
+--! tos_monitor, component_added/removed, screen_resized and interrupted --
+--! each acted on by the shell or an app on EVERY seat, because proc.tick
+--! broadcasts non-input signals. One rule, shared with the sandbox's
+--! computer.pushSignal. Pointer events (touch/drag/drop) stay LISTENABLE:
+--! they are legitimate OpenOS GUI input for the program's own seat.
+--! (test_compat_event.lua, test_sandbox_push.lua)
+local function unpushable(name)
+  local rule = kEvent.reservedSignal
+  if type(rule) ~= "function" then return true end
+  return rule(name)
+end
 
 function event.pull(...)
   local args = table.pack(...)
@@ -124,7 +136,7 @@ end
 
 function event.push(name, ...)
 
-  if isSensitive(name) or (type(name) == "string" and UNPUSHABLE_INPUT[name]) then
+  if isSensitive(name) or unpushable(name) then
     return false, "signal '" .. tostring(name) .. "' cannot be pushed by user programs"
   end
   kEvent.push(name, ...)

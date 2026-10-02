@@ -124,7 +124,10 @@ function keychain.get(name, session)
   if not session then return nil, "no session" end
   local rec, err = requireUnlocked(session)
   if not rec then return nil, err end
-  return rec.slots[name], rec.slots[name] and nil or "no such slot"
+
+  local v = rec.slots[name]
+  if v == nil then return nil, "no such slot" end
+  return v
 end
 
 function keychain.remove(name, session)

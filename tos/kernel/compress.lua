@@ -42,8 +42,8 @@ function compress.init(modules)
         local p = component.proxy(addr)
         if p then
           info.present = true
-          info.caps = { deflate = type(p.deflate) == "function"
-            and type(p.inflate) == "function" }
+
+          info.caps = { deflate = p.deflate ~= nil and p.inflate ~= nil }
           info.proxy = p
           info.name = info.caps.deflate and "data card" or "data card (no deflate)"
           return
