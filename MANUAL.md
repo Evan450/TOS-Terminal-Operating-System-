@@ -2045,7 +2045,7 @@ whole-tree snapshots. *See also:* `trash`, `deploy`.
 Show stored/maximum energy and the current charge level. Used by the power
 subsystem to warn and clean-shutdown on critical battery (Chapter 9).
 
-**bg** — `bg [job]`
+**bg** — `bg [job]` **(admin)**
 Resume a stopped job in the background. *See also:* `fg`, `ps`, `kill`.
 
 **bootsettings** — `bootsettings [show | <setting> <value> | reset]` **(admin)**
@@ -2082,6 +2082,26 @@ Announcements from the `intercom` add-on appear here too, marked `***`;
 the background listening — no invisible chat presence. Chat is part of the
 base image and rides the same mesh transport mail does. *See also:* `net`,
 `mail`, `man networking`.
+
+**cli** — `cli`
+Leave the panels for the plain command line: the same commands, without the
+panel interface. `tui` goes back. *See also:* `tui`, Chapter 4.
+
+**clip** — `clip [set <text> | clear]`
+Show what this seat's text clipboard holds (the first ten lines), put text on
+it, or empty it. Copy and paste in the panels use the same clipboard, so this
+is also how a script hands the operator something to paste.
+
+**cls** — `cls` (alias `clear`)
+Clear the screen and redraw the interface.
+
+**cluster-setup** — `cluster-setup` **(root)**
+Guided set-up that makes this machine a cluster Master or Manager. It works
+before any cluster package is installed. *See also:* Appendix B.
+
+**compat** — `compat`
+List the OpenOS compatibility modules and whether each is loaded. *See also:*
+Chapter 7.5.
 
 **component** — `component <type> [method] [args...]` **(admin; invoking a method: root)**
 List a component *type*'s available methods, or call one, through the
@@ -2163,6 +2183,12 @@ Show filesystem space per mount. *See also:* `du`, `mount`.
 
 **diag** — see **doctor** (alias).
 
+**disk** — `disk [list | info <mount> | eject <mount>]` **(admin)**
+Removable disks: list them with what each holds, show one in detail, or unmount
+one before you take it out. Installing from a disk is `pkg install`, pooling
+disks is `jbod`, and free space per mount is `df`. *See also:* `drive` (raw
+drives), `pkg`.
+
 **doctor** — `doctor` (alias `diag`)
 The **runtime health** check: hardware tiers, memory headroom, power state, disks,
 services, security posture, recent log warnings, and unsafe-shutdown repairs. The
@@ -2184,7 +2210,10 @@ Show disk usage of a path subtree. *See also:* `df`.
 
 ### E
 
-**edit** — `edit <file>`
+**echo** — `echo <text...>`
+Print the arguments, separated by spaces.
+
+**edit** — `edit <file>` **(admin)**
 Open the built-in text editor (undo, find/replace, clipboard, Lua syntax
 coloring); creates the file if missing. Keys: Ctrl+S save, Ctrl+Q close, Ctrl+F
 find, Ctrl+H replace, Ctrl+Z undo, Ctrl+G go-to-line, Ctrl+Insert copy,
@@ -2192,15 +2221,20 @@ Shift+Delete/^X cut, Shift+Insert/^V paste (`^C` is the kernel interrupt and
 never reaches the editor — Chapter 4.3).
 *See also:* `man edit`, Chapter 4.3.
 
+**env** / **export** — `env [KEY | KEY=VALUE]` (also `set`)
+With no argument, list this session's environment variables; with `KEY`, print
+one; with `KEY=VALUE`, set it for this session. A variable you want at every
+login belongs in your profile: `profile env`. *See also:* `profile`.
+
 ### F
 
-**fg** — `fg [job]`
+**fg** — `fg [job]` **(admin)**
 Bring a background/stopped job to the foreground. *See also:* `bg`, `ps`.
 
 **find** — `find [path] <name-pattern>`
 Search for files by name under a path. *See also:* `grep`, `tree`.
 
-**flash** — `flash <file>` **(admin)**
+**flash** — `flash <file>` **(root)**
 Write a new EEPROM (BIOS) image. *Danger:* a bad image can stop the machine
 booting — keep a known-good EEPROM. *See also:* Chapter 2.
 
@@ -2219,6 +2253,9 @@ The install-aware command list, or one-line help for a single command. The
 shallowest of the three help depths (`help` → `man` → this Manual). *See also:*
 `man`.
 
+**history** — `history`
+List the commands typed at this seat, oldest first.
+
 **hostname** — `hostname [name]` **(admin to set)**
 With no argument, shows the device type + hostname; `hostname <name>` sets the
 name (the `hostname` key in `/etc/tos.cfg`; 1-32 printable characters) and peers
@@ -2231,21 +2268,6 @@ List installed hardware and tiers (a quick form of the System Configuration
 screen). *See also:* `doctor`, `component`.
 
 ### I
-
-**internet** — `internet [status | get <url> | on | off]` **(tier: internet card; on/off admin)**
-Internet-card status and a bounded test fetch. `status` (the default) separates
-the three reasons access fails, which are three different problems: no card is
-installed; the **server** has HTTP disabled for internet cards, which only the
-server owner can change; or an admin here ran `internet off`. `get <url>` fetches
-a URL and prints the first 20 lines — a check that the card works, not a pager.
-`on`/`off` is the machine-wide kill switch (`internet` in `/etc/tos.cfg`) for a
-shared box where the card is wanted for one service and not for everybody.
-Reaching the network from a *package* additionally requires the `internet`
-capability, which is never implied by `component`. Hidden from `help` on a
-machine with no card. *See also:* `pkg` (§7.6), `hw`, `config`.
-
-**inventory** — `inventory` (alias `inv`) **(tier: inventory controller / robot)**
-List the contents of an attached inventory. *See also:* `redstone`, `robot`.
 
 **intercom** — `intercom [status | cues | say "…" | play <cue> | test <cue> | log [N] | set <k> <v>]` **(add-on; tier: modem)**
 The facility announcement system (§8.5). A Computronics tape holds the
@@ -2262,6 +2284,21 @@ out of their own keyboard. With no subcommand, opens the Intercom tab.
 Receiving needs `service start intercom`. *See also:* `man intercom`, `chat`,
 `tape`.
 
+**internet** — `internet [status | get <url> | on | off]` **(tier: internet card; on/off admin)**
+Internet-card status and a bounded test fetch. `status` (the default) separates
+the three reasons access fails, which are three different problems: no card is
+installed; the **server** has HTTP disabled for internet cards, which only the
+server owner can change; or an admin here ran `internet off`. `get <url>` fetches
+a URL and prints the first 20 lines — a check that the card works, not a pager.
+`on`/`off` is the machine-wide kill switch (`internet` in `/etc/tos.cfg`) for a
+shared box where the card is wanted for one service and not for everybody.
+Reaching the network from a *package* additionally requires the `internet`
+capability, which is never implied by `component`. Hidden from `help` on a
+machine with no card. *See also:* `pkg` (§7.6), `hw`, `config`.
+
+**inventory** — `inventory` (alias `inv`) **(tier: inventory controller / robot)**
+List the contents of an attached inventory. *See also:* `redstone`, `robot`.
+
 ### J
 
 **jbod** — `jbod [list | create <mount> <disk...> | destroy <mount>]` **(admin; opt-in)**
@@ -2273,8 +2310,23 @@ module isn't loaded. *Errors:* `JBOD is disabled`, `ambiguous address prefix`,
 
 ### K
 
-**kill** — `kill <job>`
+**keychain** — `keychain [status | unlock | lock | list | set <name> | get <name> | remove <name>]`
+Your own store of passphrases, locked with your login password. `unlock` asks
+for that password; `set` asks for the passphrase to store, without echoing it,
+so neither lands in your command history. `get` prints a stored passphrase on
+the screen. `rc` (rc-pilot) reads its shared secrets from here.
+
+**keys** — `keys [list | set <action> <key>... | reset [action]]`
+Show TOS's standard keyboard shortcuts, rebind one, or put one (or all) back to
+the default. *See also:* Appendix A.
+
+**kill** — `kill <job>` **(admin)**
 Terminate a job by id. *See also:* `ps`, `fg`, `bg`.
+
+**kiosk** — `kiosk` **(admin)**
+Explain kiosk mode: the locked, guest-facing menu (an allow-list, read-only)
+that runs when someone logs in as the `kiosk` user. To try it, log out and log
+in as `kiosk`.
 
 ### L
 
@@ -2296,7 +2348,11 @@ End the current session and return to the login screen. *See also:* `whoami`,
 List a directory. `-l` long form, `-a` include hidden. *Error:* `no such file`.
 *See also:* `cd`, `tree`.
 
-**lua** — `lua <code>`
+**lsdev** — `lsdev`
+List every connected component with its type, short address and, where known, a
+detail such as a disk's label. *See also:* `component`.
+
+**lua** — `lua <code>` **(root)**
 Evaluate a Lua snippet in the session sandbox (Chapter 13.1). *Example:*
 `lua print(math.pi)`. *See also:* `run`.
 
@@ -2335,6 +2391,12 @@ The memory report: RAM used/total with a usage bar, the RAM tier, swap usage, an
 a warning near the ~16 KB danger zone (Chapter 9, `man memory`). *See also:* `hw`,
 `monitor`, `doctor`, `optimize`.
 
+**menu** — `menu [show | list | add <label> <command...> [in <Menu>] | hide <item|Menu> | rename <name> <new> | move <item> <Menu> | remove <#> | reset] [--system]`
+Change the panels' menu bar. `show` prints the bar as it is; `list` prints
+your edits, which live in `~/.menu.cfg` and can be undone one at a time with
+`remove`. `--system` edits `/etc/menu.cfg` for everyone, which only an admin
+can write.
+
 **mkdir** — `mkdir [-p] <dir...>`
 Create each directory (parents as needed). *Error:* `already exists`, which `-p` turns into a quiet success.
 
@@ -2367,6 +2429,9 @@ Move or rename a file/directory. *Errors:* `no such file`, `destination exists`.
 **net** — `net [scan|peers|trust <addr> [full]|block <addr>|revoke <addr>|send <addr> <msg>]` **(tier: modem; trust: admin)**
 The zero-trust networking front end (Chapter 8). With no argument, shows status.
 *Example:* `net trust 3f8a1c2d full`. *See also:* `man net`, `ping`, `chat`.
+
+**netfs** — `netfs [status | exports | mount <host> <share> <mount> | umount <mount>]` **(admin)**
+Mount a directory that another TOS machine exports. *See also:* `man netfs`.
 
 **notify** — `notify <message> [--style info|warn|danger|error] [--title T]`
 The intrusive counterpart to `echo` (§4.1a). Raises a DOS-style modal dialog
@@ -2435,6 +2500,12 @@ peer can be a full address, an alias, or an index from `net scan`.
 With no argument, broadcasts a discovery ping; `net peers` lists who answered.
 *See also:* `net`, `hostname`.
 
+**protect** — `protect [status | off | on]` **(root)**
+The protected-path guards stop even root from writing under `/tos`, `/etc`,
+`/usr` and `/var` through securefs, as a defence against a tampered admin
+session. `protect off` stands them down for this session only; `protect on`
+puts them back.
+
 **sudo** — `sudo <command>` | `sudo -s` | `sudo -k` | `sudo setup [admin|root]` |
 `sudo off` **(USER+; guests cannot elevate)**
 Run a command with elevated privileges using a **separate elevation password**
@@ -2447,7 +2518,7 @@ opens an elevated shell until `sudo -k` or `logout`. Every attempt is logged.
 The elevation raises your **effective tier** for the action; it never gives you
 the root *account*. *See also:* `passwd`, `users`, `whoami`.
 
-**pkg** — `pkg <list|search|info <name>|install [name|dir]|uninstall <name>|enable <name>|disable <name>|commands|make-disk <mount>>` **(install/uninstall/enable/disable/make-disk: admin)**
+**pkg** — `pkg <list|search|info <name>|install [name|dir]|uninstall <name>|enable <name>|disable <name>|commands|make-disk <mount>>` **(admin)**
 Top-level `install <name>` / `uninstall <name>` are shortcuts for the same.
 The package manager — the one way to add or remove add-ons (Chapter 7). `enable`/
 `disable` toggle an installed package without removing it. Installs are sandboxed
@@ -2468,7 +2539,7 @@ to the defaults. Changes apply at your next login. This is not the BOOT profile
 (minimal/normal/full/diagnostic/safe), which `bootsettings profile` sets for the
 whole machine. *See also:* `bootsettings`, `config`, `theme`.
 
-**programs** — `programs`
+**programs** — `programs` **(admin)**
 List runnable programs/commands available to you. *See also:* `help`, `pkg list`.
 
 **ps** — `ps [-v]`
@@ -2481,17 +2552,21 @@ Print the working directory. *See also:* `cd`.
 
 ### R
 
-**reboot** — `reboot`
+**rbmk** — `rbmk <survey | status | limits | scram | skala | wall>`
+Supervise an RBMK reactor console. Needs the `rbmk-control` add-on, which is
+not on the published Optional Utilities pack yet.
+
+**reboot** — `reboot` **(admin)**
 Cleanly restart the machine (writes the clean-shutdown marker first, so the next
 boot won't warn of an unsafe shutdown). *See also:* `shutdown`, Chapter 9.
+
+**reclaim** — `reclaim [--apply]` **(root)**
+Remove the OpenOS files left behind after installing TOS over OpenOS. Without
+`--apply` it only lists them, with sizes. *See also:* Chapter 7.45.
 
 **redstone** — `redstone [...]` (alias `rs`) **(tier: redstone card)**
 Read/set redstone signals on the sides of the machine. *See also:* `inventory`,
 `robot`.
-
-**robot** — `robot [...]` **(tier: robot)**
-Drive an attached robot (move, turn, interact). *See also:* `inventory`,
-`redstone`.
 
 **rm** — `rm [-r] [--hard] <path...>`
 Remove files, or directories with `-r`; each path is handled on its own, so one
@@ -2501,11 +2576,15 @@ to unlink immediately. System paths (`/tos`, `/etc`, `/var`, `/usr`) always skip
 the trash. Both the panels and CLI shells behave this way. *Errors:* `no such
 file`, `is a directory` (without `-r`).
 
-**rsh** — `rsh <addr> <command>` **(tier: modem; TRUSTED peer)**
+**robot** — `robot [...]` **(tier: robot)**
+Drive an attached robot (move, turn, interact). *See also:* `inventory`,
+`redstone`.
+
+**rsh** — `rsh <addr> <command>` **(admin; tier: modem; TRUSTED peer)**
 Run a command on a TRUSTED remote machine (Chapter 8). *See also:* `scp`, `ssh`,
 `net`.
 
-**run** — `run <file> [args...]`
+**run** — `run <file> [args...]` **(admin)**
 Execute a Lua script file in the session sandbox with `...` set to the arguments
 (Chapter 13.2). *Errors:* `no such file`, plus any runtime error from the script.
 *See also:* `lua`, `edit`.
@@ -2522,7 +2601,7 @@ screen resolution. `screen res` shows current/max/block sizes + policy;
 `screen res <auto|max|WxH>` (admin) sets it live and saves it (fixes tiny text on
 a tier-3 GPU + large screen). *See also:* `man screen`, Chapter 10.1.
 
-**service** — `service [start|stop|list] <name>` **(start/stop: admin)**
+**service** — `service [start|stop|list] <name>` **(admin)**
 Manage `/etc/rc.d/` services (Chapter 12). *See also:* `cron`.
 
 **settings** — `settings`
@@ -2539,9 +2618,15 @@ report. Reads the display buffer when active, else the GPU directly. *See also:*
 **share** — `share [...]` **(tier: modem)**
 Front end to the file-share service (Chapter 8). *See also:* `scp`, `net servers`.
 
-**shutdown** — `shutdown`
+**shutdown** — `shutdown` **(admin)**
 Cleanly power off (writes the clean-shutdown marker). *See also:* `reboot`,
 Chapter 9.
+
+**srm** — `srm [status | scan | health | verify | full | baseline [--full] | repair [--restore | --online [--apply]] | restore [...]]` **(baseline/repair/restore: admin)**
+System Repair & Maintenance: one front door over `doctor`, `verify`, the
+boot-time repair pass and backups. With no argument it reports what it knows,
+including a fault the BIOS parked in the EEPROM. *See also:* `man srm`,
+Chapter 17.
 
 **ssh** — `ssh <addr>` **(tier: modem; TRUSTED peer)**
 Open an interactive remote shell on a TRUSTED machine. *See also:* `rsh`, `scp`.
@@ -2596,8 +2681,15 @@ also:* `tutorial`.
 **touch** — `touch <file...>`
 Create each file that does not exist yet, empty. An existing file is left as it is: OpenComputers has no way to set a timestamp.
 
+**trash** — `trash [list | empty | restore <name> [dest] [--force]]`
+Your own trash: `rm` moves files here unless given `--hard`. List what is in it,
+empty it, or put one item back. *See also:* `rm`.
+
 **tree** — `tree [path]`
 Show a directory as an indented tree. *See also:* `ls`, `find`.
+
+**tui** — `tui`
+Return from the command line to the full panel interface. *See also:* `cli`.
 
 **tutorial** — `tutorial`
 Launch the interactive new-operator walkthrough. *See also:* this Manual,
@@ -2630,7 +2722,11 @@ List user accounts and their tiers (Chapter 3). *See also:* `useradd`,
 
 ### V
 
-**verify** — `verify`
+**vault** — `vault [encrypt <src> <dst> <pass> | decrypt <src> <dst> <pass> | encrypt-in-place <file> <pass> | decrypt-in-place <file> <pass> | info <file> | tape encrypt|decrypt <pass>]`
+Passphrase encryption for files and tapes. The passphrase is an argument, so
+it stays in this seat's command history. *See also:* `man vault`, `keychain`.
+
+**verify** — `verify` **(admin)**
 The **file-integrity** check: every file in `/tos/system_manifest.lua` is checked
 for presence, Lua syntax, and (where declared) its SHA-256 hash. Only problems
 print; a clean system shows just the summary. (This checks files on disk, *not*

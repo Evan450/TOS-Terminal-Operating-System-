@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**93 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**95 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 69 | Planned or under investigation. Most contributions belong here. |
+| Planned | 71 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1937,11 +1937,41 @@ Per-command `-f`/`--live` shortcut (e.g. `ps -f`) on top of
     dedicated services pane if it earns its keep.
 ```
 
-### Planned — Prose sync: MANUAL/README/CHANGELOG version + command lists
+### Planned — OPERATOR DECISION
 
 ```text
-Prose sync: MANUAL/README/CHANGELOG version + command lists
-    (tests cover files, not prose - drift needs a human eye).
+OPERATOR DECISION: WHO MAY POWER OFF. helpers.canPowerOff (the #REV
+    #9 policy, 2026-07) lets a SOLE logged-in operator reboot or shut
+    down without being admin; with others logged in it wants admin. But
+    the registry gives reboot and shutdown tier 2, and since b39f4d0
+    (2026-09-11) dispatch enforces that first, so the sole-operator
+    branch is unreachable and the manual now says admin. b39f4d0 also
+    tightened another power-off path to admin on purpose, so admin-only
+    may be the intent. Either lower reboot/shutdown to tier 1 (users;
+    guests stay out) and let canPowerOff decide, or delete its
+    sole-operator branch as dead code.
+```
+
+### Planned — OPERATOR DECISION
+
+```text
+OPERATOR DECISION: `pkg` AND `service` READ-ONLY SUBCOMMANDS ARE
+    ADMIN-ONLY. The registry gives both tier 2, enforced at dispatch, so
+    `pkg list/search/info` and `service list` refuse a user; the manual
+    used to say only the changing subcommands needed admin. `srm` and
+    `optimize` show the other pattern (tier 1, mutating subcommands gate
+    themselves in-body). Documented as admin now; a deliberate choice
+    either way.
+```
+
+### Planned — `vault` TAKES ITS PASSPHRASE ON THE COMMAND LINE (encrypt/decrypt
+
+```text
+`vault` TAKES ITS PASSPHRASE ON THE COMMAND LINE (encrypt/decrypt,
+    the in-place forms, tape), so it lands in the seat's history: the
+    finding fixed for tape-auth (a "-" that asks, masked) and `pkg
+    trust key`. Same fix fits: "-" prompts through promptInput with a
+    mask, twice when it sets one. Found writing its manual entry.
 ```
 
 ### Planned — Screenshots. There is not one image in the repository, and every venue
