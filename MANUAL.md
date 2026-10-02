@@ -2631,7 +2631,9 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   principal it declares (root when it declares none) and its libraries load in
   kernel context. A `kind = "command"` package is confined to its capabilities;
   a service package is not, whatever its manifest lists. Install one the way you
-  would hand over the root password.
+  would hand over the root password. Only root can install one, and only root
+  can install a package that puts a boot self-test check in `/usr/lib/selftest/`,
+  because an armed machine runs those checks inside the kernel.
 - **Command tiers are enforced where commands are dispatched.** The tier each
   command declares is checked by the executor both shells share, so a command
   never runs below it even where its body forgot a check of its own.

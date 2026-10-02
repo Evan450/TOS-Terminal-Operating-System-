@@ -36,13 +36,37 @@ end
 --! sandbox. A kernel/boot session (the installer) is exempt; the login
 --! principal, which adminGate lets through, is NOT -- it is guest-tier and has
 --! no business installing anything. (test_pkg_service_root.lua)
+--! #SEC — and so does a package that installs a boot SELF-TEST CHECK.
+--! kernel/selftest.lua runs every check in /usr/lib/selftest/ inside the
+--! kernel whenever the machine is armed, and arming is ROOT-only because
+--! that is more than an admin holds. But /usr/lib/selftest/ was ordinary
+--! package space: an ADMIN install could leave a check there, and the next
+--! time root armed the battery, for any reason, it ran as the kernel.
+--! Compared case-folded (targetKey), as every target is.
+--! (test_pkg_service_root.lua)
+local SELFTEST_ROOT = "/usr/lib/selftest/"
+local function installsSelftestCheck(m)
+  if type(m) ~= "table" or type(m.files) ~= "table" then return false end
+  for _, t in ipairs(m.files) do
+
+    if type(t) == "string" and t:lower():sub(1, #SELFTEST_ROOT) == SELFTEST_ROOT then
+      return true
+    end
+  end
+  return false
+end
 local function serviceInstallGate(m, opts)
-  if type(m) ~= "table" or m.kind ~= "service" then return true end
+  local selftestCheck = installsSelftestCheck(m)
+  if type(m) ~= "table" or (m.kind ~= "service" and not selftestCheck) then return true end
   if not users then return true end
   local session = (type(opts) == "table" and opts.session) or nil
   if not session and users.currentSession then session = users.currentSession() end
   if session and session.isKernel then return true end
   if session and type(session.tier) == "number" and session.tier >= ROOT_TIER then return true end
+  if m.kind ~= "service" then
+    return false, "this package installs a boot self-test check, which runs inside the "
+      .. "kernel when the battery is armed; only root may install one"
+  end
   return false, "installing a service package runs its code as root at boot; "
     .. "only root may install a service (this one runs outside the package sandbox)"
 end

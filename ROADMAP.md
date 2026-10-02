@@ -2,18 +2,94 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**107 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**109 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 84 | Planned or under investigation. Most contributions belong here. |
+| Planned | 86 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## OPERATOR IDEAS: ONLINE REPAIR, AND THE BATTERY AS A PACKAGE (2026-10-02)
+
+### Planned — ONLINE REPAIR
+
+```text
+ONLINE REPAIR: fetch a damaged or missing system file from the
+    published repo and put it back. Shape, so whoever builds it starts
+    from the safety rules rather than the download loop:
+      THE NETWORK IS A TRANSPORT, NEVER AN AUTHORITY. A fetched file is
+    accepted only if its SHA-256 equals the digest in the LOCAL manifest,
+    and the local manifest only if it matches the EEPROM anchor (#SEC
+    C1). So a broken, stale or hostile server can fail to repair the
+    machine but cannot change what is installed. If the manifest itself
+    fails its anchor, there is no ground truth and online repair REFUSES
+    -- until ANCHOR THE NETWORK INSTALL TO A KEY (PLANNED, below) gives a
+    publisher key as a second root.
+      FETCH THE RELEASE THAT IS INSTALLED, NOT THE LATEST. Since 2603a5b
+    every release carries _TOS.build. publish.ps1 should tag each main
+    publish `build-<stamp>` (immutable), and repair fetches
+    raw.githubusercontent.com/<repo>/build-<stamp>/<path>. Falling back
+    to `main` is safe only because of the digest rule: a main that has
+    moved on simply fails to match, and repair says "the published
+    release is newer than this machine; that is an upgrade, not a
+    repair". Repair never upgrades.
+      DON'T MAKE IT WORSE, concretely:
+      * dry run by default: list each file, its source URL and bytes;
+        `--apply` acts;
+      * stage EVERYTHING first (/var/repair/), check free space before
+        staging (a Tier 2 disk is nearly full after an install), verify
+        every staged file, and only then replace -- a dropped connection
+        or a full disk mid-run leaves the machine exactly as it was;
+      * replace with writeFileAtomic, one file at a time, logging each;
+      * touch only manifest files that FAIL verification: never configs,
+        users.dat, /home, packages, or the EEPROM;
+      * root only; refused when the internet card is missing or `internet
+        off`; pkgremote's per-file and per-run byte caps apply;
+      * prefer the local SRM store when it has the file (no network at
+        all), and say afterwards that `srm baseline` should be re-taken.
+      REUSE: srm scan/repair (what is damaged), kernel.internet's bounded
+    download, the manifest digests strip.lua injects, bootstrap.lua's
+    fetch-and-verify loop (it already does this for a whole install).
+      GENERALISES FOR FREE: the same verify-against-anchor rule works for
+    any SOURCE -- the SRM store, a mounted disk carrying a TOS-Release
+    tree, or the network. Build it as "repair from a source", with the
+    network as one source among three.
+      OPERATOR CALLS before building: base image or add-on (it is a
+    recovery tool, which argues base); `srm repair --online` or its own
+    verb; whether the publish-side tags are wanted.
+```
+
+### Planned — THE BATTERY AS A PACKAGE
+
+```text
+THE BATTERY AS A PACKAGE, so developers can test what they add. The
+    runner is already in the base (kernel/selftest.lua) and already
+    searches /usr/lib/selftest as well as test disks; what is missing is
+    a way to install checks and drive the battery without a host:
+      * a `selftest` package (Optional Utilities, dev category) that
+        installs the shipped checks into /usr/lib/selftest/ and a
+        `selftest` command: arm [shutdown] [screen] [only=<prefix>],
+        disarm, status, list (what would run, from where), log;
+      * arming stays ROOT (securefs guards /etc) and running stays at
+        BOOT: several checks exist precisely to test kernel context
+        before the TUI, so a `run now` from a shell would test a
+        different thing and must not pretend otherwise;
+      * a check is `return function(t) ... end` -- document t (ok, skip,
+        note) in the package README, with a template, so a developer's
+        own package can ship checks next to its code;
+      * the README says what the shipped checks touch (80-pkg-signing
+        swaps and restores the trust policy, 93-audio beeps, 40 and 94
+        write temp files): run it on a machine you can reboot.
+    PREREQUISITE, filed next: checks run as the kernel, so installing
+    one must be a ROOT act. Related: IN-EMULATOR BOOT SMOKE TEST and
+    THE HEADLESS BOOT TEST (they automate the same battery for CI).
+```
 
 ## THE OPEN QUEUE, WORKED THROUGH (2026-10-01)
 
