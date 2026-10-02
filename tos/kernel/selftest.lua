@@ -329,7 +329,12 @@ function selftest.run(opts)
   -- Fresh file each run; a stale previous result read as a current one
   -- is worse than no result.
   if fsMod and fsMod.writeFile then pcall(fsMod.writeFile, selftest.RESULTS, "") end
-  appendLine(fsMod, string.format("SELFTEST BEGIN at=%.1f files=%d", started, #files))
+  -- build= names the tree under test: a result from a boot disk that was
+  -- behind the source must say so in its first line. (test_build_stamp.lua)
+  local T0 = rawget(_G, "_TOS") or {}
+  appendLine(fsMod, string.format("SELFTEST BEGIN at=%.1f files=%d version=%s build=%s variant=%s",
+    started, #files, tostring(T0.version or "?"), tostring(T0.build or "?"),
+    tostring(T0.variant or "?")))
   if comp and comp.freeMemory then
     appendLine(fsMod, string.format("ENV mem_free=%dK", math.floor(comp.freeMemory() / 1024)))
   end

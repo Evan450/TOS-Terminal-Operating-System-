@@ -337,11 +337,18 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
   local src, dst
   local minify = false
   local excludes = {}
+  local stampOverride
   local i_arg = 1
   while i_arg <= #arg do
     local v = arg[i_arg]
     if v == "--minify" then
       minify = true
+    elseif v == "--stamp" then
+      i_arg = i_arg + 1
+      stampOverride = arg[i_arg]
+      if not stampOverride then
+        io.stderr:write("--stamp requires a value\n"); os.exit(1)
+      end
     elseif v == "--exclude" then
       i_arg = i_arg + 1
       local pat = arg[i_arg]
@@ -358,7 +365,7 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
   end
 
   if not src or not dst then
-    io.stderr:write("Usage: lua strip.lua <src-dir> <dist-dir> [--minify] [--exclude PAT]...\n")
+    io.stderr:write("Usage: lua strip.lua <src-dir> <dist-dir> [--minify] [--stamp S] [--exclude PAT]...\n")
     os.exit(1)
   end
 
@@ -385,6 +392,52 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
     return false
   end
 
+  -- ── Build stamp ─────────────────────────────────────────
+  --! A screenshot, a selftest.log or a crash dump from a box that had been
+  --! up a week could not say which tree built it, and "the boot disk was
+  --! eleven files behind" once reported a stale answer as a real one
+  --! (it is why sync-emulator.py exists). The release's root init.lua
+  --! gets _TOS.build = the commit it was built from (short hash, plus
+  --! "-dirty" if TOS-Dev had uncommitted changes) and _TOS.variant = the
+  --! strip mode. Done on the EMITTED bytes, before the digests below, so
+  --! the manifest covers the stamped file. A placeholder that is missing or
+  --! doubled STOPS the build: a stamp that silently did not happen is the
+  --! very failure this is for. (test_build_stamp.lua)
+  local WINDOWS = package.config:sub(1, 1) == "\\"
+  local function buildStamp()
+    if stampOverride then return stampOverride end
+    local function run(cmd)
+      local p = io.popen(cmd)
+      if not p then return "" end
+      local out = p:read("*a") or ""
+      p:close()
+      return out
+    end
+    local nul = WINDOWS and "nul" or "/dev/null"
+    local q = '"' .. src .. '"'
+    local hash = run("git -C " .. q .. " rev-parse --short HEAD 2>" .. nul):match("^%s*(%x+)%s*$")
+    if not hash then return "unknown" end
+    local dirty = run("git -C " .. q .. " status --porcelain -- . 2>" .. nul):match("%S")
+    return hash .. (dirty and "-dirty" or "")
+  end
+  local function stampInit(code)
+    local function count(pat) return select(2, code:gsub(pat, "")) end
+    local B, V = 'build%s*=%s*"source"', 'variant%s*=%s*"source"'
+    if count(B) ~= 1 or count(V) ~= 1 then
+      io.stderr:write(string.format("error: init.lua must carry build = \"source\" and "
+        .. "variant = \"source\" exactly once each (found %d and %d); the build stamp "
+        .. "would not land\n", count(B), count(V)))
+      os.exit(1)
+    end
+    local stamp = buildStamp()
+    code = code:gsub(B, function() return string.format("build = %q", stamp) end)
+    code = code:gsub(V, function()
+      return string.format("variant = %q", minify and "minified" or "stripped")
+    end)
+    io.write(string.format("  build stamp: %s (%s)\n", stamp, minify and "minified" or "stripped"))
+    return code
+  end
+
   local processed, total, skipped = 0, 0, 0
 
   local function walk(srcPath, dstPath)
@@ -403,6 +456,7 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
       local content = normalizeEOL(readAll(srcPath))
       if content then
         local stripped = M.strip(content, { minify = minify })
+        if srcPath == src .. "/init.lua" then stripped = stampInit(stripped) end
         if writeAll(dstPath, stripped) then
           processed = processed + 1
           local saved = #content - #stripped

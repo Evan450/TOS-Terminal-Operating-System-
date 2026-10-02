@@ -428,6 +428,12 @@ end
 _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
+  -- Which tree this is. The release build (build/strip.lua) rewrites both
+  -- placeholders: build = the commit it was built from ("-dirty" if the
+  -- source had uncommitted changes), variant = how it was stripped. Run
+  -- from source, they stay "source". Must appear exactly once each.
+  build      = "source",
+  variant    = "source",
   bootFS     = bootFS,
   -- #REV (#8) — the boot filesystem's component address. The shell's
   -- auto-mount gate (shell.panels autoMount, #SEC H26) refuses to mount

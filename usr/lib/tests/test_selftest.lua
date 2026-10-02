@@ -160,13 +160,21 @@ do
     [okFail] = "return function(t) t.ok('deliberately false', false) end",
   })
 
+  -- The tree under test, as init.lua's _TOS carries it in a release.
+  local savedTOS = rawget(_G, "_TOS")
+  _G._TOS = { version = "9.9.9", build = "abc1234", variant = "minified" }
   local st = selftest.run({ fs = fs, computer = comp, cfg = { shutdown = false },
                             files = { okPass, okFail } })
+  _G._TOS = savedTOS
   eq("one pass recorded", 1, st.pass)
   eq("one fail recorded", 1, st.fail)
 
   local L = lines(fs)
   test("begins with SELFTEST BEGIN", L[1]:find("^SELFTEST BEGIN") ~= nil)
+  -- A result from a boot disk that was behind the source must say so in
+  -- its first line. (test_build_stamp.lua)
+  test("BEGIN names the build under test",
+    L[1]:find("version=9.9.9 build=abc1234 variant=minified", 1, true) ~= nil)
   test("ends with SELFTEST END",     L[#L]:find("^SELFTEST END") ~= nil)
   test("END carries the totals",     L[#L]:find("pass=1 fail=1") ~= nil)
 

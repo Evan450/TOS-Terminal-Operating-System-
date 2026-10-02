@@ -81,7 +81,12 @@ function kernel.boot(opts)
   -- boot screen. Absent => INFO (today's behavior).
   log.init({ earlyPrint = earlyPrint, earlyMinLevel = opts.earlyMinLevel,
     bootProgress = opts.bootProgress })
-  log.info("kernel", "TOS Kernel v" .. _G._TOS.version .. " starting")
+  -- The build stamp (init.lua's _TOS.build, set by the release build) goes
+  -- in the first line of every boot's log, so a log can always say which
+  -- tree wrote it.
+  log.info("kernel", "TOS Kernel v" .. _G._TOS.version .. " (build "
+    .. tostring(_G._TOS.build or "?") .. ", " .. tostring(_G._TOS.variant or "?")
+    .. ") starting")
 
   -- Convenience wrapper used by kernel-tier rc.d services that want to
   -- write to the system log without having to require() it themselves.

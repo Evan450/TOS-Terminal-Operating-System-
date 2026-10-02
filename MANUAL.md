@@ -1943,8 +1943,11 @@ an ADMIN session;
 ### A
 
 **about** — `about`
-Show the product banner, version, codename, and a one-line hardware summary. No
-flags. (v1.4.0 folded the old `ver` command in here.) *See also:* `hw`.
+Show the product banner, version, codename, the build (the commit the release
+was made from, or `source` when running from the source tree), and a one-line
+hardware summary. No flags. (v1.4.0 folded the old `ver` command in here.) The
+same build appears in the first line of every boot's kernel log and of
+`/var/selftest.log`. *See also:* `hw`.
 
 **alias** — `alias [<name> [command...]]`
 Per-user command shorthand. With no argument, lists your aliases; `alias <name>`
