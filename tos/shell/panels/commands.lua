@@ -205,7 +205,7 @@ local REGISTRY = {
   inv      = { category = "extras", tier = 1, help = "Inventory control", alias = "inventory" },
   component = { category = "extras", tier = 2, help = "Generic component invocation" },
   compat   = { category = "extras", tier = 0, help = "OpenOS compat layer status" },
-  disk     = { category = "extras", tier = 2, help = "Removable disks: list/info/install/eject (pooling = 'jbod', space = 'df')" },
+  disk     = { category = "extras", tier = 2, help = "Removable disks: list/info/eject (install from one = 'pkg install', pooling = 'jbod', space = 'df')" },
   drive    = { category = "extras", tier = 1, help = "Unmanaged (raw) drives: list/info/format/mount/check/defrag (needs 'blockfs')" },
   tape     = { category = "extras", tier = 1, help = "Tape archive (via the tape package)" },
   deploy   = { category = "extras", tier = 3, help = "Create install disk from running system" },
