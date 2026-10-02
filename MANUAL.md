@@ -2569,7 +2569,10 @@ label from the command — `tape-auth menu add <pass> Diagnostics -- doctor` —
 because an unquoted `|` would be read as a shell pipe and run the second half
 immediately. The **first** `menu add` on a tape is what SETS that tape's
 passphrase; pick one that is not your login password, and change it later with
-`tape-auth menu passwd <old> <new>`. Insert the card, enter your passphrase, and your toolbox runs at
+`tape-auth menu passwd <old> <new>`. Any passphrase argument can be `-` instead:
+`tape-auth menu add - Diagnostics -- doctor` asks for it without echoing it, so
+it is not left in your command history the way a typed one is (a new passphrase
+is asked twice). Insert the card, enter your passphrase, and your toolbox runs at
 your tier — it follows you between machines. (v1.4.0 retired the standalone
 `launcher`/`apps` command: the **Desktop** is TOS's menu surface now — built-in
 apps, installed package commands, and your `~/.launcher.cfg` entries all appear
