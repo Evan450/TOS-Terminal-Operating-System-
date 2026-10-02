@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**113 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**112 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 90 | Planned or under investigation. Most contributions belong here. |
+| Planned | 89 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -108,24 +108,6 @@ OCELOT CHECK FOR THE KELLER IMPORT: a round through
     prompts); and sudo's "try again in Ns" after wrong passwords.
       The first of the three is done: two rounds ran through the new
     arming (etc/selftest.on made by sync-emulator.py) on 2026-09-25.
-```
-
-### Planned — THE OTHER isyieldable() CALLERS STILL MEAN "IN A PROCESS?". On
-
-```text
-THE OTHER isyieldable() CALLERS STILL MEAN "IN A PROCESS?". On
-    hardware they are wrong the same way outside a process, though
-    none is known to be reached from there today:
-      * pipe.lua read/readLine: from the kernel, an empty pipe yields
-        to the host forever instead of returning nil;
-      * sandbox.safePullSignal: from the kernel (an rc.d service's
-        start code), it has no 3 s ceiling and waits for a signal;
-      * proc.yield / proc.sleep, and compat.term's nextSignal: from the
-        kernel both branches eat a signal, so they behave the same.
-    Convert each to proc.inProcess() when it is next touched. Not
-    compat.term's without changing 92-term first: its coroutine test
-    drives term.read OUTSIDE a process and relies on the yield.
-    The shell's own call sites run only inside seat processes.
 ```
 
 ## THE FERMI IMPORT: A CLOUD SESSION'S 15 FIXES (2026-09-23)

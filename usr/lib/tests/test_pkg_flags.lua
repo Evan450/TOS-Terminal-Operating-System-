@@ -136,9 +136,14 @@ local REMOTE = {
     local src, dst = "/repo/" .. name, "/var/pkg/remote/" .. name
     if not F.exists(src .. "/package.lua") then return nil, "not in the repo: " .. name end
     fetched = name
+    -- Collect first, then copy: adding keys to a table while pairs()
+    -- walks it is undefined in Lua, and with per-run hash seeds it made
+    -- this copy skip a file about one run in ten ("missing source file").
+    local copies = {}
     for k, v in pairs(F._f) do
-      if k:sub(1, #src + 1) == src .. "/" then F._f[dst .. k:sub(#src + 1)] = v end
+      if k:sub(1, #src + 1) == src .. "/" then copies[dst .. k:sub(#src + 1)] = v end
     end
+    for k, v in pairs(copies) do F._f[k] = v end
     return dst, nil, { repo = "test", files = 1, bytes = 1 }
   end,
   cleanup = function(dir) package.loaded["kernel.fs"].remove(dir) end,
