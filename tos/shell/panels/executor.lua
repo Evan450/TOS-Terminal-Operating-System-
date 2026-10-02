@@ -19,6 +19,13 @@ end
 
 local M = {}
 
+--! Read-only status commands where `-f` means "follow": a live tab. Only
+--! these, because -f is NOT free in general -- `trash restore` and admin's
+--! user commands read it as --force. `--live` works on any command.
+local LIVE_SHORT = { ps = true, df = true, mem = true, uptime = true, log = true,
+                     net = true, battery = true, lsdev = true }
+M.LIVE_SHORT = LIVE_SHORT
+
 function M.build(S, deps)
   local F = S.F
   local T = S.T
@@ -153,6 +160,22 @@ function M.build(S, deps)
     parts = helpers.expandAlias(S, parts)
     if #parts == 0 then return "" end
     local name = parts[1]:lower()
+    --! `ps --live` (or `ps -f`, for LIVE_SHORT) IS `watch ps`: the live tab,
+    --! reached from the command already being typed. Only on the plain path
+    --! (allowHandOff): a pipeline stage's output belongs to the pipe, and
+    --! `sudo` runs exactly what it was given. Rewritten BEFORE dispatch, so
+    --! it meets the same tier gate typing `watch` would, and watch itself
+    --! refuses anything interactive. (test_live_flag.lua)
+    if allowHandOff and name ~= "watch" then
+      for i = 2, #parts do
+        if parts[i] == "--live" or (parts[i] == "-f" and LIVE_SHORT[name]) then
+          table.remove(parts, i)
+          table.insert(parts, 1, "watch")
+          name = "watch"
+          break
+        end
+      end
+    end
 
     S.curCmd = name
 
