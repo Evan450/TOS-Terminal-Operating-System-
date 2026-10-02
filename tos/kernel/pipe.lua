@@ -1,5 +1,19 @@
 local pipe = {}
 
+--! "Am I in a process?" is asked of the SCHEDULER. A reader waiting on an
+--! empty pipe yields so the writer can run -- but on OpenComputers
+--! coroutine.isyieldable() is TRUE in kernel context too (the kernel runs
+--! inside machine.lua's coroutine), so a kernel-context read yielded to the
+--! HOST, was resumed with the next signal, dropped it, and found the pipe
+--! still empty: forever, instead of the nil it returns off-box. Without a
+--! scheduler loaded (early boot, off-box) the old question is the only one
+--! there is. Same helper as net.waitFor's. (test_inprocess_callers.lua)
+local function inProcess()
+  local P = package.loaded["kernel.process"]
+  if P and type(P.inProcess) == "function" then return P.inProcess() end
+  return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
+end
+
 function pipe.create()
   local buffer = {}
   local head = 1
@@ -43,7 +57,7 @@ function pipe.create()
   local reader = {
     read = function(self, n)
       while bufferEmpty() and not closed do
-        if coroutine.isyieldable and coroutine.isyieldable() then
+        if inProcess() then
           coroutine.yield()
         else
           return nil
@@ -55,7 +69,7 @@ function pipe.create()
       local acc = {}
       while true do
         while bufferEmpty() and not closed do
-          if coroutine.isyieldable and coroutine.isyieldable() then
+          if inProcess() then
             coroutine.yield()
           else
             if #acc > 0 then return table.concat(acc) end

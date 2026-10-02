@@ -832,19 +832,36 @@ function proc.tick(signal)
   end
 end
 
+--! A no-op outside a process. It asked coroutine.isyieldable(), which is
+--! TRUE in kernel context on OpenComputers (see proc.inProcess), so a
+--! kernel-context call yielded to the HOST and the signal that resumed it
+--! was thrown away. (test_inprocess_callers.lua)
 function proc.yield()
-  if coroutine.isyieldable and coroutine.isyieldable() then
+  if proc.inProcess() then
     return coroutine.yield()
   end
 end
 
+--! Outside a process there is no scheduler to yield to. The isyieldable()
+--! test sent a kernel-context sleep -- os.sleep in an rc.d service's start
+--! code -- to the host, which resumed it with whatever signal came next
+--! (on an idle machine, not for a long time) and dropped that signal. It
+--! waits in bounded slices now, pumping kernel.event when it is loaded so
+--! listeners and timers still run: net.waitFor's answer to the same
+--! question. (test_inprocess_callers.lua)
 function proc.sleep(seconds)
-  local deadline = computer.uptime() + seconds
+  local deadline = computer.uptime() + (tonumber(seconds) or 0)
+  if proc.inProcess() then
+    while computer.uptime() < deadline do coroutine.yield() end
+    return
+  end
   while computer.uptime() < deadline do
-    if coroutine.isyieldable and coroutine.isyieldable() then
-      coroutine.yield()
+    local slice = math.min(0.05, deadline - computer.uptime())
+    local E = package.loaded["kernel.event"]
+    if type(E) == "table" and type(E.pull) == "function" then
+      E.pull(slice)
     else
-      computer.pullSignal(math.min(0.05, deadline - computer.uptime()))
+      computer.pullSignal(slice)
     end
   end
 end

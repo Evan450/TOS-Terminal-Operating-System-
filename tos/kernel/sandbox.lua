@@ -149,13 +149,24 @@ local PULL_DROP = {
   tos_shell_exited   = true,
 }
 
+--! "Inside a scheduler coroutine" is asked of the SCHEDULER. On
+--! OpenComputers coroutine.isyieldable() is TRUE in kernel context too, so an
+--! rc.d service's start code took the yield branch: it yielded to the HOST,
+--! had no 3 s ceiling, and ignored its own timeout until some signal arrived
+--! to resume it. Same helper as net.waitFor's. (test_inprocess_callers.lua)
+local function inProcess()
+  local P = package.loaded["kernel.process"]
+  if P and type(P.inProcess) == "function" then return P.inProcess() end
+  return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
+end
+
 local function safePullSignal(timeout)
   local computer = require("computer")
   local deadline
   if type(timeout) == "number" and timeout >= 0 and timeout ~= math.huge then
     deadline = computer.uptime() + timeout
   end
-  if coroutine.isyieldable and coroutine.isyieldable() then
+  if inProcess() then
     while true do
       local sig = table.pack(coroutine.yield())
       local name = sig[1]
