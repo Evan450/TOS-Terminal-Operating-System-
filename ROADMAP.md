@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**103 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**101 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 80 | Planned or under investigation. Most contributions belong here. |
+| Planned | 78 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1463,33 +1463,6 @@ Open question worth settling first: is the feed LOCAL (this
 
 ## FROM THE OCOS SURVEY (2026-08-10)
 
-### Planned — SIGNED PACKAGE MANIFESTS (Ed25519). The biggest real gap we
-
-```text
-SIGNED PACKAGE MANIFESTS (Ed25519). The biggest real gap we
-    have. pkg.lua:200 is `if m.hashes ~= nil then` — hashes are
-    OPTIONAL, so a manifest that declares none installs
-    unverified. Worse, even when they ARE declared the manifest
-    itself is unsigned: whoever hands you the floppy writes the
-    files AND the digests, so the hash proves the disk isn't
-    CORRUPT, never that it's from who it claims. CR-5's admin
-    gate is what's actually holding the line right now, and an
-    admin gate is per-DISK consent. A signature makes it
-    per-PUBLISHER: accept a key once, then every package from
-    that key verifies without a fresh judgement call.
-      * Ed25519 over the serialized manifest; publisher pubkeys
-        in a trust store the operator manages (`pkg trust`).
-      * Three states, said out loud, never silently equivalent:
-        signed-by-known-key / signed-by-unknown-key /
-        unsigned. The third keeps working (floppies from a
-        friend are the normal case) but must require the admin
-        override it requires today, and SAY that's why.
-      * Composes with what we already have: keychain holds the
-        private key, the data card accelerates, critical.bak
-        already established the baseline-hash habit.
-      * Do NOT invent the wire format. RFC 8032 is the spec.
-```
-
 ### In progress — IN-EMULATOR BOOT SMOKE TEST
 
 ```text
@@ -2043,27 +2016,6 @@ SPLIT TABS — two or more tabs sharing one screen. Operator
 ```
 
 ## PLANNED (near future)
-
-### Planned — PUBLISH THE EXTRAS SOURCE
-
-```text
-PUBLISH THE EXTRAS SOURCE, or decide not to. Deferred
-    deliberately on 2026-09-03, when the Optional Utilities PACK
-    went public as the `optional-utilities` branch: that branch
-    carries the BUILT packages, so a machine can `pkg fetch` them,
-    but TOS-Extras/ itself is nowhere on GitHub. The consequence
-    is that nobody can contribute an add-on -- there is no tree to
-    open a pull request against, and CONTRIBUTING.md's "work on
-    dev" is a half-truth for anyone whose interest is an add-on
-    rather than the kernel.
-      Options, none costed yet: fold TOS-Extras/ into the dev
-    branch (simplest, one place to work, but roughly doubles what
-    a contributor clones); a fourth branch (symmetrical with the
-    others, but a fourth thing to keep current); or its own repo
-    (cleanest boundary, most overhead, and splits the issue
-    tracker). Whichever wins, publish.ps1 grows a mode for it and
-    the picker/README wording needs a pass.
-```
 
 ### Planned — Run a verification round in REAL Minecraft OpenComputers
 
