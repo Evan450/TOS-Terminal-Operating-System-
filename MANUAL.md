@@ -2056,8 +2056,9 @@ self-repair once next boot), `show` (POST screen), `cputier`/`datatier`
 (hardware overrides), `ramgate` (auto/plenty/tight — declare your RAM
 situation for the optional stages), plus one on/off/auto toggle per optional
 feature (`net`, `services`, `cron`, `packages`, ...). `bootsettings show`
-prints everything; changes apply on the next boot. *See also:* `man
-bootsettings`, Chapter 2.
+prints everything; changes apply on the next boot. This is how the MACHINE
+starts; its other settings are `config` (`/etc/tos.cfg`), and your own are
+`profile` (`~/.profile.cfg`). *See also:* `man bootsettings`, Chapter 2.
 
 ### C
 
@@ -2098,10 +2099,11 @@ with no `out`, writes `<file>.tcz`. Tiny/incompressible files are stored
 verbatim. *Errors:* `Compression needs a data card`, `Not a file`. *See also:*
 `decompress`, `man compress`, `optimize`.
 
-**config** — `config`
-Dump every key in `/etc/tos.cfg` (hostname, thresholds, `swapMaxKB`,
-`critBatShutdown`, …). Takes no arguments — read-only, no `get`/`set`
-subcommands — and has no tier gate. *See also:* Chapter 16.
+**config** — `config` **(admin)**
+Dump every key in `/etc/tos.cfg`, the machine's settings (hostname, thresholds,
+`swapMaxKB`, `critBatShutdown`, …). Takes no arguments — read-only, no
+`get`/`set` subcommands. How the machine boots is `bootsettings`
+(`/etc/boot.cfg`); your own settings are `profile`. *See also:* Chapter 16.
 
 **cp** — `cp <src> <dst>`
 Copy a file or directory (recursively). *Errors:* `no such file`,
@@ -2458,9 +2460,13 @@ second, network-aware copy of it (§7.6).
 *Errors:* `unknown package`, `capability not allowed`, `hash mismatch`. *See
 also:* `man pkg`, `man packages`.
 
-**profile** — `profile [name]`
-Show or hint the boot profile (minimal/normal/full/diagnostic). The authoritative
-editor is `bootsettings`. *See also:* Chapter 2.
+**profile** — `profile [show | set <field> <value> | env <KEY> [VALUE] | startup [list | add <cmd> | clear] | reset]`
+YOUR settings, kept in `~/.profile.cfg`: `set` takes `name`, `theme`, `cwd`
+(where you start) and `prompt`; `env` sets or clears an environment variable;
+`startup` lists, adds or clears commands run when you log in; `reset` goes back
+to the defaults. Changes apply at your next login. This is not the BOOT profile
+(minimal/normal/full/diagnostic/safe), which `bootsettings profile` sets for the
+whole machine. *See also:* `bootsettings`, `config`, `theme`.
 
 **programs** — `programs`
 List runnable programs/commands available to you. *See also:* `help`, `pkg list`.
