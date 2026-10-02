@@ -185,6 +185,49 @@ do
   test("ROOT can install the pair", pkg.installWithDeps("/usr/repo", "app", { session = ROOT }) == true)
 end
 
+-- A boot self-test check runs inside the kernel when the battery is armed,
+-- and arming is ROOT-only for that reason. Installing one is ROOT too: an
+-- ADMIN install could otherwise leave a check in /usr/lib/selftest/ for
+-- root's next armed boot to run as the kernel.
+print()
+print("-- a package that installs a boot self-test check --")
+do
+  local pkg, fs = newPkg()
+  local dir = putPkg(fs, "probe", { name = "probe", version = "1.0.0", kind = "lib",
+    files = { "/usr/lib/selftest/99-probe.lua" } },
+    { ["/usr/lib/selftest/99-probe.lua"] = "return function(t) end" })
+  local ok, err = pkg.install(dir, { session = ADMIN })
+  test("an ADMIN cannot install a self-test check", not ok
+    and tostring(err):find("self-test check", 1, true) ~= nil)
+  test("...and it was not written", fs._files["/usr/lib/selftest/99-probe.lua"] == nil)
+  test("ROOT can install it", pkg.install(dir, { session = ROOT }) == true)
+
+  pkg, fs = newPkg()
+  dir = putPkg(fs, "probe2", { name = "probe2", version = "1.0.0", kind = "lib",
+    files = { "/usr/lib/SelfTest/99-probe2.lua" } },
+    { ["/usr/lib/SelfTest/99-probe2.lua"] = "return function(t) end" })
+  test("...the same in other letter case (one directory on a Windows host)",
+    not pkg.install(dir, { session = ADMIN }))
+
+  -- Upgrading INTO a check is the same act.
+  pkg, fs = newPkg()
+  local d1 = putPkg(fs, "grow", { name = "grow", version = "1.0.0", kind = "lib",
+    files = { "/usr/lib/grow.lua" } }, { ["/usr/lib/grow.lua"] = "return {}" })
+  test("ADMIN installs the plain library", pkg.install(d1, { session = ADMIN }) == true)
+  putPkg(fs, "grow", { name = "grow", version = "2.0.0", kind = "lib",
+    files = { "/usr/lib/grow.lua", "/usr/lib/selftest/50-grow.lua" } },
+    { ["/usr/lib/grow.lua"] = "return {}", ["/usr/lib/selftest/50-grow.lua"] = "return function(t) end" })
+  local uok = pkg.upgrade("grow", { session = ADMIN, extraRoots = { "/usr/repo" } })
+  test("an ADMIN cannot upgrade it into one that ships a check", not uok
+    and fs._files["/usr/lib/selftest/50-grow.lua"] == nil)
+
+  -- A library elsewhere under /usr/lib is unaffected.
+  pkg, fs = newPkg()
+  dir = putPkg(fs, "selftester", { name = "selftester", version = "1.0.0", kind = "lib",
+    files = { "/usr/lib/selftester.lua" } }, { ["/usr/lib/selftester.lua"] = "return {}" })
+  test("a library merely NAMED like it is still ADMIN", pkg.install(dir, { session = ADMIN }) == true)
+end
+
 print()
 print("-- the gate directly --")
 do
