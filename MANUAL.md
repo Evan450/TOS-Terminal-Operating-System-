@@ -2722,9 +2722,11 @@ List user accounts and their tiers (Chapter 3). *See also:* `useradd`,
 
 ### V
 
-**vault** — `vault [encrypt <src> <dst> <pass> | decrypt <src> <dst> <pass> | encrypt-in-place <file> <pass> | decrypt-in-place <file> <pass> | info <file> | tape encrypt|decrypt <pass>]`
-Passphrase encryption for files and tapes. The passphrase is an argument, so
-it stays in this seat's command history. *See also:* `man vault`, `keychain`.
+**vault** — `vault [encrypt <src> <dst> | decrypt <src> <dst> | encrypt-in-place <file> | decrypt-in-place <file> | info <file> | tape encrypt|decrypt] [passphrase | -]`
+Passphrase encryption for files and tapes. Leave the passphrase off (or give
+`-`) and it is asked for without being shown; encrypting asks twice. A
+passphrase typed on the command line also works, but it stays in this seat's
+command history. *See also:* `man vault`, `keychain`.
 
 **verify** — `verify` **(admin)**
 The **file-integrity** check: every file in `/tos/system_manifest.lua` is checked
