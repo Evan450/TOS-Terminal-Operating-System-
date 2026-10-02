@@ -31,8 +31,9 @@
 -- ║                                                                ║
 -- ║  Scope: everything /tos/system_manifest.lua declares — which,  ║
 -- ║  by its own coverage rule (test_manifest_completeness.lua), is ║
--- ║  every runtime .lua file in the image. TOS-Extras add-ons are  ║
--- ║  not covered here; their own tests are.                        ║
+-- ║  every runtime .lua file in the image — and, when TOS-Extras   ║
+-- ║  is beside it, every add-on file against the environment that  ║
+-- ║  file actually runs in (second half, below).                   ║
 -- ║                                                                ║
 -- ║  Needs `luac` (ships with the same Lua install as the `lua`    ║
 -- ║  this suite already needs) to read the compiled _ENV accesses. ║
@@ -181,8 +182,8 @@ local function listingEnvNames(out)
   return order
 end
 
-local function envNames(relPath)
-  local cmd = 'luac -p -l -l "' .. root .. relPath .. '" 2>&1'
+local function envNamesAt(path)
+  local cmd = 'luac -p -l -l "' .. path .. '" 2>&1'
   local pipe = io.popen(cmd, "r")
   if not pipe then return nil, "popen unavailable" end
   local out = pipe:read("*a") or ""
@@ -190,6 +191,7 @@ local function envNames(relPath)
   if not ok or out:find("luac:", 1, true) then return nil, out end
   return listingEnvNames(out)
 end
+local function envNames(relPath) return envNamesAt(root .. relPath) end
 
 -- Probe once so a missing luac is reported as itself rather than as 150
 -- identical failures.
@@ -239,6 +241,293 @@ else
   print("        (add a `local`, pass it as a parameter, or require() it —")
   print("         or list it in ALLOWED above WITH a reason if it really is")
   print("         global in that file.)")
+end
+
+-- ============================================================
+-- TOS-Extras: every add-on file, against the environment it runs in
+-- ============================================================
+--! AUDIT 5 found this lint's scope stopped at the manifest, and one leak
+--! (80-pkg-signing.lua's `_ = v6`) had already got through it. Widening it
+--! is not a longer file list, because an add-on's globals are not the
+--! kernel's: a sandboxed package gets the sandbox's base env plus a name
+--! per capability it declares (fs, vault, crypto, ...), and NOT the
+--! standard library the stdlib list above assumes -- no os, io, load,
+--! package or debug unless a cap or the kernel loader provides them. So
+--! each file is checked against where it actually runs:
+--!   * a package COMMAND entry: the sandbox base + its manifest's caps;
+--!   * a /usr/bin program: the sandbox base + the caps progenv gives every
+--!     PATH program (fs.read, fs.write, compat.io), whatever the package
+--!     declared;
+--!   * an /etc/rc.d shim: the sandbox base + the caps rc.lua's peek reads
+--!     from the script, or rc's defaults;
+--!   * a library (/usr/lib, /usr/modules): it runs in the kernel's _G when
+--!     a service loads it (allowUserLibs) and in a sandbox when a command
+--!     does, so only names NO environment provides are flagged;
+--!   * an EEPROM: the OpenComputers BIOS env; a self-test check: the
+--!     kernel's _G; an OpenOS satellite or tool: the standard library.
+--! The cap -> name map below is checked against sandbox.lua, progenv.lua
+--! and rc.lua, so the lint cannot quietly disagree with what it models.
+print()
+print("-- TOS-Extras add-ons --")
+
+local extras
+for _, p in ipairs({ root .. "../TOS-Extras/", root .. "TOS-Extras/" }) do
+  local fh = io.open(p .. "README.md", "r")
+  if fh then fh:close(); extras = p; break end
+end
+
+local function readText(path)
+  local fh = io.open(path, "rb"); if not fh then return nil end
+  local s = fh:read("*a"); fh:close()
+  return (s:gsub("\r\n", "\n"))
+end
+
+if not extras then
+  print("  SKIP: TOS-Extras is not beside TOS-Dev; add-ons not linted")
+else
+  -- What every sandbox has: sandbox.lua's base env.
+  local SANDBOX_BASE = {}
+  for n in ([[assert error pcall xpcall type tostring tonumber pairs ipairs next
+    select unpack rawequal rawlen setmetatable getmetatable math string table
+    utf8 coroutine print require _G _VERSION]]):gmatch("%S+") do SANDBOX_BASE[n] = true end
+  -- ...and what each capability adds to it.
+  local CAP_NAMES = {
+    ["fs.read"] = { "fs" }, ["fs.write"] = { "fs" },
+    ["compat.io"] = { "io", "os", "filesystem" }, legacy = { "io", "os" },
+    component = { "component", "computer" }, load = { "load", "loadstring" },
+    notify = { "notify" }, net = { "net" }, internet = { "internet" },
+    swap = { "swap" }, vault = { "vault" }, crypto = { "crypto" },
+  }
+  local PATH_CAPS = { "fs.read", "fs.write", "compat.io" }          -- progenv.lua
+  local RC_DEFAULT_CAPS = { "fs.read", "fs.write", "component", "net" } -- rc.lua
+  local OC_GLOBALS = { component = true, computer = true, unicode = true }
+
+  -- The model, checked against the source it models.
+  do
+    local sb = readText(root .. "tos/kernel/sandbox.lua") or ""
+    local missing = {}
+    for n in pairs(SANDBOX_BASE) do
+      if n == "_G" or n == "_VERSION" then
+        if not sb:find("env." .. n .. " = ", 1, true) then missing[#missing + 1] = n end
+      elseif not sb:find("\n%s+" .. n .. "%s*=") then
+        missing[#missing + 1] = n
+      end
+    end
+    for cap, names in pairs(CAP_NAMES) do
+      if not sb:find('caps["' .. cap .. '"]', 1, true) then missing[#missing + 1] = "caps[" .. cap .. "]" end
+      for _, n in ipairs(names) do
+        if not sb:find("env%." .. n .. "%s*=") then missing[#missing + 1] = "env." .. n end
+      end
+    end
+    table.sort(missing)
+    test("the sandbox model matches sandbox.lua" .. (#missing > 0
+      and (" (missing: " .. table.concat(missing, ", ") .. ")") or ""), #missing == 0)
+    local pe = readText(root .. "tos/shell/progenv.lua") or ""
+    local okPath = true
+    for _, c in ipairs(PATH_CAPS) do
+      if not pe:find('["' .. c .. '"]', 1, true) then okPath = false end
+    end
+    test("a PATH program's caps match progenv.lua", okPath)
+    local rc = readText(root .. "tos/kernel/rc.lua") or ""
+    local dflt = rc:match("local DEFAULT_SERVICE_CAPS = (%b{})") or ""
+    local okRc = dflt ~= ""
+    for _, c in ipairs(RC_DEFAULT_CAPS) do
+      if not (dflt:find('["' .. c .. '"]', 1, true) or dflt:find("\n%s*" .. c .. "%s*=")) then okRc = false end
+    end
+    test("rc.d's default service caps match rc.lua", okRc)
+  end
+
+  local function envFor(caps)
+    local env = {}
+    for n in pairs(SANDBOX_BASE) do env[n] = true end
+    for _, c in ipairs(caps) do
+      for _, n in ipairs(CAP_NAMES[c] or {}) do env[n] = true end
+    end
+    return env
+  end
+  local PERMISSIVE = {}
+  for n in pairs(STDLIB) do PERMISSIVE[n] = true end
+  for n in pairs(OC_GLOBALS) do PERMISSIVE[n] = true end
+  for _, names in pairs(CAP_NAMES) do for _, n in ipairs(names) do PERMISSIVE[n] = true end end
+  local STANDALONE = {}
+  for n in pairs(STDLIB) do STANDALONE[n] = true end
+  for n in pairs(OC_GLOBALS) do STANDALONE[n] = true end
+
+  -- rc.lua's peek, as it reads caps: quoted names inside `caps = {...}`.
+  local function rcCaps(src)
+    local braces = src:match("caps%s*=%s*(%b{})")
+    if not braces then return RC_DEFAULT_CAPS end
+    local out = {}
+    for c in braces:gmatch('"([%w%._]+)"') do out[#out + 1] = c end
+    for c in braces:gmatch("'([%w%._]+)'") do out[#out + 1] = c end
+    return out
+  end
+
+  -- Every .lua under the tree (cmd's `dir /s /b` or `find`, as
+  -- test_manifest_completeness does), minus tests, the build and dist/.
+  local WINDOWS = package.config:sub(1, 1) == "\\"
+  local all = {}
+  do
+    local base = extras:gsub("/+$", "")
+    local absBase = base
+    if WINDOWS then
+      local p = io.popen('cd /d "' .. base:gsub("/", "\\") .. '" && cd')
+      if p then absBase = (p:read("*l") or ""):gsub("\\", "/"):gsub("/+$", ""); p:close() end
+    end
+    local cmd = WINDOWS and ('dir /b /s "' .. base:gsub("/", "\\") .. '\\*.lua" 2>nul')
+                        or ('find "' .. base .. '" -name "*.lua" 2>/dev/null')
+    local fh = io.popen(cmd)
+    if fh then
+      for line in fh:lines() do
+        line = line:gsub("\\", "/"):gsub("%s+$", "")
+        local rel
+        if line:sub(1, #absBase + 1) == absBase .. "/" then rel = line:sub(#absBase + 2)
+        elseif line:sub(1, #base + 1) == base .. "/" then rel = line:sub(#base + 2) end
+        if rel and not rel:match("^dist/") and not rel:match("^build/")
+           and not (rel:match("[^/]+$") or ""):match("^test_") then
+          all[#all + 1] = rel
+        end
+      end
+      fh:close()
+    end
+    table.sort(all)
+  end
+  test("found the add-on sources (" .. #all .. " files)", #all > 50)
+
+  -- Which env each file runs in, from the package manifests.
+  local classOf, whyOf, seenPkgDir = {}, {}, {}
+  for _, rel in ipairs(all) do
+    local dir = rel:match("^(.*)/[^/]+$")
+    while dir and not seenPkgDir[dir] do
+      seenPkgDir[dir] = true
+      local mf = extras .. dir .. "/package.lua"
+      local chunk = loadfile(mf, "t", {})
+      local okM, m = false, nil
+      if chunk then okM, m = pcall(chunk) end
+      if okM and type(m) == "table" then
+        local cmdTargets = {}
+        for _, t in pairs(type(m.commands) == "table" and m.commands or {}) do
+          if type(t) == "string" then cmdTargets[t] = true end
+        end
+        local caps = {}
+        for _, c in ipairs(type(m.capabilities) == "table" and m.capabilities or {}) do
+          caps[#caps + 1] = c
+        end
+        for _, target in ipairs(type(m.files) == "table" and m.files or {}) do
+          if type(target) == "string" and target:match("%.lua$") then
+            -- build-disk's resolution: mirror, flat, then the tail.
+            local src
+            for _, cand in ipairs({ dir .. target, dir .. "/" .. target:match("[^/]+$") }) do
+              local h = io.open(extras .. cand, "r")
+              if h then h:close(); src = cand; break end
+            end
+            if not src then
+              local tail = target:gsub("^/usr", "")
+              for _, r in ipairs(all) do
+                if r:sub(1, #dir + 1) == dir .. "/" and r:sub(-#tail) == tail then src = r; break end
+              end
+            end
+            if src then
+              if cmdTargets[target] then
+                classOf[src], whyOf[src] = envFor(caps), "command entry of " .. tostring(m.name)
+              elseif target:match("^/usr/bin/") then
+                classOf[src], whyOf[src] = envFor(PATH_CAPS), "PATH program " .. target
+              elseif target:match("^/etc/rc%.d/") then
+                classOf[src], whyOf[src] = envFor(rcCaps(readText(extras .. src) or "")),
+                  "rc.d shim " .. target
+              else
+                classOf[src], whyOf[src] = PERMISSIVE, "library " .. target
+              end
+            end
+          end
+        end
+      end
+      dir = dir:match("^(.*)/[^/]+$")
+    end
+  end
+  for _, rel in ipairs(all) do
+    if not classOf[rel] then
+      if rel:match("^robot/eeprom%-") then
+        classOf[rel], whyOf[rel] = STANDALONE, "EEPROM (OC BIOS env)"
+      elseif rel:match("^selftest/checks/") then
+        classOf[rel], whyOf[rel] = STANDALONE, "self-test check (kernel _G)"
+      else
+        -- OpenOS satellites and tools, and anything a package does not
+        -- install: the standard library, plus OC's own globals.
+        classOf[rel], whyOf[rel] = STANDALONE, "standalone"
+      end
+    end
+  end
+
+  -- Deliberate exceptions, each with a reason (same rule as ALLOWED).
+  local EXTRAS_ALLOWED = {
+    -- `table.unpack or unpack`: an OpenOS worker box may run the Lua 5.2
+    -- architecture, where only the global exists. Same as net/remote.lua.
+    ["cluster/openos/cluster-worker.lua"] = { unpack = "5.2 fallback" },
+  }
+
+  --! KNOWN GAPS -- recorded, not endorsed. Each is a real defect with its
+  --! own TODO entry; it is pinned so that FIXING it fails this lint and the
+  --! entry has to be removed, rather than passing silently.
+  local KNOWN_GAPS = {
+    ["cluster/master-skeleton/cluster.lua"] = {
+      loadfile = "THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX THEY ARE GIVEN (TODO 2026-10-01)",
+    },
+  }
+  local extOffenders, gapSeen, xScanned = {}, {}, 0
+  for _, rel in ipairs(all) do
+    local names, err = envNamesAt(extras .. rel)
+    if not names then
+      extOffenders[#extOffenders + 1] = rel .. ": could not compile (" ..
+        tostring(err):gsub("%s+", " "):sub(1, 120) .. ")"
+    else
+      xScanned = xScanned + 1
+      local env, gaps, bad = classOf[rel], KNOWN_GAPS[rel] or {}, {}
+      local allow = EXTRAS_ALLOWED[rel] or {}
+      for _, n in ipairs(names) do
+        if not env[n] and not allow[n] then
+          if gaps[n] then gapSeen[rel .. ":" .. n] = true
+          else bad[#bad + 1] = n end
+        end
+      end
+      if #bad > 0 then
+        extOffenders[#extOffenders + 1] = rel .. " [" .. whyOf[rel] .. "]: " .. table.concat(bad, ", ")
+      end
+    end
+  end
+  test("every add-on file compiled (" .. xScanned .. "/" .. #all .. ")", xScanned == #all)
+  if #extOffenders == 0 then
+    passed = passed + 1
+    print("  PASS: no add-on reaches for a name its environment does not have")
+  else
+    failed = failed + 1
+    print("  FAIL: " .. #extOffenders .. " add-on file(s) touch a name their environment lacks:")
+    for _, line in ipairs(extOffenders) do print("        " .. line) end
+    print("        (declare the capability that provides it, require() it, or")
+    print("         add a `local` -- a guard around a nil global is the bug.)")
+  end
+  for rel, gaps in pairs(KNOWN_GAPS) do
+    for n, why in pairs(gaps) do
+      local still = gapSeen[rel .. ":" .. n]
+      test("[known gap] " .. rel .. " still reads `" .. n .. "` -- " .. why
+        .. (still and "" or "  (FIXED? remove this entry)"), still)
+    end
+  end
+  -- The env model must be able to fail: a sandboxed command that reads
+  -- `os` without compat.io is exactly what it exists to catch.
+  do
+    local tmp = extras .. ".global_leak_env_probe.lua"
+    local fh = io.open(tmp, "w")
+    if fh then
+      fh:write("return function() return os.time() end\n")
+      fh:close()
+      local names = envNamesAt(tmp) or {}
+      os.remove(tmp)
+      local cmdEnv, seenOs = envFor({ "fs.read" }), false
+      for _, n in ipairs(names) do if n == "os" and not cmdEnv[n] then seenOs = true end end
+      test("the env model flags `os` in a command without compat.io", seenOs)
+    end
+  end
 end
 
 -- The lint must be able to fail. If ALLOWED ever grows to cover
