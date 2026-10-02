@@ -225,7 +225,7 @@ local REGISTRY = {
   net      = { category = "extras", tier = 1, help = "Network admin (trust, peers, servers, ports)" },
   ping     = { category = "extras", tier = 1, help = "Network ping" },
   hostname = { category = "extras", tier = 0, help = "Show device type + hostname; 'hostname <name>' sets it (admin)" },
-  config   = { category = "extras", tier = 2, help = "Edit /etc/tos.cfg" },
+  config   = { category = "extras", tier = 2, help = "Show /etc/tos.cfg, the machine's settings (read-only)" },
   battery  = { category = "extras", tier = 0, help = "Power management info" },
   internet = { category = "extras", tier = 1, help = "Internet card: status, a test fetch, and the machine-wide on/off" },
   audio    = { category = "extras", tier = 1, help = "Audio feedback controls" },
