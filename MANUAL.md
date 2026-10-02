@@ -1376,6 +1376,14 @@ nonces and stale sequence numbers (per-peer monotonic + per-boot epoch), and
 refuses an XOR downgrade when AES is available. Discovery/handshake packets are
 intentionally public.
 
+All of it travels on **modem port 42** (`listenPort` in `/etc/tos.cfg`). The
+OpenComputers community keeps a registry of claimed ports. 42 is not on it, and
+these are: 14 Ethernet-over-OC, 148 the GUI service, 4096 MultICE/Minitel,
+4378–4379 GERTi, 4662 short messages, 9100 the network print service, and 9900
+Zorya BIOS LAN boot. If you move TOS onto one of them, TOS still works, but its
+traffic shares that protocol's network. The boot log and `net status` say so
+and name the protocol.
+
 ### 8.3 The mesh transport
 
 Point-to-point packets reach a peer you can *hear*. The **mesh** reaches one you

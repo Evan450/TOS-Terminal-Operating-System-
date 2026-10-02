@@ -151,6 +151,10 @@ function X.net(a,ctx)
       (modemCount > 1 and (" (x"..modemCount..")") or "")..
       (i.hasTunnel and " + Tunnel" or ""))
     ctx.o("Encrypted: "..(i.encrypted and "Yes" or "No"))
+    ctx.o("Port: "..tostring(i.listenPort or "?"))
+    if i.portOwner then
+      ctx.o("  (registered to "..i.portOwner.." -- TOS traffic shares that network; TOS's own is 42)",0xFFFF00)
+    end
     local p=i.peers or {}
     local total=(p.unknown or 0)+(p.known or 0)+(p.trusted or 0)+(p.blocked or 0)
     ctx.o("Peers: "..total.." (trusted:".. (p.trusted or 0).." known:"..(p.known or 0).." blocked:"..(p.blocked or 0)..")")

@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**108 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**107 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 85 | Planned or under investigation. Most contributions belong here. |
+| Planned | 84 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -653,30 +653,6 @@ GENERATED API REFERENCE, AND PERMISSION ANNOTATIONS THAT CAN
     survey): one policy function makes the policy readable,
     annotation-vs-enforcement makes it checkable. Fuchas writes the
     annotations and never checks them; we would be the first to.
-```
-
-### Planned — THE RESERVED-PORT REGISTRY
-
-```text
-THE RESERVED-PORT REGISTRY: 42 IS FINE, AND UNDOCUMENTED. The
-    ecosystem keeps a list (GERT repo, now GlobalEmpire/OC-
-    Programs): 14 Ethernet-over-OC, 148 GUI service, 4096
-    MultICE/Minitel, 4378-4379 GERTi, 4662 short messages, 9100
-    network print service, 9900 Zorya BIOS LAN boot.
-      Our default (config.lua:54, net/init.lua:94) is 42, which is
-    unclaimed -- the default needs no change. The gap is the two
-    things around it:
-      * listenPort is operator-settable with NO advice. An operator
-        who sets 4096 puts TOS traffic onto a Minitel network:
-        our net rejects their frames cleanly, theirs may not.
-        net should refuse, or warn once, when the configured port
-        is a registered one, and NAME the protocol it belongs to.
-      * 42 should be registered and documented. One message to the
-        registry maintainer, one line in the manual -- it is how
-        the NEXT OS avoids colliding with us.
-      This is also the cheap, correct form of MINITEL: DECIDE,
-    DON'T DEFAULT (Cynosure survey): we stay bespoke and DOCUMENT
-    the port, so coexistence works without a bridge.
 ```
 
 ### Planned — NAME WHAT IS ON A DRIVE BEFORE ERASING IT
