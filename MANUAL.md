@@ -1363,6 +1363,14 @@ the point at which you are deciding to trust the repo — the fetch itself prove
 nothing. Under `pkg trust require on` (§7.5a) a fetched package must also be
 signed by a publisher you trust, or fetched with `--allow-unsigned`.
 
+A fetched package can be signed two ways: its own `package.sig`, as Optional
+Utilities does it, or a `programs.sig` the repo publishes beside its whole
+`programs.cfg`. For the second, `pkg fetch` downloads the signature and stages
+the index exactly as signed, so the check covers the bytes the publisher
+signed. A repo that answers "not found" (or "forbidden") for `programs.sig` is
+treated as unsigned. A fetch whose signature request gets no answer at all is
+refused, so a signed package is never recorded as unsigned — run it again.
+
 Downloads are bounded, because these are Minecraft computers: 128 KB per file,
 512 KB per package, 64 files per package, and a 128 KB index. A response that
 overruns is abandoned rather than discovered by running the machine out of

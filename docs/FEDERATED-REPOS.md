@@ -16,14 +16,14 @@ The signing machinery the design leans on is already in the tree: Ed25519 `packa
 
 ### Findings (verified 2026-09-27)
 
-These were bugs in `pkg` as it stood, found while scoping the design. Findings 1–4 and 7 are fixed by slice 1; 5 and 6 wait for slice 2.
+These were bugs in `pkg` as it stood, found while scoping the design. Findings 1–4 and 7 are fixed by slice 1; 6 was fixed on its own on 2026-10-02; 5 waits for slice 2.
 
 1. **A dependency on another disk never resolves.** `pkg.installByName`'s doc comment says it "resolves deps across all available sources"; `installWithDeps` is handed a single root and looks nowhere else. Probe: `app` on root `/x/a` requires `lib` on root `/x/b` — `pkg.findInRepos("lib")` finds `/x/b/lib`, and `pkg.installByName("app")` fails `resolve failed: unknown package: lib`.
 2. **`pkg upgrade` can change who publishes a package.** Probe: `libx 1.0.0` signed by a trusted key (`_sigState = trusted`) upgraded to a `9.9.9` signed by a stranger — accepted, now `unknown`; then to an unsigned `9.9.10` — accepted, now `unsigned`. No refusal and no prompt. `upgrade` picks its candidate with `findInRepos`, which is first-match by name.
 3. **`pkg upgrade` checks the signature only after deleting the old version.** It runs the hash, licence, conflict, validation, service and protected-path gates before `uninstall`, but not the signature gate, which only `install` runs. Probe: a trusted `libx 1.0.0`, upgraded to a `2.0.0` whose manifest was edited after signing — `upgrade FAILED after removing libx: … its signature does not verify` — and `libx` is no longer installed at all.
 4. **Version constraints are checked after the files are written, as a warning.** `resolveInstallOrder` skips an installed dependency whatever its version, and the only constraint check is `checkRequires` after install (`"Unmet constraints don't fail the install"`). `upgrade` never checks whether the new version breaks an installed package that depends on it.
 5. **`pkg fetch` never fetches dependencies.** `installRemote` fetches one package and installs it; its `requires` are left unmet.
-6. **An OPPM index signed as a whole loses its signature through `pkg fetch`.** `pkgremote.fetch` stages a *re-encoded* one-package `programs.cfg` and never downloads `programs.sig`. Probe: a `programs.cfg` + `programs.sig` pair signed by a trusted key installs as `unsigned`. TOS's own index format is not affected — Optional Utilities ships each package's `package.lua` and `package.sig` as files, and the same probe in that layout records `trusted`.
+6. **An OPPM index signed as a whole loses its signature through `pkg fetch`.** `pkgremote.fetch` stages a *re-encoded* one-package `programs.cfg` and never downloads `programs.sig`. Probe: a `programs.cfg` + `programs.sig` pair signed by a trusted key installs as `unsigned`. TOS's own index format is not affected — Optional Utilities ships each package's `package.lua` and `package.sig` as files, and the same probe in that layout records `trusted`. **Fixed 2026-10-02:** fetch stages the index bytes the signature covers together with the `.sig` (`test_pkgremote_signed_index.lua`).
 7. **An optional requirement that no source has blocked the install.** `resolveInstallOrder` ignored `optional = true` and failed `resolve failed: unknown package`. Found while writing slice 1's tests; reproduced on the code from before it.
 
 ## Decisions
@@ -144,7 +144,7 @@ Local sources only (the built-in repo roots, mounted media, `extraRoots`). No ne
 
 ### Slice 2 — remote
 
-`pkg fetch` resolves dependencies across configured repos; the manifest and per-dependency `repos` hints are used, under the floor; trust on first use; the operator's strictness knob; a known-repos store separate from the admin allowlist; fix finding 6 by staging the raw index and its `programs.sig`.
+`pkg fetch` resolves dependencies across configured repos; the manifest and per-dependency `repos` hints are used, under the floor; trust on first use; the operator's strictness knob; a known-repos store separate from the admin allowlist. (Finding 6, staging the raw index with its `programs.sig`, is already done.)
 
 ### Slice 3 — resolution
 

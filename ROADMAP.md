@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**101 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**100 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 78 | Planned or under investigation. Most contributions belong here. |
+| Planned | 77 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -100,17 +100,6 @@ OCELOT CHECK FOR SLICE 1: install a package whose library is on a
 ```text
 `pkg fetch` NEVER FETCHES DEPENDENCIES. installRemote fetches one
     package and installs it with its requires unmet. Slice 2.
-```
-
-### Planned — AN OPPM INDEX SIGNED AS A WHOLE ARRIVES UNSIGNED
-
-```text
-AN OPPM INDEX SIGNED AS A WHOLE ARRIVES UNSIGNED. pkgremote.fetch
-    stages a re-encoded one-package programs.cfg and never downloads
-    programs.sig, so a trusted index signature is recorded as
-    `unsigned`. Our own index is unaffected (each package ships its
-    package.lua + package.sig as files; the same probe records
-    `trusted`). Fix: stage the raw index bytes and the .sig. Slice 2.
 ```
 
 ### Planned — SLICE 2

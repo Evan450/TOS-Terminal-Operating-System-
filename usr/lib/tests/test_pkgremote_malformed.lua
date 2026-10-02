@@ -57,7 +57,8 @@ package.loaded["kernel.internet"] = {
   status = function() return { ok = true } end,
   parseUrl = function() return true end,
   hostOf = function() return "r.example" end,
-  get = function(url) if url:match("programs%.cfg$") then return INDEX end return nil, "404" end,
+  -- A miss answers as kernel.internet does: the status, in the error and in meta.
+  get = function(url) if url:match("programs%.cfg$") then return INDEX end return nil, "HTTP 404 Not Found", { status = 404, bytes = 0 } end,
   download = function(url, dest) local rel = url:match("https://r%.example/(.*)$"); local b = SERVED[rel]; if not b then return false, "404" end; F._f[dest] = b; return true, nil, { bytes = #b } end,
 }
 F._f["/etc/pkg-repos.cfg"] = serialize.encode({ { name = "r", url = "https://r.example" } })
