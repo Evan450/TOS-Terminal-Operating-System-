@@ -107,7 +107,8 @@ local function dataCardTier(p, overrides, addr)
     return 0, "present (unknown tier)", "unknown"
   end
   -- Fallback (datacard module unavailable): inline probe.
-  local function has(m) return type(p[m]) == "function" end
+  -- Presence, not type(): real component methods are callable tables.
+  local function has(m) return p[m] ~= nil end
   if has("generateKeyPair") or has("ecdsa") or has("ecdh") then
     return 3, DATA_TIER_NAMES[3], "detected"
   elseif has("sha256") or has("encrypt") then

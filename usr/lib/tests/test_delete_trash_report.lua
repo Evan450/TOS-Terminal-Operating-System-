@@ -101,7 +101,9 @@ end
 -- ── `rm` must not throw that reason away ──────────────────────────
 print()
 print("-- rm reports it --")
-local rmBody = coreSrc:match("C%.rm = function.-\n  end\n") or coreSrc
+-- rm is the per-path removeOne plus the C.rm loop that runs it for every
+-- path given (test_rm_targets.lua); the trash handling lives in removeOne.
+local rmBody = coreSrc:match("local function removeOne.-C%.rm = function.-\n  end\n") or coreSrc
 test("rm still captures the trash's reason", rmBody:find("local ok2, err2", 1, true) ~= nil)
 test("...and now PRINTS it", rmBody:find('o("Not trashed: "', 1, true) ~= nil)
 test("...and stops instead of hard-deleting behind the operator's back",

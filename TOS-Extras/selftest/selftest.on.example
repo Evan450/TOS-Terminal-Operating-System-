@@ -1,4 +1,8 @@
-# Presence of this file arms the self-test battery.
+# The options for a self-test round, carried on the test disk.
+#
+# This file does NOT arm the battery: the machine does, with its own
+# /etc/selftest.on (see README.md). A disk that could arm it would be a
+# floppy that runs code inside the kernel at the next boot.
 #
 # Options:
 #   shutdown=true   power the machine off when the run finishes (CI)

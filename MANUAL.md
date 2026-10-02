@@ -838,6 +838,15 @@ pkg install <names> --dry-run     print the plan, change nothing
 package on whatever disk is in the drive, and a provisioning script that
 stopped to ask would just hang.
 
+`--dry-run` prints the plan the install would make for each name: what goes
+in, dependencies first, and every contradiction the install would be refused
+for — a dependency at the wrong version, or one pinned to a different
+publisher. With `--force` as well, it says the install would go past them.
+
+An option `pkg install`, `pkg upgrade` or `pkg fetch` does not know is refused
+and nothing is done, with the list of options it does know. A misspelt
+`--dry-run` must not install anything.
+
 The panel's `From` field says which disk a package is on — the set spans two
 floppies, and everything mounted is listed together, so this is how you tell
 them apart. `Needs` is what will be installed alongside (automatically, marked
@@ -997,11 +1006,40 @@ Three optional fields describe relationships to other packages:
 ```
 
 `requires` is resolved and installed transitively — the picker marks them
-`[+]` and counts them so you see the real install set first. `recommends` is
+`[+]` and counts them so you see the real install set first. An entry may
+carry a version constraint (`"lib >=1.2"`, or `version = "^1.2"` / `"~1.2.3"`
+in the table form); a copy that meets it is preferred over one that does not,
+and the whole install is worked out before anything is written. If a
+constraint cannot be met — the installed copy is the wrong version, no copy
+anywhere is right, two packages in the set need incompatible versions, or the
+package going in would break one already installed — the install is refused,
+naming who needs what. `recommends` is
 a suggestion: the picker shows it, adds it only when the operator presses
 **R**, and shows the reverse view (`Wanted by`) on the recommended package, so
 a driver wanted by four add-ons makes its own case. A missing recommendation
 is never an error.
+
+A `requires` entry can say **whose** copy it means, by pinning the publisher's
+public key — the full 64 hex characters `pkg trust list` shows, not the short
+fingerprint:
+
+```lua
+  requires = {
+    { name = "libgui", version = "^3.0",
+      key = "1f576b3a7c556a6f6701c2b0bd03ed07f290447726342d490173ac6ae64bbb3c" },
+  },
+```
+
+A pinned dependency is only ever taken from a copy signed by that key. Copies
+signed by anyone else are passed over, so a disk cannot stand in for a library
+by having a directory with the right name, and the one that is installed is
+checked again against the files actually being copied. A pin narrows what is
+acceptable and never widens it: it does not make the key trusted, and every
+other check still applies. If the dependency is already installed from
+someone else, or two packages being installed pin different publishers, the
+install is refused before anything is written, and the refusal names who
+needs what. Dependencies are looked for on the package's own disk first, then
+on every other disk and repo directory TOS knows about.
 
 `conflicts` is checked **both ways** — an install is refused if the incoming
 package names an installed one *or* an installed one names the incoming, since
@@ -1020,18 +1058,34 @@ pkg upgrade <name> --dry-run  print the plan, change nothing
 ```
 
 An upgrade is not "install over the top". TOS verifies the candidate first
-(hashes, licence, conflicts) so a failed check never leaves you with the old
-version already deleted; remembers whether the package was enabled and whether
-its service was set to start at boot; removes the old version's files
+(hashes, signature, licence, conflicts) so a failed check never leaves you with
+the old version already deleted; remembers whether the package was enabled and
+whether its service was set to start at boot; removes the old version's files
 **including any the new version no longer ships** — an install-over would
 strand those forever, owned by nothing; installs the new one; then puts your
-enable and boot-start choices back.
+enable and boot-start choices back. The hash and signature checks take the
+same `--allow-unverified` and `--allow-unsigned` overrides an install does.
 
 A package something else depends on can still be upgraded (the
 reverse-dependency guard that blocks *uninstall* would otherwise freeze it
-permanently). A **downgrade** — the disk in the drive being older than what's
-installed — needs `--force`, because that is far more often a mistake than an
-intention.
+permanently) — but not to a version that package says it cannot use. An
+upgrade is refused, with the old version left in place, if the new version
+would break an installed package's `requires` (`app` needs `lib <2.0` and
+`lib` would go to 2.1), or if the new version needs something that is not
+installed or is installed at the wrong version. Only problems the upgrade
+would *introduce* count: one the installed version already had does not
+hold the upgrade back. `--force` goes past it.
+
+A **downgrade** — the disk in the drive being older than what's installed —
+needs `--force`, because that is far more often a mistake than an intention.
+
+**An upgrade keeps its publisher.** A package is its name *and* the key that
+signs it, so a package installed signed by a key only upgrades to a copy
+signed by that same key. A candidate signed by someone else, or not signed at
+all, is refused and the installed version is left alone — whatever disk it is
+on, and however much newer it claims to be. An unsigned package may upgrade to
+a signed one. If a publisher really has changed keys, check the new
+fingerprint with them over a channel that is not the disk, then use `--force`.
 
 Services keep their enabled/disabled state across an upgrade but keep running
 the old code until restarted: `service stop <svc>` then `service start <svc>`.
@@ -1209,6 +1263,12 @@ when you want the stricter posture. The published Optional Utilities pack is
 signed, and its README carries the key to trust; a disk you built yourself is
 signed only if you signed it.
 
+With it on, a package is refused unless it is signed by a key you trust —
+unsigned, or signed by a key you have not added, alike, since anyone can make
+a key. To make one deliberate exception, add `--allow-unsigned` to that
+`pkg install`, `pkg fetch` or `pkg upgrade`, as the refusal says. It covers
+that one command, and never a signature that does not verify.
+
 **Signing your own packages.** The private key is derived from a passphrase
 and a publisher label, so there is no key file to lose:
 
@@ -1275,7 +1335,8 @@ successful or not.
 executable code from a stranger. `pkg fetch` refuses it until you say
 `--allow-unverified`, exactly as a hashless floppy package does. That prompt is
 the point at which you are deciding to trust the repo — the fetch itself proves
-nothing.
+nothing. Under `pkg trust require on` (§7.5a) a fetched package must also be
+signed by a publisher you trust, or fetched with `--allow-unsigned`.
 
 Downloads are bounded, because these are Minecraft computers: 128 KB per file,
 512 KB per package, 64 files per package, and a 128 KB index. A response that
@@ -2349,8 +2410,9 @@ Read/set redstone signals on the sides of the machine. *See also:* `inventory`,
 Drive an attached robot (move, turn, interact). *See also:* `inventory`,
 `redstone`.
 
-**rm** — `rm [-r] [--hard] <path>`
-Remove a file, or a directory with `-r`. By default the target is moved to your
+**rm** — `rm [-r] [--hard] <path...>`
+Remove files, or directories with `-r`; each path is handled on its own, so one
+that is refused does not stop the rest. By default the target is moved to your
 per-user **trash** (recover with `trash restore`, manage with `trash`); pass `--hard`
 to unlink immediately. System paths (`/tos`, `/etc`, `/var`, `/usr`) always skip
 the trash. Both the panels and CLI shells behave this way. *Errors:* `no such
@@ -2542,7 +2604,11 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   `kernel.*`. Every module a program requires is its own view, so it cannot rewrite
   one that another program or the shell is using; an installed library runs inside
   the sandbox that required it, with that caller's authority; `net` is a facade
-  (send, listen, find peers) that never reaches the trust manager. The `legacy`
+  (send, listen, find peers) that never reaches the trust manager, and it speaks
+  and hears only discovery, chat and the generic replies, never another
+  subsystem's traffic (netfs, remote exec, trust, pairing, mesh, cluster). A
+  program listens to a copy of each packet and can remove only its own
+  listeners. The `legacy`
   cap (full os/io) is opt-in by hand-written caller code only and is *never*
   grantable from a package manifest.
 - **securefs** mediates every user-level FS op; raw component filesystem proxies

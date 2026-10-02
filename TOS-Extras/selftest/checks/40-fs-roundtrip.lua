@@ -39,7 +39,9 @@ return function(t)
     local atomic = dir .. "/atomic.txt"
     t.ok("writeFileAtomic", (fs.writeFileAtomic(atomic, "x")) and true or false)
     t.eq("atomic content", "x", fs.readFile(atomic))
-    t.ok("no .tmp left behind", not fs.exists(atomic .. ".tmp"))
+    -- ".tos-tmp" is kernel/fs.lua's ATOMIC_SUFFIX. This used to look for
+    -- ".tmp", a name nothing writes, so it could not fail.
+    t.ok("no .tos-tmp left behind", not fs.exists(atomic .. ".tos-tmp"))
     fs.remove(atomic)
   else
     t.skip("writeFileAtomic", "not present in this build")

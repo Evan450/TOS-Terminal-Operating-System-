@@ -21,6 +21,17 @@ local bootcfg = require("kernel.bootcfg")
 -- (i.e. "follow the profile / let detection decide").
 local AUTO = "auto"
 
+-- The ring token that means "no override" (AUTO, or "home" for ui) REMOVES
+-- the key; any other token is stored. A function, not the one-liner
+-- `(v == AUTO) and nil or v` every setter here used to be: `x and nil or y`
+-- is always y, so choosing AUTO wrote the string "auto" into /etc/boot.cfg,
+-- where only load-time normalisation stopped it meaning anything.
+-- (test_andor_lint.lua, test_bootsettings.lua)
+local function unlessDefault(v, default)
+  if v == (default or AUTO) then return nil end
+  return v
+end
+
 -- ============================================================
 -- Field model (pure)
 -- ============================================================
@@ -63,12 +74,12 @@ local function buildFields(ramLabel)
     { key = "verbosity", label = "Verbosity (what it says)", group = "basic",
       values = { AUTO, "silent", "splash", "text", "verbose" },
       get = function(c) return c.verbosity or AUTO end,
-      set = function(c, v) c.verbosity = (v == AUTO) and nil or v end,
+      set = function(c, v) c.verbosity = unlessDefault(v) end,
       show = function(v) return v end },
     { key = "ui", label = "Interface (all seats)", group = "basic",
       values = { "home", "split", "cli" },
       get = function(c) return c.ui or "home" end,
-      set = function(c, v) c.ui = (v == "home") and nil or v end,
+      set = function(c, v) c.ui = unlessDefault(v, "home") end,
       show = function(v)
         if v == "cli" then return "CLI shell" end
         if v == "split" then return "panels (split: Shell + Desktop)" end
@@ -92,12 +103,12 @@ local function buildFields(ramLabel)
     { key = "cpuTier", label = "CPU tier (override)", group = "advanced",
       values = { AUTO, 1, 2, 3 },
       get = function(c) return c.cpuTier or AUTO end,
-      set = function(c, v) c.cpuTier = (v == AUTO) and nil or v end,
+      set = function(c, v) c.cpuTier = unlessDefault(v) end,
       show = function(v) return (v == AUTO) and "auto (detect)" or ("Tier " .. v) end },
     { key = "dataTier", label = "Data Card tier (override)", group = "advanced",
       values = { AUTO, 1, 2, 3 },
       get = function(c) return c.dataTier or AUTO end,
-      set = function(c, v) c.dataTier = (v == AUTO) and nil or v end,
+      set = function(c, v) c.dataTier = unlessDefault(v) end,
       show = function(v) return (v == AUTO) and "auto (detect)" or ("Tier " .. v) end },
     -- The label names the memory ACTUALLY installed ("RAM for extras
     -- [2x T3.5]") rather than leaving the operator to guess what the old
@@ -115,7 +126,7 @@ local function buildFields(ramLabel)
         if c.ramGate == nil then return AUTO end
         return c.ramGate
       end,
-      set = function(c, v) c.ramGate = (v == AUTO) and nil or v end,
+      set = function(c, v) c.ramGate = unlessDefault(v) end,
       show = function(v)
         if v == AUTO then return "auto (measure)" end
         return v and "always load" or "never load"
@@ -134,7 +145,7 @@ local function buildFields(ramLabel)
       end,
       set = function(c, v)
         c.advanced = c.advanced or {}
-        c.advanced[feat] = (v == AUTO) and nil or v
+        c.advanced[feat] = unlessDefault(v)
       end,
       show = function(v)
         if v == AUTO then return "auto" end

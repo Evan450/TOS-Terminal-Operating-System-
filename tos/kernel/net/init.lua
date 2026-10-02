@@ -1103,16 +1103,45 @@ end
 --- event.pull which dispatches timers + listeners on each tick;
 --- without an event module (early boot, emergency shell) we fall back
 --- to the raw OC primitive.
+--!
+--! "From a process" is asked of the SCHEDULER, not coroutine.isyieldable().
+--! On real OpenComputers isyieldable() is true in kernel context too (the
+--! kernel runs inside machine.lua's coroutine; measured by the boot battery
+--! 2026-09-25), so the event.pull branch was unreachable on hardware. A
+--! kernel-context caller -- verifyPeer inside the netfs, rshd and transfer
+--! request handlers, which run as modem_message listeners -- yielded to the
+--! host instead: the peer's reply came back as the yield's return value,
+--! was dropped, and nothing dispatched it, so the wait could only time out,
+--! eating every other signal on the machine while it did.
+--! (test_inprocess_waitfor.lua, selftest 96-waitfor)
+local function inProcess()
+  local P = package.loaded["kernel.process"]
+  if P and type(P.inProcess) == "function" then return P.inProcess() end
+  -- No scheduler loaded (early boot, off-box): the old question.
+  return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
+end
+
 function net.waitFor(predicate, timeout)
   local deadline = computer.uptime() + (timeout or 10)
   while not predicate() do
     if computer.uptime() >= deadline then return false end
-    if coroutine.isyieldable and coroutine.isyieldable() then
+    if inProcess() then
       coroutine.yield()
-    elseif event and event.pull then
-      event.pull(0.5)
     else
-      computer.pullSignal(0.5)
+      --! The event module is looked up, not only taken from net.init.
+      --! `event` is assigned in net.init, and a Safe Mode boot skips the
+      --! network stage -- but kernel.net stays require-able (the sandbox's
+      --! `net` cap, chatpair, the mail and cluster libs), so waitFor ran
+      --! with `event` nil and took the raw pull: each signal popped and
+      --! dispatched to nobody, the predicate never true, every other
+      --! listener's signals gone for the whole wait.
+      --! (test_waitfor_without_net_init.lua, selftest 96-waitfor)
+      local E = (event and event.pull) and event or package.loaded["kernel.event"]
+      if type(E) == "table" and type(E.pull) == "function" then
+        E.pull(0.5)
+      else
+        computer.pullSignal(0.5)
+      end
     end
   end
   return true
@@ -1419,15 +1448,10 @@ function net.scan(timeout)
     results[remoteAddr] = discoveredPeers[remoteAddr]
   end)
   net.discover()
-  -- Wait for responses (cooperative — yields)
-  local deadline = computer.uptime() + timeout
-  while computer.uptime() < deadline do
-    if coroutine.isyieldable and coroutine.isyieldable() then
-      coroutine.yield()
-    else
-      computer.pullSignal(0.5)
-    end
-  end
+  -- Wait for responses: yield from a process, pump listeners from the
+  -- kernel. waitFor makes that choice correctly (see its note); this loop
+  -- used isyieldable() and, outside it, a raw pull that dispatched no PONG.
+  net.waitFor(function() return false end, timeout)
   net.off(protocol.TYPE.PONG, listenId)
   local list = {}
   for _, p in pairs(results) do list[#list + 1] = p end

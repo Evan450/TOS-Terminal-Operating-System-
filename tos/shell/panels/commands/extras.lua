@@ -651,8 +651,14 @@ return function(C, S, deps)
     if not args[2] then
       -- List methods
       local methods = {}
+      -- A real component method is a CALLABLE TABLE (machine.lua's
+      -- componentCallback), not a function; type(v) == "function" listed
+      -- nothing on hardware. Plain-table fields (e.g. `fields`) have no __call.
       for k, v in pairs(proxy) do
-        if type(v) == "function" then methods[#methods+1] = k end
+        local mt = type(v) == "table" and getmetatable(v)
+        if type(v) == "function" or (type(mt) == "table" and mt.__call) then
+          methods[#methods+1] = k
+        end
       end
       table.sort(methods)
       for _, m in ipairs(methods) do o("  " .. m .. "()", T.fg) end

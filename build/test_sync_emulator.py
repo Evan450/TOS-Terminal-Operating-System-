@@ -81,9 +81,8 @@ class TestClassify:
         assert found_floppy == floppy
 
     def test_finds_the_floppy_by_numbered_check_files_alone(self, workspace):
-        # A floppy that has the checks but has not been armed yet (no
-        # selftest.on) must still be recognised, or the script cannot
-        # report "armed: false" to tell the operator to arm it.
+        # A floppy that has the checks but no selftest.on (no options) must
+        # still be recognised, or the script cannot arm the machine for it.
         floppy = workspace / "a5b21b10"
         _touch(floppy / "10-boot.lua")
         _touch(floppy / "20-display.lua")
@@ -244,6 +243,45 @@ class TestMirror:
 
         assert log == []
         assert not dst.exists()
+
+
+# ============================================================
+# arm_machine() — the MACHINE arms the battery, not the floppy
+# ============================================================
+# kernel/selftest.lua only runs when the machine's own /etc/selftest.on
+# exists: a floppy that could arm it would run code inside the kernel at the
+# next boot on any machine it was put in. So a round set up by this script
+# needs the marker on the BOOT disk, or the floppy is silently ignored.
+
+class TestArmMachine:
+    def test_creates_an_empty_machine_marker(self, workspace):
+        boot = workspace / "b174c1d3"
+        (boot / "tos").mkdir(parents=True)
+
+        already, created = sync_emulator.arm_machine(boot, dry=False)
+
+        assert (already, created) == (False, True)
+        # Empty, so the floppy's own options (shutdown=true) stay in force.
+        assert (boot / "etc" / "selftest.on").read_text() == ""
+
+    def test_never_rewrites_an_existing_marker(self, workspace):
+        # The operator's own options live there; arming is not overwriting.
+        boot = workspace / "b174c1d3"
+        _touch(boot / "etc" / "selftest.on", "only=20-\n")
+
+        already, created = sync_emulator.arm_machine(boot, dry=False)
+
+        assert (already, created) == (True, False)
+        assert (boot / "etc" / "selftest.on").read_text() == "only=20-\n"
+
+    def test_dry_run_creates_nothing(self, workspace):
+        boot = workspace / "b174c1d3"
+        (boot / "tos").mkdir(parents=True)
+
+        already, created = sync_emulator.arm_machine(boot, dry=True)
+
+        assert (already, created) == (False, True)
+        assert not (boot / "etc" / "selftest.on").exists()
 
 
 # ============================================================

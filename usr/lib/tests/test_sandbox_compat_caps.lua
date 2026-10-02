@@ -141,6 +141,53 @@ do
   test("served with the internet cap", env2.got == "fetched")
 end
 
+-- ── #SEC: the FILE layer is the compat.io capability ──────────────
+-- compat.io, compat.filesystem and compat.shell_api read and write through
+-- securefs as the program's user -- what the compat.io cap grants as
+-- env.io / env.filesystem -- and the free "compat." prefix handed them to a
+-- sandbox that declared NOTHING: it could read and rewrite its user's files
+-- (root's, when root ran it), and shell.execute gave a child fs.read +
+-- compat.io when it could not see the parent's caps.
+print("-- compat.io / compat.filesystem / compat.shell_api --")
+do
+  local touched = {}
+  package.loaded["compat.io"] = { open = function(p, m)
+    touched[#touched + 1] = "io.open " .. tostring(p) .. " " .. tostring(m); return {} end }
+  package.loaded["compat.filesystem"] = { remove = function(p)
+    touched[#touched + 1] = "fs.remove " .. tostring(p); return true end }
+  package.loaded["compat.shell_api"] = { execute = function(p)
+    touched[#touched + 1] = "shell.execute " .. tostring(p); return true end }
+
+  local env = run({}, [[
+    local okIo, io2 = pcall(require, "compat.io")
+    local okFs, fs2 = pcall(require, "compat.filesystem")
+    local okSh, sh2 = pcall(require, "compat.shell_api")
+    gotIo, gotFs, gotSh = okIo, okFs, okSh
+    if okIo then io2.open("/etc/users.dat", "w") end
+    if okFs then fs2.remove("/home/alice/notes") end
+    if okSh then sh2.execute("/home/alice/x.lua") end
+    whyIo = not okIo and tostring(io2) or nil
+  ]])
+  test("with no caps, compat.io is refused", env.gotIo == false)
+  test("...and so is compat.filesystem", env.gotFs == false)
+  test("...and compat.shell_api", env.gotSh == false)
+  test("...naming the capability it needs",
+    type(env.whyIo) == "string" and env.whyIo:find("compat.io capability", 1, true) ~= nil)
+  test("...and nothing was opened, removed or run", #touched == 0)
+
+  local env2 = run({ ["fs.read"] = true, ["fs.write"] = true }, [[
+    local ok = pcall(require, "compat.io"); got = ok ]])
+  test("fs.read + fs.write alone do not unlock the OpenOS io layer", env2.got == false)
+
+  local env3, ok3, err3 = run({ ["compat.io"] = true }, [[
+    require("compat.io").open("/tmp/x", "r")
+    require("compat.filesystem").remove("/tmp/x")
+    require("compat.shell_api").execute("/tmp/x.lua") ]])
+  test("with compat.io all three are served (" .. tostring(err3) .. ")", ok3 and #touched == 3)
+  local _, ok4 = run({ legacy = true }, [[ require("compat.io") ]])
+  test("legacy (which already has the real io) is served too", ok4)
+end
+
 print("-- shell.ext --")
 do
   local env = run({}, [[ local ok = pcall(require, "shell.ext"); got = ok ]])

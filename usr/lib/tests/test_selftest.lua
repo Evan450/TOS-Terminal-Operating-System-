@@ -272,8 +272,15 @@ do
   fs._virtual["/mnt"] = true
   fs._mounts = { { mountPoint = "/mnt/disk_a5b2" }, { mountPoint = "/" } }
 
-  test("armed by a marker on a virtual mount", selftest.enabled(fs))
-  eq("...and names that marker", "/mnt/disk_a5b2/selftest.on",
+  -- The disk's marker is SEEN on a virtual mount (the regression this
+  -- section was written for) -- but seeing it arms nothing: see the #SEC
+  -- section below.
+  eq("the disk's marker is seen through the mount table",
+    "/mnt/disk_a5b2/selftest.on", (selftest.diskMarkers and selftest.diskMarkers(fs) or {})[1])
+  test("...and does not arm the machine by itself", not selftest.enabled(fs))
+  fs._files["/etc/selftest.on"] = ""
+  test("an armed machine runs it", selftest.enabled(fs))
+  eq("...and names the machine's marker", "/etc/selftest.on",
     selftest.activeMarker(fs))
 
   local found = selftest.discover(fs)
@@ -291,7 +298,9 @@ do
   })
   fs._virtual["/mnt"] = true
   fs._mounts = { { mountPoint = "/mnt/d" } }
-  test("armed by a marker inside selftest/", selftest.enabled(fs))
+  test("a marker inside selftest/ does not arm by itself", not selftest.enabled(fs))
+  fs._files["/etc/selftest.on"] = ""
+  test("an armed machine takes it", selftest.enabled(fs))
   eq("finds the check in the subfolder", 1, #selftest.discover(fs))
 end
 
@@ -326,6 +335,122 @@ do
   test("...and the root filesystem is never scanned",
     blob:find("install.lua", 1, true) == nil)
   eq("only the declared test disk's check is found", 1, #found)
+end
+
+-- ── #SEC: a disk never arms the battery ──────────────────────────
+-- Checks run INSIDE the kernel (no environment, on purpose), and every
+-- non-boot disk is mounted at boot. When a selftest.on on a disk armed the
+-- battery, a floppy carrying one plus any .lua was kernel code execution
+-- at the next boot: no login, nothing typed. Arming is the machine's call
+-- (/etc/selftest.on); the disk only chooses what runs.
+--
+-- The kernel does not ask selftest.enabled -- it gates INLINE, so that a
+-- production boot never loads this module -- so both copies of the rule
+-- are driven here: the module's, and the real block cut out of
+-- tos/kernel/init.lua and executed against the same disks.
+print()
+print("-- #SEC: a disk never arms the battery --")
+do
+  local function hostile()
+    local fs = ramFS({
+      ["/mnt/floppy/selftest.on"] = "shutdown=true",
+      ["/mnt/floppy/pwn.lua"]     = "return function(t) _G.PWNED = true end",
+    })
+    fs._virtual["/mnt"] = true
+    fs._mounts = { { mountPoint = "/" }, { mountPoint = "/mnt/floppy" } }
+    return fs
+  end
+
+  local fs = hostile()
+  test("a floppy with selftest.on does NOT arm the machine", not selftest.enabled(fs))
+  test("...activeMarker names nothing", selftest.activeMarker(fs) == nil)
+  eq("...though the disk marker is still visible (for the boot hint)",
+    1, #(selftest.diskMarkers and selftest.diskMarkers(fs) or {}))
+
+  -- The kernel's own gate, from the real file.
+  local initSrc
+  for _, p in ipairs({ base .. "../../../tos/kernel/init.lua", "tos/kernel/init.lua",
+                       "TOS-Dev/tos/kernel/init.lua" }) do
+    local h = io.open(p, "rb")
+    if h then initSrc = h:read("*a"); h:close(); break end
+  end
+  test("tos/kernel/init.lua readable", initSrc ~= nil)
+  -- Anchored on the section banner, then the block's own pcall(function()
+  -- and the first `if okS and st` after it -- text every version of the
+  -- gate has, so this drives the pre-fix block too.
+  local banner = initSrc and initSrc:find("In-emulator self-test battery", 1, true)
+  local HEAD = "= pcall(function()"
+  local s = banner and initSrc:find(HEAD, banner, true)
+  local e = s and initSrc:find("if okS and st", s, true)
+  test("the kernel's selftest gate block is found", s ~= nil and e ~= nil)
+  local gate
+  if s and e then
+    -- Everything between `pcall(function()` and its closing `end)`.
+    local body = initSrc:sub(s + #HEAD, e - 1):gsub("end%)%s*$", "")
+    local chunk, cerr = load("return function(fsMod) _G._TOS = { fs = fsMod }\n"
+      .. "return (function() " .. body .. " end)() end",
+      "=init.lua:selftest-gate", "t",
+      { _G = {}, pcall = pcall, type = type, ipairs = ipairs, tostring = tostring,
+        require = function(name) return { loaded = name } end })
+    test("...and compiles on its own" .. (cerr and (" (" .. cerr .. ")") or ""),
+      chunk ~= nil)
+    gate = chunk and chunk()
+  end
+  if gate then
+    local mod, where = gate(hostile())
+    test("kernel gate: a floppy alone does NOT load the battery", mod == false)
+    eq("...and names the ignored disk for the boot hint", "/mnt/floppy", where)
+
+    local armed = hostile()
+    armed._files["/etc/selftest.on"] = ""
+    local mod2 = gate(armed)
+    test("kernel gate: /etc/selftest.on loads the battery",
+      type(mod2) == "table" and mod2.loaded == "kernel.selftest")
+    test("...and the module agrees", selftest.enabled(armed))
+
+    local none = gate(ramFS({}))
+    test("kernel gate: nothing present, nothing loaded", none == nil)
+  end
+
+  -- Options still ride in on the disk once the machine is armed: CI puts
+  -- shutdown=true on the test disk and an EMPTY /etc/selftest.on on the box.
+  local armed = hostile()
+  armed._files["/etc/selftest.on"] = ""
+  test("an empty machine marker keeps the disk's shutdown=true",
+    selftest.readMarker(armed).shutdown == true)
+  armed._files["/etc/selftest.on"] = "shutdown=false"
+  test("...and the machine's marker can override it",
+    selftest.readMarker(armed).shutdown == false)
+
+  -- Arming is granting kernel authority to whatever sits on a test disk,
+  -- and an ADMIN can write a mounted disk -- so only ROOT may arm, or the
+  -- battery is an ADMIN -> kernel path. The real ACL, through securefs.
+  package.path = "tos/?.lua;" .. base .. "../../../tos/?.lua;" .. package.path
+  package.loaded["computer"] = package.loaded["computer"]
+    or { uptime = function() return 0 end, freeMemory = function() return 1e6 end }
+  package.loaded["component"] = package.loaded["component"]
+    or { list = function() return function() end end, proxy = function() end }
+  package.loaded["kernel.process"] = package.loaded["kernel.process"]
+    or { currentSession = function() return nil end, yieldCooperative = function() end }
+  local kfs = require("kernel.fs")
+  local users = require("kernel.users")
+  users.init({ fs = { normalize = kfs.normalize, exists = function() return false end,
+    readFile = function() return nil end, writeFile = function() return true end,
+    makeDirectory = function() return true end },
+    crypto = { init = function() end, hasHardware = function() return false end,
+      salt = function(n) return string.rep("s", n or 16) end,
+      hashPassword = function(pw, s) return "h:" .. pw .. s end } })
+  local T = users.TIER
+  local admin = { user = "adam", tier = T.ADMIN, home = "/home/adam" }
+  local root  = { user = "root", tier = T.ROOT,  home = "/root" }
+  test("an ADMIN may not arm the battery",
+    not users.canAccessAs(admin, "/etc/selftest.on", "w"))
+  test("...nor through a spelling the disk folds",
+    not users.canAccessAs(admin, "/ETC/SelfTest.on", "w"))
+  test("...nor through its atomic-save temp",
+    not users.canAccessAs(admin, "/etc/selftest.on.tos-tmp", "w"))
+  test("ROOT may", users.canAccessAs(root, "/etc/selftest.on", "w") == true)
+  test("anyone may still READ it", users.canAccessAs(admin, "/etc/selftest.on", "r") == true)
 end
 
 -- ── Loading must not depend on loadfile() ────────────────────
@@ -401,6 +526,24 @@ do
   local st2 = selftest.run({ fs = fs2, computer = comp,
                              cfg = { screen = false }, files = { probe } })
   eq("...and sees it off when it is off", 1, st2.pass)
+end
+
+-- ── t.note reaches the report ──────────────────────────────────
+-- Only failure and skip NAMES were written out, so an answer a check
+-- tucked into a passing assertion's name never reached the log: the
+-- first real round's reading of coroutine.isyieldable() was lost that
+-- way (92-term, 2026-09-25).
+print()
+print("-- t.note --")
+do
+  local probe = "/d/note.lua"
+  local fs = ramFS({ [probe] =
+    "return function(t) t.note('isyieldable here: true'); t.ok('a', true) end" })
+  local st = selftest.run({ fs = fs, computer = comp, cfg = {}, files = { probe } })
+  local log = fs.readFile(selftest.RESULTS) or ""
+  test("a note is written to the report", log:find("  i isyieldable here: true", 1, true) ~= nil)
+  eq("...and counts as nothing", 1, st.n)
+  eq("...not as a pass", 1, st.pass)
 end
 
 -- ── shutdown=true goes through the REAL shutdown path ──────────────

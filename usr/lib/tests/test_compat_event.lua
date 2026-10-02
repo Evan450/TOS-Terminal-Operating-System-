@@ -51,7 +51,12 @@ package.loaded["computer"] = { uptime = function() return 0 end,
 local kernelLog = {}
 local nextId = 0
 local live = {}          -- id -> { signal, callback }
+-- The push rule is the REAL one: compat.event refuses whatever
+-- kernel.event.reservedSignal reserves, and a stand-in rule would only
+-- test the stand-in.
+local realEvent = dofile(assert(package.searchpath("kernel.event", package.path)))
 package.loaded["kernel.event"] = {
+  reservedSignal = realEvent.reservedSignal,
   on = function(signal, callback, source)
     nextId = nextId + 1
     live[nextId] = { signal = signal, callback = callback }

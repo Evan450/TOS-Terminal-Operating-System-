@@ -307,9 +307,15 @@ end
 --
 -- The CALLER is responsible for vetting destPath — this module does not
 -- know which paths the caller is allowed to write.
+--! #SEC — opts.fs, when given, is the filesystem EVERY write goes through
+--! (the .part, the rename, the fallback copy). The sandbox passes the
+--! program's session-bound securefs, so a download lands only where that
+--! program could write anyway. Kernel callers vet their own paths
+--! (pkgremote's staging tree) and keep the raw fs. (test_sandbox_internet_download.lua)
 -- Returns ok, err, meta.
 function internet.download(url, destPath, opts)
-  local fs = (_G._TOS and _G._TOS.fs) or require("kernel.fs")
+  local fs = (type(opts) == "table" and type(opts.fs) == "table" and opts.fs)
+    or (_G._TOS and _G._TOS.fs) or require("kernel.fs")
   if type(destPath) ~= "string" or destPath == "" then
     return false, "no destination path"
   end

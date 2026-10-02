@@ -198,12 +198,14 @@ def discover() -> list[tuple[Path, Path]]:
 
 
 def display_path(test: Path, cwd: Path) -> str:
-    try:
-        rel = test.relative_to(cwd)
-    except ValueError:
-        rel = test
-    prefix = "" if cwd == DEV_DIR else "../TOS-Extras/"
-    return prefix + rel.as_posix()
+    # Where the file really is, relative to TOS-Dev. The prefix used to be
+    # hard-coded "../TOS-Extras/", which is right for the monorepo's SIBLING
+    # layout and wrong for the published dev branch, where TOS-Extras is
+    # nested inside the repo: every add-on test was shown at a path outside
+    # the checkout. relpath gives "../TOS-Extras/..." and "TOS-Extras/..."
+    # respectively, from the same line. (cwd is unused now, kept so callers
+    # and -k filtering are unchanged.)
+    return Path(os.path.relpath(test, DEV_DIR)).as_posix()
 
 
 def classify(out: str, rc: int) -> str:

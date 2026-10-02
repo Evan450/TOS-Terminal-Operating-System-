@@ -196,7 +196,11 @@ function keychain.get(name, session)
   if not session then return nil, "no session" end
   local rec, err = requireUnlocked(session)
   if not rec then return nil, err end
-  return rec.slots[name], rec.slots[name] and nil or "no such slot"
+  -- Not `v, v and nil or "no such slot"`: that is always the message, so a
+  -- slot that EXISTS came back as (passphrase, "no such slot").
+  local v = rec.slots[name]
+  if v == nil then return nil, "no such slot" end
+  return v
 end
 
 --- Remove a slot.

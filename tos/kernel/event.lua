@@ -351,6 +351,38 @@ function event.pullFiltered(filter, timeout)
   end
 end
 
+--! #SEC — signals only the machine or the kernel may raise. User code
+--! reaches the queue two ways -- the sandbox's computer.pushSignal (the
+--! `component` cap) and compat.event.push (no cap at all: `compat.` is a free
+--! require prefix) -- and each kept its own denylist. Both missed signals
+--! that trusted code acts on, and proc.tick hands a non-input signal to
+--! EVERY process, so one push reached every seat:
+--!   tos_interrupt / tos_monitor / tos_focus  wiped each shell's command
+--!       line, opened the Monitor, yanked the program tab -- on all seats
+--!   component_removed <mounted fs addr>       every admin/root shell
+--!       unmounted that disk (fs.mounts() shows any program the address)
+--!   component_added <addr> "eeprom"           answered root's `flash` wait
+--!   interrupted                               `write`, PaneUI, the RBMK
+--!       panel and the CLI prompt all take it as "quit"
+--!   screen_resized                            relayout on every seat
+--! One rule, in one place, used by both routes: the whole `tos_` namespace
+--! (the kernel's; a control signal added later is covered already), plus
+--! everything OpenComputers itself generates for hardware -- input, the
+--! modem, component hot-plug, screen size, OpenOS's interrupt. Custom
+--! signals a program invents still push. (test_sandbox_push.lua)
+local MACHINE_SIGNALS = {
+  key_down = true, key_up = true, clipboard = true,
+  touch = true, drag = true, drop = true, scroll = true, walk = true,
+  modem_message = true,
+  component_added = true, component_removed = true,
+  component_available = true, component_unavailable = true,
+  screen_resized = true, interrupted = true,
+}
+function event.reservedSignal(name)
+  if type(name) ~= "string" then return false end
+  return MACHINE_SIGNALS[name] == true or name:sub(1, 4) == "tos_"
+end
+
 --- Push a custom signal into the OC event queue (wraps computer.pushSignal)
 -- Used by the shell to emit tos_logout, tos_shutdown, etc.
 function event.push(...)

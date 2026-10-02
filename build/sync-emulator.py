@@ -59,6 +59,10 @@ COPY_DIRS = ["usr/bin", "usr/man", "usr/lang", "etc/rc.d"]
 # Root files TOS-Release owns.
 MIRROR_FILES = ["init.lua", "bios.lua", "install.lua", "LICENSE.txt"]
 
+# What ARMS the battery: a marker on the machine's own disk. A selftest.on on
+# the floppy only carries the round's options (shutdown=, only=, screen=).
+MACHINE_MARKER = Path("etc") / "selftest.on"
+
 
 def find_workspace(explicit: str | None) -> Path | None:
     if explicit:
@@ -97,6 +101,27 @@ def classify(workspace: Path) -> tuple[Path | None, Path | None]:
     return boot, floppy
 
 
+def arm_machine(boot: Path, dry: bool) -> tuple[bool, bool]:
+    """Make sure the emulated machine is armed for the battery.
+
+    Only the machine arms it (kernel/selftest.lua's #SEC note): a floppy that
+    could arm it would run its .lua files inside the kernel at boot on any
+    machine it was put in. This is the operator's own emulator and running
+    this script is the request for a round, so it arms it -- with an EMPTY
+    marker, so the floppy's options (shutdown=true) stay in force. An existing
+    marker is never rewritten: it may carry the operator's own options.
+
+    Returns (already_armed, created).
+    """
+    marker = boot / MACHINE_MARKER
+    if marker.is_file():
+        return True, False
+    if not dry:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("")
+    return False, True
+
+
 def mirror(src: Path, dst: Path, dry: bool, log: list[str], prune: bool = True) -> None:
     """Copy src over dst. With prune, also delete what src no longer has."""
     if not src.exists():
@@ -132,6 +157,9 @@ def main() -> int:
                     help="truncate /var/selftest.log first, so the next report "
                          "cannot be confused with the last one")
     ap.add_argument("--dry-run", action="store_true", help="say what would change")
+    ap.add_argument("--no-arm", action="store_true",
+                    help="do not create etc/selftest.on on the boot disk; without "
+                         "it the machine ignores the floppy")
     args = ap.parse_args()
 
     if not RELEASE.is_dir():
@@ -181,9 +209,9 @@ def main() -> int:
         print("boot disk: already current")
 
     if floppy and CHECKS.is_dir():
-        # selftest.on is the ARMING marker and lives only on the floppy --
-        # mirroring the checks directory over it would delete it and silently
-        # disarm the battery, which would look exactly like a clean run.
+        # The floppy's selftest.on carries the round's OPTIONS -- mirroring
+        # the checks directory over it would delete it and silently drop
+        # shutdown=true, which would look exactly like a clean run.
         fl: list[str] = []
         for p in sorted(CHECKS.glob("*.lua")):
             t = floppy / p.name
@@ -198,13 +226,24 @@ def main() -> int:
         else:
             print("selftest floppy: already current")
         marker = floppy / "selftest.on"
-        print(f"  armed: {marker.is_file()}"
-              + (f"  ({marker.read_text().strip()})" if marker.is_file() else
-                 "  -- drop a selftest.on here to arm the battery"))
+        print("  options: " + ((marker.read_text().strip() or "(defaults)")
+                               if marker.is_file() else
+                               "(defaults) -- a selftest.on here carries shutdown=/only=/screen="))
+        if args.no_arm:
+            armed = (boot / MACHINE_MARKER).is_file()
+            print(f"  machine armed: {armed}"
+                  + ("" if armed else "  -- the floppy will be ignored; create "
+                     "etc/selftest.on on the boot disk, or drop --no-arm"))
+        else:
+            already, _ = arm_machine(boot, args.dry_run)
+            print("  machine armed: " + ("yes" if already else
+                  ("would create etc/selftest.on" if args.dry_run else
+                   "yes (created etc/selftest.on)")))
     elif not floppy:
         print()
         print("selftest floppy: not found -- the battery will not run.")
-        print("  A disk carrying selftest.on at its root plus NN-name.lua checks arms it.")
+        print("  The floppy is a disk carrying NN-name.lua checks (plus an optional")
+        print("  selftest.on with options); etc/selftest.on on the boot disk arms it.")
 
     logfile = boot / "var" / "selftest.log"
     if args.clear_log and not args.dry_run:

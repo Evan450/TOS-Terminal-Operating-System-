@@ -127,6 +127,16 @@ CURRENT = shellSess
 assert(keychain.unlock("bobpass1", shellSess))
 assert(keychain.set("tape", "s3cret", shellSess))
 test("the vault exists after the first set", files[VAULT] ~= nil)
+-- get()'s contract: the passphrase, OR (nil, "no such slot"). It returned
+-- `v, v and nil or "no such slot"`, which is always the message -- so a
+-- slot that exists came back WITH "no such slot" beside it.
+do
+  local v, gerr = keychain.get("tape", shellSess)
+  test("get() of a slot that exists returns it", v == "s3cret")
+  test("...and no error alongside it (got " .. tostring(gerr) .. ")", gerr == nil)
+  local nv, nerr = keychain.get("nope", shellSess)
+  test("get() of a missing slot says so", nv == nil and nerr == "no such slot")
+end
 
 print("-- a self change re-keys --")
 do

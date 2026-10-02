@@ -115,6 +115,49 @@ end
 -- this landed. It is not repeated here: an assertion that HEAD is still
 -- vulnerable starts failing the moment the fix is committed.)
 
+-- ── #SEC: the signals the shell TRUSTS, on BOTH routes ─────────────────
+-- proc.tick hands a non-input signal to every process, so one forged push
+-- reached every seat. The two routes kept their own lists and both missed:
+--   tos_interrupt / tos_monitor / tos_focus  -> every shell: wipe the command
+--       line, open the Monitor, leave the program tab
+--   component_removed <fs addr>              -> every admin/root shell
+--       unmounts that disk (fs.mounts() hands a program the address)
+--   component_added <addr> "eeprom"          -> answers root's `flash` wait
+--   interrupted                              -> `write`, PaneUI, the RBMK
+--       panel and the CLI prompt all quit on it
+--   screen_resized                           -> relayout everywhere
+-- compat.event.push is the worse route: it needs NO capability.
+-- tos_some_future_signal pins the namespace rule, not today's list.
+print()
+print("-- #SEC: trusted signals, both routes --")
+local TRUSTED = {
+  "tos_interrupt", "tos_monitor", "tos_focus", "tos_display_lost", "tos_mail",
+  "component_added", "component_removed", "component_available",
+  "component_unavailable", "screen_resized", "interrupted", "walk",
+  "tos_some_future_signal",
+}
+do
+  local sandbox = require("kernel.sandbox")
+  local comp = buildComputer(sandbox)
+  for _, sig in ipairs(TRUSTED) do
+    resetPushed()
+    comp.pushSignal(sig, "addr", "filesystem")
+    test("computer.pushSignal('" .. sig .. "') is dropped", #pushed == 0)
+  end
+
+  -- compat.event, against the REAL kernel.event: push() reaches the same
+  -- recording computer.pushSignal as the sandbox route does.
+  local cev = require("compat.event")
+  for _, sig in ipairs(TRUSTED) do
+    resetPushed()
+    local ok = cev.push(sig, "addr", "filesystem")
+    test("compat.event.push('" .. sig .. "') is refused", ok == false and #pushed == 0)
+  end
+  resetPushed()
+  test("compat.event.push of a program's own signal still works",
+    cev.push(ALLOWED, "payload") == true and pushed[1] == ALLOWED)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

@@ -333,6 +333,22 @@ local function validateManifest(m)
   if m.requires ~= nil and type(m.requires) ~= "table" then
     return false, "requires must be an array if present"
   end
+  -- A publisher pin: `{ name = "libgui", key = "<64 hex>" }` means "libgui
+  -- as signed by this key" (docs/FEDERATED-REPOS.md). The FULL public key,
+  -- not the 16-hex fingerprint: a pin is read by a machine, and truncating
+  -- it would only make it cheaper to collide.
+  if type(m.requires) == "table" then
+    for i, req in ipairs(m.requires) do
+      if type(req) == "table" and req.key ~= nil then
+        if type(req.key) ~= "string" or #req.key ~= 64 or req.key:find("[^%x]") then
+          return false, "requires[" .. i .. "].key is not a 64-hex public key"
+        end
+        if type(req.name) ~= "string" or req.name == "" then
+          return false, "requires[" .. i .. "] pins a key but names no package"
+        end
+      end
+    end
+  end
   -- `recommends` is the SOFT counterpart of `requires`: packages that make
   -- this one better but are not needed for it to work. The installer offers
   -- them; nothing ever installs one behind the operator's back, and a
@@ -1199,27 +1215,36 @@ function pkg.resolveInstallOrder(targetName, lookup)
   local visiting = {}   -- name -> true while in DFS stack (cycle detection)
   local visited  = {}
 
-  local function visit(name)
+  -- `req` (the requires entry that led here) and `requirer` are passed to
+  -- lookup so it can choose among candidates -- a pinned dependency must
+  -- come from its publisher. Lookups that ignore them behave as before.
+  local function visit(name, req, requirer)
     if visited[name] then return true end
     if visiting[name] then
       return false, "dependency cycle through " .. name
     end
-    local m = lookup(name)
+    local m = lookup(name, req, requirer)
     if not m then
       return false, "unknown package: " .. name
     end
     visiting[name] = true
     if type(m.requires) == "table" then
       for _, req in ipairs(m.requires) do
-        local depName
-        if type(req) == "table" then depName = req.name
+        local depName, optional
+        if type(req) == "table" then depName, optional = req.name, req.optional
         elseif type(req) == "string" then depName = req:match("^(%S+)") end
         if depName then
           -- Already-installed packages don't need to be reinstalled —
           -- skip them in the resolved order. Also accept anything in
           -- the `provides` set of an installed package (EXP-1).
-          if not findProvider(depName) then
-            local ok, err = visit(depName)
+          --! An OPTIONAL requirement that no source can answer is left
+          --! out, not an error. It used to be visited like any other, so
+          --! a package that could run without a library could not be
+          --! installed at all unless the library was somewhere to hand
+          --! ("resolve failed: unknown package"). One that IS available
+          --! is still installed with it. (test_pkg_optional_requires.lua)
+          if not findProvider(depName) and not (optional and not lookup(depName, req, name)) then
+            local ok, err = visit(depName, req, name)
             if not ok then return false, err end
           end
         end
@@ -1832,6 +1857,129 @@ end
 pkg._protectedTargetRefusal = protectedTargetRefusal
 
 -- ============================================================
+-- Publisher identity
+-- ============================================================
+--! A package is its name PLUS the key that signs it
+--! (docs/FEDERATED-REPOS.md). These are the one place a key is compared
+--! and the one place it is described to an operator.
+
+--- The key a verified verdict proves, lowercased; nil for unsigned or invalid.
+local function verifiedKey(verdict)
+  if type(verdict) ~= "table" or type(verdict.key) ~= "string" then return nil end
+  if verdict.state ~= "trusted" and verdict.state ~= "unknown" then return nil end
+  return verdict.key:lower()
+end
+
+--- "alice (ABCD 1234 …)", "an untrusted key (ABCD …)", or "no signature".
+--- The label is the one the OPERATOR gave the key, never the disk's.
+local function describeKey(key, label)
+  if type(key) ~= "string" then return "no signature" end
+  local okS, ps = pcall(require, "kernel.pkgsign")
+  local fp = (okS and ps and ps.fingerprint) and ps.fingerprint(key) or key:sub(1, 16)
+  if okS and ps and ps.labelForKey and not label then label = ps.labelForKey(key) end
+  return (label and ("'" .. label .. "'") or "an untrusted key") .. " (" .. fp .. ")"
+end
+
+--- One `requires` entry as name, constraint, optional, key -- from either
+--- shape: { name=, version=, optional=, key= } or "name [constraint]".
+--- A key that is not 64 hex is not a pin; validateManifest refuses the
+--- manifest that carries it (pkg.plan runs it before anything installs).
+local function parseRequire(req)
+  if type(req) == "table" then
+    local key = (type(req.key) == "string" and #req.key == 64 and not req.key:find("[^%x]"))
+      and req.key:lower() or nil
+    return req.name, req.version, req.optional and true or false, key
+  elseif type(req) == "string" then
+    local n, c = req:match("^(%S+)%s+(.+)$")
+    if n then return n, c, false, nil end
+    return req, nil, false, nil
+  end
+  return nil
+end
+
+--- The key a package's signature file CLAIMS, unverified. Enough to choose
+--- between candidates without curve arithmetic per disk; install() is what
+--- verifies it (opts.expectKey).
+local function claimedKey(manifestPath)
+  if type(manifestPath) ~= "string" then return nil end
+  local okS, ps = pcall(require, "kernel.pkgsign")
+  if not okS or type(ps) ~= "table" or not ps.readSig or not ps.sigPathFor then return nil end
+  if ps.init then ps.init({ fs = fs, serialize = serialize, log = log }) end
+  local sigPath = ps.sigPathFor(manifestPath)
+  local rec = sigPath and ps.readSig(sigPath) or nil
+  return rec and rec.key or nil
+end
+
+--- The key an INSTALLED package was verified as at install time.
+local function installedKey(m)
+  return type(m) == "table" and type(m._sigKey) == "string" and m._sigKey:lower() or nil
+end
+
+-- ============================================================
+-- Contradictions
+-- ============================================================
+--! The four kinds are in docs/FEDERATED-REPOS.md; slice 1 finds the ones
+--! local sources can have. Each is { kind=, name=, text=, id= }: `text` is
+--! for the operator and names who needs what, `id` is stable across
+--! versions so an upgrade can tell a contradiction it INTRODUCES from one
+--! that was already there.
+
+--- What `pname`'s requirement `req` makes of `provider` -- the manifest
+--- that would answer it, signed by `providerKey` -- as contradictions.
+--- `where` names the copy for the operator ("the installed lib",
+--- "the copy in /mnt/disk2/lib").
+local function requirementContradictions(pname, req, provider, providerKey, where)
+  local out = {}
+  local dep, constraint, _, pin = parseRequire(req)
+  if not dep or type(provider) ~= "table" then return out end
+  if constraint and not pkg.satisfiesConstraint(provider.version or "0.0.0", constraint) then
+    out[#out + 1] = { kind = "version", name = dep,
+      id = "version|" .. dep .. "|" .. constraint,
+      text = string.format("%s requires '%s' %s, and %s is %s",
+        pname, dep, constraint, where, tostring(provider.version)) }
+  end
+  if pin and providerKey ~= pin then
+    out[#out + 1] = { kind = "publisher", name = dep,
+      id = "publisher|" .. dep .. "|" .. pin,
+      text = string.format("%s requires '%s' signed by %s, and %s has %s",
+        pname, dep, describeKey(pin), where,
+        providerKey and describeKey(providerKey) or "no signature") }
+  end
+  return out
+end
+
+--- Installed packages whose requirements `m` would not meet if it were
+--- installed as it stands, signed by `key`: the reverse of the check above.
+--- Sorted by the dependent's name, so a refusal reads the same every time.
+local function brokenDependents(m, key)
+  local out, names = {}, {}
+  local answers = { [m.name] = true }
+  -- A name m `provides` counts only while no package of that name is
+  -- installed, the same rule findProvider applies.
+  for _, p in ipairs(type(m.provides) == "table" and m.provides or {}) do
+    if not installed[p] then answers[p] = true end
+  end
+  for dname in pairs(installed) do names[#names + 1] = dname end
+  table.sort(names)
+  for _, dname in ipairs(names) do
+    local d = installed[dname]
+    if dname ~= m.name and type(d.requires) == "table" then
+      for _, req in ipairs(d.requires) do
+        local dep = parseRequire(req)
+        if dep and answers[dep] then
+          for _, c in ipairs(requirementContradictions("the installed " .. dname, req, m, key,
+              "the " .. tostring(m.name) .. " being put in")) do
+            c.kind, c.id = "breaks", "breaks|" .. dname .. "|" .. c.id
+            out[#out + 1] = c
+          end
+        end
+      end
+    end
+  end
+  return out
+end
+
+-- ============================================================
 -- Upgrades
 -- ============================================================
 --! There was no update path at all: `pkg.install` refused over an existing
@@ -1884,7 +2032,7 @@ function pkg.upgrade(name, opts)
   if not pkgDir then
     return false, "no source for " .. name .. " on any repo or inserted disk"
   end
-  local m, source = loadAnyManifest(pkgDir)
+  local m, source, manifestPath, manifestBytes = loadAnyManifest(pkgDir)
   if not m then return false, "unreadable manifest for " .. name end
 
   local cmp = pkg.compareVersion(m.version or "0.0.0", cur.version or "0.0.0")
@@ -1919,6 +2067,88 @@ function pkg.upgrade(name, opts)
   if not svcOk then return false, "refusing to upgrade '" .. name .. "': " .. svcErr end
   local prot = protectedTargetRefusal(m)
   if prot then return false, "refusing to upgrade '" .. name .. "': " .. prot end
+  --! The signature gate, too. It lived only in install(), which runs AFTER
+  --! the old version is removed, so a candidate whose signature did not
+  --! verify -- or an unsigned one under `pkg trust require on` -- deleted
+  --! the working package and was then refused, leaving neither. (federated
+  --! repos slice 1, finding 3; test_pkg_upgrade_identity.lua)
+  local sigVerdict, sigRefusal = pkg._signGate(manifestPath, opts, manifestBytes)
+  if sigRefusal then return false, "refusing to upgrade '" .. name .. "': " .. sigRefusal end
+
+  --! An upgrade does not change who publishes a package. The candidate
+  --! was chosen by NAME (findInRepos is first-match), so a trusted
+  --! package upgraded silently to one signed by a stranger, or to an
+  --! unsigned one, and `pkg info` said so only afterwards. Signed by K
+  --! stays signed by K; gaining a signature is fine; --force is the way
+  --! through for a publisher that really did change keys, until rotation
+  --! notices exist (federated repos slice 4). expectKey makes install()
+  --! hold the same line against the bytes IT reads. (finding 2;
+  --! test_pkg_upgrade_identity.lua)
+  local expectKey
+  local curKey = type(cur._sigKey) == "string" and cur._sigKey:lower() or nil
+  if curKey then
+    local newKey = verifiedKey(sigVerdict)
+    if newKey ~= curKey then
+      if not opts.force then
+        return false, string.format(
+          "refusing to upgrade '%s': the installed version is signed by %s, and the "
+          .. "candidate in %s has %s. An upgrade does not change who publishes a package; "
+          .. "if the publisher really changed keys, confirm the new fingerprint with them "
+          .. "over another channel, then use --force.",
+          name, describeKey(curKey, cur._sigLabel), tostring(pkgDir),
+          newKey and ("a different key: " .. describeKey(newKey)) or "no valid signature")
+      end
+      if log then
+        log.warn("pkg", "Upgrading '" .. name .. "' to a different publisher (--force): "
+          .. describeKey(curKey, cur._sigLabel) .. " -> " .. describeKey(newKey))
+      end
+    else
+      expectKey = curKey
+    end
+  end
+
+  --! What this upgrade would contradict, found before anything is removed:
+  --! the candidate's requirements against what is installed, and installed
+  --! packages whose requirements the candidate would stop meeting (a
+  --! dependent that needs lib <2 while lib goes to 2.1). Both used to pass
+  --! unremarked. Only contradictions the upgrade INTRODUCES count: one the
+  --! installed version already had is not made worse by replacing it, and
+  --! refusing on it would leave a machine unable to upgrade its way out.
+  --! (federated repos slice 1, finding 4; test_pkg_plan.lua)
+  do
+    local function problemsOf(pm, key)
+      local out = {}
+      for _, req in ipairs(type(pm.requires) == "table" and pm.requires or {}) do
+        local dep, _, optional = parseRequire(req)
+        if dep and dep ~= name then
+          local have = findProvider(dep)
+          if have then
+            for _, c in ipairs(requirementContradictions(name .. " " .. tostring(pm.version),
+                req, have, installedKey(have), "the installed " .. tostring(have.name))) do
+              out[#out + 1] = c
+            end
+          elseif not optional then
+            out[#out + 1] = { kind = "missing", name = dep, id = "missing|" .. dep,
+              text = string.format("%s %s requires '%s', which is not installed (install it first)",
+                name, tostring(pm.version), dep) }
+          end
+        end
+      end
+      for _, c in ipairs(brokenDependents(pm, key)) do out[#out + 1] = c end
+      return out
+    end
+    local already = {}
+    for _, c in ipairs(problemsOf(cur, installedKey(cur))) do already[c.id] = true end
+    local introduced = {}
+    for _, c in ipairs(problemsOf(m, verifiedKey(sigVerdict))) do
+      if not already[c.id] then introduced[#introduced + 1] = c end
+    end
+    if #introduced > 0 then
+      local why = pkg.describeContradictions(introduced)
+      if not opts.force then return false, "refusing to upgrade '" .. name .. "': " .. why end
+      if log then log.warn("pkg", "Upgrading '" .. name .. "' past contradictions (--force): " .. why) end
+    end
+  end
 
   -- Remember what to restore. `state` is the package-enable byte;
   -- the rc `.disabled` marker is the SEPARATE boot-start flag (they are
@@ -1948,6 +2178,8 @@ function pkg.upgrade(name, opts)
   local inOk, inErr = pkg.install(pkgDir, {
     session = opts.session, upgrading = true, force = opts.force,
     allowUnverified = opts.allowUnverified, licenseKey = opts.licenseKey,
+    allowUnsigned = opts.allowUnsigned,  -- the gate above let it through on this
+    expectKey = expectKey,
     _priorFiles = cur.files,   -- its own files, should their removal have failed
   })
   if not inOk then
@@ -2205,6 +2437,16 @@ function pkg.install(srcDir, opts)
   do
     local verdict, refusal = signGate(manifestPath, opts, manifestBytes)
     if refusal then return false, refusal end
+    --! opts.expectKey: the caller already decided WHICH publisher this
+    --! must be (an upgrade keeping its publisher; a pinned dependency),
+    --! having looked at the disk once. This is the check that counts,
+    --! because it is made on the bytes this install parsed and is about to
+    --! copy from. It only ever narrows: every gate above still applied.
+    if type(opts.expectKey) == "string" and verifiedKey(verdict) ~= opts.expectKey:lower() then
+      return false, string.format("refusing to install '%s': it must be signed by %s, "
+        .. "and this copy has %s", tostring(m.name), describeKey(opts.expectKey),
+        verifiedKey(verdict) and describeKey(verifiedKey(verdict)) or "no valid signature")
+    end
     sigVerdict = verdict
     if log then
       if verdict.state == "trusted" then
@@ -2374,6 +2616,186 @@ function pkg.install(srcDir, opts)
   return true, #copied .. " files"
 end
 
+-- ============================================================
+-- Planning an install  (federated repos slice 1)
+-- ============================================================
+--! An install used to be worked out one question at a time -- which
+--! packages, in what order -- and everything else was found out while
+--! files were being written, or after (checkRequires only WARNS, once the
+--! package is down). pkg.plan answers it all first and touches nothing:
+--! what goes in and in what order, which copy of each, which publisher
+--! each pinned package must be signed by, and every contradiction found
+--! on the way. installWithDeps refuses a plan with contradictions unless
+--! forced, so a refusal costs nothing. (docs/FEDERATED-REPOS.md)
+
+--- Contradictions as one line for a refusal.
+function pkg.describeContradictions(list)
+  local out = {}
+  for _, c in ipairs(list or {}) do out[#out + 1] = tostring(c.text) end
+  return table.concat(out, "; ")
+end
+
+--- Work out an install of `targetName` without doing any of it. Sources
+--- are searched as installWithDeps describes. No side effects.
+--- @return plan | nil, err
+---   plan.order           names, dependencies first (resolveInstallOrder's)
+---   plan.dirs            name -> the package directory chosen for it
+---   plan.expectKey       name -> the publisher key install() must verify
+---   plan.contradictions  { { kind=, name=, text= }, ... } in the order met
+function pkg.plan(repoDir, targetName, opts)
+  opts = opts or {}
+  if type(repoDir) ~= "string" or repoDir == "" then
+    return nil, "invalid repo dir"
+  end
+  if type(targetName) ~= "string" or targetName == "" then
+    return nil, "invalid target name"
+  end
+  repoDir = fs.normalize(repoDir)
+  if not fs.exists(repoDir) or not fs.isDirectory(repoDir) then
+    return nil, "repo dir not found: " .. repoDir
+  end
+
+  -- Where a package may come from. The target's own root is first, so a
+  -- self-contained disk resolves exactly as it always has.
+  local roots, seenRoot = {}, {}
+  local function addRoot(r)
+    if type(r) ~= "string" or r == "" then return end
+    r = fs.normalize(r)
+    if not seenRoot[r] then seenRoot[r] = true; roots[#roots + 1] = r end
+  end
+  addRoot(repoDir)
+  if type(opts.extraRoots) == "table" then
+    for _, r in ipairs(opts.extraRoots) do addRoot(r) end
+  end
+  -- Enumerating the other roots walks the mount table. If that fails,
+  -- resolution falls back to repoDir alone, which is what it always was.
+  local okR, known = pcall(pkg.repoRoots)
+  if okR and type(known) == "table" then
+    for _, r in ipairs(known) do addRoot(r) end
+  end
+
+  -- Cache loaded manifests so the resolver can call lookup() many
+  -- times without re-reading the same package.lua. chosenDir remembers
+  -- WHICH root answered, so the install reads the same copy.
+  local manifestCache, chosenDir, chosenPath, pinMiss = {}, {}, {}, {}
+  local function lookup(name, req, requirer)
+    if installed[name] then return installed[name] end
+    if manifestCache[name] then return manifestCache[name] end
+    local _, constraint, _, want = parseRequire(req)
+    -- A copy of the right publisher at the wrong version is kept as a
+    -- fallback: if nothing better turns up it is chosen, and the plan
+    -- reports the version contradiction rather than "unknown package".
+    local fallback
+    for _, root in ipairs(roots) do
+      local pkgSrc = fs.join(root, name)
+      if fs.exists(pkgSrc) then
+        local m, _, mPath = loadAnyManifest(pkgSrc)
+        -- #SEC H-20 — the directory name is the identity that was asked
+        -- for; the manifest's `name` is whatever the disk says. With more
+        -- than one root in play, a disk could otherwise answer for any
+        -- package by naming a directory after it. Same rule findInRepos
+        -- applies; a mismatch is skipped and the next root is tried.
+        if m and m.name == name then
+          -- A pinned dependency must come from its publisher. A copy
+          -- signed by anyone else is passed over, so an impostor on an
+          -- earlier disk cannot win by being found first.
+          local have = want and claimedKey(mPath) or nil
+          if want and have ~= want then
+            pinMiss[name] = pinMiss[name] or { dir = pkgSrc, have = have, want = want, by = requirer }
+            if log then
+              log.warn("pkg", "Passing over '" .. name .. "' in " .. root .. ": "
+                .. tostring(requirer) .. " requires it signed by another key")
+            end
+          elseif constraint and not pkg.satisfiesConstraint(m.version or "0.0.0", constraint) then
+            fallback = fallback or { m = m, dir = pkgSrc, path = mPath }
+          else
+            manifestCache[name], chosenDir[name], chosenPath[name] = m, pkgSrc, mPath
+            return m
+          end
+        elseif m and log then
+          log.warn("pkg", "Ignoring '" .. tostring(name) .. "' in " .. root ..
+            ": manifest name '" .. tostring(m.name) .. "' does not match directory")
+        end
+      end
+    end
+    if fallback then
+      manifestCache[name], chosenDir[name], chosenPath[name] = fallback.m, fallback.dir, fallback.path
+      return fallback.m
+    end
+    return nil
+  end
+
+  local order, resolveErr = pkg.resolveInstallOrder(targetName, lookup)
+  if not order then
+    local missing = tostring(resolveErr):match("^unknown package: (.+)$")
+    local miss = missing and pinMiss[missing]
+    if miss then
+      return nil, string.format("%s requires '%s' signed by %s; no copy signed by that "
+        .. "key was found (the one in %s has %s)", tostring(miss.by), missing,
+        describeKey(miss.want), miss.dir, miss.have and describeKey(miss.have) or "no signature")
+    end
+    return nil, "resolve failed: " .. tostring(resolveErr)
+  end
+
+  -- Everything this plan would install must be a valid manifest. install()
+  -- checks each one again, but only when its turn comes: a bad manifest
+  -- third in line used to be found after the first two were written.
+  for _, pname in ipairs(order) do
+    local pm = manifestCache[pname]
+    if pm then
+      local okV, vErr = validateManifest(pm)
+      if not okV then return nil, "invalid manifest for '" .. pname .. "': " .. tostring(vErr) end
+    end
+  end
+
+  local plan = { order = order, dirs = chosenDir, expectKey = {}, contradictions = {} }
+  local function contradiction(kind, name, text)
+    plan.contradictions[#plan.contradictions + 1] =
+      { kind = kind, name = name, text = text, id = kind .. "|" .. tostring(name) }
+  end
+
+  -- Every requirement of every package this plan would install, in plan
+  -- order, against whatever would answer it -- then the reverse: installed
+  -- packages that the one going in would no longer satisfy.
+  local pinned = {}   -- dependency -> { key =, by = } (the first pin met)
+  for _, pname in ipairs(order) do
+    local pm = manifestCache[pname]
+    if pm and type(pm.requires) == "table" then
+      for _, req in ipairs(pm.requires) do
+        local dep, _, _, key = parseRequire(req)
+        if dep and key then
+          local first = pinned[dep]
+          if not first then
+            pinned[dep] = { key = key, by = pname }
+          elseif first.key ~= key then
+            contradiction("pins", dep, string.format(
+              "%s requires '%s' signed by %s, but %s requires it signed by %s",
+              first.by, dep, describeKey(first.key), pname, describeKey(key)))
+          end
+        end
+        local have = dep and findProvider(dep)
+        local found = {}
+        if have then
+          found = requirementContradictions(pname, req, have, installedKey(have),
+            "the installed " .. tostring(have.name))
+        elseif dep and manifestCache[dep] then
+          local ck = claimedKey(chosenPath[dep])
+          found = requirementContradictions(pname, req, manifestCache[dep], ck,
+            "the copy in " .. tostring(chosenDir[dep]))
+          if key and ck == key and not plan.expectKey[dep] then plan.expectKey[dep] = key end
+        end
+        for _, c in ipairs(found) do plan.contradictions[#plan.contradictions + 1] = c end
+      end
+    end
+    if pm then
+      for _, c in ipairs(brokenDependents(pm, claimedKey(chosenPath[pname]))) do
+        plan.contradictions[#plan.contradictions + 1] = c
+      end
+    end
+  end
+  return plan
+end
+
 --- FEAT-7 — install a package and all its dependencies in resolved
 --- order. `repoDir` is a directory containing one subdir per package
 --- (each with its own package.lua). For a target package "foo", we
@@ -2381,45 +2803,39 @@ end
 --- and install everything in topological order — skipping packages
 --- that are already installed at a satisfying version.
 ---
+--- A dependency is looked for in `repoDir` first, then in
+--- opts.extraRoots, then in every root pkg.repoRoots() knows. The whole
+--- install is planned first (pkg.plan); a plan with contradictions is
+--- refused before anything is written, unless opts.force.
+---
 --- Returns (true, { installed = {names}, skipped = {names} }) on
 --- success, or (false, err) on resolution / install failure.
+--! Dependencies used to be looked for in `repoDir` ONLY. A package on one
+--! floppy that needed a library on another could not be installed, even
+--! with both disks in and `pkg.findInRepos` finding the library, and
+--! installByName's own comment claimed the opposite. (federated repos
+--! slice 1, finding 1; test_pkg_cross_source.lua)
 function pkg.installWithDeps(repoDir, targetName, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
   if not g then return false, gErr end
-  if type(repoDir) ~= "string" or repoDir == "" then
-    return false, "invalid repo dir"
-  end
-  if type(targetName) ~= "string" or targetName == "" then
-    return false, "invalid target name"
-  end
-  repoDir = fs.normalize(repoDir)
-  if not fs.exists(repoDir) or not fs.isDirectory(repoDir) then
-    return false, "repo dir not found: " .. repoDir
-  end
 
-  -- Cache loaded manifests so the resolver can call lookup() many
-  -- times without re-reading the same package.lua.
-  local manifestCache = {}
-  local function lookup(name)
-    if installed[name] then return installed[name] end
-    if manifestCache[name] then return manifestCache[name] end
-    local pkgSrc = fs.join(repoDir, name)
-    if not fs.exists(pkgSrc) then return nil end
-    local m = loadAnyManifest(pkgSrc)
-    if m then manifestCache[name] = m end
-    return m
+  local plan, planErr = pkg.plan(repoDir, targetName, opts)
+  if not plan then return false, planErr end
+  if #plan.contradictions > 0 then
+    local why = pkg.describeContradictions(plan.contradictions)
+    if not opts.force then
+      return false, "refusing to install '" .. targetName .. "': " .. why
+    end
+    if log then log.warn("pkg", "Installing '" .. targetName .. "' past contradictions (force): " .. why) end
   end
-
-  local order, resolveErr = pkg.resolveInstallOrder(targetName, lookup)
-  if not order then return false, "resolve failed: " .. tostring(resolveErr) end
 
   local installedList, skippedList = {}, {}
-  for _, name in ipairs(order) do
+  for _, name in ipairs(plan.order) do
     if installed[name] then
       skippedList[#skippedList + 1] = name
     else
-      local pkgSrc = fs.join(repoDir, name)
+      local pkgSrc = plan.dirs[name] or fs.join(fs.normalize(repoDir), name)
       -- FEAT-14 — only the target package consumes the supplied key;
       -- dependencies that ALSO require keys must be pre-installed
       -- separately (or the caller can pass `licenseKeys = { [name] = key, ... }`).
@@ -2430,9 +2846,17 @@ function pkg.installWithDeps(repoDir, targetName, opts)
         perPkgKey = nil  -- don't reuse the target's key on deps
       end
       -- #SEC CR-5 — forward the authorized session to the nested install
-      -- so the per-dep gate sees the same admin principal.
+      -- so the per-dep gate sees the same admin principal. expectKey: a
+      -- pinned dependency is verified as its publisher's on the bytes
+      -- install reads, not only on what the plan saw. allowUnsigned was
+      -- not forwarded, so `pkg install <name> --allow-unsigned` could not
+      -- have worked even had the shell parsed it. Nor was force, which
+      -- is what install's conflict check reads: `--force overrides
+      -- either` (MANUAL 7.3) held for a path install and never for one by
+      -- name. (test_pkg_flags.lua)
       local ok, err = pkg.install(pkgSrc, { licenseKey = perPkgKey, session = opts.session,
-        allowUnverified = opts.allowUnverified })
+        allowUnverified = opts.allowUnverified, allowUnsigned = opts.allowUnsigned,
+        force = opts.force, expectKey = plan.expectKey[name] })
       if not ok then
         -- Roll back: uninstall what we installed in this transaction.
         for _, prev in ipairs(installedList) do
@@ -2687,6 +3111,52 @@ function pkg.findInRepos(targetName, extraRoots)
   return nil
 end
 
+--- Where an install by name starts: (root, name), or (nil, err).
+--- Accepts a full PATH to a package directory as well as a bare name, so
+--- `pkg install /mnt/<disk>/optional-utilities/tetris` works too. A path
+--- is normalized to (repoRoot=parent, name); H-20 still requires the
+--- manifest's name to match the directory base name.
+local function resolveTarget(targetName, extraRoots)
+  if type(targetName) == "string" and targetName:find("/") then
+    local cand = fs.normalize(targetName:gsub("/$", ""))
+    local base = cand:match("[^/]+$")
+    if base and fs.exists(cand) and fs.isDirectory(cand) then
+      local m = loadAnyManifest(cand)
+      if m and m.name == base then
+        local root = cand:match("^(.*)/[^/]+$"); if root == "" then root = "/" end
+        return root, base
+      end
+      return nil, "not a package directory (or name mismatch): " .. targetName
+    end
+    return nil, "package not found in any repo: " .. targetName
+  end
+  local pkgDir, root = pkg.findInRepos(targetName, extraRoots)
+  if not pkgDir then
+    return nil, "package not found in any repo: " .. tostring(targetName)
+  end
+  return root, targetName
+end
+
+--- What `pkg install <name>` would do, worked out and not done: the
+--- plan pkg.plan makes from the same starting point installByName uses.
+--- Touches nothing, so it needs no admin gate; the install it describes
+--- still does.
+--- @return plan | nil, err   (plan.target is the bare package name)
+--! `pkg install --dry-run` used to answer with the names it was given and
+--! nothing else, so a version or publisher contradiction -- the thing a
+--! dry run is for -- was found by the real install, as a refusal. Same
+--! resolver as installByName, so the dry run and the install cannot
+--! disagree about where a package comes from. (test_pkg_flags.lua)
+function pkg.planByName(targetName, opts)
+  opts = opts or {}
+  local root, name = resolveTarget(targetName, opts.extraRoots)
+  if not root then return nil, name end
+  local plan, err = pkg.plan(root, name, { extraRoots = opts.extraRoots })
+  if not plan then return nil, err end
+  plan.target = name
+  return plan
+end
+
 --- Install one or more packages by name, looking them up in
 --- configured repos + mounted media + extraRoots. Resolves deps
 --- across all available sources. Returns (true, summary) or (false, err).
@@ -2694,33 +3164,9 @@ function pkg.installByName(targetName, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
   if not g then return false, gErr end
-  -- Accept a full PATH to a package directory as well as a bare name, so
-  -- `pkg install /mnt/<disk>/optional-utilities/tetris` works too. Normalize
-  -- it to (name, repoRoot=parent); H-20 still requires the manifest's name to
-  -- match the directory base name.
-  local root
-  if type(targetName) == "string" and targetName:find("/") then
-    local cand = fs.normalize(targetName:gsub("/$", ""))
-    local base = cand:match("[^/]+$")
-    if base and fs.exists(cand) and fs.isDirectory(cand) then
-      local m = loadAnyManifest(cand)
-      if m and m.name == base then
-        root = cand:match("^(.*)/[^/]+$"); if root == "" then root = "/" end
-        targetName = base
-      else
-        return false, "not a package directory (or name mismatch): " .. targetName
-      end
-    else
-      return false, "package not found in any repo: " .. targetName
-    end
-  end
-  if not root then
-    local pkgDir
-    pkgDir, root = pkg.findInRepos(targetName, opts.extraRoots)
-    if not pkgDir then
-      return false, "package not found in any repo: " .. targetName
-    end
-  end
+  local root, name = resolveTarget(targetName, opts.extraRoots)
+  if not root then return false, name end
+  targetName = name
   -- Use the directory containing pkgDir as the repo for dep resolution
   -- (so siblings of targetName are reachable via installWithDeps).
   -- FEAT-14 — forward license key + per-package keys.
@@ -2729,6 +3175,9 @@ function pkg.installByName(targetName, opts)
     licenseKeys     = opts.licenseKeys,
     session         = opts.session,  -- #SEC CR-5 — carry the authorized principal
     allowUnverified = opts.allowUnverified,  -- #SEC — hash-requirement escape hatch
+    allowUnsigned   = opts.allowUnsigned,    -- `pkg trust require on`'s, for one install
+    extraRoots      = opts.extraRoots,  -- deps are searched for here too
+    force           = opts.force,       -- past the plan's contradictions and file conflicts
   })
 end
 
@@ -2866,8 +3315,12 @@ function pkg.installFromFloppy(opts)
   local total = #candidates
   for i, c in ipairs(candidates) do
     if confirm(c.name, c.dir, i, total) then
+      -- The operator's overrides are theirs to pass on: the shell handed
+      -- them over and they were dropped here. (test_pkg_flags.lua)
       local ok, err = pkg.installByName(c.name,
-        { extraRoots = { c.mount }, session = opts.session })
+        { extraRoots = { c.mount }, session = opts.session,
+          allowUnverified = opts.allowUnverified, allowUnsigned = opts.allowUnsigned,
+          force = opts.force })
       if ok then installed_pkgs[#installed_pkgs + 1] = c.name
       else skipped_pkgs[#skipped_pkgs + 1] = c.name .. " (" .. tostring(err) .. ")" end
     else

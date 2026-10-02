@@ -208,18 +208,22 @@ end
 --! traffic other processes' listeners trust. Input arrives from real
 --! hardware and the kernel — never from a guest program — so refusing to
 --! re-emit it costs honest code nothing (custom app signals still push).
---! (test_sandbox_push.lua)
-local PUSH_DROP = {
-  -- hardware input (mirrors proc.INPUT_SIGNALS)
-  key_down = true, key_up = true, clipboard = true,
-  touch = true, drag = true, drop = true, scroll = true,
-  -- inbound network traffic
-  modem_message = true,
-  -- kernel control signals (shutdown/logout/login spoofing)
-  tos_shutdown = true, tos_logout = true,
-  tos_login_complete = true, tos_seat_changed = true,
-  tos_shell_exited = true,
-}
+--!
+--! The list itself lives in kernel.event (reservedSignal), shared with
+--! compat.event.push: this one and that one were kept apart, and both
+--! missed signals the shell trusts -- tos_interrupt, component_removed,
+--! interrupted -- which, being broadcast, reached every seat. With no rule
+--! to consult, refuse: never guess. (test_sandbox_push.lua)
+local reservedRule = nil
+local function isReservedSignal(name)
+  if reservedRule == nil then
+    local okE, ev = pcall(require, "kernel.event")
+    reservedRule = (okE and type(ev) == "table"
+                    and type(ev.reservedSignal) == "function" and ev.reservedSignal) or false
+  end
+  if not reservedRule then return true end
+  return reservedRule(name)
+end
 
 -- #SEC (review, Jul 2026) — signals a sandboxed program must NEVER receive
 -- from pullSignal: broadcast network traffic (packet sniffing) and kernel
@@ -293,7 +297,7 @@ local function makeSafeComputer()
       -- sandboxed program may push its OWN custom signals for coordination,
       -- but never forge the hardware input or modem traffic the scheduler
       -- routes as genuine input to real foreground processes.
-      if type(name) == "string" and PUSH_DROP[name] then
+      if isReservedSignal(name) then
         return  -- silently drop
       end
       return computer.pushSignal(name, ...)
@@ -704,10 +708,117 @@ local function copyPeer(p)
   return { addr = p.addr, lastSeen = p.lastSeen, hostname = p.hostname,
            device = p.device, trust = p.trust }
 end
+
+--! #SEC — the message types a program holding `net` may SPEAK and HEAR:
+--! discovery, the machine-wide chat channel, and the generic replies. The
+--! facade above passed net.on/off/onceFrom/send/broadcast through raw, and
+--! every other type belongs to a kernel subsystem:
+--!   * net.on("*", f) received EVERY packet this machine got, AFTER the net
+--!     layer decrypted it -- other users' netfs file blocks, rsh output,
+--!     trust and pairing handshakes -- the sniffing that PULL_DROP and
+--!     compat.event refuse on the modem_message route;
+--!   * a listener gets the LIVE packet, and one registered before a
+--!     request's own listener runs first: rewrite NETFS_RES data and root
+--!     reads a file of the program's choosing off a mounted share;
+--!   * net.off(type, id) removed ANY listener -- ids are global counters --
+--!     so a loop unregistered the kernel's mesh, netfs and rshd handlers;
+--!   * send() is sealed with this MACHINE's secrets, so REMOTE_EXEC and
+--!     FILE_REQ went out past the admin gate on `rsh` and `scp`, and
+--!     NETFS_RES / CLUSTER_* / TRUST_REVOKE could be forged as this box.
+--! protocol.validate drops unknown types, so there is no private app type
+--! to hand out instead: the allowlist IS the capability. Chat is on it
+--! because any user may already read it (every chat tab listens for MSG).
+--! (test_sandbox_net_facade.lua)
+local NET_PROGRAM_TYPES = { "PING", "PONG", "HELLO", "HELLO_ACK", "INFO_REQ",
+                            "INFO_RES", "MSG", "MSG_ACK", "DENY", "ERROR" }
+
+-- A plain, RAW copy: `next` ignores __index and __pairs, so what is checked
+-- is what is sent, and a callback's copy shares nothing with the packet the
+-- kernel's own listeners go on to read. Packets are small (one modem
+-- message) and acyclic from the wire; the depth cap covers a crafted one.
+local function snapshot(v, depth)
+  if type(v) ~= "table" then return v end
+  if depth > 16 then return nil end
+  local out = {}
+  for k, x in next, v do
+    if type(k) ~= "table" then out[k] = snapshot(x, depth + 1) end
+  end
+  return out
+end
+
 local function netFacade(net)
   local f = {}
   for _, k in ipairs(NET_FACADE) do
     if type(net[k]) == "function" then f[k] = net[k] end
+  end
+
+  local okP, P = pcall(function() return net.getProtocol and net.getProtocol() end)
+  local TYPE = okP and type(P) == "table" and type(P.TYPE) == "table" and P.TYPE or {}
+  local allowed = {}
+  for _, name in ipairs(NET_PROGRAM_TYPES) do
+    allowed[TYPE[name] or name:lower()] = true
+  end
+  local function refuse(t, verb)
+    return nil, "net: programs may not " .. verb .. " '" .. tostring(t) .. "' packets"
+  end
+  -- The raw versions copied in by the loop above never reach the program;
+  -- only the wrappers below replace them.
+  f.on, f.onceFrom, f.off, f.offAll, f.send, f.broadcast = nil, nil, nil, nil, nil, nil
+
+  -- Listener ids THIS program registered, per type: off() may remove only these.
+  local mine = {}
+  local function remember(msgType, id)
+    if id ~= nil then mine[msgType] = mine[msgType] or {}; mine[msgType][id] = true end
+    return id
+  end
+  local function copying(callback)
+    return function(packet, from) return callback(snapshot(packet, 0), from) end
+  end
+
+  if type(net.on) == "function" then
+    f.on = function(msgType, callback)
+      if not allowed[msgType] then return refuse(msgType, "listen for") end
+      if type(callback) ~= "function" then return nil, "net.on: callback must be a function" end
+      return remember(msgType, net.on(msgType, copying(callback)))
+    end
+  end
+  if type(net.onceFrom) == "function" then
+    f.onceFrom = function(msgType, addr, callback)
+      if not allowed[msgType] then return refuse(msgType, "listen for") end
+      if type(callback) ~= "function" then return nil, "net.onceFrom: callback must be a function" end
+      return remember(msgType, net.onceFrom(msgType, addr, copying(callback)))
+    end
+  end
+  if type(net.off) == "function" then
+    f.off = function(msgType, id)
+      if not (mine[msgType] and mine[msgType][id]) then return false end
+      mine[msgType][id] = nil
+      return net.off(msgType, id)
+    end
+    f.offAll = function(entries)
+      if type(entries) ~= "table" then return end
+      for _, e in ipairs(entries) do
+        if type(e) == "table" then f.off(e.type, e.id) end
+      end
+    end
+  end
+  if type(net.send) == "function" then
+    f.send = function(address, packet, port)
+      local pkt = snapshot(packet, 0)
+      if type(pkt) ~= "table" or not allowed[pkt.type] then
+        return refuse(type(pkt) == "table" and pkt.type or type(packet), "send")
+      end
+      return net.send(address, pkt, port)
+    end
+  end
+  if type(net.broadcast) == "function" then
+    f.broadcast = function(packet, port)
+      local pkt = snapshot(packet, 0)
+      if type(pkt) ~= "table" or not allowed[pkt.type] then
+        return refuse(type(pkt) == "table" and pkt.type or type(packet), "broadcast")
+      end
+      return net.broadcast(pkt, port)
+    end
   end
   local function copyList(list)
     local out = {}
@@ -733,6 +844,22 @@ local function netFacade(net)
   end
   return f
 end
+
+--! #SEC — three more compat names are the FILE capability, not libraries.
+--! compat.io, compat.filesystem and compat.shell_api read and write through
+--! securefs as the program's user: exactly what the `compat.io` cap grants
+--! as env.io / env.filesystem. Behind the free "compat." prefix they needed
+--! no capability at all, so a package declaring NOTHING could read and
+--! rewrite its user's files -- root's, if root ran it, and root may write
+--! /etc/users.dat -- while `pkg info` showed no filesystem access. And
+--! shell.execute started its child with fs.read + compat.io whenever it
+--! could not see a parent's caps. Same rule as compat.component and
+--! compat.internet below: the name needs the cap. (test_sandbox_compat_caps.lua)
+local COMPAT_FILE_CAP = {
+  ["compat.io"]         = "compat.io",
+  ["compat.filesystem"] = "compat.io",
+  ["compat.shell_api"]  = "compat.io",
+}
 
 local function makeSafeRequire(opts, prebound, envRef)
   local cache = {}
@@ -785,6 +912,12 @@ local function makeSafeRequire(opts, prebound, envRef)
     end
     if name == "compat.internet" and not (opts.caps and opts.caps["internet"]) then
       error("sandbox: 'compat.internet' needs the internet capability", 2)
+    end
+    do
+      local need = COMPAT_FILE_CAP[name]
+      if need and not (opts.caps and (opts.caps[need] or opts.caps["legacy"])) then
+        error("sandbox: '" .. name .. "' needs the " .. need .. " capability", 2)
+      end
     end
     --! #SEC (pentest, Sep 2026) — `compat` itself is the layer's LOADER.
     --! init() re-run after boot forwards opts.procSleep into the os.sleep
@@ -1269,7 +1402,29 @@ function sandbox.build(opts)
     if ok and inet then
       env.internet = {
         get      = function(url, o) return inet.get(url, o) end,
-        download = function(url, dest, o) return inet.download(url, dest, o) end,
+        --! #SEC — a download lands through THIS program's securefs, and only
+        --! with fs.write. internet.download writes with the fs it is handed
+        --! and leaves vetting the path to its caller; this wrapper was that
+        --! caller and vetted nothing, so every download went through the RAW
+        --! kernel fs: any package declaring `internet` could replace
+        --! /tos/kernel/init.lua, /etc/users.dat or an /etc/rc.d script with
+        --! bytes it served, past every ACL and the protected-path guard.
+        --! `internet` is network reach; writing files is fs.write's. Only the
+        --! request options are forwarded, and `fs` is set last, so a caller
+        --! cannot hand in a filesystem of its own. (test_sandbox_internet_download.lua)
+        download = function(url, dest, o)
+          if not (caps["fs.write"] and boundFs) then
+            return false, "internet.download needs the fs.write capability"
+          end
+          local req = {}
+          if type(o) == "table" then
+            for _, k in ipairs({ "maxBytes", "timeout", "headers", "method", "body" }) do
+              req[k] = o[k]
+            end
+          end
+          req.fs = boundFs
+          return inet.download(url, dest, req)
+        end,
         socket   = function(addr, port) return inet.socket(addr, port) end,
         status   = function() return inet.status() end,
         available = function() return inet.available() end,

@@ -180,9 +180,13 @@ function transfer.request(address, remotePath, localPath, opts)
           -- Prefer securefs when we have a session so writes are
           -- tier-checked and path-validated like any other user write.
           local writeOk, writeErr
+          --! securefs.writeFile's third argument IS the session. This passed
+          --! { session = session }, a table with no tier, which the ACL
+          --! raised on -- inside a pcall'd listener, so every documented
+          --! opts.session caller got "Timeout waiting for response" for a
+          --! reply that had arrived. (test_transfer_paths.lua)
           if securefs and session and securefs.writeFile then
-            writeOk, writeErr = securefs.writeFile(localPath, payload.data,
-              { session = session })
+            writeOk, writeErr = securefs.writeFile(localPath, payload.data, session)
           else
             writeOk, writeErr = fs.writeFile(localPath, payload.data)
           end
@@ -228,7 +232,10 @@ function transfer.request(address, remotePath, localPath, opts)
     return false, errMsg
   end
 
-  return result, result and nil or errMsg
+  -- Not `result, result and nil or errMsg`: `x and nil or y` is always y,
+  -- so a SUCCESS came back as (true, "Timeout waiting for response").
+  if result then return true end
+  return false, errMsg
 end
 
 -- ============================================================
@@ -292,8 +299,11 @@ function transfer.handleRequest(packet, fromAddr)
   end
 
   -- Security: only allow files under /public/ (normalize resolves .. first)
+  -- A path fs.normalize refuses (not a string, a NUL byte) comes back nil:
+  -- that is a denial, not an index-nil raise that leaves the peer to time out.
   local normalized = fs.normalize(path)
-  if normalized:sub(1, 8) ~= "/public/" and normalized ~= "/public" then
+  if type(normalized) ~= "string"
+     or (normalized:sub(1, 8) ~= "/public/" and normalized ~= "/public") then
     local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
       reason = "Access restricted to /public/",
     }, { to = fromAddr })

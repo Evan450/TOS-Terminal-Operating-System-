@@ -800,21 +800,9 @@ return function(C, S, deps)
       files[1], (out:gsub("^.*/", "")), fmtSz(#data)), T.highlight)
   end
 
-  C.rm = function(args, o)
-    -- Flag parsing: first non-flag arg is the path. -r / -rf allow
-    -- recursive delete of directories; without it, rm refuses to touch
-    -- a non-empty directory so `rm /etc` doesn't nuke /etc in one go.
-    -- --hard skips the trash (FEAT-1) and unlinks immediately.
-    local recursive, hard = false, false
-    local targets = {}
-    for _, a in ipairs(args) do
-      if a == "-r" or a == "-rf" or a == "-R" then recursive = true
-      elseif a == "--hard" or a == "-H" then hard = true
-      else targets[#targets + 1] = a end
-    end
-    if #targets == 0 then o("Usage: rm [-r] [--hard] <path>", T.dim); return end
-
-    local target = targets[1]
+  -- One path's worth of `rm`. Every `return` below skips THIS path only;
+  -- C.rm runs it once per path it was given.
+  local function removeOne(target, recursive, hard, o)
     local p = rp(target)
     if p == "/" then o("Cannot remove root", T.error); return end
 
@@ -908,6 +896,26 @@ return function(C, S, deps)
     else
       refreshBrowser()
     end
+  end
+
+  C.rm = function(args, o)
+    -- Flag parsing: every non-flag arg is a path. -r / -rf allow
+    -- recursive delete of directories; without it, rm refuses to touch
+    -- a non-empty directory so `rm /etc` doesn't nuke /etc in one go.
+    -- --hard skips the trash (FEAT-1) and unlinks immediately.
+    local recursive, hard = false, false
+    local targets = {}
+    for _, a in ipairs(args) do
+      if a == "-r" or a == "-rf" or a == "-R" then recursive = true
+      elseif a == "--hard" or a == "-H" then hard = true
+      else targets[#targets + 1] = a end
+    end
+    if #targets == 0 then o("Usage: rm [-r] [--hard] <path...>", T.dim); return end
+    --! Every path given is removed, each on its own terms: a guard or a
+    --! trash refusal on one says so and moves to the next. This took
+    --! targets[1] and dropped the rest without a word -- `rm a b c` said
+    --! "Removed: a" and left b and c where they were. (test_rm_targets.lua)
+    for _, target in ipairs(targets) do removeOne(target, recursive, hard, o) end
   end
 
   -- FEAT-1 — trash management.

@@ -162,6 +162,33 @@ return function(C, S, deps)
     if not okP or not pkgMod then o("pkg module unavailable", T.error); return end
     local sub = args[1]
 
+    --! A `--` word a verb does not know is refused, and nothing happens.
+    --! They used to be dropped without a word, which is how
+    --! --allow-unsigned -- named in the signature gate's own refusal --
+    --! went unparsed by every verb, and why `pkg install x --dry-rn`
+    --! installed x for real. Refused rather than warned past, because the
+    --! flags these verbs take all change what happens: guessing past a
+    --! misspelt one does the thing the operator was trying to prevent.
+    --! `known` maps each option to true, or to "value" when the next word
+    --! is its argument (--key). Returns true when it refused.
+    --! (test_pkg_flags.lua)
+    local function unknownOption(known, usage)
+      local i = 2
+      while i <= #args do
+        local a = tostring(args[i])
+        if known[a] == "value" then
+          i = i + 1                                  -- skip its argument
+        elseif a:sub(1, 2) == "--" and not known[a] then
+          o(string.format("pkg %s: unknown option '%s' -- nothing was done.", tostring(sub), a),
+            T.error)
+          o("Options: " .. usage, T.dim)
+          return true
+        end
+        i = i + 1
+      end
+      return false
+    end
+
     if not sub or sub == "list" then
       local list = pkgMod.list()
       if #list == 0 then o("No packages installed.", T.dim); return end
@@ -461,22 +488,32 @@ return function(C, S, deps)
       o("Install one with:  pkg fetch <name>", T.dim)
 
     elseif sub == "fetch" then
-      if not args[2] then
-        o("Usage: pkg fetch <name> [--allow-unverified]", T.dim)
+      if unknownOption({ ["--allow-unverified"] = true, ["--allow-unsigned"] = true },
+          "--allow-unverified --allow-unsigned") then return end
+      -- Options go anywhere, as they do for install: the name is the first
+      -- word that is not one. (It was args[2], so `pkg fetch
+      -- --allow-unsigned x` tried to fetch a package called
+      -- "--allow-unsigned".)
+      local name, allow, allowUnsigned = nil, false, false
+      for i = 2, #args do
+        local a = tostring(args[i])
+        if a == "--allow-unverified" then allow = true
+        elseif a == "--allow-unsigned" then allowUnsigned = true
+        elseif not name then name = a end
+      end
+      if not name then
+        o("Usage: pkg fetch <name> [--allow-unverified] [--allow-unsigned]", T.dim)
         o("Downloads from a configured repo, then installs it.", T.dim)
         return
       end
-      local allow = false
-      for i = 3, #args do
-        if args[i] == "--allow-unverified" then allow = true end
-      end
-      o("Fetching '" .. args[2] .. "'...", T.dim)
-      local ok2, res = pkgMod.installRemote(args[2], {
+      o("Fetching '" .. name .. "'...", T.dim)
+      local ok2, res = pkgMod.installRemote(name, {
         session = helpers.sessionOf(S), allowUnverified = allow,
+        allowUnsigned = allowUnsigned,
       })
       if ok2 then
         o(string.format("Installed '%s' from repo '%s' (%d files, %d bytes).",
-          args[2], tostring(res and res.repo), (res and res.files) or 0,
+          name, tostring(res and res.repo), (res and res.files) or 0,
           (res and res.bytes) or 0), T.highlight)
       else
         o(tostring(res), T.error)
@@ -507,7 +544,16 @@ return function(C, S, deps)
       o("pkg upgrade <name>   or   pkg upgrade --all --yes", T.dim)
 
     elseif sub == "upgrade" then
+      if unknownOption({ ["--all"] = true, ["--yes"] = true, ["--force"] = true,
+          ["--dry-run"] = true, ["--dryrun"] = true,
+          ["--allow-unverified"] = true, ["--allow-unsigned"] = true },
+          "--all --yes/-y --force --dry-run --allow-unverified --allow-unsigned") then
+        return
+      end
       local wantAll, assumeYes, force, dryRun = false, false, false, false
+      -- The two gate overrides, because an upgrade runs both gates and its
+      -- refusals name both flags.
+      local allowUnverified, allowUnsigned = false, false
       local names = {}
       for i = 2, #args do
         local a = tostring(args[i])
@@ -515,6 +561,8 @@ return function(C, S, deps)
         elseif a == "--yes" or a == "-y" then assumeYes = true
         elseif a == "--force" then force = true
         elseif a == "--dry-run" or a == "--dryrun" then dryRun = true
+        elseif a == "--allow-unverified" then allowUnverified = true
+        elseif a == "--allow-unsigned" then allowUnsigned = true
         elseif a:sub(1, 2) ~= "--" then names[#names + 1] = a end
       end
 
@@ -531,6 +579,7 @@ return function(C, S, deps)
         end
       else
         o("Usage: pkg upgrade <name>… | --all [--yes] [--force] [--dry-run]", T.dim)
+        o("                   [--allow-unverified] [--allow-unsigned]", T.dim)
         o("       pkg outdated   shows what has a newer version available", T.dim)
         return
       end
@@ -560,7 +609,8 @@ return function(C, S, deps)
       local okN, failN = 0, 0
       for _, u in ipairs(todo) do
         local ok2, res = pkgMod.upgrade(u.name,
-          { session = helpers.sessionOf(S), force = force })
+          { session = helpers.sessionOf(S), force = force,
+            allowUnverified = allowUnverified, allowUnsigned = allowUnsigned })
         if ok2 then
           okN = okN + 1
           o(string.format("  %-20s %s -> %s", u.name, tostring(res.from), tostring(res.to)),
@@ -667,6 +717,12 @@ return function(C, S, deps)
       -- #SEC — packages without a full hash set are rejected unless the
       -- operator passes --allow-unverified (runs untrusted code with no
       -- integrity check). Scan for the flag once; `target` skips it.
+      --! --allow-unsigned is the other gate's override: with `pkg trust
+      --! require on`, an unsigned (or untrusted-key) package is refused and
+      --! the refusal says to use it. It used to be dropped here like any
+      --! unknown `--` word, so following that advice got the same refusal
+      --! again. Every mode below passes BOTH flags on, the picker and the
+      --! media scan included. (test_pkg_flags.lua)
       --
       -- AUTOMATION FLAGS. The picker is for a person at a keyboard; a
       -- startup script, a `bg` job or a cluster provisioning step needs to
@@ -678,11 +734,24 @@ return function(C, S, deps)
       --                   alternative is a script that hangs on a question
       --                   nobody is there to answer)
       --   --dry-run       print the plan, change nothing
+      if unknownOption({ ["--allow-unverified"] = true, ["--allow-unsigned"] = true,
+          ["--force"] = true, ["--all"] = true, ["--yes"] = true,
+          ["--dry-run"] = true, ["--dryrun"] = true, ["--key"] = "value",
+          ["--prompts"] = true, ["--classic"] = true },
+          "--all --yes/-y --dry-run --force --allow-unverified --allow-unsigned "
+          .. "--key <key> --prompts") then
+        return
+      end
       local allowUnverified, wantAll, assumeYes, dryRun = false, false, false, false
+      -- --force: past another package's files and the plan's contradictions
+      -- (MANUAL 7.3). Dropped here too until test_pkg_flags.lua.
+      local allowUnsigned, force = false, false
       local names = {}
       for i = 2, #args do
         local a = tostring(args[i])
         if a == "--allow-unverified" then allowUnverified = true
+        elseif a == "--allow-unsigned" then allowUnsigned = true
+        elseif a == "--force" then force = true
         elseif a == "--all" then wantAll = true
         elseif a == "--yes" or a == "-y" then assumeYes = true
         elseif a == "--dry-run" or a == "--dryrun" then dryRun = true
@@ -707,15 +776,55 @@ return function(C, S, deps)
       local function installList(list)
         if #list == 0 then o("Nothing to install.", T.dim); return end
         if dryRun then
+          --! Each name gets the plan the install would make: what goes
+          --! in, dependencies first, and every contradiction pkg.plan
+          --! finds -- the refusal a real install would have hit, said
+          --! before anything is changed. (test_pkg_flags.lua)
           o(string.format("Would install %d package(s):", #list), T.title)
-          for _, n in ipairs(list) do o("  " .. n, T.fg) end
+          local refused = 0
+          for _, n in ipairs(list) do
+            local plan, perr
+            if pkgMod.planByName then plan, perr = pkgMod.planByName(n) end
+            if not plan then
+              o("  " .. n, T.fg)
+              if perr then
+                refused = refused + 1
+                o("    would fail: " .. tostring(perr), T.error)
+              end
+            else
+              o("  " .. n, T.fg)
+              local steps = {}
+              for _, pn in ipairs(plan.order or {}) do
+                steps[#steps + 1] = (pkgMod.info and pkgMod.info(pn))
+                  and (pn .. " (installed)") or pn
+              end
+              if #steps > 1 then o("    order: " .. table.concat(steps, ", "), T.dim) end
+              for _, c in ipairs(plan.contradictions or {}) do
+                o("    ! " .. tostring(c.text), T.warning)
+              end
+              if #(plan.contradictions or {}) > 0 then
+                if force then
+                  o("    --force: would install past " .. #plan.contradictions
+                    .. " contradiction(s)", T.warning)
+                else
+                  refused = refused + 1
+                  o("    would be refused (--force overrides)", T.error)
+                end
+              end
+            end
+          end
+          if refused > 0 then
+            o(string.format("%d of %d would not install as things stand.", refused, #list),
+              T.warning)
+          end
           o("(--dry-run: nothing was changed)", T.dim)
           return
         end
         local okN, failN = 0, 0
         for _, n in ipairs(list) do
           local ok2, summary = pkgMod.installByName(n,
-            { session = helpers.sessionOf(S), allowUnverified = allowUnverified })
+            { session = helpers.sessionOf(S), allowUnverified = allowUnverified,
+              allowUnsigned = allowUnsigned, force = force })
           if ok2 then
             okN = okN + 1
             o(string.format("  %-20s installed%s", n,
@@ -729,6 +838,28 @@ return function(C, S, deps)
         end
         o(string.format("%d installed, %d failed.", okN, failN),
           failN > 0 and T.warning or T.highlight)
+      end
+
+      --! --dry-run was only ever read by installList, i.e. by --all and by
+      --! several names. One name, a path, and the no-argument scan never
+      --! looked at it, so `pkg install tetris --dry-run` installed tetris
+      --! and `pkg install --dry-run` opened the picker and installed what
+      --! was ticked: the one flag whose whole promise is "change nothing".
+      --! Every mode stops here now. (test_pkg_flags.lua)
+      if dryRun and (mode == "name" or mode == "dir") then
+        installList({ target })
+        return
+      elseif dryRun and mode == "floppy" then
+        local list = {}
+        for _, e in ipairs(pkgMod.listAllAvailable() or {}) do
+          if not (pkgMod.info and pkgMod.info(e.name)) then list[#list + 1] = e.name end
+        end
+        table.sort(list)
+        if #list == 0 then o("Nothing to install.", T.dim); return end
+        o(string.format("Would offer %d package(s) to choose from:", #list), T.title)
+        for _, n in ipairs(list) do o("  " .. n, T.fg) end
+        o("(--dry-run: nothing was changed)", T.dim)
+        return
       end
 
       if mode == "all" then
@@ -760,7 +891,9 @@ return function(C, S, deps)
         end
         local ok2, summary = pkgMod.installByName(target,
           { licenseKey = licenseKey, session = helpers.sessionOf(S),
-            allowUnverified = allowUnverified })  -- #SEC CR-5 + hash gate
+            allowUnverified = allowUnverified,    -- #SEC CR-5 + hash gate
+            allowUnsigned = allowUnsigned,        -- + signature gate
+            force = force })
         if ok2 then
           o(string.format("Installed: %s", table.concat(summary.installed, ", ")), T.highlight)
           if #summary.skipped > 0 then
@@ -774,7 +907,8 @@ return function(C, S, deps)
       elseif mode == "dir" then
         if not target then o("Usage: pkg install <dir>", T.dim); return end
         local ok2, info = pkgMod.install(target,
-          { session = helpers.sessionOf(S), allowUnverified = allowUnverified })  -- #SEC CR-5
+          { session = helpers.sessionOf(S), allowUnverified = allowUnverified,  -- #SEC CR-5
+            allowUnsigned = allowUnsigned, force = force })
         if ok2 then o("Installed: " .. tostring(info), T.highlight)
         else o("Install failed: " .. tostring(info), T.error) end
 
@@ -790,7 +924,9 @@ return function(C, S, deps)
         end
         local ranPicker = false
         if not forcePrompts and pkgMod.runInstaller then
-          local okR, why = pkgMod.runInstaller({ session = helpers.sessionOf(S) })
+          local okR, why = pkgMod.runInstaller({ session = helpers.sessionOf(S),
+            allowUnverified = allowUnverified, allowUnsigned = allowUnsigned,
+            force = force })
           if okR then
             ranPicker = true
             -- #FIX (emulator round 7) — DROP THE SHADOW FIRST. The picker
@@ -817,6 +953,8 @@ return function(C, S, deps)
         local ok2, summary = pkgMod.installFromFloppy({
           session = helpers.sessionOf(S),  -- #SEC CR-5
           allowUnverified = allowUnverified,
+          allowUnsigned = allowUnsigned,
+          force = force,
           confirm = function(name, dir, index, total)
             --! The box wins when there is one, and it is strictly more
             --! informative: the one-line prompt had to name only the
@@ -830,14 +968,19 @@ return function(C, S, deps)
             --! that vanishes and reappears reads as a new interruption
             --! each time rather than one sequence.
             if confirmBox then
+              local boxOpts = { title = "Install from media", severity = "install",
+                yes = "Install", no = "Skip",
+                progress = (index and total and total > 1)
+                  and { index = index, total = total } or nil }
+              --! Set, not `(index < total) and false or nil`: that is
+              --! always nil (`x and false or y` is y), so the wrapper put
+              --! its full repaint back between EVERY question and the
+              --! sequence flickered exactly as the note above says it must
+              --! not. (test_andor_lint.lua)
+              if index and total and index < total then boxOpts.redraw = false end
               return confirmBox(
                 "Install  " .. name .. "?" .. "\n\n" ..
-                "From:" .. "\n  " .. dir,
-                { title = "Install from media", severity = "install",
-                  yes = "Install", no = "Skip",
-                  progress = (index and total and total > 1)
-                    and { index = index, total = total } or nil,
-                  redraw = (index and total and index < total) and false or nil })
+                "From:" .. "\n  " .. dir, boxOpts)
             end
             --! Kept, and not only for old shells: a screen too small for
             --! a framed box, a headless seat, or a GPU-less boot all end
@@ -2246,9 +2389,10 @@ return function(C, S, deps)
     end
     for _, f in ipairs(EXTRA) do if kfs.exists(f) then o("  " .. f, T.fg) end end
     o("", T.dim)
-    o("TOS installs no files into these; nothing in the TOS runtime", T.dim)
-    o("loads from them. An OpenOS floppy remains your recovery path —", T.dim)
-    o("this install stopped being one when TOS replaced /init.lua.", T.dim)
+    o("TOS installs no files into these, but it still looks in them:", T.dim)
+    o("require() searches /lib, and an unknown command is tried in /bin.", T.dim)
+    o("An OpenOS floppy remains your recovery path — this install", T.dim)
+    o("stopped being one when TOS replaced /init.lua.", T.dim)
     o("", T.dim)
     o("Removing /bin also changes what an unknown command does: today", T.dim)
     o("it may run OpenOS's version, afterwards you get 'not a command'.", T.dim)
@@ -2626,7 +2770,9 @@ return function(C, S, deps)
         local ok2, px = pcall(component.proxy, addr)
         if ok2 and px then
           local function lvl(fn)
-            if type(fn) ~= "function" then return "?" end
+            -- nil test, not type(): real component methods are callable
+            -- tables, so type(fn) ~= "function" made every level "?".
+            if fn == nil then return "?" end
             local okL, v = pcall(fn)
             return (okL and tonumber(v)) and tostring(math.floor(v)) or "?"
           end

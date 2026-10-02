@@ -137,6 +137,54 @@ test("admin-capped elevation can setTier to admin", (users.setTier("alice", "car
 test("admin-capped elevation canNOT grant ROOT", not (users.setTier("alice", "carol", T.ROOT)))
 procPrincipal = nil   -- restore for the disable section below
 
+-- ── #SEC: elevation guesses are throttled like logins (H-5) ─────────
+-- With cap = root the elevation password IS a root password, any USER
+-- may try it, and every wrong guess used to be answered at once. It now
+-- takes login's curve, counted per ACCOUNT in the user DB so that a
+-- reboot (which a lone USER may do) does not reset it.
+print()
+print("-- elevation backoff --")
+do
+  local realTime = os.time
+  local now = 1000000
+  os.time = function() return now end
+  users.setElevation(rootS, "letmein9", T.ROOT)
+  procPrincipal = rootS
+  test("root creates erin", (users.create("root", "erin", "erinpass1", T.USER)))
+  procPrincipal = nil
+  local erinS = { user = "erin", tier = T.USER, home = "/home/erin" }
+
+  for i = 1, 3 do
+    local e, why = users.elevate(erinS, "guess" .. i)
+    test("wrong guess " .. i .. " is simply refused",
+      e == nil and why == "Incorrect elevation password")
+  end
+  local e4, why4 = users.elevate(erinS, "letmein9")
+  test("a 4th attempt at once is throttled -- even with the RIGHT password", e4 == nil)
+  test("...and says so", type(why4) == "string" and why4:find("try again in 5s", 1, true) ~= nil)
+
+  -- A reboot re-reads the user DB; the count lives there.
+  users.init({ fs = fs, crypto = package.loaded["kernel.crypto"], log = nil })
+  test("the cooldown survives a reboot", (users.elevate(erinS, "letmein9")) == nil)
+
+  now = now + 6
+  local e5, why5 = users.elevate(erinS, "wrong-again")
+  test("once it passes, a wrong guess is judged again",
+    e5 == nil and why5 == "Incorrect elevation password")
+  local _, why6 = users.elevate(erinS, "letmein9")
+  test("...and the next cooldown is longer (10s)",
+    type(why6) == "string" and why6:find("try again in 10s", 1, true) ~= nil)
+
+  now = now + 11
+  local ok7 = users.elevate(erinS, "letmein9")
+  test("after the cooldown the right password elevates", ok7 ~= nil)
+  local rec = users.getUser("erin")
+  test("...and success clears the count", rec and rec.elevFailed == nil and rec.elevFailedAt == nil)
+  test("another account was never throttled by erin's guesses",
+    users.elevate({ user = "carol", tier = T.ADMIN }, "letmein9") ~= nil)
+  os.time = realTime
+end
+
 -- ── Disable ────────────────────────────────────────────────────────
 test("USER cannot disable elevation", not (users.clearElevation(aliceS)))
 test("root disables elevation", (users.clearElevation(rootS)))

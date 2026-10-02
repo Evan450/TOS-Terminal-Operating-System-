@@ -49,17 +49,21 @@ local function isSensitive(name)
   return type(name) == "string" and SENSITIVE_SIGNALS[name] == true
 end
 
--- #SEC — pointer input a sandboxed program must not be able to INJECT via
--- event.push, even though it may still LISTEN for its own (touch/drag/drop
--- are legitimate OpenOS GUI events, so they stay off SENSITIVE_SIGNALS and
--- remain listenable). key_down/key_up/clipboard/modem/tos_* are already
--- refused by isSensitive on the push path; these four close the gap for the
--- pointer events, so a program can't forge a click or scroll into another
--- seat's foreground the way it can't forge a keystroke. Mirrors
--- kernel.sandbox's PUSH_DROP for the OpenOS-compat route.
-local UNPUSHABLE_INPUT = {
-  touch = true, drag = true, drop = true, scroll = true,
-}
+--! #SEC — what event.push refuses is kernel.event.reservedSignal: the whole
+--! tos_ namespace and everything the machine itself raises (input, modem,
+--! hot-plug, screen_resized, OpenOS's interrupted). This route needs no
+--! capability at all, and its own list missed tos_interrupt, tos_focus,
+--! tos_monitor, component_added/removed, screen_resized and interrupted --
+--! each acted on by the shell or an app on EVERY seat, because proc.tick
+--! broadcasts non-input signals. One rule, shared with the sandbox's
+--! computer.pushSignal. Pointer events (touch/drag/drop) stay LISTENABLE:
+--! they are legitimate OpenOS GUI input for the program's own seat.
+--! (test_compat_event.lua, test_sandbox_push.lua)
+local function unpushable(name)
+  local rule = kEvent.reservedSignal
+  if type(rule) ~= "function" then return true end   -- no rule: refuse, never guess
+  return rule(name)
+end
 
 --- Pull a signal with optional timeout and filter.
 -- OpenOS signature: event.pull([timeout: number], [name: string], ...) -> ...
@@ -187,7 +191,7 @@ function event.push(name, ...)
   -- signals (tos_login_complete, tos_shutdown, etc.). Permitting the push
   -- would let the kernel main loop honour an attacker-supplied token or
   -- shut the machine down at will. Pushing a regular signal still works.
-  if isSensitive(name) or (type(name) == "string" and UNPUSHABLE_INPUT[name]) then
+  if isSensitive(name) or unpushable(name) then
     return false, "signal '" .. tostring(name) .. "' cannot be pushed by user programs"
   end
   kEvent.push(name, ...)

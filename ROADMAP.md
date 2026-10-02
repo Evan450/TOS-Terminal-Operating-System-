@@ -2,18 +2,153 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**103 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**116 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 81 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 19 | Idea, no commitment. Discuss before building. |
+| Planned | 93 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## FEDERATED PACKAGE REPOS (2026-09-27)
+
+### Planned — OCELOT CHECK FOR SLICE 1
+
+```text
+OCELOT CHECK FOR SLICE 1: install a package whose library is on a
+    SECOND floppy; `pkg upgrade` against a disk carrying a stranger-
+    signed copy (refused, old version intact); an install refused for
+    a version contradiction. And TIME the signed upgrade on a T1: it
+    now verifies Ed25519 twice (before removal, and in install against
+    the bytes install reads).
+```
+
+### Planned — `pkg fetch` NEVER FETCHES DEPENDENCIES. installRemote fetches one
+
+```text
+`pkg fetch` NEVER FETCHES DEPENDENCIES. installRemote fetches one
+    package and installs it with its requires unmet. Slice 2.
+```
+
+### Planned — AN OPPM INDEX SIGNED AS A WHOLE ARRIVES UNSIGNED
+
+```text
+AN OPPM INDEX SIGNED AS A WHOLE ARRIVES UNSIGNED. pkgremote.fetch
+    stages a re-encoded one-package programs.cfg and never downloads
+    programs.sig, so a trusted index signature is recorded as
+    `unsigned`. Our own index is unaffected (each package ships its
+    package.lua + package.sig as files; the same probe records
+    `trusted`). Fix: stage the raw index bytes and the .sig. Slice 2.
+```
+
+### Planned — SLICE 2
+
+```text
+SLICE 2: REMOTE. Dependencies across configured repos; the
+    manifest and per-requires `repos` hints under the floor (trusted
+    installs; unknown key = trust on first use, never for service or
+    driver; unsigned = never auto-pulled from a discovered repo); the
+    operator's strictness knob; a known-repos store kept apart from
+    the admin allowlist.
+```
+
+### Planned — SLICE 3
+
+```text
+SLICE 3: RESOLUTION. Winner order: one shared copy satisfies
+    everyone > higher trust > newer > less disk; a tie asks. Private
+    copies when no shared copy works; consensus and freshness across
+    mirrors (a signature cannot stop a mirror serving an OLD signed
+    version; agreement between repos can).
+```
+
+### Idea / far future — SLICE 4
+
+```text
+SLICE 4: DISCOVERY AND REVOCATION. Opt-in bounded crawl over
+    index `siblings`; signed revocation/rotation notices (revocations
+    honoured automatically, successors never trusted automatically);
+    in-world repos over the modem network; namespaced names.
+```
+
+## THE KELLER IMPORT, AND THE BATTERY'S FIRST ROUND (2026-09-25)
+
+### Planned — SSH AND SHARE HAVE NEVER WORKED
+
+```text
+SSH AND SHARE HAVE NEVER WORKED. They look for the network where
+    it does not exist inside their sandbox and always print "Network
+    not available". Deliberately left alone: making them work as they
+    stand would let non-admins run remote commands and transfers that
+    rsh / scp keep admin-only. Decide: alias them to rsh / scp, remove
+    them, or document them. (keller session)
+```
+
+### Planned — /lib IS STILL SEARCHED BEFORE /usr/lib. It is protected now, but
+
+```text
+/lib IS STILL SEARCHED BEFORE /usr/lib. It is protected now, but
+    OpenOS's own libraries there can still shadow an add-on of the same
+    name, and load in Safe Mode. Consider dropping /lib from the search
+    path; needs an in-game check. (keller session)
+```
+
+### Planned — mkdir, touch AND cat USE ONLY THEIR FIRST PATH, as rm did. Visible
+
+```text
+mkdir, touch AND cat USE ONLY THEIR FIRST PATH, as rm did. Visible
+    to the user, unlike rm's silent case. (keller session)
+```
+
+### Planned — fs.mounts() HANDS SANDBOXED PROGRAMS REAL DISK ADDRESSES, which
+
+```text
+fs.mounts() HANDS SANDBOXED PROGRAMS REAL DISK ADDRESSES, which
+    undercuts #SEC H15. Harmless while forged signals are refused;
+    worth closing anyway. (keller session)
+```
+
+### Planned — A MALFORMED REMOTE PACKAGE INDEX MAKES `pkg fetch` THROW instead of
+
+```text
+A MALFORMED REMOTE PACKAGE INDEX MAKES `pkg fetch` THROW instead of
+    refusing cleanly. (keller session)
+```
+
+### Planned — OCELOT CHECK FOR THE KELLER IMPORT
+
+```text
+OCELOT CHECK FOR THE KELLER IMPORT: a round through
+    sync-emulator.py (it now creates etc/selftest.on, since a floppy
+    alone no longer arms the battery); installing several packages
+    from media (it should no longer repaint the shell between
+    prompts); and sudo's "try again in Ns" after wrong passwords.
+      The first of the three is done: two rounds ran through the new
+    arming (etc/selftest.on made by sync-emulator.py) on 2026-09-25.
+```
+
+### Planned — THE OTHER isyieldable() CALLERS STILL MEAN "IN A PROCESS?". On
+
+```text
+THE OTHER isyieldable() CALLERS STILL MEAN "IN A PROCESS?". On
+    hardware they are wrong the same way outside a process, though
+    none is known to be reached from there today:
+      * pipe.lua read/readLine: from the kernel, an empty pipe yields
+        to the host forever instead of returning nil;
+      * sandbox.safePullSignal: from the kernel (an rc.d service's
+        start code), it has no 3 s ceiling and waits for a signal;
+      * proc.yield / proc.sleep, and compat.term's nextSignal: from the
+        kernel both branches eat a signal, so they behave the same.
+    Convert each to proc.inProcess() when it is next touched. Not
+    compat.term's without changing 92-term first: its coroutine test
+    drives term.read OUTSIDE a process and relies on the yield.
+    The shell's own call sites run only inside seat processes.
+```
 
 ## THE FERMI IMPORT: A CLOUD SESSION'S 15 FIXES (2026-09-23)
 
@@ -27,6 +162,24 @@ OCELOT CHECK FOR THE FERMI IMPORT. Two things off-box tests
     sealed-traffic gate: a peer with encryptComms OFF talking to one
     that has it ON and holds a secret for it now has its unsealed
     packets dropped, with a log line, where they used to be accepted.
+      The battery now covers what one machine can (selftest 91-95,
+    2026-09-23): H-03 on a real keyboard; term.read driven through a
+    coroutine against the real GPU, plus what isyieldable() answers
+    in kernel context; beep pauses, the cooldown and the 50 ms floor,
+    timed; rename-over-existing on the host disk; UTF-8 tokens
+    painted and read back. Each was run off-box against the old tree
+    and fails there, except 94, which is a host-behaviour check. Both
+    items above still need hardware this workspace lacks: a second
+    seat, and a second computer.
+      FIRST ROUND 2026-09-25: 102 pass, 1 fail, 2 skip. 91, 93, 94 and
+    95 pass on hardware; 93 confirms a 0.3 s beep holds the machine,
+    the premise the cooldown rests on. The one failure was 92's, and
+    it was real: see COMPONENT METHODS ARE CALLABLE TABLES below.
+    isyieldable()'s answer was lost to the report format (fixed by
+    t.note), so it is still to be read at the next round.
+      SECOND ROUND 2026-09-25: 105 pass, 0 fail, 2 skip, on the rebuilt
+    release. isyieldable() in kernel context: TRUE. See NET.WAITFOR
+    COULD ONLY TIME OUT FROM KERNEL CONTEXT, above.
 ```
 
 ### Planned — BUMP THE CLUSTER PACKAGE VERSIONS

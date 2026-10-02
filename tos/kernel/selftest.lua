@@ -95,17 +95,11 @@ end
 
 --- Every place a marker may live, in priority order.
 ---
---- /etc is securefs-PROTECTED. `echo > /etc/selftest.on` is denied, and
---- the first real round found exactly that -- the shell reported the
---- write as fine, no file appeared, and the battery never ran. /etc
---- gained a WRITE_PROTECTED_EXEMPT entry so the documented procedure
---- works, but a marker that needs an exemption to create is a bad
---- marker.
----
---- So the DISK arms it. Drop selftest.on beside the checks and inserting
---- the disk is the entire procedure: no protected write, no root shell,
---- and the disk that carries the checks is the disk that says "run
---- them", which is one fact instead of two that can disagree.
+--- Markers carry two different facts, and only one of them may come
+--- from a disk:
+---   WHETHER the battery runs  /etc/selftest.on, on the machine itself
+---   WHAT it runs, and how     the test disk: its checks, and a
+---                             selftest.on of its own for the options
 function selftest.markerPaths(fsMod)
   fsMod = fsMod or fs
   local out = { selftest.MARKER }
@@ -116,25 +110,44 @@ function selftest.markerPaths(fsMod)
   return out
 end
 
---- Is the battery armed? Absent marker means this module is never even
---- required, so a production image pays nothing for shipping it.
+--- The disk-side markers present right now. They pick options and mark a
+--- disk root as a folder of checks; they do not arm anything (enabled).
+function selftest.diskMarkers(fsMod)
+  fsMod = fsMod or fs
+  local out = {}
+  if not (fsMod and fsMod.exists) then return out end
+  for _, p in ipairs(selftest.markerPaths(fsMod)) do
+    if p ~= selftest.MARKER and fsMod.exists(p) then out[#out + 1] = p end
+  end
+  return out
+end
+
+--! #SEC — THE MACHINE ARMS THE BATTERY; A DISK NEVER DOES. Every check is
+--! loaded with no environment and run inside the kernel -- deliberately,
+--! because checks audit the live kernel -- and every non-boot disk is
+--! mounted at boot. So when a selftest.on ON A DISK armed it, a floppy
+--! carrying that file plus any .lua was full kernel code execution at the
+--! next boot: no login, no root, nothing typed. Inserted media is hostile
+--! everywhere else in TOS (the BIOS boot prompt, sanitised mount labels,
+--! pkg's hash gate); here it was trusted outright.
+--!
+--! /etc/selftest.on takes ROOT to create (users.lua ROOT_WRITE_PATHS: arming
+--! is granting kernel authority, which an ADMIN does not hold) or, on Ocelot
+--! and ocvm, the host: the machine's disk is an ordinary host directory
+--! there. The disk still decides WHICH checks run and with what options.
+--! (test_selftest.lua)
+--
+-- Absent marker also means this module is never even required, so a
+-- production image pays nothing for shipping it.
 function selftest.enabled(fsMod)
   fsMod = fsMod or fs
   if not (fsMod and fsMod.exists) then return false end
-  for _, p in ipairs(selftest.markerPaths(fsMod)) do
-    if fsMod.exists(p) then return true end
-  end
-  return false
+  return fsMod.exists(selftest.MARKER) and true or false
 end
 
---- Which marker actually armed it, or nil.
+--- Which marker armed it, or nil. Only ever the machine's own.
 function selftest.activeMarker(fsMod)
-  fsMod = fsMod or fs
-  if not (fsMod and fsMod.exists) then return nil end
-  for _, p in ipairs(selftest.markerPaths(fsMod)) do
-    if fsMod.exists(p) then return p end
-  end
-  return nil
+  return selftest.enabled(fsMod) and selftest.MARKER or nil
 end
 
 --- Marker contents are optional config, parsed leniently: a machine
@@ -151,17 +164,29 @@ end
 --- race against the log. Turning the screen checks on is choosing to
 --- accept a messy console for the round, which is a fair trade when
 --- they are the ones answering the question.
+---
+--- Every marker present contributes. For each option the first marker in
+--- priority order that sets it wins, so the usual EMPTY /etc/selftest.on
+--- leaves a test disk's `shutdown=true` in force, and the machine's own
+--- marker can still override the disk.
 function selftest.readMarker(fsMod)
   fsMod = fsMod or fs
   local cfg = { shutdown = false, only = nil, screen = false }
-  local marker = selftest.activeMarker(fsMod)
-  if not marker then return cfg end
-  local body = fsMod.readFile and fsMod.readFile(marker) or ""
-  for line in tostring(body or ""):gmatch("[^\r\n]+") do
-    local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-    if k == "shutdown" then cfg.shutdown = (v == "true" or v == "1")
-    elseif k == "screen" then cfg.screen = (v == "true" or v == "1")
-    elseif k == "only" and v ~= "" then cfg.only = v end
+  if not (fsMod and fsMod.exists) then return cfg end
+  local set = {}
+  for _, marker in ipairs(selftest.markerPaths(fsMod)) do
+    if fsMod.exists(marker) then
+      local body = fsMod.readFile and fsMod.readFile(marker) or ""
+      local mine = {}   -- within one file the last line wins, as before
+      for line in tostring(body or ""):gmatch("[^\r\n]+") do
+        local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+        if k == "shutdown" or k == "screen" then mine[k] = (v == "true" or v == "1")
+        elseif k == "only" and v ~= "" then mine[k] = v end
+      end
+      for k, v in pairs(mine) do
+        if not set[k] then cfg[k] = v; set[k] = true end
+      end
+    end
   end
   return cfg
 end
@@ -172,8 +197,8 @@ end
 
 --- Check files live on a TEST DISK, not in the base image: the runner is
 --- small enough to ship dormant, but a battery of checks is not. Any
---- mounted /mnt/<label>/selftest/ is searched, so inserting the disk is
---- the whole install step.
+--- mounted /mnt/<label>/selftest/ is searched, so on an ARMED machine
+--- inserting the disk is the whole install step (see enabled).
 function selftest.discover(fsMod)
   fsMod = fsMod or fs
   local out = {}
@@ -243,6 +268,15 @@ local function makeT(state)
     state.skips[#state.skips + 1] = name .. " :: " .. tostring(why or "n/a")
     return true
   end
+  -- An OBSERVATION, not a verdict: something the machine answered that a
+  -- round exists to learn (what isyieldable() says in kernel context).
+  -- Only failure and skip names reach the report, so a fact tucked into a
+  -- passing check's name was simply lost -- which is what happened to the
+  -- first answer to that question. Counted as nothing.
+  function t.note(text)
+    state.notes[#state.notes + 1] = tostring(text)
+    return true
+  end
   return t
 end
 
@@ -288,7 +322,7 @@ function selftest.run(opts)
   local files = opts.files or selftest.discover(fsMod)
 
   local state = { n = 0, pass = 0, fail = 0, skip = 0, failures = {}, skips = {},
-                  cfg = cfg }
+                  notes = {}, cfg = cfg }
   local t = makeT(state)
   local started = comp and comp.uptime() or 0
 
@@ -354,6 +388,7 @@ function selftest.run(opts)
 
   for _, f in ipairs(state.failures) do appendLine(fsMod, "  - " .. f) end
   for _, s in ipairs(state.skips)    do appendLine(fsMod, "  ~ " .. s) end
+  for _, n in ipairs(state.notes)    do appendLine(fsMod, "  i " .. n) end
 
   local dur = (comp and comp.uptime() or 0) - started
   appendLine(fsMod, string.format(
