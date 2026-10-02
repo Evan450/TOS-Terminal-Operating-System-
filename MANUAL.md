@@ -2741,8 +2741,11 @@ Chapters 16 & 17.
 Open a **live tab** that re-runs a read-only command on a timer (default 1s) — the
 self-updating counterpart to running it once. *Examples:* `watch ps`,
 `watch 2 df`, `watch net peers`. Press **r** to refresh now, **q**/F4 to close.
-Interactive/screen commands (`edit`, `lua`, `monitor`, …) can't be watched. *See
-also:* `monitor`, `ps`.
+Interactive/screen commands (`edit`, `lua`, `monitor`, …) can't be watched, and a
+watched command needs the same tier it needs at the prompt. The shorthand is
+`--live` on the command itself (`ps --live`, `net peers --live`); `-f` does the
+same for `ps`, `df`, `mem`, `uptime`, `log`, `net`, `battery` and `lsdev`, the
+status commands that use `-f` for nothing else. *See also:* `monitor`, `ps`.
 
 **wc** — `wc <file>`
 Count lines/words/characters. *See also:* `head`, `grep`.
