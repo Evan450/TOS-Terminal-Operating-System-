@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "8ab51921ea3cb7e4bb87205d62d1c549cb378ae0321eac6b468e54257d48e30b" },
+  { path = "/init.lua",                       critical = true  , hash = "258d073028d7c679d3f6ad21cb45844c7fd16184aec881413184ecab2b80f9a1" },
   { path = "/install.lua",                    critical = false , hash = "303de0f21d4afd4deb71d6ede9764cf58ad866d4871b71e21446a85450a4a942" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "3af6ff4ebdc3e4564a88526dabb0e11dc8c592e9bc765350260b14a510dcf29f" },
@@ -59,7 +59,7 @@ return {
   { path = "/tos/kernel/trash.lua",           critical = false , hash = "8e2432b1112c469da3a55395a8313342abbf33981a66679649a1fb77d7676443" },
   { path = "/tos/kernel/vault.lua",           critical = false , hash = "490c3d64d32cf06e516af0b5d7e6c9b5028be5dcf9d4f2d5ae7dc84d8d0fdcfa" },
 
-  { path = "/tos/kernel/net/init.lua",        critical = false , hash = "21405229eece7a701847bdcb33f976e67b534f8929720ebbb89c747cf5717456" },
+  { path = "/tos/kernel/net/init.lua",        critical = false , hash = "471f96267ce65b90da9b0bad81b16e248b32c9795e8008539ac38c6059b75cc8" },
   { path = "/tos/kernel/net/protocol.lua",    critical = false , hash = "c69c48b37edba9e5984fec22f6db78732291d8d18d8fffd09a444a5130f06df8" },
   { path = "/tos/kernel/net/trust.lua",       critical = false , hash = "7f557877c4dfe3f147f877b601964f5c3e1c3c783161799fa05817085a35cee5" },
   { path = "/tos/kernel/net/transfer.lua",    critical = false , hash = "196dfbca15209895e23a4a4ef3540e320a6f6d6dc51bbb9d0e84ca97d2608d40" },
@@ -76,7 +76,7 @@ return {
   { path = "/tos/shell/progenv.lua",          critical = false , hash = "2549d6849bc5e0d6d715ce9d5c6155dc807a3c3a120d5f3961a79cef3b09f389" },
 
   { path = "/tos/shell/keys.lua",             critical = false , hash = "911cdb80368a1c53baabfa24ae012e933a7fcb39c5ce19df81064e0b723c70a9" },
-  { path = "/tos/shell/ext.lua",              critical = false , hash = "a86a87837341a5b41510d5e6e7290f974d352850aa08939bb9f182e86fdf05d0" },
+  { path = "/tos/shell/ext.lua",              critical = false , hash = "c8095b5f8dea3641f60752f5cbd99921071b5bebead6edf618acb746d3a03bc8" },
   { path = "/tos/shell/login.lua",            critical = false , hash = "903ee90406d22c16764cb59304dcabcbaa14820fd974a57273b562e8fb59d773" },
   { path = "/tos/shell/colophon.lua",         critical = false , hash = "6e36066966124e3baecc5b739232d2c4811f87365eb600a62406feae4a6f81ef" },
   { path = "/tos/shell/syntax.lua",           critical = false , hash = "727c8ac8b9f3f47dd109bb118ae61c34ba80f3403eb850935a1b5e03c4dbb83c" },

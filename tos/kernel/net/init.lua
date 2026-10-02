@@ -55,6 +55,28 @@ local modems   = {}
 
 local listenPort    = 42
 local broadcastPort = nil
+
+--! Ports the OpenComputers ecosystem has already claimed (the registry the
+--! GERT project kept, now GlobalEmpire/OC-Programs). 42, TOS's default, is
+--! not one of them. listenPort is the operator's to set, and nothing used
+--! to say that moving it to, say, 4096 puts TOS traffic on a Minitel
+--! network: TOS refuses their frames cleanly, theirs may not refuse ours.
+--! Said once, when the port is opened, naming whose port it is; `net
+--! status` says it too. Not refused: a base can have a reason.
+--! (test_net_reserved_ports.lua)
+local REGISTERED_PORTS = {
+  [14]   = "Ethernet-over-OC",
+  [148]  = "the GUI service",
+  [4096] = "MultICE / Minitel",
+  [4378] = "GERTi",
+  [4379] = "GERTi",
+  [4662] = "short messages",
+  [9100] = "the network print service",
+  [9900] = "Zorya BIOS LAN boot",
+}
+net.REGISTERED_PORTS = REGISTERED_PORTS
+
+function net.portOwner(port) return REGISTERED_PORTS[port] end
 local encryptComms  = true
 local hostname      = "tos"
 
@@ -93,6 +115,13 @@ function net.init(modules)
     broadcastPort = (type(bp) == "number" and bp ~= listenPort) and bp or nil
     encryptComms  = config.get("encryptComms") ~= false
     hostname      = config.get("hostname") or "tos"
+  end
+  for _, p in ipairs({ listenPort, broadcastPort }) do
+    local owner = p and REGISTERED_PORTS[p]
+    if owner and log then
+      log.warn("net", string.format("Port %d is registered to %s: TOS traffic will share "
+        .. "that network. TOS's own port is 42 (listenPort in /etc/tos.cfg).", p, owner))
+    end
   end
 
   modems = {}
@@ -1047,6 +1076,7 @@ function net.status()
     fullAddress  = myAddr,
     hostname     = hostname,
     listenPort   = listenPort,
+    portOwner    = REGISTERED_PORTS[listenPort],
     encrypted    = encryptComms,
     hasModem     = modem ~= nil,
     hasTunnel    = tunnel ~= nil,
