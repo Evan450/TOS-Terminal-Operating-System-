@@ -170,6 +170,48 @@ do
     and #img < #src and not img:find("^%-%-") and not img:find("\n%s*%-%-"))
 end
 
+-- Every .lua the pack ships is stripped the way the release tree is:
+-- comments out, `--!` lines kept, line numbers where the source has them.
+-- The pack used to ship source as written (blockfs.lua: 53 KB to require,
+-- all of it embedded in the TBFS boot blob).
+do
+  local strip
+  for _, cand in ipairs({ root .. "/../TOS-Dev/build/strip.lua", root .. "/../build/strip.lua",
+      "../TOS-Dev/build/strip.lua", "build/strip.lua" }) do
+    local c = loadfile(cand)
+    if c then
+      local ok, mod = pcall(c)
+      if ok and type(mod) == "table" and type(mod.strip) == "function" then strip = mod break end
+    end
+  end
+  test("strip.lua reachable (for the stripping checks)", true, strip ~= nil)
+  local function lines(x) return select(2, x:gsub("\n", "")) end
+  for _, f in ipairs({
+      { pkg = "blockfs", src = "/modules/blockfs/usr/lib/blockfs.lua", target = "/usr/lib/blockfs.lua" },
+      { pkg = "tape", src = "/modules/tape/init.lua", target = "/usr/modules/tape/init.lua" } }) do
+    local src = readAll(root .. f.src)
+    local shipped = readAll(OUT .. "/" .. f.pkg .. f.target)
+    if strip and src and shipped then
+      src = src:gsub("\r\n", "\n")
+      test(f.pkg .. ": ships its .lua stripped", true, shipped == strip.strip(src))
+      test("...smaller than the source", true, #shipped < #src)
+      test("...every line where the source has it", lines(src), lines(shipped))
+    end
+  end
+  local broken
+  for _, name in ipairs(EXPECTED) do
+    local chunk = loadfile(OUT .. "/" .. name .. "/package.lua")
+    local m = chunk and chunk() or {}
+    for _, target in ipairs(m.files or {}) do
+      if target:match("%.lua$") then
+        local d = readAll(OUT .. "/" .. name .. target)
+        if d and not load(d, "=" .. target, "t", {}) then broken = broken or (name .. target) end
+      end
+    end
+  end
+  test("every .lua in the pack parses", nil, broken)
+end
+
 -- And a build whose image would not fit the chip is refused, not shipped.
 do
   local big = OUT .. "-big"

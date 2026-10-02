@@ -62,6 +62,20 @@ Two things about that command line are deliberate:
 The builder drives `TOS-Dev/tos/kernel/pkgsign.lua` over a filesystem shim
 rather than reimplementing the record, so a disk built here and a package
 signed on-box with `pkg sign` cannot disagree about what a signature is.
+
+### What a package ships
+
+Every `.lua` file goes through `TOS-Dev/build/strip.lua` on its way into the
+pack, as the release tree does: comments are removed, `--!` lines are kept,
+and line numbers do not move, so a traceback still points at the source line.
+Write comments freely; they cost a machine nothing. A file that parses as
+written and not once stripped stops the build. The add-ons ship about 35%
+smaller this way (blockfs.lua: 53 KB to 37 KB).
+
+One file is built rather than copied: rc-pilot's robot EEPROM image,
+`/usr/share/rc-pilot/eeprom-rc-pilot.lua`, minified from
+`robot/eeprom-rc-pilot.lua` (`MINIFIED` in the builder). The build fails if
+the image is over the chip's 4096 bytes.
 Defaults: `extras-root` = the parent of `build/`, `out-dir` =
 `<extras-root>/dist/optional-utilities`. The output directory is a build
 artifact (wiped and regenerated every run — never hand-edit it) — copy its

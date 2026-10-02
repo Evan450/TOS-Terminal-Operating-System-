@@ -294,10 +294,23 @@ print()
 print("-- the driver still fits its boot region --")
 do
   local fh = io.open(blockfsPath, "rb"); local src = fh:read("*a"); fh:close()
-  local blob = blockfs.bootBlob(src)
+  src = src:gsub("\r\n", "\n")
+  -- What the pack SHIPS: build-disk.lua strips every .lua it packs, and
+  -- `deploy` embeds the installed copy, so the stripped bytes are both the
+  -- RAM a 192 KB machine pays to require the driver and the boot blob.
+  local strip
+  for _, p in ipairs({ base .. "../../../TOS-Dev/build/strip.lua", base .. "../../../build/strip.lua",
+      "../TOS-Dev/build/strip.lua", "build/strip.lua" }) do
+    local c = loadfile(p)
+    if c then
+      local ok, m = pcall(c)
+      if ok and type(m) == "table" and type(m.strip) == "function" then strip = m break end
+    end
+  end
+  local shipped = strip and strip.strip(src) or src
+  local blob = blockfs.bootBlob(shipped)
   le("boot blob fits the 64 KB region test_blockfs.lua formats", 64 * 1024 - 4, #blob)
-  -- The pack ships this file unstripped, so its size is RAM on a 192 KB
-  -- machine. A ceiling, so growth is a decision rather than drift.
+  -- A ceiling, so growth is a decision rather than drift.
   --! DECIDED 2026-09-10: 52 KB -> 54 KB. The ENOSPC fix (an allocation
   --! journal and a two-pass write) and deploy's pre-flight (blockfs.plan,
   --! blockfs.blocksFor) added ~2.4 KB of code. The comments that came with
@@ -305,7 +318,14 @@ do
   --! fit, and the maintainer chose to raise the ceiling over golfing
   --! readable code. The larger lever is stripping the pack's Lua at build
   --! time, which would give back far more than this cost.
-  le("driver source stays under 54 KB", 54 * 1024, #src)
+  --! 2026-10-02: that lever is pulled (build-disk.lua strips the pack), so
+  --! the ceiling is on the SHIPPED driver: 36.9 KB today, 40 KB allowed.
+  --! Comments in the source cost nothing on a machine now; write them.
+  if strip then
+    le("shipped (stripped) driver stays under 40 KB", 40 * 1024, #shipped)
+  else
+    le("driver source stays under 54 KB (strip.lua not reachable)", 54 * 1024, #src)
+  end
 end
 
 print()

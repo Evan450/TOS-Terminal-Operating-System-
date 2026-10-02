@@ -298,6 +298,14 @@ end
 --! runs its file-tree driver only when invoked AS strip.lua, so loading it
 --! from here just returns its module table. Missing it is not fatal unless
 --! a package needs it (MINIFIED below), and then it is a build problem.
+--!
+--! EVERY shipped .lua goes through it, as the release tree does. The pack
+--! used to copy source as written, comments and all: blockfs.lua was 53 KB
+--! on disk and in RAM when required, and the TBFS boot blob embedded all
+--! of it. Stripped it is 37 KB, and the add-ons as a whole drop from 825 KB
+--! to 537 KB. `--!` lines are kept and nothing is minified, so line numbers
+--! do not move and a traceback still points at the source line.
+--! (test_build_disk.lua)
 local stripper
 do
   for _, cand in ipairs({
@@ -312,6 +320,9 @@ do
       local ok, m = pcall(chunk)
       if ok and type(m) == "table" and type(m.strip) == "function" then stripper = m break end
     end
+  end
+  if not stripper then
+    io.write("WARNING: build/strip.lua not found -- packages ship with their comments\n")
   end
 end
 
@@ -528,7 +539,16 @@ for _, root in ipairs(DISCOVERY_ROOTS) do
           local srcRel = gen and gen.src or resolveTarget(srcDirRel, m.name, target)
           local data = srcRel and normalizeEOL(readAll(extrasRoot .. "/" .. srcRel))
           local genErr
-          if data and gen then
+          if data and not gen and stripper and target:match("%.lua$") then
+            local stripped = stripper.strip(data)
+            -- A file that parses as written and not once stripped is a
+            -- strip.lua bug, and a refusal rather than a broken package.
+            if load(data, "=" .. target, "t", {}) and not load(stripped, "=" .. target, "t", {}) then
+              genErr = "parses as written but not once stripped (a strip.lua bug)"
+            else
+              data = stripped
+            end
+          elseif data and gen then
             if not stripper then
               genErr = "is built with strip.lua --minify, and strip.lua was not found"
             else
@@ -541,7 +561,7 @@ for _, root in ipairs(DISCOVERY_ROOTS) do
             end
           end
           if genErr then
-            problems[#problems + 1] = m.name .. ": " .. target .. " (from " .. gen.src .. ") " .. genErr
+            problems[#problems + 1] = m.name .. ": " .. target .. " (from " .. tostring(srcRel) .. ") " .. genErr
           elseif not data then
             problems[#problems + 1] = m.name .. ": no source found for " .. target
               .. " (tried " .. srcDirRel .. target .. " and "
