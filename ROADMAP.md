@@ -17,6 +17,24 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
 
 ## THE OPEN QUEUE, WORKED THROUGH (2026-10-01)
 
+### Planned — LICENCE HEADERS -- OPERATOR DECISION
+
+```text
+LICENCE HEADERS -- OPERATOR DECISION. The provenance lint's other
+    half (A PROVENANCE LINT, below) wanted every shipped .lua to carry a
+    licence header. Today 0 of the 197 shipped files do; LICENSE.txt at
+    the root is the whole statement. Two calls are the licence holder's,
+    not a session's: (1) GPL-3.0-only or GPL-3.0-or-later; (2) whether
+    the RELEASE carries it. strip.lua keeps `--!` lines (licence
+    headers are one of the three things it keeps), so a one-line
+    `--! SPDX-License-Identifier: GPL-3.0-or-later` costs 46 bytes in
+    each of the 138 release files: about 6.2 KB on a Tier 2 disk the
+    2026-09 audit already found tight. A plain `--` header would cost
+    nothing in the release and carry the notice in source only. Once
+    decided, the header goes in mechanically and test_provenance.py
+    grows the check.
+```
+
 ### Open bug — THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX THEY ARE GIVEN. Found
 
 ```text
@@ -363,22 +381,6 @@ IF WE BUILD THE ARCHIVE MOUNT, USE mtar -- DO NOT INVENT A
     archive has no trust properties of its own -- the Ed25519
     signature over it is where the security lives, and that stays
     ours.
-```
-
-### Planned — A PROVENANCE LINT
-
-```text
-A PROVENANCE LINT. KittenOS' compliance.lua walks the repository
-    and prints "File wasn't accounted for" for anything not claimed
-    by an author manifest. We have the same SHAPE for runtime files
-    (test_manifest_completeness.lua) and an accidental-global lint
-    besides; what is missing is the LICENSING half. We are GPL v3,
-    we vendor an OpenOS tree under Reference/, and Extras ships
-    separately authored modules. A lint that every .lua under tos/
-    and TOS-Extras/modules/ carries a license header, and that
-    nothing under Reference/ is reachable from a release manifest, is
-    cheap and protects the part of the project that is hardest to
-    repair after the fact.
 ```
 
 ### Idea / far future — MESH

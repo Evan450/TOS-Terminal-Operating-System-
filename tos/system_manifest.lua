@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "09017b50da867795d4efad7afa3a84a57b18628343b3a2a9c23e38416178cb33" },
+  { path = "/init.lua",                       critical = true  , hash = "5a03555989418ccbb20993fae8f5d388d322b58d8019556490c348983b5553db" },
   { path = "/install.lua",                    critical = false , hash = "303de0f21d4afd4deb71d6ede9764cf58ad866d4871b71e21446a85450a4a942" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "3af6ff4ebdc3e4564a88526dabb0e11dc8c592e9bc765350260b14a510dcf29f" },
@@ -125,7 +125,7 @@ return {
   { path = "/tos/compat/colors.lua",          critical = false , hash = "52a7750022f49889827d3ef26bd2827283b3900cda693f7358bfe851bfd4be81" },
   { path = "/tos/compat/event.lua",           critical = false , hash = "1900b9cd839eda24fd0c2f4af5e7eeda4d35dbe7083416ddc714a9364c2c4fa0" },
   { path = "/tos/compat/filesystem.lua",      critical = false , hash = "978632f73950c697fb29b0f15bc48d1942dba2392bd9aec8b98cc2cf2fbe9438" },
-  { path = "/tos/compat/internet.lua",        critical = false , hash = "82086daecfe5bbe59814d81692e0c2a2b4a1b602e08ab243c92b6d7fc1ad5535" },
+  { path = "/tos/compat/internet.lua",        critical = false , hash = "cbecf3b0d776bf951a86fbe8b2cbf4956864402a192958af5287ad6b27f8595f" },
   { path = "/tos/compat/io.lua",              critical = false , hash = "fe5dfc7bcfdb5009e8e4ca09d3894e1be68bacd28bd9eda8bad004616b821180" },
   { path = "/tos/compat/keyboard.lua",        critical = false , hash = "1148f86b1ac51645ec0a2de7c83decf47e8e2220f758426d3c53579b566df32e" },
   { path = "/tos/compat/note.lua",            critical = false , hash = "f5df4ce91df5b547618ece232afe0c94b00a3fca976b1ff8982f6374c4ecfca1" },

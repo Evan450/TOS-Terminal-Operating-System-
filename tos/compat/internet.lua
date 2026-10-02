@@ -1,3 +1,10 @@
+--! PROVENANCE. Parts of this file follow OpenOS's lib/internet.lua (MIT
+--! licence, the OpenComputers project) line for line: the checkArg
+--! contract of request/socket/open, and the loop that form-encodes a table
+--! `data` into a POST body. They are kept identical on purpose -- a ported
+--! program must see the same behaviour -- and credited here for that
+--! reason. The rest is TOS's own. (build/test_provenance.py)
+
 --! This shim reaches the internet card DIRECTLY, exactly as the OpenOS
 --! library does — an OpenOS program's `internet.request` is expected to
 --! stream, and routing it through kernel.internet's bounded string reader
