@@ -489,6 +489,8 @@ return function(C, S, deps)
     end
     o("TOS - " .. tagline, T.title)
     o("Version " .. (tos.version or "?") .. "  [" .. (tos.codename or "?") .. "]", T.highlight)
+
+    o("Build " .. tostring(tos.build or "?") .. " (" .. tostring(tos.variant or "?") .. ")", T.dim)
     o("GPU T" .. tier .. " | " ..
       math.floor(computer.totalMemory() / 1024) .. "K RAM", T.dim)
     o(vendor .. "   -   GNU GPL v3.0", T.dim)

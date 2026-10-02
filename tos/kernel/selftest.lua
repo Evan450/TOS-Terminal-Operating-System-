@@ -200,7 +200,11 @@ function selftest.run(opts)
   local started = comp and comp.uptime() or 0
 
   if fsMod and fsMod.writeFile then pcall(fsMod.writeFile, selftest.RESULTS, "") end
-  appendLine(fsMod, string.format("SELFTEST BEGIN at=%.1f files=%d", started, #files))
+
+  local T0 = rawget(_G, "_TOS") or {}
+  appendLine(fsMod, string.format("SELFTEST BEGIN at=%.1f files=%d version=%s build=%s variant=%s",
+    started, #files, tostring(T0.version or "?"), tostring(T0.build or "?"),
+    tostring(T0.variant or "?")))
   if comp and comp.freeMemory then
     appendLine(fsMod, string.format("ENV mem_free=%dK", math.floor(comp.freeMemory() / 1024)))
   end

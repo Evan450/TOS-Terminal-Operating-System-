@@ -46,7 +46,10 @@ function kernel.boot(opts)
 
   log.init({ earlyPrint = earlyPrint, earlyMinLevel = opts.earlyMinLevel,
     bootProgress = opts.bootProgress })
-  log.info("kernel", "TOS Kernel v" .. _G._TOS.version .. " starting")
+
+  log.info("kernel", "TOS Kernel v" .. _G._TOS.version .. " (build "
+    .. tostring(_G._TOS.build or "?") .. ", " .. tostring(_G._TOS.variant or "?")
+    .. ") starting")
 
   _G._TOS.log    = function(src, msg) log.info(src, msg) end
   _G._TOS.logObj = log
