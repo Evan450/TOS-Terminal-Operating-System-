@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**111 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**110 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 87 | Planned or under investigation. Most contributions belong here. |
+| Planned | 86 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -356,35 +356,6 @@ IF WE BUILD THE ARCHIVE MOUNT, USE mtar -- DO NOT INVENT A
     archive has no trust properties of its own -- the Ed25519
     signature over it is where the security lives, and that stays
     ours.
-```
-
-### Planned — rc.lua: TWO NARROW THINGS, AND A CORRECTED ASSUMPTION. OCOS'
-
-```text
-rc.lua: TWO NARROW THINGS, AND A CORRECTED ASSUMPTION. OCOS'
-    service framework (declarative units, topo-sorted startup,
-    supervised restart, per-service caps) reads like a clear lead.
-    IT IS NOT -- rc.lua has all of it: topoSort at :135,
-    dependency-ordered start at :423, restart supervision at :516,
-    per-service caps and user. Recorded so the next survey does not
-    re-raise it. The DETAILS are worth having:
-      * SERVICE METADATA IS RECOVERED BY REGEX OVER SOURCE TEXT.
-        rc.lua:237 does src:match("restart%s*=%s*true"). The returned
-        table is consulted too (:403 uses result.restart), so this is
-        a pre-scan rather than the only path -- but a COMMENT that
-        mentions restart = true, or a value computed rather than
-        written literally, is read wrong. Fix that fits our idiom:
-        keep the file, drop the regex, have the pre-scan load the
-        table in a bare environment.
-      * restartCount NEVER DECAYS. tryRestart stops at maxRestart and
-        logs -- good, no thrash -- but the count is per-LIFETIME, so
-        a service that crashes once a week eventually exhausts its
-        budget and stays down with a log line as the only trace.
-        Could be as small as resetting the count after the service
-        has stayed up N minutes. OCOS' answer is exponential backoff
-        plus a tri-state policy (always / on_failure / one_shot), and
-        their one_shot comment names the case worth stealing: a
-        missing GPU should not make the supervisor thrash.
 ```
 
 ### Planned — A PROVENANCE LINT

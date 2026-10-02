@@ -66,6 +66,18 @@ end
 
 -- Turn a caps spec (array or set) into a set, dropping anything not on
 -- the allowed list so a malicious rc.d script can't request unknown caps.
+--! restartCount used to be per-LIFETIME. Stopping at maxRestart ends a
+--! crash loop, but a service that crashed once a week used its budget up
+--! eventually and then stayed down for good, a log line the only trace. A
+--! service that has stayed up RESTART_DECAY seconds since it last started
+--! gets the budget back, and an operator's `service start` resets it.
+--! (test_rc_peek_decay.lua)
+local RESTART_DECAY = 600
+local function now()
+  local ok, c = pcall(require, "computer")
+  return (ok and type(c) == "table" and type(c.uptime) == "function") and c.uptime() or 0
+end
+
 local function normalizeCaps(spec)
   if type(spec) ~= "table" then
     local out = {}
@@ -205,20 +217,61 @@ function rc.runAll()
   -- explicitly called out that the old code ran every rc.d script with
   -- full kernel authority just to read result.caps — now we never do.
 
+  --! The peek reads CODE, not comments: block comments go first, then the
+  --! rest of any line from a `--` that is not inside a string. Reading the
+  --! raw source, a comment that mentioned `restart = true` made a service
+  --! restart, and one that sketched a caps table stood in for the real
+  --! one. (test_rc_peek_decay.lua)
+  local function stripComments(src)
+    src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
+    local out = {}
+    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+      local i, inS, inD, cut = 1, false, false, #line
+      while i <= #line do
+        local c = line:sub(i, i)
+        if not inS and not inD and c == "-" and line:sub(i + 1, i + 1) == "-" then
+          cut = i - 1; break
+        end
+        if not inD and c == "'" and line:sub(i - 1, i - 1) ~= "\\" then inS = not inS end
+        if not inS and c == '"' and line:sub(i - 1, i - 1) ~= "\\" then inD = not inD end
+        i = i + 1
+      end
+      out[#out + 1] = line:sub(1, cut)
+    end
+    return table.concat(out, "\n")
+  end
+
   local function peekServiceMeta(src)
     -- Returns a table of declared metadata fields (caps, user, restart,
     -- maxRestart, deps). Only accepts simple literal patterns so a
     -- clever script can't trick the peek into granting itself extra
     -- caps. Anything the peek can't parse is treated as absent.
     local meta = {}
-    local capsStr = src:match("caps%s*=%s*(%b{})")
+    local code = stripComments(src)
+    local capsStr = code:match("caps%s*=%s*(%b{})")
     if capsStr then
-      meta.caps = {}
-      for cap in capsStr:gmatch('"([%w%._]+)"') do
-        meta.caps[#meta.caps + 1] = cap
+      --! Decoded as DATA (kernel.serialize runs no code), so every literal
+      --! form reads alike: { "net" }, { ["net"] = true } and { net = true }.
+      --! The quoted-name scan read only the first two, so cluster-storaged's
+      --! `net = true` was dropped and the daemon started without the
+      --! network it serves. A table that is not a literal falls back to
+      --! that scan, and normalizeCaps grants only ALLOWED_SERVICE_CAPS
+      --! either way.
+      local okS, ser = pcall(require, "kernel.serialize")
+      local okD, decoded = false, nil
+      if okS and type(ser) == "table" and ser.decode then
+        okD, decoded = pcall(ser.decode, capsStr)
       end
-      for cap in capsStr:gmatch("'([%w%._]+)'") do
-        meta.caps[#meta.caps + 1] = cap
+      if okD and type(decoded) == "table" then
+        meta.caps = decoded
+      else
+        meta.caps = {}
+        for cap in capsStr:gmatch('"([%w%._]+)"') do
+          meta.caps[#meta.caps + 1] = cap
+        end
+        for cap in capsStr:gmatch("'([%w%._]+)'") do
+          meta.caps[#meta.caps + 1] = cap
+        end
       end
     end
     meta.user = src:match('user%s*=%s*"([%w_-]+)"')
@@ -234,8 +287,8 @@ function rc.runAll()
     if meta.user == "_kernel_" then
       meta._kernelClaimed = true
     end
-    meta.restart = src:match("restart%s*=%s*true") and true or false
-    local mr = src:match("maxRestart%s*=%s*(%d+)")
+    meta.restart = code:match("restart%s*=%s*true") and true or false
+    local mr = code:match("maxRestart%s*=%s*(%d+)")
     if mr then meta.maxRestart = tonumber(mr) end
     return meta
   end
@@ -435,6 +488,7 @@ function rc.runAll()
       local sok, serr = pcall(svc.start)
       if sok then
         svc.running = true
+        svc.startedAt = now()
         if log then log.info("rc", "Service started: " .. svcName) end
       else
         svc.running = false
@@ -468,6 +522,10 @@ function rc.start(name)
   local ok, err = pcall(svc.start)
   if ok then
     svc.running = true
+    -- An operator's start is a fresh start: the restart budget is theirs
+    -- to give back (see RESTART_DECAY).
+    svc.startedAt = now()
+    svc.restartCount = 0
     -- #SVC — an explicit operator start persists the enable: clear the
     -- disabled marker so the service also auto-starts on the next boot.
     if svc.disabledAtBoot and fs then
@@ -518,6 +576,11 @@ function rc.tryRestart(name)
   local svc = services[name]
   if not svc then return false end
   if not svc.restart then return false end
+  -- A service that stayed up RESTART_DECAY since its last start crashed
+  -- once, not in a loop: it gets its budget back.
+  if svc.startedAt and now() - svc.startedAt >= RESTART_DECAY then
+    svc.restartCount = 0
+  end
   if svc.restartCount >= svc.maxRestart then
     if log then log.warn("rc", "Service '" .. name .. "' exceeded max restarts (" .. svc.maxRestart .. ")") end
     return false
@@ -527,6 +590,7 @@ function rc.tryRestart(name)
   local ok, err = pcall(svc.start)
   if ok then
     svc.running = true
+    svc.startedAt = now()
     return true
   end
   if log then log.warn("rc", "Restart failed: " .. name .. ": " .. tostring(err)) end
