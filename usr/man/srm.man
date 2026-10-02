@@ -10,6 +10,7 @@ SYNOPSIS
     srm full
     srm baseline [--full]
     srm repair   [--restore] [--source <mount>] [--unverified]
+    srm repair   --online [--apply] [--unanchored] [--ref=<tag>]
     srm restore  [--source <mount>] [--unverified] [path...]
 
 DESCRIPTION
@@ -89,9 +90,21 @@ SUBCOMMANDS
                 files that are missing or have drifted.
     restore     Restore specific files (or everything scan flags) from the
                 store or from --source.
+    repair --online
+                Put back system files that fail their manifest digest,
+                fetched through an internet card from THIS machine's
+                release (the build-<stamp> tag; the newest release when
+                there is none). A fetched file is written only if its
+                SHA-256 matches the local manifest, and the manifest only
+                if it matches the EEPROM anchor (--unanchored accepts an
+                unanchored one; a mismatched one is always refused).
+                Everything is staged under /var/repair and checked before
+                anything is replaced. Nothing under /etc is touched.
+                Without --apply it only lists what it would fetch.
 
     status, scan, health, verify and full are open to any logged-in user.
-    baseline, repair and restore require an ADMIN session.
+    baseline, repair and restore require an ADMIN session; repair
+    --online --apply requires root.
 
 FILES
     /var/srm/index.dat    the baseline: a hash and size per file

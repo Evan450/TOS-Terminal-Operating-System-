@@ -68,6 +68,7 @@ return {
   { path = "/tos/kernel/bootsettings.lua",    critical = false },
   { path = "/tos/kernel/bootsteps.lua",       critical = false },
   { path = "/tos/kernel/repair.lua",          critical = false },
+  { path = "/tos/kernel/netrepair.lua",       critical = false },
   { path = "/tos/kernel/srm.lua",             critical = false },
   { path = "/tos/kernel/errors.lua",          critical = false },
   { path = "/tos/kernel/notify.lua",          critical = false },

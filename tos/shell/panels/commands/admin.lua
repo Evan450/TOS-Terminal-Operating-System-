@@ -1326,6 +1326,29 @@ return function(C, S, deps)
         paths = #rest > 0 and rest or nil,
       })))
 
+    elseif sub == "repair" and flags.online then
+      -- Online repair (kernel/netrepair.lua): put back system files that
+      -- fail their manifest digest, from the published release. A dry run
+      -- by default; --apply writes, and writing kernel files with bytes
+      -- off the network is ROOT's call even though every byte is checked.
+      if not adminOnly(o) then return end
+      if flags.apply and not rootOnly(o) then return end
+      if flags.ref == true then
+        o("--ref needs a value, e.g. --ref=build-2603a5b or --ref=main", T.error); return
+      end
+      local okN, nr = pcall(require, "kernel.netrepair")
+      if not okN or not nr then o("online repair unavailable: " .. tostring(nr), T.error); return end
+      o("=== SRM repair --online ===", T.title)
+      local rep = nr.run(nil, { apply = flags.apply and true or false,
+        unanchored = flags.unanchored and true or false,
+        ref = type(flags.ref) == "string" and flags.ref or nil })
+      for _, l in ipairs(rep.lines) do o(l.text, SEV[l.sev] or T.fg) end
+      if flags.apply then
+        o("", T.dim)
+        o(string.format("%d repaired, %d rejected.", rep.fixed, rep.rejected),
+          rep.ok and SEV.ok or SEV.warn)
+      end
+
     elseif sub == "repair" then
       if not adminOnly(o) then return end
       o("=== SRM repair ===", T.title)
@@ -1367,6 +1390,8 @@ return function(C, S, deps)
       o("  srm full                 all of the above, in one report", T.dim)
       o("  srm baseline [--full]    record a known-good system (--full stores copies)", T.dim)
       o("  srm repair [--restore]   fix what is safe; --restore puts files back", T.dim)
+      o("  srm repair --online [--apply] [--unanchored] [--ref=<tag>]", T.dim)
+      o("                           put back broken system files from the published release", T.dim)
       o("  srm restore [--source <mount>] [--unverified] [path...]", T.dim)
       o("", T.dim)
       o("SRM has two halves. The EEPROM one runs at POST and catches the", T.dim)
