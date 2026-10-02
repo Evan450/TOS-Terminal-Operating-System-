@@ -607,8 +607,37 @@ function securefs.forSession(session)
   proxy.spaceTotal  = securefs.spaceTotal
   proxy.spaceUsed   = securefs.spaceUsed
   proxy.spaceFree   = securefs.spaceFree
-  proxy.mounts      = securefs.mounts
+  --! #SEC H15 — this proxy is the `fs` a sandboxed program is given, and
+  --! its mounts() handed back every disk's REAL component address.
+  --! compat.filesystem.get() has hidden that address since H15 (it is the
+  --! handle `component.proxy` turns into raw, unmediated disk access);
+  --! fs.mounts() gave it out anyway. Same rule as there: admin-or-better
+  --! sees the address, anyone else the opaque id securefs.opaqueMountId
+  --! derives, so the two views of one disk agree. Copies, so nothing the
+  --! caller does to the list reaches fs.lua. (test_securefs_session_bind.lua)
+  proxy.mounts = function()
+    local list = securefs.mounts() or {}
+    local sess = sessionOf(session)
+    local admin = sess and usermod and usermod.TIER
+      and (sess.tier or 0) >= (usermod.TIER.ADMIN or 2)
+    local out = {}
+    for i, m in ipairs(list) do
+      local c = {}
+      for k, v in pairs(m) do c[k] = v end
+      if not admin then c.address = securefs.opaqueMountId(m.mountPoint, m.address) end
+      out[i] = c
+    end
+    return out
+  end
   return proxy
+end
+
+function securefs.opaqueMountId(mountPoint, addr)
+  local okC, cryptoMod = pcall(require, "kernel.crypto")
+  if okC and cryptoMod and cryptoMod.hash then
+    return "fs:" .. cryptoMod.hash(tostring(mountPoint) .. "|" .. tostring(addr)):sub(1, 16)
+  end
+  return "fs:" .. tostring(mountPoint)
 end
 
 securefs._isProtectedTarget = function(p, s) return _isProtectedTarget(p, s) end
