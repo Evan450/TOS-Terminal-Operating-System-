@@ -170,19 +170,15 @@ do
       eq("...recognised as a programs.cfg index", "/repo/programs.cfg", path)
       eq("...resolving to the install target OPPM would use",
         "/usr/bin/bootstrap.lua", m.files and m.files[1])
-      --! [KNOWN GAP] — recorded, not endorsed. TOS resolves the source with
-      --! the `master/` segment intact, i.e. it expects a directory literally
-      --! named `master` inside the repo. A git CHECKOUT of the master branch
-      --! has no such directory: the segment is part of the raw URL OPPM
-      --! builds, not part of the tree. So TOS can read this index but would
-      --! look for the file one level too deep if someone cloned an OPPM repo
-      --! and pointed `pkg install` at it.
-      --!
-      --! It costs nothing HERE (OPPM fetches by URL, where the key is right)
-      --! and the index we publish is correct for OPPM. It is pinned so that
-      --! fixing kernel.pkg fails this line and prompts an update rather than
-      --! passing silently. See TODO/ROADMAP: "OPPM checkout source paths".
-      eq("[known gap] source keeps the branch segment (see the note above)",
+      --! The translation keeps the key LITERALLY, branch segment and all:
+      --! that is the path OPPM appends to a raw URL, and the one `pkg
+      --! fetch` stages files under. This used to be pinned as a known gap,
+      --! because a git CHECKOUT of the branch has no `master/` directory
+      --! and the install looked one level too deep. The gap is closed where
+      --! the file is READ (pkg.install tries the path without its first
+      --! segment when the literal one is absent; test_pkg_lifecycle.lua),
+      --! so the translation stays exactly as OPPM means it.
+      eq("the source keeps the branch segment (the URL path OPPM uses)",
         "master/tos/bootstrap.lua",
         m.fileMap and m.fileMap["/usr/bin/bootstrap.lua"])
       test("...carrying the description through",

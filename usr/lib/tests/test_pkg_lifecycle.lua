@@ -514,6 +514,36 @@ do
 end
 
 do
+  -- A GIT CHECKOUT of the same branch: the key's first segment is the
+  -- branch OPPM puts in a raw URL, and a checkout has no master/ directory.
+  -- It read as "missing source file". The literal path is still tried
+  -- first, so a fetched (or mirror-laid) repo resolves exactly as above.
+  local pkg, fs = newPkg()
+  fs.makeDirectory("/mnt/clone/gui")
+  fs.writeFile("/mnt/clone/programs.cfg", serialize.encode({
+    gui = { files = { ["master/gui/gui.lua"] = "/lib" } },
+  }))
+  fs.writeFile("/mnt/clone/gui/gui.lua", "return { cloned = true }")
+  local ok, err = pkg.install("/mnt/clone/gui",
+    { session = ADMIN, allowUnverified = true, force = true })
+  test("a cloned OPPM repo (no branch directory) installs", ok)
+  if not ok then print("        " .. tostring(err)) end
+  eq("...reading the file from its checkout path", "return { cloned = true }",
+    fs.readFile("/usr/lib/gui.lua"))
+
+  pkg, fs = newPkg()
+  fs.makeDirectory("/mnt/both/gui")
+  fs.writeFile("/mnt/both/programs.cfg", serialize.encode({
+    gui = { files = { ["master/gui/gui.lua"] = "/lib" } },
+  }))
+  fs.writeFile("/mnt/both/master/gui/gui.lua", "return { literal = true }")
+  fs.writeFile("/mnt/both/gui/gui.lua", "return { checkout = true }")
+  pkg.install("/mnt/both/gui", { session = ADMIN, allowUnverified = true, force = true })
+  eq("with both layouts present, the literal path wins", "return { literal = true }",
+    fs.readFile("/usr/lib/gui.lua"))
+end
+
+do
   -- Directory-copy entries (":" prefix) cannot be honoured without giving
   -- up the per-file ownership map. Refusing LOUDLY beats installing a
   -- package that is silently missing its data files.
