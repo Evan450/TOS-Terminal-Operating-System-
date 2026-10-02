@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**100 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**99 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 77 | Planned or under investigation. Most contributions belong here. |
+| Planned | 76 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -1552,19 +1552,6 @@ IN-EMULATOR BOOT SMOKE TEST, in CI. The one class of failure
         own header already draws this line -- a battery that
         installs software on the machine it is auditing is a
         different and much worse tool.
-```
-
-### Planned — PANIC DUMP VIA RAW component.invoke. Completes the SRM
-
-```text
-PANIC DUMP VIA RAW component.invoke. Completes the SRM
-    story. The EEPROM fault channel covers failures BEFORE any
-    disk code runs. This covers the other end — a panic after
-    boot, where kernel.fs / securefs may be exactly what broke,
-    so the dump must NOT go through them. Walk component.list
-    ("filesystem"), find one that isn't read-only, write the
-    trace with raw invokes. SRM reads it on the next boot the
-    same way it reads the EEPROM code.
 ```
 
 ### Idea / far future — SHELL LEXER + PARSER. Only if we ever want `&amp;&amp;`, `||` or

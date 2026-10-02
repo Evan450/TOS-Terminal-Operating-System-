@@ -347,7 +347,7 @@ _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
 
-  build = "a72c1a2",
+  build = "133a5d3",
   variant = "minified",
   bootFS     = bootFS,
 
@@ -1052,7 +1052,11 @@ if not ok then
   local report
   pcall(function()
     local K = _G._TOS and _G._TOS.kernel
-    if K and K.crashDump then report = K.crashDump(reason, errStr) or nil; return end
+    if K and K.crashDump then
+
+      local okK, r = pcall(K.crashDump, reason, errStr)
+      if okK and r then report = r; return end
+    end
     if bootFS and bootFS.open then
       pcall(bootFS.makeDirectory, "/var/crash")
       local h = bootFS.open("/var/crash/crash-panic.txt", "w")
