@@ -773,14 +773,22 @@ under `/etc`, and never `/tos` or `/init.lua`.
 
 ### 7.2 The Optional Utilities disk
 
-The bundled add-ons (tetris, tape, rc-pilot, **mouse**, **printer**,
-**write**, **stock**, the cluster
-packages) ship on the **Optional Utilities** disk — a pick-and-choose installer modeled on
-the MS-DOS Supplemental Utilities Disk. Building it is one command -
-`TOS-Extras/build/build-disk.cmd` (Windows) or `build-disk.sh` (POSIX) — which
-auto-discovers every add-on with a `package.lua`; add
+The bundled add-ons ship on the **Optional Utilities** disk, a pick-and-choose
+set modeled on the MS-DOS Supplemental Utilities Disk: games (`tetris`, `snake`,
+`ttt`), `calc`, `write`, `tape` and `tape-authenticator`, `rc-pilot`, `stock`,
+the `mouse` and `printer` drivers, `blockfs`, `mail`, `intercom`, the cluster
+packages, and `selftest`. Building it is one command,
+`TOS-Extras/build/build-disk.cmd` (Windows) or `build-disk.sh` (POSIX), which
+auto-discovers every add-on with a `package.lua`. Add
 `--install <path-to-OC-floppy-folder>` to "burn" the result straight onto a
-floppy. Then insert it and run `install.lua` as admin.
+floppy. Then insert it and run `pkg install` as admin.
+
+**`selftest`** is for developers. It installs the boot self-test battery: checks
+that run inside the booted kernel on real hardware. `selftest arm` (root) runs
+it at the next boot, and `selftest log` reads the result. Use `selftest
+template` to write checks for what you add to TOS. Installing it needs root,
+because an armed machine runs those checks as the kernel. See
+`TOS-Extras/modules/selftest/README.md`.
 
 You can also build one **from inside TOS** with `pkg make-disk <mount>` (§7.1) -
 it bundles your installed add-ons onto the disk, no dev box required. Either
