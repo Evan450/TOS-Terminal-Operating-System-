@@ -2762,7 +2762,10 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   repaired any interrupted critical write at boot. Run `doctor` to review.
 - **Won't boot / missing files:** the BIOS POST lists missing critical files;
   `verify` checks the manifest; `critical.bak` and the hardcoded fallback list
-  guard the boot file set.
+  guard the boot file set. The "MISSING n FILES" screen would reboot into the
+  same broken disk forever, so press **B** there instead: it lists the other
+  disks the BIOS can boot, and a disk's number makes it the boot disk. Insert
+  the TOS installer floppy first (B looks again) to reinstall.
 - **A blue STOP screen:** the kernel hit an error it could not recover from. The
   `*** STOP:` line names it with an `E-` code and an `ERR_` symbol; the hex under
   it is a machine reference you can ignore. The crash report is saved to

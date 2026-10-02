@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**99 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**98 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 76 | Planned or under investigation. Most contributions belong here. |
+| Planned | 75 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -343,6 +343,9 @@ SPLIT THE BIOS: MINIMAL EEPROM, RECOVERY UI IN STAGE 2. Refines
         broke, stage 2 is gone and only the EEPROM half is left.
         Which is exactly why the EEPROM half must still be able to
         pick a DIFFERENT disk, and why the emergency terminal stays.
+        Today K4, I5 and I6 end in "any key reboots" on the same
+        saved disk: a loop. /init.lua's missing-files screen got its
+        way out on 2026-10-02 (bootElsewhere); these are the rest.
       Two behaviours from the small bootloaders, both cheap: GEBL's
     QUICK BOOT (exactly one bootable OS found -> boot it, no prompt)
     and its INIT FINDER (config missing or unreadable -> search the
@@ -759,27 +762,6 @@ THE PACKET MAC HAS NO LENGTH FRAMING. net/init.lua:482 (send)
     second layer and this quietly removes it. Fix: length-prefix
     each field. Severity LOW, and it rises the day the seq check is
     relaxed.
-```
-
-## THE BIOS REFUSED TO BOOT ANYTHING BUT TOS (2026-09-06)
-
-### Planned — A BROKEN TOS INSTALL ON THE COMMITTED BOOT DEVICE IS A LOOP
-
-```text
-A BROKEN TOS INSTALL ON THE COMMITTED BOOT DEVICE IS A LOOP.
-    Found while fixing the above, not reported. If the EEPROM's saved
-    address names a disk whose /init.lua loads but whose kernel is
-    gone, the BIOS boots it, init.lua reports the missing files and
-    reboots, and the BIOS boots it again. The fallback-approval
-    prompt (#SEC H1) only appears when the SAVED address does not
-    work at all, so it never offers a way out. Recoverable only by
-    moving the disk to another machine or re-flashing from one.
-      The fix is an escape hatch at POST -- a held key that forces
-    the device-selection prompt even when the saved address is
-    bootable. It is the same shape as the S-at-POST safe-mode
-    one-shot the kernel already has. Not done here: 153 bytes is
-    thin for a key-scan loop, and getting it wrong makes every boot
-    slower or, worse, stealable by a stray keypress.
 ```
 
 ## EXTRAS SWEEP 2: THE PACKAGING SEAM (2026-09-06)
