@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "b55f4f3df441da38b38213aa3724271cb32a2a804a349bd02ff112fc884ce167" },
+  { path = "/init.lua",                       critical = true  , hash = "2071bd40413d2e7967d59925ebea2db7a99af4952014ffb79f452becfc992cd0" },
   { path = "/install.lua",                    critical = false , hash = "bc9d02fb08842903e22001a4ef0892863c2924151984e7b5d2ea821a200981c1" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "62fca79a65a453bb03980760276b1a4e5c312914c6aa91e7ebf112daf96524a4" },

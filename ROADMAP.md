@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**95 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**94 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 72 | Planned or under investigation. Most contributions belong here. |
+| Planned | 71 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -227,7 +227,8 @@ REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK. Needs the
     signed ONCE when they are all in. So far: the new `selftest`
     package, cluster-master 1.0.2 (the fixes, under a number
     `pkg upgrade` will offer), tape-authenticator 1.0.3, and
-    rc-pilot 1.2.0 (it carries the robot's EEPROM image now). test_build_disk.lua is red on them until
+    rc-pilot 1.2.0 (it carries the robot's EEPROM image now). And
+    every package's bytes change once: the pack strips its Lua now. test_build_disk.lua is red on them until
     then. The operator runs, from Minecraft/TOS-Dev:
       python tos.py pack --sign
     then publishes the utils branch:  publish.ps1 -Utils -Push
@@ -778,22 +779,6 @@ THE CANONICAL NUMBER FORMAT IS STILL ARCHITECTURE-DEPENDENT. The
 ```
 
 ## TBFS: THE COST WAS WRITES, AND A SECOND HANDLE (2026-09-06)
-
-### Planned — THE PACK SHIPS SOURCE UNSTRIPPED
-
-```text
-THE PACK SHIPS SOURCE UNSTRIPPED. build-disk.lua copies each
-    module's files as-is, comments and all, so blockfs.lua is
-    ~50 KB on disk and in RAM when required, and the boot blob
-    embeds all of it. strip.lua exists for the release tree and
-    keeps every `--!` line; running the same pass over pack
-    files would roughly halve the driver. Not done here: the
-    hashes and the signature are taken over the shipped bytes,
-    so this touches the build and publish chain, and the size
-    ceiling in test_blockfs_perf.lua (52 KB) holds the line
-    meanwhile. Worth doing before a machine with 192 KB tries to
-    boot from TBFS.
-```
 
 ### Planned — STILL ~8 SECTOR WRITES PER TINY FILE (inode alloc, directory
 
