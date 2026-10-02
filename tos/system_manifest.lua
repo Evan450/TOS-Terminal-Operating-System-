@@ -157,6 +157,7 @@ return {
   { path = "/tos/shell/panels/desktop.lua",   critical = false },
   { path = "/tos/shell/panels/home.lua",      critical = false },
   { path = "/tos/shell/panels/selection.lua", critical = false },
+  { path = "/tos/shell/panels/textcol.lua",   critical = false },
   { path = "/tos/shell/panels/settingsapp.lua", critical = false },
   { path = "/tos/shell/panels/monitorapp.lua", critical = false },
   { path = "/tos/shell/panels/chatapp.lua",   critical = false },

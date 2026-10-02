@@ -105,14 +105,17 @@ do
   test("editor.lua readable", ed ~= nil)
 
   if d then
+    -- The rule is in CELLS since the editor learned UTF-8 (curCell is
+    -- the cursor's screen column; test_editor_utf8_columns.lua drives the
+    -- real draw for that). The arithmetic above is unchanged.
     test("draw decides the offset",
-      d:find("if tab.curCol > viewLeft + editW - 1 then", 1, true) ~= nil)
+      d:find("if curCell > viewLeft + editW - 1 then", 1, true) ~= nil)
     test("the text slice starts at the offset, not column 1",
-      d:find("lineText:sub(viewLeft, lastCol)", 1, true) ~= nil)
+      d:find("tc.slice(lineText, viewLeft, lastCol)", 1, true) ~= nil)
     test("no line is still drawn from column 1",
       d:find("lineText:sub(1, editW)", 1, true) == nil)
     test("the cursor is offset by the scroll",
-      d:find("gutterW + (tab.curCol - viewLeft) + 1", 1, true) ~= nil)
+      d:find("gutterW + (curCell - viewLeft) + 1", 1, true) ~= nil)
     test("the selection overlay walks visible columns",
       d:find("for cix = viewLeft,", 1, true) ~= nil)
     test("an off-screen continuation is signalled at each edge",

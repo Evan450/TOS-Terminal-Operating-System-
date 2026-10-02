@@ -8,6 +8,7 @@ local helpers = require("shell.panels.helpers")
 local widgets = require("shell.panels.widgets")
 local ui = require("shell.panels.ui")
 local selMod = require("shell.panels.selection")
+local tc = require("shell.panels.textcol")
 
 local M = {}
 
@@ -713,9 +714,17 @@ function M.editTab(S, tab)
   --!
   --! Deciding it at draw time also means a screen RESIZE needs no
   --! special handling: the next repaint recomputes from the new width.
+  --!
+  --! viewLeft, lastCol and every x below are CELLS, which is what the
+  --! screen counts; tab.curCol is a BYTE column into the line, which is
+  --! what the edits count. textcol is the one map between them. Doing
+  --! this in bytes drew text, the cursor, the selection and the scroll
+  --! edge in the wrong place from a line's first non-ASCII character
+  --! (AUDIT 5). (test_editor_utf8_columns.lua)
+  local curCell = tc.cellOf(lines[tab.curRow] or "", tab.curCol)
   local viewLeft = tab.viewLeft or 1
-  if tab.curCol < viewLeft then viewLeft = tab.curCol end
-  if tab.curCol > viewLeft + editW - 1 then viewLeft = tab.curCol - editW + 1 end
+  if curCell < viewLeft then viewLeft = curCell end
+  if curCell > viewLeft + editW - 1 then viewLeft = curCell - editW + 1 end
   if viewLeft < 1 then viewLeft = 1 end
   tab.viewLeft = viewLeft            -- remembered so the view is stable
   local lastCol = viewLeft + editW - 1
@@ -739,14 +748,14 @@ function M.editTab(S, tab)
         --! half, and the highlighter would then colour the remainder as
         --! code from there to the end of the line.
         local tokens = syn.tokenize(lineText)
-        local col = 1                      -- absolute column of tok start
+        local col = 1                      -- absolute CELL of tok start
         for _, tok in ipairs(tokens) do
           local tokText = tok.text
-          local tokEnd  = col + #tokText - 1
+          local tokEnd  = col + tc.cells(tokText) - 1
           local from = math.max(col, viewLeft)
           local to   = math.min(tokEnd, lastCol)
           if to >= from then
-            local piece = tokText:sub(from - col + 1, to - col + 1)
+            local piece = tc.slice(tokText, from - col + 1, to - col + 1)
             if #piece > 0 then
               D.set(gutterW + (from - viewLeft) + 1, y,
                 piece, syn.tokenColor(tok.type, T), T.bg)
@@ -756,7 +765,7 @@ function M.editTab(S, tab)
           if col > lastCol then break end
         end
       else
-        D.set(gutterW + 1, y, lineText:sub(viewLeft, lastCol), T.fg, T.bg)
+        D.set(gutterW + 1, y, tc.slice(lineText, viewLeft, lastCol), T.fg, T.bg)
       end
 
       --! Say when a line runs past either edge, the way nano does. Only
@@ -766,7 +775,7 @@ function M.editTab(S, tab)
       if viewLeft > 1 then
         D.set(gutterW + 1, y, "<", T.dim, T.bg)
       end
-      if #lineText > lastCol then
+      if tc.cells(lineText) > lastCol then
         D.set(gutterW + editW, y, ">", T.dim, T.bg)
       end
     end
@@ -784,20 +793,31 @@ function M.editTab(S, tab)
       local li = tab.viewTop + i - 1
       local lineText = lines[li]
       if lineText then
-        --! Walk the VISIBLE columns, not 1..editW. Iterating from 1
+        --! Walk the VISIBLE cells, not 1..editW. Iterating from 1
         --! painted the selection at the wrong x once the view scrolled,
-        --! and highlighted cells the operator could not see.
-        for cix = viewLeft, math.min(#lineText, lastCol) do
-          if selMod.contains(tab.selAnchor, here, li, cix) then
-            D.set(gutterW + (cix - viewLeft) + 1, 1 + i, lineText:sub(cix, cix), sfg, sbg)
+        --! and highlighted cells the operator could not see. selMod
+        --! speaks byte columns, so each cell asks about the byte it
+        --! starts at, and paints what that cell shows.
+        local starts, disps
+        if tc.isAscii(lineText) then
+          starts = nil
+        else
+          starts, disps = tc.units(lineText)
+        end
+        local nCells = starts and #starts or #lineText
+        for cix = viewLeft, math.min(nCells, lastCol) do
+          local bcol = starts and starts[cix] or cix
+          if selMod.contains(tab.selAnchor, here, li, bcol) then
+            D.set(gutterW + (cix - viewLeft) + 1, 1 + i,
+              starts and disps[cix] or lineText:sub(cix, cix), sfg, sbg)
           end
         end
         -- A selection that runs past the end of a line covers the
         -- newline; show that as one highlighted cell so a multi-line
         -- selection doesn't look ragged.
-        local eol = #lineText + 1
+        local eol = nCells + 1
         if eol >= viewLeft and eol <= lastCol
-           and selMod.contains(tab.selAnchor, here, li, eol) then
+           and selMod.contains(tab.selAnchor, here, li, #lineText + 1) then
           D.set(gutterW + (eol - viewLeft) + 1, 1 + i, " ", sfg, sbg)
         end
       end
@@ -811,19 +831,19 @@ function M.editTab(S, tab)
     --! it sits on actually IS. Previously this was gutterW + curCol and
     --! simply skipped when that fell past the screen -- which is what
     --! made typing past the right edge look like a frozen editor.
-    local curX = gutterW + (tab.curCol - viewLeft) + 1
+    local curX = gutterW + (curCell - viewLeft) + 1
     if curX >= gutterW + 1 and curX <= gutterW + editW then
-      local char = (lines[tab.curRow] or ""):sub(tab.curCol, tab.curCol)
+      local char = tc.slice(lines[tab.curRow] or "", curCell, curCell)
       if char == "" then char = " " end
       D.set(curX, cy, char, T.sel_fg, T.sel_bg)
     end
   end
 
-  -- Status bar
+  -- Status bar. Col is the column the operator SEES (cells), not bytes.
   local mod = tab.modified and " [+]" or ""
   local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
   local stat = string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find [^Q]Close",
-    tab.label, mod, tab.curRow, tab.curCol, searchInfo)
+    tab.label, mod, tab.curRow, curCell, searchInfo)
   ui.drawRampBar(D, T, H, W, stat, nil, T.bar_fg, T.bar_bg)
 end
 

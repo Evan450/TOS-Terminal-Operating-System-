@@ -40,6 +40,15 @@ do
          contains = function() return false end,
          lineRange = function() return nil end }
 end
+-- textcol (the editor's byte <-> cell map) is the same kind of module.
+do
+  for _, p in ipairs({ "tos/shell/panels/textcol.lua",
+      "TOS-Dev/tos/shell/panels/textcol.lua",
+      "../../../tos/shell/panels/textcol.lua" }) do
+    local chunk = loadfile(p)
+    if chunk then package.loaded["shell.panels.textcol"] = chunk(); break end
+  end
+end
 
 local here = (arg and arg[0]) or "usr/lib/tests/test_panels_help_ui.lua"
 local base = here:gsub("[^/\\]*$", "")
