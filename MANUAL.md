@@ -2111,7 +2111,11 @@ Copy a file or directory (recursively). *Errors:* `no such file`,
 List the crash post-mortems in `/var/crash`, or print one. TOS writes a report
 there on a kernel panic or an unrecoverable-shell drop (reason, uptime, free RAM,
 the recent log, and any traceback), and the next boot reports "Last run crashed:
-…". Read the details after rebooting. *See also:* `log`, `doctor`.
+…". Read the details after rebooting. If the filesystem layer itself is what
+failed, the report is written to the boot disk directly instead; if even that is
+impossible, it goes to another writable disk, without the log, and the boot
+message names where (`crash /mnt/<disk>/var/crash/<name>` reads it). *See also:*
+`log`, `doctor`.
 
 **cron** — `cron [list | add <interval> <cmd> | rm <id>]` **(admin)**
 Manage persistent scheduled tasks (Chapter 12). *Example:*
@@ -2762,9 +2766,11 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 - **A blue STOP screen:** the kernel hit an error it could not recover from. The
   `*** STOP:` line names it with an `E-` code and an `ERR_` symbol; the hex under
   it is a machine reference you can ignore. The crash report is saved to
-  `/var/crash` — after the reboot, `crash` reads it, and `why E-201` (or
-  whichever code it showed) explains it. A Tier 1 monochrome screen draws the
-  same page in inverse video. Every code is listed in Appendix C.
+  `/var/crash` (the screen names the disk if it had to use another one, and
+  names no report if none could be saved) — after the reboot, `crash` reads it,
+  and `why E-201` (or whichever code it showed) explains it. A Tier 1
+  monochrome screen draws the same page in inverse video. Every code is listed
+  in Appendix C.
 - **`SRM <code> - POST FAILED`:** the EEPROM caught a boot fault before the OS
   could load. The two-character code is also the beep count (`K4` is four short
   beeps after a long one). `srm status` reports it on the next successful boot,

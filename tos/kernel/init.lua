@@ -1926,9 +1926,56 @@ end
 -- to /var/crash so the operator can read it AFTER recovering — and drops a tiny
 -- "NEW" marker that the next boot surfaces (checkLastCrash) then clears. Called
 -- from the kernel's unrecoverable-shell path and the top-level panic handler.
+--
+--! A panic is often IN the filesystem layer -- kernel.fs, securefs, a driver
+--! below them -- and a report written through it fails exactly when it is
+--! needed. crashWriteRaw writes with raw component invokes instead, sharing
+--! no code with what may have broken: the boot disk first, where the next
+--! boot looks; then any other writable disk, never the tmpfs, which a
+--! reboot wipes. Anywhere but the boot disk the report is `away` (it stops
+--! before the log ring: /var/crash is admin-read, a floppy is readable by
+--! whoever holds it) and the marker names this machine, because a disk
+--! moves between machines. Returns (address, onBootDisk), or nil.
+--! (test_crash_dump_raw.lua)
+function kernel.crashWriteRaw(name, body, away, marker)
+  local boot, tmp, me
+  pcall(function() boot = computer.getBootAddress() end)
+  pcall(function() tmp = computer.tmpAddress() end)
+  pcall(function() me = computer.address() end)
+  local order, seen = {}, {}
+  local function add(a)
+    if type(a) == "string" and a ~= tmp and not seen[a] then
+      seen[a] = true
+      order[#order + 1] = a
+    end
+  end
+  add(boot)
+  pcall(function() for a in component.list("filesystem") do add(a) end end)
+  local function call(a, m, ...) return pcall(component.invoke, a, m, ...) end
+  local function put(a, path, data)
+    local okO, h = call(a, "open", path, "w")
+    if not okO or not h then return false end
+    local okW, res, werr = call(a, "write", h, data)
+    call(a, "close", h)
+    return okW and res ~= false and not (res == nil and werr ~= nil)
+  end
+  for _, a in ipairs(order) do
+    local okR, ro = call(a, "isReadOnly")
+    if okR and ro == false then
+      local onBoot = (a == boot)
+      call(a, "makeDirectory", "/var/crash")
+      if put(a, "/var/crash/" .. name, onBoot and body or away) then
+        put(a, "/var/crash/NEW", onBoot and marker
+          or (marker .. "\nmachine " .. tostring(me)))
+        return a, onBoot
+      end
+    end
+  end
+  return nil
+end
+
 function kernel.crashDump(reason, detail)
   local fs = _G._TOS and _G._TOS.fs
-  if not (fs and fs.writeFile) then return false end
   local up    = math.floor((computer.uptime and computer.uptime()) or 0)
   local free  = math.floor(((computer.freeMemory and computer.freeMemory()) or 0) / 1024)
   local total = math.floor(((computer.totalMemory and computer.totalMemory()) or 0) / 1024)
@@ -1942,6 +1989,7 @@ function kernel.crashDump(reason, detail)
     lines[#lines + 1] = "detail :"
     for l in tostring(detail):gmatch("[^\n]+") do lines[#lines + 1] = "  " .. l end
   end
+  local away = table.concat(lines, "\n") .. "\n"
   lines[#lines + 1] = ""
   lines[#lines + 1] = "--- recent log ---"
   local okL, logMod = pcall(require, "kernel.log")
@@ -1954,31 +2002,78 @@ function kernel.crashDump(reason, detail)
       end
     end
   end
-  local path = "/var/crash/crash-" .. up .. ".txt"
-  local _, wrote = pcall(fs.writeFile, path, table.concat(lines, "\n") .. "\n")
+  local name = "crash-" .. up .. ".txt"
+  local path = "/var/crash/" .. name
+  local body = table.concat(lines, "\n") .. "\n"
   -- One-line unacknowledged-crash marker the next boot reports + clears.
-  pcall(fs.writeFile, "/var/crash/NEW", tostring(reason or "unknown") .. " @ uptime " .. up .. "s")
-  if okL and logMod and logMod.warn then logMod.warn("kernel", "Crash report saved: " .. path) end
-  return wrote and path or false
+  local marker = tostring(reason or "unknown") .. " @ uptime " .. up .. "s"
+  --! pcall's second value is the ERROR when the call raises, and an error
+  --! string is truthy: a write that died inside a broken kernel.fs used to
+  --! be reported as saved, and the stop screen named a file that was never
+  --! written.
+  local wrote = false
+  if fs and fs.writeFile then
+    local okW, res = pcall(fs.writeFile, path, body)
+    wrote = okW and res and true or false
+  end
+  if wrote then
+    pcall(fs.writeFile, "/var/crash/NEW", marker)
+    if okL and logMod and logMod.warn then pcall(logMod.warn, "kernel", "Crash report saved: " .. path) end
+    return path
+  end
+  local disk, onBoot = kernel.crashWriteRaw(name, body, away, marker)
+  if not disk then return false end
+  if onBoot then return path end
+  return path .. " on disk " .. disk:sub(1, 8)
 end
 
 -- At boot: if the last run left an unacknowledged crash marker, surface it once
 -- (into the log / splash narration) and clear the marker. The full reports stay
 -- in /var/crash for `crash` to read.
+--! The boot disk's marker, then the marker on any other disk that names THIS
+--! machine: crashWriteRaw writes there when the boot disk would not take the
+--! report. Only real filesystem components are asked -- that is all it
+--! writes to, and a network mount must not stall the boot. A marker naming
+--! another machine is that machine's, and stays where it is.
 function kernel.checkLastCrash()
   local fs = _G._TOS and _G._TOS.fs
-  if not (fs and fs.exists) or not fs.exists("/var/crash/NEW") then return end
-  local summary
-  if fs.readFile then
-    local ok, s = pcall(fs.readFile, "/var/crash/NEW")
-    if ok and s then summary = tostring(s) end
+  if not (fs and fs.exists) then return end
+  local dirs = { "/var/crash" }
+  if fs.mounts then
+    local okM, ms = pcall(fs.mounts)
+    if okM and type(ms) == "table" then
+      for _, m in ipairs(ms) do
+        local okT, kind = pcall(component.type, type(m) == "table" and m.address)
+        if okT and kind == "filesystem" and type(m.mountPoint) == "string"
+            and m.mountPoint ~= "/" then
+          dirs[#dirs + 1] = (m.mountPoint:gsub("/+$", "")) .. "/var/crash"
+        end
+      end
+    end
   end
-  summary = (summary or "a previous run"):gsub("%s+$", "")
+  local me
+  pcall(function() me = computer.address() end)
   local okL, logMod = pcall(require, "kernel.log")
-  if okL and logMod and logMod.warn then
-    logMod.warn("kernel", "Last run crashed: " .. summary .. " — see /var/crash (`crash`)")
+  for i, dir in ipairs(dirs) do
+    local markerPath = dir .. "/NEW"
+    if fs.exists(markerPath) then
+      local body = ""
+      if fs.readFile then
+        local ok, s = pcall(fs.readFile, markerPath)
+        if ok and type(s) == "string" then body = s end
+      end
+      local owner = body:match("\nmachine (%S+)")
+      if i == 1 or (owner ~= nil and owner == me) then
+        local summary = (body:match("^[^\n]*") or ""):gsub("%s+$", "")
+        if summary == "" then summary = "a previous run" end
+        if okL and logMod and logMod.warn then
+          logMod.warn("kernel", "Last run crashed: " .. summary .. " — see " .. dir
+            .. (i == 1 and " (`crash`)" or ""))
+        end
+        if fs.remove then pcall(fs.remove, markerPath) end
+      end
+    end
   end
-  if fs.remove then pcall(fs.remove, "/var/crash/NEW") end
 end
 
 -- Data feed for the shell's scrollable `monitor` live tab: the SAME privilege-

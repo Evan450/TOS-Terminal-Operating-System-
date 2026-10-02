@@ -1361,7 +1361,12 @@ if not ok then
   local report
   pcall(function()
     local K = _G._TOS and _G._TOS.kernel
-    if K and K.crashDump then report = K.crashDump(reason, errStr) or nil; return end
+    if K and K.crashDump then
+      -- crashDump falls back to raw invokes on its own. If it still saved
+      -- nothing, or raised, the boot-disk write below is the last try.
+      local okK, r = pcall(K.crashDump, reason, errStr)
+      if okK and r then report = r; return end
+    end
     if bootFS and bootFS.open then
       pcall(bootFS.makeDirectory, "/var/crash")
       local h = bootFS.open("/var/crash/crash-panic.txt", "w")
