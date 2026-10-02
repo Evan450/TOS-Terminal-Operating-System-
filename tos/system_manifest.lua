@@ -48,7 +48,7 @@ return {
   { path = "/tos/kernel/backup.lua",          critical = false , hash = "7968dad19e2ac34f59c8eb12a4fd7848f2220fb88628245fc2ee3e5136796f04" },
   { path = "/tos/kernel/diag.lua",            critical = false , hash = "462a8a1d87fe063e97ffbb0f320e252081117522f53048e7fce8706d1e199fc2" },
   { path = "/tos/kernel/internet.lua",        critical = false , hash = "bfd5d15af651966bb16a833f511cdac08c4ba5ae7a8fa6012d32dc9b380a3e50" },
-  { path = "/tos/kernel/pkgremote.lua",       critical = false , hash = "5bef1924b379299db25c061254ddc434463c9f268171795526c7fc94d7f05a32" },
+  { path = "/tos/kernel/pkgremote.lua",       critical = false , hash = "9ef0918eb864a1eaa0017f7433258264fb8fb4200c58c046e18dfb867be389c1" },
   { path = "/tos/kernel/jbod.lua",            critical = false , hash = "e12fcdc6aa3fe577061eee734a15527bb6299bd230b1e79efe75b986a7345b8f" },
   { path = "/tos/kernel/netfs.lua",           critical = false , hash = "4b707be895a12c943f66bc4fb12eaa4931fad2c7fd840ce1d279563151ca22b6" },
   { path = "/tos/kernel/selftest.lua",        critical = false , hash = "e020068284b98672a696e08815468f6261c7168e3f6dc28a9bf1a49ea41b2089" },

@@ -224,18 +224,39 @@ function pkgremote.fetch(name, opts)
   end
 
   local repo, entry
+  local unusable = {}
   for _, r in ipairs(repos) do
-    local idx = pkgremote.index(r, opts)
+    local idx, iErr = pkgremote.index(r, opts)
     if idx and type(idx[name]) == "table" then
       repo, entry = r, idx[name]
       break
+    elseif not idx then
+      unusable[#unusable + 1] = tostring(iErr)
     end
   end
   if not entry then
-    return nil, "package '" .. tostring(name) .. "' is not in any configured repo"
+    --! A repo whose index would not load used to vanish from the answer:
+    --! "not in any configured repo" when the truth was "that repo's index
+    --! is broken". Say both. (test_pkgremote_malformed.lua)
+    local why = "package '" .. tostring(name) .. "' is not in any configured repo"
+    if #unusable > 0 then why = why .. " (" .. table.concat(unusable, "; ") .. ")" end
+    return nil, why
   end
   if type(entry.files) ~= "table" then
     return nil, "package '" .. name .. "' declares no files"
+  end
+  --! #SEC — the entry is a stranger's data, and every key is used as a
+  --! string below. A `files` table written as an array ({ "a.lua" })
+  --! has number keys, and `src:gsub` on one THREW out of `pkg fetch`
+  --! instead of refusing. Check the whole shape before anything is staged
+  --! or downloaded: OPPM's files map is source path -> destination dir,
+  --! both strings. (test_pkgremote_malformed.lua)
+  for src, dest in pairs(entry.files) do
+    if type(src) ~= "string" or type(dest) ~= "string" then
+      return nil, "package '" .. name .. "' in repo '" .. repo.name
+        .. "' has a malformed file list (expected { [\"source/path\"] = \"/dest/dir\" }, got "
+        .. type(src) .. " -> " .. type(dest) .. ")"
+    end
   end
 
   local root   = fs.join(STAGE_ROOT, repo.name)
@@ -244,18 +265,25 @@ function pkgremote.fetch(name, opts)
   if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then
     return nil, "could not create staging directory " .. pkgDir
   end
+  --! Every refusal from here on leaves staging empty. Two of them (an
+  --! OPPM directory copy, an unsafe path) returned with the staged index
+  --! still on disk.
+  local function fail(msg)
+    pcall(fs.remove, root)
+    return nil, msg
+  end
 
   local okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
     serialize.encode({ [name] = entry }))
-  if not okIdx then return nil, "could not stage the package index" end
+  if not okIdx then return fail("could not stage the package index") end
 
   local count, total = 0, 0
   for src in pairs(entry.files) do
     local rel = safeRepoPath(src:gsub("^:", ""))
     if src:sub(1, 1) == ":" then
-      return nil, "package '" .. name ..
+      return fail("package '" .. name ..
         "' uses an OPPM directory-copy entry (" .. tostring(src) ..
-        "); TOS installs a declared file list"
+        "); TOS installs a declared file list")
     end
     if not rel then
 
@@ -263,12 +291,12 @@ function pkgremote.fetch(name, opts)
         log.warn("pkgremote", "Refused unsafe source path from repo '"
           .. repo.name .. "': " .. tostring(src))
       end
-      return nil, "package '" .. name .. "' declares an unsafe file path: " .. tostring(src)
+      return fail("package '" .. name .. "' declares an unsafe file path: " .. tostring(src))
     end
     count = count + 1
     if count > MAX_FILES_PER_PKG then
-      return nil, "package '" .. name .. "' exceeds the " .. MAX_FILES_PER_PKG
-        .. "-file limit"
+      return fail("package '" .. name .. "' exceeds the " .. MAX_FILES_PER_PKG
+        .. "-file limit")
     end
 
     local url  = repo.url .. "/" .. rel
@@ -278,20 +306,17 @@ function pkgremote.fetch(name, opts)
 
     local okD, dErr, meta = im.download(url, dest, { maxBytes = MAX_FILE_BYTES })
     if not okD then
-      pcall(fs.remove, root)
-      return nil, "downloading " .. rel .. ": " .. tostring(dErr)
+      return fail("downloading " .. rel .. ": " .. tostring(dErr))
     end
     total = total + ((meta and meta.bytes) or 0)
     if total > MAX_PKG_BYTES then
-      pcall(fs.remove, root)
-      return nil, "package '" .. name .. "' exceeds the "
-        .. math.floor(MAX_PKG_BYTES / 1024) .. " KB total limit"
+      return fail("package '" .. name .. "' exceeds the "
+        .. math.floor(MAX_PKG_BYTES / 1024) .. " KB total limit")
     end
   end
 
   if count == 0 then
-    pcall(fs.remove, root)
-    return nil, "package '" .. name .. "' listed no installable files"
+    return fail("package '" .. name .. "' listed no installable files")
   end
   if log then
     log.info("pkgremote", string.format("Fetched %s from %s (%d files, %d bytes)",
