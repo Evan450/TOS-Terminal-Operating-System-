@@ -123,13 +123,20 @@ local function makeSafeMountProxy(addr, mountPoint)
   -- Stable opaque identifier for non-privileged callers — hash of the
   -- (mountPoint || addr) so the value is reproducible across calls
   -- but never reveals the underlying component address.
+  -- securefs.opaqueMountId is the one derivation, shared with the
+  -- sandbox's fs.mounts(), so both views name a disk the same way.
   local opaqueId = addr
   if not exposeAddr then
-    local okC, cryptoMod = pcall(require, "kernel.crypto")
-    if okC and cryptoMod and cryptoMod.hash then
-      opaqueId = "fs:" .. cryptoMod.hash(mountPoint .. "|" .. addr):sub(1, 16)
+    local f = fs()
+    if f and type(f.opaqueMountId) == "function" then
+      opaqueId = f.opaqueMountId(mountPoint, addr)
     else
-      opaqueId = "fs:" .. mountPoint
+      local okC, cryptoMod = pcall(require, "kernel.crypto")
+      if okC and cryptoMod and cryptoMod.hash then
+        opaqueId = "fs:" .. cryptoMod.hash(mountPoint .. "|" .. addr):sub(1, 16)
+      else
+        opaqueId = "fs:" .. mountPoint
+      end
     end
   end
 

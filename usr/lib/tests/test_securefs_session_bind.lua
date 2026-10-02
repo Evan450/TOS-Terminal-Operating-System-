@@ -338,6 +338,41 @@ do
   CURRENT = nil
 end
 
+-- #SEC H15: a disk's component address is the handle component.proxy
+-- turns into raw, unmediated access. compat.filesystem.get() has hidden
+-- it from non-admins since H15; fs.mounts() on a sandboxed program's own
+-- `fs` handed every one out anyway.
+print()
+print("-- 8. fs.mounts() does not hand a sandbox disk addresses --")
+do
+  local function mountOf(list, mp)
+    for _, m in ipairs(list or {}) do if m.mountPoint == mp then return m end end
+  end
+  local real = mountOf(fs.mounts(), "/")
+  assert(real and real.address == "disk0", "setup: the root mount should be disk0")
+  local okR, mR = pcall(envR.fs.mounts)
+  test("a fs.read sandbox can still list mounts", okR and type(mR) == "table" and #mR > 0)
+  local seen = okR and mountOf(mR, "/")
+  test("...with the mount point and space it always had", seen and seen.mountPoint == "/"
+    and seen.total == real.total)
+  test("...but not the disk's address", seen and seen.address ~= "disk0")
+  test("...a stable stand-in instead", seen and type(seen.address) == "string"
+    and seen.address:sub(1, 3) == "fs:" and seen.address == mountOf(envR.fs.mounts(), "/").address)
+  test("the same id compat.filesystem.get() gives for that disk",
+    seen and seen.address == securefs.opaqueMountId("/", "disk0"))
+  local okW, mW = pcall(envW.fs.mounts)
+  test("a fs.write sandbox does not see it either",
+    okW and mountOf(mW, "/") and mountOf(mW, "/").address ~= "disk0")
+  -- The list is a copy: nothing a program writes into it reaches fs.lua.
+  if seen then seen.address = "disk0"; seen.mountPoint = "/evil" end
+  test("editing the list changes nothing underneath", mountOf(fs.mounts(), "/") ~= nil
+    and mountOf(envR.fs.mounts(), "/").address ~= "disk0")
+  local envA = sandbox.build({ caps = { ["fs.read"] = true }, session = adamS })
+  local mA = envA.fs.mounts()
+  test("an admin's sandbox still sees the real address", mountOf(mA, "/")
+    and mountOf(mA, "/").address == "disk0")
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
