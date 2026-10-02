@@ -479,6 +479,21 @@ local function isProtectedTarget(path, session)
 end
 _isProtectedTarget = isProtectedTarget
 
+--- Why securefs would refuse to remove `path` for `session`, or nil if
+--- the protected-target guard would let it through (the ACL check still
+--- applies at remove time). Read-only: no side effects.
+--! For `rm`, which used to answer `rm /tos/x` with "add -r" and `rm -r
+--! /tos/x` with this guard's refusal -- two different errors, the first
+--! recommending a flag that could not help. Same check, same words as
+--! securefs.remove below. (test_rm_system_guard.lua)
+function securefs.removeRefusal(path, session)
+  path = fs.normalize(path)
+  if not path then return INVALID_PATH end
+  local hit = isProtectedTarget(path, sessionOf(session))
+  if hit then return protectedMsg("removing", hit, sessionOf(session)) end
+  return nil
+end
+
 function securefs.remove(path, session)
   -- Normalize FIRST so variants like "/tos/" or "/tos/." can't slip past
   path = fs.normalize(path)

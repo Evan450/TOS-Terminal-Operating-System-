@@ -118,7 +118,7 @@ do
   test("trash refusal explained", helpers.explainFailure(
     "Not trashed: file too large for trash (9000 > 4096)") ~= nil)
   test("rm -r guard explained", helpers.explainFailure(
-    "Refusing to remove protected path without -r: /tos") ~= nil)
+    "Refusing to remove a system path without -r: /tos") ~= nil)
   test("directory-without-r explained", helpers.explainFailure(
     "Cannot remove directory without -r: /home/x") ~= nil)
   test("unknown command explained", helpers.explainFailure(
