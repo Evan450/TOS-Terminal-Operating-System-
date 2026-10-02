@@ -6,14 +6,63 @@ What is actually open. Generated from our working notes, which are not published
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 88 | Planned or under investigation. Most contributions belong here. |
+| Planned | 87 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## THE OPEN QUEUE, WORKED THROUGH (2026-10-01)
+
+### Open bug — THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX THEY ARE GIVEN. Found
+
+```text
+THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX THEY ARE GIVEN. Found
+    by the widened global lint (AUDIT 5's TOS-Extras item, below) and
+    then proven by running the real files in the real sandbox.
+    /usr/bin/cluster.lua (cluster-master) and /usr/bin/cluster-manager.lua
+    are PATH programs, so the shell runs them through progenv in a
+    sandbox with fs.read, fs.write and compat.io. Neither loads:
+      cluster status -> user lib 'cluster.api' failed: api.lua:14:
+        module 'computer' is not available to sandboxed code
+      cluster-manager status -> user lib 'cluster-manager' failed:
+        cluster-manager.lua:38: (the same refusal)
+    THE CAUSE IS A DESIGN CONFLICT, not a typo. Since 8f7b12b
+    (2026-09-11, "every module is the program's own") a library a
+    sandboxed program requires loads INSIDE that sandbox, one instance
+    each. cluster.api's own header says it is "an in-process API ...
+    they share address space" with the running clusterd. So granting
+    the CLI `component` only moves the failure: its private cluster.api
+    is a fresh copy no daemon ever bound ("cluster daemon is not
+    running"). Also dead in the CLI regardless: `cluster submit` uses
+    loadfile, which no sandbox has, and die()/usage() call os.exit,
+    which the sandbox's os omits.
+    THE SERVICES ARE FINE: an rc.d service loads its libraries through
+    the kernel loader (allowUserLibs), into the real _G, and so clusterd
+    and the manager daemon start. Only the operator CLIs are dead --
+    which includes `cluster pair start`, so a Manager can only be paired
+    through the base `cluster-setup` wizard.
+    OPERATOR DECISION, deliberately not made here, because it is about
+    what a trusted package may reach:
+      (a) a SERVICE package's own /usr/bin program gets allowUserLibs,
+          so its libraries load through the kernel loader and share the
+          daemon's state. Consistent with "a service package is trusted
+          with the machine" (installing one is ROOT), but it runs user
+          input through kernel-loaded code, so the tier checks must move
+          into cluster.api itself (today they are in the sandboxed CLI);
+      (b) build ADDRESSABLE LOCAL IPC (WHAT THE REST OF THE FIELD DOES
+          BETTER, below) and have the CLI talk to the daemon through a
+          registered, cap-gated endpoint -- the designed answer, and
+          the larger job.
+    Recommendation: (a) now, with api-side tier checks, and (b) when
+    IPC exists. Pinned as [known gap] in test_cluster_cli_sandbox.lua
+    and in test_global_leaks.lua's TOS-Extras half, so either fix fails
+    those lines and they get rewritten. Shipping now: cluster-master
+    1.0.1 and cluster-manager in the published pack carry this.
+```
 
 ## FEDERATED PACKAGE REPOS (2026-09-27)
 
@@ -791,28 +840,6 @@ RUN-THIS-ONCE CONFINEMENT. Plan9k composes namespaces at
 ```
 
 ## AUDIT 5: KERNEL &amp; COMPAT, OFF-BOX (2026-09-18)
-
-### Planned — THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
-
-```text
-THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
-    LEAK IS ALREADY THROUGH. test_global_leaks.lua is good and its
-    scope is stated honestly -- system_manifest.lua entries only.
-    Running the same luac -p -l -l analysis over everything it
-    skips: the TOS-Dev files outside the manifest are clean, but
-    TOS-Extras/selftest/checks/80-pkg-signing.lua:128 writes a
-    global `_` (`_ = v6`, the mark-as-used idiom). Exactly the
-    class the lint exists to catch.
-      Widening it is not just a longer file list. Extras module
-    code legitimately reads `fs`, `vault` and `crypto`, which the
-    sandbox injects per capability (sandbox.lua:1068, :1252,
-    :1282), so the lint would have to know the module ENVIRONMENT
-    and not only STDLIB. Severity LOW. Pin: the widened lint is its
-    own pin.
-      The `_ = v6` leak is gone (fc2c4da, fermi import); widening the
-    lint is what remains. It did gain one thing: it now follows
-    global accesses past a function's 256th constant (59efe90).
-```
 
 ### Planned — THE PACKET MAC HAS NO LENGTH FRAMING
 
