@@ -91,6 +91,20 @@ local function validRepoName(n)
   return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
 end
 
+--! #SEC — a package name becomes a staging PATH below (and the staging
+--! root is removed before every fetch), so it must be a name and nothing
+--! else: the rule pkg.lua's validName applies to manifests -- alphanumerics
+--! with inner dashes, 64 at most, no dots, no separators. A hand-typed
+--! name was only the operator's own risk; a dependency name comes from a
+--! REMOTE manifest, and "../../tos" there must not reach fs.remove.
+--! (test_pkgremote_deps.lua)
+local function validPkgName(n)
+  if type(n) ~= "string" or n == "" or #n > 64 then return false end
+  if #n == 1 then return n:match("^%w$") ~= nil end
+  return n:match("^%w[%w%-]*%w$") ~= nil
+end
+pkgremote.validPkgName = validPkgName
+
 --- Load configured repos. Returns an array of { name, url, host }.
 --- A malformed entry is dropped rather than failing the whole file: one
 --- bad line should not make every other repo unreachable.
@@ -316,6 +330,9 @@ end
 --- Returns pkgDir, err.
 function pkgremote.fetch(name, opts)
   opts = opts or {}
+  if not validPkgName(name) then
+    return nil, "not a package name: " .. tostring(name):sub(1, 64)
+  end
   local im = inet()
   if not im then return nil, "internet module unavailable" end
   if not im.available() then
@@ -396,10 +413,14 @@ function pkgremote.fetch(name, opts)
     end
   end
 
-  -- Staging tree: <STAGE_ROOT>/<repo>/  holds programs.cfg + the sources,
-  -- and <STAGE_ROOT>/<repo>/<name>/ is the package directory whose PARENT
-  -- the manifest reader looks in for the index. Cleared per fetch.
-  local root   = fs.join(STAGE_ROOT, repo.name)
+  -- Staging tree: <STAGE_ROOT>/<repo>.<name>/ holds programs.cfg + the
+  -- sources, and .../<name>/ is the package directory whose PARENT the
+  -- manifest reader looks in for the index. Cleared per fetch.
+  --! One root PER PACKAGE, not per repo: `pkg fetch` stages a package's
+  --! dependencies while the package itself is still staged, and a
+  --! per-repo root was wiped by the next fetch from the same repo. "." is
+  --! legal in neither a repo name nor a package name, so no two collide.
+  local root   = fs.join(STAGE_ROOT, repo.name .. "." .. name)
   local pkgDir = fs.join(root, name)
   pcall(fs.remove, root)
   if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then

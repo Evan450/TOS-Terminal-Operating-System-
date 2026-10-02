@@ -130,7 +130,11 @@ test("the signed index's package installs", ok == true)
 if not ok then print("      (" .. tostring(err) .. ")") end
 test("...recorded as signed by the trusted publisher", info and info._sigState == "trusted")
 test("...under the publisher's label", info and info._sigLabel == "tester")
-test("staging is cleared afterwards", not F.exists(pkgremote.STAGE_ROOT .. "/r"))
+local leftover
+for k in pairs(F._f) do
+  if k:sub(1, #pkgremote.STAGE_ROOT + 1) == pkgremote.STAGE_ROOT .. "/" then leftover = k end
+end
+test("staging is cleared afterwards", leftover == nil)
 
 -- The bytes must be the ones the signature covers.
 serve(INDEX .. "\n-- appended\n", SIG)
