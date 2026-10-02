@@ -156,6 +156,51 @@ test("tape at /usr/modules/tape/", true,
 test("no stale /usr/modules/tape-storage/", false,
   exists(OUT .. "/tape/usr/modules/tape-storage/init.lua"))
 
+-- rc-pilot carries the robot's EEPROM image, minified from robot/ by the
+-- assembler (MINIFIED in build-disk.lua). The commented source is ~6 KB,
+-- a chip holds 4096 bytes, and the burnable image used to exist only if
+-- someone ran strip.lua by hand.
+do
+  local img = readAll(OUT .. "/rc-pilot/usr/share/rc-pilot/eeprom-rc-pilot.lua")
+  local src = readAll(root .. "/robot/eeprom-rc-pilot.lua")
+  test("rc-pilot ships the robot EEPROM image", true, img ~= nil)
+  test("...that fits a 4096-byte chip", true, img ~= nil and #img <= 4096)
+  test("...and parses", true, img ~= nil and load(img, "=img", "t", {}) ~= nil)
+  test("...minified from robot/, no comment left", true, img ~= nil and src ~= nil
+    and #img < #src and not img:find("^%-%-") and not img:find("\n%s*%-%-"))
+end
+
+-- And a build whose image would not fit the chip is refused, not shipped.
+do
+  local big = OUT .. "-big"
+  rmrf(big)
+  local function mk(d)
+    if WINDOWS then os.execute('mkdir "' .. d:gsub("/", "\\") .. '" >nul 2>nul')
+    else os.execute('mkdir -p "' .. d .. '" 2>/dev/null') end
+  end
+  local function put(path, data)
+    local f = io.open(path, "wb"); if f then f:write(data); f:close() end
+  end
+  mk(big .. "/modules/rc-pilot"); mk(big .. "/robot")
+  for _, f in ipairs({ "package.lua", "init.lua" }) do
+    put(big .. "/modules/rc-pilot/" .. f, readAll(root .. "/modules/rc-pilot/" .. f) or "")
+  end
+  -- Code, not comment, so minifying cannot save it: ~2.4 KB more.
+  put(big .. "/robot/eeprom-rc-pilot.lua",
+    (readAll(root .. "/robot/eeprom-rc-pilot.lua") or "") .. string.rep("local x = 1\n", 200))
+  local log = big .. "/build.log"
+  local cmd = string.format('lua "%s/build-disk.lua" "%s" "%s/out" --limit 0 >"%s" 2>&1',
+    buildDir, big, big, log)
+  local ok = os.execute(cmd)
+  ok = (ok == true or ok == 0)
+  local said = readAll(log) or ""
+  test("an image over 4096 bytes fails the build", false, ok)
+  test("...saying which file and why", true,
+    said:find("eeprom-rc-pilot.lua", 1, true) ~= nil and said:find("4096-byte limit", 1, true) ~= nil)
+  test("...and ships no package", false, exists(big .. "/out/rc-pilot/package.lua"))
+  rmrf(big)
+end
+
 -- ── Output cleaning between builds ───────────────────────────
 local stale = OUT .. "/tape/usr/modules/left-behind.lua"
 local h = io.open(stale, "wb")

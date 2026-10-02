@@ -112,6 +112,8 @@ mod.commands = {
       o("  The robot must be running the rc-pilot EEPROM and have a")
       o("  shared secret either in your keychain (slot 'rc:<addr>')")
       o("  or passed via 'rc <addr> --secret <secret>'.")
+      o("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
+      o("  swap a blank EEPROM in, `flash` that file, and swap yours back.")
       return
     end
 

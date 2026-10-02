@@ -293,6 +293,28 @@ do
   end
 end
 
+-- ── The comment stripper, as a library ──────────────────────────────
+--! TOS-Dev/build/strip.lua, found the same two ways as sha256 above. It
+--! runs its file-tree driver only when invoked AS strip.lua, so loading it
+--! from here just returns its module table. Missing it is not fatal unless
+--! a package needs it (MINIFIED below), and then it is a build problem.
+local stripper
+do
+  for _, cand in ipairs({
+      extrasRoot .. "/../TOS-Dev/build/strip.lua",
+      extrasRoot .. "/../build/strip.lua",
+      scriptDir  .. "/../../TOS-Dev/build/strip.lua",
+      scriptDir  .. "/../../build/strip.lua",
+      "TOS-Dev/build/strip.lua",
+      "../build/strip.lua" }) do
+    local chunk = loadfile(cand)
+    if chunk then
+      local ok, m = pcall(chunk)
+      if ok and type(m) == "table" and type(m.strip) == "function" then stripper = m break end
+    end
+  end
+end
+
 -- ── Publisher signing (optional) ────────────────────────────────────
 -- `--sign` signs each emitted manifest with an Ed25519 key derived from
 -- a passphrase, writing package.sig beside package.lua.
@@ -441,6 +463,19 @@ local LEGACY_SOURCES = {
   },
 }
 
+-- Install targets built from a source elsewhere in the tree, passed
+-- through strip.lua --minify on the way into the package, and refused if
+-- the result will not fit where it goes. The robot EEPROM is the only one:
+-- robot/ holds the commented source, a chip holds 4096 bytes, and the
+-- burnable image used to exist only if someone ran strip.lua by hand.
+-- Shipping it inside rc-pilot puts it under the package's hashes and
+-- signature, and on the machine that will flash it.
+local MINIFIED = {
+  ["rc-pilot"] = {
+    ["/usr/share/rc-pilot/eeprom-rc-pilot.lua"] = { src = "robot/eeprom-rc-pilot.lua", max = 4096 },
+  },
+}
+
 -- ── Manifest loading ───────────────────────────────────────────────
 local function loadManifest(path)
   local src = readAll(path)
@@ -489,9 +524,25 @@ for _, root in ipairs(DISCOVERY_ROOTS) do
                     manifestSrc = manifestSrc, files = {},
                     size = #manifestSrc + OVERHEAD }
         for _, target in ipairs(m.files or {}) do
-          local srcRel = resolveTarget(srcDirRel, m.name, target)
+          local gen = MINIFIED[m.name] and MINIFIED[m.name][target]
+          local srcRel = gen and gen.src or resolveTarget(srcDirRel, m.name, target)
           local data = srcRel and normalizeEOL(readAll(extrasRoot .. "/" .. srcRel))
-          if not data then
+          local genErr
+          if data and gen then
+            if not stripper then
+              genErr = "is built with strip.lua --minify, and strip.lua was not found"
+            else
+              data = stripper.strip(data, { minify = true })
+              if #data > gen.max then
+                genErr = ("is %d bytes minified, over its %d-byte limit"):format(#data, gen.max)
+              elseif not load(data, "=" .. target, "t", {}) then
+                genErr = "does not parse once minified"
+              end
+            end
+          end
+          if genErr then
+            problems[#problems + 1] = m.name .. ": " .. target .. " (from " .. gen.src .. ") " .. genErr
+          elseif not data then
             problems[#problems + 1] = m.name .. ": no source found for " .. target
               .. " (tried " .. srcDirRel .. target .. " and "
               .. srcDirRel .. "/" .. basename(target) .. ")"
