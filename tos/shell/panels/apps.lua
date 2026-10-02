@@ -8,13 +8,18 @@
 -- ║  lifecycle contract; the shell dispatches render + input   ║
 -- ║  to the active tab's app.                                  ║
 -- ║                                                            ║
--- ║  HYBRID app model (operator's call): an app is either      ║
--- ║  in-shell (a module the shell draws inside its own loop —  ║
--- ║  cheap, for glanceable/utility tabs like Desktop/Settings/ ║
--- ║  Monitor) or process-backed (a real scheduled process that ║
--- ║  keeps running when you switch away — for Chat and other   ║
--- ║  live things). `model` names which; Stage 1 wires in-shell ║
--- ║  render, later stages add process binding + input.         ║
+-- ║  HYBRID app model (operator's call), both halves built:    ║
+-- ║   * "inshell" -- a module the shell draws inside its own   ║
+-- ║     loop: Desktop, Settings, Monitor, Chat, and the Mail   ║
+-- ║     and Intercom tabs their add-ons register. Cheap; a     ║
+-- ║     live one (Monitor, Chat) ticks while it is in front.   ║
+-- ║   * "process" -- a running full-screen PROGRAM (the        ║
+-- ║     PROGRAM_APP below). Its tab hands the seat over: the   ║
+-- ║     program owns the screen while the tab is active, keeps ║
+-- ║     running or freezes per its background policy when you ║
+-- ║     switch away (^B), and dies with the tab (^W).          ║
+-- ║  `model` names which. Input and mouse go through the same  ║
+-- ║  contract for both.                                        ║
 -- ╚══════════════════════════════════════════════════════════╝
 --
 -- App spec (all fields optional except `type`):
@@ -116,9 +121,8 @@ end
 -- ============================================================
 -- The PROCESS-backed app: a running full-screen program
 -- ============================================================
--- `model = "process"` has been in the spec since stage 1 and only
--- "inshell" was ever built. This is that missing half, and it is the
--- one app whose "draw" is not a draw at all: a program owns the real
+-- The "process" half of the model, and the one app whose "draw" is not a
+-- draw at all: a program owns the real
 -- screen, so making its tab active means HANDING THE SEAT OVER —
 -- foreground its process, tell it to repaint, and stop drawing.
 --
