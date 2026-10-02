@@ -114,7 +114,7 @@ return {
   { path = "/tos/shell/panels/monitorapp.lua", critical = false , hash = "4ba94c0321f2198a13cfa95b29c71594ae6f66ab0fb0dd464ae12764a6782c5f" },
   { path = "/tos/shell/panels/chatapp.lua",   critical = false , hash = "510692d6764d18613b664b47711d93f85a4c4143dec8b4347a7778d9692704bb" },
 
-  { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "eefe419169baf181cd68d9c111a6f851544aee5c1b4754338c6af80db5d327c4" },
+  { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "1bef78790860c2499553d0ee6fc66eeac38822cbc1c2f4817ac0e95ee62baa6f" },
   { path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "2a7bb9b566420de0531befb890eeecf0bdd38310e65e4e98d83a9ebfcaebffd1" },
   { path = "/tos/shell/panels/commands/extras.lua", critical = false , hash = "9563671de4ae3ac314dbd1a849356ae6640d6369a8d437c9c366334fea8f706b" },
 

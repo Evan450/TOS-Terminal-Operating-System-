@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**116 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**115 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 93 | Planned or under investigation. Most contributions belong here. |
+| Planned | 92 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -96,13 +96,6 @@ SSH AND SHARE HAVE NEVER WORKED. They look for the network where
     OpenOS's own libraries there can still shadow an add-on of the same
     name, and load in Safe Mode. Consider dropping /lib from the search
     path; needs an in-game check. (keller session)
-```
-
-### Planned — mkdir, touch AND cat USE ONLY THEIR FIRST PATH, as rm did. Visible
-
-```text
-mkdir, touch AND cat USE ONLY THEIR FIRST PATH, as rm did. Visible
-    to the user, unlike rm's silent case. (keller session)
 ```
 
 ### Planned — fs.mounts() HANDS SANDBOXED PROGRAMS REAL DISK ADDRESSES, which

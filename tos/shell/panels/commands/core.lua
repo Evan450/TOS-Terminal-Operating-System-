@@ -275,11 +275,11 @@ return function(C, S, deps)
       o(" Navigation & Files", T.highlight)
       o("  cd [dir]              Change directory  (~ = home, .. = parent)", T.fg)
       o("  ls [path]             List directory  (dir = alias)", T.fg)
-      o("  cat <file>            View file contents  (type = alias)", T.fg)
+      o("  cat <file...>         View file contents  (type = alias)", T.fg)
       o("  more <file>           Open file in view tab", T.fg)
       if S.userTier >= 1 then
-      o("  mkdir <dir>           Create directory", T.fg)
-      o("  touch <file>          Create empty file", T.fg)
+      o("  mkdir [-p] <dir...>   Create directories", T.fg)
+      o("  touch <file...>       Create empty files", T.fg)
       o("  cp <src> <dst>        Copy file (both paths required)", T.fg)
       o("  mv <src> <dst>        Move or rename file", T.fg)
       o("  rm <path>             Delete file or directory", T.fg)
@@ -628,13 +628,24 @@ return function(C, S, deps)
   end
   C.dir = C.ls
 
-  C.cat = function(args, o)
-    if not args[1] then o("Usage: cat <file>", T.dim); return end
-    local p = rp(args[1])
-    if not canRead(p, o) then return end
+  --! cat, mkdir and touch handle EVERY path given, each on its own terms,
+  --! as rm does: a refusal on one says so and moves to the next. All three
+  --! took args[1] and ignored the rest -- `touch a b c` made a and said
+  --! "Touched: a", and `cat a b` printed a alone. (test_multi_path_cmds.lua)
+
+  local function catOne(arg, o)
+    local p = rp(arg)
+    if not canRead(p, o) then return true end
     local ok, shown, stopped = helpers.readLinesCapped(F, p, function(l) o(l, T.fg) end)
-    if not ok then o("Cannot read: " .. args[1], T.error)
-    elseif stopped then o(string.format(helpers.VIEW_STOPPED, shown), T.warning) end
+    if not ok then o("Cannot read: " .. arg, T.error)
+    elseif stopped then o(string.format(helpers.VIEW_STOPPED, shown), T.warning); return false end
+    return true
+  end
+  C.cat = function(args, o)
+    if not args[1] then o("Usage: cat <file...>", T.dim); return end
+    for _, a in ipairs(args) do
+      if not catOne(a, o) then break end
+    end
   end
   C.type = C.cat
 
@@ -649,32 +660,54 @@ return function(C, S, deps)
     openViewTab(buf, args[1]:match("[^/]+$") or args[1])
   end
 
-  C.mkdir = function(args, o)
-    if not args[1] then o("Usage: mkdir <dir>", T.dim); return end
-    local p      = rp(args[1])
+  local function mkdirOne(arg, parents, o)
+    local p      = rp(arg)
     local parent = p:match("^(.*)/[^/]+/?$") or "/"
-    if not canWrite(parent, o) then return end
+    if not canWrite(parent, o) then return false end
+
+    if F.isDirectory and F.isDirectory(p) then
+      if not parents then o("Already exists: " .. arg, T.warning) end
+      return false
+    end
     --! Surface the REASON. securefs returns a full explanation --
     --! which guard refused, why, and how root lifts it -- and this threw
     --! it away and printed "Failed", sending the operator to the kernel
     --! log to find out what happened.
     local okMk, errMk = F.makeDirectory(p)
     if okMk then
-      refreshBrowser()
-      o("Created: " .. args[1], T.highlight)
-    else o(tostring(errMk or "Could not create " .. args[1]), T.error) end
+      o("Created: " .. arg, T.highlight)
+      return true
+    end
+    o(tostring(errMk or "Could not create " .. arg), T.error)
+    return false
+  end
+  C.mkdir = function(args, o)
+
+    local parents, paths = false, {}
+    for _, a in ipairs(args) do
+      if a == "-p" or a == "--parents" then parents = true else paths[#paths + 1] = a end
+    end
+    if not paths[1] then o("Usage: mkdir [-p] <dir...>", T.dim); return end
+    local made = false
+    for _, a in ipairs(paths) do made = mkdirOne(a, parents, o) or made end
+    if made then refreshBrowser() end
   end
 
-  C.touch = function(args, o)
-    if not args[1] then o("Usage: touch <file>", T.dim); return end
-    local p = rp(args[1])
-    if not canWrite(p, o) then return end
+  local function touchOne(arg, o)
+    local p = rp(arg)
+    if not canWrite(p, o) then return false end
     if not F.exists(p) then
       local okW, errW = F.writeFile(p, "")
-      if not okW then o(tostring(errW or "Could not create " .. args[1]), T.error); return end
+      if not okW then o(tostring(errW or "Could not create " .. arg), T.error); return false end
     end
-    refreshBrowser()
-    o("Touched: " .. args[1], T.highlight)
+    o("Touched: " .. arg, T.highlight)
+    return true
+  end
+  C.touch = function(args, o)
+    if not args[1] then o("Usage: touch <file...>", T.dim); return end
+    local any = false
+    for _, a in ipairs(args) do any = touchOne(a, o) or any end
+    if any then refreshBrowser() end
   end
 
   local function parseKeep(args)
