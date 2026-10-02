@@ -8,8 +8,8 @@ What is actually open. Generated from our working notes, which are not published
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 71 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 19 | Idea, no commitment. Discuss before building. |
+| Planned | 70 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
@@ -653,29 +653,13 @@ GENERATED API REFERENCE, AND PERMISSION ANNOTATIONS THAT CAN
     annotations and never checks them; we would be the first to.
 ```
 
-### Planned — NAME WHAT IS ON A DRIVE BEFORE ERASING IT
+### Idea / far future — A READ-ONLY FOREIGN-VOLUME READER
 
 ```text
-NAME WHAT IS ON A DRIVE BEFORE ERASING IT. TBFS writes its own
-    "TBFS" magic at sector 1 and blockfs.format zeroes the metadata
-    region unconditionally. The install path does gate this behind
-    a danger confirm box ("Anything on it now is gone",
-    commands/extras.lua:1405), so nothing is destroyed silently --
-    this is calibrated small. What it CANNOT do is say what is
-    there: the only answer TBFS can give about a foreign volume is
-    "not a TBFS volume".
-      * Probe known magics before formatting -- TBFS, OSDI, OCGPT
-        (sectors 2-9), MTPT, msdos -- and name the finding in the
-        confirmation. "This drive holds an OSDI partition table" is
-        a different decision from "this drive looks blank", and
-        read-only probing cannot break anything.
-      * A READ-ONLY foreign-volume reader is worth a line, not a
-        round: recovering files off another OS's disk is a real
-        base-admin task and we cannot see such a drive at all.
-      Our unmanaged-drive story stays bespoke on purpose -- TBFS'
-    boot region, bootBlob and the EEPROM stage-2 loader are tied to
-    how we boot. This is about RECOGNISING other formats, not
-    adopting one.
+A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above:
+    now TOS can NAME another OS's disk, the next step would be listing
+    and copying files off it (OSDI/MTPT partitions, SimpleFS), which is
+    a real base-admin task. A line, not a round.
 ```
 
 ### Planned — LOCALISE THE INSTALLER

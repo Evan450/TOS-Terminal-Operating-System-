@@ -51,6 +51,28 @@ return function(C, S, deps)
   --! choice is the first button, so a click-through cancels.
   local confirmBox        = deps.confirm
 
+  --! What a raw drive holds, said BEFORE it is erased: an OSDI table and a
+  --! blank drive are different decisions, and "not a TBFS volume" was all
+  --! TOS could say. Read-only (shell/panels/diskprobe.lua), loaded only
+  --! when a drive is about to be named. A TBFS volume is named from its own
+  --! stats when blockfs can read them. Returns the phrase, or nil.
+  --! (test_diskprobe.lua)
+  local function driveHolds(px, lib)
+    local okD, dp = pcall(require, "shell.panels.diskprobe")
+    if not okD or type(dp) ~= "table" then return nil end
+    local okP, r = pcall(dp.probe, px)
+    if not okP or type(r) ~= "table" then return nil end
+    if r.kind == "tbfs" and lib and lib.stats then
+      local okS, st = pcall(lib.stats, px)
+      if okS and type(st) == "table" then
+        local label = tostring(st.label or ""):gsub("%c", "?"):sub(1, 24)
+        return ('a TBFS volume labelled "%s": %d file(s), %d dir(s)'):format(
+          label, tonumber(st.files) or 0, tonumber(st.dirs) or 0)
+      end
+    end
+    return r.text
+  end
+
   C.redstone = function(args, o)
     local ok2, rs = pcall(require, "peripheral.redstone")
     if not ok2 then o("No redstone module", T.error); return end
@@ -957,8 +979,11 @@ return function(C, S, deps)
             s.files, s.dirs), T.fg)
           o(string.format("    fragmentation %d%%   %s",
             math.floor(s.fragmentation * 100 + 0.5), s.clean and "clean" or "DIRTY (mounted or unclean)"), T.fg)
-        else o("  (not a TBFS volume — unformatted or foreign)", T.dim) end
-      else o("  (install 'blockfs' to read the filesystem)", T.dim) end
+        else o("  Not a TBFS volume. It holds " .. (driveHolds(px) or "something unreadable") .. ".", T.dim) end
+      else
+        o("  It holds " .. (driveHolds(px) or "something unreadable") .. ".", T.dim)
+        o("  (install 'blockfs' to format or mount it)", T.dim)
+      end
       return
     end
 
@@ -1094,15 +1119,18 @@ return function(C, S, deps)
       local px, addr = proxyFor(args[2])
       if not px then o(tostring(addr), T.error); return end
       local label = args[3] or ("disk" .. addr:sub(1, 4))
+      local holds = driveHolds(px, lib)
       local okFmt
       if confirmBox then
         okFmt = confirmBox(
           "Format drive " .. addr:sub(1, 8) .. "... as TBFS?" .. "\n\n" ..
+          (holds and ("It holds " .. holds .. ".\n") or "") ..
           "Every file on it is destroyed. There is no undo and no\n" ..
           "recovery tool in TOS that can bring it back.",
           { title = "Format drive", severity = "danger",
             yes = "Format", no = "Cancel" })
       else
+        if holds then o("Drive " .. addr:sub(1, 8) .. "... holds " .. holds .. ".", T.warning) end
         local ans = promptInput and promptInput("FORMAT " .. addr:sub(1, 8) ..
           "... as TBFS? destroys all data [y/N]: ", 4) or "n"
         okFmt = (ans or ""):lower() == "y"
@@ -1409,14 +1437,17 @@ return function(C, S, deps)
       end
 
       local okInst
+      local holds = driveHolds(drive, blockfs)
       if confirmBox then
         okInst = confirmBox(
           "Install TOS onto raw drive " .. addr:sub(1, 8) .. "...?" .. "\n\n" ..
+          (holds and ("It holds " .. holds .. ".\n") or "") ..
           "The drive is erased and reformatted as bootable TBFS.\n" ..
           "Anything on it now is gone.",
           { title = "Erase and install", severity = "danger",
             yes = "Erase", no = "Cancel" })
       else
+        if holds then o("Drive " .. addr:sub(1, 8) .. "... holds " .. holds .. ".", T.warning) end
         local ans = promptInput and promptInput(
           "Install TOS onto raw drive " .. addr:sub(1, 8) .. "...? ERASES it [y/N]: ", 4) or "n"
         okInst = (ans or ""):lower() == "y"
