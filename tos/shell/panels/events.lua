@@ -12,6 +12,7 @@ local appsMod   = require("shell.panels.apps")
 local homeMod   = require("shell.panels.home")
 local keysMod   = require("shell.keys")
 local selMod    = require("shell.panels.selection")
+local tc        = require("shell.panels.textcol")
 local clipMod   = require("kernel.clipboard")
 
 local desktopMod = nil
@@ -739,21 +740,35 @@ function M.run(S, deps)
               end
             end
 
+            --! tab.curCol is a BYTE column and always sits on a character
+            --! boundary (shell/panels/textcol.lua). Left, right, Backspace
+            --! and Delete step a whole character -- one byte at a time put
+            --! the cursor inside a UTF-8 sequence, and Backspace deleted
+            --! half of one. Up, down and the page keys keep the column the
+            --! operator SEES, not the byte count, which on a line with
+            --! accents is a different place. (test_editor_utf8_columns.lua)
+            local function moveRow(r)
+              local cell = tc.cellOf(lines[tab.curRow] or "", tab.curCol)
+              tab.curRow = math.max(1, math.min(#lines, r))
+              tab.curCol = tc.colOf(lines[tab.curRow] or "", cell)
+              clampEdit()
+            end
+
             if edClip then draw = edClip
-            elseif co == 200 then tab.curRow = tab.curRow - 1; clampEdit(); draw = 1
-            elseif co == 208 then tab.curRow = tab.curRow + 1; clampEdit(); draw = 1
+            elseif co == 200 then moveRow(tab.curRow - 1); draw = 1
+            elseif co == 208 then moveRow(tab.curRow + 1); draw = 1
             elseif co == 203 then
-              if tab.curCol > 1 then tab.curCol = tab.curCol - 1
+              if tab.curCol > 1 then tab.curCol = tc.prevCol(lines[tab.curRow], tab.curCol)
               elseif tab.curRow > 1 then tab.curRow = tab.curRow - 1; tab.curCol = #lines[tab.curRow]+1 end
               clampEdit(); draw = 1
             elseif co == 205 then
-              if tab.curCol <= #lines[tab.curRow] then tab.curCol = tab.curCol + 1
+              if tab.curCol <= #lines[tab.curRow] then tab.curCol = tc.nextCol(lines[tab.curRow], tab.curCol)
               elseif tab.curRow < #lines then tab.curRow = tab.curRow + 1; tab.curCol = 1 end
               clampEdit(); draw = 1
             elseif co == 199 then tab.curCol = 1; draw = 1
             elseif co == 207 then tab.curCol = #lines[tab.curRow]+1; draw = 1
-            elseif co == 201 then tab.curRow = math.max(1, tab.curRow - edH); clampEdit(); draw = 1
-            elseif co == 209 then tab.curRow = math.min(#lines, tab.curRow + edH); clampEdit(); draw = 1
+            elseif co == 201 then moveRow(tab.curRow - edH); draw = 1
+            elseif co == 209 then moveRow(tab.curRow + edH); draw = 1
             elseif (co == 14 or co == 211) and tab.selAnchor then
 
               pushUndo()
@@ -763,8 +778,9 @@ function M.run(S, deps)
               tab.selAnchor = nil; tab.modified = true; clampEdit(); draw = 1
             elseif co == 14 then
               if tab.curCol > 1 then
-                local l = lines[tab.curRow]; lines[tab.curRow] = l:sub(1, tab.curCol-2) .. l:sub(tab.curCol)
-                tab.curCol = tab.curCol - 1; tab.modified = true; draw = 1
+                local l = lines[tab.curRow]; local p = tc.prevCol(l, tab.curCol)
+                lines[tab.curRow] = l:sub(1, p - 1) .. l:sub(tab.curCol)
+                tab.curCol = p; tab.modified = true; draw = 1
               elseif tab.curRow > 1 then
                 pushUndo(); tab.curCol = #lines[tab.curRow-1] + 1
                 lines[tab.curRow-1] = lines[tab.curRow-1] .. lines[tab.curRow]
@@ -772,7 +788,7 @@ function M.run(S, deps)
               end
             elseif co == 211 then
               local l = lines[tab.curRow]
-              if tab.curCol <= #l then lines[tab.curRow] = l:sub(1, tab.curCol-1) .. l:sub(tab.curCol+1); tab.modified = true; draw = 1
+              if tab.curCol <= #l then lines[tab.curRow] = l:sub(1, tab.curCol-1) .. l:sub(tc.nextCol(l, tab.curCol)); tab.modified = true; draw = 1
               elseif tab.curRow < #lines then pushUndo(); lines[tab.curRow] = l .. lines[tab.curRow+1]; table.remove(lines, tab.curRow+1); tab.modified = true; draw = 1 end
             elseif co == 28 then
               pushUndo(); local l = lines[tab.curRow]; local before = l:sub(1, tab.curCol - 1); local after = l:sub(tab.curCol)

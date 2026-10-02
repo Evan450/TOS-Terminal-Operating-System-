@@ -1,5 +1,27 @@
 local M = {}
 
+local tcMod
+local function textcol()
+  if tcMod == nil then
+    local ok, m = pcall(require, "shell.panels.textcol")
+    tcMod = (ok and type(m) == "table") and m or false
+  end
+  return tcMod or nil
+end
+
+--! Through the horizontal scroll (draw.lua keeps tab.viewLeft, in cells)
+--! and through the line's cells. A click on a scrolled line landed
+--! viewLeft-1 columns left of where it was aimed -- px - gutterW is a
+--! column of the WINDOW, not of the line -- and on a line with accents
+--! a cell is not a byte. (test_editor_utf8_columns.lua)
+local function editColAt(tab, line, px, gutterW)
+  local cell = (px - gutterW) + (tab.viewLeft or 1) - 1
+  if cell < 1 then cell = 1 end
+  local tc = textcol()
+  if tc then return tc.colOf(line or "", cell) end
+  return math.min(#(line or "") + 1, cell)
+end
+
 local function uptime()
   local ok, c = pcall(require, "computer")
   if ok and c and c.uptime then return c.uptime() end
@@ -238,7 +260,7 @@ local function handleClick(S, deps, ev)
       local lines = tab.lines or { "" }
       local gutterW = S.tier >= 2 and (math.max(#tostring(#lines), 2) + 1) or 0
       tab.curRow = math.max(1, math.min(#lines, (tab.viewTop or 1) + (py - 2)))
-      tab.curCol = math.max(1, math.min(#(lines[tab.curRow] or "") + 1, px - gutterW))
+      tab.curCol = editColAt(tab, lines[tab.curRow], px, gutterW)
 
       tab.selAnchor = nil
       S._drag = { kind = "edit", row = tab.curRow, col = tab.curCol }
@@ -284,7 +306,7 @@ local function handleDrag(S, deps, ev)
     local edH = S.H - 2
     local gutterW = S.tier >= 2 and (math.max(#tostring(#lines), 2) + 1) or 0
     local row = math.max(1, math.min(#lines, (tab.viewTop or 1) + (py - 2)))
-    local col = math.max(1, math.min(#(lines[row] or "") + 1, px - gutterW))
+    local col = editColAt(tab, lines[row], px, gutterW)
     if py < 2 or py >= 2 + edH then return 0 end
     if not tab.selAnchor then
       tab.selAnchor = { row = d.row or tab.curRow, col = d.col or tab.curCol }
@@ -351,8 +373,11 @@ local function handleScroll(S, deps, ev)
     local lines = tab.lines or { "" }
     local edH = S.H - 2
     local step = dir > 0 and -3 or 3
+    local tc = textcol()
+    local cell = tc and tc.cellOf(lines[tab.curRow] or "", tab.curCol) or tab.curCol
     tab.curRow = math.max(1, math.min(#lines, tab.curRow + step))
-    tab.curCol = math.max(1, math.min(#(lines[tab.curRow] or "") + 1, tab.curCol))
+    tab.curCol = tc and tc.colOf(lines[tab.curRow] or "", cell)
+      or math.max(1, math.min(#(lines[tab.curRow] or "") + 1, cell))
     if tab.curRow < tab.viewTop then tab.viewTop = tab.curRow end
     if tab.curRow > tab.viewTop + edH - 1 then tab.viewTop = tab.curRow - edH + 1 end
     return 1

@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**112 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**111 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 89 | Planned or under investigation. Most contributions belong here. |
+| Planned | 88 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -791,40 +791,6 @@ RUN-THIS-ONCE CONFINEMENT. Plan9k composes namespaces at
 ```
 
 ## AUDIT 5: KERNEL &amp; COMPAT, OFF-BOX (2026-09-18)
-
-### Planned — THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS
-
-```text
-THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS.
-    kernel/screen.lua's proxy.set is UTF-8 correct: it splits on
-    "[\0-\127\194-\255][\128-\191]*" and maps one character to one
-    cell (screen.lua:1290). The editor's syntax path does its
-    column arithmetic in BYTES -- panels/draw.lua:741-755 uses
-    #tokText for token width and tokText:sub() to clip. Driving the
-    real modules on  local s = "café"  -- naïve : draw.lua thinks
-    the line is 28 columns and screen.lua paints 26. So the clip
-    window, the horizontal scroll, the ">" overflow marker and the
-    byte-indexed selection overlay are all off from the first
-    non-ASCII character onward.
-      In CODE position it is worse. Bytes >= 0x80 match none of %a,
-    %w, %d or %s, so shell/syntax.lua emits one `op` token per
-    BYTE; the lead byte paints as a lone garbage cell, and the
-    continuation bytes match nothing in the UTF-8 gmatch, so
-    _diffWindow returns nil and proxy.set counts them as SKIPPED --
-    they vanish. On  local café = 1 , byte C3 is drawn and A9 is
-    dropped. Comments and strings survive as single tokens, which
-    is why the box-drawing in our own headers still renders, drift
-    and all.
-      Fix: have syntax.tokenize return characters rather than
-    bytes, and have draw.lua advance by cell count. Severity
-    MEDIUM. Pin: a test comparing draw.lua's column total against
-    the screen's cell count. [?] the visual half has not been seen
-    on hardware.
-      HALF FIXED 2026-09-23 (350fd87, fermi import). syntax.tokenize,
-    and PaneUI's port of it, keep a UTF-8 character as one token, so
-    the garbage cell in code position is gone. What remains is the
-    column model: draw.lua still advances by bytes.
-```
 
 ### Planned — THE ACCIDENTAL-GLOBAL LINT DOES NOT COVER TOS-Extras, AND ONE
 
