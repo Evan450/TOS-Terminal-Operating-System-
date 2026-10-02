@@ -332,6 +332,27 @@ function M.liveTier(S)
   return (S and S.userTier) or 0
 end
 
+--! #SEC — the registry tier of the command `name`, enforced. Returns
+--! (message, need, have) when this seat may not run it, nil when it may.
+--! The executor makes this check at dispatch (Sep 2026 pentest); anything
+--! that runs a command by NAME without going through the executor --
+--! `watch`, the tape toolbox -- must make it too, or it is a way around
+--! it: both used to call C[name] directly, so `watch redstone set ...`
+--! ran for a GUEST. Package commands are not in the registry (tier 0) and
+--! run sandboxed, as they do from the prompt. (test_watch_tier.lua)
+function M.tierRefusal(S, name)
+  local okC, commandsMod = pcall(require, "shell.panels.commands")
+  local meta = okC and type(commandsMod) == "table" and commandsMod.entry
+    and commandsMod.entry(name) or nil
+  local need = meta and tonumber(meta.tier) or 0
+  if need <= 0 then return nil end
+  local have = M.liveTier(S)
+  if have >= need then return nil end
+  return "Permission denied: '" .. tostring(name) .. "' needs "
+    .. (M.tierName and M.tierName(need) or ("tier " .. need))
+    .. "  [E-403 ERR_TIER_REQUIRED]", need, have
+end
+
 function M.rootOnly(S, o)
   if M.liveTier(S) < 3 then
 
