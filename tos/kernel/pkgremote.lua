@@ -54,6 +54,20 @@ local function validRepoName(n)
   return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
 end
 
+--! #SEC — a package name becomes a staging PATH below (and the staging
+--! root is removed before every fetch), so it must be a name and nothing
+--! else: the rule pkg.lua's validName applies to manifests -- alphanumerics
+--! with inner dashes, 64 at most, no dots, no separators. A hand-typed
+--! name was only the operator's own risk; a dependency name comes from a
+--! REMOTE manifest, and "../../tos" there must not reach fs.remove.
+--! (test_pkgremote_deps.lua)
+local function validPkgName(n)
+  if type(n) ~= "string" or n == "" or #n > 64 then return false end
+  if #n == 1 then return n:match("^%w$") ~= nil end
+  return n:match("^%w[%w%-]*%w$") ~= nil
+end
+pkgremote.validPkgName = validPkgName
+
 function pkgremote.repos()
   local out = {}
   if not fs.exists(REPO_CFG) then return out end
@@ -251,6 +265,9 @@ end
 
 function pkgremote.fetch(name, opts)
   opts = opts or {}
+  if not validPkgName(name) then
+    return nil, "not a package name: " .. tostring(name):sub(1, 64)
+  end
   local im = inet()
   if not im then return nil, "internet module unavailable" end
   if not im.available() then
@@ -331,7 +348,11 @@ function pkgremote.fetch(name, opts)
     end
   end
 
-  local root   = fs.join(STAGE_ROOT, repo.name)
+  --! One root PER PACKAGE, not per repo: `pkg fetch` stages a package's
+  --! dependencies while the package itself is still staged, and a
+  --! per-repo root was wiped by the next fetch from the same repo. "." is
+  --! legal in neither a repo name nor a package name, so no two collide.
+  local root   = fs.join(STAGE_ROOT, repo.name .. "." .. name)
   local pkgDir = fs.join(root, name)
   pcall(fs.remove, root)
   if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then

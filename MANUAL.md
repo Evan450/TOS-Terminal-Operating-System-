@@ -1356,6 +1356,16 @@ and the unverified-package gate are not reimplemented for the network — they a
 the same code, so they cannot drift. Staging is cleared after every fetch,
 successful or not.
 
+**A fetch brings what the package requires.** Its `requires` are fetched from
+the configured repos too, each through that same door and with the same
+`--allow-…` flags you gave, and installed first. Everything is downloaded and
+every requirement checked before anything is installed, so if one requirement
+is in no configured repo — or a repo has it only in a version that does not meet
+the requirement — the fetch is refused and nothing is installed. Something
+already installed in a good enough version is left alone; one that is too old
+is reported with the `pkg upgrade` to run. Optional requirements are not
+fetched.
+
 **Most repos ship no hashes**, and a package TOS cannot check is unchecked
 executable code from a stranger. `pkg fetch` refuses it until you say
 `--allow-unverified`, exactly as a hashless floppy package does. That prompt is

@@ -2939,6 +2939,31 @@ function pkg.searchRemote(opts)
   return m.search(opts)
 end
 
+--! `pkg fetch` installs what a package REQUIRES, too (the first part of
+--! slice 2 in docs/FEDERATED-REPOS.md; it used to install the package with
+--! its requirements unmet). Dependencies come only from the CONFIGURED
+--! repos -- the admin's allowlist, the design's floor for anything
+--! unsigned -- and each goes through the same door a hand-typed fetch
+--! does: same hashes, same signature policy, same service gate, and the
+--! --allow-* flags the operator gave for this fetch. The whole set is
+--! staged and every requirement resolved BEFORE anything is installed, so
+--! a dependency no repo has refuses the fetch instead of leaving half of
+--! it on disk. Installed and satisfying: left alone. Installed but too
+--! old, or a repo copy that does not meet the constraint: refused, with
+--! the fix (re-choosing a shared copy is slice 3). Optional requirements
+--! are not fetched. Bounded in depth and count; a cycle is not followed
+--! twice. (test_pkgremote_deps.lua)
+local MAX_FETCH_DEPTH, MAX_FETCH_PACKAGES = 8, 16
+
+local function requirementParts(req)
+  if type(req) == "table" then return req.name, req.version, req.optional == true end
+  if type(req) == "string" then
+    local n, c = req:match("^(%S+)%s+(.+)$")
+    if n then return n, c, false end
+    return req, nil, false
+  end
+end
+
 function pkg.installRemote(name, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)
@@ -2946,21 +2971,81 @@ function pkg.installRemote(name, opts)
   local m, mErr = remoteMod()
   if not m then return false, mErr end
 
-  local pkgDir, err, meta = m.fetch(name, opts)
-  if not pkgDir then return false, err end
-
-  --! The fetched package reaches install through the SAME door as a
-  --! floppy. In particular the hash gate is unchanged: an index that
-  --! ships no hashes is unverified code, and installing it still requires
-  --! the operator to have said --allow-unverified. Remote provenance is
-  --! not a reason to relax that — it is the reason it exists.
-  local ok, iErr = pkg.install(pkgDir, opts)
-  m.cleanup(pkgDir)
-  if not ok then return false, iErr end
-  if log then
-    log.info("pkg", "Installed '" .. tostring(name) .. "' from repo '"
-      .. tostring(meta and meta.repo) .. "'")
+  local staged, order, seen = {}, {}, {}
+  local function cleanupAll()
+    for _, s in ipairs(staged) do m.cleanup(s.dir) end
   end
+  local function stage(n, depth, wanted, by)
+    if seen[n] then return true end
+    local who = by and ("dependency '" .. tostring(n) .. "' of '" .. by .. "': ") or ""
+    if depth > MAX_FETCH_DEPTH then
+      return false, who .. "dependencies nest deeper than " .. MAX_FETCH_DEPTH
+    end
+    if #staged >= MAX_FETCH_PACKAGES then
+      return false, "the fetch would bring in more than " .. MAX_FETCH_PACKAGES .. " packages"
+    end
+    seen[n] = true
+    local dir, err, meta = m.fetch(n, opts)
+    if not dir then
+      if by then
+        return false, who .. tostring(err) .. " (if you have it on a disk, `pkg install "
+          .. tostring(n) .. "` it first)"
+      end
+      return false, err
+    end
+    local entry = { name = n, dir = dir, meta = meta }
+    staged[#staged + 1] = entry
+    local man = loadAnyManifest(dir)
+    if type(man) ~= "table" then return false, who .. "no readable manifest" end
+    if wanted and not pkg.satisfiesConstraint(man.version or "0.0.0", wanted) then
+      return false, who .. "needs " .. wanted .. ", and the repo has "
+        .. tostring(man.version or "no version")
+    end
+    for _, req in ipairs(type(man.requires) == "table" and man.requires or {}) do
+      local rn, rc, optional = requirementParts(req)
+      if rn and not optional then
+        local have = findProvider(rn)
+        if have then
+          if rc and not pkg.satisfiesConstraint(have.version or "0.0.0", rc) then
+            return false, ("'%s' needs %s %s, and %s is installed -- `pkg upgrade %s` first"):format(
+              n, rn, rc, tostring(have.version or "?"), rn)
+          end
+        else
+          local ok, e = stage(rn, depth + 1, rc, n)
+          if not ok then return false, e end
+        end
+      end
+    end
+    order[#order + 1] = entry
+    return true
+  end
+
+  local okS, sErr = stage(name, 0)
+  if not okS then cleanupAll(); return false, sErr end
+
+  --! Each package -- the dependencies first -- reaches install through the
+  --! SAME door as a floppy. In particular the hash gate is unchanged: an
+  --! index that ships no hashes is unverified code, and installing it still
+  --! requires the operator to have said --allow-unverified. Remote
+  --! provenance is not a reason to relax that — it is the reason it exists.
+  local done, meta = {}, nil
+  for _, s in ipairs(order) do
+    local ok, iErr = pkg.install(s.dir, opts)
+    if not ok then
+      cleanupAll()
+      return false, (s.name ~= name and ("dependency '" .. s.name .. "': ") or "") .. tostring(iErr)
+        .. (#done > 0 and (" (installed before it stopped: " .. table.concat(done, ", ") .. ")") or "")
+    end
+    if log then
+      log.info("pkg", "Installed '" .. tostring(s.name) .. "' from repo '"
+        .. tostring(s.meta and s.meta.repo) .. "'"
+        .. (s.name ~= name and (" as a dependency of '" .. name .. "'") or ""))
+    end
+    if s.name == name then meta = s.meta else done[#done + 1] = s.name end
+  end
+  cleanupAll()
+  meta = meta or {}
+  meta.dependencies = done
   return true, meta
 end
 

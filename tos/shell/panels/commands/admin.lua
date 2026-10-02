@@ -431,6 +431,10 @@ return function(C, S, deps)
         o(string.format("Installed '%s' from repo '%s' (%d files, %d bytes).",
           name, tostring(res and res.repo), (res and res.files) or 0,
           (res and res.bytes) or 0), T.highlight)
+        local deps = res and res.dependencies
+        if type(deps) == "table" and #deps > 0 then
+          o("  ...and what it requires: " .. table.concat(deps, ", "), T.highlight)
+        end
       else
         o(tostring(res), T.error)
 
