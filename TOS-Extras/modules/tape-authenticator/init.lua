@@ -364,6 +364,53 @@ local function writeMenu(drive, img, entries, passphrase, o)
   return true
 end
 
+-- ── Passphrases ──────────────────────────────────────────────
+--! A passphrase typed as an argument lands in this seat's command history:
+--! the same finding as `pkg trust key` and rc-pilot's --secret. "-" in its
+--! place asks for it instead, masked, through compat.term (reachable from a
+--! package; rc-pilot reads its secret the same way). The typed form still
+--! works, so no script breaks, and it now says what it costs.
+local function askPass(o, prompt)
+  local okT, term = pcall(require, "compat.term")
+  if not okT or type(term) ~= "table" or type(term.read) ~= "function" then
+    o("Cannot ask here (no terminal): type the passphrase in place of -.", 0xFF6600)
+    return nil
+  end
+  o(prompt .. " (not echoed):", 0xAAAAAA)
+  local okR, line = pcall(term.read, nil, false, nil, "*")
+  line = (okR and type(line) == "string") and line:gsub("[\r\n]+$", "") or nil
+  if not line or line == "" then o("Cancelled.", 0xAAAAAA); return nil end
+  return line
+end
+
+--- A passphrase argument: "-" asks, anything else is taken as typed.
+--- `setting` means this write is what gives the region its passphrase (an
+--- empty log or menu has none; the first add sets it, as does passwd). An
+--- asked-for one is then asked twice: nobody sees a masked typo, and a log
+--- encrypted under one is gone for good.
+local function passFor(o, v, prompt, setting)
+  if v ~= "-" then return v end
+  local a = askPass(o, prompt)
+  if not a or not setting then return a end
+  local b = askPass(o, "Again, to confirm")
+  if b ~= a then
+    if b then o("The two did not match; nothing was changed.", 0xFF6600) end
+    return nil
+  end
+  return a
+end
+
+local function historyNote(o, ...)
+  for i = 1, select("#", ...) do
+    local v = select(i, ...)
+    if v ~= nil and v ~= "-" then
+      o("Note: a typed passphrase stays in command history.", 0x555555)
+      o("Put - in its place to be asked for it instead.", 0x555555)
+      return
+    end
+  end
+end
+
 -- ── Commands ─────────────────────────────────────────────────
 
 local function cmdInit(args, o)
@@ -396,7 +443,8 @@ local function cmdInit(args, o)
   if not ok then o(tostring(werr), 0xFF0000); return end
   o(("Keycard initialized: label=%s (%d bytes identity, log empty)")
     :format(label, #body + MAC_LEN + 4), 0x00FF00)
-  o("Add private notes with: tape-auth log add <passphrase> <text>", 0xAAAAAA)
+  o("Add private notes with: tape-auth log add - <text>", 0xAAAAAA)
+  o("(- asks for the passphrase, so it stays out of your history)", 0xAAAAAA)
 end
 
 local function cmdVerify(args, o)
@@ -463,16 +511,19 @@ local function cmdLog(args, o)
   local action = args[2]
   local pass   = args[3]
   if not action or not pass then
-    o("Usage: tape-auth log <add|list|remove|clear|passwd> <passphrase> [...]", 0xAAAAAA)
+    o("Usage: tape-auth log <add|list|remove|clear|passwd> <passphrase|-> [...]", 0xAAAAAA)
     return
   end
+  historyNote(o, pass, action == "passwd" and args[4] or nil)
 
   if action == "add" then
     local text = table.concat(args, " ", 4)
-    if #text == 0 then o("Usage: tape-auth log add <passphrase> <text>", 0xAAAAAA); return end
+    if #text == 0 then o("Usage: tape-auth log add <passphrase|-> <text>", 0xAAAAAA); return end
     text = text:gsub("[\r\n]", " ")
     local drive, img = openCard(o, true, #text + 96)
     if not drive then return end
+    pass = passFor(o, pass, "Log passphrase", img.logLen == 0)
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
     entries[#entries + 1] = ("[t%d] %s"):format(math.floor(computer.uptime()), text)
@@ -484,6 +535,8 @@ local function cmdLog(args, o)
     local drive, img = openCard(o, false)
     if not drive then return end
     if img.version ~= 2 or img.logLen == 0 then o("Log is empty.", 0xAAAAAA); return end
+    pass = passFor(o, pass, "Log passphrase")
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
     o(("Personal log — %s (%d entries)"):format(img.label, #entries), 0xFFFF55)
@@ -493,9 +546,11 @@ local function cmdLog(args, o)
 
   elseif action == "remove" or action == "rm" then
     local n = tonumber(args[4])
-    if not n then o("Usage: tape-auth log remove <passphrase> <entry#>", 0xAAAAAA); return end
+    if not n then o("Usage: tape-auth log remove <passphrase|-> <entry#>", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
+    pass = passFor(o, pass, "Log passphrase")
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
     if not entries[n] then o("No entry #" .. n .. ".", 0xFF6600); return end
@@ -508,18 +563,25 @@ local function cmdLog(args, o)
     local drive, img = openCard(o, true)
     if not drive then return end
     -- Validate the passphrase before destroying anything.
-    if img.logLen > 0 and not decryptLog(img, pass, o) then return end
+    if img.logLen > 0 then
+      pass = passFor(o, pass, "Log passphrase")
+      if not pass or not decryptLog(img, pass, o) then return end
+    end
     if writeLog(drive, img, {}, pass, o) then
       o("Log cleared.", 0x00FF00)
     end
 
   elseif action == "passwd" then
     local newPass = args[4]
-    if not newPass then o("Usage: tape-auth log passwd <old> <new>", 0xAAAAAA); return end
+    if not newPass then o("Usage: tape-auth log passwd <old|-> <new|->", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
+    pass = passFor(o, pass, "Current log passphrase")
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
+    newPass = passFor(o, newPass, "New log passphrase", true)
+    if not newPass then return end
     if writeLog(drive, img, entries, newPass, o) then
       o("Log passphrase changed.", 0x00FF00)
     end
@@ -537,9 +599,10 @@ local function cmdMenu(args, o)
   local action = args[2]
   local pass   = args[3]
   if not action or not pass then
-    o("Usage: tape-auth menu <add|list|remove|passwd|clear> <passphrase> [...]", 0xAAAAAA)
+    o("Usage: tape-auth menu <add|list|remove|passwd|clear> <passphrase|-> [...]", 0xAAAAAA)
     return
   end
+  historyNote(o, pass, action == "passwd" and args[4] or nil)
 
   if action == "add" then
     local rest = table.concat(args, " ", 4)
@@ -573,6 +636,8 @@ local function cmdMenu(args, o)
     -- passphrase. That was silent, and silence reads as "it already knew
     -- my password" — say it out loud instead.
     local fresh = (img.menuLen == 0 or img.menuBlob == "")
+    pass = passFor(o, pass, "Menu passphrase", fresh)
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
     entries[#entries + 1] = label .. "|" .. cmd
@@ -587,7 +652,7 @@ local function cmdMenu(args, o)
 
   elseif action == "passwd" then
     local newPass = args[4]
-    if not newPass then o("Usage: tape-auth menu passwd <old> <new>", 0xAAAAAA); return end
+    if not newPass then o("Usage: tape-auth menu passwd <old|-> <new|->", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
     if img.menuLen == 0 or img.menuBlob == "" then
@@ -595,8 +660,12 @@ local function cmdMenu(args, o)
       o("'menu add'.", 0xAAAAAA)
       return
     end
+    pass = passFor(o, pass, "Current menu passphrase")
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
+    newPass = passFor(o, newPass, "New menu passphrase", true)
+    if not newPass then return end
     if writeMenu(drive, img, entries, newPass, o) then
       o("Menu passphrase changed.", 0x00FF00)
     end
@@ -605,6 +674,8 @@ local function cmdMenu(args, o)
     local drive, img = openCard(o, false)
     if not drive then return end
     if img.menuLen == 0 then o("Tape menu is empty.", 0xAAAAAA); return end
+    pass = passFor(o, pass, "Menu passphrase")
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
     o(("Tape menu — %s (%d items)"):format(img.label, #entries), 0xFFFF55)
@@ -615,9 +686,11 @@ local function cmdMenu(args, o)
 
   elseif action == "remove" or action == "rm" then
     local n = tonumber(args[4])
-    if not n then o("Usage: tape-auth menu remove <pass> <#>", 0xAAAAAA); return end
+    if not n then o("Usage: tape-auth menu remove <pass|-> <#>", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
+    pass = passFor(o, pass, "Menu passphrase")
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
     if not entries[n] then o("No menu item #" .. n .. ".", 0xFF6600); return end
@@ -629,7 +702,10 @@ local function cmdMenu(args, o)
   elseif action == "clear" then
     local drive, img = openCard(o, true)
     if not drive then return end
-    if img.menuLen > 0 and not decryptMenu(img, pass, o) then return end
+    if img.menuLen > 0 then
+      pass = passFor(o, pass, "Menu passphrase")
+      if not pass or not decryptMenu(img, pass, o) then return end
+    end
     if writeMenu(drive, img, {}, pass, o) then
       o("Tape menu cleared.", 0x00FF00)
     end
@@ -672,6 +748,8 @@ return {
         o("  tape-auth menu passwd <old> <new>         Change the passphrase", 0xFFFFFF)
         o("  tape-auth menu clear <pass>               Wipe the menu", 0xFFFFFF)
         o("  (-- separates label from command; an unquoted | is a pipe)", 0xAAAAAA)
+        o("  Any <pass> can be - : it is asked for, not echoed, and not", 0xAAAAAA)
+        o("  left in your command history. A new one is asked twice.", 0xAAAAAA)
         o("  Then open it with:  launcher tape", 0xAAAAAA)
       end
     end,

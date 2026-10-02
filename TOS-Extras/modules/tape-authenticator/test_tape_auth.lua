@@ -103,9 +103,13 @@ local componentStub = {
   end,
   proxy = function() return drive end,
 }
+-- compat.term is admitted to any package under the sandbox's "compat."
+-- prefix; nil here stands for a session with no terminal to ask on.
+local termStub = nil
 local function sandboxRequire(name)
   if name == "component" then return componentStub end
   if name == "computer" then return computerStub end
+  if name == "compat.term" and termStub then return termStub end
   if type(name) == "string" and name:sub(1, 7) == "kernel." then
     error("sandbox: cannot require kernel module '" .. name .. "'", 2)
   end
@@ -365,6 +369,93 @@ do
   reset(); cmd({ "menu", "clear", "betterpw" }, o)
   reset(); cmd({ "init", "Fresh" }, o)
   test("init proceeds once log and menu are both gone", true, outHas("Keycard initialized"))
+end
+
+-- ── "-" asks for the passphrase instead of taking it from argv ──
+-- A typed passphrase lands in the seat's command history: the finding that
+-- took `pkg trust key`'s passphrase off the command line and put a warning
+-- on rc-pilot's --secret. "-" in its place reads it masked through
+-- compat.term; the typed form keeps working for scripts and says its cost.
+print()
+print("-- a passphrase can be asked for instead of typed --")
+do
+  local typed, reads, masks = {}, 0, {}
+  termStub = { read = function(_, _, _, pwchar)
+    reads = reads + 1
+    masks[#masks + 1] = pwchar
+    local line = table.remove(typed, 1)
+    return line and (line .. "\n") or nil
+  end }
+  local function ask(...) typed = { ... }; reads = 0 end
+
+  drive = makeDrive(4096)
+  adminMode = true
+  reset(); cmd({ "init", "Asked" }, o)
+  test("init now suggests the asking form", true, outHas("log add - <text>"))
+  adminMode = false
+
+  ask("s3cret", "s3cret")
+  reset(); cmd({ "log", "add", "-", "first", "note" }, o)
+  test("log add - : logged", true, outHas("Logged entry #1"))
+  test("...asked twice, since this add SETS the passphrase", 2, reads)
+  test("...masked", "*", masks[1])
+  test("...and no history note: nothing was typed", false, outHas("command history"))
+  reset(); cmd({ "log", "list", "s3cret" }, o)
+  test("the asked-for passphrase is the one that encrypted it", true, outHas("first note"))
+  test("a typed passphrase still works, and says it is kept in history", true,
+    outHas("command history"))
+
+  ask("s3cret")
+  reset(); cmd({ "log", "add", "-", "second" }, o)
+  test("once the log has a passphrase, asked once", 1, reads)
+  test("...and the entry is added", true, outHas("Logged entry #2"))
+
+  ask("wrong")
+  reset(); cmd({ "log", "list", "-" }, o)
+  test("a wrong asked-for passphrase is refused like a typed one", true,
+    outHas("Cannot decrypt log"))
+
+  ask("")
+  reset(); cmd({ "log", "add", "-", "third" }, o)
+  test("an empty answer cancels", true, outHas("Cancelled"))
+  ask("s3cret")
+  reset(); cmd({ "log", "list", "-" }, o)
+  test("...and wrote nothing", true, outHas("(2 entries)"))
+
+  ask("s3cret", "newpw-1", "newpw-2")
+  reset(); cmd({ "log", "passwd", "-", "-" }, o)
+  test("passwd - - with a mistyped confirmation changes nothing", true,
+    outHas("did not match"))
+  reset(); cmd({ "log", "list", "s3cret" }, o)
+  test("...the old passphrase still opens it", true, outHas("(2 entries)"))
+  ask("s3cret", "newpw", "newpw")
+  reset(); cmd({ "log", "passwd", "-", "-" }, o)
+  test("passwd - - with a matching confirmation changes it", true,
+    outHas("passphrase changed"))
+  reset(); cmd({ "log", "list", "newpw" }, o)
+  test("...to the one that was asked for", true, outHas("(2 entries)"))
+
+  -- The menu takes "-" the same way, and its first add still warns.
+  ask("menupw", "menupw")
+  reset(); cmd({ "menu", "add", "-", "Diag", "--", "doctor" }, o)
+  test("menu add - on a fresh menu asks twice", 2, reads)
+  test("...adds the item", true, outHas("Added menu item #1"))
+  test("...and still says it just set the passphrase", true, outHas("login password"))
+  ask("menupw")
+  reset(); cmd({ "menu", "list", "-" }, o)
+  test("menu list - opens it", true, outHas("Diag"))
+
+  -- An empty region needs no passphrase to clear, so "-" does not ask.
+  reset(); cmd({ "log", "clear", "newpw" }, o)
+  ask()
+  reset(); cmd({ "log", "clear", "-" }, o)
+  test("clearing an empty log does not ask", 0, reads)
+
+  -- No terminal to ask on: say so, and touch nothing.
+  termStub = nil
+  reset(); cmd({ "menu", "list", "-" }, o)
+  test("with no terminal, - says it cannot ask", true, outHas("Cannot ask here"))
+  test("...and opens nothing", false, outHas("Diag"))
 end
 
 print()

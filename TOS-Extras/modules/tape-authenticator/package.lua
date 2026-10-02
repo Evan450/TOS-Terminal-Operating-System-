@@ -1,4 +1,7 @@
 -- FEAT-7 native package manifest for tape-authenticator.
+-- 1.0.3 — any passphrase argument can be "-": it is asked for, masked, and
+-- stays out of the seat's command history (a new one is asked twice). The
+-- typed form still works and now says it is kept in history.
 -- 1.0.1 — streaming reads: parse only the keycard region instead of slurping
 -- the whole multi-MB tape (the old readWholeTape OOM'd even tier-3.5 RAM when
 -- configuring a tape). `info` now authenticates inline for admins instead of
@@ -14,7 +17,7 @@
 -- disk; it now ships.
 return {
   name        = "tape-authenticator",
-  version     = "1.0.2",
+  version     = "1.0.3",
   kind        = "command",
   category    = "security",
   description = "Tape keycard + encrypted personal log: HMAC identity for access control, private notes you can edit any time.",
