@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**107 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**106 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 84 | Planned or under investigation. Most contributions belong here. |
+| Planned | 83 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -2023,20 +2023,6 @@ STAGE 1b LEFTOVER — the runner is verified only off-box:
        within a frame; the input-driven ones would not). Four small
        package updates + a documented convention for third parties.
     6. On program EXIT: hand the seat back to the shell the same way.
-```
-
-### Planned — STAGE 2 LEFTOVER
-
-```text
-STAGE 2 LEFTOVER — apps.lua's header still describes stages;
-    rewrite it now that both models exist. Cosmetic.
-    ORIGINAL SKETCH (kept for reference): apps.lua has documented `model =
-    "process"` since stage 1 but ONLY "inshell" was ever built (see
-    apps.lua:82) — this is that missing half. A running program gets
-    a tab chip beside Desktop/Shell/Monitor; F2 cycles to it, ^W
-    closes it (kills the process). Same engine, different surface —
-    and it is the same viewport work the split-tabs sketch below
-    needs, so do them in that order.
 ```
 
 ## DEFERRED BY OPERATOR: split tabs (design captured)
