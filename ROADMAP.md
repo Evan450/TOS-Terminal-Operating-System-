@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**104 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**103 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 81 | Planned or under investigation. Most contributions belong here. |
+| Planned | 80 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -791,20 +791,6 @@ A BROKEN TOS INSTALL ON THE COMMITTED BOOT DEVICE IS A LOOP.
     one-shot the kernel already has. Not done here: 153 bytes is
     thin for a key-scan loop, and getting it wrong makes every boot
     slower or, worse, stealable by a stray keypress.
-```
-
-### Planned — INSTALLING TOS REPLACES /init.lua AND NOTHING PUTS IT BACK
-
-```text
-INSTALLING TOS REPLACES /init.lua AND NOTHING PUTS IT BACK.
-    install.lua says so plainly before it starts ("Your /init.lua
-    will be replaced"), so this is disclosed rather than hidden --
-    but there is no uninstall, so a shared disk that had OpenOS on
-    it does not become bootable again by deleting /tos. The BIOS fix
-    above means ANOTHER disk now boots; this one is about the disk
-    TOS was installed onto. Options if it ever matters: keep the
-    displaced /init.lua as /init.lua.pre-tos and have a `tos
-    uninstall` restore it, or simply document the state.
 ```
 
 ## EXTRAS SWEEP 2: THE PACKAGING SEAM (2026-09-06)

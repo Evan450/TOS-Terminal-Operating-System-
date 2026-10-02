@@ -218,6 +218,19 @@ do
   end
 end
 
+-- The /init.lua the installer displaced is kept as /init.lua.pre-tos
+-- (test_install_preinit.lua). reclaim removes it with OpenOS's trees,
+-- never on its own, and both files must agree on its name.
+do
+  local adm = findUp("tos/shell/panels/commands/admin.lua") or ""
+  local inst = findUp("install.lua") or ""
+  test("install.lua and reclaim name the backup alike",
+    inst:find('local PRE_TOS = "/init.lua.pre-tos"', 1, true) ~= nil
+    and adm:find('local PRE_TOS = "/init.lua.pre-tos"', 1, true) ~= nil)
+  test("reclaim takes the backup only alongside an OpenOS tree",
+    adm:find("if kfs.exists(PRE_TOS) then EXTRA[#EXTRA + 1] = PRE_TOS end", 1, true) ~= nil)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

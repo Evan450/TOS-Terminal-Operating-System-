@@ -488,6 +488,28 @@ end
 --! Verified safe against the manifest rather than assumed: TOS installs
 --! 152 files and none of them land in any of these trees.
 local OPENOS_ONLY_TREES = { "/bin", "/boot", "/lib" }
+
+--! INSTALLING TOS REPLACES /init.lua, and nothing used to put the old one
+--! back: a shared disk that had another OS on it did not become bootable
+--! again by deleting /tos. The displaced loader is kept as
+--! /init.lua.pre-tos (OpenOS's is 843 bytes), so renaming it back restores
+--! the old boot as long as that OS's own files are still there. Kept ONCE
+--! and only when it is not TOS's own loader: a re-install over TOS must not
+--! replace the real backup with a copy of TOS. It is a NEW file, never an
+--! overwrite. (test_install_preinit.lua)
+local PRE_TOS = "/init.lua.pre-tos"
+local function preserveForeignInit()
+  if not fs or not fs.exists("/init.lua") or fs.exists(PRE_TOS) then return false end
+  local h = io.open("/init.lua", "r")
+  if not h then return false end
+  local body = h:read("*a"); h:close()
+  if not body or body == "" or body:find("_TOS", 1, true) then return false end
+  local w = io.open(PRE_TOS, "w")
+  if not w then return false end
+  w:write(body); w:close()
+  return fs.exists(PRE_TOS)
+end
+
 local function hasOpenOsLeftovers()
   if not fs then return false end
   for _, d in ipairs(OPENOS_ONLY_TREES) do
@@ -504,6 +526,12 @@ local function cleanOpenOsLeftovers()
       local okR = pcall(fs.remove, d)
       if okR and not fs.exists(d) then removed[#removed + 1] = d end
     end
+  end
+  -- Without its /lib the old loader boots nothing; keeping it would only
+  -- suggest it still could.
+  if #removed > 0 and fs.exists(PRE_TOS) then
+    pcall(fs.remove, PRE_TOS)
+    if not fs.exists(PRE_TOS) then removed[#removed + 1] = PRE_TOS end
   end
   return removed
 end
@@ -726,7 +754,8 @@ if diskMode then
   print()
   color(0xFFFF00)
   print("TOS will be installed on the current boot drive.")
-  print("Your /init.lua will be replaced.")
+  print("Your /init.lua will be replaced (the current one is kept as")
+  print("/init.lua.pre-tos; rename it back to boot the old system).")
   color(0xFFFFFF)
   print()
   if not confirm("Continue?") then print("Cancelled."); return end
@@ -736,6 +765,8 @@ if diskMode then
   -- confirmation. --force-wipe on the command line bypasses (for
   -- scripted installs); without it the operator must type FORCE-WIPE.
   if not preInstallSafetyCheck(_G._FORCE_WIPE or false) then return end
+
+  if preserveForeignInit() then ok("Kept the previous /init.lua as " .. PRE_TOS) end
 
   -- Copy system files from install disk. On failure we still allow
   -- the user to proceed to the questionnaire (so config can be saved

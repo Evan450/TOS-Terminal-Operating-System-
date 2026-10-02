@@ -1136,10 +1136,11 @@ not answer.
 ### 7.45 Reclaiming space after installing over OpenOS
 
 Installing TOS onto a drive that already ran OpenOS leaves OpenOS behind.
-TOS replaces exactly one of its files — `/init.lua` — and installs nothing
-into `/bin`, `/boot` or `/lib`, so those three trees are dead weight
-afterwards: roughly a megabyte on a 4 MB drive, which is most of the way to
-an install that fails for want of room.
+TOS replaces exactly one of its files — `/init.lua` — keeping the old one as
+`/init.lua.pre-tos`, so renaming it back boots OpenOS again while OpenOS's
+files are still there. TOS installs nothing into `/bin`, `/boot` or `/lib`, so
+those three trees are dead weight afterwards: roughly a megabyte on a 4 MB
+drive, which is most of the way to an install that fails for want of room.
 
 The installer offers to remove them at the end, but only when the file copy
 verified completely. A partial install skips the offer, so a machine can end
@@ -1154,8 +1155,9 @@ It refuses outright unless `/init.lua` is TOS's, so it cannot fire on a
 machine where OpenOS is still the operating system.
 
 Two things worth knowing before you run it. Your recovery path becomes an
-OpenOS **floppy** — this install stopped being one the moment TOS took over
-`/init.lua`. And `/bin` is on the shell's `PATH`, so a command TOS does not
+OpenOS **floppy**. `reclaim` removes `/init.lua.pre-tos` along with OpenOS's
+trees (it could boot nothing without them), and so does the installer's own
+clean-install offer. And `/bin` is on the shell's `PATH`, so a command TOS does not
 implement currently falls through to OpenOS's copy; afterwards you get a
 clean "not a command" instead. That is usually an improvement: those
 fall-throughs run under the TOS sandbox and tend to fail with a confusing

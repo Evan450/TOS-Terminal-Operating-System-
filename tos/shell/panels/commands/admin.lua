@@ -2382,6 +2382,19 @@ return function(C, S, deps)
     --! one this makes.
     local TREES = { "/bin", "/boot", "/lib" }
     local EXTRA = {}
+    --! The installer keeps the /init.lua it replaced as /init.lua.pre-tos,
+    --! so renaming it back boots the old system while that system's files
+    --! remain. Removing OpenOS's trees ends that, so the backup goes WITH
+    --! them -- and only with them: on a disk with no OpenOS trees it may
+    --! be some other OS's loader, which this command has no business
+    --! deleting. Same name as install.lua's PRE_TOS (test_reclaim.lua).
+    local PRE_TOS = "/init.lua.pre-tos"
+    for _, t in ipairs(TREES) do
+      if kfs.exists(t) then
+        if kfs.exists(PRE_TOS) then EXTRA[#EXTRA + 1] = PRE_TOS end
+        break
+      end
+    end
 
     local function walk(path, acc)
       if not kfs.exists(path) then return end
@@ -2420,8 +2433,13 @@ return function(C, S, deps)
     o("", T.dim)
     o("TOS installs no files into these, but it still looks in them:", T.dim)
     o("require() searches /lib, and an unknown command is tried in /bin.", T.dim)
-    o("An OpenOS floppy remains your recovery path — this install", T.dim)
-    o("stopped being one when TOS replaced /init.lua.", T.dim)
+    if kfs.exists(PRE_TOS) then
+      o("Until this runs, renaming /init.lua.pre-tos back to /init.lua", T.dim)
+      o("boots OpenOS again; afterwards an OpenOS floppy is the way back.", T.dim)
+    else
+      o("An OpenOS floppy remains your recovery path — this install", T.dim)
+      o("stopped being one when TOS replaced /init.lua.", T.dim)
+    end
     o("", T.dim)
     o("Removing /bin also changes what an unknown command does: today", T.dim)
     o("it may run OpenOS's version, afterwards you get 'not a command'.", T.dim)
