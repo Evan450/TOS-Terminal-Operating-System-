@@ -777,6 +777,18 @@ return function(C, S, deps)
     local p = rp(target)
     if p == "/" then o("Cannot remove root", T.error); return end
 
+    --! Ask securefs FIRST. The -r guard below used to run before it, so
+    --! `rm /tos/x` was told to add -r, and `rm -r /tos/x` then met
+    --! securefs's protected-path refusal: a different error with a
+    --! different fix (`protect off`), after advice that could not help.
+    --! securefs's verdict comes first now, in securefs's own words.
+    --! (test_rm_system_guard.lua)
+    local secfs = _G._TOS and _G._TOS.securefs
+    if secfs and type(secfs.removeRefusal) == "function" then
+      local why = secfs.removeRefusal(p, helpers.sessionOf(S))
+      if why then o(tostring(why), T.error); return end
+    end
+
     local systemGuards = {
       "^/$", "^/init%.lua$", "^/bios%.lua$",
       "^/tos$", "^/tos/", "^/etc$", "^/etc/",
@@ -784,7 +796,9 @@ return function(C, S, deps)
     }
     for _, pat in ipairs(systemGuards) do
       if p:match(pat) and not recursive then
-        o("Refusing to remove protected path without -r: " .. p .. "  [E-303 ERR_RM_SYSTEM_PATH]", T.error)
+        o("Refusing to remove a system path without -r: " .. p
+          .. "  [E-303 ERR_RM_SYSTEM_PATH]", T.error)
+        o("Protection is off, so this would really delete it. Add -r to confirm.", T.dim)
         return
       end
     end

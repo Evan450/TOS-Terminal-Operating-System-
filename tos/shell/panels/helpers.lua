@@ -436,11 +436,11 @@ local FAILURES = {
       { "(it lifts at logout, and every path it allows is logged). To", "fix" },
       { "REMOVE TOS, boot another disk and delete it from there.", "fix" },
     } },
-  { key = "Refusing to remove protected path without -r", sym = "ERR_RM_SYSTEM_PATH", lines = {
+  { key = "Refusing to remove a system path without -r", sym = "ERR_RM_SYSTEM_PATH", lines = {
       { "You named a system path, and rm will not touch one by accident.", "err" },
-      { "Fix: add -r if you really mean the whole tree. Note the", "fix" },
-      { "protected-path guard may still refuse it — that is a separate", "dim" },
-      { "check, and `why` will say so if it fires.", "dim" },
+      { "The protected-path guard has already been asked and allows it:", "dim" },
+      { "root has lifted protection, so the delete would really happen.", "dim" },
+      { "Fix: add -r to confirm, if you really mean it.", "fix" },
     } },
   { key = "Cannot remove directory without -r", sym = "ERR_NEEDS_RECURSIVE", lines = {
       { "rm removes files; a directory needs the recursive flag.", "err" },

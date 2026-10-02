@@ -2,14 +2,14 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**110 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**109 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
 | Planned | 86 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 20 | Idea, no commitment. Discuss before building. |
+| Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
 
@@ -828,22 +828,6 @@ THE PACKET MAC HAS NO LENGTH FRAMING. net/init.lua:482 (send)
     second layer and this quietly removes it. Fix: length-prefix
     each field. Severity LOW, and it rises the day the seq check is
     relaxed.
-```
-
-### Idea / far future — `rm`'s SYSTEM-PATH GUARD IS DISABLED BY THE FLAG ITS OWN
-
-```text
-`rm`'s SYSTEM-PATH GUARD IS DISABLED BY THE FLAG ITS OWN
-    MESSAGE RECOMMENDS. panels/commands/core.lua:832 fires only
-    when `p:match(pat) and not recursive`, so `rm -r /tos` skips it
-    entirely -- and the comment above it describes a second
-    condition ("explicit system path typed out, not a wildcard or
-    expansion") that is not implemented at all. securefs's
-    REMOVE_PROTECTED is the real backstop and it does hold, so this
-    is a confusing two-step error rather than a hole: the shell
-    suggests -r, then securefs refuses with a different message.
-    Worth tidying next time that file is open; not worth a commit
-    of its own.
 ```
 
 ## THE BIOS REFUSED TO BOOT ANYTHING BUT TOS (2026-09-06)
