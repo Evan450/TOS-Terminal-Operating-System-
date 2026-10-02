@@ -1613,11 +1613,36 @@ srm baseline --full     Record this system as known-good, with copies
 srm scan                Has anything changed since?
 srm repair              Fix what is mechanically safe to fix
 srm repair --restore    ...and put drifted system files back
+srm repair --online     What could be fetched from the published release
 srm full                Everything, for a bug report
 ```
 
+**Online repair** (`srm repair --online`) puts back system files that fail
+their manifest digest, fetched over an internet card from the published
+release. It is built to be unable to make things worse:
+
+- **The network is only a transport.** A fetched file is written only if its
+  SHA-256 matches what this machine's own manifest says it should be. The
+  manifest is trusted only if it matches the EEPROM anchor (`verify anchor`).
+  An unanchored manifest needs `--unanchored`, and one that *fails* its anchor
+  is refused outright.
+- **It fetches this machine's release, never the latest.** Every release is
+  tagged with its build (`about` shows it). Without a tag it falls back to the
+  newest release, and only files that still match are repaired. Repair never
+  upgrades.
+- **Nothing changes until everything has arrived.** Files are staged under
+  `/var/repair` and checked first. A dropped connection or a full disk leaves
+  the machine as it was.
+- **Only what is broken, and never your settings.** Nothing under `/etc` is
+  touched: service scripts and their on/off markers are yours to change, and
+  "restoring" one would undo a choice. It prints those instead.
+
+Without `--apply` it only says what it would fetch. `--apply` needs root.
+`--ref=<tag>` picks a different release tag.
+
 `status`, `scan`, `health`, `verify` and `full` are open to any logged-in user;
-`baseline`, `repair` and `restore` need ADMIN. See `man srm`.
+`baseline`, `repair` and `restore` need ADMIN, and `repair --online --apply`
+needs root. See `man srm`.
 
 Some repairs only work at boot, before the files they fix are read — that's
 what `bootsettings repair on` schedules (it runs once and clears its own flag,
