@@ -640,6 +640,10 @@ return function(C, S, deps)
       o(string.format(" name:        %s", m.name), T.title)
       o(string.format(" version:     %s", m.version or "?"), T.fg)
       o(string.format(" kind:        %s", m.kind or "?"), T.fg)
+      if m.lua or m.tos then
+        o(string.format(" needs:       %s%s%s", m.lua and ("Lua " .. m.lua .. "+") or "",
+          (m.lua and m.tos) and ", " or "", m.tos and ("TOS " .. m.tos) or ""), T.fg)
+      end
       if m.category then o(string.format(" category:    %s", m.category), T.fg) end
       if m.description then o(string.format(" description: %s", m.description), T.fg) end
       if m.author then o(string.format(" author:      %s", m.author), T.fg) end

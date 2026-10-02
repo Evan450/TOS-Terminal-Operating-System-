@@ -326,6 +326,16 @@ local function validateManifest(m)
     end
   end
 
+  -- Declared runtime (optional): the Lua architecture and the TOS a package
+  -- needs. Only the SHAPE is checked here; whether this machine meets them
+  -- is runtimeRefusal's question, asked at install and in the plan.
+  if m.lua ~= nil and (type(m.lua) ~= "string" or not m.lua:match("^%d+%.%d+$")) then
+    return false, 'lua must be a Lua version like "5.3" if present'
+  end
+  if m.tos ~= nil and (type(m.tos) ~= "string" or not m.tos:match("^%s*[<>=~%^]*%s*%d")) then
+    return false, 'tos must be a version constraint like ">=1.5.0" if present'
+  end
+
   -- #SEC CR-4 — if the manifest declares hashes, they must be a table of
   -- 64-hex digests. (Per-file presence/verification happens at install.)
   if m.hashes ~= nil then
@@ -2409,6 +2419,14 @@ function pkg.install(srcDir, opts)
   local svcOk, svcErr = serviceInstallGate(m, opts)
   if not svcOk then return false, svcErr end
 
+  -- What the package says it needs to run. --force goes past it, loudly,
+  -- like any other contradiction.
+  do
+    local rt = pkg.runtimeRefusal(m)
+    if rt and not opts.force then return false, rt end
+    if rt and log then log.warn("pkg", "Installing past a runtime requirement (force): " .. rt) end
+  end
+
   -- `opts.upgrading` is set by pkg.upgrade, which has already removed the
   -- old version's files and is entitled to reuse its paths.
   if installed[m.name] and not opts.upgrading then
@@ -2652,6 +2670,35 @@ end
 --! on the way. installWithDeps refuses a plan with contradictions unless
 --! forced, so a refusal costs nothing. (docs/FEDERATED-REPOS.md)
 
+--- Does THIS machine run what the package says it needs? nil when it
+--- does (or when the package declares nothing), else a sentence for the
+--- operator.
+--! A package written for a newer Lua than the CPU runs used to fail at
+--! LOAD, as a syntax error naming a line of someone else's code. The
+--! manifest can say what it needs (`lua = "5.4"`, `tos = ">=1.5.0"`), and
+--! the refusal then says what to do about it. (test_pkg_runtime.lua)
+function pkg.runtimeRefusal(m)
+  if type(m) ~= "table" then return nil end
+  local name = tostring(m.name or "this package")
+  if type(m.lua) == "string" then
+    local want = m.lua:match("^(%d+%.%d+)$")
+    local have = tostring(_VERSION or ""):match("(%d+%.%d+)")
+    if want and have and pkg.compareVersion(have, want) < 0 then
+      return string.format("'%s' needs the Lua %s architecture; this CPU runs Lua %s. "
+        .. "Sneak-right-click the CPU (or APU) to switch its architecture, then reboot.",
+        name, want, have)
+    end
+  end
+  if type(m.tos) == "string" then
+    local T = rawget(_G, "_TOS")
+    local have = T and T.version
+    if have and not pkg.satisfiesConstraint(have, m.tos) then
+      return string.format("'%s' needs TOS %s; this is TOS %s.", name, m.tos, have)
+    end
+  end
+  return nil
+end
+
 --- Contradictions as one line for a refusal.
 function pkg.describeContradictions(list)
   local out = {}
@@ -2814,6 +2861,10 @@ function pkg.plan(repoDir, targetName, opts)
     if pm then
       for _, c in ipairs(brokenDependents(pm, claimedKey(chosenPath[pname]))) do
         plan.contradictions[#plan.contradictions + 1] = c
+      end
+      if not installed[pname] then
+        local rt = pkg.runtimeRefusal(pm)
+        if rt then contradiction("runtime", pname, rt) end
       end
     end
   end
