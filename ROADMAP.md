@@ -212,6 +212,21 @@ Emulator checklist:
 - a package whose destination is //etc must be REFUSED
 - PATH=/tmp with a planted /tmp/foo.lua: `foo` must not run
 
+MOSTLY DONE 2026-10-03 on the headless machine:
+
+- tail: works on /var/log/kernel.log once the kernel has flushed it (every 30 s; at 20 s after boot the file does not exist yet, which tail called "Cannot read" with no reason -- it now says "No such file"). The manual's /var/log/tos.log never existed; it names kernel.log now. `watch tail` not run.
+- `head -n 2 FILE` answered "Cannot read: -n" although the manual documents `head [-n N]`; and `ls -l` listed "0 items" because ls parsed no flags, so the manual's own `alias ll ls -l` broke. FIXED: head/tail take -n N, -N and a trailing count; ls takes -l (adds the modified time), -a (dotfiles, hidden by default and counted), a missing directory says "no such file" (test\_head\_tail\_args.lua, test\_ls\_flags.lua).
+- aliases: `alias ll ls -l` then `ll` in the same session, `alias` lists, `unalias ll` removes, and `alias kl ls -l` survives logging out and in. `alias ls "ls -a"` is REFUSED on purpose (the code says why); the manual claimed it worked and says so now.
+- a USER's `alias x usermod` then `x alice admin`: "Permission denied: 'usermod' needs ROOT". Aliases carry no privilege.
+- which: `cat` and `ls` built-in, `share` /usr/bin/share.lua.
+- `env PATH=/tmp` with /tmp/foo.lua planted: `foo` is "Unknown command"; it does not run.
+
+STILL OPEN: the OPPM repo checkout on a floppy (and its pkg info
+
+origin/dependency), the //etc destination refusal, `which` on an
+
+installed package command, and `watch tail`.
+
 ### Emulator checklist: Picker QoL round
 
 *Planned* · from the round *Picker QoL round (2026-07-29)*
