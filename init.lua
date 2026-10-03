@@ -347,7 +347,7 @@ _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
 
-  build = "0478dc6",
+  build = "5423d98",
   variant = "minified",
   bootFS     = bootFS,
 
@@ -433,8 +433,8 @@ local function loadErrorText(name, path, err, mode)
     return "Read error in '" .. name .. "' (" .. path .. "): " .. why
   end
   if why:find("not enough memory", 1, true) then
-    return "Out of memory loading '" .. name .. "' (" .. path .. "): "
-      .. "too little free RAM to compile it"
+
+    return "Out of memory loading '" .. name .. "' (" .. path .. "): " .. why
   end
   return "Syntax error in '" .. name .. "' (" .. path .. "): " .. why
 end

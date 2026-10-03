@@ -92,6 +92,8 @@ function M.run(ctx)
     cy = 3
   end
 
+  local refocused
+
   local function pullSignal()
     if coroutine.isyieldable and coroutine.isyieldable() then
       return coroutine.yield()
@@ -167,6 +169,11 @@ function M.run(ctx)
           buf = buf:sub(1, cur - 1) .. string.char(ch) .. buf:sub(cur)
           cur = cur + 1
         end
+        paint()
+      elseif sig == "tos_focus" then
+
+        redraw()
+        if refocused then refocused() end
         paint()
       elseif sig == "interrupted" then
         return nil
@@ -276,7 +283,22 @@ function M.run(ctx)
       .. "and the full interface needs %d KB.", auto.haveKB, auto.needKB), D.c("warning"))
     o("'tui' opens it anyway · 'bootsettings ui panels' makes it the default", D.c("dim"))
   end
+
+  if ctx.tuiFailed then
+    o("The full interface could not start: " .. tostring(ctx.tuiFailed), D.c("error"))
+    o("This is the command line instead · 'tui' tries again", D.c("dim"))
+  end
   o("")
+
+  refocused = function()
+
+    if S.outLines then viewBuffer(S.outLines, nil); S.outLines = nil end
+    if S.lastOut then
+      if type(S.lastOut) == "table" then o(S.lastOut[1], S.lastOut[2])
+      else o(tostring(S.lastOut)) end
+      S.lastOut = nil
+    end
+  end
 
   while true do
 
@@ -316,7 +338,6 @@ function M.run(ctx)
         end
       end
 
-      if S._program then S._program = nil; redraw() end
     end
 
     if leaving then

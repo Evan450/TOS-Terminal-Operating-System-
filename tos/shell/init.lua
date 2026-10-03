@@ -22,7 +22,8 @@ local function ctx()
            uiSplit = uiShape() == "split",
 
            displayIdx = myDisplayIdx,
-           autoCLI = S._autoCLI }
+           autoCLI = S._autoCLI,
+           tuiFailed = S._tuiFailed }
 end
 
 local function runCLI()
@@ -35,7 +36,10 @@ local function runCLI()
     computer.pullSignal(5)
     return "logout"
   end
-  return cliMod.run(ctx())
+
+  local c = ctx()
+  S._tuiFailed = nil
+  return cliMod.run(c)
 end
 
 local function runTUI()
@@ -45,6 +49,8 @@ local function runTUI()
     D.set(1, 2, "WARNING: TUI unavailable (" .. tostring(pm) .. ")", D.c("error"), D.c("bg"))
     D.set(1, 3, "Falling back to the command line.", D.c("warning"), D.c("bg"))
     computer.pullSignal(2)
+
+    S._tuiFailed = tostring(pm)
     return nil
   end
   return pm.run(ctx())
