@@ -14,6 +14,8 @@ from the right place, and tells you what it ran.
     python tos.py sign <dir>|--all    sign package manifests
     python tos.py key                 print the public key you sign as
     python tos.py check               the drift-sensitive checks, quickly
+    python tos.py selftest [opts]     build, then run the boot battery on a
+                                      headless OpenComputers machine
     python tos.py roadmap             regenerate the queue + ROADMAP.md
     python tos.py publish [args...]   hand off to the publisher (maintainer)
 
@@ -200,6 +202,31 @@ def cmd_check(args) -> int:
     return worst
 
 
+def cmd_selftest(args) -> int:
+    """Build the release, then boot it on a headless machine with the battery.
+
+    Building first is the point: a round that tests a stale TOS-Release
+    reports on code you no longer have, which is the failure sync-emulator.py
+    was written to stop.
+    """
+    if not args.no_build:
+        say("build")
+        rc = cmd_build(args)
+        if rc != 0:
+            return rc
+        print()
+    say("boot battery on a headless machine")
+    cmd = [sys.executable, "build/headless-selftest.py"]
+    for name in ("ocelot", "checks", "only", "timeout"):
+        value = getattr(args, name)
+        if value is not None:
+            cmd += [f"--{name}", str(value)]
+    for name in ("no_screen", "internet", "keep"):
+        if getattr(args, name):
+            cmd.append("--" + name.replace("_", "-"))
+    return run(cmd, cwd=DEV)
+
+
 def cmd_roadmap(args) -> int:
     # Maintainer-only: TODO.txt and these generators are deliberately not
     # published, so a contributor will not have them. Say that rather than
@@ -257,6 +284,17 @@ def main() -> int:
 
     c = sub.add_parser("check", help="fast drift checks (generated vs source)")
     c.set_defaults(fn=cmd_check)
+
+    e = sub.add_parser("selftest", help="build, then run the boot battery headlessly")
+    e.add_argument("--no-build", action="store_true", help="test TOS-Release as it is")
+    e.add_argument("--ocelot", help="Ocelot Desktop's jar, or the folder holding it")
+    e.add_argument("--checks", help="a folder of checks to run instead of the battery's")
+    e.add_argument("--only", help="only the checks whose names start with this")
+    e.add_argument("--no-screen", action="store_true", help="skip checks that draw")
+    e.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    e.add_argument("--timeout", type=float, help="seconds before a round counts as stuck")
+    e.add_argument("--keep", action="store_true", help="keep the machine's directory")
+    e.set_defaults(fn=cmd_selftest)
 
     r = sub.add_parser("roadmap", help="regenerate the queue and ROADMAP.md")
     r.set_defaults(fn=cmd_roadmap)

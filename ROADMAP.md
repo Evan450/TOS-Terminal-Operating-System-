@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 63 | Planned or under investigation. Most contributions belong here. |
+| Planned | 62 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -243,44 +243,6 @@ PUT THE COMPAT NUMBER IN THE README, or decide not to. The
     were required by none of them". Then re-run the scan when the
     claim is made, so the number in the README is one somebody can
     reproduce.
-```
-
-### Planned — THE HEADLESS BOOT TEST HAS A WORKING RECIPE
-
-```text
-THE HEADLESS BOOT TEST HAS A WORKING RECIPE. This is the missing
-    half of IN-EMULATOR BOOT SMOKE TEST (OCOS survey, [~]), not a new
-    item. OCOS runs the whole thing unattended under ocvm
-    (tools/test-boot.sh) and the shape is what our battery already
-    produces:
-      * wipe every uuid-shaped dir in the emulator instance first, so
-        a MISSING log is detectable instead of reading a stale one --
-        the same failure sync-emulator.py exists to prevent;
-      * stage a real package into the writable fs so the self-test
-        exercises a genuine install, not a synthetic one;
-      * timeout 240 script -qc tools/run-emu.sh -- `script` gives
-        ocvm a REAL PTY, without which the GPU comes up 0x0. That one
-        line is what makes headless work;
-      * the OS writes /selftest.log and SHUTS ITSELF DOWN, so the
-        outer timeout is only a stuck-boot guard;
-      * exit 0 pass, 2 if the log has ^FAIL, 1 if no log was written
-        at all -- and on 1 it dumps the last 30 lines of the emulator
-        log to stderr.
-      We already do the wipe, already write /var/selftest.log, and
-    already have nine checks. MISSING: an emulator that can be driven
-    headlessly (ocvm, not Ocelot's GUI), the script -qc PTY trick, and
-    a self-test mode that powers the machine OFF when it finishes.
-      2026-10-02: the last of those three exists now -- a selftest.on
-    carrying shutdown=true powers the machine off after the report
-    ("SHUTDOWN requested by marker"), and the battery is the selftest
-    package with sixteen checks. Still missing: ocvm (not on this
-    machine; Ocelot has no headless mode and no power-on flag), so the
-    one manual step is still pressing the power button.
-    The README calls powering on "the one manual step" -- this is how
-    it stops being one.
-      Their 240 s budget has a reason worth keeping: pure-Lua
-    1024-bit RSA verify takes 10-30 s on a simulated T1 CPU. Ed25519
-    is cheaper, but budget for crypto on a SIMULATED cpu.
 ```
 
 ### Planned — DRY-RUN CAPABILITY ENFORCEMENT
@@ -1316,6 +1278,12 @@ IN-EMULATOR BOOT SMOKE TEST, in CI. The one class of failure
         see the triage note below for what is left of the ~15
         "Emulator checklist" items and why most of what remains is
         not portable into this shape.
+          2026-10-02: the unattended half is done -- `python tos.py
+        selftest` boots a fresh headless machine (THE HEADLESS BOOT
+        TEST) and exits 0/2/1. What is left is a CI host to run it on,
+        and there is none: the monorepo has no remote, and a hosted
+        runner on the public repo would have to fetch Ocelot's jar each
+        run. Sixteen checks now.
       * First four checks: boot invariants, the GPU colour cache
         after a scroll (the status-bar-goes-black bug), how big an
         input this machine can actually hash (the sha256 stack

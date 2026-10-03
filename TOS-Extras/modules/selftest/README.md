@@ -98,6 +98,14 @@ it does. The ones with side effects:
 - `93-audio` beeps;
 - `20-display` and `70-screen-truth` draw on the console only with `screen`.
 
+## Without installing it: headless
+
+`python TOS-Dev/tos.py selftest` builds the release, boots it on a fresh
+headless OpenComputers machine (Ocelot Brain, from Ocelot Desktop's jar) with
+these checks on a second disk, and exits 0 when everything passed, 2 on a
+failure, 1 when the report is incomplete. `--checks DIR` runs your own folder
+of checks instead, which is the quickest way to try a new one.
+
 ## Without installing it: the emulator workflow
 
 `TOS-Dev/build/sync-emulator.py` copies the release onto an Ocelot boot disk,
