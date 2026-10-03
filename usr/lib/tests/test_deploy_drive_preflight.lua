@@ -163,6 +163,7 @@ do
   test("A: deploy returns cleanly", ok, err)
   test("A: it says TOS will not fit", text:find("will not fit", 1, true) ~= nil, text)
   test("A: ...and that nothing was erased", text:find("Nothing was erased", 1, true) ~= nil)
+  test("A: ...with its code, for `why` (E-306)", text:find("[E-306 ERR_DRIVE_TOO_SMALL]", 1, true) ~= nil)
   test("A: it never asked to erase the drive", asked == 0, "asked " .. asked)
   test("A: and never wrote a single sector", writes() == 0, writes() .. " writes")
 end

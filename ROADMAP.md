@@ -1930,6 +1930,12 @@ Error registry: the rest of the migration. The first slice (2026-09-10)
     explains all four; Appendix C lists them. Still untagged: the rest
     of pkg (install/upgrade gates), the network layer proper, vault, the
     drive and deploy commands, hardware.
+      Same day, vault and deploy (both touched that day): E-305
+    ERR_VAULT_UNLOCK, tagged at its source in kernel.vault's MAC check so
+    every caller carries it (vault, tape-auth's log/menu, the tape
+    toolbox), and E-306 ERR_DRIVE_TOO_SMALL on deploy's pre-flight
+    refusal. Still untagged: the rest of pkg, the network layer proper,
+    drive format/mount failures, hardware.
 ```
 
 ## FAR FUTURE / IDEAS

@@ -94,6 +94,11 @@ run({ "decrypt", "/secret.vlt", "/back.txt", "-" }, { "hunter2" })
 test("decrypt with '-' asks once", asked == 1, asked)
 test("...and decrypts", files["/back.txt"] == "the launch codes")
 
+files["/wrong.txt"] = nil
+run({ "decrypt", "/secret.vlt", "/wrong.txt" }, { "not-it" })
+test("a wrong passphrase is refused with its code (E-305)", files["/wrong.txt"] == nil
+  and said("[E-305 ERR_VAULT_UNLOCK]"))
+
 files["/other.vlt"] = nil
 run({ "encrypt", "/secret.txt", "/other.vlt" }, { "hunter2", "hunter3" })
 test("a mistyped confirmation changes nothing", files["/other.vlt"] == nil and said("did not match"))

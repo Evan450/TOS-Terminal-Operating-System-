@@ -1418,7 +1418,7 @@ return function(C, S, deps)
         end
         if needBlocks > plan.dataBlocks then
           o(string.format("TOS will not fit on this drive: it needs %s, and the drive holds "
-            .. "%s once the boot region and metadata are laid out.",
+            .. "%s once the boot region and metadata are laid out.  [E-306 ERR_DRIVE_TOO_SMALL]",
             fmtSz(needBlocks * plan.ss), fmtSz(plan.dataBlocks * plan.ss)), T.error)
           o("Nothing was erased. Use a larger drive, or a managed disk: deploy <mount-point>", T.dim)
           return

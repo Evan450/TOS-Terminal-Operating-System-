@@ -227,7 +227,9 @@ function vault.decrypt(blob, passphrase)
     packU32(ctLen) .. ct
   local expected = crypto.hmac(macKey, body)
   if not crypto.ctEquals(expected, mac) then
-    return nil, "MAC mismatch (wrong passphrase, or blob tampered with)"
+    --! Tagged at the source, so every caller's message carries it: the
+    --! vault command, tape-auth's log and menu, the tape toolbox.
+    return nil, "MAC mismatch (wrong passphrase, or blob tampered with)  [E-305 ERR_VAULT_UNLOCK]"
   end
 
   -- crypto.decrypt for "aes" expects iv-prepended ciphertext.

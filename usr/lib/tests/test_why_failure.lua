@@ -139,7 +139,7 @@ end
 -- `pkg fetch`'s refusals are tagged; `why` must explain each by its code,
 -- and a dependency refusal must read as one, not as the lookup inside it.
 do
-  for _, code in ipairs({ "E-501", "E-601", "E-602", "E-603" }) do
+  for _, code in ipairs({ "E-305", "E-306", "E-501", "E-601", "E-602", "E-603" }) do
     local lines = helpers.explainCode(code)
     test(code .. " is explained by `why`", lines ~= nil and #lines >= 2)
   end
