@@ -269,6 +269,45 @@ do
   end
 end
 
+-- ══════════════════════════════════════════════════════════════════════
+-- confirmTyped, driven: the loop itself, run in a coroutine the way the
+-- shell runs it, fed key signals. The emulator round (2026-10-03, on the
+-- headless machine) passed every item of its checklist but one: the hint
+-- said "choose Confirm" beside a button labelled "Flash".
+-- ══════════════════════════════════════════════════════════════════════
+print()
+print("-- confirmTyped, driven --")
+do
+  local drawn = {}
+  local S = {
+    W = 80, H = 25, padW = string.rep(" ", 80),
+    T = setmetatable({}, { __index = function() return 0 end }),
+    D = {
+      set = function(_, _, s) drawn[#drawn + 1] = tostring(s) end,
+      fill = function() end,
+      getSize = function() return 80, 25 end,
+    },
+  }
+  local co = coroutine.create(function()
+    return dialogs.confirmTyped(S, "Overwrite this machine's EEPROM?", "flash",
+      { yes = "Flash", no = "Cancel" })
+  end)
+  local okR, errR = coroutine.resume(co)
+  test("the box draws and waits for a key", okR and coroutine.status(co) == "suspended", errR)
+  local function screenText() return table.concat(drawn, "\n") end
+  test("the inert hint names the button as labelled",
+    screenText():find("(Flash stays inert until it matches)", 1, true) ~= nil)
+  for ch in ("flash"):gmatch(".") do
+    drawn = {}
+    coroutine.resume(co, "key_down", "kb", ch:byte(), 0)
+  end
+  test("...and so does the matched one",
+    screenText():find("the word matches - choose Flash", 1, true) ~= nil, screenText():sub(1, 200))
+  test("no hint names a button that is not there", not screenText():find("Confirm", 1, true))
+  local okQ, answer = coroutine.resume(co, "key_down", "kb", 17, 16)   -- ^Q
+  test("^Q still cancels, even with the word typed", okQ and answer == false)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

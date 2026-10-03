@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 63 | Planned or under investigation. Most contributions belong here. |
+| Planned | 62 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (22) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (21) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -143,18 +143,6 @@ Emulator checklist - editor horizontal scrolling:
 - select across a scrolled region and confirm the highlight lands on the characters it claims
 - resize the screen narrower with the cursor near the right edge; the next repaint must re-anchor the window
 - off-box tests cover the ARITHMETIC only; drawing needs a real GPU
-
-### Emulator checklist - confirmTyped's interactive loop
-
-*Planned* · from the round *Signed manifests round (2026-08-11)*
-
-Emulator checklist - confirmTyped's interactive loop:
-
-- the box draws with the same frame/shadow as every other dialog (it calls drawDialog), at 80x25 and on a resized screen; the line COUNT is constant in both matched and unmatched states so it must not resize while typing
-- typing the word letter by letter, backspacing, and pasting it via the clipboard signal all reach Confirm
-- Confirm is inert until the word matches: clicking it moves focus rather than firing, Enter on it does nothing
-- Esc and ^Q both cancel; Cancel is the FIRST button, so a click-through lands on it
-- off-box tests cover the contract around this loop, not the loop -- it needs a real screen and signal stream
 
 ### Emulator checklist (needs OpenPrinter installed): Printer + word processor round
 
