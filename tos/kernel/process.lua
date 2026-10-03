@@ -460,6 +460,14 @@ function proc.list()
         parent = p.parent,
         -- Phase 4 identity fields
         user = p.principal and p.principal.user or nil,
+        -- A COPY of the capability set, for `ps -v`: the live table stays
+        -- the kernel's. (test_ps_owner.lua)
+        caps = (function()
+          if type(p.caps) ~= "table" then return nil end
+          local c = {}
+          for k, v in pairs(p.caps) do c[k] = v end
+          return c
+        end)(),
         cwd  = p.cwd,
         display = p.display,
         sigDropped = p.sigDropped or 0,

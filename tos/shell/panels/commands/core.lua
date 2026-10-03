@@ -1811,8 +1811,11 @@ return function(C, S, deps)
     o(string.rep("-", verbose and 70 or 50), T.border)
 
     for _, proc in ipairs(P.list()) do
-      local procUser = proc.principal and proc.principal.user or "?"
-      local procTier = proc.principal and proc.principal.tier or 0
+      -- proc.list() names the owner as `user`; it carries no principal.
+      -- Reading proc.principal made every owner "?", and a USER then
+      -- matched none of their own processes. (test_ps_owner.lua)
+      local procUser = proc.user or "?"
+      if procUser == "_kernel_" then procUser = "kernel" end
       -- Visibility filter.
       local visible = false
       if viewerTier >= 2 then visible = true        -- ADMIN+ sees all
