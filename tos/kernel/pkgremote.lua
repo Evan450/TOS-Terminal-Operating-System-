@@ -233,7 +233,7 @@ local function indexSignature(im, repo, opts)
       answer = false
     else
       return nil, "could not ask repo '" .. repo.name .. "' whether it signs its index: "
-        .. tostring(err)
+        .. tostring(err) .. "  [E-501 ERR_NET_NO_ANSWER]"
     end
   end
   sigCache[repo.name] = answer
@@ -267,6 +267,7 @@ function pkgremote.fetch(name, opts)
   opts = opts or {}
   if not validPkgName(name) then
     return nil, "not a package name: " .. tostring(name):sub(1, 64)
+      .. "  [E-602 ERR_PKG_BAD_NAME]"
   end
   local im = inet()
   if not im then return nil, "internet module unavailable" end
@@ -329,7 +330,7 @@ function pkgremote.fetch(name, opts)
     --! is broken". Say both. (test_pkgremote_malformed.lua)
     local why = "package '" .. tostring(name) .. "' is not in any configured repo"
     if #unusable > 0 then why = why .. " (" .. table.concat(unusable, "; ") .. ")" end
-    return nil, why
+    return nil, why .. "  [E-601 ERR_PKG_NOT_FOUND]"
   end
   if type(entry.files) ~= "table" then
     return nil, "package '" .. name .. "' declares no files"

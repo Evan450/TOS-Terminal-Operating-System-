@@ -2955,6 +2955,10 @@ end
 --! twice. (test_pkgremote_deps.lua)
 local MAX_FETCH_DEPTH, MAX_FETCH_PACKAGES = 8, 16
 
+local function depRefusal(msg)
+  return (tostring(msg):gsub("%s*%[E%-%d%d%d ERR_[%w_]+%]", "")) .. "  [E-603 ERR_PKG_DEPENDENCY]"
+end
+
 local function requirementParts(req)
   if type(req) == "table" then return req.name, req.version, req.optional == true end
   if type(req) == "string" then
@@ -2979,17 +2983,17 @@ function pkg.installRemote(name, opts)
     if seen[n] then return true end
     local who = by and ("dependency '" .. tostring(n) .. "' of '" .. by .. "': ") or ""
     if depth > MAX_FETCH_DEPTH then
-      return false, who .. "dependencies nest deeper than " .. MAX_FETCH_DEPTH
+      return false, depRefusal(who .. "dependencies nest deeper than " .. MAX_FETCH_DEPTH)
     end
     if #staged >= MAX_FETCH_PACKAGES then
-      return false, "the fetch would bring in more than " .. MAX_FETCH_PACKAGES .. " packages"
+      return false, depRefusal("the fetch would bring in more than " .. MAX_FETCH_PACKAGES .. " packages")
     end
     seen[n] = true
     local dir, err, meta = m.fetch(n, opts)
     if not dir then
       if by then
-        return false, who .. tostring(err) .. " (if you have it on a disk, `pkg install "
-          .. tostring(n) .. "` it first)"
+        return false, depRefusal(who .. tostring(err) .. " (if you have it on a disk, `pkg install "
+          .. tostring(n) .. "` it first)")
       end
       return false, err
     end
@@ -2998,8 +3002,8 @@ function pkg.installRemote(name, opts)
     local man = loadAnyManifest(dir)
     if type(man) ~= "table" then return false, who .. "no readable manifest" end
     if wanted and not pkg.satisfiesConstraint(man.version or "0.0.0", wanted) then
-      return false, who .. "needs " .. wanted .. ", and the repo has "
-        .. tostring(man.version or "no version")
+      return false, depRefusal(who .. "needs " .. wanted .. ", and the repo has "
+        .. tostring(man.version or "no version"))
     end
     for _, req in ipairs(type(man.requires) == "table" and man.requires or {}) do
       local rn, rc, optional = requirementParts(req)
@@ -3007,8 +3011,8 @@ function pkg.installRemote(name, opts)
         local have = findProvider(rn)
         if have then
           if rc and not pkg.satisfiesConstraint(have.version or "0.0.0", rc) then
-            return false, ("'%s' needs %s %s, and %s is installed -- `pkg upgrade %s` first"):format(
-              n, rn, rc, tostring(have.version or "?"), rn)
+            return false, depRefusal(("'%s' needs %s %s, and %s is installed -- `pkg upgrade %s` first"):format(
+              n, rn, rc, tostring(have.version or "?"), rn))
           end
         else
           local ok, e = stage(rn, depth + 1, rc, n)
@@ -3033,8 +3037,9 @@ function pkg.installRemote(name, opts)
     local ok, iErr = pkg.install(s.dir, opts)
     if not ok then
       cleanupAll()
-      return false, (s.name ~= name and ("dependency '" .. s.name .. "': ") or "") .. tostring(iErr)
+      local msg = (s.name ~= name and ("dependency '" .. s.name .. "': ") or "") .. tostring(iErr)
         .. (#done > 0 and (" (installed before it stopped: " .. table.concat(done, ", ") .. ")") or "")
+      return false, s.name ~= name and depRefusal(msg) or msg
     end
     if log then
       log.info("pkg", "Installed '" .. tostring(s.name) .. "' from repo '"
