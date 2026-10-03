@@ -21,7 +21,7 @@ local bootcfg = require("kernel.bootcfg")
 -- (i.e. "follow the profile / let detection decide").
 local AUTO = "auto"
 
--- The ring token that means "no override" (AUTO, or "home" for ui) REMOVES
+-- The ring token that means "no override" (AUTO) REMOVES
 -- the key; any other token is stored. A function, not the one-liner
 -- `(v == AUTO) and nil or v` every setter here used to be: `x and nil or y`
 -- is always y, so choosing AUTO wrote the string "auto" into /etc/boot.cfg,
@@ -77,10 +77,13 @@ local function buildFields(ramLabel)
       set = function(c, v) c.verbosity = unlessDefault(v) end,
       show = function(v) return v end },
     { key = "ui", label = "Interface (all seats)", group = "basic",
-      values = { "home", "split", "cli" },
-      get = function(c) return c.ui or "home" end,
-      set = function(c, v) c.ui = unlessDefault(v, "home") end,
+      values = { AUTO, "home", "split", "cli" },
+      get = function(c) return c.ui or AUTO end,
+      set = function(c, v) c.ui = unlessDefault(v) end,
       show = function(v)
+        if v == AUTO then
+          return string.format("auto (panels from %d KB, else CLI)", bootcfg.PANELS_MIN_KB)
+        end
         if v == "cli" then return "CLI shell" end
         if v == "split" then return "panels (split: Shell + Desktop)" end
         return "panels (Home: one tab, two views)"

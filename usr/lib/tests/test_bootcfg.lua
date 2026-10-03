@@ -134,6 +134,29 @@ test("ui: junk collapses to home", "home",
 -- an operator escape hatch, so it has to survive normalize like cli does.
 test("ui helper resolves split", "split", bootcfg.ui(bootcfg._normalize({ ui = "split" })))
 test("ui: split persists", "split", bootcfg._normalize({ ui = "split" }).ui)
+
+-- ── ui unset is AUTO: the panels only where they fit ───────────────
+-- Measured on a headless OpenComputers machine: the panels at 1024 KB
+-- crashed the machine on the first command, the CLI on the same machine
+-- left 48 KB. Unset now means "pick from installed memory".
+local auto = bootcfg._normalize({})
+test("auto: 1 MB starts the CLI", "cli", bootcfg.ui(auto, 1024))
+test("auto: ...and says it chose", "auto", select(2, bootcfg.ui(auto, 1024)))
+test("auto: 1.25 MB still starts the CLI", "cli", bootcfg.ui(auto, 1280))
+test("auto: 1.5 MB starts the panels", "home", bootcfg.ui(auto, bootcfg.PANELS_MIN_KB))
+test("auto: 2 MB starts the panels", "home", bootcfg.ui(auto, 2048))
+test("auto: no memory figure (off-box) keeps the panels", "home", bootcfg.ui(auto, nil))
+test("auto: ramGate plenty means the panels", "home",
+  bootcfg.ui(bootcfg._normalize({ ramGate = true }), 1024))
+local insisted = bootcfg._normalize({ ui = "home" })
+test("home persists: it is the operator insisting", "home", insisted.ui)
+test("home is obeyed below the line", "home", bootcfg.ui(insisted, 1024))
+test("...and is not reported as chosen for them", nil, select(2, bootcfg.ui(insisted, 1024)))
+test("an explicit cli is obeyed on a big machine", "cli",
+  bootcfg.ui(bootcfg._normalize({ ui = "cli" }), 4096))
+test("'panels' is a spelling of home", "home", bootcfg._normalize({ ui = "panels" }).ui)
+test("'tui' is a spelling of home", "home", bootcfg._normalize({ ui = "tui" }).ui)
+test("a default boot.cfg stays empty", nil, auto.ui)
 test("repair one-shot flag survives", true, knobs.repair)
 test("repair: junk collapses to false", false,
   bootcfg._normalize({ repair = "yes" }).repair)

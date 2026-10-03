@@ -40,10 +40,16 @@ local myDisplayIdx = nil
 -- the pre-merge panels: a Shell tab and a separate Desktop tab, with F2
 -- cycling between them. It is an escape hatch, not a second design — the
 -- merged Home is the default and everything is written against it.
+-- Unset, bootcfg picks from installed memory, which is why it gets it.
+local function installedKB()
+  local ok, total = pcall(computer.totalMemory)
+  return (ok and type(total) == "number") and math.floor(total / 1024) or nil
+end
+
 local function uiShape()
   local okB, bcM = pcall(require, "kernel.bootcfg")
   local cfg = _G._TOS and _G._TOS.bootcfg
-  if okB and bcM and bcM.ui then return bcM.ui(cfg) end
+  if okB and bcM and bcM.ui then return bcM.ui(cfg, installedKB()) end
   return "home"
 end
 
@@ -55,7 +61,8 @@ local function ctx()
            -- panels state had S.displayIdx = nil, so `logout` pushed a
            -- seatless tos_logout, which the kernel used to treat as a
            -- GLOBAL logout -> kernel loop exit -> POWER OFF.
-           displayIdx = myDisplayIdx }
+           displayIdx = myDisplayIdx,
+           autoCLI = S._autoCLI }
 end
 
 --- Run the command-line shell. Returns "tui" to hand back, or anything
@@ -110,7 +117,15 @@ function S.run(k, token)
   -- load at login, which is the lightest-RAM startup there is. `tui`
   -- still opens the full interface on demand, so it is a default and
   -- never a lockout.
-  local mode = (uiShape() == "cli") and "cli" or "tui"
+  local shape, chosen = uiShape()
+  local mode = (shape == "cli") and "cli" or "tui"
+  -- The CLI because the panels would not fit, not because anyone asked:
+  -- the CLI says so once, with the numbers and the way round it.
+  S._autoCLI = nil
+  if mode == "cli" and chosen == "auto" then
+    local okB, bcM = pcall(require, "kernel.bootcfg")
+    S._autoCLI = { haveKB = installedKB(), needKB = okB and bcM.PANELS_MIN_KB or nil }
+  end
 
   -- Bounce between the two interfaces until one of them ends the
   -- session. A guard on the count because a handoff loop with no exit

@@ -1,6 +1,6 @@
 # TOS — Terminal Operating System
 
-**A multi-user operating system for the OpenComputers Minecraft mod.** Logins, per-user permissions, a capability sandbox, signed packages and an encrypted mesh network — on a machine with 256 KB of RAM.
+**A multi-user operating system for the OpenComputers Minecraft mod.** Logins, per-user permissions, a capability sandbox, signed packages and an encrypted mesh network.
 
 **Requires OpenComputers 1.7.5 or newer, on Minecraft 1.12.2**, with a CPU set to the **Lua 5.3 or 5.4 architecture** (sneak-click the CPU to switch) and a Tier 2 disk. Full requirements below.
 
@@ -48,15 +48,17 @@ It is **keyboard-first and built to run infrastructure**: a base that has to kee
 
 Read [`CHANGELOG.md`](CHANGELOG.md) for what each release changed, and [`ROADMAP.md`](ROADMAP.md) for what is still open — it is generated, carries its own count, and includes the items deliberately *not* done and why. If you are looking for somewhere to start, start there.
 
-Contributions welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) has the branch layout (work on `dev`, never `main`), the setup, and the house rules for writing code that has to fit in 192 KB.
+Contributions welcome: [`CONTRIBUTING.md`](CONTRIBUTING.md) has the branch layout (work on `dev`, never `main`), the setup, and the house rules for writing code that has to fit in a small machine's memory.
 
 ## System Requirements
 
-| Tier | RAM | Experience |
-|------|-----|-----------|
-| Minimum | T1 (192KB) | Degraded: minimal auth + emergency shell |
-| Recommended | T1.5+ (256KB) | Full: login, CLI, panels, multitasking |
-| Optimal | T2+ (512KB+) | All modules + compat layer + themes + generous headroom |
+| | Memory | What you get |
+|---|---|---|
+| Minimum | 1 MB (one Tier 3.5 stick) | The command line, which runs every command and loads each one as you use it. TOS starts there by itself on a machine this size. About 35 KB stays free. |
+| Recommended | 1.5 MB (two Tier 3 sticks) | The full panels interface, with about 200 KB free after you log in. |
+| Comfortable | 2 MB (two Tier 3.5 sticks) | Room for add-ons, themes and the OpenOS compatibility layer: about 730 KB free after you log in. |
+
+Below 1 MB TOS does not reach a usable shell. At 768 KB the main shell cannot load and the boot falls back to the emergency terminal; at 384 KB or less the kernel itself does not fit. (Measured on a fresh install, logged in, after one command.)
 
 - **GPU**: Tier 1 (monochrome), Tier 2 (16-color), Tier 3 (256-color) — auto-detected
 - **CPU**: Tier 1+ on the **Lua 5.3 or 5.4 architecture** (any tier works;

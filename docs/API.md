@@ -139,8 +139,8 @@ body calls, and every gate against a mark.
   Should optional feature `name` load? Resolution order: 1. an explicit advanced override (true/false), 2. the profile's pin for that feature, 3. the RAM gate (`ramOK`, default true) — today's behavior.
 - `bootcfg.ramOK(cfg, detected)`
   Resolve the RAM gate: the operator's declaration wins, else the live measurement. `detected` is the caller's "free RAM looks fine" boolean.
-- `bootcfg.ui(cfg)`
-  Effective startup interface: "home" (default), "split" or "cli". "home" is the merged surface — one tab, tiles and files as two views of it, the prompt resident in both. "split" is the pre-merge shape, kept for operators who want the Desktop as its own tab. Both are the panels TUI; only "cli" is a different program.
+- `bootcfg.ui(cfg, totalKB)`
+  Effective startup interface: "home", "split" or "cli" -- and, as a second value, "auto" when it was chosen FOR the operator rather than set by them. "home" is the merged surface — one tab, tiles and files as two views of it, the prompt resident in both. "split" is the pre-merge shape, kept for operators who want the Desktop as its own tab. Both are the panels TUI; only "cli" is a different program. Unset is AUTO: the panels from PANELS_MIN_KB of installed memory (`totalKB`), the CLI below it, because below it the panels load and then crash the machine on the first command. ramGate = "plenty" is the operator saying the memory is fine, so it means the panels. With no `totalKB` (off-box) auto is the panels, as it always was.
 
 ## kernel.bootsettings
 

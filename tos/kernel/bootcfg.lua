@@ -130,8 +130,9 @@ local DEFAULTS = {
   cpuTier    = nil,        -- operator CPU-tier override (consumed by sysinfo)
   dataTier   = nil,        -- operator Data Card-tier override (consumed by sysinfo)
   -- Operator knobs (Jul 2026):
-  ui         = nil,        -- nil/"panels" = the TUI; "cli" = boot straight to
-                           -- the minimal CLI shell (system-wide, all seats)
+  ui         = nil,        -- nil = auto: the panels TUI from PANELS_MIN_KB of
+                           -- installed RAM, the CLI below it. "home",
+                           -- "split" or "cli" = always that (all seats)
   repair     = false,      -- ONE-SHOT: run self-repair on the next boot, then
                            -- the flag clears itself (kernel.repair)
   ramGate    = nil,        -- memory declaration for the optional-stage gates:
@@ -174,9 +175,12 @@ local function normalize(cfg)
   -- dataTier: 1..3 or nil
   local dt = tonumber(cfg.dataTier)
   cfg.dataTier = (dt and dt >= 1 and dt <= 3) and math.floor(dt) or nil
-  -- ui: only the known shapes; "home" (the merged surface) is the default
-  -- and collapses to nil so a default-shaped boot.cfg stays empty.
-  if cfg.ui ~= "cli" and cfg.ui ~= "split" then cfg.ui = nil end
+  -- ui: nil is AUTO (bootcfg.ui picks from installed memory), so a default
+  -- boot.cfg stays empty. "home" is kept rather than collapsed to nil: it
+  -- is the operator insisting on the panels even below PANELS_MIN_KB.
+  -- "panels" and "tui" are what people type for it.
+  if cfg.ui == "panels" or cfg.ui == "tui" then cfg.ui = "home" end
+  if cfg.ui ~= "home" and cfg.ui ~= "cli" and cfg.ui ~= "split" then cfg.ui = nil end
   -- repair: boolean one-shot, default off
   cfg.repair = cfg.repair == true
   -- ramGate: strict tri-state (nil/true/false); anything else → auto
@@ -266,16 +270,37 @@ function bootcfg.ramOK(cfg, detected)
   return detected ~= false
 end
 
---- Effective startup interface: "home" (default), "split" or "cli".
+--- Installed memory (KB) the panels interface needs to be USABLE: to run
+--- commands after login, not merely to draw. Measured 2026-10-03 on a
+--- headless OpenComputers machine (default config, T1 CPU, fresh install,
+--- one command after login): at 1024 KB the first command crashed the
+--- machine ("not enough memory"); at 1152 KB core commands would not
+--- load; 1280 KB left 62 KB free; 1536 KB left 198 KB. The CLI on the
+--- same 1024 KB machine left 48 KB. (build/headless-session.py --ram)
+bootcfg.PANELS_MIN_KB = 1536
+
+--- Effective startup interface: "home", "split" or "cli" -- and, as a
+--- second value, "auto" when it was chosen FOR the operator rather than
+--- set by them.
 ---
 --- "home" is the merged surface — one tab, tiles and files as two views
 --- of it, the prompt resident in both. "split" is the pre-merge shape,
 --- kept for operators who want the Desktop as its own tab. Both are the
 --- panels TUI; only "cli" is a different program.
-function bootcfg.ui(cfg)
+---
+--- Unset is AUTO: the panels from PANELS_MIN_KB of installed memory
+--- (`totalKB`), the CLI below it, because below it the panels load and
+--- then crash the machine on the first command. ramGate = "plenty" is the
+--- operator saying the memory is fine, so it means the panels. With no
+--- `totalKB` (off-box) auto is the panels, as it always was.
+function bootcfg.ui(cfg, totalKB)
   local v = cfg and cfg.ui
-  if v == "cli" or v == "split" then return v end
-  return "home"
+  if v == "cli" or v == "split" or v == "home" then return v end
+  if cfg and cfg.ramGate == true then return "home", "auto" end
+  if type(totalKB) == "number" and totalKB > 0 and totalKB < bootcfg.PANELS_MIN_KB then
+    return "cli", "auto"
+  end
+  return "home", "auto"
 end
 
 bootcfg.PATH = PATH

@@ -10,8 +10,8 @@ headless-selftest.py uses (HeadlessTOS.java on Ocelot Brain), and reads the
 answers off the real screen.
 
     python TOS-Dev/build/headless-session.py SCRIPT [--profile t3|t1]
-        [--ram KB[,KB]] [--disk DIR] [--timeout SECS] [--trace] [--keep]
-        [--internet]
+        [--ram KB[,KB]] [--disk DIR] [--put PATH=TEXT] [--timeout SECS]
+        [--trace] [--keep] [--internet]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
 A script is one step per line (HeadlessTOS.java's runScript lists them):
@@ -81,7 +81,8 @@ def expand(lines: list[str]) -> list[str]:
                 "key ctrl+q",
                 r"wait 15 Skip tutorial\?",
                 "type y",
-                r"wait 30 root@\S+:\S*\$",
+                # root@tos:/$ in the panels shell, root:/$ in the CLI.
+                r"wait 30 root(@\S+)?:\S*\$",
             ]
         elif word == "login":
             parts = line.split()
@@ -93,20 +94,32 @@ def expand(lines: list[str]) -> list[str]:
                 f"type {parts[1]}\\n",
                 "wait 15 (?i)password:",
                 f"type {parts[2]}\\n",
-                rf"wait 60 {re.escape(parts[1])}@\S+:\S*[$#]",
+                rf"wait 60 {re.escape(parts[1])}(@\S+)?:\S*[$#]",
             ]
         else:
             out.append(raw.rstrip("\r\n"))
     return out
 
 
-def stage(run: Path, release: Path, disk: Path | None) -> tuple[Path, Path | None, Path]:
-    """A fresh, UNARMED machine: no /etc/selftest.on, so no battery runs."""
+def stage(run: Path, release: Path, disk: Path | None,
+          put: list[str] | None = None) -> tuple[Path, Path | None, Path]:
+    """A fresh, UNARMED machine: no /etc/selftest.on, so no battery runs.
+
+    `put` is PATH=TEXT pairs written onto the boot disk first -- a boot.cfg
+    to try a profile, a config file a checklist item needs.
+    """
     boot, work = run / "boot", run / "work"
     shutil.copytree(release, boot)
     marker = boot / "etc" / "selftest.on"
     if marker.exists():
         marker.unlink()
+    for spec in put or []:
+        path, sep, text = spec.partition("=")
+        if not sep or not path.startswith("/") or ".." in path.split("/"):
+            raise ValueError(f"--put takes /ABSOLUTE/PATH=TEXT: {spec!r}")
+        target = boot / path.lstrip("/")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
     staged = None
     if disk is not None:
         staged = run / "disk"
@@ -128,6 +141,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ram", help="memory sticks in KB, e.g. 256 or 384,384 "
                     "(192/256/384/512/768/1024; default 1024,1024, or 192 for t1)")
     ap.add_argument("--disk", help="a folder to insert as a second disk (copied first)")
+    ap.add_argument("--put", action="append", metavar="PATH=TEXT",
+                    help="write TEXT to PATH on the boot disk before it boots, e.g. "
+                         "--put '/etc/boot.cfg=return { ui = \"cli\" }' (repeatable)")
     ap.add_argument("--timeout", type=float, default=600.0, help="seconds for the whole script (600)")
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
@@ -159,7 +175,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     run = Path(tempfile.mkdtemp(prefix="tos-session-"))
-    boot, disk, work = stage(run, hs.RELEASE, Path(args.disk) if args.disk else None)
+    try:
+        boot, disk, work = stage(run, hs.RELEASE, Path(args.disk) if args.disk else None, args.put)
+    except ValueError as e:
+        shutil.rmtree(run, ignore_errors=True)
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     (work / "script.txt").write_text("\n".join(steps) + "\n", encoding="utf-8")
     config = Path(args.config) if args.config else jar.parent / "OpenComputers.conf"
     cmd = [java, "-Xmx1G", "-cp", f"{classes}{os.pathsep}{jar}", "HeadlessTOS",

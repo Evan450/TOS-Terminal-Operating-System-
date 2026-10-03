@@ -202,7 +202,7 @@ def verdict(log: str | None) -> tuple[int, str]:
 
 def build_stamp(release: Path) -> str | None:
     try:
-        m = re.search(r'build\s*=\s*"([^"]+)"', (release / "init.lua").read_text(errors="replace"))
+        m = re.search(r'build\s*=\s*"([^"]+)"', (release / "init.lua").read_text(encoding="utf-8", errors="replace"))
     except OSError:
         return None
     return m.group(1) if m else None
@@ -219,7 +219,7 @@ def head_short() -> str | None:
 
 def tail(path: Path, n: int) -> str:
     try:
-        return "\n".join(path.read_text(errors="replace").splitlines()[-n:])
+        return "\n".join(path.read_text(encoding="utf-8", errors="replace").splitlines()[-n:])
     except OSError:
         return "(none)"
 
@@ -306,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
             print(line)
 
     log_path = boot / "var" / "selftest.log"
-    log = log_path.read_text(errors="replace") if log_path.is_file() else None
+    log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.is_file() else None
     code, summary = verdict(log)
     if code == 0 and machine_code != 0:
         code, summary = 1, f"the report is complete but the machine did not power off cleanly ({machine_code})"

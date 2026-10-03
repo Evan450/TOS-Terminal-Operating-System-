@@ -49,7 +49,8 @@ test("field 1 is profile", "Profile (what loads)", fields[1].label)
 test("default profile value shown", "normal", fields[1].value)
 test("default verbosity shows auto", "auto", fields[2].value)
 test("field 3 is interface", "Interface (all seats)", fields[3].label)
-test("default interface shows Home", "panels (Home: one tab, two views)", fields[3].value)
+test("default interface shows auto, and where the line is",
+  "auto (panels from " .. bootcfg.PANELS_MIN_KB .. " KB, else CLI)", fields[3].value)
 test("field 4 is self-repair", "Self-repair next boot", fields[4].label)
 test("default repair shows off", "off", fields[4].value)
 test("default showConfig shows on", "on", fields[5].value)
@@ -94,14 +95,18 @@ test("profile wraps to safe", "safe", c.profile)
 local shown = bs.fields(c)
 test("safe shows as SAFE MODE", "SAFE MODE", shown[1].value)
 
--- ── interface ring: home -> split -> cli -> home ──────────────────────
+-- ── interface ring: auto -> home -> split -> cli -> auto ─────────────
+-- Unset is AUTO (bootcfg.ui picks by installed memory); "home" is now a
+-- stored choice, the operator insisting on the panels on a small machine.
 local cu = bootcfg._normalize({})
+bs.cycleKey(cu, "ui", 1)
+test("interface auto -> home", "home", cu.ui)
 bs.cycleKey(cu, "ui", 1)
 test("interface home -> split", "split", cu.ui)
 bs.cycleKey(cu, "ui", 1)
 test("interface split -> cli", "cli", cu.ui)
 bs.cycleKey(cu, "ui", 1)
-test("interface cli -> home (nil in config)", nil, cu.ui)
+test("interface cli -> auto (nil in config)", nil, cu.ui)
 
 -- ── self-repair one-shot toggle ────────────────────────────────────
 local cr = bootcfg._normalize({})
@@ -163,7 +168,7 @@ local edited = bootcfg._normalize({})
 bs.cycleKey(edited, "profile", 1)      -- normal -> full
 bs.cycleKey(edited, "cpuTier", 3)      -- auto -> 3 (three steps)
 bs.cycleKey(edited, "dataTier", 2)     -- auto -> 2 (two steps)
-bs.cycleKey(edited, "ui", 1)           -- home -> split
+bs.cycleKey(edited, "ui", 2)           -- auto -> home -> split
 bs.cycleKey(edited, "repair", 1)       -- off -> run once
 bs.cycleKey(edited, "ramGate", 2)      -- auto -> tight
 bootcfg.save(mockFS, edited)

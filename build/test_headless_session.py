@@ -45,6 +45,7 @@ FIRST_BOOT = """
                ║ Please set a new password for root.            ║
                ║ New password: _                                ║
 """
+CLI = "'help' lists them · 'tui' returns to the full\n\nroot:/$\n"
 SHELL = "root@tos:/$ _\n▓▒░░ Memory:904K │ Disk:2.0M │ View:FILES"
 LOGIN = "                    ║ Username: _                          ║\n║ Password:     ║"
 
@@ -82,6 +83,7 @@ def test_firstboot_waits_match_the_real_screens():
     w = waits(hsess.expand(["firstboot"]))
     assert re.search(w[0][2], FIRST_BOOT, re.M)
     assert re.search(w[-1][2], SHELL, re.M)
+    assert re.search(w[-1][2], CLI, re.M)          # ui = "cli" boots to root:/$
     assert not re.search(w[-1][2], FIRST_BOOT, re.M)
 
 
@@ -92,6 +94,7 @@ def test_login_types_the_user_then_the_password():
     w = waits(steps)
     assert re.search(w[0][2], LOGIN, re.M)
     assert re.search(w[-1][2], "alice@tos:/home/alice$ _", re.M)
+    assert re.search(w[-1][2], "alice:/home/alice$", re.M)   # the CLI's prompt
     assert not re.search(w[-1][2], SHELL, re.M)   # root's prompt is not alice's
 
 
@@ -130,3 +133,18 @@ def test_stage_copies_the_disk_rather_than_lending_it(tmp_path):
     assert (disk / "programs.cfg").read_text() == "{}"
     (disk / "written-by-tos").write_text("x")
     assert not (src / "written-by-tos").exists()
+
+
+def test_put_writes_a_file_onto_the_boot_disk(tmp_path):
+    rel = _release(tmp_path, armed=False)
+    boot, _, _ = hsess.stage(tmp_path / "run", rel, None, ['/etc/boot.cfg=return { ui = "cli" }'])
+    assert (boot / "etc" / "boot.cfg").read_text() == 'return { ui = "cli" }'
+    assert not (rel / "etc" / "boot.cfg").exists()     # the release is left alone
+
+
+@pytest.mark.parametrize("bad", ["etc/boot.cfg=x", "/etc/../../escape=x", "/etc/boot.cfg"])
+def test_put_refuses_relative_climbing_or_valueless_paths(tmp_path, bad):
+    # A path that climbs out would write into the host's temp directory,
+    # beside the machine rather than on it.
+    with pytest.raises(ValueError):
+        hsess.stage(tmp_path / "run", _release(tmp_path, armed=False), None, [bad])
