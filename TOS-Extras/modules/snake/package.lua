@@ -8,9 +8,13 @@
 -- Sandbox-safe: draws through the sandboxed `component` GPU proxy, pulls
 -- raw signals, writes its high-score board through the session-bound
 -- `fs`. Rules are pure in snake/logic.lua, unit-tested by test_snake.lua.
+--
+-- 1.0.1 — the board really is per player: scores go to .snake_hs in the
+-- player's own home (fs.home()), not to /home/.snake_hs, which admins
+-- shared and ordinary users could not write. test_snake_scores.lua.
 return {
   name        = "snake",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "games",
   description = "Classic snake with per-user high scores. Requires a T2+ screen.",

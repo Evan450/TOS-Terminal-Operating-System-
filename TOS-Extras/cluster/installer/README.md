@@ -64,6 +64,13 @@ to expect them. Do the Master **first**:
 The pairing window lasts five minutes. If it lapses, `cluster pair start` on
 the Master opens another.
 
+> **Known issue:** the `cluster` and `cluster-manager` commands do not start
+> at present (see [the cluster README](../README.md)), so `cluster pair
+> status`, `cluster managers`, `cluster pair start` and the status commands
+> below all fail. `cluster-setup` pairs without them. If a pairing window
+> lapses, run `cluster-setup` on the Master again to open another, and
+> `service list` shows whether `clusterd` or `cluster-manager` is running.
+
 ## Afterwards
 
 On the Master:

@@ -78,10 +78,24 @@ local function screen(o, minW, minH)
   return D
 end
 
--- Per-user high scores. The sandbox hands us a session-bound `fs`, so
--- ~/ resolves to the CALLING user's home — every player keeps their own
--- board, exactly like tetris.
+-- Per-user high scores. The sandbox hands us a session-bound `fs`, and
+-- fs.home() answers the CALLING user's home on every call, so every
+-- player keeps their own board, exactly like tetris.
+-- #FIX — this used to write "/home/.snake_hs": one file in /home itself,
+-- outside every home. Admins shared a single board, and an ordinary user,
+-- who may not write there, never had a score saved (the write is pcall'd,
+-- so nothing said so). test_snake_scores.lua.
 local MAX_SCORES = 5
+local SCORE_FILE = ".snake_hs"
+local function scorePath()
+  if not (fs and fs.home) then return nil end
+  local ok, home = pcall(fs.home)
+  if not ok or type(home) ~= "string" then return nil end
+  -- securefs.home() falls back to /tmp when there is no live session: no
+  -- board then, rather than one shared by everyone who played logged out.
+  if home == "/tmp" then return nil end
+  return home .. "/" .. SCORE_FILE
+end
 local function loadScores(path)
   if not (fs and fs.exists and fs.exists(path)) then return {} end
   local okR, data = pcall(fs.readFile, path)
@@ -252,7 +266,8 @@ local function snake(args, o)
 
   -- Game over.
   pcall(computer.beep, 200, 0.4)
-  local scores = recordScore("/home/.snake_hs", s.score)
+  local path = scorePath()
+  local scores = path and recordScore(path, s.score) or { { score = s.score } }
   local by = oy + math.floor(BH / 2) - 3
   D.box(ox + 4, by, BW - 8, 8, "Game Over")
   D.centre(by + 2, "Score: " .. s.score, T.hi)

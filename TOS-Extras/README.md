@@ -1,34 +1,101 @@
 # TOS Extras
 
-Optional add-ons that run on TOS but aren't part of the OS proper. These are not bundled into a standard install; they ship via a separate pick-and-choose installer (the **Optional Utilities** disk, modeled on MS-DOS 6.22's Supplemental Utilities Disk — see [`build/README.md`](build/README.md)).
+Optional add-ons for TOS: programs, games, drivers and services that run on TOS but are not part of the OS. None of them is installed with TOS. They ship as the **Optional Utilities** pack, a pick-and-choose set modelled on MS-DOS 6.22's Supplemental Utilities Disk, and each is its own package, so you can take any subset.
 
-| Path             | What it is |
-|------------------|------------|
-| `build/`         | **Optional Utilities disk builder + installer.** One command — `build-disk.cmd` (Windows) / `build-disk.sh` (POSIX) — auto-discovers every add-on below with a `package.lua` and assembles the disk into `dist/optional-utilities/`; `--install <dir>` copies it straight onto an OC floppy folder. The set now exceeds one 512K floppy, so a default build **splits into `disk1/`, `disk2/`** — burn each dir's contents to its own floppy (`--limit 0` forces a single unlimited disk). The packer runs first-fit to learn how many disks the set *needs*, then **re-packs into that same count using worst fit** so the headroom is spread evenly: plain first-fit fills disk 1 to the brim before opening disk 2, which had left disk 1 at 99.2% (3,930 bytes spare) while disk 2 sat half empty — a state where the next add-on of any size is a build *error* rather than a split, and the error names a package that did nothing wrong. If balancing would ever need more disks than first-fit did, the first-fit layout is kept; fewer floppies beats tidier ones. The disk carries **no installer**: the picker only runs on a TOS machine, and every TOS machine has it in its base image at `tos/shell/pkgpicker.lua` (reached with `pkg install`). Each disk gets a `README.txt` naming that command and an `optutil-set.lua` **set manifest** describing the WHOLE set, so the picker can list packages that live on a disk which isn't inserted and ask you to swap. Packages joined by `requires` share a disk (a split group cannot install); `recommends` pairs are co-located best-effort, and any the packer had to separate are named at build time. **Use the wrapper that matches your shell**: `build-disk.ps1` (PowerShell), `build-disk.cmd` (cmd.exe), `build-disk.sh` (POSIX/Git Bash) — invoking the `.cmd` *from PowerShell* prints harmless stray `'M' is not recognized` lines before the correct output, which the `.ps1` avoids by calling lua directly. Install **LuaFileSystem** (`luarocks install luafilesystem`) for a completely subprocess-free build — the builder prefers it for every directory operation and only shells out without it. |
-| `modules/`       | Bundled-but-optional TOS modules. Each subdir has its own `init.lua` and a `package.lua` manifest; installs to `/usr/modules/<name>/`. Currently: `tape` (general tape control; formerly `tape-storage`, still `provides` that name), `tetris`, `rc-pilot`, `tape-authenticator` (tape keycard + encrypted personal log), `mouse`, `blockfs` (TBFS filesystem driver for unmanaged drives — exception to the layout above, it's `kind="lib"` and installs a single `/usr/lib/blockfs.lua`), `mail` (see below). |
-| `modules/calc/`  | **Spreadsheet.** Cells, formulas, save/load, CSV export, in the TOS visual grammar. The formula engine is a hand-written tokenizer + recursive-descent parser, deliberately **not** `load()`-based — evaluating cells by rewriting them into Lua would make every saved sheet executable, so nothing a cell contains is ever run and the package doesn't request the `load` cap. Refs, ranges, ~25 functions, propagating error values, cycle detection. Engine is pure: `modules/calc/test_calc.lua` (125 assertions, incl. a canary proving cell content can't execute). |
-| `modules/stock/` | **Inventory monitor** (`stock`) — totals every item across every inventory adjacent to a transposer or inventory controller, and warns on anything below a threshold you set. Live full-screen monitor plus one-shot `stock list` / `stock low` / `stock sides`. **Aggregates by registry name + damage, never by display label**: two mods can both ship a "Copper Ingot" and any item can be renamed on an anvil, so a count keyed on the visible name merges different items and splits identical ones — pinned in both directions by `test_stock.lua`. A watched item that has hit **zero** still appears, which is exactly when it should. Thresholds live in `/etc/stock-watch.cfg` as plain tab-separated lines (hand-editable, never executable); writing them needs admin, since a base-wide alarm level isn't a personal preference. Aggregation/thresholds/formatting are pure in `stock/stock.lua` — 53 assertions off-box. Uses `peripheral.inventory`'s `getAllStacks` fast path where available: one component call per side instead of one per slot, which is the difference between a scan you can run live and one you can't. |
-| `modules/snake/` | **Snake** (`snake`) — classic snake, per-user high scores. Sandbox-safe like `tetris`. Rules pure in `snake/logic.lua`; `test_snake.lua`. In the **games** category (see below). |
-| `modules/ttt/`   | **Tic-tac-toe** (`ttt`, `ttt 2p` for hotseat) vs an unbeatable AI. Rules pure in `ttt/logic.lua`; the AI is minimax and `test_ttt.lua` proves it *unbeatable* by exhaustively playing every human line against it (569 terminal positions, 0 human wins). `ttt` also hides an undocumented mode that makes the OS's easter egg discoverable without reading source — left unexplained on purpose; it's photosensitivity-safe, and a test pins the command it reveals against the one the base image actually listens for. In the **games** category. |
-| `modules/mail/`  | **Mesh email.** The mesh *transport* is part of the base OS (`kernel/net/meshctl.lua` — flooded, store-and-forward, end-to-end sealed, service-multiplexed); this package is the *mailbox*: storage under `/var/mail/<user>/`, subject/body semantics, the inbox tab (`/usr/lib/mailapp.lua`, picked up by the panels app registry) and CLI TUI (`/usr/lib/mailui.lua`), plus an rc.d service that registers the delivery handler at boot so store-and-forward receive works with nobody logged in. `kind="service"`, **installed disabled** — `service start mail` to receive. Full-priv (blockfs precedent): the base image keeps only a thin `mail` command stub that hands this package the shell's display + session, and prints an install hint when it's absent. A TOS box without it still relays mail for its trusted neighbours. Tests: `modules/mail/test_mail.lua` (90 assertions) + the base OS's `usr/lib/tests/test_meshctl.lua` for the transport. |
-| `modules/intercom/` | **Facility announcement system.** A Computronics tape holds *recorded* announcements; a tape drive cannot tell you what is on it, so the operator catalogs it once, in the notation they'd jot down anyway: `fuel-low  [0001] "Warning: Reactor fuel low." [0005]  warn` — start, what it says, end, how urgently. From that one line the Intercom knows where to seek, when to stop, what to broadcast and how hard to interrupt. `intercom play <cue>` plays the recording **and** sends those same words over the mesh; `intercom test <cue>` plays it locally and tells nobody, which is how you check the positions really bracket the recording. The tape is optional — `intercom say "we are out of iron" --severity warn` is text-only. On the receiving side announcements land in the chat tab and, at `alert` or above, raise a message box — **rate-limited by a cooldown**, so a failing reactor can't lock an operator out of their own keyboard. `kind="service"`, **installed disabled** (accepting messages that can pop a modal on your screen is an operator decision). Full-priv, mail precedent: the base image keeps a thin `intercom` command stub. Tests: `modules/intercom/test_intercom.lua` (112 assertions, fake tape drive, no network). |
-| `modules/mouse/` | **Mouse driver** (DOS-style — TOS has no baked-in mouse support). Installs a `require("mouse")` library (`/usr/lib/mouse.lua`) that turns OpenComputers touch/drag/drop/scroll signals into clean click/drag/scroll events with rectangle hit-testing, plus a `mousetest` demo command. Since 1.1.0 the TOS panels shell auto-detects the driver (`shell.panels.mouse` in the base OS): installing this package makes the shell's menus, tabs, file list, dialogs, and editor click/scroll-able; `pkg disable mouse` turns that back off. Pure userspace; `component` cap only. Laid out at install paths (mirror resolver) since it ships two files. Unit tests: `modules/mouse/test_mouse.lua` + the base OS's `usr/lib/tests/test_panels_mouse.lua`. |
-| `modules/printer/` | **Printer driver** (DOS-style, same posture as the mouse driver — TOS has no baked-in printing). Targets PC-Logix's **OpenPrinter** addon and its `openprinter` component; OpenComputers' own `printer3d` is a model printer and a different device. Ships **two** libraries and the split is load-bearing: `/usr/lib/printerfmt.lua` is **pure** layout (the character-width table transcribed from the mod, wrapping, 20-line pagination, ink/paper costing) so it unit-tests off-box and works with no printer attached, while `/usr/lib/printer.lua` is the hardware, the job builder and the capability check. Plus a `printer` command (`status`, `test`, `file`, `preview`, `scan`, `tag`, `clear`). Three design points worth knowing: a job is **built in memory, pre-flighted against the actual paper and ink levels, then committed**, because the printer's buffer is shared and persistent and a job that fails halfway leaves half a document in the output chest; a failed commit reports **how many pages already printed**, so you don't reprint the lot; and **colour is opt-in per line**, since OpenPrinter charges a unit of colour ink for every `writeln` carrying a colour and a colour default would quietly drain the cartridge on an all-black document. Declares `peripheral.printer` — a printer actuates the world and consumes the player's resources, so it is gated like `piston`/`robot` rather than covered by blanket `component`. **Because the library is loaded through the real `require` (as every `/usr/lib` add-on lib is), it re-checks that capability itself on every call** — see its header, and `tos/peripheral/redstone.lua`'s `#SEC H34` for the precedent. Tests: `modules/printer/test_printer.lua` (131 assertions, against a fake printer that *throws* on failure the way the mod does). |
-| `modules/write/` | **Word processor** (`write`). Not a second text editor: TOS has `edit`. The difference is the **page** — `write` knows how wide a printed line is in pixels and how many lines fit on a sheet, so it shows where the document breaks *live in the rail while you type*, plus what it will cost in paper and ink before you spend either. The file stays **plain text**; formatting rides on roff-style dot commands in column one (`.title` `.center` `.color` `.page`, `..` to escape a literal dot), so a document is greppable, mailable, hand-editable and never executable. **This is the one deliberate cross-Extras dependency** (`requires = { "printer" }`): the page model lives in the driver's `printerfmt.lua`, and without it there is no page. The printer *hardware* stays soft — composing, pagination, the page view and saving all work with no printer in the world, and the rail says whether the breaks came from the attached printer's own metrics or the transcribed table, because those are not equally trustworthy. Model pure in `write/doc.lua`; `modules/write/test_write.lua` (84 assertions, most of them pinning the source-line→page mapping, whose failure mode is a silently drifting ruler). |
-| `modules/selftest/` | **The boot self-test battery** (`selftest`, category `dev`, **root install**). The runner is in the base image (`tos/kernel/selftest.lua`): an armed machine runs every check in `/usr/lib/selftest/` and on any test disk **inside the kernel** at boot and writes `/var/selftest.log`. This package installs the shipped checks there and a `selftest` command to `arm`/`disarm` (root), `list` what would run and from where, read the `log` (a run with no END line is reported as STALLED in the check that wedged it), and print a `template` for a check of your own, which is the point: developers can test what they add on a booted machine. It deliberately does not run checks from the shell, because several exist to test kernel context before the TUI. `test_selftest_cmd.lua` drives the command against the real runner on one disk: what `arm` writes is what the kernel reads, `list` is exactly what the kernel discovers, and `log`/`status` read a log the real runner wrote. See [modules/selftest/README.md](modules/selftest/README.md). |
-| `cluster/`       | The cluster add-on. `master-skeleton/` and `manager-skeleton/` are the installable Master/Manager packages (`cluster-master` / `cluster-manager`). `openos/cluster-worker.lua` is the OpenOS-side worker. See [cluster/Plan.md](cluster/Plan.md) and [cluster/cluster-protocol-spec-draft.md](cluster/cluster-protocol-spec-draft.md). |
-| `rbmk/`          | **RBMK reactor supervisor** (HBM Nuclear Tech Mod) — `controller-skeleton/` ships as the `rbmk-control` package (v0.2.0, `kind="service"`, installed DISABLED). Safety limits, SCRAM ownership, read-only telemetry, and since 0.2.0 the **SKALA information panel**: a coordinate-ruled core map of one reading per channel with a rail of lettered parameter keys (N power, T core temp, X steam, K rod depth, G coolant), plus alarm and trend pages. `rbmk skala --wall` drives every screen on the machine at once — opt-in, because TOS is multi-seat and painting every display by default would take over screens other operators are working at — and `openos/rbmk-display.lua` renders the same picture on cheap OpenOS satellites, **time-slicing one GPU across several screens** so a display wall costs one graphics card rather than four. Built **survey-first**: HBM's OC component/method names can only be learned in-world, so they're *data* in `/etc/rbmk.cfg` and `rbmk survey` prints what a real console actually exposes. Everything pure is tested off-box (**328 assertions** across `test_rbmk.lua`, `test_rbmk_skala.lua`, `test_rbmk_panel.lua`) — a missing *or stale* reading SCRAMs, a typo'd limit falls back to the default, the service refuses to start blind, telemetry frames carrying anything command-shaped are refused, and the panel's colour is pinned in both directions because **coolant is inverted**: low is the dangerous end, and on the normal ramp a dry loop would draw in the same calm blue as a cold core. 0.2.0 also fixed a defect the missing display half had hidden — telemetry went out as a TOS protocol `MSG`, which the trust gate allows only at TRUSTED, so no untrusted display could ever have received it; it is now a raw modem broadcast on port 2200, still strictly one-way. **The in-game survey is the blocker for everything else**, and `build-disk.lua` still (correctly) skips the package as below 1.0.0. See [rbmk/README.md](rbmk/README.md) and [rbmk/Plan.md](rbmk/Plan.md). |
-| `robot/`         | `robot/eeprom-rc-pilot.lua` — an OpenComputers robot/drone EEPROM payload, the burnable counterpart to `modules/rc-pilot/` (the TOS-side host command that sends it movement packets). **Burn the stripped file, not the source:** an EEPROM holds 4096 bytes and `flash` refuses more. The `rc-pilot` package ships the burnable image as `/usr/share/rc-pilot/eeprom-rc-pilot.lua`: `build/build-disk.lua` minifies it with `strip.lua` and refuses to build if it is over 4096 bytes or does not parse (`test_rc_pilot.lua` also keeps it under the limit). By hand, from `TOS-Extras/`: `lua ../build/strip.lua robot <out-dir> --minify`. |
-| `pane-ui/`       | PaneUI — TOS look-and-feel layered over OpenOS. Single-file Lua app. Installs by copying onto an OpenOS machine (not through `pkg`), so it's not on the Optional Utilities disk. **v0.4** follows TOS's visual grammar (double-line modal + shadow, dim `─┤ label ├─` rails, edge-only `░▒▓` ramps, state-bearing tab chips with a `«N` overflow) and the v1.4.0 "Iris" file-type glyphs. Because it *copies* TOS's look rather than importing it, `pane-ui/test_paneui_grammar.lua` pins the glyph table against the real `tos/shell/panels/ui.lua` so the two can't drift. |
+## Installing them
 
-> Build artifacts live in `dist/` (regenerated by `build-disk.lua`) — safe to delete / git-ignore.
+On a TOS machine, as admin, insert the Optional Utilities floppy and run `pkg install`. It opens a checkbox picker grouped by category: tick what you want and it installs the lot in one pass. `pkg install <name>` installs one add-on by name. With an internet card, `pkg fetch <name>` gets one from a configured repository instead (TOS manual, §7.9).
+
+The service packages (`mail`, `intercom` and the cluster) and `selftest` need **root**, not just admin: a service runs at boot outside the package sandbox, and a self-test check runs inside the kernel.
+
+The signed pack is published on the repository's `optional-utilities` branch. This directory is the source, and the pack can trail it until its next signing; the picker shows the version of each package it offers.
+
+## The add-ons
+
+Grouped as the picker groups them. Each name links to that add-on's README: what it does, how to use it, and where its files go.
+
+**Productivity**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [calc](modules/calc/README.md) | `calc` | A spreadsheet: formulas, ranges, CSV export, and nothing in a cell can ever run as code. |
+| [write](modules/write/README.md) | `write` | A word processor that shows where the printed page breaks as you type, and what it will cost in paper and ink. Brings `printer` with it. |
+
+**Games**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [snake](modules/snake/README.md) | `snake` | Classic snake, with a high-score board for each player. |
+| [tetris](modules/tetris/README.md) | `tetris` | Classic Tetris, with levels and a high-score table for each player. |
+| [ttt](modules/ttt/README.md) | `ttt` | Tic-tac-toe against a machine that cannot lose, or two players at one keyboard. |
+
+**Drivers**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [mouse](modules/mouse/README.md) | `mousetest` | Makes the TOS shell clickable and scrollable, and gives programs `require("mouse")`. |
+| [printer](modules/printer/README.md) | `printer` | Prints on PC-Logix's OpenPrinter, checking the paper and ink before a job starts. |
+
+**Storage**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [blockfs](modules/blockfs/README.md) | through `drive` | TBFS, a real filesystem for unmanaged drives, which TOS can even boot from. |
+| [tape](modules/tape/README.md) | `tape` | Everything a Computronics tape drive does: file archives, audio, raw bytes and encryption. |
+
+**Security**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [tape-authenticator](modules/tape-authenticator/README.md) | `tape-auth` | A tape as an unforgeable keycard, carrying a private log and a personal command menu. |
+
+**Network**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [mail](modules/mail/README.md) | `mail` | Store-and-forward email between TOS machines, sealed end to end, with no server. Root. |
+| [intercom](modules/intercom/README.md) | `intercom` | Facility announcements: a recorded message plays from tape, and the same words go out over the network. Root. |
+| [cluster](cluster/README.md) | `cluster-setup` | Spreads jobs across machines: one Master, any number of Managers, and optional OpenOS workers. Root. Its `cluster` command does not start at present; see its README. |
+
+**Control and automation**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [rc-pilot](modules/rc-pilot/README.md) | `rc` | Fly a robot or drone from the keyboard, with every keystroke signed. Setting up the robot cannot yet be finished on TOS alone; see its README. |
+| [stock](modules/stock/README.md) | `stock` | Totals every item in the chests around a transposer, and warns when something runs low. |
+
+**Development**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [selftest](modules/selftest/README.md) | `selftest` | The boot self-test battery: checks that run inside the kernel on real hardware, for testing what you add to TOS. Root. |
+
+### Here, but not on the pack
+
+| Path | What it is |
+|---|---|
+| [rbmk/](rbmk/README.md) | `rbmk-control` 0.2.0, a safety supervisor and operator panel for HBM's RBMK reactors. Held back until its component names are checked against the mod in game. |
+| [cluster/storage-skeleton/](cluster/README.md) | `cluster-storage` 0.1.0, an early storage node for the cluster. Held back while its spec is a draft. |
+| [pane-ui/](pane-ui/README.md) | PaneUI, the TOS look and file manager for OpenOS machines. One file, copied by hand rather than installed with `pkg`. |
+| [robot/](robot/README.md) | The program on the robot's own chip for `rc-pilot`. The rc-pilot package ships it ready to burn. |
+| [web/](web/README.md) | A text-mode web browser and a fetch proxy between TOS machines. Design only, no code yet. |
+
+A package below version 1.0.0 is not finished, so it stays off the pack: the builder keeps a list of them and prints each one it skips, and why.
+
+## Building the pack
+
+`build/` holds the builder. Run `build-disk.ps1` from PowerShell, `build-disk.cmd` from cmd.exe or `build-disk.sh` from a POSIX shell: it finds every add-on with a `package.lua` and lays the pack out in `dist/optional-utilities/`, split across as many 512 KB floppies as the set needs (two, today). `--install <dir>` copies the result onto an OpenComputers floppy folder. [build/README.md](build/README.md) explains the packing, the set manifest each disk carries, and signing.
+
+`dist/` is build output: regenerated by every build and safe to delete.
+
+Every add-on's tests run with the OS's own: `python run_tests.py` in the TOS source.
 
 ## Conventions
 
-Each top-level entry under `TOS-Extras/` should be a self-contained installable unit so the Optional Utilities installer (see [`build/README.md`](build/README.md)) can offer it as a discrete checkbox. Don't introduce cross-Extras dependencies without flagging it — the user should be able to install any subset without surprise. This is why the games ship as **three standalone packages** (`snake`, `ttt`, `tetris`) rather than one bundle: you can take Snake without Tic-Tac-Toe.
+Each top-level entry under `TOS-Extras/` should be a self-contained installable unit, so the picker can offer it as a separate checkbox. Don't introduce cross-Extras dependencies without flagging it: the user should be able to install any subset without surprise. This is why the games ship as **three standalone packages** (`snake`, `ttt`, `tetris`) rather than one bundle: you can take Snake without Tic-Tac-Toe.
 
 **Flagged cross-Extras dependency: `write` → `printer`.** The only hard one in the set, and it is here rather than merged because the two are genuinely separable in use: plenty of machines want the driver and the `printer` command with no word processor anywhere near them. The reverse is not true — the word processor's whole point is the page, the page model lives in the driver's `printerfmt.lua`, and a `write` that shipped its own copy would be two definitions of "how tall is a page" drifting apart. The picker auto-selects `printer` alongside it, marks it `[+]`, and counts it in the install set, so nothing installs behind your back. `requires` also means the packer keeps them on the same floppy.
 
 **Categories.** A manifest may declare `category = "..."` (games, productivity, network, storage, security, drivers, control, or your own). The installer groups the pick-list by category — so related packages browse together while each stays independently installable. Uncategorised packages fall into "misc" / Other. Keep a package's *scope* to one program; use the category to relate it to its neighbours.
 
-When adding a new add-on, give it its own subdirectory, a clear entry point, and (if non-trivial) a short README describing what it installs and where.
+When adding a new add-on, give it its own subdirectory, a clear entry point, and a `README.md` saying what it is, how to install and use it, and where its files go. Add a row for it to the catalogue above.

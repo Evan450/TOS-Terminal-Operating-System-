@@ -19,7 +19,7 @@ See [Plan.md](Plan.md).
 | `openos/rbmk-display.lua` | The OpenOS display satellite. Single file, read-only, never transmits. |
 | `test_rbmk.lua` | Binding + safety rules (73 assertions). |
 | `test_rbmk_skala.lua` | Panel model, display wall, wire format, and the satellite's copied constants (196). |
-| `test_rbmk_panel.lua` | End-to-end: console → controller → wire → painted screen (59). |
+| `test_rbmk_panel.lua` | End-to-end: console → controller → wire → painted screen (75). |
 
 Run them from the `TOS-Extras` root: `lua rbmk/test_rbmk.lua`, and so on.
 

@@ -449,8 +449,8 @@ local DISCOVERY_ROOTS = { "modules", "cluster", "rbmk" }
 --
 -- The rule is the version, not an opinion: a package below 1.0.0 is not
 -- finished, and shipping it on a public pack means an operator ticks it
--- in the picker and gets a skeleton. Both entries below are 0.1.0 and
--- both still have an open spec draft beside them (cluster/
+-- in the picker and gets a skeleton. Both entries below are under
+-- 1.0.0 and both still have an open spec draft beside them (cluster/
 -- storage-spec-draft.md, rbmk/Plan.md). Delete the entry when the
 -- package reaches 1.0.0 — nothing else needs changing, the assembler
 -- discovers it again on the next build.
