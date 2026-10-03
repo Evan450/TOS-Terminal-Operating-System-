@@ -24,7 +24,7 @@ local REGISTRY = {
   type     = { category = "core", tier = 0, help = "Print file contents", alias = "cat" },
   more     = { category = "core", tier = 0, help = "Page through a file" },
   head     = { category = "core", tier = 0, help = "Print the first lines of a file" },
-  tail     = { category = "core", tier = 0, help = "Print the last lines of a file (watch tail <log> to follow it)" },
+  tail     = { category = "core", tier = 0, help = "Print the last lines of a file: tail [-n N] <file> (watch tail to follow it)" },
   mkdir    = { category = "core", tier = 1, help = "Make a directory" },
   touch    = { category = "core", tier = 1, help = "Create an empty file" },
   compress   = { category = "core", tier = 1, help = "Compress a file with the data card (-> .tcz)" },

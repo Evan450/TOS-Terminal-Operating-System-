@@ -601,32 +601,68 @@ return function(C, S, deps)
   end
 
   C.ls = function(args, o)
-    local p  = rp(args[1] or S.cwd)
+
+    local long, all, target = false, false, nil
+    for _, a in ipairs(args) do
+      if not target and a:sub(1, 1) == "-" and #a > 1 then
+        for ch in a:sub(2):gmatch(".") do
+          if ch == "l" then long = true
+          elseif ch == "a" then all = true
+          else o("Usage: ls [-l|-a] [dir]", T.dim); return end
+        end
+      elseif not target then target = a end
+    end
+    local p  = rp(target or S.cwd)
     if not canRead(p, o) then return end
+    if F.exists and not F.exists(p) then o("no such file: " .. (target or p), T.error); return end
     local ok2, l = pcall(F.list, p)
     if not ok2 or not l then o("Cannot list: " .. p, T.error); return end
-    local e = {}
-    if type(l) == "table" then for _, n in ipairs(l) do e[#e+1] = n end
-    elseif type(l) == "function" then for n in l do e[#e+1] = n end end
+    local e, hidden = {}, 0
+    local function add(n)
+      if all or n:sub(1, 1) ~= "." then e[#e+1] = n else hidden = hidden + 1 end
+    end
+    if type(l) == "table" then for _, n in ipairs(l) do add(n) end
+    elseif type(l) == "function" then for n in l do add(n) end end
     table.sort(e, function(a, b2)
       local ad, bd = a:sub(-1)=="/", b2:sub(-1)=="/"
       if ad ~= bd then return ad end return a < b2
     end)
-    o(string.format(" %-24s %8s", "Name", "Size"), T.title)
-    o(string.rep("-", 34), T.border)
+
+    local function modified(name)
+      if not F.lastModified then return "-" end
+      local okM, ms = pcall(F.lastModified, F.join(p, name))
+      if not okM or type(ms) ~= "number" or ms <= 0 then return "-" end
+      local okD, txt = pcall(os.date, "%Y-%m-%d %H:%M", math.floor(ms / 1000))
+      return okD and txt or "-"
+    end
+    if long then
+      o(string.format(" %-24s %8s  %s", "Name", "Size", "Modified"), T.title)
+      o(string.rep("-", 52), T.border)
+    else
+      o(string.format(" %-24s %8s", "Name", "Size"), T.title)
+      o(string.rep("-", 34), T.border)
+    end
     for _, n in ipairs(e) do
+      local line, col
       if n:sub(-1) == "/" then
-        o(string.format(" %-24s %8s", "["..n:sub(1,-2).."]", "<DIR>"), T.dir or T.highlight)
+        line = string.format(" %-24s %8s", "["..n:sub(1,-2).."]", "<DIR>")
+        col = T.dir or T.highlight
       else
         local sz = F.size(F.join(p, n))
-        local sc = T.fg
-        if n:match("%.lua$") then sc = T.file_lua or T.file_exec or T.highlight
-        elseif n:match("%.cfg$") or n:match("%.conf$") then sc = T.file_cfg or T.warning
-        elseif n:match("%.log$") then sc = T.file_log or T.dim end
-        o(string.format(" %-24s %8s", n:sub(1,24), fmtSz(sz)), sc)
+        col = T.fg
+        if n:match("%.lua$") then col = T.file_lua or T.file_exec or T.highlight
+        elseif n:match("%.cfg$") or n:match("%.conf$") then col = T.file_cfg or T.warning
+        elseif n:match("%.log$") then col = T.file_log or T.dim end
+        line = string.format(" %-24s %8s", n:sub(1,24), fmtSz(sz))
       end
+      if long then line = line .. "  " .. modified(n) end
+      o(line, col)
     end
-    o(#e .. " items", T.dim)
+    if hidden > 0 then
+      o(#e .. " items (" .. hidden .. " hidden: ls -a shows them)", T.dim)
+    else
+      o(#e .. " items", T.dim)
+    end
   end
   C.dir = C.ls
 
@@ -1359,34 +1395,54 @@ return function(C, S, deps)
     o(S.cwd or "/", T.fg)
   end
 
+  local function linesArgs(args)
+    local file, n = nil, 10
+    local i = 1
+    while i <= #args do
+      local a = args[i]
+      if a == "-n" and args[i + 1] then n = tonumber(args[i + 1]) or n; i = i + 1
+      elseif a:match("^%-%d+$") then n = tonumber(a:sub(2))
+      elseif not file then file = a
+      elseif tonumber(a) then n = tonumber(a) end
+      i = i + 1
+    end
+    return file, n
+  end
+
+  local function cannotRead(file, p, err, o)
+    if F.exists and not F.exists(p) then o("No such file: " .. file, T.error)
+    else o("Cannot read " .. file .. (err and (": " .. tostring(err)) or ""), T.error) end
+  end
+
   C.head = function(args, o)
-    if not args[1] then o("Usage: head <file> [lines]", T.dim); return end
-    local p = rp(args[1])
+    local file, n = linesArgs(args)
+    if not file then o("Usage: head [-n N] <file>", T.dim); return end
+    local p = rp(file)
     if not canRead(p, o) then return end
 
-    local n, shown = tonumber(args[2]) or 10, 0
-    if n < 1 then return end
-    local okR = helpers.eachLine(F, p, function(line)
+    local shown = 0
+    if not n or n < 1 then return end
+    local okR, err = helpers.eachLine(F, p, function(line)
       o(line, T.fg); shown = shown + 1
       if shown >= n then return false end
     end)
-    if not okR then o("Cannot read: " .. args[1], T.error) end
+    if not okR then cannotRead(file, p, err, o) end
   end
 
   C.tail = function(args, o)
-    if not args[1] then o("Usage: tail <file> [lines]", T.dim); return end
-    local p = rp(args[1])
+    local file, n = linesArgs(args)
+    if not file then o("Usage: tail [-n N] <file>", T.dim); return end
+    local p = rp(file)
     if not canRead(p, o) then return end
-    local n = tonumber(args[2]) or 10
-    if n < 1 then return end
+    if not n or n < 1 then return end
 
     if n > 1000 then n = 1000 end
     local ring, count = {}, 0
-    local okR = helpers.eachLine(F, p, function(line)
+    local okR, err = helpers.eachLine(F, p, function(line)
       count = count + 1
       ring[(count - 1) % n + 1] = line
     end)
-    if not okR then o("Cannot read: " .. args[1], T.error); return end
+    if not okR then cannotRead(file, p, err, o); return end
     for i = math.max(1, count - n + 1), count do
       o(ring[(i - 1) % n + 1], T.fg)
     end

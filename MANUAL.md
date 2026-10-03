@@ -2265,9 +2265,10 @@ login, and are personal — nobody else's shell sees them. An alias carries **no
 privilege**: the expansion is dispatched through the same tier checks as if you
 had typed it, so aliasing a name to an admin command does not make it runnable.
 Expansion chains (`alias l=ll` where `ll` is itself an alias) but never loops —
-each name expands at most once, so the near-universal `alias ls "ls -a"` runs the
-real `ls` instead of hanging the seat. *Examples:* `alias ll ls -l`,
-`alias log tail /var/log/tos.log`. *See also:* `unalias`, `profile`, `which`.
+each name expands at most once. An alias may not start with its own name:
+`alias ls "ls -a"` is refused, since it reads like recursion, so give the flags a
+name of their own (`alias la ls -a`). *Examples:* `alias ll ls -l`,
+`alias klog tail -n 20 /var/log/kernel.log`. *See also:* `unalias`, `profile`, `which`.
 
 **audio** — `audio [on|off|volume <0-100>|test]`
 Toggle the audio feedback subsystem, set the volume, or play every beep code
@@ -2593,8 +2594,9 @@ End the current session and return to the login screen. *See also:* `whoami`,
 `passwd`.
 
 **ls** — `ls [-l|-a] [dir]`
-List a directory. `-l` long form, `-a` include hidden. *Error:* `no such file`.
-*See also:* `cd`, `tree`.
+List a directory. Names starting with a dot are hidden, and the count says how
+many; `-a` includes them. `-l` adds when each entry last changed. Flags
+combine (`ls -la`). *Error:* `no such file`. *See also:* `cd`, `tree`.
 
 **lsdev** — `lsdev`
 List every connected component with its type, short address and, where known, a
@@ -2895,9 +2897,10 @@ spelling. *See also:* `optimize`, `mem`, Chapter 9.4.
 
 ### T
 
-**tail** — `tail <file> [lines]`
+**tail** — `tail [-n N] <file>`
 Print the last N lines (default 10) — the other half of `head`. Pair it with
-`watch` to follow a file as it grows: `watch tail /var/log/tos.log`. *See also:*
+`watch` to follow a file as it grows: `watch tail /var/log/kernel.log` (the
+kernel writes its log there every 30 seconds; `log` shows it live). *See also:*
 `head`, `more`, `watch`, `log`.
 
 **tape** — `tape [...]` **(pkg: tape; tier: tape drive)**
