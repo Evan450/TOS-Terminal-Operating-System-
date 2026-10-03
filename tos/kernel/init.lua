@@ -3107,11 +3107,15 @@ end
 -- #SEC C1 — manifest hash anchoring in EEPROM data field
 -- ============================================================
 -- The EEPROM exposes a 256-byte `data` field that BIOS code can read at
--- boot (via component.eeprom.getData / setData). We use the first 64
--- bytes of it to anchor the running system's manifest hash. On next
--- boot, kernel.verifyManifestHash() reads the EEPROM data, computes the
--- live manifest's hash, and refuses to continue boot if they don't
--- match (unless a held-key recovery override is asserted).
+-- boot (via component.eeprom.getData / setData). Its second line holds
+-- this system's manifest hash once an operator runs `verify anchor`, and
+-- kernel.verifyManifestHash() compares the live manifest with it.
+--
+-- NOTHING CALLS IT AT BOOT (checked 2026-10-03). This comment used to say
+-- boot refuses on a mismatch, "unless a held-key recovery override is
+-- asserted" -- neither exists. `doctor` and the network repair call it,
+-- so the anchor is a check an operator runs, not one boot enforces.
+-- Whether boot should is open: TODO, THE MANIFEST ANCHOR IS NOT ENFORCED.
 
 local function readManifestSource()
   -- Manifest lives at /tos/system_manifest.lua. Read raw bytes (not
@@ -3134,9 +3138,9 @@ function kernel.computeManifestHash()
 end
 
 --- Write the current manifest hash into the EEPROM data field. Operator
---- runs this once after a clean install (or after a verified upgrade).
---- On subsequent boots, verifyManifestHash() refuses to continue on
---- mismatch.
+--- runs this once after a clean install (or after a verified upgrade);
+--- `doctor` reports any later mismatch (see the note above: boot does
+--- not check it).
 function kernel.anchorManifestHash()
   local digest, err = kernel.computeManifestHash()
   if not digest then return false, err end

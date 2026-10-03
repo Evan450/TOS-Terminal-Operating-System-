@@ -413,6 +413,7 @@ function M.build(S, deps)
           o("'" .. name .. "' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
           if S.lastOut and S.lastOut[1] then
             o(S.lastOut[1], T.error)
+            S.lastOut = nil   -- said once, here; exec would append it again
           else
             o("Its command group failed to load — check `log` for the reason.", T.dim)
           end
@@ -451,7 +452,21 @@ function M.build(S, deps)
     end
   end
 
+  -- A command can report through S.lastOut instead of o() -- twenty do in
+  -- admin.lua alone ("User 'alice' created."). showOutput clears lastOut
+  -- before routing the output, so that report was erased whenever the
+  -- command printed nothing else: on a headless machine `useradd` created
+  -- the account and said nothing. Fold it into the output instead, as its
+  -- last line. lastOut is cleared before each command, so only what THIS
+  -- command set can be folded in. (test_lastout_kept.lua)
+  local function withReport(buf)
+    local said = S.lastOut
+    if type(said) == "table" and said[1] then buf[#buf + 1] = said end
+    return buf
+  end
+
   local function exec(input)
+    S.lastOut = nil
     local hasPipe = input:find("|", 1, true)
     local hasRedirect = input:find("[>]") or input:find("<")
 
@@ -494,7 +509,7 @@ function M.build(S, deps)
 
           if i == #segments then finalBuf = buf end
         end
-        showOutput(helpers.expandBuf(S, finalBuf), "output")
+        showOutput(helpers.expandBuf(S, withReport(finalBuf)), "output")
         return
       end
     end
@@ -504,7 +519,7 @@ function M.build(S, deps)
     -- redirect wants a buffer to write.
     local buf = execSingle(input, nil, true)
     if S._program then return end   -- a full-screen program owns the seat
-    showOutput(helpers.expandBuf(S, buf), input:match("^(%S+)") or "output")
+    showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
   end
 
   -- Expose the single-command runner so `sudo <cmd>` can run one command

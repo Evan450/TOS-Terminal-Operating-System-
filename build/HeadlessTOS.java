@@ -263,6 +263,9 @@ public class HeadlessTOS {
    *                       find() over the whole screen); the step fails if
    *                       SECS pass first
    *   gone SECS REGEX     until the screen no longer matches
+   *   maybe SECS REGEX    if the screen matches within SECS, the next step
+   *                       runs; if not, the next step is skipped. For what
+   *                       only sometimes appears (a first-login tour)
    *   type TEXT           types TEXT; \n is Enter, \t Tab, \\ a backslash
    *   key NAME [N]        presses a key N times: enter, esc, tab, backspace,
    *                       up/down/left/right, home, end, pgup, pgdn, insert,
@@ -290,6 +293,7 @@ public class HeadlessTOS {
     Map<String, Long> marks = new HashMap<>();
     String lastMark = null;
     int si = 0, tick = 0, phase = 0;
+    boolean skipNext = false;
     long stepStart = System.nanoTime(), downSince = 0;
     boolean everRan = false;
     int code = 2;
@@ -312,7 +316,7 @@ public class HeadlessTOS {
       String[] w = line.split("\\s+", 3);
       String cmd = w[0];
       double secs = w.length > 1 && (cmd.equals("wait") || cmd.equals("gone") || cmd.equals("sleep")
-          || cmd.equals("off")) ? Double.parseDouble(w[1]) : 0;
+          || cmd.equals("off") || cmd.equals("maybe")) ? Double.parseDouble(w[1]) : 0;
       double inStep = (System.nanoTime() - stepStart) / 1e9;
 
       // A machine that is down outside off/powercycle has crashed or shut
@@ -326,9 +330,31 @@ public class HeadlessTOS {
       }
       if (!input.isEmpty()) continue;   // finish typing before the next step
 
+      if (skipNext) {
+        // The `maybe` before this step did not see its text: skip it.
+        skipNext = false;
+        System.out.printf("[step] %3d %-60s skipped%n", si + 1,
+            line.length() > 60 ? line.substring(0, 57) + "..." : line);
+        si++;
+        stepStart = System.nanoTime();
+        continue;
+      }
+
       boolean done = false;
       String note = "";
       switch (cmd) {
+        case "maybe": {
+          if (!running) break;
+          if (frame == null) frame = screenText(screen);
+          if (Pattern.compile(w[2], Pattern.MULTILINE).matcher(frame).find()) {
+            done = true;
+          } else if (inStep > secs) {
+            done = true;
+            skipNext = true;
+            note = " (not seen: the next step is skipped)";
+          }
+          break;
+        }
         case "wait":
         case "gone": {
           if (!running) break;

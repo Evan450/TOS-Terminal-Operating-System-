@@ -280,6 +280,27 @@ offer), any other key or the 30s timeout halts. The same prompt guards **raw
 TBFS boot drives** (Chapter 5.4): the BIOS scans managed filesystems first, then
 raw drives, and a discovered boot volume of either kind needs this approval.
 
+### 2.5 What happens during boot, in order
+
+1. **The BIOS** (on the EEPROM) finds the boot disk — a normal drive, or a raw
+   TBFS drive, whose boot region it reads directly — and loads `/init.lua`.
+   It boots any disk with a valid `/init.lua`, OpenOS included; its check that
+   the TOS kernel is present (`K4`) applies only when that `/init.lua` is TOS's.
+2. **`/init.lua`** locates the boot filesystem, builds `require`, brings up the
+   GPU for boot messages, and (when the profile asks) checks every system file
+   against the manifest.
+3. **The kernel** starts its core modules (log, hardware layer, filesystem,
+   configuration, events, processes, display), then power monitoring on a
+   tablet, security (crypto, users, `securefs`), the theme manager, the network
+   stack, startup services (`/etc/rc.d/`) and cron. What loads depends on the
+   boot profile and the memory free (2.1).
+4. **Login** — the full login screen, or minimal authentication when memory is
+   very short.
+5. **Your theme** is applied, then the **first-boot tour** runs if you have not
+   seen it.
+6. **The shell** — the panels interface, or the command line (`ui = "cli"`, or
+   automatically on a machine under 1.5 MB). Both run the same commands.
+
 ## 3. Logging In, Users & Tiers
 
 ### 3.1 Tiers
@@ -308,8 +329,8 @@ survives reboots (so even `root` can't be brute-forced quickly). Login never
 reveals whether a username exists or is locked — wrong credentials always get the
 same generic error.
 
-Commands: `passwd` (change your own), and (admin) `useradd`, `userdel`,
-`usermod <user> lock|unlock|admin|user`, `users`.
+Commands: `passwd` (change your own); (admin) `users`; and (root) `useradd`,
+`userdel`, `usermod <user> lock|unlock|admin|user|root`.
 
 ---
 
@@ -1256,6 +1277,15 @@ useful.
 
 ### 7.7 Third-party and OpenOS packages
 
+**OpenOS libraries.** TOS provides 15 of OpenOS's libraries, so a program that
+`require`s them runs: `buffer`, `colors`, `event`, `filesystem`, `internet`,
+`io`, `keyboard`, `note`, `process`, `robot`, `serialization`, `shell`,
+`sides`, `term` and `text`. They load the first time a program asks for one
+(`compat` lists which are loaded). `thread` and `uuid` are not provided. The
+compatibility is best-effort: a program that reaches for raw components or the
+global environment runs into the sandbox, and `filesystem.get()` returns a
+description of a disk rather than the disk itself.
+
 `pkg` reads four manifest forms, so a loot disk or an OPPM repo installs like
 anything else:
 
@@ -1828,6 +1858,18 @@ Tier-3 is full RGB. (The PaneUI app for OpenOS mirrors the six classic themes.)
 A profile can also name a preset (`profile set theme <name>`); it applies at
 login only when you have no explicit `theme set` choice saved — the more
 specific `~/.theme.cfg` (which can carry per-key overrides) always wins.
+
+The keys `theme color` can override (`theme keys` lists them too): `bg`, `fg`,
+`border`, `title`, `highlight`, `dim`, `selected_bg`, `selected_fg`,
+`menubar_bg`, `menubar_fg`, `menubar_hot`, `statusbar_bg`, `statusbar_fg`,
+`error`, `warning`, `panel_bg`, `input_bg`, `input_fg`, `syn_keyword`,
+`syn_string`, `syn_comment`, `syn_number`, `syn_func`, `file_lua`,
+`dir_color`. A colour can be written `0xRRGGBB`, `#RRGGBB`, `RRGGBB` or in
+decimal.
+
+> **Themes are shared by every seat.** The last person to log in, or to run
+> `theme set`, decides the colours every seat sees. Per-seat themes are not
+> supported yet.
 
 ### 10.1 Screen resolution
 
@@ -2436,7 +2478,7 @@ Show or set the UI language. Catalogs are data files in `/usr/lang`;
 machine default via `lang system` (admin). *See also:* Chapter 10.2,
 `profile`.
 
-**log** — `log [N | clear]` **(clear: admin)**
+**log** — `log [N | clear]` **(admin)**
 Show the last N log lines (kernel + services), or clear the log. *See also:*
 `doctor`.
 
@@ -2691,7 +2733,7 @@ Execute a Lua script file in the session sandbox with `...` set to the arguments
 
 ### S
 
-**scp** — `scp <addr> <src> <dst>` **(tier: modem; TRUSTED peer)**
+**scp** — `scp <addr> <src> <dst>` **(admin; needs a modem and a TRUSTED peer)**
 Copy a file to/from a TRUSTED remote machine (Chapter 8). *See also:* `rsh`,
 `share`, `net`.
 
@@ -2806,14 +2848,15 @@ Remove one of your aliases. *See also:* `alias`.
 **uptime** — `uptime`
 Show how long the machine has been running.
 
-**useradd** — `useradd <name>` **(admin)**
-Create a user account (prompts for a password and tier). *See also:* `users`,
+**useradd** — `useradd <name>` **(root)**
+Create a user account at the USER tier. It asks for the password twice; raise
+the tier afterwards with `usermod <name> admin`. *See also:* `users`,
 `userdel`, `usermod`.
 
-**userdel** — `userdel <name>` **(admin)**
+**userdel** — `userdel <name>` **(root)**
 Delete a user account. *See also:* `users`, `useradd`.
 
-**usermod** — `usermod <name> [...]` **(admin)**
+**usermod** — `usermod <name> lock | unlock | user | admin | root` **(root)**
 Modify a user (tier, lock state). *See also:* `users`, `passwd`.
 
 **users** — `users` **(admin)**
@@ -2938,17 +2981,34 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   that, put them in a `vault` (passphrase-derived key, and it refuses to
   fall back to software crypto for secret-bearing stores) rather than relying
   on file permissions. The same applies to a `tape` or any removable medium.
-- **The manifest records presence, not integrity.** `verify` and the boot
-  self-check confirm that every file the manifest lists *exists*; they do not
-  check that its contents are unmodified, because the manifest carries no
-  per-file digests yet. A corrupted or edited kernel module passes. Note the
-  asymmetry: `pkg` requires a SHA-256 for every file in a third-party package,
-  so add-on code is currently held to a higher integrity standard than the OS
-  is. Tracked work, not a design position.
-- **`bootstrap.lua` trusts its transport.** The network installer verifies that
-  what it downloaded is the right *size*, not that it is the right *bytes*. It
-  relies on HTTPS and on the GitHub account not being compromised. Installing
-  from a disk you made yourself avoids that dependency.
+- **The release manifest vouches for every file.** A release's manifest carries
+  a SHA-256 for each file it installs (the build writes them over the bytes it
+  actually ships), and `verify` — and the boot self-check, when the profile
+  runs it (2.1) — compares every installed file against it, counting a
+  mismatch as damage. The manifest itself can be pinned too: `verify anchor`
+  records its hash in the EEPROM, and `doctor` then reports if it ever
+  changes. A machine running straight from the source tree has no digests to
+  check: the source manifest stays digest-free, so that editing a file does not
+  dirty it.
+- **`bootstrap.lua` trusts the repository, not the publisher.** It checks every
+  download against the release manifest's digests before writing it, and
+  refuses the whole install on any mismatch. But the manifest and the files come
+  from the same host over the same connection, so this proves "these are the
+  bytes that repository serves", not "these are the bytes Strata published".
+  A signature checked against a key pinned in `bootstrap.lua` would close the
+  gap; it is not done. Installing from a disk you made yourself avoids the
+  dependency.
+
+- **No preemption.** OpenComputers keeps `debug.sethook` for its own "too long
+  without yielding" watchdog and does not give it to the OS, so TOS cannot
+  stop a runaway program itself. The time budgets in the process scheduler and
+  in remote execution are written but never armed on a real machine
+  (`proc.preemptionAvailable()` and `remote.stepBudgetAvailable()` say so, and
+  the first remote command without a budget logs a warning). A runaway, or
+  hostile code arriving through `rsh` from a TRUSTED peer, runs until
+  OpenComputers restarts the whole computer. Treat it as a denial of service
+  you can attribute, not an escape — and treat `rsh` as unbounded code
+  execution for TRUSTED peers, which is why it is off by default.
 
 ## 16. Configuration Files
 

@@ -75,7 +75,7 @@ local S = {
 local exec = executorMod.build(S, {
   rp = function(p) return p end,
   makeProgramEnv = function() return {} end,
-  C = { drive = cmd("drive"), ls = cmd("ls"), useradd = cmd("useradd"),
+  C = { drive = cmd("drive"), ls = cmd("ls"), bootsettings = cmd("bootsettings"),
         flash = cmd("flash"), rs = cmd("rs"), hello = cmd("hello") },
 })
 
@@ -97,14 +97,14 @@ test("GUEST still runs an unregistered built-in", tryAs("g", "hello", "hello"))
 test("GUEST still runs a package command (sandboxed; not in the registry)",
   tryAs("g", "fakegame", "fakegame"))
 test("USER runs a tier-1 command", tryAs("u", "drive list", "drive"))
-test("USER cannot run a tier-2 command (useradd)", not tryAs("u", "useradd bob", "useradd"))
-test("ADMIN runs a tier-2 command", tryAs("a", "useradd bob", "useradd"))
+test("USER cannot run a tier-2 command (bootsettings)", not tryAs("u", "bootsettings show", "bootsettings"))
+test("ADMIN runs a tier-2 command", tryAs("a", "bootsettings show", "bootsettings"))
 test("ADMIN cannot run a tier-3 command (flash)", not tryAs("a", "flash bios.lua", "flash"))
 test("ROOT runs a tier-3 command", tryAs("r", "flash bios.lua", "flash"))
 test("an expired seat token drops to GUEST", not tryAs("gone", "drive list", "drive"))
 -- sudo swaps the seat token for an elevated one; the gate must see it.
 sessions.elev = { user = "alice", tier = 2, elevated = true }
-test("an elevated (sudo) token counts at its elevated tier", tryAs("elev", "useradd carol", "useradd"))
+test("an elevated (sudo) token counts at its elevated tier", tryAs("elev", "bootsettings show", "bootsettings"))
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))

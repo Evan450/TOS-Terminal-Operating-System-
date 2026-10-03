@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**89 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 63 | Planned or under investigation. Most contributions belong here. |
+| Planned | 65 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -277,6 +277,50 @@ THE RAM FLOOR IS 1 MB, NOT 192 KB. Measured 2026-10-03 on the
     headless machine can produce one now. Then a floor check in the
     headless runs, so the documented number cannot drift again: 192 KB
     was presumably true once, and nothing re-measured it.
+```
+
+### Planned — WHO MAY MANAGE ACCOUNTS
+
+```text
+WHO MAY MANAGE ACCOUNTS, READ THE LOG, USE SCP. Found 2026-10-03
+    walking the README's new "first ten minutes" on the headless
+    machine: five commands' REGISTRY tier disagreed with the gate their
+    own body runs. useradd/userdel/usermod were registered ADMIN (and
+    documented admin in MANUAL 3.3 and ch.14) but call rootOnly; log and
+    scp were registered USER ("log: filtered by tier") but call
+    adminOnly. So `help` offered admins (users) a command that then
+    refused them. Fixed the safe way: the registry and MANUAL now follow
+    the code (no change in who can do what), and
+    test_command_gate_tiers.lua fails on any future mismatch.
+      DECISION NEEDED, if any should be LOOSER: kernel users.create
+    already accepts an ADMIN creator (effective tier >= ADMIN), so admin
+    account management is a one-word change in admin.lua -- but
+    usermod's admin/root promotions and userdel need checking against
+    users.setTier/delete's own guards first. `log` "filtered by tier"
+    implies a user-visible log that the body has never allowed.
+```
+
+### Planned — THE MANIFEST ANCHOR IS NOT ENFORCED AT BOOT
+
+```text
+THE MANIFEST ANCHOR IS NOT ENFORCED AT BOOT. `verify anchor` writes
+    the manifest's hash into the EEPROM's data field and `doctor` (and
+    netrepair) compare it with the live manifest -- but nothing calls
+    kernel.verifyManifestHash at boot. Its own comment said boot refused
+    on a mismatch "unless a held-key recovery override is asserted";
+    found 2026-10-03 while correcting MANUAL 15 that neither the refusal
+    nor the override exists. Comment fixed, MANUAL says `doctor`
+    reports it. Not a new hole: MANUAL 15 already says an admin who can
+    write the boot files runs code before login.
+      DECISION NEEDED before building it: enforcing means a machine whose
+    manifest legitimately changed (an upgrade, `pkg` touching a system
+    path, a repair) stops booting until someone clears the anchor -- so
+    it needs (a) every legitimate manifest writer to re-anchor or clear,
+    (b) a recovery path that is not itself a bypass (the held-key idea:
+    a key held at POST, like S for Safe Mode, that boots past a mismatch
+    with a loud warning), and (c) a choice of refuse vs warn. Warn-only
+    at boot (a POST line + the boot log) is cheap and safe; refuse is
+    the real protection and the real cost.
 ```
 
 ### Planned — DRY-RUN CAPABILITY ENFORCEMENT

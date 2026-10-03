@@ -16,13 +16,15 @@ answers off the real screen.
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
 A script is one step per line (HeadlessTOS.java's runScript lists them):
-`wait SECS REGEX`, `gone SECS REGEX`, `type TEXT` (\\n is Enter), `key NAME
-[N]` (ctrl+q, f10, up, ...), `paste TEXT`, `click X Y`, `sleep SECS`, `mark
-NAME`, `snap NAME`, `off SECS`, `powercycle`. Two more are expanded here:
+`wait SECS REGEX`, `gone SECS REGEX`, `maybe SECS REGEX` (run the next step
+only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
+(ctrl+q, f10, up, ...), `paste TEXT`, `click X Y`, `sleep SECS`, `mark NAME`,
+`snap NAME`, `off SECS`, `powercycle`. Two more are expanded here:
 
     firstboot [PASSWORD]   set root's password at First Boot Setup, skip the
                            tutorial, and wait for the shell prompt
-    login USER PASSWORD    log in at the login screen of a later boot
+    login USER PASSWORD    log in at the login screen, skipping the tour an
+                           account's first login opens
 
 Every round boots a FRESH copy of TOS-Release (unarmed: no battery), with
 --disk copied in as a second disk. --profile t1 is a T1 CPU, GPU and screen
@@ -99,13 +101,20 @@ def expand(lines: list[str]) -> list[str]:
             parts = line.split()
             if len(parts) != 3:
                 raise ValueError(f"login takes USER PASSWORD: {line!r}")
+            prompt = rf"{re.escape(parts[1])}(@\S+)?:\S*[$#]"
             out += [
                 f"# login {parts[1]}",
                 "wait 120 (?i)(login|username|user name):",
                 f"type {parts[1]}\\n",
                 "wait 15 (?i)password:",
                 f"type {parts[2]}\\n",
-                rf"wait 60 {re.escape(parts[1])}(@\S+)?:\S*[$#]",
+                # An account's first login opens its tour; skip it if so.
+                f"wait 60 {prompt}|Welcome to TOS v",
+                "maybe 1 Welcome to TOS v",
+                "key ctrl+q",
+                r"maybe 5 Skip tutorial\?",
+                "type y",
+                f"wait 60 {prompt}",
             ]
         else:
             out.append(raw.rstrip("\r\n"))

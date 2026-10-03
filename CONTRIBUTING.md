@@ -87,6 +87,26 @@ bootstrap.lua <your-fork> dev
 
 > **Windows note.** Clone somewhere short, like `C:\src\tos`. Some package paths run to ~255 characters, and Windows' 260-character `MAX_PATH` will make the disk builder fail on a write with a path that *looks* fine.
 
+## Where things live
+
+| Path | What is there |
+|---|---|
+| `bios.lua`, `init.lua` | The BIOS (4 KiB EEPROM) and the boot loader that builds `require` |
+| `install.lua`, `bootstrap.lua` | The installer, and the network bootstrap that fetches a release and hands off to it |
+| `tos/kernel/` | The kernel: users, `securefs`, the scheduler, packages, crypto, display. [`docs/API.md`](docs/API.md) lists every module and public function |
+| `tos/kernel/net/` | Networking: trust, the mesh, file transfer, remote execution |
+| `tos/shell/` | The two shells: the panels interface (`panels/`) and the command line (`cli.lua`), plus login, the tour and the package picker |
+| `tos/shell/panels/commands/` | The commands, in three groups: `core`, `admin`, `extras` |
+| `tos/compat/` | The OpenOS library shims |
+| `tos/peripheral/` | Redstone, robots, inventories |
+| `tos/system_manifest.lua` | Every file a release installs: the list `deploy`, `verify` and the installer read |
+| `etc/rc.d/`, `usr/bin/`, `usr/man/`, `usr/lang/` | Startup services, user programs, man pages, language catalogues |
+| `usr/lib/tests/` | The test suite (not shipped) |
+| `build/` | Release tooling, generators and the headless machine (not shipped) |
+| `TOS-Extras/` | The add-ons, and the tools that build their disks |
+
+Every source file starts with a comment saying what it is for.
+
 ## Writing an add-on
 
 Add-ons live under `TOS-Extras/`, install through `pkg`, and run in the capability sandbox. A package is a directory with a `package.lua` manifest and the files it installs:

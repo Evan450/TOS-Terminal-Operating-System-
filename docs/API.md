@@ -495,7 +495,7 @@ body calls, and every gate against a mark.
 - `kernel.computeManifestHash()`
   Compute the running manifest's SHA-256 hex digest. Returns (hexDigest, nil) on success, (nil, errMsg) on failure.
 - `kernel.anchorManifestHash()`
-  Write the current manifest hash into the EEPROM data field. Operator runs this once after a clean install (or after a verified upgrade). On subsequent boots, verifyManifestHash() refuses to continue on mismatch.
+  Write the current manifest hash into the EEPROM data field. Operator runs this once after a clean install (or after a verified upgrade); `doctor` reports any later mismatch (see the note above: boot does not check it).
 - `kernel.clearManifestAnchor()`
   Remove the anchor, keeping the boot address. Used when an operator is about to upgrade (the hash will legitimately change) or wants to drop the check entirely.
 - `kernel.verifyManifestHash()`

@@ -90,7 +90,18 @@ def test_firstboot_waits_match_the_real_screens():
 def test_login_types_the_user_then_the_password():
     steps = hsess.expand(["login alice s3cret"])
     typed = [s for s in steps if s.startswith("type ")]
-    assert typed == ["type alice\\n", "type s3cret\\n"]
+    assert typed[:2] == ["type alice\\n", "type s3cret\\n"]
+
+
+def test_login_skips_a_first_login_tour_only_when_one_appears():
+    # An account's first login opens its tour, a later one does not; every
+    # key that dismisses the tour must sit behind a `maybe`, or a later
+    # login would type them into the shell.
+    steps = [s for s in hsess.expand(["login alice s3cret"]) if not s.startswith("#")]
+    for i, step in enumerate(steps):
+        if step in ("key ctrl+q", "type y"):
+            assert steps[i - 1].startswith("maybe "), step
+    assert steps[-1].startswith("wait ") and "alice" in steps[-1]
     w = waits(steps)
     assert re.search(w[0][2], LOGIN, re.M)
     assert re.search(w[-1][2], "alice@tos:/home/alice$ _", re.M)
