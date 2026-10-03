@@ -154,6 +154,7 @@ bootstrap.lua <your-fork> dev
 3. **Run the suite.** `python run_tests.py`. Report the result in the PR — do not claim a fix works if you have not run it.
 4. **Keep the manifest honest.** If you add a runtime file under `/tos`, `/etc/rc.d`, `/usr/bin` or `/usr/modules`, add it to `tos/system_manifest.lua` as well. `test_manifest_completeness.lua` enforces this — a file missing from the manifest is silently absent from every fresh install and invisible to `verify`.
 5. **Update the docs in the same commit.** Version bumps touch `README.md`, `CHANGELOG.md`, and any version constant together. Documentation that contradicts the code is worse than none.
+6. **Regenerate the API reference** when you add or change a public kernel function (`function mod.name(` at the top level of a file in `tos/kernel/`) or the `---` comment above it: `python build/make_apiref.py` rewrites `docs/API.md`, and the suite fails while it is stale. A function that refuses callers below ADMIN — one that calls an admin gate such as `adminGate` — carries `--- @tier admin` in that comment; `build/test_apiref.py` fails on a gate without the mark, or a mark without the gate.
 
 ## Comment conventions
 

@@ -670,6 +670,7 @@ end
 --! their choosing at an empty /var/pkg/secrets or /etc/rc.d, where the guard
 --! stops even an admin writing. /mnt, homes and /tmp are unaffected, and
 --! root lifts it with `protect off` like any other. (test_mount_points.lua)
+--- @tier admin
 function securefs.mount(path, proxy, session)
   if not fs then return false, "securefs not initialized" end
   local ok, err = requireAdmin(session)
@@ -687,6 +688,7 @@ function securefs.mount(path, proxy, session)
   return fs.mount(norm, proxy)
 end
 
+--- @tier admin
 function securefs.unmount(path, session)
   if not fs then return false, "securefs not initialized" end
   local ok, err = requireAdmin(session)

@@ -444,6 +444,7 @@ end
 -- @param address string: Remote machine address
 -- @param secret string: Raw secret bytes (or nil to clear)
 -- @param actorTier number: Actor's user tier (ADMIN+ required)
+--- @tier admin
 function trust.setSecret(actor, address, secret, actorTier)
   local ok, err = requireAdminActor(actor, actorTier, "set peer secret")
   if not ok then return false, err end
@@ -476,6 +477,7 @@ end
 -- @param actor string: Username requesting the secret (for audit log)
 -- @param address string: Remote machine address
 -- @param actorTier number: Actor's user tier (ADMIN+ required)
+--- @tier admin
 function trust.getSecret(actor, address, actorTier)
   local ok, err = requireAdminActor(actor, actorTier, "read peer secret")
   if not ok then return nil, err end
@@ -490,6 +492,7 @@ function trust.getSecret(actor, address, actorTier)
 end
 
 --- Generate and set a new shared secret (both sides need to do this).
+--- @tier admin
 function trust.generateSecret(actor, address, actorTier)
   local ok, err = requireAdminActor(actor, actorTier, "generate peer secret")
   if not ok then return nil, err end

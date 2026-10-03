@@ -147,6 +147,7 @@ end
 
 --- Register `alias` → `address`. Replaces any existing mapping for
 --- either side (so renaming a host or repointing an alias is one call).
+--- @tier admin
 function aliases.set(alias, address)
   local okT, terr = requireAdmin("set")
   if not okT then return false, terr end
@@ -184,6 +185,7 @@ function aliases.set(alias, address)
 end
 
 --- Drop an alias by name (case-insensitive).
+--- @tier admin
 function aliases.remove(alias)
   local okT, terr = requireAdmin("remove")
   if not okT then return false, terr end

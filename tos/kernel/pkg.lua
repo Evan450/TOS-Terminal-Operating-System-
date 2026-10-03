@@ -632,6 +632,7 @@ end
 --- Mark a package enabled or disabled.
 -- Service start/stop is the caller's responsibility — pkg.lua just
 -- records the bit; rc.d hooks (commit 2) will read it and act.
+--- @tier admin
 function pkg.setEnabled(name, on, opts)
   local g, gErr = adminGate(opts)  -- #SEC CR-5
   if not g then return false, gErr end
@@ -2055,6 +2056,7 @@ end
 --- opts.force            proceed past conflicts / allow a downgrade
 --- opts.allowUnverified  same meaning as install's
 --- @return ok, summary | false, err
+--- @tier admin
 function pkg.upgrade(name, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
@@ -2373,6 +2375,7 @@ function pkg._verificationGate(m, allowUnverified)
     .. "' (" .. why .. "). Re-run with --allow-unverified to override.", false
 end
 
+--- @tier admin
 function pkg.install(srcDir, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
@@ -2905,6 +2908,7 @@ end
 --! with both disks in and `pkg.findInRepos` finding the library, and
 --! installByName's own comment claimed the opposite. (federated repos
 --! slice 1, finding 1; test_pkg_cross_source.lua)
+--- @tier admin
 function pkg.installWithDeps(repoDir, targetName, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
@@ -2968,6 +2972,7 @@ end
 -- the only package whose removal can brick the boot path.
 --
 -- @return ok, info
+--- @tier admin
 function pkg.uninstall(name, opts)
   local g, gErr = adminGate(opts)  -- #SEC CR-5
   if not g then return false, gErr end
@@ -3250,6 +3255,7 @@ end
 --- Install one or more packages by name, looking them up in
 --- configured repos + mounted media + extraRoots. Resolves deps
 --- across all available sources. Returns (true, summary) or (false, err).
+--- @tier admin
 function pkg.installByName(targetName, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
@@ -3368,6 +3374,7 @@ end
 --- One-shot helper: scan every mount under /mnt/ for packages, and
 --- prompt the caller via a `confirm(pkgName, dir)` callback before
 --- installing each. Used by the floppy-detection panel command.
+--- @tier admin
 function pkg.installFromFloppy(opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5
@@ -3496,6 +3503,7 @@ local SELF_PKG = { ["tos-core"] = true }
 --- Build an Optional Utilities (add-on) disk from the installed packages.
 --- opts.only = { "tetris", ... } restricts to named packages (default: all).
 --- @return ok, summary | false, err
+--- @tier admin
 function pkg.exportDisk(targetDir, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)  -- #SEC CR-5 — admin-gated like install
@@ -3717,18 +3725,21 @@ function pkg.trustList()
   return ps.listKeys()
 end
 
+--- @tier admin
 function pkg.trustAdd(label, pubHex, opts)
   local g, gErr = adminGate(opts); if not g then return false, gErr end
   local ps, e = withSign(); if not ps then return false, e end
   return ps.addKey(label, pubHex)
 end
 
+--- @tier admin
 function pkg.trustRemove(label, opts)
   local g, gErr = adminGate(opts); if not g then return false, gErr end
   local ps, e = withSign(); if not ps then return false, e end
   return ps.removeKey(label)
 end
 
+--- @tier admin
 function pkg.trustRequire(on, opts)
   local g, gErr = adminGate(opts); if not g then return false, gErr end
   local ps, e = withSign(); if not ps then return false, e end
@@ -3759,6 +3770,7 @@ end
 --! without it would derive a different key than signing with it, so the
 --! same passphrase would produce two identities depending on whether a
 --! flag was typed.
+--- @tier admin
 function pkg.signPackage(srcDir, passphrase, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts); if not g then return nil, gErr end
@@ -3795,6 +3807,7 @@ end
 --- Add/remove a repo. #SEC CR-5 — same admin gate as install: a repo entry
 --- is a standing decision about where this machine will accept code from,
 --- which is at least as consequential as one install.
+--- @tier admin
 function pkg.addRepo(name, url, description, opts)
   local g, gErr = adminGate(opts)
   if not g then return false, gErr end
@@ -3803,6 +3816,7 @@ function pkg.addRepo(name, url, description, opts)
   return m.addRepo(name, url, description)
 end
 
+--- @tier admin
 function pkg.removeRepo(name, opts)
   local g, gErr = adminGate(opts)
   if not g then return false, gErr end
@@ -3855,6 +3869,7 @@ local function requirementParts(req)
   end
 end
 
+--- @tier admin
 function pkg.installRemote(name, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)   -- #SEC CR-5

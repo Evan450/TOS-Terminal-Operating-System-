@@ -185,6 +185,9 @@ def cmd_check(args) -> int:
         checks.append(("open queue freshness", [sys.executable, "todo_index.py", "--check"], DEV))
     if (DEV / "build" / "make_roadmap.py").is_file():
         checks.append(("roadmap freshness", [sys.executable, "build/make_roadmap.py", "--check"], DEV))
+    if (DEV / "build" / "make_apiref.py").is_file():
+        checks.append(("API reference + tier marks",
+                       [sys.executable, "build/make_apiref.py", "--check"], DEV))
 
     need("lua", "install with:  winget install DEVCOM.Lua")
     worst = 0
