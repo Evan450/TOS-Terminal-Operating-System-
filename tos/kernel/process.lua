@@ -320,6 +320,13 @@ function proc.list()
         parent = p.parent,
 
         user = p.principal and p.principal.user or nil,
+
+        caps = (function()
+          if type(p.caps) ~= "table" then return nil end
+          local c = {}
+          for k, v in pairs(p.caps) do c[k] = v end
+          return c
+        end)(),
         cwd  = p.cwd,
         display = p.display,
         sigDropped = p.sigDropped or 0,

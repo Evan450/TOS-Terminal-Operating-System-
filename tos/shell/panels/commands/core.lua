@@ -1640,8 +1640,9 @@ return function(C, S, deps)
     o(string.rep("-", verbose and 70 or 50), T.border)
 
     for _, proc in ipairs(P.list()) do
-      local procUser = proc.principal and proc.principal.user or "?"
-      local procTier = proc.principal and proc.principal.tier or 0
+
+      local procUser = proc.user or "?"
+      if procUser == "_kernel_" then procUser = "kernel" end
 
       local visible = false
       if viewerTier >= 2 then visible = true
