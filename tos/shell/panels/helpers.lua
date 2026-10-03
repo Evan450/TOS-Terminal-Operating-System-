@@ -502,6 +502,19 @@ local FAILURES = {
       { "Fix: `why <command>` shows the tier it needs; an admin can run it,", "fix" },
       { "or sign in on an account that has that tier.", "fix" },
     } },
+  { sym = "ERR_VAULT_UNLOCK", lines = {
+      { "It did not decrypt: the passphrase is wrong, or the encrypted", "err" },
+      { "data was changed after it was written.", "err" },
+      { "A vault checks its own integrity, so a wrong passphrase is", "dim" },
+      { "refused instead of producing garbage. Nothing was changed.", "dim" },
+      { "Fix: try the passphrase again (`keychain list` may have it).", "fix" },
+      { "If it is right, this copy is damaged; restore it from a backup.", "fix" },
+    } },
+  { sym = "ERR_DRIVE_TOO_SMALL", lines = {
+      { "The install would not fit on that drive, so nothing was erased.", "err" },
+      { "Fix: use a larger drive, or install onto a managed disk:", "fix" },
+      { "  deploy <mount-point>", "fix" },
+    } },
   { sym = "ERR_NET_NO_ANSWER", lines = {
       { "A remote host did not answer: it timed out, refused the", "err" },
       { "connection, or the transfer broke off part-way.", "err" },

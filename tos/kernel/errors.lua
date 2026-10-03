@@ -47,6 +47,8 @@ local LIST = {
   { 302, "ERR_NEEDS_RECURSIVE", "that is a directory; removing it needs -r" },
   { 303, "ERR_RM_SYSTEM_PATH",  "rm will not remove a system path without -r" },
   { 304, "ERR_TRASH_REFUSED",   "the trash would not take it, so nothing was deleted" },
+  { 305, "ERR_VAULT_UNLOCK",    "the passphrase is wrong, or the encrypted data was changed" },
+  { 306, "ERR_DRIVE_TOO_SMALL", "TOS will not fit on that drive, so nothing was erased" },
 
   { 401, "ERR_PERM_DENIED",     "your account is not allowed to do that" },
   { 402, "ERR_PATH_PROTECTED",  "that path is guarded against changes, even by an admin" },

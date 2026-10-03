@@ -3005,6 +3005,8 @@ hit — and the E-number's last digit is that same beep count.
 | E-302 | `ERR_NEEDS_RECURSIVE` | that is a directory; removing it needs -r | |
 | E-303 | `ERR_RM_SYSTEM_PATH` | rm will not remove a system path without -r | |
 | E-304 | `ERR_TRASH_REFUSED` | the trash would not take it, so nothing was deleted | |
+| E-305 | `ERR_VAULT_UNLOCK` | the passphrase is wrong, or the encrypted data was changed | |
+| E-306 | `ERR_DRIVE_TOO_SMALL` | TOS will not fit on that drive, so nothing was erased | |
 | E-401 | `ERR_PERM_DENIED` | your account is not allowed to do that | |
 | E-402 | `ERR_PATH_PROTECTED` | that path is guarded against changes, even by an admin | |
 | E-403 | `ERR_TIER_REQUIRED` | that needs a higher account tier | |
