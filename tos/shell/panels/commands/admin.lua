@@ -2494,12 +2494,20 @@ return function(C, S, deps)
 
   C.flash = function(args, o)
     if not rootOnly(o) then return end
-    if not args[1] then
-      o("Usage: flash <bios.lua>", T.dim)
+    -- `--data` may come before or after the file.
+    local file, wantData = nil, false
+    for _, a in ipairs(args) do
+      if a == "--data" then wantData = true
+      elseif file == nil then file = a end
+    end
+    if not file then
+      o("Usage: flash <file> [--data]", T.dim)
       o("Flashes the given file to the system EEPROM.", T.dim)
+      o("--data also writes the chip's data field, asked for and not shown,", T.dim)
+      o("for a chip going into a robot or drone (rc-pilot's shared secret).", T.dim)
       return
     end
-    local path = rp(args[1])
+    local path = rp(file)
     local eepromAddr = nil
     for addr in component.list("eeprom") do eepromAddr = addr; break end
     if not eepromAddr then
@@ -2568,7 +2576,9 @@ return function(C, S, deps)
           "This file does not look like a BIOS." .. "\n\n" ..
           "None of the markers a BIOS normally carries were found in it. " ..
           "Flashing it will very likely leave a machine that cannot boot, " ..
-          "and fixing that means physically replacing the EEPROM.",
+          "and fixing that means physically replacing the EEPROM." .. "\n\n" ..
+          "If this chip is going into a robot or a drone, that is expected: " ..
+          "put this computer's own EEPROM back before it restarts.",
           "force",
           { title = "Not a BIOS", severity = "danger",
             yes = "Flash anyway", no = "Cancel" })
@@ -2584,6 +2594,41 @@ return function(C, S, deps)
         o("Aborted (safety check).", T.dim)
         return
       end
+    end
+
+    -- #FIX — the chip's DATA field. rc-pilot's robot program reads its
+    -- shared secret from there, and nothing on TOS could write it: this
+    -- command wrote only the code, `component eeprom setData` is refused
+    -- (this is the one EEPROM write path), and the sandbox hides the
+    -- EEPROM from every program, the root `lua` prompt included. A chip
+    -- burned by following rc's own instructions ignored every frame, and
+    -- said nothing. (test_flash_data.lua)
+    -- Refused for a BIOS: the TOS BIOS keeps its boot address and the
+    -- manifest anchor in the data field, and a typed value would lose both.
+    -- Asked twice, masked, and BEFORE the confirm, so a mismatch leaves
+    -- the chip exactly as it was.
+    local newData = nil
+    if wantData then
+      if looksLikeBios then
+        o("Refusing --data: this file looks like a BIOS, and a BIOS keeps its", T.error)
+        o("boot address in the data field. --data is for a chip that is going", T.dim)
+        o("into a robot or a drone.", T.dim)
+        return
+      end
+      if not promptInput then o("--data needs a screen to ask on.", T.error); return end
+      local limit = 256
+      do
+        local okL, n = pcall(function() return eeprom.getDataSize() end)
+        if okL and type(n) == "number" and n > 0 then limit = n end
+      end
+      local first = promptInput("Data for the chip (not shown): ", limit, true)
+      if first == nil or first == "" then o("Aborted.", T.dim); return end
+      local again = promptInput("The same again, to confirm: ", limit, true)
+      if again ~= first then
+        o("The two did not match. Nothing was written.", T.error)
+        return
+      end
+      newData = first
     end
 
     local elabel = eeprom.getLabel and eeprom.getLabel() or "(no label)"
@@ -2619,6 +2664,9 @@ return function(C, S, deps)
     end
     o(string.format("  EEPROM : %s", elabel), T.dim)
     o(string.format("  Boot   : %s", curBoot), T.dim)
+    if newData then
+      o(string.format("  Data   : %d bytes, as typed (not shown)", #newData), T.dim)
+    end
     -- #SEC H29 — require the operator to TYPE the literal "flash"
     -- rather than a single y/N keystroke. Bumping into 'y' while the
     -- prompt is on screen used to be enough to brick the machine.
@@ -2647,7 +2695,20 @@ return function(C, S, deps)
         o("Flash failed: " .. tostring(setErr), T.error)
       else
         o("EEPROM flashed! " .. #data .. " bytes written.", T.highlight)
-        o("Reboot for changes to take effect.", T.dim)
+        if newData then
+          local dOk, dErr = pcall(eeprom.setData, newData)
+          if dOk then
+            o("Data field set: " .. #newData .. " bytes.", T.highlight)
+          else
+            o("The code was written, but the data field was NOT: " .. tostring(dErr), T.error)
+          end
+        end
+        if looksLikeBios then
+          o("Reboot for changes to take effect.", T.dim)
+        else
+          o("This chip is not a BIOS: put this computer's own EEPROM back", T.dim)
+          o("before it restarts.", T.dim)
+        end
       end
     else
       o("Aborted.", T.dim)

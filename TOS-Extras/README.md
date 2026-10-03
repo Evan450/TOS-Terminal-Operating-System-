@@ -61,7 +61,7 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 
 | Add-on | Command | What it is |
 |---|---|---|
-| [rc-pilot](modules/rc-pilot/README.md) | `rc` | Fly a robot or drone from the keyboard, with every keystroke signed. Setting up the robot cannot yet be finished on TOS alone; see its README. |
+| [rc-pilot](modules/rc-pilot/README.md) | `rc` | Fly a robot or drone from the keyboard, with every keystroke signed. The robot cannot yet tell you its address; see its README. |
 | [stock](modules/stock/README.md) | `stock` | Totals every item in the chests around a transposer, and warns when something runs low. |
 
 **Development**

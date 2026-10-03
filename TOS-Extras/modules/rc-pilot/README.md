@@ -12,12 +12,17 @@ As admin, with the Optional Utilities disk inserted: `pkg install rc-pilot`.
 
 Both ends share a secret of at least 16 characters. Every frame carries an HMAC-SHA256 of its contents under that secret, and the robot ignores any frame whose signature does not check out, or that it has already seen.
 
-1. **Burn the chip.** Swap a blank EEPROM into this computer, keeping yours safe, and run `flash /usr/share/rc-pilot/eeprom-rc-pilot.lua` as root. `flash` will warn that the file does not look like a BIOS. It is right, because this is a robot program; type `force`, then `flash`.
-2. **Give the chip its secret.** The robot reads its secret from the EEPROM's data field.
-3. Swap your own EEPROM back, and build the chip into the robot or drone, with a wireless network card.
-4. **Give `rc` the same secret**, in your keychain: `keychain set rc:<first 8 characters of the robot's modem address>`.
+1. **Burn the chip, with its secret.** Swap a blank EEPROM into this computer, keeping yours safe, and as root run:
 
-> **Not finished yet.** Two steps of this have no tool on TOS today. Nothing on TOS writes an EEPROM's data field: `flash` writes only the code, and the sandbox hides the EEPROM from every program, `lua` included. Until that is fixed, do step 2 from an OpenOS computer, with the chip in it: `lua`, then `component.eeprom.setData("your-shared-secret")`. And the robot does not announce its wireless card's address, which `rc` needs in full. A chip with no secret ignores everything without a sound. Both gaps are on the TOS TODO list.
+   ```
+   flash /usr/share/rc-pilot/eeprom-rc-pilot.lua --data
+   ```
+
+   `flash` warns that the file does not look like a BIOS. It is right, because this is a robot program: type `force`. Then type the shared secret when asked, twice; it is not shown. Last, type `flash` to write the program and the secret together. The secret goes in the chip's data field, which is where the robot reads it.
+2. Swap your own EEPROM back, and build the chip into the robot or drone, with a wireless network card.
+3. **Give `rc` the same secret.** `keychain unlock`, then `keychain set rc:<the first 8 characters of the robot's modem address>`; it asks for the secret without showing it.
+
+> **Not finished yet.** The robot does not announce its wireless card's address, which `rc` needs in full, and a chip with no secret ignores everything without a sound. Both are on the TOS TODO list.
 
 ## Use
 
