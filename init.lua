@@ -579,8 +579,9 @@ local function loadErrorText(name, path, err, mode)   --[[TEST-EXTRACT]]
     return "Read error in '" .. name .. "' (" .. path .. "): " .. why
   end
   if why:find("not enough memory", 1, true) then
-    return "Out of memory loading '" .. name .. "' (" .. path .. "): "
-      .. "too little free RAM to compile it"
+    -- Lua's own words stay on the end: the shell's error explainer and
+    -- `why` recognise "not enough memory" (ERR_OUT_OF_MEMORY).
+    return "Out of memory loading '" .. name .. "' (" .. path .. "): " .. why
   end
   return "Syntax error in '" .. name .. "' (" .. path .. "): " .. why
 end                                                    --[[/TEST-EXTRACT]]

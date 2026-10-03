@@ -62,7 +62,8 @@ local function ctx()
            -- seatless tos_logout, which the kernel used to treat as a
            -- GLOBAL logout -> kernel loop exit -> POWER OFF.
            displayIdx = myDisplayIdx,
-           autoCLI = S._autoCLI }
+           autoCLI = S._autoCLI,
+           tuiFailed = S._tuiFailed }
 end
 
 --- Run the command-line shell. Returns "tui" to hand back, or anything
@@ -80,7 +81,11 @@ local function runCLI()
     computer.pullSignal(5)
     return "logout"
   end
-  return cliMod.run(ctx())
+  -- Hand over why the full interface failed, once: the CLI prints it
+  -- where it stays, and a later failure sets it again.
+  local c = ctx()
+  S._tuiFailed = nil
+  return cliMod.run(c)
 end
 
 --- Run the panels TUI. Returns "cli" to hand over, nil if it could not
@@ -92,6 +97,12 @@ local function runTUI()
     D.set(1, 2, "WARNING: TUI unavailable (" .. tostring(pm) .. ")", D.c("error"), D.c("bg"))
     D.set(1, 3, "Falling back to the command line.", D.c("warning"), D.c("bg"))
     computer.pullSignal(2)
+    -- That warning lasts two seconds at most (any signal ends the wait)
+    -- before the CLI's banner replaces it. Seen on the headless machine
+    -- with the panels tree broken: the seat landed in a working CLI that
+    -- never said why, and `tui` just showed the same banner again. So
+    -- the reason goes to the CLI too. (test_tui_failure_reported.lua)
+    S._tuiFailed = tostring(pm)
     return nil
   end
   return pm.run(ctx())

@@ -155,6 +155,10 @@ function M.run(ctx)
     cy = 3
   end
 
+  -- What to put back when the seat returns from a full-screen program:
+  -- whatever it printed. Assigned below, once viewBuffer exists.
+  local refocused
+
   -- ── Input ──────────────────────────────────────────────────────
   local function pullSignal()
     if coroutine.isyieldable and coroutine.isyieldable() then
@@ -240,6 +244,17 @@ function M.run(ctx)
           buf = buf:sub(1, cur - 1) .. string.char(ch) .. buf:sub(cur)
           cur = cur + 1
         end
+        paint()
+      elseif sig == "tos_focus" then
+        -- The seat is ours again: a full-screen program (calc, tetris,
+        -- stock...) ended or was put in the background. It ran in its own
+        -- process and drew over everything, and its process sends this
+        -- when it hands the seat back, so this is where the CLI repaints.
+        -- Seen on the headless machine: quitting calc from the CLI left a
+        -- blank screen -- no prompt, no header -- until the operator
+        -- typed blind. (test_cli_refocus.lua)
+        redraw()
+        if refocused then refocused() end
         paint()
       elseif sig == "interrupted" then
         return nil
@@ -383,7 +398,23 @@ function M.run(ctx)
       .. "and the full interface needs %d KB.", auto.haveKB, auto.needKB), D.c("warning"))
     o("'tui' opens it anyway · 'bootsettings ui panels' makes it the default", D.c("dim"))
   end
+  -- The full interface was asked for and would not load. Its own
+  -- warning is gone in two seconds; this one stays in the scrollback.
+  if ctx.tuiFailed then
+    o("The full interface could not start: " .. tostring(ctx.tuiFailed), D.c("error"))
+    o("This is the command line instead · 'tui' tries again", D.c("dim"))
+  end
   o("")
+
+  refocused = function()
+    -- A program that printed and exited (`ttt help`) left its text here.
+    if S.outLines then viewBuffer(S.outLines, nil); S.outLines = nil end
+    if S.lastOut then
+      if type(S.lastOut) == "table" then o(S.lastOut[1], S.lastOut[2])
+      else o(tostring(S.lastOut)) end
+      S.lastOut = nil
+    end
+  end
 
   -- ── Loop ───────────────────────────────────────────────────────
   while true do
@@ -434,9 +465,12 @@ function M.run(ctx)
           S._exitTo = nil
         end
       end
-      -- A full-screen program (tetris, calc, stock…) took the seat and
-      -- has given it back; the screen it left is not ours.
-      if S._program then S._program = nil; redraw() end
+      -- A full-screen program (tetris, calc, stock…) handed the seat here
+      -- has only just been STARTED in its own process; the CLI repaints
+      -- when that process says the seat is back (tos_focus, in readLine).
+      -- This used to redraw at this point, which was before the program
+      -- had drawn anything, and clear S._program, which the executor owns
+      -- and clears itself when the program ends.
     end
 
     if leaving then

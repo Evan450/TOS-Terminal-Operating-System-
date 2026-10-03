@@ -47,6 +47,8 @@ do
     local oom = f("kernel.pkg", "/tos/kernel/pkg.lua", "not enough memory", "compile")
     test("a compile that ran out of memory says so", oom:find("Out of memory loading 'kernel.pkg'", 1, true) ~= nil, oom)
     test("...and is not called a syntax error", not oom:find("Syntax error", 1, true), oom)
+    test("...and keeps Lua's words, which the error explainer keys on",
+      oom:find("not enough memory", 1, true) ~= nil, oom)
     local syn = f("kernel.x", "/tos/kernel/x.lua", "[string]:3: unexpected symbol", "compile")
     test("a real syntax error is still a syntax error",
       syn == "Syntax error in 'kernel.x' (/tos/kernel/x.lua): [string]:3: unexpected symbol", syn)

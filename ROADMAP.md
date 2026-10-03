@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 62 | Planned or under investigation. Most contributions belong here. |
+| Planned | 61 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (21) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (20) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -165,21 +165,6 @@ Emulator checklist (needs OpenPrinter installed):
 - `write` a 25-line document: the page rule must appear between lines 20 and 21, and F5 page view must agree
 - put `.title` at the top and confirm the rule does NOT move (the directive prints nothing; this is the drift regression the unit tests pin)
 - print from `write` (F3) and from `printer file` on the same document -&gt; byte-identical pages
-
-### Emulator checklist: From the Cynosure 2 survey
-
-*Planned* · from the round *From the Cynosure 2 survey (2026-08-10)*
-
-Emulator checklist:
-
-- `cli` from the TUI, `tui` back, several times: confirm no state is lost and the seat never ends up in neither
-- F10 -&gt; \[4\] CLI Mode, and the File menu's Quit -&gt; \[4\]: both must reach the same place
-- boot with ui=cli and confirm the panels tree is NOT parsed (watch free RAM at the prompt vs a TUI login)
-- a T1 (192K) box: the whole point. Type `ls`, then `mem`, then something from admin (`useradd`) and watch memory step down as categories load. If admin.lua cannot load at 192K the OOM path in commands.lua should SAY so rather than reading as "unknown command".
-- run a package fullscreen program (tetris/calc/stock) FROM the CLI and confirm the seat comes back cleanly
-- `sudo -s` in the CLI: prompt must show \[sudo\], and `tui` must NOT carry the elevation across
-- a pipeline and a redirect at the CLI prompt (`ls | grep x`, `ps > /tmp/p`) — these never worked in the old CLI
-- break shell/panels/init.lua on purpose and confirm the seat lands in a WORKING CLI, not a dead one
 
 ### Emulator checklist: Stock add-on
 
