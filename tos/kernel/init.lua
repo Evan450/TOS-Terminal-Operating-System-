@@ -2492,7 +2492,11 @@ function kernel.uptime()
   return computer.uptime() - _G._TOS.bootTime
 end
 
+local rebootRequested = false
+
 function kernel.shutdown(reboot)
+  if reboot then rebootRequested = true end
+  reboot = rebootRequested
   running = false
   shuttingDown = true
 
