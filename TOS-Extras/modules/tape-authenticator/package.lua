@@ -1,7 +1,9 @@
 -- FEAT-7 native package manifest for tape-authenticator.
 -- 1.0.3 — any passphrase argument can be "-": it is asked for, masked, and
 -- stays out of the seat's command history (a new one is asked twice). The
--- typed form still works and now says it is kept in history.
+-- typed form still works and now says it is kept in history. Also: the
+-- menu help pointed at `launcher tape`, retired in v1.4.0; it names
+-- `tape-menu` now (test_hint_commands.lua in the base suite).
 -- 1.0.1 — streaming reads: parse only the keycard region instead of slurping
 -- the whole multi-MB tape (the old readWholeTape OOM'd even tier-3.5 RAM when
 -- configuring a tape). `info` now authenticates inline for admins instead of

@@ -150,6 +150,54 @@ do
 end
 
 -- ============================================================
+-- [known gap] the robot's replies never reach `rc` for real
+-- ============================================================
+-- Everything above hands the host a RAW pullSignal. A real `rc` runs in
+-- the package sandbox, whose pullSignal drops every modem_message so a
+-- program cannot sniff the network (kernel/sandbox.lua, PULL_DROP). The
+-- `net` capability carries only TOS-protocol messages, and the robot does
+-- not speak that. So on a real machine the pong is never shown, and no
+-- reply from a robot can be heard at all -- which is also what blocks an
+-- `rc scan` to find a robot's address. Whether a package may hear raw
+-- frames on a port it opened is a sandbox decision for the operator (TODO:
+-- RC-PILOT CANNOT BE SET UP FROM ITS OWN INSTRUCTIONS). This pins today's
+-- behaviour through the REAL sandbox pullSignal, so the fix fails it.
+do
+  local okS, sandbox = pcall(require, "kernel.sandbox")
+  test("the real sandbox loads", okS and type(sandbox) == "table"
+    and type(sandbox._safePullSignal) == "function")
+  if okS and type(sandbox) == "table" and type(sandbox._safePullSignal) == "function" then
+    local hostComputer = package.loaded["computer"]
+    local rawPull = hostComputer.pullSignal
+    -- The sandbox's pull reads the hardware through require("computer");
+    -- give it the raw queue while the host's own table points at it.
+    local raw = { uptime = hostComputer.uptime, pullSignal = rawPull }
+    hostComputer.pullSignal = function(timeout)
+      local saved = package.loaded["computer"]
+      package.loaded["computer"] = raw
+      local r = table.pack(pcall(sandbox._safePullSignal, timeout))
+      package.loaded["computer"] = saved
+      if not r[1] then error(r[2], 0) end
+      return table.unpack(r, 2, r.n)
+    end
+    sent = {}; hostOut = {}
+    hostQueue = {
+      key(112, 25),                                -- P: ping
+      { n = 6, "modem_message", "modem-host", ROBOT, 7777, 3.0, '{magic="RCPILOT1",op="pong",arg=42}' },
+      key(17, 16),                                 -- ^Q
+    }
+    rc({ ROBOT, "--secret", SECRET }, o)
+    hostComputer.pullSignal = rawPull
+    local text = table.concat(hostOut, "\n")
+    test("through the real sandbox the ping still goes out", #sent == 1
+      and sent[1].data:find('op="ping"', 1, true) ~= nil)
+    test("[known gap] ...and the robot's pong never reaches rc",
+      text:find("pong @", 1, true) == nil)
+    test("the pilot still exits on the quit key", text:find("exited", 1, true) ~= nil)
+  end
+end
+
+-- ============================================================
 -- Robot side: the real EEPROM, driven by the host's frames
 -- ============================================================
 local function makeRobot(secretOnChip)

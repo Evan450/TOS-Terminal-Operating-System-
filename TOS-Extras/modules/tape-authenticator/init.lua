@@ -592,9 +592,9 @@ local function cmdLog(args, o)
 end
 
 -- Personal menu: a vault-encrypted list of "Label | command" entries that the
--- launcher (`launcher tape`) reads off the card so your toolbox travels with
--- your keycard. Items run at YOUR tier — the launcher shows the real command
--- before running it.
+-- base OS's `tape-menu` reads off the card so your toolbox travels with your
+-- keycard. Items run at YOUR tier — tape-menu shows the real command before
+-- running it.
 local function cmdMenu(args, o)
   local action = args[2]
   local pass   = args[3]
@@ -741,7 +741,7 @@ return {
         o("  tape-auth log clear <pass>           Wipe the log", 0xFFFFFF)
         o("  tape-auth log passwd <old> <new>     Change the passphrase", 0xFFFFFF)
         o("", 0xFFFFFF)
-        o(" Personal menu (your launcher toolbox, travels on the card):", 0x00FF00)
+        o(" Personal menu (your own toolbox, travels on the card):", 0x00FF00)
         o("  tape-auth menu add <pass> <Label> -- <cmd> Add a menu item", 0xFFFFFF)
         o("  tape-auth menu list <pass>                Show items", 0xFFFFFF)
         o("  tape-auth menu remove <pass> <n>          Delete item n", 0xFFFFFF)
@@ -750,7 +750,8 @@ return {
         o("  (-- separates label from command; an unquoted | is a pipe)", 0xAAAAAA)
         o("  Any <pass> can be - : it is asked for, not echoed, and not", 0xAAAAAA)
         o("  left in your command history. A new one is asked twice.", 0xAAAAAA)
-        o("  Then open it with:  launcher tape", 0xAAAAAA)
+        -- `launcher` was retired in v1.4.0. (test_hint_commands.lua)
+        o("  Then open it with:  tape-menu", 0xAAAAAA)
       end
     end,
   },

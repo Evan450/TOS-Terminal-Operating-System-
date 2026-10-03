@@ -1191,8 +1191,10 @@ return function(C, S, deps)
     o("To test: log out, log in as the 'kiosk' user.", T.dim)
     o("Config: /etc/kiosk.cfg", T.dim)
     o("", T.fg)
-    o("Looking for the OPERATOR multi-tool? Run 'launcher' — same clickable", T.highlight)
-    o("menu, but it runs real commands at YOUR tier (no allow-list).", T.dim)
+    -- v1.4.0 retired `launcher`; the Desktop is the operator's menu now.
+    -- (test_hint_commands.lua)
+    o("Looking for the OPERATOR menu? Run 'desktop': the same kind of", T.highlight)
+    o("clickable menu, but it runs real commands at YOUR tier (no allow-list).", T.dim)
   end
 
   -- FEAT-2 — diagnostic unit. Canonical name is `doctor` (matches the

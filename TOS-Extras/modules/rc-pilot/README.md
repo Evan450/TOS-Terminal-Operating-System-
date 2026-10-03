@@ -22,7 +22,7 @@ Both ends share a secret of at least 16 characters. Every frame carries an HMAC-
 2. Swap your own EEPROM back, and build the chip into the robot or drone, with a wireless network card.
 3. **Give `rc` the same secret.** `keychain unlock`, then `keychain set rc:<the first 8 characters of the robot's modem address>`; it asks for the secret without showing it.
 
-> **Not finished yet.** The robot does not announce its wireless card's address, which `rc` needs in full, and a chip with no secret ignores everything without a sound. Both are on the TOS TODO list.
+> **Not finished yet.** The robot does not announce its wireless card's address, which `rc` needs in full, and a chip with no secret ignores everything without a sound. Fixing either needs `rc` to hear the robot's replies, and a TOS package cannot hear raw network traffic at present: the sandbox drops it so that no program can listen in on another's. Whether a package may hear the ports it opened itself is an open decision on the TOS TODO list.
 
 ## Use
 
@@ -44,7 +44,7 @@ The secret comes from your keychain (slot `rc:` plus the first 8 characters of t
 | X | swing: break the block ahead | nothing |
 | B | place a block from the selected slot | nothing |
 | 1 to 9 | select that inventory slot | nothing |
-| P | ping: a round-trip check | ping |
+| P | ping the robot. It answers, but `rc` cannot show the answer yet (see above) | ping |
 
 A drone has no facing, so it moves along the world's axes. An operation the machine cannot do is simply not done.
 
@@ -67,4 +67,4 @@ It asks for `peripheral.modem` to talk to the robot and `crypto` to sign frames.
 
 ## Tests
 
-From `TOS-Extras/`: `lua modules/rc-pilot/test_rc_pilot.lua` drives the real `rc` command against the real EEPROM program with the real `kernel.crypto`. The robot moves for the host's signature and not for a replay, a tampered signature, a changed operation, the wrong magic, a missing signature, or a different or absent secret; ping is answered; and the minified image fits the chip.
+From `TOS-Extras/`: `lua modules/rc-pilot/test_rc_pilot.lua` drives the real `rc` command against the real EEPROM program with the real `kernel.crypto`. The robot moves for the host's signature and not for a replay, a tampered signature, a changed operation, the wrong magic, a missing signature, or a different or absent secret; ping is answered; and the minified image fits the chip. One check runs `rc` through the real sandbox and pins that the answer to a ping cannot reach it yet, so the fix will show up as that check failing.
