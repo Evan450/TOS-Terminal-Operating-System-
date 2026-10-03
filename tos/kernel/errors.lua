@@ -57,6 +57,12 @@ local LIST = {
   { 402, "ERR_PATH_PROTECTED",  "that path is guarded against changes, even by an admin" },
   { 403, "ERR_TIER_REQUIRED",   "that needs a higher account tier" },
 
+  { 501, "ERR_NET_NO_ANSWER",   "a remote host did not answer (timed out, refused, or broke off)" },
+
+  { 601, "ERR_PKG_NOT_FOUND",   "no configured repo has a package by that name" },
+  { 602, "ERR_PKG_BAD_NAME",    "that is not a valid package name" },
+  { 603, "ERR_PKG_DEPENDENCY",  "something the package requires could not be satisfied" },
+
   { 801, "ERR_UNKNOWN_CMD",     "no command by that name" },
   { 802, "ERR_CMD_UNLOADABLE",  "the command exists but would not fit in memory" },
 }

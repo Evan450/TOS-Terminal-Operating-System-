@@ -177,6 +177,24 @@ ok, res = fetch("deep1")
 test("a chain deeper than the bound refuses", ok == false and tostring(res):find("deeper", 1, true) ~= nil, res)
 test("...with nothing installed", not installed("deep1") and not installed("deep9"))
 
+-- Each refusal carries its registry code, and only its own: a dependency
+-- refusal wraps the inner lookup's message but not its E-601.
+do
+  local function tags(msg)
+    local t = {}
+    for code in tostring(msg):gmatch("%[(E%-%d%d%d) ERR_[%w_]+%]") do t[#t + 1] = code end
+    return table.concat(t, ",")
+  end
+  local _, r1 = fetch("nosuchpackage")
+  test("a package no repo has is E-601", tags(r1) == "E-601", r1)
+  local _, r2 = fetch("orphan")
+  test("a missing dependency is E-603, and only E-603", tags(r2) == "E-603", r2)
+  local _, r3 = fetch("../tos")
+  test("a name that is not a name is E-602", tags(r3) == "E-602", r3)
+  local _, r4 = fetch("deep1")
+  test("too deep a chain is E-603", tags(r4) == "E-603", r4)
+end
+
 reset()
 ok, res = fetch("tosapp")
 test("a native package's requires (package.lua) are fetched too", ok == true and installed("tosapp") and installed("lib"), res)

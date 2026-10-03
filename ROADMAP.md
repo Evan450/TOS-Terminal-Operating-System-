@@ -1965,6 +1965,14 @@ Error registry: the rest of the migration. The first slice (2026-09-10)
     are reserved and still empty). Tag them as they are touched, never
     renumber, and let test_error_registry.lua's scan of every shipped file
     keep each literal tag honest.
+      2026-10-02, the first 5xx/6xx entries, for `pkg fetch` (touched
+    that day): E-501 ERR_NET_NO_ANSWER (a repo that did not answer
+    whether it signs its index), E-601 ERR_PKG_NOT_FOUND, E-602
+    ERR_PKG_BAD_NAME, E-603 ERR_PKG_DEPENDENCY. A dependency refusal
+    drops the inner lookup's tag so it carries one code, its own. `why`
+    explains all four; Appendix C lists them. Still untagged: the rest
+    of pkg (install/upgrade gates), the network layer proper, vault, the
+    drive and deploy commands, hardware.
 ```
 
 ## FAR FUTURE / IDEAS

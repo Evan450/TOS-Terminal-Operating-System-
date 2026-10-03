@@ -135,6 +135,23 @@ do
   test("a non-string returns nil", helpers.explainFailure(nil) == nil)
 end
 
+-- ── The network and package codes (first 5xx/6xx entries) ───────────
+-- `pkg fetch`'s refusals are tagged; `why` must explain each by its code,
+-- and a dependency refusal must read as one, not as the lookup inside it.
+do
+  for _, code in ipairs({ "E-501", "E-601", "E-602", "E-603" }) do
+    local lines = helpers.explainCode(code)
+    test(code .. " is explained by `why`", lines ~= nil and #lines >= 2)
+  end
+  local lines = helpers.explainFailure("dependency 'nothere' of 'orphan': package 'nothere' "
+    .. "is not in any configured repo (if you have it on a disk, `pkg install nothere` it first)"
+    .. "  [E-603 ERR_PKG_DEPENDENCY]")
+  local text = ""
+  for _, l in ipairs(lines or {}) do text = text .. l.text .. "\n" end
+  test("a dependency refusal is explained as one", text:find("requires", 1, true) ~= nil
+    and text:find("pkg upgrade", 1, true) ~= nil)
+end
+
 -- ── Ordering: the protected message must not be caught by a looser key ─
 -- protectedMsg contains "protected system path" AND the word "removing";
 -- if a broader entry were checked first the operator would get the wrong
