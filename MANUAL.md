@@ -186,7 +186,7 @@ Configuration screen** (2.2) for what your machine has.
 
 | | |
 |---|---|
-| **Memory** | At least 1 MB (one Tier 3.5 stick). On a machine that size TOS starts at the command line; the full panels interface needs 1.5 MB (two Tier 3 sticks). Below 1 MB it does not reach a usable shell. |
+| **Memory** | At least 1 MB (one Tier 3.5 stick). On a machine that size TOS starts at the command line; installing add-ons needs 1.25 MB, because the package manager does not load in 1 MB; the full panels interface needs 1.5 MB (two Tier 3 sticks). Below 1 MB it does not reach a usable shell. |
 | **Drive** | About 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own. Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), because OpenOS stays there until the install finishes. TOS does not fit on a floppy. |
 | **CPU** | Any tier, on the Lua 5.3 or 5.4 architecture (sneak-click the CPU to switch it). |
 | **To install from** | OpenOS, plus an Internet Card or a TOS install disk. |

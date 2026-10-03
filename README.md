@@ -63,7 +63,7 @@ It is **keyboard-first and built to run infrastructure**: a base that has to kee
 
 | | Memory | What you get |
 |---|---|---|
-| Minimum | 1 MB (one Tier 3.5 stick) | The command line, which runs every command and loads each one as you use it. TOS starts there by itself on a machine this size. About 35 KB stays free. |
+| Minimum | 1 MB (one Tier 3.5 stick) | The command line, which loads each command as you use it. TOS starts there by itself on a machine this size. About 35 KB stays free: too little for the package manager, which needs 1.25 MB (add a Tier 1.5 stick) and says so. |
 | Recommended | 1.5 MB (two Tier 3 sticks) | The full panels interface, with about 200 KB free after you log in. |
 | Comfortable | 2 MB (two Tier 3.5 sticks) | Room for add-ons, themes and the OpenOS compatibility layer: about 730 KB free after you log in. |
 

@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**90 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 66 | Planned or under investigation. Most contributions belong here. |
+| Planned | 63 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (25) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (22) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -79,16 +79,6 @@ different and much worse tool.
 *Planned* · from the round *Federated package repos (2026-09-27)*
 
 OCELOT CHECK FOR SLICE 1: install a package whose library is on a SECOND floppy; `pkg upgrade` against a disk carrying a stranger- signed copy (refused, old version intact); an install refused for a version contradiction. And TIME the signed upgrade on a T1: it now verifies Ed25519 twice (before removal, and in install against the bytes install reads).
-
-### Ocelot check for the Keller import: a round through sync-emulator.py
-
-*Planned* · from the round *The Keller import, and the battery's first round (2026-09-25)*
-
-OCELOT CHECK FOR THE KELLER IMPORT: a round through sync-emulator.py (it now creates etc/selftest.on, since a floppy alone no longer arms the battery); installing several packages from media (it should no longer repaint the shell between prompts); and sudo's "try again in Ns" after wrong passwords.
-
-The first of the three is done: two rounds ran through the new arming (etc/selftest.on made by sync-emulator.py) on 2026-09-25.
-
-The third, 2026-10-03, on the headless machine (headless-session.py: sudo set up, three wrong elevation passwords as a USER, a fourth a second later): it was never asked to wait. Login's and sudo's backoff measured with os.time(), which on OpenComputers is the in-game clock, 72 game seconds to the real one, so every wait was 72 times short and one KDF outlasted it. Fixed the same day: both run on real seconds (computer.uptime(), stamped with the boot), and the same session now shows "try again in 4s". test\_backoff\_clock.lua. Left: installing several packages from media.
 
 ### Ocelot check for the Fermi import
 
@@ -165,30 +155,6 @@ Emulator checklist - confirmTyped's interactive loop:
 - Confirm is inert until the word matches: clicking it moves focus rather than firing, Enter on it does nothing
 - Esc and ^Q both cancel; Cancel is the FIRST button, so a click-through lands on it
 - off-box tests cover the contract around this loop, not the loop -- it needs a real screen and signal stream
-
-### Emulator checklist — key derivation, added with KDF v2
-
-*Planned* · from the round *Signed manifests round (2026-08-11)*
-
-Emulator checklist — key DERIVATION, added with KDF v2:
-
-- TIME IT. `pkg trust key <label>` and `pkg sign` on a T1 and a T3. v2 raised the round count 512 -&gt; 4096, and 4096 rounds of SHA-512 is 0.13 s natively; the on-box figure is the one that decides whether this is usable, and off-box tests cannot give it.
-- confirm the 5-second watchdog does NOT fire mid-derive. The loop yields every 256 rounds (16 yields); if a seat still stalls, lower that interval rather than the round count — the rounds are the point.
-- derive the SAME label twice on two machines and confirm the key matches, and a different label gives a different one. This is what makes the salt safe to require.
-
-### Emulator checklist: Signed manifests round
-
-*Planned* · from the round *Signed manifests round (2026-08-11)*
-
-Emulator checklist:
-
-- TIME IT. `pkg verify-sig` on a signed floppy, on a T1 and on a T3. This is the number off-box tests cannot give and the one that decides whether the cooperative yields are frequent enough. If a seat visibly stalls, lower the yield interval in fePow/ptMul.
-- confirm the box does NOT hit OC's 5-second watchdog mid-verify, and that a second seat stays responsive
-- a T1 (192K): confirm requiring ed25519 does not OOM. This is the real risk — it is \~550 lines plus the bignum, loaded on top of an install already in flight. If it does, the fix is to verify BEFORE the install allocates, not to shrink the module.
-- `pkg trust add` a key, reboot, confirm it persisted and that the package now reads trusted
-- hand-edit one byte of an installed package's manifest on a signed disk and confirm the refusal names tampering
-- `pkg trust require on` then insert an unsigned disk: refusal must name the setting, and --allow-unsigned must still work
-- `pkg sign` on-box, then verify from a DIFFERENT machine that trusts the key (this is the interop claim)
 
 ### Emulator checklist (needs OpenPrinter installed): Printer + word processor round
 
@@ -791,6 +757,8 @@ CALIBRATION, so this is not the emulator: OpenOS 1.8.9, copied from the Ocelot w
 Done the same day: the README, CONTRIBUTING and the installer's warnings state the measured floor, and below 1.5 MB an unset `ui` starts the CLI (bootcfg.PANELS\_MIN\_KB) rather than the panels crashing on the first command.
 
 OPEN, the real work: the footprint itself. The first wall is compiling tos/kernel/init.lua (90 KB even minified), which alone fails at 384K. Start with a per-stage memory profile -- the headless machine can produce one now. Then a floor check in the headless runs, so the documented number cannot drift again: 192 KB was presumably true once, and nothing re-measured it.
+
+ALSO MEASURED 2026-10-03: at 1024K the CLI runs but `pkg` does not load -- compiling kernel.pkg (117 KB stripped) needs more than the \~200 KB left once the shell is up. Every pkg command printed only "pkg module unavailable"; the reason, thrown away, was the loader's "Syntax error in 'kernel.pkg': not enough memory". At 1024+256K it lists, verifies, signs and installs (the signing checklist below ran there whole). Now `pkg` says "cannot load: not enough free memory" and gives 1280 KB against what the machine has, the loader says "Out of memory loading" instead of "Syntax error", eight more commands keep their reason (helpers.loadFailure), and the README and MANUAL 1.1 give the 1.25 MB floor for add-ons. Splitting kernel.pkg so its everyday verbs load alone is what would let 1 MB install packages; that is footprint work, the same as above.
 
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2
 

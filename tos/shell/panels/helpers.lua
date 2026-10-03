@@ -68,6 +68,14 @@ function M.fileColor(S, f)
   return T.fg
 end
 
+function M.loadFailure(what, err)
+  local why = tostring(err or "unknown error")
+  if why:find("Out of memory", 1, true) or why:find("not enough memory", 1, true) then
+    return what .. " cannot load: not enough free memory on this machine."
+  end
+  return what .. " module unavailable: " .. why
+end
+
 function M.fmtSz(sz)
   if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
   if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end

@@ -347,7 +347,7 @@ _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
 
-  build = "dad9755",
+  build = "b28bbf0",
   variant = "minified",
   bootFS     = bootFS,
 
@@ -427,6 +427,18 @@ local function loadModuleFile(path)
   return true, fn, err, "compile"
 end
 
+local function loadErrorText(name, path, err, mode)
+  local why = tostring(err)
+  if mode == "read" then
+    return "Read error in '" .. name .. "' (" .. path .. "): " .. why
+  end
+  if why:find("not enough memory", 1, true) then
+    return "Out of memory loading '" .. name .. "' (" .. path .. "): "
+      .. "too little free RAM to compile it"
+  end
+  return "Syntax error in '" .. name .. "' (" .. path .. "): " .. why
+end
+
 --! MUST list every name compat.init registers, or that name's first
 --! require falls past this hook into the search path.
 --!
@@ -469,8 +481,7 @@ local function tosRequireBody(name)
     local found, fn, err, mode = loadModuleFile(path)
     if found then
       if not fn then
-        error((mode == "read" and "Read error in '" or "Syntax error in '")
-          .. name .. "' (" .. path .. "): " .. tostring(err), 2)
+        error(loadErrorText(name, path, err, mode), 2)
       end
       local ok, result = pcall(fn, name)
       if not ok then

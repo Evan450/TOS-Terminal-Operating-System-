@@ -559,7 +559,7 @@ return function(C, S, deps)
 
   C.tutorial = function(args, o)
     local ok2, tut = pcall(require, "shell.tutorial")
-    if not ok2 then o("Tutorial module unavailable", T.error); return end
+    if not ok2 then o(helpers.loadFailure("tutorial", tut), T.error); return end
 
     if args[1] == "--reset" then
       local sess = (U and st and U.getSession) and U.getSession(st) or nil
@@ -933,7 +933,7 @@ return function(C, S, deps)
 
   C.vault = function(args, o)
     local okV, vmod = pcall(require, "kernel.vault")
-    if not okV or not vmod then o("vault module unavailable", T.error); return end
+    if not okV or not vmod then o(helpers.loadFailure("vault", vmod), T.error); return end
     local sub = args[1]
 
     local sess = helpers.sessionOf(S)
