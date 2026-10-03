@@ -1,52 +1,52 @@
--- ╔══════════════════════════════════════╗
--- ║  TOS Module: tape                    ║
--- ║  General Computronics tape control   ║
--- ║  (formerly "tape-storage")           ║
--- ╚══════════════════════════════════════╝
--- Provides file archival, restore, hex dump, and raw I/O
--- for Computronics tape drives used as data storage media.
---
--- Tape data format (per archived entry):
---   [4]  Magic      "TOS\x01"
---   [1]  Version    0x01
---   [1]  Flags      bit 0 = directory entry (no data)
---   [2]  Path len   uint16 big-endian
---   [N]  Path       UTF-8 path string
---   [4]  Data len   uint32 big-endian  (0 for dirs)
---   [4]  Checksum   CRC-like sum of data bytes
---   [D]  Data       raw file bytes
--- End-of-archive marker: "TOS\x00" (4 bytes)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer   = require("computer")
--- `fs` is provided by the sandbox as a session-bound securefs proxy
--- (cap "fs.read" + "fs.write" declared in module.cfg). Archive/restore
--- operations therefore enforce the invoking user's permissions rather
--- than running with raw kernel fs privileges.
-local fs         = fs  -- luacheck: ignore
+
+
+
+
+local fs         = fs  
 
 local mod = {}
 
--- ── Constants ────────────────────────────────────────────
+
 local MAGIC     = "TOS\x01"
-local EOA       = "TOS\x00"  -- end of archive
+local EOA       = "TOS\x00"  
 local VERSION   = 1
 local FLAG_DIR  = 1
-local BLOCK     = 8192        -- R/W chunk size
+local BLOCK     = 8192        
 
--- Vault blob wire format — see TOS-Dev/tos/kernel/vault.lua. We only mirror
--- the parts needed to BOUND a read: the magic says a tape is encrypted, and
--- ctLen says exactly how many bytes the blob occupies, so we never have to
--- guess from the physical tape length.
+
+
+
+
 --! kernel.vault writes V2 today and still reads V1 (#SEC CR-7). Accept both.
 local VAULT_MAGIC_V1 = "TVAULT1\0"
 local VAULT_MAGIC_V2 = "TVAULT2\0"
-local VAULT_HEADER   = 114    -- 8 magic +4 algo +2 rounds +16 salt +16 iv +4 ctLen +64 mac
-local VAULT_CTLEN_AT = 47     -- 1-indexed offset of ctLen (uint32, LITTLE-endian)
+local VAULT_HEADER   = 114    
+local VAULT_CTLEN_AT = 47     
 
--- ── Helpers ──────────────────────────────────────────────
 
---- Find the first tape_drive component, or a specific one by partial address.
+
+
 local function findDrive(addr)
   if addr then
     for a in component.list("tape_drive") do
@@ -78,7 +78,7 @@ end
 --! reported as unknown rather than guessed at. Reporting a number nobody
 --! asked the drive for would be the same class of mistake as the pcall
 --! that hid this one.
-local lastSet = {}   -- drive address -> { speed = n, volume = n }
+local lastSet = {}   
 
 local function noteSet(drive, key, value)
   local a = drive and drive.address
@@ -93,15 +93,15 @@ local function recalled(drive, key)
   return rec and rec[key] or nil
 end
 
---- Encode uint16 big-endian.
+
 local function enc16(n)
   return string.char(math.floor(n / 256) % 256, n % 256)
 end
---- Decode uint16 big-endian.
+
 local function dec16(s)
   return s:byte(1) * 256 + s:byte(2)
 end
---- Encode uint32 big-endian.
+
 local function enc32(n)
   local b1 = math.floor(n / 16777216) % 256
   local b2 = math.floor(n / 65536) % 256
@@ -109,12 +109,12 @@ local function enc32(n)
   local b4 = n % 256
   return string.char(b1, b2, b3, b4)
 end
---- Decode uint32 big-endian.
+
 local function dec32(s)
   return s:byte(1) * 16777216 + s:byte(2) * 65536 + s:byte(3) * 256 + s:byte(4)
 end
 
---- Simple checksum (sum of all bytes mod 2^32).
+
 local function checksum(data)
   local sum = 0
   for i = 1, #data do
@@ -123,7 +123,7 @@ local function checksum(data)
   return sum
 end
 
---- Read exactly n bytes from tape. Returns string or nil.
+
 local function tapeRead(drive, n)
   local parts = {}
   local remaining = n
@@ -136,7 +136,7 @@ local function tapeRead(drive, n)
   return table.concat(parts)
 end
 
---- Write string to tape.
+
 local function tapeWrite(drive, data)
   local written = 0
   while written < #data do
@@ -146,12 +146,12 @@ local function tapeWrite(drive, data)
   end
 end
 
---- Rewind tape to position 0.
+
 local function rewind(drive)
   drive.seek(-drive.getSize())
 end
 
---- Seek to an absolute position.
+
 local function seekTo(drive, pos)
   rewind(drive)
   if pos > 0 then
@@ -159,7 +159,7 @@ local function seekTo(drive, pos)
   end
 end
 
---- Format byte count for display.
+
 local function fmtSize(n)
   if n >= 1048576 then
     return string.format("%.1fMB", n / 1048576)
@@ -169,14 +169,14 @@ local function fmtSize(n)
   return n .. "B"
 end
 
---- Estimate tape length in minutes from byte capacity.
--- Computronics manual: storage ≈ (minutes / 4) MB
--- So: minutes ≈ bytes / 262144
+
+
+
 local function tapeMinutes(sizeBytes)
   return sizeBytes / 262144
 end
 
---- Format a tape capacity summary line.
+
 local function fmtCapacity(size)
   local mins = tapeMinutes(size)
   if mins >= 1 then
@@ -185,12 +185,12 @@ local function fmtCapacity(size)
   return fmtSize(size)
 end
 
---- Per-entry header overhead: 4 magic + 1 ver + 1 flags + 2 pathlen + 4 datalen + 4 checksum = 16 bytes + path length
+
 local HEADER_FIXED = 16
---- End-of-archive marker size
+
 local EOA_SIZE = 4
 
---- Calculate the total on-tape size for one entry (header + data).
+
 local function entryTapeSize(pathLen, dataLen)
   return HEADER_FIXED + pathLen + dataLen
 end
@@ -219,8 +219,8 @@ local function relativeTo(basePath, full)
   return full
 end
 
---- Scan the archive on tape and return { used = bytes, files = N, dirs = N, dataBytes = N }
---- Leaves the drive rewound to position 0.
+
+
 local function scanArchive(drive)
   rewind(drive)
   local info = { used = 0, files = 0, dirs = 0, dataBytes = 0 }
@@ -249,7 +249,7 @@ local function scanArchive(drive)
     if not dataLenRaw then break end
     local dataLen = dec32(dataLenRaw)
 
-    -- Skip checksum
+    
     tapeRead(drive, 4)
 
     local isDir = (flags % 2) == 1
@@ -264,12 +264,12 @@ local function scanArchive(drive)
       info.used = info.used + overhead + dataLen
     end
 
-    -- Skip data
+    
     if dataLen > 0 then
       drive.seek(dataLen)
     end
 
-    -- Yield periodically
+    
     if (info.files + info.dirs) % 10 == 0 then
       computer.pullSignal(0)
     end
@@ -279,9 +279,9 @@ local function scanArchive(drive)
   return info
 end
 
--- ── Subcommands ──────────────────────────────────────────
 
---- tape detect — list all tape drives and tape status
+
+
 local function cmdDetect(args, o)
   local count = 0
   for addr in component.list("tape_drive") do
@@ -305,7 +305,7 @@ local function cmdDetect(args, o)
   end
 end
 
---- tape info — detailed info about the current tape
+
 local function cmdInfo(args, o)
   local drive, err = findDrive(args[2])
   if not drive then o(err, 0xFF0000); return end
@@ -320,13 +320,13 @@ local function cmdInfo(args, o)
   o("  Capacity: " .. fmtCapacity(size), 0xFFFFFF)
   o("  Bytes:    " .. size, 0xAAAAAA)
   o("  State:    " .. drive.getState(), 0xFFFFFF)
-  -- Check if tape has a TOS archive and scan usage
+  
   rewind(drive)
   local header = tapeRead(drive, 4)
   rewind(drive)
   if header == MAGIC then
     o("  Format:   TOS archive", 0x00FF00)
-    -- Scan to get usage stats
+    
     local info = scanArchive(drive)
     local free = size - info.used
     local pctUsed = info.used * 100 / size
@@ -351,7 +351,7 @@ local function cmdInfo(args, o)
   end
 end
 
---- tape label [name] — get or set tape label
+
 local function cmdLabel(args, o)
   local drive, err = findDrive(nil)
   if not drive then o(err, 0xFF0000); return end
@@ -372,7 +372,7 @@ local function cmdLabel(args, o)
   end
 end
 
---- tape store <path> [--overwrite] — archive a file or directory to tape
+
 local function cmdStore(args, o)
   local path = args[2]
   if not path then
@@ -383,7 +383,7 @@ local function cmdStore(args, o)
     return
   end
 
-  -- Parse flags and path from args (args[1] is the subcommand "store")
+  
   local overwrite = false
   local pathArg = nil
   for i = 2, #args do
@@ -406,13 +406,13 @@ local function cmdStore(args, o)
 
   drive.stop()
 
-  -- Collect all files to archive
+  
   path = fs.normalize(path)
   if not fs.exists(path) then
     o("Path not found: " .. path, 0xFF0000); return
   end
 
-  local entries = {}  -- { path = string, isDir = bool }
+  local entries = {}  
   local basePath = path
 
   local function scan(dir)
@@ -436,12 +436,12 @@ local function cmdStore(args, o)
     basePath = fs.split(path) or "/"
   end
 
-  -- ── Find append position ────────────────────────────────
-  -- By default, scan existing archive and append after it.
-  -- With --overwrite, start from position 0.
+  
+  
+  
   local tapeSize = drive.getSize()
   local appendPos = 0
-  local existingUsed = 0  -- bytes used by existing data (excluding old EOA)
+  local existingUsed = 0  
 
   if not overwrite then
     rewind(drive)
@@ -450,22 +450,22 @@ local function cmdStore(args, o)
     if headerCheck == MAGIC then
       local info = scanArchive(drive)
       if info.used > EOA_SIZE then
-        existingUsed = info.used - EOA_SIZE  -- bytes before the old EOA marker
+        existingUsed = info.used - EOA_SIZE  
         appendPos = existingUsed
         o(string.format("Existing archive: %d files, %d dirs (%s)",
           info.files, info.dirs, fmtSize(info.used)), 0x00AAFF)
         o("Appending after existing entries...", 0xAAAAAA)
       end
     elseif headerCheck == EOA then
-      -- Empty archive, just overwrite the EOA marker at position 0
+      
       existingUsed = 0
       appendPos = 0
     end
   end
 
-  -- ── Pre-write estimate ──────────────────────────────────
-  -- Calculate total bytes needed before writing anything.
-  local estimatedBytes = EOA_SIZE  -- always need the end marker
+  
+  
+  local estimatedBytes = EOA_SIZE  
   local estimateFiles = 0
   local estimateData = 0
   for _, entry in ipairs(entries) do
@@ -504,14 +504,14 @@ local function cmdStore(args, o)
   end
   o("", 0xFFFFFF)
 
-  -- ── Write ───────────────────────────────────────────────
-  -- Seek to the append position (after existing data, or position 0 for overwrite)
+  
+  
   seekTo(drive, appendPos)
   local totalBytes = 0
   local fileCount = 0
 
   for _, entry in ipairs(entries) do
-    -- Make path relative to the base
+    
     local relPath = relativeTo(basePath, entry.path)
 
     local flags = entry.isDir and FLAG_DIR or 0
@@ -521,7 +521,7 @@ local function cmdStore(args, o)
       fileCount = fileCount + 1
     end
 
-    -- Build header
+    
     local pathBytes = relPath
     local header = MAGIC
       .. string.char(VERSION)
@@ -531,7 +531,7 @@ local function cmdStore(args, o)
       .. enc32(#data)
       .. enc32(checksum(data))
 
-    -- Check space (account for existing data + what we've written so far)
+    
     local needed = #header + #data
     if existingUsed + totalBytes + needed + EOA_SIZE > tapeSize then
       o("WARNING: Tape full after " .. fileCount .. " files.", 0xFF6600)
@@ -544,13 +544,13 @@ local function cmdStore(args, o)
     end
     totalBytes = totalBytes + needed
 
-    -- Yield periodically to avoid "too long without yielding"
+    
     if fileCount % 5 == 0 then
       computer.pullSignal(0)
     end
   end
 
-  -- Write end-of-archive marker
+  
   tapeWrite(drive, EOA)
   totalBytes = totalBytes + EOA_SIZE
 
@@ -563,7 +563,7 @@ local function cmdStore(args, o)
     freeAfter < tapeSize * 0.1 and 0xFF6600 or 0x00FF00)
 end
 
---- tape restore [path] [--addr=X] — restore archived files from tape
+
 local function cmdRestore(args, o)
   local destBase = args[2] or "/home"
   destBase = fs.normalize(destBase)
@@ -584,14 +584,14 @@ local function cmdRestore(args, o)
   local totalBytes = 0
 
   while true do
-    -- Read magic
+    
     local magic = tapeRead(drive, 4)
     if not magic or #magic < 4 then
       o("Unexpected end of tape", 0xFF6600)
       break
     end
 
-    -- Check for end-of-archive
+    
     if magic == EOA then
       break
     end
@@ -602,7 +602,7 @@ local function cmdRestore(args, o)
       return
     end
 
-    -- Read rest of header
+    
     local verFlag = tapeRead(drive, 2)
     if not verFlag then o("Truncated header", 0xFF0000); break end
     local ver   = verFlag:byte(1)
@@ -632,11 +632,11 @@ local function cmdRestore(args, o)
     totalBytes = totalBytes + 4 + 2 + 2 + pathLen + 4 + 4
 
     local isDir = (flags % 2) == 1
-    -- #SEC C16 — refuse tape-supplied paths that escape destBase. A
-    -- crafted tape can encode `../../etc/users.dat` or `/etc/users.dat`
-    -- as its relPath; without this guard fs.join(...) would happily
-    -- normalize it back to /etc/users.dat and we'd overwrite the shadow
-    -- file on restore.
+    
+    
+    
+    
+    
     if type(relPath) ~= "string" or relPath == "" then
       o("Skipping entry with empty path", 0xFF6600)
       break
@@ -653,7 +653,7 @@ local function cmdRestore(args, o)
     --! and refusing meant aborting the whole restore.
     relPath = relPath:gsub("^/+", "")
     if relPath == "" then relPath = "." end
-    -- Reject any `..` segment anywhere in the path.
+    
     do
       local bad = false
       for seg in relPath:gmatch("[^/\\]+") do
@@ -665,9 +665,9 @@ local function cmdRestore(args, o)
       end
     end
     local fullPath = fs.join(destBase, relPath)
-    -- Defence in depth: the normalized join must remain strictly inside
-    -- destBase. (`destBase .. "/"` so a sibling named `destBase2` cannot
-    -- masquerade as a child.)
+    
+    
+    
     local baseGuard = destBase
     if baseGuard:sub(-1) ~= "/" then baseGuard = baseGuard .. "/" end
     if fullPath ~= destBase and fullPath:sub(1, #baseGuard) ~= baseGuard then
@@ -681,7 +681,7 @@ local function cmdRestore(args, o)
       end
       dirCount = dirCount + 1
     else
-      -- Read file data
+      
       local data = ""
       if dataLen > 0 then
         data = tapeRead(drive, dataLen)
@@ -692,15 +692,15 @@ local function cmdRestore(args, o)
       end
       totalBytes = totalBytes + dataLen
 
-      -- Verify checksum
+      
       local actualSum = checksum(data)
       if actualSum ~= expectedSum then
         o("CHECKSUM MISMATCH: " .. relPath, 0xFF6600)
         o("  Expected: " .. expectedSum .. " Got: " .. actualSum, 0xFF6600)
-        -- Still write it, but warn
+        
       end
 
-      -- Ensure parent directory exists
+      
       local parentDir = fs.split(fullPath)
       if parentDir and parentDir ~= "/" and not fs.exists(parentDir) then
         fs.makeDirectory(parentDir)
@@ -710,7 +710,7 @@ local function cmdRestore(args, o)
       fileCount = fileCount + 1
     end
 
-    -- Yield periodically
+    
     if (fileCount + dirCount) % 5 == 0 then
       computer.pullSignal(0)
     end
@@ -722,7 +722,7 @@ local function cmdRestore(args, o)
     fileCount, dirCount, fmtSize(totalBytes), fmtCapacity(tapeSize)), 0x00FF00)
 end
 
---- tape list — list files in a TOS tape archive
+
 local function cmdList(args, o)
   local drive, err = findDrive(nil)
   if not drive then o(err, 0xFF0000); return end
@@ -748,7 +748,7 @@ local function cmdList(args, o)
     return
   end
 
-  -- Rewind and scan all entries
+  
   rewind(drive)
 
   o(string.format(" %-6s  %-8s  %s", "Type", "Size", "Path"), 0xFFFF00)
@@ -757,7 +757,7 @@ local function cmdList(args, o)
   local fileCount = 0
   local dirCount = 0
   local totalData = 0
-  local totalUsed = 0  -- total bytes on tape (headers + data + EOA)
+  local totalUsed = 0  
 
   while true do
     local hdrMagic = tapeRead(drive, 4)
@@ -782,7 +782,7 @@ local function cmdList(args, o)
     if not dataLenRaw then break end
     local dataLen = dec32(dataLenRaw)
 
-    -- Skip checksum
+    
     tapeRead(drive, 4)
 
     local isDir = (flags % 2) == 1
@@ -799,7 +799,7 @@ local function cmdList(args, o)
       totalUsed = totalUsed + entryOverhead + dataLen
     end
 
-    -- Skip data
+    
     if dataLen > 0 then
       drive.seek(dataLen)
     end
@@ -823,7 +823,7 @@ local function cmdList(args, o)
     free < tapeSize * 0.1 and 0xFF6600 or 0x00FF00)
 end
 
---- tape erase — wipe the tape (fill with zeros)
+
 local function cmdErase(args, o)
   local drive, err = findDrive(nil)
   if not drive then o(err, 0xFF0000); return end
@@ -831,8 +831,8 @@ local function cmdErase(args, o)
     o("No tape inserted.", 0xFF6600); return
   end
 
-  -- Quick erase: just write the EOA marker at position 0
-  -- Full erase: write zeros across the entire tape
+  
+  
   local full = args[2] == "full"
 
   drive.stop()
@@ -858,7 +858,7 @@ local function cmdErase(args, o)
     rewind(drive)
     o("Tape erased (" .. fmtSize(size) .. " zeroed)", 0x00FF00)
   else
-    -- Quick erase: just mark empty archive
+    
     tapeWrite(drive, EOA)
     rewind(drive)
     o("Tape quick-erased (archive header cleared)", 0x00FF00)
@@ -866,7 +866,7 @@ local function cmdErase(args, o)
   end
 end
 
---- tape dump <offset> <length> — hex dump of tape contents
+
 local function cmdDump(args, o)
   local offset = tonumber(args[2]) or 0
   local length = tonumber(args[3]) or 128
@@ -895,7 +895,7 @@ local function cmdDump(args, o)
   o(string.format(" Tape dump: offset %d, %d bytes", offset, #data), 0xFFFF00)
   o("", 0xFFFFFF)
 
-  -- Format as hex dump: OFFSET  HEX  ASCII
+  
   for row = 0, #data - 1, 16 do
     local hex = {}
     local ascii = {}
@@ -921,7 +921,7 @@ local function cmdDump(args, o)
   rewind(drive)
 end
 
---- tape seek <position> — seek the tape head to a position
+
 local function cmdSeek(args, o)
   local pos = tonumber(args[2])
   if not pos then
@@ -940,9 +940,9 @@ local function cmdSeek(args, o)
   o("Tape head at byte " .. pos, 0x00FF00)
 end
 
---- tape raw read <offset> <length> <file> — read raw bytes to file
+
 local function cmdRawRead(args, o)
-  -- args: raw read <offset> <length> <file>
+  
   local offset = tonumber(args[3])
   local length = tonumber(args[4])
   local file   = args[5]
@@ -964,7 +964,7 @@ local function cmdRawRead(args, o)
 
   o("Reading " .. fmtSize(length) .. " from tape at " .. offset .. " ...", 0x00AAFF)
 
-  -- Read in chunks and write directly to file
+  
   local fh, ferr = fs.open(file, "w")
   if not fh then
     o("Cannot open file: " .. tostring(ferr), 0xFF0000)
@@ -991,9 +991,9 @@ local function cmdRawRead(args, o)
   o("Saved " .. fmtSize(total) .. " to " .. file, 0x00FF00)
 end
 
---- tape raw write <offset> <file> — write raw bytes from file to tape
+
 local function cmdRawWrite(args, o)
-  -- args: raw write <offset> <file>
+  
   local offset = tonumber(args[3])
   local file   = args[4]
 
@@ -1028,11 +1028,11 @@ local function cmdRawWrite(args, o)
   o("Wrote " .. fmtSize(#data) .. " from " .. file, 0x00FF00)
 end
 
--- ── EXP-1 — audio / playback / device-state subcommands ──
--- The tape module used to only handle DATA on tapes. Computronics
--- tape drives are also AUDIO devices: they play DFPWM-encoded sound
--- when you call `play()`. These subcommands expose that surface so a
--- single `tape` command covers everything the device can do.
+
+
+
+
+
 
 local function cmdPlay(args, o)
   local drive, err = findDrive(nil)
@@ -1116,16 +1116,16 @@ local function cmdRewind(args, o)
   if not drive then o(err, 0xFF0000); return end
   if not drive.isReady() then o("No tape inserted.", 0xFF6600); return end
   pcall(drive.stop)
-  -- Reuse the existing rewind helper if it's in scope.
+  
   local size = drive.getSize() or 0
   if size > 0 then pcall(drive.seek, -size) end
   o("Rewound.", 0x00FF00)
 end
 
---- Load a raw audio file (DFPWM) onto tape at position 0.
--- Writes the file bytes directly — no archive header. This is the
--- complement to `tape raw write` for the common "I want to put this
--- audio clip on a tape and play it" workflow.
+
+
+
+
 local function cmdLoad(args, o)
   local file = args[2]
   if not file then o("Usage: tape load <file.dfpwm>", 0xAAAAAA); return end
@@ -1144,8 +1144,8 @@ local function cmdLoad(args, o)
       fmtSize(#data), fmtSize(size)), 0xFF0000); return
   end
 
-  -- Rewind, then write in chunks. Tapes have a small per-call cap on
-  -- write size in OC; BLOCK (8192) is well under any reasonable limit.
+  
+  
   pcall(drive.stop)
   pcall(drive.seek, -size)
   local written = 0
@@ -1156,31 +1156,31 @@ local function cmdLoad(args, o)
       o("write failed at " .. written .. ": " .. tostring(werr), 0xFF0000); return
     end
     written = written + #chunk
-    -- Yield occasionally so the scheduler can run.
+    
     if (written / BLOCK) % 8 == 0 then computer.pullSignal(0) end
   end
-  pcall(drive.seek, -size)  -- rewind for immediate play
+  pcall(drive.seek, -size)  
   o(string.format("Loaded %s onto tape. Run `tape play` to listen.",
     fmtSize(written)), 0x00FF00)
 end
 
--- ── FEAT-10 — Vault: encrypted data on tape and arbitrary files ──
--- Encrypt anything the tape module would otherwise write in cleartext.
--- The header carries the magic "TVAULT1\0" so decrypt can refuse to
--- run on tape contents that aren't actually a vault blob — which
--- matters because Computronics tapes are dual-use (data AND audio).
--- An audio tape being misinterpreted as data and "decrypted" would
--- produce garbage; the magic check fails loudly instead.
+
+
+
+
+
+
+
 
 local function loadVault()
-  -- Under the pkg sandbox the kernel injects a narrow `vault` global
-  -- (encrypt/decrypt/isEncrypted) when the manifest declares the
-  -- "vault" capability — kernel.vault itself is require-blocked there.
+  
+  
+  
   if type(vault) == "table" and vault.encrypt and vault.decrypt then
     return vault
   end
-  -- Unsandboxed contexts (kernel-side callers, off-box tests) can still
-  -- reach the real module.
+  
+  
   local ok, v = pcall(require, "kernel.vault")
   if ok and v then return v end
   return nil
@@ -1193,13 +1193,13 @@ end
 --! input, the cipher output and the assembled blob alive at once, hence /3.
 local function memBudget()
   local free = computer.freeMemory and computer.freeMemory() or 0
-  if free <= 0 then return math.huge end  -- off-box tests: no OC memory model
+  if free <= 0 then return math.huge end  
   return math.floor(free / 3)
 end
 
---- Read exactly `n` bytes from the current position, or nil on short read.
--- Yields every 8 blocks so a multi-MB read doesn't starve the scheduler
--- (the old readWholeTape yielded on the same cadence; keep it).
+
+
+
 local function readExact(drive, n)
   local parts, got, blocks = {}, 0, 0
   while got < n do
@@ -1214,9 +1214,9 @@ local function readExact(drive, n)
   return table.concat(parts)
 end
 
---- Read the archive region off a tape — entries plus the end-of-archive
---- marker — and nothing past it.
----
+
+
+
 --! Replaces readWholeTape(), which pulled getSize() bytes into one string on
 --! the claim that "tapes typically hold a few hundred KB at most". That is
 --! false for a stock 4 MB Computronics tape, and it is the same pattern that
@@ -1224,8 +1224,8 @@ end
 --! written to fix (see modules/tape-authenticator/package.lua). scanArchive()
 --! already walks the entries structurally, so ask it how long the archive
 --! actually is instead of reading the cartridge and discarding the padding.
---- Public so it can be unit-tested against a fake drive, the same way
---- launcher.readTapeMenuFromDrive is.
+
+
 function mod.readArchiveFromDrive(drive)
   if not (drive and drive.read and drive.seek and drive.getSize) then
     return nil, "no tape drive"
@@ -1234,7 +1234,7 @@ function mod.readArchiveFromDrive(drive)
   if size <= 0 then return nil, "No tape data." end
   if drive.stop then pcall(drive.stop) end
 
-  local info = scanArchive(drive)          -- leaves the drive rewound
+  local info = scanArchive(drive)          
   local used = info.used or 0
   if used <= 0 or used > size then
     return nil, "No TOS data archive found on this tape."
@@ -1252,9 +1252,9 @@ function mod.readArchiveFromDrive(drive)
   return data, nil
 end
 
---- Read a vault blob off a tape, bounded by the ctLen its header declares
---- rather than by the physical tape length.
---- Public for the same unit-testing reason as readArchiveFromDrive.
+
+
+
 function mod.readVaultBlobFromDrive(drive)
   if not (drive and drive.read and drive.seek and drive.getSize) then
     return nil, "no tape drive"
@@ -1304,8 +1304,8 @@ local function writeWholeTape(drive, data)
     written = written + #chunk
     if (written / BLOCK) % 8 == 0 then computer.pullSignal(0) end
   end
-  -- Pad the trailing portion of the tape with NULs so the new content
-  -- is unambiguously shorter than whatever was there before.
+  
+  
   local tail = (drive.getSize() or 0) - written
   if tail > 0 then
     local pad = string.rep("\0", math.min(tail, BLOCK))
@@ -1321,11 +1321,11 @@ local function writeWholeTape(drive, data)
   return true
 end
 
---- Sniff the tape: does the data at the start look like an audio file?
--- DFPWM (the OC audio format) has no magic header, so we can't be
--- 100% sure — but we CAN detect our own archive (`TOS\x01...`) and
--- our own vault blob (`TVAULT1\0...`). Anything else, we refuse to
--- encrypt automatically since it might be audio.
+
+
+
+
+
 local function tapeFormatGuess(data)
   if not data or #data < 8 then return "empty" end
   if data:sub(1, 4) == MAGIC then return "tos-archive" end
@@ -1356,8 +1356,8 @@ local function cmdEncrypt(args, o)
   if not drive then o(err, 0xFF0000); return end
   if not drive.isReady() then o("No tape inserted.", 0xFF6600); return end
 
-  -- Only the first 8 bytes decide the format — don't pull the whole
-  -- cartridge into RAM just to find that out.
+  
+  
   rewind(drive)
   local head = readExact(drive, math.min(8, drive.getSize() or 0)) or ""
   local kind = tapeFormatGuess(head)
@@ -1371,8 +1371,8 @@ local function cmdEncrypt(args, o)
     return
   end
 
-  -- Reads exactly the archive (entries + EOA marker); the stale padding
-  -- past it never enters RAM, so there is nothing left to strip here.
+  
+  
   local data, rerr = mod.readArchiveFromDrive(drive)
   if not data then o(tostring(rerr), 0xFF0000); return end
 
@@ -1397,9 +1397,9 @@ local function cmdDecrypt(args, o)
   if not drive then o(err, 0xFF0000); return end
   if not drive.isReady() then o("No tape inserted.", 0xFF6600); return end
 
-  -- Bounded by the header's ctLen, so the trailing tape padding is never
-  -- read at all — no over-read to trim before vault.decrypt, and the
-  -- magic check (both wire versions) happens inside the reader.
+  
+  
+  
   local data, rerr = mod.readVaultBlobFromDrive(drive)
   if not data then o(tostring(rerr), 0xFF6600); return end
 
@@ -1415,11 +1415,11 @@ local function cmdDecrypt(args, o)
     fmtSize(#data), fmtSize(#plaintext)), 0x00FF00)
 end
 
--- FEAT-10 (extension) — vault encrypt/decrypt on arbitrary files,
--- including ones living on floppy disks under /mnt/<label>/. This is
--- the "extend to floppies" the user asked about: the same encrypted
--- format works on any byte string, and floppies appear as plain files
--- on disk so there's no special-casing.
+
+
+
+
+
 local function cmdVault(args, o)
   local sub = args[2]
   if sub ~= "encrypt" and sub ~= "decrypt" then
@@ -1459,7 +1459,7 @@ local function cmdVault(args, o)
   end
 end
 
--- ── Main command dispatcher ──────────────────────────────
+
 
 local function tapeCmd(args, o)
   local sub = args[1]
@@ -1541,8 +1541,8 @@ local function tapeCmd(args, o)
   end
 end
 
--- ── Module return ────────────────────────────────────────
--- Module system expects: { commands = { name = fn } }
+
+
 
 mod.commands = {
   tape = tapeCmd,

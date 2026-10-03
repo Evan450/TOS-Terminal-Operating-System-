@@ -1,33 +1,33 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  clusterd — Cluster control-plane daemon (Master)            ║
--- ║  TOS service; started by /etc/rc.d/clusterd.lua              ║
--- ╚══════════════════════════════════════════════════════════════╝
--- Lifecycle (as a TOS rc service):
---   start() — wire up state, net listeners, scheduler tick; return
---   stop()  — persist state, tear down listeners; return
---
--- The daemon does not block start()/stop(); it registers callbacks
--- with TOS's event system and yields control. The "loop" is actually
--- the TOS event scheduler dispatching modem_message and timer events.
+
+
+
+
+
+
+
+
+
+
+
 
 local state     = require("cluster.state")
 local scheduler = require("cluster.scheduler")
 local jobs      = require("cluster.jobs")
 local netmod    = require("cluster.net")
 local api       = require("cluster.api")
--- CLUSTER-6 — operator-driven trust bootstrap. Wired into the daemon
--- so the pair window survives across CLI invocations (the window
--- lives in the daemon's address space, not the operator's shell).
+
+
+
 local pair      = require("cluster.pair")
 local storecli  = require("cluster.store_client")
 
--- Boot-order-proof requires (#FIX round-1 "cluster services error on
--- boot"): rc.d services load BEFORE the OpenOS compat layer registers
--- the "filesystem"/"event" module aliases, so requiring those names at
--- load time killed this service on every boot ("Module not found:
--- filesystem"). Prefer the TOS kernel modules (whose API this file
--- already calls: event.interval/cancelTimer, fs.exists/writeFile);
--- keep the OpenOS names as fallbacks for off-box tests and ports.
+
+
+
+
+
+
+
 local function firstRequire(...)
   for i = 1, select("#", ...) do
     local ok, mod = pcall(require, (select(i, ...)))
@@ -38,9 +38,9 @@ local event    = firstRequire("kernel.event", "event")
 local fs       = firstRequire("kernel.fs", "filesystem")
 local computer = require("computer")
 
--- TOS rotating file logger (kernel.log on TOS). Fall back to
--- stderr-prefixed stubs so unit/integration tests don't need a full
--- kernel — io-guarded, since `io` doesn't exist at rc.d time either.
+
+
+
 local log
 do
   local mod = firstRequire("kernel.log", "log")
@@ -61,19 +61,19 @@ local LOG_TAG = "clusterd"
 
 local clusterd = {}
 
--- ============================================================
--- Internal handles
--- ============================================================
+
+
+
 
 local _running = false
-local _timer_heartbeat_sweep  -- timer id: scan for stale Managers
-local _timer_state_snapshot   -- timer id: write /var/cluster/status.dat
-local _timer_scheduler_tick   -- timer id: run scheduler pass
-local _net_listeners = {}     -- net.on() ids to tear down on stop
+local _timer_heartbeat_sweep  
+local _timer_state_snapshot   
+local _timer_scheduler_tick   
+local _net_listeners = {}     
 
--- ============================================================
--- Configuration
--- ============================================================
+
+
+
 
 local CONFIG_PATH   = "/etc/cluster-master.cfg"
 local STATE_PATH    = "/var/cluster/state.dat"
@@ -93,8 +93,8 @@ local DEFAULT_CFG = {
   min_supported_protocol   = "1.0",
 }
 
-local cfg  -- loaded in start()
-clusterd._cfg = nil  -- exposed post-start for api.getConfig()
+local cfg  
+clusterd._cfg = nil  
 
 local function _mergeDefaults(loaded)
   local out = {}
@@ -102,8 +102,8 @@ local function _mergeDefaults(loaded)
   if type(loaded) == "table" then
     for k, v in pairs(loaded) do out[k] = v end
   end
-  -- Nested encryption table: merge rather than replace so partial
-  -- overrides don't blank plaintext_types.
+  
+  
   if type(loaded) == "table" and type(loaded.encryption) == "table" then
     out.encryption = {}
     for k, v in pairs(DEFAULT_CFG.encryption) do out.encryption[k] = v end
@@ -117,8 +117,8 @@ local function loadConfig()
     log.info(LOG_TAG, "no config at " .. CONFIG_PATH .. "; using defaults")
     return _mergeDefaults(nil)
   end
-  -- fs.readFile + load, NOT loadfile: that global doesn't exist at
-  -- rc.d time (compat registers it later, if at all). Text-only load.
+  
+  
   local src = fs.readFile and fs.readFile(CONFIG_PATH)
   local chunk, err = src and load(src, "=" .. CONFIG_PATH, "t")
   if not chunk then
@@ -135,9 +135,9 @@ local function loadConfig()
   return _mergeDefaults(result)
 end
 
--- ============================================================
--- Ensure /var/cluster exists
--- ============================================================
+
+
+
 
 local function _ensureStateDir()
   local dir = STATE_PATH:match("(.+)/[^/]+$")
@@ -150,9 +150,9 @@ local function _ensureStateDir()
   end
 end
 
--- ============================================================
--- Start / stop
--- ============================================================
+
+
+
 
 function clusterd.start()
   if _running then return true end
@@ -163,30 +163,30 @@ function clusterd.start()
 
   _ensureStateDir()
 
-  -- 1. Load persisted state (managers, jobs, counters)
+  
   state.init(STATE_PATH)
   local ok, lerr = state.load(STATE_PATH)
   if not ok then
     log.error(LOG_TAG, "state load failed: " .. tostring(lerr))
-    -- Continue; state.load keeps the fresh in-memory state on failure.
+    
   end
 
-  -- Re-hydrate storage node from config if it wasn't in persisted state.
+  
   if cfg.storage_node_address and not state._data.storage_node then
     state.setStorageNode({ address = cfg.storage_node_address })
   end
 
-  -- Public storage, if there is any. jobs.lua asks store_client whether a
-  -- node is CONFIGURED before every spill decision, so handing it the
-  -- client unconditionally is safe: with no storage_node_address the
-  -- client reports unavailable and every assignment stays inline, which
-  -- is exactly how the cluster behaved before this existed.
+  
+  
+  
+  
+  
   do
     local okSer, ser = pcall(require, "kernel.serialize")
-    -- No `net` handed in on purpose: store_client wants the KERNEL net
-    -- (it speaks to the Storage Node on port 2101), not cluster.net,
-    -- which exists to talk to Managers and would source-route through a
-    -- relay path that has nothing to do with storage.
+    
+    
+    
+    
     storecli.init({ state = state, serialize = okSer and ser or nil, log = log })
     jobs.setStore(storecli, okSer and ser or nil)
     if storecli.available() then
@@ -196,15 +196,15 @@ function clusterd.start()
     end
   end
 
-  -- CLUSTER-6 — initialize the pair module with a handle to trust so
-  -- it can flip new peers to TRUSTED on a successful pair.
+  
+  
   do
     local okT, trustMod = pcall(require, "kernel.net.trust")
     if okT then pair.init({ trust = trustMod }) end
   end
 
-  -- 2. Inject handler callbacks and wire net listeners.
-  -- CLUSTER-6 — onPairInit dispatches to the pair module.
+  
+  
   _net_listeners = netmod.register({
     onRegister     = function(p, from) clusterd._onRegister(p, from)     end,
     onHeartbeat    = function(p, from) clusterd._onHeartbeat(p, from)    end,
@@ -216,8 +216,8 @@ function clusterd.start()
     onPairInit     = function(p, from) pair.onPairInit(p, from)          end,
   })
 
-  -- 3. Start recurring timers. event.interval is the canonical TOS API
-  --    for "call me every N seconds" — event.timer is single-shot.
+  
+  
   _timer_heartbeat_sweep = event.interval(
     cfg.heartbeat_sweep_interval,
     function() clusterd._onHeartbeatSweep() end,
@@ -231,7 +231,7 @@ function clusterd.start()
     function() clusterd._onStatusSnapshot() end,
     "clusterd.status")
 
-  -- 4. Expose the in-process API for the CLI.
+  
   api.bind(state, scheduler, jobs, clusterd)
 
   _running = true
@@ -264,17 +264,17 @@ end
 function clusterd.isRunning() return _running end
 function clusterd.getConfig() return cfg end
 
--- CLUSTER-6 — pairing surface, called by the cluster CLI (which lives
--- in the operator's shell process, NOT inside the daemon, but talks to
--- the daemon via this module's exported handles).
+
+
+
 function clusterd.startPairing()    return pair.startWindow()           end
 function clusterd.closePairing()    return pair.closeWindow()           end
 function clusterd.pairingInfo()     return pair.windowInfo()            end
 function clusterd.pairingOpen()     return pair.windowOpen()            end
 
--- ============================================================
--- Timer handlers
--- ============================================================
+
+
+
 
 function clusterd._onHeartbeatSweep()
   if not cfg then return end
@@ -285,7 +285,7 @@ function clusterd._onHeartbeatSweep()
 
     if since > cfg.heartbeat_offline_after and prev ~= "offline" then
       state.setManagerState(addr, "offline")
-      -- Best-effort reassign / mark-lost for this Manager's work.
+      
       pcall(jobs.onManagerOffline, m.domain_id, state)
     elseif since > cfg.heartbeat_degraded_after and prev == "active" then
       state.setManagerState(addr, "degraded")
@@ -293,7 +293,7 @@ function clusterd._onHeartbeatSweep()
       state.setManagerState(addr, "active")
     end
 
-    -- Draining manager that has finished all work → offline per §6.1.
+    
     if prev == "draining" then
       local any = false
       for _, j in pairs(state._data.jobs) do
@@ -315,7 +315,7 @@ function clusterd._onSchedulerTick()
   if not cfg then return end
   local now = computer.uptime()
 
-  -- 1. Dispatch pending assignments.
+  
   local pending = jobs.pendingAssignments(state)
   local ctx = {
     compute_bound_in_flight = state.computeBoundInFlight(),
@@ -323,8 +323,8 @@ function clusterd._onSchedulerTick()
     uptime                  = now,
   }
   for _, a in ipairs(pending) do
-    -- Refresh ctx.compute_bound_in_flight after each dispatch so the cap
-    -- is enforced within a single tick as well as across ticks.
+    
+    
     ctx.compute_bound_in_flight = state.computeBoundInFlight()
     local addr, reason = scheduler.pickDomain(a, state._data.managers, ctx)
     if addr then
@@ -334,18 +334,18 @@ function clusterd._onSchedulerTick()
           a.assignment_id or -1, tostring(derr)))
       end
     elseif reason and reason ~= "thread_budget_saturated" then
-      -- Noisy reasons are expected in steady state; log only the first
-      -- occurrence per minute would be nicer but good-enough for now.
+      
+      
     end
   end
 
-  -- 2. Enforce deadlines on running assignments.
+  
   for _, job in pairs(state._data.jobs) do
     for aid, a in pairs(job.assignments) do
       if a.state == "running" and a.deadline and a.deadline > 0 then
-        -- deadline stored as absolute seconds-since-epoch-style number.
-        -- We keep parity with the spec (§4.3) and compare against the
-        -- uptime equivalent the Manager computed.
+        
+        
+        
         if now > a.deadline then
           pcall(jobs.onAssignmentTimeout, aid, state, netmod)
         end
@@ -355,9 +355,9 @@ function clusterd._onSchedulerTick()
 end
 
 function clusterd._onStatusSnapshot()
-  -- Compact snapshot for /var/cluster/status.dat. Readable by CLI even
-  -- if the daemon is wedged — this is the "what's the cluster doing?"
-  -- fast path.
+  
+  
+  
   local snap = {
     time              = computer.uptime(),
     managers          = { active = 0, degraded = 0, draining = 0, offline = 0 },
@@ -385,7 +385,7 @@ function clusterd._onStatusSnapshot()
     }
   end
 
-  -- Atomic write via .tmp + rename.
+  
   local serialize = require("kernel.serialize")
   local blob = serialize.encode(snap)
   local tmp  = STATUS_PATH .. ".tmp"
@@ -414,12 +414,12 @@ function clusterd._onStatusSnapshot()
   end
 end
 
--- ============================================================
--- Event handlers (called by cluster.net on packet receipt)
--- ============================================================
 
---- Cluster protocol version negotiation (§3.4). Returns (ok, reason).
---  Major mismatch → hard reject. Minor mismatch → accept (best-effort).
+
+
+
+
+
 local function _versionCompatible(manager_ver)
   local min = cfg and cfg.min_supported_protocol or "1.0"
   local function split(v)
@@ -474,18 +474,18 @@ function clusterd._onHeartbeat(packet, from)
   local snap = packet.payload or {}
   local ok, err = state.updateManagerHeartbeat(from, snap)
   if not ok then
-    -- A heartbeat from a Manager we don't know about means they weren't
-    -- properly registered (or we restarted). Ignore; they'll time out
-    -- their CLUSTER_REGISTER and retry.
+    
+    
+    
     log.warn(LOG_TAG, "heartbeat from unknown " .. tostring(from) ..
                       ": " .. tostring(err))
     return
   end
-  -- If the snapshot says they're draining, reflect that.
+  
   if snap.state == "draining" then
     state.setManagerState(from, "draining")
   end
-  -- Fresh heartbeat → consider un-degrading.
+  
   local m = state.getManager(from)
   if m and m.state == "degraded" then
     state.setManagerState(from, "active")
@@ -515,13 +515,13 @@ end
 function clusterd._onAssignAck(packet, from)
   local p = packet.payload or {}
   if not p.assignment_id then return end
-  -- Rejected assignments go back to pending so the scheduler picks a
-  -- different domain next tick.
+  
+  
   if p.accepted == false then
     log.warn(LOG_TAG, string.format(
       "manager %s rejected asn %d: %s",
       tostring(from):sub(1, 8), p.assignment_id, tostring(p.reason)))
-    -- Find the job_id the assignment belongs to.
+    
     for job_id, job in pairs(state._data.jobs) do
       if job.assignments[p.assignment_id] then
         state.setAssignmentState(job_id, p.assignment_id, "pending", {
@@ -535,8 +535,8 @@ function clusterd._onAssignAck(packet, from)
 end
 
 function clusterd._onStatusRes(packet, from)
-  -- For v1 we don't track pending status queries; just log. The api
-  -- layer can plumb correlation_ids through later.
+  
+  
   log.info(LOG_TAG, "status response from " .. tostring(from):sub(1, 8))
 end
 

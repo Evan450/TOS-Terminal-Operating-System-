@@ -1,22 +1,22 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  TOS Module: printer — the `printer` command                 ║
--- ║                                                              ║
--- ║  Operator front end over the driver in /usr/lib/printer.lua. ║
--- ║  The driver is the API; this is the thing you type.          ║
--- ║                                                              ║
--- ║    printer                 what is attached, and its levels  ║
--- ║    printer test            one page, to prove the wiring     ║
--- ║    printer file <path>     print a text file                 ║
--- ║    printer preview <path>  paginate it WITHOUT printing      ║
--- ║    printer scan [<path>]   read the page in the input slot   ║
--- ║    printer tag <text>      print a name tag                  ║
--- ║    printer clear           empty the printer's buffer        ║
--- ║                                                              ║
--- ║  `preview` exists because paper is a real resource: the way  ║
--- ║  to find out that your 3-line footer pushed the document to  ║
--- ║  a fourth sheet should not be finding a fourth sheet in the  ║
--- ║  output chest.                                               ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local P   = require("printer")
 local fmt = require("printerfmt")
@@ -28,10 +28,10 @@ local C_DIM   = 0xAAAAAA
 local C_TITLE = 0xFFFF55
 local C_FG    = 0xFFFFFF
 
--- ── Flag parsing ──────────────────────────────────────────────────────
--- Long flags only, `--name` or `--name=value`. Positional arguments keep
--- their order. Deliberately small: TOS has no shared getopt yet, and this
--- command is not the place to invent one.
+
+
+
+
 local function parseArgs(args)
   local pos, flags = {}, {}
   for i = 1, #args do
@@ -50,7 +50,7 @@ end
 
 local function haveFs() return fs and fs.readFile and fs.exists end
 
--- ── Status ────────────────────────────────────────────────────────────
+
 local function cmdStatus(o)
   local st, err = P.status()
   if not st then
@@ -74,9 +74,9 @@ local function cmdStatus(o)
   level("black ink", st.black, 10)
   level("colour ink", st.color, 10)
   o(string.format("  %-12s %d px x %d lines", "page", st.maxWidth, st.maxLines), C_FG)
-  -- Which optional methods this build has. It reads as trivia until the
-  -- day `printer scan` says "this printer cannot scan" and nobody can
-  -- tell whether that is the mod version or a broken block.
+  
+  
+  
   local missing = {}
   for _, m in ipairs({ "width", "maxWidth", "scan", "scanBook", "printTag" }) do
     if not st.features[m] then missing[#missing + 1] = m end
@@ -86,11 +86,11 @@ local function cmdStatus(o)
   end
 end
 
--- ── Reading a document ────────────────────────────────────────────────
-local MAX_DOC_BYTES = 64 * 1024   -- a page holds ~20 short lines; 64K is
-                                  -- already ~100 sheets. Reading more into
-                                  -- one Lua string on a T1 is how you OOM
-                                  -- the box before you print anything.
+
+local MAX_DOC_BYTES = 64 * 1024   
+                                  
+                                  
+                                  
 
 local function readDoc(path, o)
   if not haveFs() then
@@ -124,8 +124,8 @@ local function layoutOpts(flags)
     if not opts.copies then return nil, "--copies needs a number" end
   end
   if flags.color then
-    -- Accept 0xRRGGBB or plain decimal. A colour here colours EVERY line
-    -- and costs a colour-ink unit per line; the cost report says so.
+    
+    
     opts.color = tonumber(flags.color) or tonumber(flags.color, 16)
     if not opts.color then return nil, "--color needs a number like 0xFF0000" end
   end
@@ -137,7 +137,7 @@ local function reportCost(cost, o)
     cost.paper, cost.black, cost.color), C_DIM)
 end
 
--- ── printer file ──────────────────────────────────────────────────────
+
 local function cmdFile(pos, flags, o)
   local path = pos[2]
   if not path then o("Usage: printer file <path> [--title=T] [--copies=N] [--center]", C_DIM); return end
@@ -176,7 +176,7 @@ local function cmdFile(pos, flags, o)
   local printed, pErr, partial = job:commit(opts)
   if not printed then
     o("Print failed: " .. tostring(pErr), C_ERR)
-    -- The partial count is the whole reason commit returns three values.
+    
     if (partial or 0) > 0 then
       o(string.format("%d page(s) DID print — check the output slots before reprinting.",
         partial), C_WARN)
@@ -186,7 +186,7 @@ local function cmdFile(pos, flags, o)
   o(string.format("Printed %d page(s) of %s.", printed, path), C_OK)
 end
 
--- ── printer preview ───────────────────────────────────────────────────
+
 local function cmdPreview(pos, flags, o)
   local path = pos[2]
   if not path then o("Usage: printer preview <path> [--center] [--no-wrap]", C_DIM); return end
@@ -194,10 +194,10 @@ local function cmdPreview(pos, flags, o)
   local opts, oErr = layoutOpts(flags)
   if not opts then o(tostring(oErr), C_ERR); return end
 
-  -- Measure with the real printer when one is attached, and SAY which
-  -- measure was used. A preview laid out from the fallback table can
-  -- disagree with the hardware by a pixel or two per line, which is
-  -- exactly enough to move a word onto the next sheet.
+  
+  
+  
+  
   local measure, source = fmt.width, "estimated widths"
   if P.available() then
     local _, src = P.width("M")
@@ -221,7 +221,7 @@ local function cmdPreview(pos, flags, o)
   reportCost(cost, o)
 end
 
--- ── printer test ──────────────────────────────────────────────────────
+
 local function cmdTest(flags, o)
   if not P.available() then
     o("No printer available: " .. tostring(P.unavailableReason()), C_ERR); return
@@ -236,13 +236,13 @@ local function cmdTest(flags, o)
   job:line("Centred.", nil, "center")
   job:blank()
   job:line("Widest line the page will hold:")
-  -- Fill exactly one line to the printer's real budget, so a clipped
-  -- test page is itself the diagnostic: if the row of #s is cut short,
-  -- our measure and the printer's disagree.
+  
+  
+  
   local budget, row = P.maxWidth(), ""
-  -- Bounded: a printer whose width() answered 0 would otherwise spin here
-  -- forever, and a hung `printer test` is a worse diagnostic than a short
-  -- row of #s. maxWidth is in pixels and no glyph is narrower than 1.
+  
+  
+  
   for _ = 1, budget do
     local w = (P.width(row .. "#"))
     if w > budget then break end
@@ -263,7 +263,7 @@ local function cmdTest(flags, o)
   o("Test page printed. Check the output slots.", C_OK)
 end
 
--- ── printer scan ──────────────────────────────────────────────────────
+
 local function cmdScan(pos, o)
   local lines, err = P.scan()
   if not lines then o("Scan failed: " .. tostring(err), C_ERR); return end
@@ -285,7 +285,7 @@ local function cmdScan(pos, o)
   if #lines == 0 then o("(the page is blank)", C_DIM) end
 end
 
--- ── printer tag ───────────────────────────────────────────────────────
+
 local function cmdTag(args, o)
   local text = table.concat({ table.unpack(args, 2) }, " ")
   if text == "" then o("Usage: printer tag <text>", C_DIM); return end
@@ -294,7 +294,7 @@ local function cmdTag(args, o)
   o("Name tag printed.", C_OK)
 end
 
--- ── Dispatch ──────────────────────────────────────────────────────────
+
 local function help(o)
   o("printer — OpenPrinter driver", C_TITLE)
   o("  printer                    Attached printer and its levels", C_FG)

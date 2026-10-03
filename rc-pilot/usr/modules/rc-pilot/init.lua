@@ -1,35 +1,35 @@
--- ╔══════════════════════════════════════╗
--- ║  TOS Module — rc-pilot (host side)   ║
--- ╚══════════════════════════════════════╝
--- Pairs with /TOS-Extras/robot/eeprom-rc-pilot.lua. Run `rc <addr>`
--- on a TOS computer with a wireless modem; the screen goes into
--- piloting mode and WASD / arrow keys / Space / Shift drive the
--- robot. ^Q or F10 exits (Esc belongs to Minecraft — it closes the
--- screen GUI and never reaches the computer).
---
--- Key bindings (covers both flat robots and Computronics drones):
---   W / Up      forward
---   S / Down    back
---   A / Left    strafe left (drone) OR turn-left+forward+turn-right (robot)
---   D / Right   strafe right (drone) OR turn-right+forward+turn-left (robot)
---   Q           turn left in place
---   E           turn right in place
---   Space       up (drone)
---   LShift      down (drone)
---   F           use (right-click in front)
---   X           swing (break block in front)
---   B           place (place block from selected slot)
---   1..9        select inventory slot 1..9
---   P           ping (round-trip test)
---   Esc / Ctrl+C  exit pilot mode
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
 
--- Standard TOS shortcuts, shared with the shell (tos/shell/keys.lua): ^Q
--- closes this the same way it closes everything else TOS ships, and an
--- operator rebinding `quit` with `keys set` reaches here too. Falls back
--- to the coded defaults when the module is unavailable.
+
+
+
+
 local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
 local function stdQuit(ch, code)
   if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
@@ -48,20 +48,20 @@ local mod = {}
 local PORT  = 7777
 local MAGIC = "RCPILOT1"
 
--- ============================================================
--- Helpers (HMAC + CSPRNG)
--- ============================================================
--- The package sandbox injects a narrow `crypto` GLOBAL when the manifest
--- declares the "crypto" capability (hash/hmac/ctEquals/random). It does NOT
--- allow require("kernel.crypto"), so prefer the injected global and only fall
--- back to the kernel module when run un-sandboxed (e.g. a smoke test).
+
+
+
+
+
+
+
 local crypto = crypto
 if not (crypto and crypto.hmac) then
   local ok, kc = pcall(require, "kernel.crypto")
   if ok then crypto = kc end
 end
--- The injected surface exposes CSPRNG bytes as `random(n)`; the raw kernel
--- module spells the same thing `salt(n)`. Bridge both so this runs either way.
+
+
 local function randBytes(n) return (crypto.random or crypto.salt)(n) end
 
 --! HEX, never raw bytes. The frame is a Lua-literal string the EEPROM
@@ -77,19 +77,19 @@ local function packFrame(op, arg, secret)
   local n = nonce()
   local body = op .. "|" .. tostring(arg or "") .. "|" .. n
   local mac  = crypto.hmac(secret, body)
-  -- Serialize as minimal Lua so the EEPROM's pattern parser can read it.
+  
   local argPart = arg and ("arg=" .. tostring(arg) .. ",") or ""
   return string.format(
     '{magic="%s",op="%s",%snonce="%s",mac="%s"}',
     MAGIC, op, argPart, n, mac)
 end
 
--- ============================================================
--- Resolve target + secret
--- ============================================================
+
+
+
 
 local function resolveSecret(target, sess)
-  -- Prefer keychain slot "rc:<addr>" if present + unlocked.
+  
   local km = _G._TOS and _G._TOS.keychain
   if km and km.isUnlocked and km.isUnlocked(sess) then
     local k = "rc:" .. (target or ""):sub(1, 8)
@@ -99,9 +99,9 @@ local function resolveSecret(target, sess)
   return nil
 end
 
--- ============================================================
--- Main command
--- ============================================================
+
+
+
 
 mod.commands = {
   rc = function(args, o)
@@ -112,10 +112,12 @@ mod.commands = {
       o("  The robot must be running the rc-pilot EEPROM and have a")
       o("  shared secret either in your keychain (slot 'rc:<addr>')")
       o("  or passed via 'rc <addr> --secret <secret>'.")
+      o("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
+      o("  swap a blank EEPROM in, `flash` that file, and swap yours back.")
       return
     end
 
-    -- Find a local modem.
+    
     local modemAddr = component.list("modem")()
     if not modemAddr then o("No modem"); return end
     local modem = component.proxy(modemAddr)
@@ -124,12 +126,12 @@ mod.commands = {
       return
     end
 
-    -- Resolve a prefix against the peers TOS knows. This used to call
-    -- net.listPeers, which does not exist (trust.listPeers does), so the
-    -- prefix form advertised in the usage never resolved anything. A
-    -- robot on a bare EEPROM is not a TOS peer and will usually not be in
-    -- that list either -- so the honest instruction is the full address,
-    -- and a prefix is a convenience when it happens to be known.
+    
+    
+    
+    
+    
+    
     local full = nil
     local tos = _G._TOS or {}
     local tm = tos.trust or (tos.net and tos.net.trust)
@@ -140,14 +142,14 @@ mod.commands = {
         if type(a) == "string" and a:sub(1, #target) == target then full = a; break end
       end
     end
-    full = full or target  -- accept full address verbatim
+    full = full or target  
     if #full < 16 then
       o("Target address looks too short. Give the robot's full modem address")
       o("(a prefix only works for a peer TOS already knows about).")
       return
     end
 
-    -- Resolve secret: keychain, then --secret <s>, then a masked prompt.
+    
     local secret
     for i = 2, #args do
       if args[i] == "--secret" and args[i + 1] then
@@ -163,7 +165,7 @@ mod.commands = {
       secret = resolveSecret(full, sess)
     end
     if not secret then
-      -- Ask for it, masked, when the compat term is available to us.
+      
       local okT, term = pcall(require, "compat.term")
       if okT and type(term) == "table" and type(term.read) == "function" then
         o("Shared secret for " .. full:sub(1, 8) .. "... (not echoed): ")
@@ -183,12 +185,12 @@ mod.commands = {
     o("Keys: WASD/arrows | Q/E turn | Space/Shift up/down | F use | X break | B place | 1-9 slot | P ping | "
       .. quitLabel() .. " quit")
 
-    -- Key→op map. OC key codes (LWJGL):
-    --   17=W  31=S  30=A  32=D  16=Q  18=E
-    --   200=Up 208=Down 203=Left 205=Right
-    --   57=Space  42=LShift
-    --   33=F  45=X  48=B  25=P  1=Esc
-    --   2..10=number keys 1..9
+    
+    
+    
+    
+    
+    
     local function dispatchKey(ch, code)
       if code == 17 or code == 200 then return "move:f" end
       if code == 31 or code == 208 then return "move:b" end
@@ -203,7 +205,7 @@ mod.commands = {
       if code == 48 then return "place:f" end
       if code == 25 then return "ping"  end
       if code >= 2 and code <= 10 then
-        return "select", code - 1   -- code 2 → slot 1, code 10 → slot 9
+        return "select", code - 1   
       end
       return nil
     end
@@ -215,12 +217,12 @@ mod.commands = {
       --! lost and the pilot hung until the operator pressed a key.
       local sig, _, a3, a4, _, a6 = computer.pullSignal(0.5)
       if sig == "key_down" then
-        local char, code = a3, a4          -- (name, keyboard, char, code, player)
-        -- #FIX (real Minecraft, 2026-08-11) — ^Q or F10, not Esc: Esc
-        -- closes the screen GUI and never reaches the computer, and a
-        -- pilot you cannot exit keeps flying a robot. Plain Q is TURN
-        -- LEFT here, so it cannot be the quit key. Esc and ^C stay
-        -- accepted in case anything ever delivers them.
+        local char, code = a3, a4          
+        
+        
+        
+        
+        
         if stdQuit(char, code) or char == 3 then
           modem.close(PORT)
           o("RC pilot exited.")
@@ -231,7 +233,7 @@ mod.commands = {
           modem.send(full, PORT, packFrame(op, arg, secret))
         end
       elseif sig == "modem_message" then
-        -- (name, local, remote, port, distance, data): the reply is a6.
+        
         local data = a6
         if type(data) == "string" then
           local pongAt = data:match('op="pong",arg=(%d+)')

@@ -1,31 +1,31 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  TOS Module: calc — a spreadsheet                            ║
--- ║                                                              ║
--- ║  Grid, formulas, save/load, CSV export. The MODEL and the    ║
--- ║  formula engine live in calc/sheet.lua (pure, unit-tested);  ║
--- ║  this file is the TUI: drawing, keys, and the file dialogs.  ║
--- ║                                                              ║
--- ║  Runs inside the pkg sandbox — draws through the sandboxed   ║
--- ║  `component` GPU proxy, pulls raw signals, and reads/writes  ║
--- ║  through the session-bound `fs`, so a sheet is saved with    ║
--- ║  the CALLING user's permissions (no way to write somewhere   ║
--- ║  they couldn't write themselves).                            ║
--- ║                                                              ║
--- ║  Follows the TOS visual grammar: dim rails for structure,    ║
--- ║  ramp caps on the key bar, selection by inverse, chrome dim  ║
--- ║  and data bright.                                            ║
--- ║                                                              ║
--- ║  Usage:  calc [file]                                          ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
 local S         = require("calc.sheet")
 
--- Standard TOS shortcuts, shared with the shell (tos/shell/keys.lua): ^Q
--- closes this the same way it closes everything else TOS ships, and an
--- operator rebinding `quit` with `keys set` reaches here too. Falls back
--- to the coded defaults when the module is unavailable.
+
+
+
+
 local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
 local function stdQuit(ch, code)
   if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
@@ -41,17 +41,17 @@ end
 
 local M = {}
 
-local COLW    = 9         -- data column width in cells
-local ROWHDR  = 5         -- row-number gutter width
+local COLW    = 9         
+local ROWHDR  = 5         
 local DEFAULT_EXT = ".calc"
 
--- #FIX (emulator round 7) — pad/padLeft measured BYTES. Chrome text
--- here is not ASCII: the key bar separates its hints with "·" (2 bytes
--- in UTF-8), so a 68-COLUMN key bar measured 73 and got sliced on an
--- 80-column screen — the operator saw "^Q Qui". Count characters
--- instead: in UTF-8 a character is any byte that is not a 10xxxxxx
--- continuation byte, and every glyph this program draws is one column
--- wide, so characters and columns agree.
+
+
+
+
+
+
+
 function M.ulen(s)
   local n = 0
   for i = 1, #s do
@@ -84,13 +84,13 @@ function M.padLeft(s, n)
   return string.rep(" ", n - w) .. s
 end
 
---- Join key hints so the bar always ends on a WHOLE hint. When they
---- don't all fit, drop from the RIGHT rather than slicing a word in
---- half — a bar reading "^Q Qui" looks like a rendering fault, while a
---- bar that simply stops after "Del Clear" reads as a short screen.
---- The hints keep their natural reading order; `must` (the way OUT of
---- the program) is re-appended if the drop would have eaten it, since
---- an operator who can't see how to quit is genuinely stuck.
+
+
+
+
+
+
+
 function M.fitHints(hints, cols, must)
   local function join(list)
     return (#list == 0) and "" or (" " .. table.concat(list, " · ") .. " ")
@@ -107,7 +107,7 @@ function M.fitHints(hints, cols, must)
       kept[#kept + 1] = must
       if M.ulen(join(kept)) <= cols then have = true
       else
-        kept[#kept] = nil                 -- didn't fit: free a slot and retry
+        kept[#kept] = nil                 
         if #kept == 0 then return join({ must }) end
         kept[#kept] = nil
       end
@@ -155,24 +155,24 @@ local function run(args, o)
   end
   local pad, padLeft, fitHints = M.pad, M.padLeft, M.fitHints
 
-  -- ── State ──────────────────────────────────────────────────────
+  
   local sh = S.new()
   local ctx = S.evaluator(sh)
   local cur = { c = 1, r = 1 }
-  local off = { c = 1, r = 1 }            -- top-left visible cell
+  local off = { c = 1, r = 1 }            
   local path = args and args[1] or nil
   local dirty = false
   local status, statusCol = "", nil
 
-  local GRID_TOP = 4                      -- rows 1 title, 2 rail, 3 col hdr
-  local GRID_BOT = H - 2                  -- H-1 formula/edit line, H key bar
+  local GRID_TOP = 4                      
+  local GRID_BOT = H - 2                  
   local function visRows() return GRID_BOT - GRID_TOP + 1 end
   local function visCols() return math.max(1, math.floor((W - ROWHDR) / COLW)) end
 
   local function recalc() ctx = S.evaluator(sh) end
   local function say(msg, col) status, statusCol = msg or "", col end
 
-  -- ── Drawing ────────────────────────────────────────────────────
+  
   local function drawChrome()
     fill(1, 1, W, 1, " ", T.fg, T.bg)
     set(2, 1, "TOS calc", T.title, T.bg)
@@ -184,7 +184,7 @@ local function run(args, o)
     local right = cells .. " cells"
     set(math.max(1, W - #right), 1, right, T.dim, T.bg)
 
-    -- Rule 2: a dim rail under the title carrying the cursor address.
+    
     local dash = mono and "-" or "─"
     local lt, rt = (mono and "|" or "┤"), (mono and "|" or "├")
     local label = S.refName(cur.c, cur.r)
@@ -202,7 +202,7 @@ local function run(args, o)
       local x = ROWHDR + i * COLW + 1
       local nameTxt = S.colName(c)
       local isCur = (c == cur.c)
-      -- Centre the column letter over its column.
+      
       local lead = math.floor((COLW - #nameTxt) / 2)
       set(x, 3, string.rep(" ", COLW), isCur and T.selfg or T.dim,
         isCur and T.selbg or T.bg)
@@ -217,7 +217,7 @@ local function run(args, o)
       local r = off.r + i
       local y = GRID_TOP + i
       fill(1, y, W, 1, " ", T.fg, T.bg)
-      -- Row gutter (chrome: dim; current row highlighted).
+      
       local isCurRow = (r == cur.r)
       set(1, y, padLeft(tostring(r), ROWHDR - 1) .. " ",
         isCurRow and T.selfg or T.dim, isCurRow and T.selbg or T.bg)
@@ -230,9 +230,9 @@ local function run(args, o)
         local fg = T.fg
         if S.isErr(v) then fg = T.err
         elseif type(v) == "number" then fg = T.fg
-        elseif v ~= nil then fg = T.dim end          -- text reads as label
-        -- Numbers right-align, text left-aligns (spreadsheet convention:
-        -- alignment is how you spot a number stored as text).
+        elseif v ~= nil then fg = T.dim end          
+        
+        
         local cellTxt
         if type(v) == "number" then cellTxt = padLeft(disp, COLW - 1) .. " "
         else cellTxt = " " .. pad(disp, COLW - 1) end
@@ -250,7 +250,7 @@ local function run(args, o)
       set(2, H - 1, pad(raw ~= "" and raw or "(empty)", W - 2),
         raw ~= "" and T.fg or T.dim, T.bg)
     end
-    -- Rule 3: ramp caps at the edges of the key bar.
+    
     fill(1, H, W, 1, mono and " " or "░", T.dim, T.bg)
     if not mono then
       set(1, H, "▓▒░", T.dim, T.bg)
@@ -277,8 +277,8 @@ local function run(args, o)
     if off.r < 1 then off.r = 1 end
   end
 
-  -- ── A one-line editor on the status row ────────────────────────
-  -- Returns the string, or nil when cancelled (^Q / Esc).
+  
+  
   local function editLine(prompt, initial)
     local buf = initial or ""
     while true do
@@ -290,9 +290,9 @@ local function run(args, o)
       set(#prompt + 1 + #shown, H - 1, "_", T.hi, T.bg)
       local ev, _, ch, code = computer.pullSignal()
       if ev == "key_down" then
-        if code == 28 then return buf                     -- Enter
-        elseif code == 1 or ch == 17 then return nil      -- Esc / ^Q
-        elseif code == 14 then                            -- Backspace
+        if code == 28 then return buf                     
+        elseif code == 1 or ch == 17 then return nil      
+        elseif code == 14 then                            
           if #buf > 0 then buf = buf:sub(1, -2) end
         elseif ch and ch >= 32 and ch < 127 then
           buf = buf .. string.char(ch)
@@ -303,7 +303,7 @@ local function run(args, o)
     end
   end
 
-  -- ── File I/O (through the sandbox's session-bound fs) ──────────
+  
   local function haveFs() return fs and fs.writeFile and fs.readFile end
 
   local function doSave(target)
@@ -351,19 +351,19 @@ local function run(args, o)
     else say("Export failed: " .. tostring(e), T.err) end
   end
 
-  -- ── Open a file passed on the command line ─────────────────────
+  
   if path then doOpen(path) end
 
-  -- ── Mouse ──────────────────────────────────────────────────────
-  -- A click selects the cell under the pointer; the wheel scrolls the
-  -- grid. Both go through the same cur/off state the arrow keys drive,
-  -- so nothing else in the program has to know a mouse exists — and on a
-  -- box with no touch-capable screen these events simply never arrive.
-  -- Column-header and gutter clicks are ignored rather than guessed at.
+  
+  
+  
+  
+  
+  
   local function cellAtPixel(x, y)
     if type(x) ~= "number" or type(y) ~= "number" then return nil end
     if y < GRID_TOP or y > GRID_BOT then return nil end
-    if x <= ROWHDR then return nil end               -- the row-number gutter
+    if x <= ROWHDR then return nil end               
     local j = math.floor((x - ROWHDR - 1) / COLW)
     if j < 0 or j >= visCols() then return nil end
     local i = y - GRID_TOP
@@ -374,33 +374,33 @@ local function run(args, o)
     return c, r
   end
 
-  -- ── Main loop ──────────────────────────────────────────────────
+  
   redraw()
   while true do
-    -- The 5th value is the scroll DIRECTION (and the mouse button on a
-    -- touch); keys don't use it.
+    
+    
     local ev, _, ch, code, arg5 = computer.pullSignal()
-    -- The seat came back to us after a Ctrl+B suspend: whatever is on
-    -- the screen is somebody else's. Repaint everything.
+    
+    
     if ev == "tos_focus" then
       redraw()
     elseif ev == "touch" or ev == "drag" then
-      -- OC: (touch, screenAddr, x, y, button) — the same two locals that
-      -- carry char/code for a key carry the coordinates here.
+      
+      
       local c, r = cellAtPixel(ch, code)
       if c then cur.c, cur.r = c, r; say(""); redraw() end
     elseif ev == "scroll" then
-      -- (scroll, screenAddr, x, y, direction): +1 = away from you = up.
+      
       local step = (arg5 or 0) > 0 and -3 or 3
       cur.r = math.max(1, math.min(S.MAX_ROWS, cur.r + step))
       ensureVisible(); redraw()
     elseif ev == "key_down" then
       local handled = true
       say("")
-      if stdQuit(ch, code) then                           -- standard quit
+      if stdQuit(ch, code) then                           
         if dirty then
           local ans = editLine("Unsaved changes — save first? (y/n/esc): ", "")
-          if ans == nil then handled = true              -- cancelled: stay
+          if ans == nil then handled = true              
           elseif ans:lower():sub(1, 1) == "y" then
             local t = path or editLine("Save as: ", "")
             if t then doSave(t); fill(1, 1, W, H, " ", T.fg, T.bg); return end
@@ -410,14 +410,14 @@ local function run(args, o)
         else
           fill(1, 1, W, H, " ", T.fg, T.bg); return
         end
-      elseif ch == 19 then                               -- ^S save
+      elseif ch == 19 then                               
         local t = path
         if not t then t = editLine("Save as: ", "") end
         if t then doSave(t) end
-      elseif ch == 15 then                               -- ^O open
+      elseif ch == 15 then                               
         local t = editLine("Open: ", path or "")
         if t then doOpen(t) end
-      elseif ch == 5 then                                -- ^E export CSV
+      elseif ch == 5 then                                
         local suggest = (path and path:gsub("%.%w+$", "") or "sheet") .. ".csv"
         local t = editLine("Export CSV as: ", suggest)
         if t then doExportCSV(t) end
@@ -427,27 +427,27 @@ local function run(args, o)
       elseif code == 205 then cur.c = math.min(S.MAX_COLS, cur.c + 1)
       elseif code == 201 then cur.r = math.max(1, cur.r - visRows())
       elseif code == 209 then cur.r = math.min(S.MAX_ROWS, cur.r + visRows())
-      elseif code == 199 then cur.c = 1                  -- Home
-      elseif code == 207 then                            -- End: last used col
+      elseif code == 199 then cur.c = 1                  
+      elseif code == 207 then                            
         local maxc = 1
         for k in pairs(sh.cells) do
           local c = tonumber(k:match("^(%d+):"))
           if c and c > maxc then maxc = c end
         end
         cur.c = maxc
-      elseif code == 211 or code == 14 then              -- Del / Backspace
+      elseif code == 211 or code == 14 then              
         if S.raw(sh, cur.c, cur.r) ~= "" then
           S.set(sh, cur.c, cur.r, nil); recalc(); dirty = true
         end
-      elseif code == 28 then                             -- Enter = edit
+      elseif code == 28 then                             
         local v = editLine(S.refName(cur.c, cur.r) .. ": ", S.raw(sh, cur.c, cur.r))
         if v ~= nil then
           S.set(sh, cur.c, cur.r, v); recalc(); dirty = true
-          cur.r = math.min(S.MAX_ROWS, cur.r + 1)        -- Enter walks down
+          cur.r = math.min(S.MAX_ROWS, cur.r + 1)        
         end
       elseif ch and ch >= 32 and ch < 127 then
-        -- Type-to-edit: the first character starts the editor, like a
-        -- real spreadsheet (no separate "enter edit mode" step).
+        
+        
         local v = editLine(S.refName(cur.c, cur.r) .. ": ", string.char(ch))
         if v ~= nil then
           S.set(sh, cur.c, cur.r, v); recalc(); dirty = true

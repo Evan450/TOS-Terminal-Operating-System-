@@ -1,18 +1,18 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  cluster.net — Packet handlers for the Master                ║
--- ╚══════════════════════════════════════════════════════════════╝
--- Registers net.on() handlers for every cluster message type.
--- Handlers do minimal inline work — they validate packet shape,
--- dispatch to clusterd callback handlers, and enqueue jobs for the
--- scheduler tick. Heavy lifting lives in the scheduler and jobs
--- modules.
+
+
+
+
+
+
+
+
 
 local net      = require("kernel.net")
 local protocol = require("kernel.net.protocol")
 local serialize = require("kernel.serialize")
 
--- Best-effort log hook. kernel.log first — bare "log" resolves nowhere
--- on TOS, which made these logs silently vanish.
+
+
 local log
 do
   local okK, mod = pcall(require, "kernel.log")
@@ -24,12 +24,12 @@ local LOG_TAG = "cluster.net"
 
 local netmod = {}
 
--- Cluster-specific message type constants. These extend protocol.TYPE;
--- we alias to the real strings defined in kernel.net.protocol so the
--- net layer's type-level validation still gates them at receive.
--- If the TOS protocol module doesn't know a given cluster type
--- (e.g. running against an older kernel), fall back to the spec's
--- friendly names so tests can still exercise the logic.
+
+
+
+
+
+
 local function _ptype(cluster_name, fallback)
   if protocol.TYPE and protocol.TYPE[cluster_name] then
     return protocol.TYPE[cluster_name]
@@ -56,17 +56,17 @@ local TYPE = {
 }
 netmod.TYPE = TYPE
 
--- ============================================================
--- Return-path bookkeeping for relay-originated traffic
--- ============================================================
--- When a packet arrives wrapped in RELAY_FORWARD, the envelope's `path`
--- describes the hops it took. Master's reply is source-routed back: we
--- remember the path per originating address so outbound helpers can
--- wrap replies in a matching RELAY_FORWARD going the other way.
---
--- Entries age out after 5 minutes of quiet; this matters only for
--- Managers that go offline mid-assignment.
-local _returnPaths = {}          -- [manager_addr] = { hops = {...}, last_seen = uptime }
+
+
+
+
+
+
+
+
+
+
+local _returnPaths = {}          
 
 local computer = require("computer")
 
@@ -88,33 +88,33 @@ local function _returnPathFor(manager_addr)
   return e.hops
 end
 
-netmod._returnPaths = _returnPaths   -- exposed for test & diagnostic
+netmod._returnPaths = _returnPaths   
 
--- ============================================================
--- Outbound packet helpers
--- ============================================================
 
---- Build and send a packet, wrapping in RELAY_FORWARD if the destination
--- has a known return path. Returns (ok, err).
+
+
+
+
+
 local function _sendToManager(manager_addr, msgType, payload)
   local pkt = protocol.makePacket(msgType, payload, { to = manager_addr })
 
   local hops = _returnPathFor(manager_addr)
   if hops and #hops > 0 then
-    -- Source-routed reply: wrap inner packet in RELAY_FORWARD along the
-    -- reverse of the original path. The relay path we send TO is the
-    -- reverse of the path the inbound packet TRAVERSED.
+    
+    
+    
     local reversed = {}
     for i = #hops, 1, -1 do reversed[#reversed + 1] = hops[i] end
 
-    -- The first hop on the reverse path is our next-hop relay peer.
+    
     local next_hop = reversed[1]
     if not next_hop then return false, "empty_reverse_path" end
 
     local inner_blob = serialize.encode(pkt)
     local wrapper = protocol.makePacket(TYPE.RELAY_FORWARD, {
       dest       = manager_addr,
-      path       = reversed,            -- hops the reply will traverse
+      path       = reversed,            
       ttl        = math.max(3, #reversed + 1),
       inner      = inner_blob,
       inner_type = msgType,
@@ -127,7 +127,7 @@ local function _sendToManager(manager_addr, msgType, payload)
 end
 
 function netmod.sendAssignment(managerAddr, assignment)
-  -- CLUSTER_ASSIGN payload per §4.3.
+  
   local payload = {
     assignment_id   = assignment.assignment_id,
     job_id          = assignment.job_id,
@@ -166,10 +166,10 @@ function netmod.sendRegisterAck(managerAddr, domain_id, accepted, reason, extra)
     master_protocol        = extra.master_protocol or "1.0",
     min_supported_protocol = extra.min_supported_protocol or "1.0",
   }
-  -- Register replies are sent directly; the Manager's relay path is
-  -- not yet known when it first registers (or, if the register was
-  -- relay-routed, we already stashed the return path via the relay
-  -- unwrap, and _sendToManager will use it automatically).
+  
+  
+  
+  
   return _sendToManager(managerAddr, TYPE.CLUSTER_REGISTER_ACK, payload)
 end
 
@@ -177,16 +177,16 @@ function netmod.sendStatusReq(managerAddr)
   return _sendToManager(managerAddr, TYPE.CLUSTER_STATUS_REQ, {})
 end
 
--- ============================================================
--- Register / unregister listeners
--- ============================================================
 
---- Wire net.on() listeners for every cluster message type.
--- @param handlers table: callbacks injected by clusterd. Keys:
---          onRegister, onHeartbeat, onResult, onResultChunk,
---          onAssignAck, onStatusRes, onRelayFail, onCancelEcho.
---        Missing keys degrade to a no-op + warning.
--- @return table: list of { type, id } rows to pass back to unregister().
+
+
+
+
+
+
+
+
+
 function netmod.register(handlers)
   handlers = handlers or {}
 
@@ -203,9 +203,9 @@ function netmod.register(handlers)
   local onAssignAck    = getH("onAssignAck")
   local onStatusRes    = getH("onStatusRes")
   local onRelayFail    = getH("onRelayFail")
-  -- CLUSTER-6 — pairing handshake listener. clusterd binds this to
-  -- the pair module's onPairInit so the trust DB gets updated when
-  -- a Manager presents a valid pairing code.
+  
+  
+  
   local onPairInit     = getH("onPairInit")
 
   local registered = {}
@@ -260,12 +260,32 @@ function netmod.register(handlers)
     if not ok then log.error(LOG_TAG, "onPairInit threw: " .. tostring(err)) end
   end)
 
-  -- RELAY_FORWARD arrives at Master when a Manager's relay path
-  -- terminates here. We unwrap the inner packet and re-dispatch by type.
+  
+  
+  --! #SEC — REFUSED, until a relayed packet can prove where it came from.
+  --! The inner packet is `serialize.encode(pkt)`: no encryption, no MAC
+  --! (cluster/protocol.lua's "end-to-end encrypted by the caller with its
+  --! Master secret" describes a design, not this code). Its origin was
+  --! read from the inner packet's own `from`, so ANY trusted Manager could
+  --! wrap a CLUSTER_RESULT / HEARTBEAT / REGISTER "from" another Manager
+  --! and have it accepted as that Manager's, and rewrite that Manager's
+  --! remembered return path so the Master's next assignment for it went
+  --! to the relay instead. Nothing legitimate is lost: no Manager sends
+  --! RELAY_FORWARD (cluster.relayHandle has no caller), so the only
+  --! relayed packet this handler has ever seen is a hand-made one. To turn
+  --! relaying on, MAC the inner with the ORIGIN's Master secret and verify
+  --! it here before trusting inner.from or recording a path.
+  --! (test_cluster_relay_refused.lua)
+  local RELAY_UNAUTHENTICATED = true
   add(TYPE.RELAY_FORWARD, function(packet, from)
     local p = packet and packet.payload
     if type(p) ~= "table" or not p.inner then
       log.warn(LOG_TAG, "malformed RELAY_FORWARD from " .. tostring(from))
+      return
+    end
+    if RELAY_UNAUTHENTICATED then
+      log.warn(LOG_TAG, "refusing RELAY_FORWARD from " .. tostring(from):sub(1, 8)
+        .. ": relayed packets carry no origin authentication yet")
       return
     end
     local inner, derr = serialize.decode(p.inner)
@@ -274,14 +294,14 @@ function netmod.register(handlers)
       return
     end
 
-    -- Remember the originating Manager's return path so outbound
-    -- replies retrace the same hops.
+    
+    
     local origin = inner.from or (p.path and p.path[1])
     if origin and type(p.path) == "table" then
       _rememberReturnPath(origin, p.path)
     end
 
-    -- Re-dispatch the inner packet according to its type.
+    
     local inner_from = origin or from
     local t = inner.type
     if t == TYPE.CLUSTER_REGISTER then
@@ -319,9 +339,9 @@ function netmod.unregister(registered)
   end
 end
 
--- Diagnostic helper: check whether we have a live return path for a
--- given Manager. Useful from the api module when an operator runs
--- `cluster managers <id>`.
+
+
+
 function netmod.hasRelayReturnPath(manager_addr)
   return _returnPathFor(manager_addr) ~= nil
 end

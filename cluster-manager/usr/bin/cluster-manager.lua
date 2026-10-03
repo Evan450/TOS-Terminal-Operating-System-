@@ -1,9 +1,9 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  cluster-manager — Manager CLI                               ║
--- ╚══════════════════════════════════════════════════════════════╝
--- Thin wrapper over the daemon's API. Operators use this to inspect
--- the local Manager and trigger drain/undrain without going through
--- the full Master CLI.
+
+
+
+
+
+
 
 local mgr = require("cluster-manager")
 
@@ -27,7 +27,7 @@ if sub == "status" then
   print(string.format(" errors last min:      %d", s.errors_last_min))
 
 elseif sub == "workers" then
-  -- CLUSTER v2 — registered OpenOS workers on the bridge.
+  
   local list = mgr.workers and mgr.workers() or {}
   if #list == 0 then
     print("No OpenOS workers registered (bridge off or none have joined).")
@@ -51,8 +51,8 @@ elseif sub == "undrain" then
   print("undrained (resumed accepting work)")
 
 elseif sub == "pair" then
-  -- CLUSTER-6 — pair this Manager with a Master using the code shown
-  -- by `cluster pair start` on the Master side.
+  
+  
   local masterAddr = args[2]
   local code       = args[3]
   if not masterAddr or not code then

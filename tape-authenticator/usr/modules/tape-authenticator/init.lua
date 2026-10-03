@@ -1,52 +1,52 @@
--- ╔══════════════════════════════════════════════════════════╗
--- ║  TOS Module — Tape Authenticator                           ║
--- ║  Keycard identity + encrypted personal log on one tape     ║
--- ╚══════════════════════════════════════════════════════════╝
--- A tape is a lot bigger than a keycard needs, so this module uses the
--- rest of it: the front of the tape carries an HMAC-signed identity
--- block ("this tape is Operator X's key", machine-secret-bound and
--- unforgeable), and the space after it holds a vault-encrypted PERSONAL
--- LOG the operator can add to / remove from at any time — a miniature
--- private notebook fused with an access card.
---
--- The two halves are deliberately independent:
---   * The identity block is signed with a per-package MACHINE secret
---     (crypto.secret(), admin-gated, kernel-managed) — minting and
---     verifying keys is an operator action on the issuing machine.
---   * The log is encrypted with the OPERATOR'S OWN passphrase (vault
---     cap). Editing the log never touches the identity block, needs no
---     admin tier, and the machine secret can't read the log.
---
--- Runs fully inside the pkg sandbox: `crypto` + `vault` capability
--- globals, the component proxy for the tape drive — no kernel.*
--- requires (the 0.1.x build needed kernel.crypto/securefs, which the
--- sandbox blocks, so it could never run under pkg).
---
--- Wire format on tape (TAUTH2):
---   magic      "TAUTH2\0"   7 bytes
---   issuedAt   uint32       computer.uptime() at init (informational)
---   labelLen   uint16
---   label      <labelLen>   display name for the key / operator
---   mac        64 hex       HMAC-SHA256(machine secret, bytes above)
---   logLen     uint32       0 = no log yet
---   log        <logLen>     vault blob (operator-passphrase encrypted)
---
--- The MAC covers ONLY the identity block, so log edits don't need the
--- machine secret. TAUTH1 tapes (the 0.1.x format, identity-only) still
--- verify read-only.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
 
 local MAGIC_V2 = "TAUTH2\0"
 local MAGIC_V1 = "TAUTH1\0"
-local MAC_LEN  = 64       -- hex HMAC-SHA256
+local MAC_LEN  = 64       
 local MAX_LABEL = 200
-local BLOCK    = 8192     -- tape I/O chunk size
+local BLOCK    = 8192     
 
--- ── Capability checks ────────────────────────────────────────
--- `crypto` and `vault` are sandbox-injected globals (declared in
--- package.lua). Checked lazily so `tape-auth help` works regardless.
+
+
+
 local function getCrypto(o)
   if type(crypto) == "table" and crypto.hmac and crypto.ctEquals then
     return crypto
@@ -62,10 +62,10 @@ local function getVault(o)
   return nil
 end
 
--- The machine secret that signs identity blocks. crypto.secret() is
--- per-package (other packages can't read it) and admin-gated (resolved
--- against the live session), so this surfaces a clear message for
--- non-admin callers instead of a confusing nil.
+
+
+
+
 local function getSecret(o)
   local C = getCrypto(o)
   if not C then return nil end
@@ -82,7 +82,7 @@ local function getSecret(o)
   return secret
 end
 
--- ── Tape I/O ─────────────────────────────────────────────────
+
 local function findDrive()
   local addr = component.list("tape_drive")()
   if addr then return component.proxy(addr) end
@@ -96,8 +96,8 @@ local function requireTape(o)
   return drive
 end
 
--- Stream exactly N bytes from the current tape position (drive.read may return
--- short, so loop). Returns "" on N<=0.
+
+
 local function readN(drive, n)
   if n <= 0 then return "" end
   local parts, need = {}, n
@@ -121,14 +121,14 @@ local function writeImage(drive, data)
     written = written + #chunk
     if (written / BLOCK) % 8 == 0 then computer.pullSignal(0) end
   end
-  -- Terminate any stale bytes left behind by a longer previous image.
+  
   pcall(drive.write, string.rep("\0", 16))
   drive.stop()
   drive.seek(-(drive.getSize() or 0))
   return true
 end
 
--- ── Wire-format helpers ──────────────────────────────────────
+
 local function packU16(n) return string.char(n & 0xFF, (n >> 8) & 0xFF) end
 local function packU32(n)
   return string.char(n & 0xFF, (n >> 8) & 0xFF, (n >> 16) & 0xFF, (n >> 24) & 0xFF)
@@ -141,9 +141,9 @@ local function unpackU32(s, off)
     | (s:byte(off + 3) << 24), off + 4
 end
 
--- Parse a raw tape image. Returns a table or (nil, reason):
---   { version=1|2, label=, issuedAt=, body= (MACed bytes), mac=,
---     logLen=, logBlob= ("" when absent), identityEnd= }
+
+
+
 local function parseImage(raw)
   if not raw or #raw < 7 + 4 + 2 + MAC_LEN then return nil, "tape unreadable or too short" end
   local magic = raw:sub(1, 7)
@@ -171,9 +171,9 @@ local function parseImage(raw)
         logBlob = raw:sub(off, off + logLen - 1)
         off = off + logLen
       end
-      -- Optional trailing MENU region — the operator's personal launcher menu
-      -- (vault-encrypted, like the log). Older TAUTH2 tapes that predate it
-      -- simply end after the log, so a missing region is not an error.
+      
+      
+      
       if off + 3 <= #raw then
         menuLen, off = unpackU32(raw, off)
         if menuLen > 0 then
@@ -191,8 +191,8 @@ local function parseImage(raw)
   }
 end
 
--- Rebuild a full V2 image from parts. The log region is always present (length
--- prefix, possibly 0); the menu region is appended only when non-empty.
+
+
 local function buildImage(body, mac, logBlob, menuBlob)
   local img = body .. mac .. packU32(#logBlob) .. logBlob
   if menuBlob and #menuBlob > 0 then
@@ -201,12 +201,12 @@ local function buildImage(body, mac, logBlob, menuBlob)
   return img
 end
 
--- Read + parse a keycard by STREAMING only the bytes the structure needs
--- (header, label, mac, log, menu) — never the whole tape. Reading a whole 4 MB+
--- tape into one Lua string OOMs even tier-3.5 RAM, which is what made
--- "configuring a tape" fail. Returns the same shape as parseImage, or
--- (nil, reason). Lengths are bounded by the tape size so a corrupt prefix can't
--- trigger a multi-GB read.
+
+
+
+
+
+
 local function readCard(drive)
   local size = drive.getSize() or 0
   drive.stop()
@@ -257,7 +257,7 @@ local function readCard(drive)
   }
 end
 
--- Read + parse + verify capacity for a mutation. Returns (drive, img).
+
 local function openCard(o, forWrite, extraBytes)
   local drive = requireTape(o)
   if not drive then return nil end
@@ -278,9 +278,9 @@ local function openCard(o, forWrite, extraBytes)
   return drive, img
 end
 
--- ── Log plaintext helpers ────────────────────────────────────
--- The decrypted log is newline-separated single-line entries, each
--- prefixed with the uptime it was added at: "[t1234] text".
+
+
+
 local function splitEntries(plain)
   local entries = {}
   for line in (plain or ""):gmatch("[^\n]+") do entries[#entries + 1] = line end
@@ -312,7 +312,7 @@ local function writeLog(drive, img, entries, passphrase, o)
     if not b then o("encrypt failed: " .. tostring(eerr), 0xFF0000); return false end
     blob = b
   end
-  -- Preserve the menu region when rewriting the log (and vice versa).
+  
   local image = buildImage(img.body, img.mac, blob, img.menuBlob)
   if #image > (drive.getSize() or 0) then
     o("Tape too small for the updated log.", 0xFF0000)
@@ -323,11 +323,11 @@ local function writeLog(drive, img, entries, passphrase, o)
   return true
 end
 
--- ── Personal menu helpers ────────────────────────────────────
--- The personal menu is a vault-encrypted list (like the log) of "Label|command"
--- lines. The LAUNCHER reads + decrypts this region itself (it knows the
--- operator's home and has tape + vault access), so the menu travels on the
--- card without this sandboxed package needing filesystem access.
+
+
+
+
+
 local function decryptMenu(img, passphrase, o)
   local V = getVault(o)
   if not V then return nil end
@@ -353,7 +353,7 @@ local function writeMenu(drive, img, entries, passphrase, o)
     if not b then o("encrypt failed: " .. tostring(eerr), 0xFF0000); return false end
     blob = b
   end
-  -- Preserve the log region while rewriting the menu.
+  
   local image = buildImage(img.body, img.mac, img.logBlob, blob)
   if #image > (drive.getSize() or 0) then
     o("Tape too small for the updated menu.", 0xFF0000)
@@ -364,7 +364,54 @@ local function writeMenu(drive, img, entries, passphrase, o)
   return true
 end
 
--- ── Commands ─────────────────────────────────────────────────
+
+--! A passphrase typed as an argument lands in this seat's command history:
+--! the same finding as `pkg trust key` and rc-pilot's --secret. "-" in its
+--! place asks for it instead, masked, through compat.term (reachable from a
+--! package; rc-pilot reads its secret the same way). The typed form still
+--! works, so no script breaks, and it now says what it costs.
+local function askPass(o, prompt)
+  local okT, term = pcall(require, "compat.term")
+  if not okT or type(term) ~= "table" or type(term.read) ~= "function" then
+    o("Cannot ask here (no terminal): type the passphrase in place of -.", 0xFF6600)
+    return nil
+  end
+  o(prompt .. " (not echoed):", 0xAAAAAA)
+  local okR, line = pcall(term.read, nil, false, nil, "*")
+  line = (okR and type(line) == "string") and line:gsub("[\r\n]+$", "") or nil
+  if not line or line == "" then o("Cancelled.", 0xAAAAAA); return nil end
+  return line
+end
+
+
+
+
+
+
+local function passFor(o, v, prompt, setting)
+  if v ~= "-" then return v end
+  local a = askPass(o, prompt)
+  if not a or not setting then return a end
+  local b = askPass(o, "Again, to confirm")
+  if b ~= a then
+    if b then o("The two did not match; nothing was changed.", 0xFF6600) end
+    return nil
+  end
+  return a
+end
+
+local function historyNote(o, ...)
+  for i = 1, select("#", ...) do
+    local v = select(i, ...)
+    if v ~= nil and v ~= "-" then
+      o("Note: a typed passphrase stays in command history.", 0x555555)
+      o("Put - in its place to be asked for it instead.", 0x555555)
+      return
+    end
+  end
+end
+
+
 
 local function cmdInit(args, o)
   local label = args[2]
@@ -376,10 +423,10 @@ local function cmdInit(args, o)
   if not secret then return end
   local C = getCrypto(o)
 
-  -- Refuse to silently destroy an existing card's log OR menu. The menu
-  -- check is new: a card whose log was empty but whose menu was not was
-  -- re-initialised without a word, and the operator's toolbox went with
-  -- it. (test_tape_auth.lua)
+  
+  
+  
+  
   local existing = readCard(drive)
   if existing and ((existing.logLen or 0) > 0 or (existing.menuLen or 0) > 0) then
     local what = ((existing.logLen or 0) > 0) and "a personal log" or "a personal menu"
@@ -396,7 +443,8 @@ local function cmdInit(args, o)
   if not ok then o(tostring(werr), 0xFF0000); return end
   o(("Keycard initialized: label=%s (%d bytes identity, log empty)")
     :format(label, #body + MAC_LEN + 4), 0x00FF00)
-  o("Add private notes with: tape-auth log add <passphrase> <text>", 0xAAAAAA)
+  o("Add private notes with: tape-auth log add - <text>", 0xAAAAAA)
+  o("(- asks for the passphrase, so it stays out of your history)", 0xAAAAAA)
 end
 
 local function cmdVerify(args, o)
@@ -419,17 +467,17 @@ local function cmdVerify(args, o)
 end
 
 local function cmdInfo(args, o)
-  -- Unauthenticated peek: shows what the tape CLAIMS without the
-  -- machine secret (so any operator can identify a card). Says so.
+  
+  
   local drive = requireTape(o)
   if not drive then return end
   local img, err = readCard(drive)
   if not img then o(tostring(err), 0xFF6600); return end
 
-  -- If the machine secret is reachable (admin session), AUTHENTICATE inline and
-  -- report the real verdict — so `info` is self-sufficient instead of always
-  -- telling the operator to "run verify" even right after they verified. For a
-  -- non-admin, crypto.secret() returns nil quietly and we keep the peek + hint.
+  
+  
+  
+  
   local C = (type(crypto) == "table" and crypto.hmac and crypto.ctEquals) and crypto or nil
   local secret = nil
   if C and C.secret then local ok, s = pcall(C.secret); if ok then secret = s end end
@@ -463,16 +511,19 @@ local function cmdLog(args, o)
   local action = args[2]
   local pass   = args[3]
   if not action or not pass then
-    o("Usage: tape-auth log <add|list|remove|clear|passwd> <passphrase> [...]", 0xAAAAAA)
+    o("Usage: tape-auth log <add|list|remove|clear|passwd> <passphrase|-> [...]", 0xAAAAAA)
     return
   end
+  historyNote(o, pass, action == "passwd" and args[4] or nil)
 
   if action == "add" then
     local text = table.concat(args, " ", 4)
-    if #text == 0 then o("Usage: tape-auth log add <passphrase> <text>", 0xAAAAAA); return end
+    if #text == 0 then o("Usage: tape-auth log add <passphrase|-> <text>", 0xAAAAAA); return end
     text = text:gsub("[\r\n]", " ")
     local drive, img = openCard(o, true, #text + 96)
     if not drive then return end
+    pass = passFor(o, pass, "Log passphrase", img.logLen == 0)
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
     entries[#entries + 1] = ("[t%d] %s"):format(math.floor(computer.uptime()), text)
@@ -484,6 +535,8 @@ local function cmdLog(args, o)
     local drive, img = openCard(o, false)
     if not drive then return end
     if img.version ~= 2 or img.logLen == 0 then o("Log is empty.", 0xAAAAAA); return end
+    pass = passFor(o, pass, "Log passphrase")
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
     o(("Personal log — %s (%d entries)"):format(img.label, #entries), 0xFFFF55)
@@ -493,9 +546,11 @@ local function cmdLog(args, o)
 
   elseif action == "remove" or action == "rm" then
     local n = tonumber(args[4])
-    if not n then o("Usage: tape-auth log remove <passphrase> <entry#>", 0xAAAAAA); return end
+    if not n then o("Usage: tape-auth log remove <passphrase|-> <entry#>", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
+    pass = passFor(o, pass, "Log passphrase")
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
     if not entries[n] then o("No entry #" .. n .. ".", 0xFF6600); return end
@@ -507,19 +562,26 @@ local function cmdLog(args, o)
   elseif action == "clear" then
     local drive, img = openCard(o, true)
     if not drive then return end
-    -- Validate the passphrase before destroying anything.
-    if img.logLen > 0 and not decryptLog(img, pass, o) then return end
+    
+    if img.logLen > 0 then
+      pass = passFor(o, pass, "Log passphrase")
+      if not pass or not decryptLog(img, pass, o) then return end
+    end
     if writeLog(drive, img, {}, pass, o) then
       o("Log cleared.", 0x00FF00)
     end
 
   elseif action == "passwd" then
     local newPass = args[4]
-    if not newPass then o("Usage: tape-auth log passwd <old> <new>", 0xAAAAAA); return end
+    if not newPass then o("Usage: tape-auth log passwd <old|-> <new|->", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
+    pass = passFor(o, pass, "Current log passphrase")
+    if not pass then return end
     local entries = decryptLog(img, pass, o)
     if not entries then return end
+    newPass = passFor(o, newPass, "New log passphrase", true)
+    if not newPass then return end
     if writeLog(drive, img, entries, newPass, o) then
       o("Log passphrase changed.", 0x00FF00)
     end
@@ -529,36 +591,37 @@ local function cmdLog(args, o)
   end
 end
 
--- Personal menu: a vault-encrypted list of "Label | command" entries that the
--- launcher (`launcher tape`) reads off the card so your toolbox travels with
--- your keycard. Items run at YOUR tier — the launcher shows the real command
--- before running it.
+
+
+
+
 local function cmdMenu(args, o)
   local action = args[2]
   local pass   = args[3]
   if not action or not pass then
-    o("Usage: tape-auth menu <add|list|remove|passwd|clear> <passphrase> [...]", 0xAAAAAA)
+    o("Usage: tape-auth menu <add|list|remove|passwd|clear> <passphrase|-> [...]", 0xAAAAAA)
     return
   end
+  historyNote(o, pass, action == "passwd" and args[4] or nil)
 
   if action == "add" then
     local rest = table.concat(args, " ", 4)
-    -- #FIX (emulator round 7) — "|" CANNOT be the separator on a command
-    -- line. The TOS shell parses an unquoted "|" as a PIPE before this
-    -- package ever sees the arguments, so the usage text we printed
-    -- ("... Reactor status | doctor") split into two commands and ran the
-    -- second one on the spot: the operator typed `tape-auth menu add
-    -- 111111 test | doctor` and watched `doctor` run. "--" is the
-    -- separator now — the shell has no meaning for it — and a quoted "|"
-    -- still works for anyone who already learned the old form.
+    
+    
+    
+    
+    
+    
+    
+    
     local label, cmd = rest:match("^(.-)%s+%-%-%s+(.+)$")
     if not label then label, cmd = rest:match("^(.-)%s*|%s*(.+)$") end
     if not label or #label == 0 or not cmd then
       o("Usage: tape-auth menu add <pass> <Label> -- <command>", 0xAAAAAA)
       o("  e.g. tape-auth menu add hunter2 Reactor status -- doctor", 0xAAAAAA)
       if #rest > 0 then
-        -- Almost always what just happened: the shell ate everything from
-        -- the "|" onwards, so we were handed a bare label.
+        
+        
         o("Note: an unquoted | is a shell PIPE — it never reaches this", 0xFFAA00)
         o("command. Use -- , or quote it: \"" .. rest .. " | <command>\"", 0xFFAA00)
       end
@@ -568,11 +631,13 @@ local function cmdMenu(args, o)
     cmd   = cmd:gsub("[\r\n]", " ")
     local drive, img = openCard(o, true, #label + #cmd + 96)
     if not drive then return end
-    -- An EMPTY menu decrypts under any passphrase (there is nothing to
-    -- decrypt), so this first write is what actually SETS the tape's
-    -- passphrase. That was silent, and silence reads as "it already knew
-    -- my password" — say it out loud instead.
+    
+    
+    
+    
     local fresh = (img.menuLen == 0 or img.menuBlob == "")
+    pass = passFor(o, pass, "Menu passphrase", fresh)
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
     entries[#entries + 1] = label .. "|" .. cmd
@@ -587,7 +652,7 @@ local function cmdMenu(args, o)
 
   elseif action == "passwd" then
     local newPass = args[4]
-    if not newPass then o("Usage: tape-auth menu passwd <old> <new>", 0xAAAAAA); return end
+    if not newPass then o("Usage: tape-auth menu passwd <old|-> <new|->", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
     if img.menuLen == 0 or img.menuBlob == "" then
@@ -595,8 +660,12 @@ local function cmdMenu(args, o)
       o("'menu add'.", 0xAAAAAA)
       return
     end
+    pass = passFor(o, pass, "Current menu passphrase")
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
+    newPass = passFor(o, newPass, "New menu passphrase", true)
+    if not newPass then return end
     if writeMenu(drive, img, entries, newPass, o) then
       o("Menu passphrase changed.", 0x00FF00)
     end
@@ -605,6 +674,8 @@ local function cmdMenu(args, o)
     local drive, img = openCard(o, false)
     if not drive then return end
     if img.menuLen == 0 then o("Tape menu is empty.", 0xAAAAAA); return end
+    pass = passFor(o, pass, "Menu passphrase")
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
     o(("Tape menu — %s (%d items)"):format(img.label, #entries), 0xFFFF55)
@@ -615,9 +686,11 @@ local function cmdMenu(args, o)
 
   elseif action == "remove" or action == "rm" then
     local n = tonumber(args[4])
-    if not n then o("Usage: tape-auth menu remove <pass> <#>", 0xAAAAAA); return end
+    if not n then o("Usage: tape-auth menu remove <pass|-> <#>", 0xAAAAAA); return end
     local drive, img = openCard(o, true)
     if not drive then return end
+    pass = passFor(o, pass, "Menu passphrase")
+    if not pass then return end
     local entries = decryptMenu(img, pass, o)
     if not entries then return end
     if not entries[n] then o("No menu item #" .. n .. ".", 0xFF6600); return end
@@ -629,7 +702,10 @@ local function cmdMenu(args, o)
   elseif action == "clear" then
     local drive, img = openCard(o, true)
     if not drive then return end
-    if img.menuLen > 0 and not decryptMenu(img, pass, o) then return end
+    if img.menuLen > 0 then
+      pass = passFor(o, pass, "Menu passphrase")
+      if not pass or not decryptMenu(img, pass, o) then return end
+    end
     if writeMenu(drive, img, {}, pass, o) then
       o("Tape menu cleared.", 0x00FF00)
     end
@@ -639,7 +715,7 @@ local function cmdMenu(args, o)
   end
 end
 
--- ── Dispatcher ───────────────────────────────────────────────
+
 return {
   commands = {
     ["tape-auth"] = function(args, o)
@@ -665,19 +741,22 @@ return {
         o("  tape-auth log clear <pass>           Wipe the log", 0xFFFFFF)
         o("  tape-auth log passwd <old> <new>     Change the passphrase", 0xFFFFFF)
         o("", 0xFFFFFF)
-        o(" Personal menu (your launcher toolbox, travels on the card):", 0x00FF00)
+        o(" Personal menu (your own toolbox, travels on the card):", 0x00FF00)
         o("  tape-auth menu add <pass> <Label> -- <cmd> Add a menu item", 0xFFFFFF)
         o("  tape-auth menu list <pass>                Show items", 0xFFFFFF)
         o("  tape-auth menu remove <pass> <n>          Delete item n", 0xFFFFFF)
         o("  tape-auth menu passwd <old> <new>         Change the passphrase", 0xFFFFFF)
         o("  tape-auth menu clear <pass>               Wipe the menu", 0xFFFFFF)
         o("  (-- separates label from command; an unquoted | is a pipe)", 0xAAAAAA)
-        o("  Then open it with:  launcher tape", 0xAAAAAA)
+        o("  Any <pass> can be - : it is asked for, not echoed, and not", 0xAAAAAA)
+        o("  left in your command history. A new one is asked twice.", 0xAAAAAA)
+        
+        o("  Then open it with:  tape-menu", 0xAAAAAA)
       end
     end,
   },
-  -- Test hooks (pure wire-format functions). pkg only reads `.commands`, so
-  -- exposing these for off-box format tests is harmless at runtime.
+  
+  
   _format = {
     parseImage = parseImage,
     buildImage = buildImage,

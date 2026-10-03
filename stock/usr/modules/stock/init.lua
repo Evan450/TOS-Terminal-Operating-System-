@@ -1,21 +1,21 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  TOS Module: stock — what is in my base, and what is short   ║
--- ║                                                              ║
--- ║  Scans every inventory adjacent to a transposer or inventory ║
--- ║  controller, totals each item across all of them, and flags  ║
--- ║  anything below a threshold you set.                          ║
--- ║                                                              ║
--- ║  Runs fully inside the pkg sandbox: reads hardware through   ║
--- ║  peripheral.inventory (which enforces the peripheral.        ║
--- ║  inventory cap), draws through the sandboxed component GPU   ║
--- ║  proxy, and saves watches through the session-bound `fs` —   ║
--- ║  so the list is always written with the calling user's        ║
--- ║  permissions.                                                 ║
--- ║                                                              ║
--- ║  Aggregation, thresholds and formatting live in stock.lua —  ║
--- ║  pure, and unit-tested off-box by test_stock.lua. This file  ║
--- ║  is scanning, drawing and input.                              ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
@@ -23,9 +23,9 @@ local S         = require("stock.stock")
 
 local WATCH_FILE = "/etc/stock-watch.cfg"
 
--- ── Screen acquisition over a raw GPU proxy (same kit the game ────────
--- ── packages use; duplicated rather than shared so installing  ────────
--- ── `stock` pulls in nothing else). ───────────────────────────────────
+
+
+
 local function screen(o, minW, minH)
   local gpuAddr = component.list and component.list("gpu")()
   if not gpuAddr then o("No GPU found.", 0xFF0000); return nil end
@@ -80,9 +80,9 @@ local function padL(s, w)
   return string.rep(" ", w - #s) .. s
 end
 
--- ── Hardware scan ─────────────────────────────────────────────────────
--- peripheral.inventory does the component work AND enforces the
--- peripheral.inventory capability, so this never touches a raw proxy.
+
+
+
 local function scan(onProgress)
   local okI, inv = pcall(require, "peripheral.inventory")
   if not okI or not inv then
@@ -111,13 +111,13 @@ local function scan(onProgress)
   return readings, nil, scanned
 end
 
--- ── Watch list persistence ────────────────────────────────────────────
--- Stored as plain tab-separated lines (see stock.lua): hand-editable, and
--- never executable. Reads/writes go through the sandbox's session-bound
--- `fs`, so an operator without write access to /etc simply cannot save —
--- which is the correct outcome, not a bug to work around.
--- `fs` is the sandbox's session-bound securefs (the fs.read/fs.write
--- caps), reached as a bare global exactly as calc does.
+
+
+
+
+
+
+
 local function haveFs() return fs and fs.readFile and fs.writeFile end
 
 local function loadWatches()
@@ -139,21 +139,21 @@ local function saveWatches(watches, labels)
   return true
 end
 
--- ── Key decoding ──────────────────────────────────────────────────────
 
--- ── Standard TOS shortcuts ────────────────────────────────────────────
--- Shared with the shell (tos/shell/keys.lua), so ^Q closes this the same
--- way it closes everything else TOS ships — and an operator who rebinds
--- `quit` with `keys set` has it reach here too.
---
--- Plain Q still works: it is what this program has always used and
--- taking it away would break muscle memory for no gain. What changed is
--- which one is ADVERTISED, because a shortcut you have to remember per
--- program is not a shortcut, it is trivia.
+
+
+
+
+
+
+
+
+
+
 local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
 local function stdQuit(ch, code)
   if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
-  return ch == 17 or code == 68 or code == 1   -- ^Q / F10 / Esc
+  return ch == 17 or code == 68 or code == 1   
 end
 local function quitLabel()
   if KEYS and KEYS.label then
@@ -167,10 +167,10 @@ local function keyName(ch, code)
   if code == 200 then return "up"    elseif code == 208 then return "down"
   elseif code == 201 then return "pgup" elseif code == 209 then return "pgdn"
   elseif code == 199 then return "home" elseif code == 207 then return "end"
-  -- #FIX (real Minecraft, 2026-08-11) — ^Q (char 17) and F10 also read
-  -- as "esc". Esc itself never arrives: it closes the screen GUI, so
-  -- every cancel and quit that listened only for it was unreachable.
-  -- Mapping them here fixes every call site at once.
+  
+  
+  
+  
   elseif code == 28 then return "enter"
   elseif stdQuit(ch, code) then return "esc"
   elseif code == 14 then return "back"
@@ -178,9 +178,9 @@ local function keyName(ch, code)
   return nil
 end
 
--- ══════════════════════════════════════════════════════════════════════
--- The monitor
--- ══════════════════════════════════════════════════════════════════════
+
+
+
 local function monitor(o)
   local D = screen(o, 50, 16)
   if not D then return end
@@ -215,7 +215,7 @@ local function monitor(o)
   local function draw()
     local list = visible()
     D.clear()
-    -- Header
+    
     D.fill(1, 1, W, 1, " ", T.bg, T.border)
     D.set(2, 1, "STOCK", T.bg, T.border)
     local t = S.totals(rows)
@@ -223,14 +223,14 @@ local function monitor(o)
       t.distinct, S.fmtCount(t.items), t.slots)
     D.set(math.max(8, W - #summary - 1), 1, summary, T.bg, T.border)
 
-    -- Where the numbers came from. A total with no provenance is a total
-    -- you cannot trust when a chest quietly stops being detected.
+    
+    
     local src = (#scanned > 0)
       and ("sides: " .. table.concat(scanned, ", "))
       or "no inventories detected"
     D.set(2, 2, pad(src, W - 2), T.dim, T.bg)
 
-    -- Filter / mode line
+    
     local mode = {}
     if query ~= "" then mode[#mode + 1] = "filter '" .. query .. "'" end
     if lowOnly then mode[#mode + 1] = "LOW ONLY" end
@@ -238,7 +238,7 @@ local function monitor(o)
     if typing then modeLine = "/" .. query .. "_" end
     D.set(2, 3, pad(modeLine, W - 2), typing and T.title or T.hi, T.bg)
 
-    -- Column heads
+    
     local wCount, wStacks, wMin = 9, 8, 7
     local wName = W - 2 - wCount - wStacks - wMin - 12
     D.set(2, 4, pad("ITEM", wName) .. padL("COUNT", wCount)
@@ -275,13 +275,13 @@ local function monitor(o)
           .. "  " .. where,
           fg, bg)
       end
-      -- Scroll hint
+      
       if #list > pageSize then
         D.set(W - 10, 4, string.format("%d/%d", cursor, #list), T.dim, T.bg)
       end
     end
 
-    -- Footer
+    
     D.fill(1, H, W, 1, " ", T.bg, T.border)
     local help = typing
       and "Enter=apply  Esc=cancel"
@@ -293,7 +293,7 @@ local function monitor(o)
     end
   end
 
-  -- Prompt for a number, inline on the status row.
+  
   local function promptNumber(label, default)
     local buf = tostring(default or "")
     while true do
@@ -315,7 +315,7 @@ local function monitor(o)
   refresh()
   draw()
 
-  local REFRESH_EVERY = 10   -- seconds
+  local REFRESH_EVERY = 10   
   while true do
     local e = { computer.pullSignal(1) }
     local sig = e[1]
@@ -380,13 +380,13 @@ local function monitor(o)
       break
 
     elseif sig == "tos_focus" then
-      -- Came back from the background: the screen belongs to someone
-      -- else's leftovers until we repaint it.
+      
+      
       draw()
 
     elseif sig == nil or sig == "timer" then
-      -- Idle tick. Rescanning is a lot of component calls, so it happens
-      -- on a slow timer rather than every frame.
+      
+      
       if computer.uptime() - lastScan >= REFRESH_EVERY then
         refresh(); draw()
       end
@@ -398,9 +398,9 @@ local function monitor(o)
   pcall(D.gpu.setBackground, 0x000000)
 end
 
--- ══════════════════════════════════════════════════════════════════════
--- Command entry
--- ══════════════════════════════════════════════════════════════════════
+
+
+
 local function cmdStock(args, o)
   local sub = args and args[1] and tostring(args[1]):lower() or nil
 

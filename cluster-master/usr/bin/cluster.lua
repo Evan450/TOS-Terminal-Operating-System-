@@ -1,20 +1,20 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  cluster — Operator CLI                                      ║
--- ║  Invoked from the shell; dispatches subcommands via          ║
--- ║  cluster.api which talks to the running clusterd.            ║
--- ╚══════════════════════════════════════════════════════════════╝
--- Access tier enforcement (via TOS's users module):
---   ADMIN: read-only commands (status, managers, jobs, storage, log)
---   ROOT : mutating commands  (submit, cancel, retry, drain, undrain,
---                                forget, config set)
---
--- Dispatch shim is intentionally small: print formatting lives here,
--- domain logic lives in cluster.api.
+
+
+
+
+
+
+
+
+
+
+
+
 
 local api   = require("cluster.api")
-local users = require("users")  -- TOS user/tier check
+local users = require("users")  
 
--- Optional modules: guard against running outside a full shell.
+
 local term, event
 do
   local ok, mod = pcall(require, "term");  term  = ok and mod or nil
@@ -23,9 +23,9 @@ end
 
 local cli = {}
 
--- ============================================================
--- Output helpers
--- ============================================================
+
+
+
 
 local function die(msg)
   io.stderr:write("cluster: " .. tostring(msg) .. "\n")
@@ -37,13 +37,13 @@ local function _tierName(t)
   return map[t] or ("tier" .. tostring(t))
 end
 
--- ============================================================
--- Tier guard
--- ============================================================
+
+
+
 
 local function requireTier(minName)
   if not users or not users.TIER or not users.currentSession then
-    -- Users module missing → fail closed rather than allow unchecked access.
+    
     die("users subsystem unavailable; refusing to run")
   end
   local need = users.TIER[minName]
@@ -85,7 +85,7 @@ local function _padLeft(s, w)
 end
 
 local function _cellValue(row, col)
-  -- Allow synthetic columns ("workers", "storage") that need computing.
+  
   if col.key == "workers" then
     local snap = row.last_snapshot
     if not snap then return "-/-" end
@@ -108,7 +108,7 @@ local function printTable(rows, columns)
     print("(no entries)")
     return
   end
-  -- Header
+  
   local hdr = {}
   for _, c in ipairs(columns) do
     local fn = (c.align == "right") and _padLeft or _padRight
@@ -116,14 +116,14 @@ local function printTable(rows, columns)
   end
   print(table.concat(hdr, "  "))
 
-  -- Divider
+  
   local div = {}
   for _, c in ipairs(columns) do
     div[#div + 1] = string.rep("-", c[3] or c.width or 10)
   end
   print(table.concat(div, "  "))
 
-  -- Body
+  
   for _, r in ipairs(rows) do
     local line = {}
     for _, c in ipairs(columns) do
@@ -153,9 +153,9 @@ local function printKV(obj, order)
   end
 end
 
--- ============================================================
--- Subcommand: status
--- ============================================================
+
+
+
 
 function cli.status(_args)
   requireTier("ADMIN")
@@ -179,9 +179,9 @@ function cli.status(_args)
     tostring(s.host_thread_budget), s.compute_bound_in_flight or 0))
 end
 
--- ============================================================
--- Subcommand: managers
--- ============================================================
+
+
+
 
 function cli.managers(args)
   requireTier("ADMIN")
@@ -213,9 +213,9 @@ function cli.managers(args)
   end
 end
 
--- ============================================================
--- Subcommand: jobs
--- ============================================================
+
+
+
 
 function cli.jobs(args)
   requireTier("ADMIN")
@@ -246,9 +246,9 @@ function cli.jobs(args)
   end
 end
 
--- ============================================================
--- Subcommand: storage
--- ============================================================
+
+
+
 
 function cli.storage(_args)
   requireTier("ADMIN")
@@ -260,9 +260,9 @@ function cli.storage(_args)
   printKV(s, {"address", "used_bytes", "capacity_bytes", "last_seen"})
 end
 
--- ============================================================
--- Subcommand: submit
--- ============================================================
+
+
+
 
 function cli.submit(args)
   requireTier("ROOT")
@@ -278,9 +278,9 @@ function cli.submit(args)
   print("Submitted job " .. tostring(job_id))
 end
 
--- ============================================================
--- Subcommand: cancel / retry
--- ============================================================
+
+
+
 
 function cli.cancel(args)
   requireTier("ROOT")
@@ -298,9 +298,9 @@ function cli.retry(args)
   print("Retried as job " .. tostring(new_id))
 end
 
--- ============================================================
--- Subcommand: drain / undrain / forget
--- ============================================================
+
+
+
 
 function cli.drain(args)
   requireTier("ROOT")
@@ -326,13 +326,13 @@ function cli.forget(args)
   print("Forgot domain " .. tostring(domain_id))
 end
 
--- ============================================================
--- Subcommand: pair (trust bootstrap; CLUSTER-6)
--- ============================================================
--- Opens a one-time pairing window. Operator reads the displayed code,
--- walks to each Manager, and types it into `cluster-manager pair`.
--- The pairing exchange runs over CLUSTER_PAIR_INIT / _CONFIRM packets,
--- which trust.lua allows at UNKNOWN level (chicken-and-egg solved).
+
+
+
+
+
+
+
 
 function cli.pair(args)
   requireTier("ROOT")
@@ -379,9 +379,9 @@ function cli.pair(args)
   end
 end
 
--- ============================================================
--- Subcommand: watch (simple TUI dashboard)
--- ============================================================
+
+
+
 
 function cli.watch(args)
   requireTier("ADMIN")
@@ -389,7 +389,7 @@ function cli.watch(args)
     die("watch requires a terminal")
   end
 
-  -- Parse args: --interval N, --events N.
+  
   local interval = 1.0
   local eventCount = 8
   for i = 1, #args do
@@ -404,10 +404,10 @@ function cli.watch(args)
 
   local computer = require("computer")
 
-  -- CLUSTER-4 — render a compact dashboard frame. Sections are
-  -- ASCII-rule-separated so it reads on T1 monochrome too.
+  
+  
   local function rule(label)
-    -- 60-wide rule keeps the dashboard sane on smaller terms.
+    
     print(string.format("── %s ", label) .. string.rep("─", 56 - #label))
   end
 
@@ -415,7 +415,7 @@ function cli.watch(args)
   while true do
     term.clear()
 
-    -- Header line: cluster summary as a one-liner.
+    
     local s = api.status()
     local mgrs = s.managers or {}
     local jobs = s.jobs or {}
@@ -426,7 +426,7 @@ function cli.watch(args)
       s.compute_bound_in_flight or 0,
       tostring(s.host_thread_budget or "?")))
 
-    -- Storage line, if configured.
+    
     if s.storage then
       print(string.format("Storage | %s used=%s/%s last_seen=%s",
         s.storage.address and s.storage.address:sub(1, 8) .. "..." or "?",
@@ -443,9 +443,9 @@ function cli.watch(args)
     rule("Recent jobs")
     cli.jobs({})
 
-    -- Events panel — new in CLUSTER-4. Pulled from state.recentEvents
-    -- via the API; sorted newest-last so the bottom of the screen has
-    -- the freshest activity.
+    
+    
+    
     print("")
     rule("Events (newest last)")
     local events = api.recentEvents(eventCount) or {}
@@ -464,11 +464,11 @@ function cli.watch(args)
       end
     end
 
-    -- Footer hint.
+    
     print("")
     print("  q=quit | --interval Ns | --events N")
 
-    -- Wait for either the refresh interval or a 'q' key.
+    
     local quit = false
     if event and event.pull then
       local t0 = computer.uptime()
@@ -477,7 +477,7 @@ function cli.watch(args)
         if remaining <= 0 then break end
         local name, _, ch = event.pull(math.min(0.25, remaining), "key_down")
         if name == "key_down" then
-          if ch == 113 or ch == 81 then quit = true; break end -- q / Q
+          if ch == 113 or ch == 81 then quit = true; break end 
         end
       end
     end
@@ -486,9 +486,9 @@ function cli.watch(args)
   if term and term.clear then term.clear() end
 end
 
--- ============================================================
--- Subcommand: config
--- ============================================================
+
+
+
 
 function cli.config(args)
   if args[1] == "set" then
@@ -509,9 +509,9 @@ function cli.config(args)
   end
 end
 
--- ============================================================
--- Subcommand: log
--- ============================================================
+
+
+
 
 function cli.log(args)
   requireTier("ADMIN")
@@ -534,9 +534,9 @@ function cli.log(args)
   end
 end
 
--- ============================================================
--- Dispatch
--- ============================================================
+
+
+
 
 local SUBCOMMANDS = {
   status   = cli.status,

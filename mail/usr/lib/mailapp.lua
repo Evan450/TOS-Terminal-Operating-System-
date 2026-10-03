@@ -1,21 +1,21 @@
--- ╔══════════════════════════════════════════════════════╗
--- ║  Optional Utilities — Mail App (panels tab)          ║
--- ║                                                      ║
--- ║  The mail inbox as a persistent panels TAB (type     ║
--- ║  "mail"): list + read views, compose/reply, delete,  ║
--- ║  live refresh while front, unread badge on the tab   ║
--- ║  label. Ships with the mail package (stage 5); the   ║
--- ║  panels app registry pcall-requires "mailapp" and    ║
--- ║  simply skips it when the add-on isn't installed.    ║
--- ║                                                      ║
--- ║  Runs INSIDE the panels shell (full-priv), so the    ║
--- ║  shell.panels.* toolkit requires are fine here.      ║
--- ╚══════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local computer = require("computer")
 local ui       = require("shell.panels.ui")
 local tabsMod  = require("shell.panels.tabs")
-local mailLib  = require("mail")   -- the package's service lib
+local mailLib  = require("mail")   
 
 local M = {}
 
@@ -23,7 +23,7 @@ local LIST_TOP = 4
 
 local function listHeight(H) return math.max(1, (H - 1) - LIST_TOP) end
 
--- ── Model ───────────────────────────────────────────────────
+
 
 function M.label(unread)
   if (unread or 0) > 0 then return "Mail(" .. unread .. ")" end
@@ -31,11 +31,11 @@ function M.label(unread)
 end
 
 local function box(S, tab)
-  -- Own inbox only (principal-enforced in the lib).
+  
   return (mailLib.inboxBox(S.who or "user"))
 end
 
---- Re-pump the mesh (retries + arrivals) and refresh the badge.
+
 function M.refresh(S, tab)
   mailLib.tick()
   local b = box(S, tab)
@@ -43,7 +43,7 @@ function M.refresh(S, tab)
   local unread = (b and b.unread and b:unread()) or 0
   tab.unread = unread
   if S.tabs[S.activeTab] == tab then
-    tab.label = M.label(0)     -- you're looking at it
+    tab.label = M.label(0)     
   else
     tab.label = M.label(unread)
   end
@@ -54,7 +54,7 @@ local function msgs(tab)
   return (b and b.list and b:list()) or {}
 end
 
---- Find-or-create the Mail tab and focus it.
+
 function M.open(S)
   local idx = tabsMod.find(S, "mail")
   local tab
@@ -70,7 +70,7 @@ function M.open(S)
   return tab
 end
 
--- ── Reading ─────────────────────────────────────────────────
+
 
 local function wrapBody(text, W)
   local out = {}
@@ -108,7 +108,7 @@ local function openMessage(S, tab, idx)
   return true
 end
 
--- ── Compose (blocking field editor, like the old TUI) ───────
+
 
 local function pullSignal(timeout)
   if coroutine.isyieldable and coroutine.isyieldable() then
@@ -129,7 +129,7 @@ local function readField(S, label, initial, maxLen, y)
     local sig, _, c, co = pullSignal()
     if sig == "key_down" then
       if co == 28 then return buf
-      elseif c == 17 then return nil                       -- ^Q cancels
+      elseif c == 17 then return nil                       
       elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
       elseif c and c >= 32 and c < 127 and #buf < (maxLen or 256) then
         buf = buf .. string.char(c)
@@ -167,15 +167,15 @@ local function compose(S, tab, prefillTo, prefillSubject)
       .. (sealed and "  (sealed)" or "  (PLAINTEXT bulletin)"),
       sealed and T.highlight or T.warning, T.bg)
   else
-    -- Refuse-plaintext lands here for an unpaired unicast peer.
+    
     D.set(1, H, "Send failed: " .. tostring(sealed), T.error, T.bg)
   end
   pullSignal(1.4)
 end
 
--- ── Drawing ─────────────────────────────────────────────────
--- Row 1 top bar · row 2 rail · row 3 counts · rows 4..H-1 list/read ·
--- row H hints.
+
+
+
 
 function M.draw(S, tab)
   local D, T, W, H = S.D, S.T, S.W, S.H
@@ -233,10 +233,10 @@ function M.draw(S, tab)
       "Enter Read · C Compose · R Reply · D Delete · ^Q Close",
       nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
   end
-  tab.label = M.label(0)     -- looking at it = seen
+  tab.label = M.label(0)     
 end
 
--- ── Input ───────────────────────────────────────────────────
+
 
 local function replyTo(m)
   local to = (m.fromUser and m.fromUser ~= "" and m.fromUser)
@@ -246,19 +246,19 @@ local function replyTo(m)
   return to, subj
 end
 
---- Keyboard. Returns (drawLevel[, result]).
+
 function M.handleKey(S, tab, ch, co, deps)
   if not tab._box then M.refresh(S, tab) end
   local listH = listHeight(S.H)
 
-  if ch == 17 then                                    -- Ctrl+Q: close tab
+  if ch == 17 then                                    
     tabsMod.close(S)
     return 3
   end
 
   if tab.mode == "read" then
     local maxScroll = math.max(0, #(tab.bodyLines or {}) - listH)
-    if co == 1 or ch == 113 then tab.mode = "list"; return 3   -- Esc/q back
+    if co == 1 or ch == 113 then tab.mode = "list"; return 3   
     elseif co == 200 then
       tab.readScroll = math.max(0, (tab.readScroll or 0) - 1); return 3
     elseif co == 208 then
@@ -267,7 +267,7 @@ function M.handleKey(S, tab, ch, co, deps)
       tab.readScroll = math.max(0, (tab.readScroll or 0) - listH); return 3
     elseif co == 209 then
       tab.readScroll = math.min(maxScroll, (tab.readScroll or 0) + listH); return 3
-    elseif ch == 114 or ch == 82 then                 -- r = reply
+    elseif ch == 114 or ch == 82 then                 
       local b = tab._box
       local m = tab.openIdx and b and b.get and b:get(tab.openIdx)
       if m then
@@ -277,7 +277,7 @@ function M.handleKey(S, tab, ch, co, deps)
         M.refresh(S, tab)
       end
       return 3
-    elseif ch == 100 or ch == 68 then                 -- d = delete + back
+    elseif ch == 100 or ch == 68 then                 
       local b = tab._box
       if tab.openIdx and b and b.delete then
         pcall(function() b:delete(tab.openIdx) end)
@@ -289,7 +289,7 @@ function M.handleKey(S, tab, ch, co, deps)
     return 0
   end
 
-  -- List mode.
+  
   local list = msgs(tab)
   if co == 200 then tab.sel = math.max(1, tab.sel - 1); return 3
   elseif co == 208 then tab.sel = math.min(math.max(1, #list), tab.sel + 1); return 3
@@ -297,14 +297,14 @@ function M.handleKey(S, tab, ch, co, deps)
   elseif co == 209 then tab.sel = math.min(math.max(1, #list), tab.sel + listH); return 3
   elseif co == 199 then tab.sel = 1; return 3
   elseif co == 207 then tab.sel = math.max(1, #list); return 3
-  elseif co == 28 then                                -- Enter = read
+  elseif co == 28 then                                
     if #list > 0 then openMessage(S, tab, tab.sel) end
     return 3
-  elseif ch == 99 or ch == 67 then                    -- c = compose
+  elseif ch == 99 or ch == 67 then                    
     compose(S, tab)
     M.refresh(S, tab)
     return 3
-  elseif ch == 114 then                               -- r = reply to selected
+  elseif ch == 114 then                               
     local m = list[tab.sel]
     if m then
       local to, subj = replyTo(m)
@@ -312,10 +312,10 @@ function M.handleKey(S, tab, ch, co, deps)
       M.refresh(S, tab)
     end
     return 3
-  elseif ch == 82 then                                -- R = refresh now
+  elseif ch == 82 then                                
     M.refresh(S, tab)
     return 3
-  elseif ch == 100 or ch == 68 then                   -- d = delete
+  elseif ch == 100 or ch == 68 then                   
     local b = tab._box
     if #list > 0 and b and b.delete then
       pcall(function() b:delete(tab.sel) end)
@@ -326,7 +326,7 @@ function M.handleKey(S, tab, ch, co, deps)
   return 0
 end
 
---- Mouse: click selects (list mode); click on selected reads.
+
 function M.handleClick(S, tab, ev, deps)
   if tab.mode ~= "list" then return 0 end
   local list = msgs(tab)
@@ -342,7 +342,7 @@ function M.handleClick(S, tab, ev, deps)
   return 0
 end
 
---- Mouse scroll: move the selection (list) / scroll the body (read).
+
 function M.handleScroll(S, tab, ev)
   local dir = (ev.dir or 0) > 0 and -1 or 1
   if tab.mode == "read" then
@@ -359,7 +359,7 @@ function M.handleScroll(S, tab, ev)
   return 3
 end
 
---- Live refresh while front: pump the mesh + repaint the list.
+
 function M.tick(S, tab)
   M.refresh(S, tab)
   if tab.mode == "list" then return 3 end

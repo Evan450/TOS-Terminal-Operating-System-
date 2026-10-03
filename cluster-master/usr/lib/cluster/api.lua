@@ -1,15 +1,15 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  cluster.api — In-process API for the `cluster` CLI          ║
--- ╚══════════════════════════════════════════════════════════════╝
--- Bridge between the operator-facing CLI (`cluster`) and the daemon
--- (`clusterd`). The CLI requires this module and calls its functions
--- directly; because TOS is cooperative, they share address space within
--- the user's shell process for read operations. For write operations
--- the API acquires the state lock (state.withLock) before mutating.
---
--- Design rule: this module is the ONLY entrypoint the CLI uses. It
--- exists so that the CLI can't accidentally touch state directly —
--- making the (daemon, CLI) contract explicit and small.
+
+
+
+
+
+
+
+
+
+
+
+
 
 local computer = require("computer")
 
@@ -18,15 +18,15 @@ local api = {}
 local _state, _scheduler, _jobs, _clusterd
 local _bound = false
 
--- Lazy require for cluster.net so this module loads even when the
--- daemon hasn't been started (e.g. CLI autoloaded during shell init).
+
+
 local function _netmod()
   return package.loaded["cluster.net"] or require("cluster.net")
 end
 
--- ============================================================
--- Binding
--- ============================================================
+
+
+
 
 function api.bind(state, scheduler, jobs, clusterd)
   _state     = state
@@ -47,9 +47,9 @@ local function _requireBound()
   end
 end
 
--- ============================================================
--- Job spec validation
--- ============================================================
+
+
+
 
 local VALID_PROFILES = { compute_bound = true, io_bound = true, mixed = true }
 local VALID_POLICIES = { safe = true, once = true, none = true }
@@ -78,9 +78,9 @@ local function _validateJobSpec(spec)
   return true
 end
 
--- ============================================================
--- Inspection (read-only; no lock needed for simple reads)
--- ============================================================
+
+
+
 
 function api.status()
   _requireBound()
@@ -133,13 +133,13 @@ end
 function api.getJob(job_id)
   _requireBound()
   if not job_id then return nil, "missing_argument: job_id" end
-  -- Answers the same condition the same way api.retryJob does. These two
-  -- used to disagree — bare nil here, `nil, "no such job"` there — which
-  -- is exactly the ambiguity a caller cannot code against.
+  
+  
+  
   local j = _state.getJob(tonumber(job_id))
   if not j then return nil, "no_such_job" end
-  -- Return a shallow copy of the job with assignments as a sorted array
-  -- for easier CLI display.
+  
+  
   local out = {}
   for k, v in pairs(j) do out[k] = v end
   local arr = {}
@@ -166,21 +166,21 @@ function api.recentEvents(n)
   return _state.recentEvents(n or 20)
 end
 
--- ============================================================
--- Job management (mutating; require lock)
--- ============================================================
+
+
+
 
 function api.submit(jobSpec)
   _requireBound()
   local ok, err = _validateJobSpec(jobSpec)
   if not ok then return nil, err end
 
-  -- Fast refusal if there's no capacity at all.
+  
   if not _scheduler.hasAnyActiveCapacity(_state._data.managers) then
     return nil, "no_eligible_manager: no active managers with free workers"
   end
 
-  -- Fill in who submitted this for audit, if caller didn't set it.
+  
   local okUsers, users = pcall(require, "users")
   if okUsers and users and not jobSpec.submitted_by then
     local sess = users.currentSession and users.currentSession()
@@ -230,7 +230,7 @@ function api.retryJob(job_id)
   if job.state ~= "failed" then
     return nil, "wrong_state: only failed jobs can be retried (state=" .. tostring(job.state) .. ")"
   end
-  -- Deep-copy the spec, reset submitted_at implicitly via createJob.
+  
   local new_id
   _state.withLock(function()
     local fresh = {}
@@ -242,9 +242,9 @@ function api.retryJob(job_id)
   return new_id
 end
 
--- ============================================================
--- Manager management (mutating)
--- ============================================================
+
+
+
 
 function api.drainManager(domain_id)
   _requireBound()
@@ -290,12 +290,12 @@ function api.forgetManager(domain_id)
   return true
 end
 
--- ============================================================
--- Config
--- ============================================================
 
--- Keys the operator can tune at runtime. Keys marked restart_required
--- take effect only after `rc restart clusterd`.
+
+
+
+
+
 local TUNABLE_KEYS = {
   host_thread_budget       = { type = "number", restart_required = false },
   heartbeat_interval       = { type = "number", restart_required = true  },
@@ -307,16 +307,16 @@ local TUNABLE_KEYS = {
   storage_node_address     = { type = "string", restart_required = false },
 }
 
--- ============================================================
--- Pairing (CLUSTER-6)
--- ============================================================
 
---- Start a pairing window on the daemon.
---- Returns { code, expires_in } on success, or nil, err.
---- The window is returned as a table rather than as (code, expires_in):
---- the second slot of a `value, err` function is the error slot, and
---- filling it with a number on success meant no caller could read it
---- without already knowing the outcome.
+
+
+
+
+
+
+
+
+
 function api.startPairing()
   _requireBound()
   if not _clusterd or not _clusterd.startPairing then
@@ -326,7 +326,7 @@ function api.startPairing()
   return { code = code, expires_in = expires_at - computer.uptime() }
 end
 
---- Close the active pairing window without waiting for expiry.
+
 function api.closePairing()
   _requireBound()
   if not _clusterd or not _clusterd.closePairing then
@@ -336,9 +336,9 @@ function api.closePairing()
   return true
 end
 
---- Inspect the pairing window. Returns { expires_in, paired } if one is
---- open, bare nil if none is (absence, not failure), or nil, err if the
---- daemon has no pairing support at all.
+
+
+
 function api.pairingInfo()
   _requireBound()
   if not _clusterd or not _clusterd.pairingInfo then
@@ -350,7 +350,7 @@ end
 function api.getConfig()
   _requireBound()
   local cfg = _clusterd and _clusterd.getConfig and _clusterd.getConfig() or {}
-  -- Return a shallow copy so the caller can't mutate the live config.
+  
   local out = {}
   for k, v in pairs(cfg) do out[k] = v end
   return out

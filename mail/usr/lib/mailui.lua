@@ -1,21 +1,21 @@
--- ╔══════════════════════════════════════════════════════╗
--- ║  Optional Utilities — Mail TUI (CLI shell client)    ║
--- ║                                                      ║
--- ║  Full-screen inbox/read/compose client for the mail  ║
--- ║  package — the interactive counterpart to the        ║
--- ║  line-based `mail` subcommands, used by the CLI      ║
--- ║  shell (the panels shell opens the mailapp TAB       ║
--- ║  instead). Owns the screen, runs an input loop,      ║
--- ║  returns on ^Q. Ships with the mail package.         ║
--- ╚══════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
 
 local computer = require("computer")
 local mailLib  = require("mail")
 
 local M = {}
 
---- Run the mail TUI. opts = { display=D, me=<username>, event=E(optional),
---- aliases=<net.aliases-like resolver holder> (optional) }.
+
+
 function M.run(opts)
   opts = opts or {}
   local D  = opts.display or opts.D
@@ -26,10 +26,10 @@ function M.run(opts)
   local W, H = D.getSize()
   local T    = D.getTheme()
 
-  -- Seat-safe pull (the login.lua lesson): inside a process coroutine the
-  -- only correct read is coroutine.yield() — raw pullSignal would drain
-  -- the global queue and starve other seats. E.pull/pullSignal are the
-  -- non-process fallbacks.
+  
+  
+  
+  
   local function pull(timeout)
     if coroutine.isyieldable and coroutine.isyieldable() then
       return coroutine.yield()
@@ -65,18 +65,18 @@ function M.run(opts)
     box = mailLib.inboxBox(me) or box
   end
 
-  local mode       = "list"     -- "list" | "read"
+  local mode       = "list"     
   local sel        = 1
   local scroll     = 0
-  local openIdx    = nil        -- index being read
-  local bodyLines  = {}         -- wrapped body of the open message
+  local openIdx    = nil        
+  local bodyLines  = {}         
   local readScroll = 0
 
   local HELP_ROW = H
   local LIST_TOP = 3
   local LIST_H   = HELP_ROW - LIST_TOP
 
-  -- ── small line editor (compose fields) ──────────────────
+  
   local function readField(label, initial, maxLen, y)
     local buf = initial or ""
     while true do
@@ -88,7 +88,7 @@ function M.run(opts)
       local sig, _, c, co = pull()
       if sig == "key_down" then
         if co == 28 then return buf
-        elseif c == 17 then return nil                       -- ^Q cancels
+        elseif c == 17 then return nil                       
         elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
         elseif c and c >= 32 and c < 127 and #buf < (maxLen or 256) then
           buf = buf .. string.char(c)
@@ -99,7 +99,7 @@ function M.run(opts)
     end
   end
 
-  -- ── compose ─────────────────────────────────────────────
+  
   local function compose(prefillTo, prefillSubject)
     D.clear(T.bg)
     D.set(1, 1, " Compose mail   (Enter = next field/line, ^Q = cancel)", T.title, T.bg)
@@ -111,7 +111,7 @@ function M.run(opts)
     local lines, y = {}, 9
     while #lines < 64 and y <= H - 1 do
       local ln = readField("  ", "", 200, y)
-      if ln == nil then return end           -- cancelled
+      if ln == nil then return end           
       if ln == "" then break end
       lines[#lines + 1] = ln
       y = y + 1
@@ -126,14 +126,14 @@ function M.run(opts)
         .. (sealed and "  (sealed)" or "  (PLAINTEXT bulletin)"),
         sealed and T.highlight or T.warning)
     else
-      -- Refuse-plaintext lands here for an unpaired unicast peer.
+      
       D.set(1, H, "Send failed: " .. tostring(sealed), T.error)
     end
     local dl = computer.uptime() + 1.4
     while computer.uptime() < dl do pull(dl - computer.uptime()) end
   end
 
-  -- ── drawing ─────────────────────────────────────────────
+  
   local function header()
     D.fill(1, 1, W, 1, " ", T.menubar_fg, T.menubar_bg)
     local msgs = list()
@@ -233,7 +233,7 @@ function M.run(opts)
     if mode == "read" then drawRead() else drawList() end
   end
 
-  -- ── input loop ──────────────────────────────────────────
+  
   refresh()
   redraw()
   local lastTick = computer.uptime()
@@ -242,20 +242,20 @@ function M.run(opts)
     local sig, _, ch, co = pull(0.5)
 
     if sig == "key_down" then
-      if ch == 17 then break                                  -- ^Q exit
+      if ch == 17 then break                                  
       elseif mode == "list" then
         local msgs = list()
-        if co == 200 then sel = math.max(1, sel - 1); drawList()           -- up
-        elseif co == 208 then sel = math.min(#msgs, sel + 1); drawList()   -- down
-        elseif co == 201 then sel = math.max(1, sel - LIST_H); drawList()  -- PgUp
+        if co == 200 then sel = math.max(1, sel - 1); drawList()           
+        elseif co == 208 then sel = math.min(#msgs, sel + 1); drawList()   
+        elseif co == 201 then sel = math.max(1, sel - LIST_H); drawList()  
         elseif co == 209 then sel = math.min(#msgs, sel + LIST_H); drawList()
-        elseif co == 199 then sel = 1; drawList()                          -- Home
-        elseif co == 207 then sel = #msgs; drawList()                      -- End
-        elseif co == 28 then                                               -- Enter = read
+        elseif co == 199 then sel = 1; drawList()                          
+        elseif co == 207 then sel = #msgs; drawList()                      
+        elseif co == 28 then                                               
           if #msgs > 0 and openMessage(sel) then redraw() else drawList() end
-        elseif ch == 99 or ch == 67 then                                   -- c = compose
+        elseif ch == 99 or ch == 67 then                                   
           compose(); refresh(); redraw()
-        elseif ch == 114 or ch == 82 then                                  -- r = reply
+        elseif ch == 114 or ch == 82 then                                  
           local m = msgs[sel]
           if m then
             local rt = (m.fromUser and m.fromUser ~= "" and m.fromUser)
@@ -264,20 +264,20 @@ function M.run(opts)
               and ("Re: " .. m.subject) or (m.subject or "")
             compose(rt:gsub("^@", ""), subj); refresh(); redraw()
           end
-        elseif ch == 100 or ch == 68 then                                  -- d = delete
+        elseif ch == 100 or ch == 68 then                                  
           if #msgs > 0 and box and box.delete then
             pcall(function() box:delete(sel) end)
             refresh(); drawList()
           end
         end
-      else  -- read mode
+      else  
         local maxScroll = math.max(0, #bodyLines - (HELP_ROW - 2))
-        if co == 1 or ch == 113 then mode = "list"; redraw()               -- Esc/q = back
+        if co == 1 or ch == 113 then mode = "list"; redraw()               
         elseif co == 200 then readScroll = math.max(0, readScroll - 1); drawRead()
         elseif co == 208 then readScroll = math.min(maxScroll, readScroll + 1); drawRead()
         elseif co == 201 then readScroll = math.max(0, readScroll - (HELP_ROW - 2)); drawRead()
         elseif co == 209 then readScroll = math.min(maxScroll, readScroll + (HELP_ROW - 2)); drawRead()
-        elseif ch == 114 or ch == 82 then                                  -- r = reply
+        elseif ch == 114 or ch == 82 then                                  
           local m = openIdx and box and box.get and box:get(openIdx)
           if m then
             local rt = (m.fromUser and m.fromUser ~= "" and m.fromUser) or ""
@@ -285,7 +285,7 @@ function M.run(opts)
               and ("Re: " .. m.subject) or (m.subject or "")
             compose(rt, subj); mode = "list"; refresh(); redraw()
           end
-        elseif ch == 100 or ch == 68 then                                  -- d = delete + back
+        elseif ch == 100 or ch == 68 then                                  
           if openIdx and box and box.delete then
             pcall(function() box:delete(openIdx) end)
             mode = "list"; refresh(); redraw()
@@ -297,7 +297,7 @@ function M.run(opts)
       redraw()
 
     elseif sig == nil then
-      -- Idle: pull retries + new mail, refresh the list view live.
+      
       local now = computer.uptime()
       if now - lastTick >= 2 then
         lastTick = now

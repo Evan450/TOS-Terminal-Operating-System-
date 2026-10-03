@@ -1,38 +1,38 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  calc — the sheet MODEL + FORMULA ENGINE (pure, no I/O)      ║
--- ║                                                              ║
--- ║  A spreadsheet is mostly a small language implementation, so ║
--- ║  all of it lives here as value-in/value-out code and         ║
--- ║  unit-tests off-box; init.lua is drawing + keys only.        ║
--- ║                                                              ║
--- ║  WHY A REAL PARSER (and not `load`): the obvious way to      ║
--- ║  evaluate "=A1*2+SUM(B1:B9)" is to rewrite it into Lua and   ║
--- ║  load() it. TOS refuses to do that. Package code doesn't     ║
--- ║  even get `load` unless its manifest asks for the cap, and a ║
--- ║  spreadsheet whose CELLS are executable is a code-execution  ║
--- ║  surface disguised as a data file — one shared .calc and the ║
--- ║  sandbox is the only thing between a formula and the         ║
--- ║  machine. (The Python reference this is modelled on uses     ║
--- ║  eval() behind a character-whitelist "sanitizer"; that is    ║
--- ║  exactly the pattern we don't want.) So: a tokenizer and a   ║
--- ║  recursive-descent parser over a fixed grammar. Nothing a    ║
--- ║  cell can contain is ever executed — the worst a hostile     ║
--- ║  formula can do is evaluate to #ERR.                         ║
--- ║                                                              ║
--- ║  Errors are TABLES ({ e = "#DIV/0!" }), not strings, so a    ║
--- ║  text cell that happens to start with "#" can never be       ║
--- ║  mistaken for an error and propagated.                       ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local S = {}
 
-S.MAX_COLS = 26 * 3      -- A..Z, AA..AZ, BA..BZ — plenty for an 80-col screen
+S.MAX_COLS = 26 * 3      
 S.MAX_ROWS = 512
-S.MAX_DEPTH = 32         -- reference-chain depth guard (belt with the cycle brace)
+S.MAX_DEPTH = 32         
 
--- ============================================================
--- Errors
--- ============================================================
+
+
+
 
 local function err(code) return { e = code } end
 local function isErr(v) return type(v) == "table" and v.e ~= nil end
@@ -46,11 +46,11 @@ S.E_VALUE = "#VALUE!"
 S.E_SYNTAX = "#SYNTAX!"
 S.E_DEPTH = "#DEPTH!"
 
--- ============================================================
--- Column / cell addressing
--- ============================================================
 
---- 1 -> "A", 26 -> "Z", 27 -> "AA". Pure.
+
+
+
+
 function S.colName(n)
   if type(n) ~= "number" or n < 1 then return "?" end
   local name = ""
@@ -62,7 +62,7 @@ function S.colName(n)
   return name
 end
 
---- "A" -> 1, "AA" -> 27. Returns nil on junk. Pure.
+
 function S.colIndex(s)
   if type(s) ~= "string" or s == "" then return nil end
   s = s:upper()
@@ -75,7 +75,7 @@ function S.colIndex(s)
   return n
 end
 
---- "B3" -> (2, 3). Returns nil when it isn't a reference. Pure.
+
 function S.parseRef(s)
   if type(s) ~= "string" then return nil end
   local col, row = s:match("^(%a+)(%d+)$")
@@ -89,24 +89,24 @@ end
 
 function S.refName(c, r) return S.colName(c) .. tostring(r) end
 
--- Internal cell key. A string key keeps the store sparse (a 26x512 grid
--- of nils would otherwise cost real memory on a 192 KB machine).
+
+
 local function key(c, r) return c .. ":" .. r end
 S._key = key
 
--- ============================================================
--- Sheet construction
--- ============================================================
+
+
+
 
 function S.new()
   return {
-    cells = {},          -- ["c:r"] = raw string as typed
-    cols  = 8,           -- logical extent (grows as cells are set)
+    cells = {},          
+    cols  = 8,           
     rows  = 20,
   }
 end
 
---- Store a cell's RAW text ("" / nil clears it). Mutates; returns the sheet.
+
 function S.set(sh, c, r, raw)
   if c < 1 or r < 1 or c > S.MAX_COLS or r > S.MAX_ROWS then return sh end
   local k = key(c, r)
@@ -120,14 +120,14 @@ function S.set(sh, c, r, raw)
   return sh
 end
 
---- The raw text of a cell ("" when empty). Pure.
+
 function S.raw(sh, c, r) return sh.cells[key(c, r)] or "" end
 
--- ============================================================
--- Tokenizer
--- ============================================================
--- Token = { t = "num"|"str"|"ref"|"range"|"name"|"op"|"("|")"|",",
---           v = <value> }
+
+
+
+
+
 
 local OPS2 = { ["<="] = true, [">="] = true, ["<>"] = true }
 local OPS1 = { ["+"] = true, ["-"] = true, ["*"] = true, ["/"] = true,
@@ -141,8 +141,8 @@ function S.tokenize(src)
     if ch == " " or ch == "\t" then
       i = i + 1
     elseif ch == '"' then
-      -- String literal. Doubled quotes ("") escape a quote, as in the
-      -- spreadsheets people already know.
+      
+      
       local buf, j = {}, i + 1
       while j <= n do
         local c2 = src:sub(j, j)
@@ -153,12 +153,12 @@ function S.tokenize(src)
           buf[#buf + 1] = c2; j = j + 1
         end
       end
-      if j > n then return nil, S.E_SYNTAX end      -- unterminated
+      if j > n then return nil, S.E_SYNTAX end      
       toks[#toks + 1] = { t = "str", v = table.concat(buf) }
       i = j + 1
     elseif ch:match("%d") or (ch == "." and src:sub(i + 1, i + 1):match("%d")) then
       local numStr = src:match("^%d*%.?%d+", i) or src:match("^%d+", i)
-      -- Scientific notation, e.g. 1e3 / 2.5E-4.
+      
       local expPart = src:match("^[eE][%+%-]?%d+", i + #numStr)
       if expPart then numStr = numStr .. expPart end
       toks[#toks + 1] = { t = "num", v = tonumber(numStr) }
@@ -166,14 +166,14 @@ function S.tokenize(src)
     elseif ch:match("%a") then
       local word = src:match("^%a[%w_%.]*", i)
       local after = i + #word
-      -- A bare A1 is a ref; A1:B3 is a range; anything else is a name
-      -- (function or a bare word like TRUE).
+      
+      
       local c1, r1 = S.parseRef(word)
       if c1 and src:sub(after, after) == ":" then
         local word2 = src:match("^%a+%d+", after + 1)
-        -- NOT `word2 and S.parseRef(word2)`: an `and` expression yields
-        -- only the FIRST return value, which silently dropped the range's
-        -- end ROW and made every range formula blow up in numList.
+        
+        
+        
         local c2, r2
         if word2 then c2, r2 = S.parseRef(word2) end
         if c2 then
@@ -205,15 +205,15 @@ function S.tokenize(src)
   return toks
 end
 
--- ============================================================
--- Parser (recursive descent) -> AST
--- ============================================================
--- Precedence, loosest first:
---   comparison  = <> < > <= >=      (left)
---   add/sub     + -                 (left)
---   mul/div/mod * / %               (left)
---   unary       - +
---   power       ^                   (right)
+
+
+
+
+
+
+
+
+
 
 local function parser(toks)
   local p = { toks = toks, i = 1 }
@@ -226,7 +226,7 @@ local function parser(toks)
   return p
 end
 
-local parseExpr   -- forward
+local parseExpr   
 
 local function parsePrimary(p)
   local t = p:next()
@@ -258,7 +258,7 @@ local function parsePrimary(p)
       end
       return { k = "call", name = t.v, args = args }
     end
-    -- Bare words: the two booleans, otherwise an unknown name.
+    
     if t.v == "TRUE" then return { k = "num", v = 1 } end
     if t.v == "FALSE" then return { k = "num", v = 0 } end
     return { k = "err", v = S.E_NAME }
@@ -277,7 +277,7 @@ local function parsePower(p)
   local t = p:peek()
   if t and t.t == "op" and t.v == "^" then
     p:next()
-    local rhs, e2 = parsePower(p)          -- right-associative
+    local rhs, e2 = parsePower(p)          
     if not rhs then return nil, e2 end
     return { k = "bin", op = "^", a = base, b = rhs }
   end
@@ -320,7 +320,7 @@ local function parseMul(p) return parseBinLevel(p, MULOPS, parseUnary) end
 local function parseAdd(p) return parseBinLevel(p, ADDOPS, parseMul) end
 parseExpr = function(p) return parseBinLevel(p, CMPOPS, parseAdd) end
 
---- Parse a formula body (no leading "="). Returns (ast) or (nil, errCode).
+
 function S.parse(src)
   local toks, terr = S.tokenize(src)
   if not toks then return nil, terr end
@@ -328,22 +328,22 @@ function S.parse(src)
   local p = parser(toks)
   local ast, e = parseExpr(p)
   if not ast then return nil, e end
-  if p:peek() then return nil, S.E_SYNTAX end     -- trailing junk
+  if p:peek() then return nil, S.E_SYNTAX end     
   return ast
 end
 
--- ============================================================
--- Evaluation
--- ============================================================
+
+
+
 
 local function toNum(v)
   if type(v) == "number" then return v end
   if type(v) == "boolean" then return v and 1 or 0 end
   if type(v) == "string" then
     if v == "" then return 0 end
-    return tonumber(v)                            -- nil when not numeric
+    return tonumber(v)                            
   end
-  if v == nil then return 0 end                   -- an empty cell is 0
+  if v == nil then return 0 end                   
   return nil
 end
 S.toNum = toNum
@@ -360,8 +360,8 @@ local function toStr(v)
 end
 S.toStr = toStr
 
--- Flatten call arguments into a numeric list, expanding ranges. Errors
--- inside the range propagate (a SUM over a broken cell is broken).
+
+
 local function numList(ctx, args, evalNode)
   local out = {}
   for _, a in ipairs(args) do
@@ -371,8 +371,8 @@ local function numList(ctx, args, evalNode)
           local v = ctx.get(c, r)
           if isErr(v) then return nil, v end
           local n = toNum(v)
-          -- Text and blanks are SKIPPED (spreadsheet convention) so a
-          -- label row inside a range doesn't poison the sum.
+          
+          
           if n ~= nil and not (v == nil or v == "") then out[#out + 1] = n end
         end
       end
@@ -387,7 +387,7 @@ local function numList(ctx, args, evalNode)
   return out
 end
 
--- Range-aware COUNT: counts numeric entries only.
+
 local FUNCS = {}
 
 local function fnAgg(name, fold, init, post)
@@ -427,7 +427,7 @@ FUNCS.COUNT = function(ctx, args, evalNode)
   return #list
 end
 
--- Single-argument math helpers.
+
 local function fn1(name, f)
   FUNCS[name] = function(ctx, args, evalNode)
     if #args ~= 1 then return err(S.E_VALUE) end
@@ -458,8 +458,8 @@ FUNCS.ROUND = function(ctx, args, evalNode)
     digits = toNum(d) or 0
   end
   local mult = 10 ^ digits
-  -- Round HALF AWAY FROM ZERO, which is what a spreadsheet user expects
-  -- (Lua's %.0f would round half to even: 2.5 -> 2).
+  
+  
   local x = n * mult
   local rounded = (x >= 0) and math.floor(x + 0.5) or math.ceil(x - 0.5)
   return rounded / mult
@@ -527,7 +527,7 @@ FUNCS.NOT = function(ctx, args, evalNode)
   return (n == nil or n == 0) and 1 or 0
 end
 
--- Text functions.
+
 FUNCS.LEN = function(ctx, args, evalNode)
   if #args ~= 1 then return err(S.E_VALUE) end
   local v = evalNode(args[1])
@@ -567,9 +567,9 @@ FUNCS.CONCAT = function(ctx, args, evalNode)
 end
 S.FUNCS = FUNCS
 
---- Evaluate an AST against a context. ctx.get(c, r) returns a cell's
---- VALUE (number/string/err) and is responsible for recursion + cycle
---- detection. Pure given ctx.
+
+
+
 function S.evalAst(ast, ctx, depth)
   depth = (depth or 0) + 1
   if depth > S.MAX_DEPTH then return err(S.E_DEPTH) end
@@ -579,7 +579,7 @@ function S.evalAst(ast, ctx, depth)
   if k == "num" or k == "str" then return ast.v end
   if k == "err" then return err(ast.v) end
   if k == "ref" then return ctx.get(ast.c, ast.r) end
-  if k == "range" then return err(S.E_VALUE) end   -- bare range isn't a value
+  if k == "range" then return err(S.E_VALUE) end   
   if k == "unary" then
     local v = ev(ast.a)
     if isErr(v) then return v end
@@ -597,8 +597,8 @@ function S.evalAst(ast, ctx, depth)
     if isErr(a) then return a end
     if isErr(b) then return b end
     local op = ast.op
-    -- "=" and "<>" compare TEXT when either side is non-numeric, so
-    -- ="yes"="yes" behaves the way a user expects.
+    
+    
     if op == "=" or op == "<>" then
       local na, nb = toNum(a), toNum(b)
       local same
@@ -609,8 +609,8 @@ function S.evalAst(ast, ctx, depth)
     end
     local na, nb = toNum(a), toNum(b)
     if na == nil or nb == nil then
-      -- "+" over text is a common typo for CONCAT; be explicit instead
-      -- of silently concatenating.
+      
+      
       return err(S.E_VALUE)
     end
     if op == "+" then return na + nb end
@@ -634,14 +634,14 @@ function S.evalAst(ast, ctx, depth)
   return err(S.E_SYNTAX)
 end
 
--- ============================================================
--- Sheet-level evaluation (memoized, cycle-safe)
--- ============================================================
 
---- Evaluate every referenced cell on demand. Returns a `values` table
---- keyed like the store, plus a get(c, r) accessor. A cell currently
---- being evaluated that is reached again is a CYCLE — reported as
---- #CYCLE! on every cell in the loop rather than hanging.
+
+
+
+
+
+
+
 function S.evaluator(sh)
   local memo, visiting = {}, {}
   local ctx = {}
@@ -677,14 +677,14 @@ function S.evaluator(sh)
   return ctx
 end
 
---- The DISPLAY string for a cell, given an evaluator. Numbers are
---- trimmed to `places` decimals when they don't land on an integer.
+
+
 function S.display(sh, ctx, c, r, places)
   local v = ctx.get(c, r)
   if v == nil then return "" end
   if isErr(v) then return v.e end
   if type(v) == "number" then
-    if v ~= v then return "#NAN!" end                        -- 0/0 style
+    if v ~= v then return "#NAN!" end                        
     if v == math.huge or v == -math.huge then return "#INF!" end
     if v == math.floor(v) and math.abs(v) < 1e15 then
       return string.format("%d", v)
@@ -694,14 +694,14 @@ function S.display(sh, ctx, c, r, places)
   return tostring(v)
 end
 
--- ============================================================
--- Serialization (a small, hand-parsed text format)
--- ============================================================
--- One cell per line: "A1<TAB>raw text". Chosen over kernel.serialize so
--- a .calc file is greppable/diffable, survives hand-editing, and — most
--- importantly — LOADING IS NOT EXECUTION: the loader only ever assigns
--- strings into cells. Tabs and newlines are escaped so a cell's text can
--- never forge a new record.
+
+
+
+
+
+
+
+
 
 local function escape(s)
   return (s:gsub("\\", "\\\\"):gsub("\t", "\\t"):gsub("\n", "\\n"):gsub("\r", ""))
@@ -725,7 +725,7 @@ end
 
 function S.serialize(sh)
   local lines = { "TOSCALC1" }
-  -- Deterministic order (column-major by row) so saves diff cleanly.
+  
   local keys = {}
   for k in pairs(sh.cells) do keys[#keys + 1] = k end
   table.sort(keys, function(a, b)
@@ -743,9 +743,9 @@ function S.serialize(sh)
   return table.concat(lines, "\n")
 end
 
---- Parse a saved sheet. Unknown/garbled lines are SKIPPED rather than
---- aborting the load: a partially-corrupt file should still open with
---- everything that survived, not refuse to open at all.
+
+
+
 function S.deserialize(text)
   local sh = S.new()
   if type(text) ~= "string" then return sh end
@@ -755,7 +755,7 @@ function S.deserialize(text)
     if first then
       first = false
       if line ~= "TOSCALC1" then
-        -- No/av unknown header: try to read it anyway (hand-made file).
+        
         local ref, val = line:match("^(%a+%d+)\t(.*)$")
         if ref then
           local c, r = S.parseRef(ref)
@@ -764,8 +764,8 @@ function S.deserialize(text)
       end
     elseif line ~= "" then
       local ref, val = line:match("^(%a+%d+)\t(.*)$")
-      -- Same truncation trap as the tokenizer's range branch: keep the
-      -- call out of an `and` so the ROW survives.
+      
+      
       local c, r
       if ref then c, r = S.parseRef(ref) end
       if c then S.set(sh, c, r, unescape(val)) else skipped = skipped + 1 end
@@ -775,9 +775,9 @@ function S.deserialize(text)
   return sh
 end
 
--- ============================================================
--- CSV export (a spreadsheet people can take elsewhere)
--- ============================================================
+
+
+
 
 function S.toCSV(sh, ctx)
   local rows = {}
@@ -785,12 +785,12 @@ function S.toCSV(sh, ctx)
     local cols = {}
     for c = 1, sh.cols do
       local v = S.display(sh, ctx, c, r)
-      -- Quote when the value contains a comma, quote or newline.
+      
       if v:find('[,"\n]') then v = '"' .. v:gsub('"', '""') .. '"' end
       cols[#cols + 1] = v
     end
-    -- Trim trailing empties so a sparse sheet doesn't export a rectangle
-    -- of commas.
+    
+    
     while #cols > 0 and cols[#cols] == "" do cols[#cols] = nil end
     rows[#rows + 1] = table.concat(cols, ",")
   end

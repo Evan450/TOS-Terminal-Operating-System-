@@ -1,14 +1,14 @@
--- ╔══════════════════════════════════════════════════════════╗
--- ║  TOS Module: mouse  —  `mousetest` driver demo            ║
--- ║                                                            ║
--- ║  A small interactive proof that the mouse driver works:    ║
--- ║  draws a few clickable buttons and reports every click,    ║
--- ║  drag, drop, and scroll the screen reports. Mostly it is   ║
--- ║  a worked example of require("mouse") for your own tools.  ║
--- ║                                                            ║
--- ║  Controls: click the buttons; scroll; drag. Click QUIT or  ║
--- ║  press q / Esc to leave.                                   ║
--- ╚══════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
@@ -20,9 +20,9 @@ mod.commands = {
   mousetest = function(args, o)
     o = o or print
 
-    -- Bind to this seat's GPU (granted by the `component` capability). The
-    -- gpu is already attached to this seat's screen, so its coordinate
-    -- space matches the touch/drag coordinates we'll receive.
+    
+    
+    
     local gpuAddr = component.list("gpu")()
     if not gpuAddr then o("No GPU found — mousetest needs a screen."); return end
     local gpu = component.proxy(gpuAddr)
@@ -33,7 +33,7 @@ mod.commands = {
       o("Screen too small for mousetest (need ~28x10)."); return
     end
 
-    -- Colour only if the GPU has the depth for it; fall back to mono.
+    
     local depth = (gpu.getDepth and gpu.getDepth()) or 1
     local color = depth > 1
     local function setColors(fg, bg)
@@ -41,13 +41,13 @@ mod.commands = {
       pcall(gpu.setBackground, bg or 0x000000)
     end
 
-    -- Save nothing fancy — we clear on entry and on exit.
+    
     local function clear()
       setColors(0xFFFFFF, 0x000000)
       gpu.fill(1, 1, W, H, " ")
     end
 
-    -- ── Buttons (each a click region with a payload) ───────
+    
     local buttons = {
       { x = 3,  y = 6, w = 9, h = 3, label = "  RED  ", fg = 0xFFFFFF, bg = color and 0xAA0000 or 0x000000, id = "red"  },
       { x = 14, y = 6, w = 9, h = 3, label = " GREEN ", fg = 0x000000, bg = color and 0x00AA00 or 0x000000, id = "green" },
@@ -89,24 +89,24 @@ mod.commands = {
 
     drawFrame()
 
-    -- ── Event loop ─────────────────────────────────────────
-    -- We pull RAW signals ourselves (so we can also catch key_down to
-    -- quit) and hand each to mouse.parse — the recommended pattern when a
-    -- tool needs both mouse and keyboard.
+    
+    
+    
+    
     local running = true
     while running do
       local sig = table.pack(computer.pullSignal(1))
       local name = sig[1]
       if name == "key_down" then
         local ch, code = sig[3], sig[4]
-        -- q / Q / ^Q / F10. Esc is still accepted but never relied on:
-        -- it closes the screen GUI, so it does not reach the computer.
+        
+        
         if code == 1 or ch == 113 or ch == 81 or ch == 17 or code == 68 then
           running = false
         end
       else
         local ev = mouse.parse(table.unpack(sig, 1, sig.n))
-        -- Ignore events from other seats' screens on a multi-seat rig.
+        
         if ev and (not myScreen or not ev.screen or ev.screen == myScreen) then
           if ev.type == "click" then
             local hit = mouse.hit(regions, ev.x, ev.y)

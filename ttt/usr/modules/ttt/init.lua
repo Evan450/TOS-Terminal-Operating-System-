@@ -1,26 +1,26 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  TOS Module: ttt — tic-tac-toe vs an unbeatable AI (or 2P)   ║
--- ║                                                              ║
--- ║  Runs fully inside the pkg sandbox (component GPU proxy +    ║
--- ║  raw signals). Rules live in ttt/logic.lua (pure, tested —   ║
--- ║  the AI's unbeatability is a proven property, not a claim);  ║
--- ║  this file is drawing + input.                               ║
--- ║                                                              ║
--- ║  Its own standalone package (each program installable on its ║
--- ║  own). The small TUI kit is duplicated across the game       ║
--- ║  packages rather than shared through a dependency, matching  ║
--- ║  `tetris`, so installing `ttt` pulls in nothing else.        ║
--- ║                                                              ║
--- ║  `ttt`     vs the machine · `ttt 2p` hotseat · and an        ║
--- ║  UNDOCUMENTED zero-player mode (see zeroPlayer) that makes   ║
--- ║  the OS's own easter egg discoverable without reading code.  ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
 local L         = require("ttt.logic")
 
--- ── Shared TUI kit: screen acquisition over a raw GPU proxy ───────────
+
 local function screen(o, minW, minH)
   local gpuAddr = component.list and component.list("gpu")()
   if not gpuAddr then o("No GPU found.", 0xFF0000); return nil end
@@ -68,22 +68,22 @@ local function screen(o, minW, minH)
   return D
 end
 
--- Key helper: OC delivers (char, code). Arrows are codes; letters/space
--- come through as chars.
 
--- ── Standard TOS shortcuts ────────────────────────────────────────────
--- Shared with the shell (tos/shell/keys.lua), so ^Q closes this the same
--- way it closes everything else TOS ships — and an operator who rebinds
--- `quit` with `keys set` has it reach here too.
---
--- Plain Q still works: it is what this program has always used and
--- taking it away would break muscle memory for no gain. What changed is
--- which one is ADVERTISED, because a shortcut you have to remember per
--- program is not a shortcut, it is trivia.
+
+
+
+
+
+
+
+
+
+
+
 local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
 local function stdQuit(ch, code)
   if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
-  return ch == 17 or code == 68 or code == 1   -- ^Q / F10 / Esc
+  return ch == 17 or code == 68 or code == 1   
 end
 local function quitLabel()
   if KEYS and KEYS.label then
@@ -96,10 +96,10 @@ end
 local function keyName(ch, code)
   if code == 200 then return "up"    elseif code == 208 then return "down"
   elseif code == 203 then return "left" elseif code == 205 then return "right"
-  -- #FIX (real Minecraft, 2026-08-11) — ^Q (char 17) and F10 also read
-  -- as "esc". Esc itself never arrives: it closes the screen GUI, so
-  -- every cancel and quit that listened only for it was unreachable.
-  -- Mapping them here fixes every call site at once.
+  
+  
+  
+  
   elseif code == 28 then return "enter"
   elseif stdQuit(ch, code) then return "esc" end
   if type(ch) == "number" and ch > 0 then
@@ -108,32 +108,32 @@ local function keyName(ch, code)
   return nil
 end
 
--- ── The zero-player game ──────────────────────────────────────────────
--- `ttt 2p` is documented; `ttt 0p` is not. It is meant to be found by a
--- player who reads "2p" and wonders what happens with none — which is
--- also the joke: a machine playing itself.
---
--- It exists to make the OS's easter egg FINDABLE outside the source. TOS
--- hides a full cinematic behind `usermod computer root`, and a player who
--- never reads the code has no reason to ever type that. Here the machine
--- discovers futility the WarGames way, faults, and leaks the directive in
--- its own diagnostic — so the reveal is in-fiction rather than a hint in
--- a help screen.
---
--- PHOTOSENSITIVITY RULE (inherited from the base cinematic — see the
--- header of tos/shell/panels/takeover.lua, which is operator-mandated):
--- no strobing, ever. The acceleration here is an ILLUSION built the same
--- way the base egg builds it — games join mid-play, the numbers SKIP, the
--- holds shrink — and the "crash" is a long DARK HOLD, not a flash. Full
--- screen clears are separated by comfortable waits; the montage repaints
--- only the small board region between them.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 local function zeroPlayer(D, o)
   local T = D.T
   local function wait(s)
     local dl = computer.uptime() + s
     while computer.uptime() < dl do
       local ev, _, ch = computer.pullSignal(dl - computer.uptime())
-      -- Any key aborts — never trap someone in a cutscene.
+      
       if ev == "key_down" then return false end
     end
     return true
@@ -146,8 +146,8 @@ local function zeroPlayer(D, o)
     return true
   end
 
-  -- Board geometry: a compact 3x3 drawn in the middle, repainted in
-  -- place so the montage never repaints the whole field.
+  
+  
   local bx = math.floor((D.W - 11) / 2) + 1
   local by = 6
   local function drawBoard(b, dim)
@@ -173,8 +173,8 @@ local function zeroPlayer(D, o)
   if not say(2, { "No opponent.", "Then I will play myself." }, T.warn) then return end
   if not wait(0.5) then return end
 
-  -- Move-by-move, then briskly, then joining mid-game, then endings only.
-  -- Every variant is perfect play; every result is a draw.
+  
+  
   local script = {
     { 1, 1, 0.42 }, { 2, 1, 0.26 }, { 3, 4, 0.16 },
     { 7, 6, 0.13 }, { 19, 8, 0.11 },
@@ -199,7 +199,7 @@ local function zeroPlayer(D, o)
   }, T.dim) then return end
   if not wait(1.0) then return end
 
-  -- The fault. A long dark hold does the work a flash would have done.
+  
   D.clear()
   if not wait(1.6) then return end
 
@@ -216,7 +216,7 @@ local function zeroPlayer(D, o)
   if not line("  outcome       : draw (65536/65536)", T.dim) then return end
   if not line("  conclusion    : the game is not the problem", T.dim, 0.9) then return end
   if not line("", T.fg, 0.2) then return end
-  -- The reveal, dressed as a leaked operator directive.
+  
   if not line("  pending operator directive:", T.dim) then return end
   if not line("      usermod computer root", T.hi, 1.0) then return end
   if not line("  status        : NOT PERFORMED (insufficient privilege)",
@@ -233,19 +233,19 @@ local function zeroPlayer(D, o)
   D.clear()
 end
 
--- ============================================================
--- Tic-tac-toe
--- ============================================================
+
+
+
 
 local function ttt(args, o)
   o = o or print
 
-  -- Bare `ttt` prints the modes instead of launching. A full-screen game
-  -- that starts the instant you type its name gives you nowhere to learn
-  -- it has any options at all — and this one has a hotseat mode most
-  -- players never discovered. `ttt play` (or `1p`) starts the default
-  -- game. The zero-player mode is deliberately ABSENT from this list;
-  -- finding it is the point (see zeroPlayer above).
+  
+  
+  
+  
+  
+  
   local mode
   for _, a in ipairs(args or {}) do
     local v = tostring(a):lower()
@@ -283,13 +283,13 @@ local function ttt(args, o)
   local tieBreak = function(n) return math.random(n) end
 
   local b = L.newBoard()
-  local human, ai = "X", "O"        -- human always moves first as X
+  local human, ai = "X", "O"        
   local cur = "X"
-  local cursor = 5                  -- start on the centre cell
+  local cursor = 5                  
   local msg = twoPlayer and "X's turn" or "Your move (X)"
 
-  -- Grid geometry: each cell is 7 wide x 3 tall, so the board is
-  -- 21 x 9 plus separators.
+  
+  
   local CW, CH = 7, 3
   local gx = math.floor((D.W - (CW * 3 + 2)) / 2) + 1
   local gy = 4
@@ -314,7 +314,7 @@ local function ttt(args, o)
     local cfg = isCur and T.bg or fg
     D.fill(x, y, CW, CH, " ", cfg, bg)
     if mark then
-      -- Big 3-row glyphs so the board reads from across the room.
+      
       local art = (mark == "X")
         and { " \\   / ", "   X   ", " /   \\ " }
         or  { " ,---. ", " |   | ", " `---' " }
@@ -326,7 +326,7 @@ local function ttt(args, o)
 
   local function drawGrid(winLine)
     for i = 1, 9 do drawCell(i, winLine) end
-    -- Separators between cells (chrome: dim, rule 4).
+    
     for r = 1, 2 do
       D.fill(gx, gy + r * (CH + 1) - 1, CW * 3 + 2, 1, D.BOX.h, T.dim, T.bg)
     end
@@ -353,17 +353,17 @@ local function ttt(args, o)
     if not w then return false end
     if w == "draw" then msg = "A draw."
     elseif twoPlayer then msg = w .. " wins!"
-    elseif w == human then msg = "You win!"          -- unreachable vs perfect AI
+    elseif w == human then msg = "You win!"          
     else msg = "The machine wins." end
     redraw(line)
     pcall(computer.beep, (w == "draw") and 400 or 700, 0.2)
     return true
   end
 
-  -- What happens AFTER a legal move lands — turn hand-off, the machine's
-  -- reply, win/draw detection. Factored out of the key handler so a mouse
-  -- click and an Enter go down exactly the same path; returns whether the
-  -- game is now over.
+  
+  
+  
+  
   local function applyMove()
     if twoPlayer then
       cur = L.other(cur)
@@ -372,8 +372,8 @@ local function ttt(args, o)
       redraw(); return false
     end
     if finish() then return true end
-    -- The machine replies immediately. Perfect play, but it varies among
-    -- equally-optimal moves so consecutive games aren't identical.
+    
+    
     local m = L.bestMove(b, ai, tieBreak)
     if m then L.play(b, m, ai) end
     msg = "Your move (X)"
@@ -385,14 +385,14 @@ local function ttt(args, o)
   local over = false
   while true do
     local ev, _, ch, code = computer.pullSignal()
-    -- The seat came back to us (suspended with Ctrl+B, then switched
-    -- back). Whatever was on the screen while we were away is not ours —
-    -- repaint the whole board. Costs nothing when it never happens.
+    
+    
+    
     if ev == "tos_focus" then
       redraw()
-    -- Mouse: a click on a cell IS a move. OC's touch signal is
-    -- (touch, screenAddr, x, y, button), so the same two locals that
-    -- carry char/code for a key carry the coordinates here.
+    
+    
+    
     elseif ev == "touch" and not over then
       local i = L.cellAt(ch, code, gx, gy, CW, CH)
       if i then

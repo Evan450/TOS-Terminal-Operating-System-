@@ -1,54 +1,54 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  TBFS - TOS Block File System (driver for UNMANAGED drives)    ║
--- ║                                                                ║
--- ║  OpenComputers drives come in two flavours. A *managed* disk   ║
--- ║  is a `filesystem` component: it hands you open/read/write/     ║
--- ║  list already. An *unmanaged* disk is a raw `drive` component:  ║
--- ║  readSector/writeSector/getSectorSize/getCapacity and nothing  ║
--- ║  else - no files, no directories. To use one for storage you   ║
--- ║  must lay a filesystem down on the bare sectors yourself.      ║
--- ║                                                                 ║
--- ║  This library IS that filesystem. Given a raw drive proxy it   ║
--- ║  formats, checks, defragments, and - the payoff - returns a     ║
--- ║  proxy that speaks the EXACT managed-filesystem interface TOS   ║
--- ║  already mounts (exists/isDirectory/list/makeDirectory/remove/  ║
--- ║  rename/size/lastModified/open/read/write/close/seek/           ║
--- ║  spaceTotal/spaceUsed/getLabel/setLabel/isReadOnly). So once    ║
--- ║  mounted, securefs, the panels browser, cp, everything works    ║
--- ║  on it unmodified.                                              ║
--- ║                                                                 ║
--- ║  It is PURE: the only thing it touches is the drive proxy you   ║
--- ║  pass in (readSector/writeSector/getSectorSize/getCapacity),    ║
--- ║  so it unit-tests off-box against a table-backed fake drive.    ║
--- ║                                                                 ║
--- ║  ── On-disk layout (TBFS v1) ──                                 ║
--- ║    block 0            superblock                                ║
--- ║    bitmap region      1 bit per block (free/used)              ║
--- ║    inode region       fixed inode table                        ║
--- ║    data region        file + directory blocks                  ║
--- ║  A block is one sector. Files map logical→physical blocks via   ║
--- ║  8 direct + 1 single-indirect + 1 double-indirect pointer, so   ║
--- ║  a single file scales into the megabytes. Directories are just  ║
--- ║  files whose data is a list of {name, inode} entries.          ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local blockfs = {}
 blockfs._VERSION = "1.2.0"
 
 local MAGIC        = "TBFS"
 local FMT_VERSION  = 1
-local INODE_SIZE   = 64          -- bytes per inode record
-local N_DIRECT     = 8           -- direct block pointers in an inode
+local INODE_SIZE   = 64          
+local N_DIRECT     = 8           
 local T_FREE, T_FILE, T_DIR = 0, 1, 2
-local NAME_MAX     = 48          -- longest directory-entry name
-local ROOT_INODE   = 1           -- inode 0 is reserved (== "nil pointer")
+local NAME_MAX     = 48          
+local ROOT_INODE   = 1           
 
--- ============================================================
--- Low-level drive I/O (whole-block reads/writes)
--- ============================================================
--- The drive proxy is the OC unmanaged `drive` component (readSector/
--- writeSector are 1-indexed in OC). We wrap it so the rest of the code
--- speaks in 0-indexed block numbers and never worries about padding.
+
+
+
+
+
+
 
 local function driveGeom(drive)
   local ss = drive.getSectorSize and drive.getSectorSize() or 512
@@ -58,10 +58,10 @@ local function driveGeom(drive)
   return ss, blocks
 end
 
--- Read block b (0-indexed) as an ss-byte string.
--- ============================================================
--- Block cache
--- ============================================================
+
+
+
+
 --! MEASURED, not guessed. Writing one 8 KB file cost 219 sector reads
 --! for 16 blocks of data, and TWO sectors were 89% of them: the file's
 --! inode block, re-read 144 times, and the allocation bitmap, re-read 50
@@ -115,8 +115,8 @@ local function cachePut(fs, b, data, pin)
     return
   end
   if c.n >= CACHE_SLOTS then
-    -- Evict the least recently used CLEAN entry. A dirty (pinned) entry
-    -- is a write the drive has not seen yet; it cannot be dropped.
+    
+    
     local oldest, oldestUsed
     for blk, ent in pairs(c.map) do
       if not ent.dirty and (not oldestUsed or ent.used < oldestUsed) then
@@ -129,9 +129,9 @@ local function cachePut(fs, b, data, pin)
   c.n = c.n + 1
 end
 
--- Read block b (0-indexed) as an ss-byte string. `cacheable = false`
--- reads around the cache (file data): the bytes come back but are not
--- kept, so they cannot evict the metadata the cache is for.
+
+
+
 local function readBlock(fs, b, cacheable)
   if b < 0 or b >= fs.totalBlocks then
     error("readBlock out of range: " .. tostring(b), 2)
@@ -141,7 +141,7 @@ local function readBlock(fs, b, cacheable)
     local e = c.map[b]
     if e then c.tick = c.tick + 1; e.used = c.tick; return e.data end
   end
-  local s = fs.drive.readSector(b + 1)          -- OC sectors are 1-indexed
+  local s = fs.drive.readSector(b + 1)          
   if type(s) ~= "string" then s = "" end
   if #s < fs.ss then s = s .. string.rep("\0", fs.ss - #s) end
   s = s:sub(1, fs.ss)
@@ -149,8 +149,8 @@ local function readBlock(fs, b, cacheable)
   return s
 end
 
--- Write every deferred (dirty) cache entry to the drive, lowest block
--- first, and unpin it. Called when the outermost batch closes.
+
+
 local function flushDeferred(fs)
   local c = fs.cache
   if not c or not c.dirtyCount or c.dirtyCount == 0 then return end
@@ -167,18 +167,18 @@ local function flushDeferred(fs)
   c.dirtyCount = 0
 end
 
--- Batching (see the cache note). Nestable; only the outermost close
--- flushes. A batch left open on an error path is metadata the drive
--- never received -- every opener closes on every path.
+
+
+
 local function beginBatch(fs) fs.batchDepth = (fs.batchDepth or 0) + 1 end
 local function endBatch(fs)
   fs.batchDepth = fs.batchDepth - 1
   if fs.batchDepth <= 0 then fs.batchDepth = 0; flushDeferred(fs) end
 end
 
--- Write an ss-byte block (data is padded/truncated to the sector).
--- `defer` is honoured only inside a batch and only when a cache exists;
--- otherwise this is the plain write-through it always was.
+
+
+
 local function writeBlock(fs, b, data, defer)
   if b < 0 or b >= fs.totalBlocks then
     error("writeBlock out of range: " .. tostring(b), 2)
@@ -194,9 +194,9 @@ local function writeBlock(fs, b, data, defer)
   end
   fs.drive.writeSector(b + 1, data)
   --! Through, not back: the drive already has it before the cache does.
-  -- Metadata and already-cached blocks are kept; other data blocks stay
-  -- out (see readBlock). A dirty entry superseded here is now on the
-  -- drive, so unpin it.
+  
+  
+  
   if c and (b < fs.dataStart or (c.map[b] ~= nil)) then
     local e = c.map[b]
     if e and e.dirty then e.dirty = nil; c.dirtyCount = c.dirtyCount - 1 end
@@ -204,15 +204,15 @@ local function writeBlock(fs, b, data, defer)
   end
 end
 
--- ============================================================
--- Superblock
--- ============================================================
 
--- Superblock layout. bootStart/bootBlocks describe an optional CONTIGUOUS
--- boot region (super | bitmap | inodes | BOOT | data) holding a stage-2
--- boot blob — this is what lets an unmanaged drive be BOOTABLE: the
--- tiny EEPROM reads this contiguous run and runs it (no in-EEPROM TBFS
--- parser needed). bootBlocks == 0 means a normal, non-bootable volume.
+
+
+
+
+
+
+
+
 local function packSuper(sb)
   local label = (sb.label or ""):sub(1, 32)
   return string.pack("<c4 I1 I2 I4 I4 I4 I4 I4 I4 I4 I4 I4 I4 I1 s2",
@@ -247,16 +247,16 @@ local function writeSuper(fs)
   fs.superDirty = false
 end
 
--- The superblock only changes when the free count does (allocBlock /
--- freeBlock set the flag). A write that lands inside blocks a file already
--- owns -- every small append -- used to rewrite it anyway.
+
+
+
 local function writeSuperIfDirty(fs)
   if fs.superDirty then writeSuper(fs) end
 end
 
--- ============================================================
--- Block bitmap (1 bit per block; bit set == used)
--- ============================================================
+
+
+
 
 local function bitmapByte(fs, blk)
   local bitIndex = blk
@@ -281,17 +281,17 @@ local function bitSet(fs, blk, val)
   writeBlock(fs, bb, sector:sub(1, off) .. string.char(byte) .. sector:sub(off + 2), true)
 end
 
--- Layout-aware allocation: prefer `near`+1 (keep a file's blocks
--- contiguous → the simulated head doesn't seek), else the nearest free
--- block scanning outward from the last-served cursor. Marks it used,
--- decrements the free count, and returns the block number (or nil).
+
+
+
+
 local function allocBlock(fs, near)
   if fs.freeBlocks <= 0 then return nil end
   local first, last = fs.dataStart, fs.totalBlocks - 1
   local function tryTake(b)
     if b >= first and b <= last and bitGet(fs, b) == 0 then
       bitSet(fs, b, 1); fs.freeBlocks = fs.freeBlocks - 1; fs.allocHint = b
-      fs.superDirty = true                     -- the free count moved
+      fs.superDirty = true                     
       return b
     end
     return nil
@@ -311,15 +311,15 @@ local function freeBlock(fs, b)
   end
 end
 
--- ============================================================
--- Inodes
--- ============================================================
--- Record: type(1) flags(1) size(4) mtime(4) blocks(4) direct[8]*4
---         indirect(4) doubleIndirect(4)  = 1+1+4+4+4+32+4+4 = 54, pad 64.
+
+
+
+
+
 
 local function inodeLoc(fs, ino)
   local perBlock = fs.ss // INODE_SIZE
-  local idx = ino                      -- inode 0 reserved; array is dense
+  local idx = ino                      
   local blk = fs.inodeStart + (idx // perBlock)
   local off = (idx % perBlock) * INODE_SIZE
   return blk, off
@@ -331,7 +331,7 @@ local function readInode(fs, ino)
   local rec = sector:sub(off + 1, off + INODE_SIZE)
   local t, flags, size, mtime, blocks = string.unpack("<I1 I1 I4 I4 I4", rec)
   local direct = {}
-  local p = 15                          -- byte offset after the 14-byte header
+  local p = 15                          
   for i = 1, N_DIRECT do
     direct[i] = string.unpack("<I4", rec, p); p = p + 4
   end
@@ -368,10 +368,10 @@ local function allocInode(fs, itype)
   return nil
 end
 
--- ============================================================
--- Logical → physical block mapping (direct / indirect / double)
--- ============================================================
-local function ppb(fs) return fs.ss // 4 end     -- pointers per block
+
+
+
+local function ppb(fs) return fs.ss // 4 end     
 
 local function readPtr(fs, blk, slot)
   local sector = readBlock(fs, blk)
@@ -390,12 +390,12 @@ local function jot(fs, op, a, b)
   if j then j[#j + 1] = { op, a, b } end
 end
 
--- Physical block backing logical file-block `li`; when `alloc`, grows
--- the file (allocating indirect blocks as needed) and keeps blocks near
--- each other for a defrag-friendly, seek-cheap layout. Returns block#|nil,
--- plus `true` when this call allocated the data block (nothing in it to
--- preserve). node.blocks is counted here as blocks are gained, instead
--- of re-walking the whole map after every write.
+
+
+
+
+
+
 local function mapBlock(fs, node, li, alloc)
   local P = ppb(fs)
   local function near() return fs.allocHint end
@@ -418,7 +418,7 @@ local function mapBlock(fs, node, li, alloc)
     return d ~= 0 and d or nil
   end
   li = li - N_DIRECT
-  if li < P then                                   -- single indirect
+  if li < P then                                   
     if node.indirect == 0 then
       if not alloc then return nil end
       local ib = take(near()); if not ib then return nil end
@@ -434,7 +434,7 @@ local function mapBlock(fs, node, li, alloc)
     return phys ~= 0 and phys or nil
   end
   li = li - P
-  if li < P * P then                               -- double indirect
+  if li < P * P then                               
     if node.double == 0 then
       if not alloc then return nil end
       local db = take(near()); if not db then return nil end
@@ -457,10 +457,10 @@ local function mapBlock(fs, node, li, alloc)
     end
     return phys ~= 0 and phys or nil
   end
-  return nil   -- beyond double-indirect reach (multi-MB file)
+  return nil   
 end
 
--- Undo a journal newest-first: node map and bitmap as before the write.
+
 local function rollback(fs, node, j)
   for k = #j, 1, -1 do
     local op, a, b = j[k][1], j[k][2], j[k][3]
@@ -468,13 +468,13 @@ local function rollback(fs, node, j)
     elseif op == "direct" then node.direct[a] = 0
     elseif op == "ind" then node.indirect = 0
     elseif op == "dbl" then node.double = 0
-    else writePtr(fs, a, b, 0) end   -- "ptr"
+    else writePtr(fs, a, b, 0) end   
   end
 end
 
--- Visit every physical block a file owns (data + indirect metadata),
--- calling fn(block, kind) where kind is "data"|"meta". Used by free,
--- fsck, and defrag.
+
+
+
 local function walkBlocks(fs, node, fn)
   local P = ppb(fs)
   local nblk = node.blocks
@@ -506,7 +506,7 @@ local function walkBlocks(fs, node, fn)
 end
 
 local function freeInodeBlocks(fs, node)
-  beginBatch(fs)                 -- one bitmap write per sector touched, not per block
+  beginBatch(fs)                 
   walkBlocks(fs, node, function(b) freeBlock(fs, b) end)
   endBatch(fs)
   node.blocks = 0; node.size = 0
@@ -514,17 +514,17 @@ local function freeInodeBlocks(fs, node)
   node.indirect = 0; node.double = 0
 end
 
--- ============================================================
--- File data read / write (byte ranges over the block map)
--- ============================================================
+
+
+
 
 local function readData(fs, node, offset, count)
   if offset >= node.size then return "" end
   count = math.min(count, node.size - offset)
   local out = {}
   local pos = offset
-  -- Directory blocks are metadata and stay cached; file data streams
-  -- around the cache so it cannot evict the inode/bitmap blocks.
+  
+  
   local cacheable = (node.type == T_DIR)
   while count > 0 do
     local li = pos // fs.ss
@@ -534,7 +534,7 @@ local function readData(fs, node, offset, count)
     if phys then
       chunk = readBlock(fs, phys, cacheable):sub(within + 1, within + math.min(count, fs.ss - within))
     else
-      chunk = string.rep("\0", math.min(count, fs.ss - within))   -- sparse hole
+      chunk = string.rep("\0", math.min(count, fs.ss - within))   
     end
     out[#out + 1] = chunk
     local n = #chunk
@@ -549,9 +549,9 @@ end
 local function writeData(fs, node, offset, data)
   local n = #data
   local ss = fs.ss
-  beginBatch(fs)                 -- bitmap + pointer writes coalesce until the end
+  beginBatch(fs)                 
 
-  -- Pass 1: map. (A zero-length write maps nothing.)
+  
   local firstLi = offset // ss
   local phys, fresh = {}, {}
   if n > 0 then
@@ -571,7 +571,7 @@ local function writeData(fs, node, offset, data)
     fs.journal = nil
   end
 
-  -- Pass 2: data. Cannot fail for space now.
+  
   local pos, i = offset, 1
   while i <= n do
     local li = pos // ss
@@ -582,10 +582,10 @@ local function writeData(fs, node, offset, data)
     local chunk = data:sub(i, i + room - 1)
     local sector
     if #chunk == ss then
-      sector = chunk                                   -- whole block: nothing to keep
+      sector = chunk                                   
     elseif fresh[k] then
-      -- Just allocated: nothing in it is ours to preserve, and the bytes
-      -- around the chunk are what a read would have returned anyway.
+      
+      
       sector = string.rep("\0", within) .. chunk .. string.rep("\0", ss - within - #chunk)
     else
       local old = readBlock(fs, blk, node.type == T_DIR)
@@ -596,16 +596,16 @@ local function writeData(fs, node, offset, data)
   end
   endBatch(fs)
   if pos > node.size then node.size = pos end
-  -- node.blocks is maintained by mapBlock as blocks are allocated.
+  
   node.mtime = fs.now()
   return true
 end
 
--- ============================================================
--- Directories (a directory file is a list of entries)
--- ============================================================
--- Entry: nameLen(1) name(nameLen) inode(4). Packed back-to-back in the
--- directory's data. A zero-length name marks a tombstone (deleted slot).
+
+
+
+
+
 
 local function dirEntries(fs, dnode)
   local raw = readData(fs, dnode, 0, dnode.size)
@@ -628,10 +628,10 @@ local function dirLookup(fs, dnode, name)
 end
 
 local function dirAdd(fs, dnode, name, ino)
-  -- Reload the directory inode fresh: two resolve() results for the same
-  -- directory are SEPARATE in-memory copies, so a caller (e.g. rename,
-  -- where source and dest share a parent) could otherwise hold a stale
-  -- copy whose write-back clobbers an entry another copy just added.
+  
+  
+  
+  
   dnode = readInode(fs, dnode.num)
   if #name > NAME_MAX then return false, "name too long" end
   if dirLookup(fs, dnode, name) then return false, "exists" end
@@ -642,10 +642,10 @@ local function dirAdd(fs, dnode, name, ino)
   return true
 end
 
--- Remove an entry by rewriting the directory without it (keeps the
--- format simple and the on-disk data compact — no tombstone accrual).
+
+
 local function dirRemove(fs, dnode, name)
-  dnode = readInode(fs, dnode.num)     -- fresh copy (see dirAdd)
+  dnode = readInode(fs, dnode.num)     
   local kept = {}
   for _, e in ipairs(dirEntries(fs, dnode)) do
     if e.name ~= name then
@@ -654,9 +654,9 @@ local function dirRemove(fs, dnode, name)
   end
   freeInodeBlocks(fs, dnode)
   dnode.size = 0
-  -- One write of the whole listing, not one writeData per surviving
-  -- entry: removing one file from a 20-entry directory cost 25 sector
-  -- writes that way, and each of those re-walked the block map.
+  
+  
+  
   if #kept > 0 then
     local ok, err = writeData(fs, dnode, 0, table.concat(kept))
     if not ok then return false, err end
@@ -665,9 +665,9 @@ local function dirRemove(fs, dnode, name)
   return true
 end
 
--- ============================================================
--- Path resolution
--- ============================================================
+
+
+
 
 local function splitPath(path)
   local parts = {}
@@ -678,8 +678,8 @@ local function splitPath(path)
   return parts
 end
 
--- Resolve to (inode-number, node) or nil. Also returns the parent dir
--- node and the final path segment, so callers can create/remove.
+
+
 local function resolve(fs, path)
   local parts = splitPath(path)
   local cur = readInode(fs, ROOT_INODE)
@@ -689,7 +689,7 @@ local function resolve(fs, path)
     parent = cur; leaf = seg
     local ino = dirLookup(fs, cur, seg)
     if not ino then
-      if i == #parts then return nil, parent, leaf end      -- missing leaf
+      if i == #parts then return nil, parent, leaf end      
       return nil, nil, nil, "no such path"
     end
     cur = readInode(fs, ino)
@@ -697,12 +697,12 @@ local function resolve(fs, path)
   return cur, parent, leaf
 end
 
--- ============================================================
--- Format
--- ============================================================
 
---- Pure: the layout format() will write (table, or nil + reason). `deploy
---- drive` checks it BEFORE erasing; format uses it, so they cannot disagree.
+
+
+
+
+
 function blockfs.plan(drive, opts)
   opts = opts or {}
   local ss, totalBlocks = driveGeom(drive)
@@ -734,44 +734,44 @@ function blockfs.plan(drive, opts)
   }
 end
 
---- Pure: blocks a file of `bytes` takes, indirect pointer blocks included.
+
 function blockfs.blocksFor(bytes, ss)
   ss = ss or 512
   local data = math.ceil((tonumber(bytes) or 0) / ss)
   if data <= N_DIRECT then return data end
   local P = ss // 4
-  local meta, rest = 1, data - N_DIRECT - P   -- 1: single indirect
-  if rest > 0 then meta = meta + 1 + math.ceil(rest / P) end   -- double + mids
+  local meta, rest = 1, data - N_DIRECT - P   
+  if rest > 0 then meta = meta + 1 + math.ceil(rest / P) end   
   return data + meta
 end
 
---- Lay a fresh TBFS onto a raw drive. opts = { label, inodeRatio,
---- bootBytes }. inodeRatio = data-bytes per inode (default 4 KB).
---- bootBytes > 0 reserves a contiguous BOOT region of that many bytes
---- (rounded up to a sector) between the inode table and the data region,
---- making the volume bootable (see blockfs.writeBoot). Default 0.
+
+
+
+
+
 function blockfs.format(drive, opts)
   opts = opts or {}
-  local fs, lerr = blockfs.plan(drive, opts)   -- the plan IS the handle
+  local fs, lerr = blockfs.plan(drive, opts)   
   if not fs then return false, lerr end
   local ss, totalBlocks, dataStart = fs.ss, fs.totalBlocks, fs.dataStart
   fs.drive, fs.freeBlocks, fs.clean = drive, 0, true
   fs.label = (opts.label or "tbfs"):sub(1, 32)
   fs.now = opts.now or function() return 0 end
   fs.allocHint = dataStart
-  -- A cache so the bitmap marking below coalesces (see writeBlock);
-  -- this handle is dropped when format returns.
+  
+  
   fs.cache = { map = {}, n = 0, tick = 0 }
 
-  -- Zero metadata (superblock + bitmap + inode table).
+  
   for b = 0, dataStart - 1 do writeBlock(fs, b, string.rep("\0", ss)) end
-  -- Mark metadata blocks used in the bitmap; data blocks free. One
-  -- bitmap write per sector, not one per block marked.
+  
+  
   fs.freeBlocks = totalBlocks - dataStart
   beginBatch(fs)
   for b = 0, dataStart - 1 do bitSet(fs, b, 1) end
   endBatch(fs)
-  -- Root directory inode (empty).
+  
   local root = { num = ROOT_INODE, type = T_DIR, flags = 0, size = 0,
     mtime = fs.now(), blocks = 0, direct = {}, indirect = 0, double = 0 }
   for i = 1, N_DIRECT do root.direct[i] = 0 end
@@ -780,9 +780,9 @@ function blockfs.format(drive, opts)
   return true
 end
 
--- ============================================================
--- Open a formatted volume → the in-memory fs handle
--- ============================================================
+
+
+
 
 local function openVolume(drive, opts)
   opts = opts or {}
@@ -804,16 +804,16 @@ local function openVolume(drive, opts)
   return fs
 end
 
--- ============================================================
--- The managed-filesystem proxy (what TOS mounts)
--- ============================================================
 
---- Build the OC-`filesystem`-shaped proxy over a formatted drive.
---- Returns (proxy, fs) or (nil, err).
+
+
+
+
+
 function blockfs.mount(drive, opts)
   local fs, err = openVolume(drive, opts)
   if not fs then return nil, err end
-  fs.clean = false; writeSuper(fs)          -- mark dirty until a clean unmount
+  fs.clean = false; writeSuper(fs)          
   local handles, nextH = {}, 1
 
   local function nodeAt(path)
@@ -823,11 +823,11 @@ function blockfs.mount(drive, opts)
 
   local P = {}
 
-  -- Component-proxy shape: expose the underlying drive's address (and the
-  -- filesystem type tag) so consumers can treat the root like any managed
-  -- FS proxy. init.lua's _TOS.bootAddr reads .address — without it the
-  -- shell's auto-mount gate (#SEC H26, fail-closed) would silently refuse
-  -- every inserted disk on a TBFS-booted box.
+  
+  
+  
+  
+  
   P.address = drive.address
   P.type = "filesystem"
 
@@ -882,13 +882,13 @@ function blockfs.mount(drive, opts)
   --! guarantee is stated one layer up rather than here.
   function P.makeDirectory(path)
     local parts = splitPath(path)
-    if #parts == 0 then return true end                 -- "/" already exists
+    if #parts == 0 then return true end                 
     local acc = ""
     for _, seg in ipairs(parts) do
       acc = acc .. "/" .. seg
       local node, parent, leaf = resolve(fs, acc)
       if node then
-        if node.type ~= T_DIR then return false end     -- a file is in the way
+        if node.type ~= T_DIR then return false end     
       else
         if not parent or not leaf then return false end
         local dir = allocInode(fs, T_DIR)
@@ -905,7 +905,7 @@ function blockfs.mount(drive, opts)
     local node, parent, leaf = resolve(fs, path)
     if not node or not parent or not leaf then return false end
     if node.type == T_DIR then
-      -- recursive remove of children first
+      
       for _, e in ipairs(dirEntries(fs, node)) do
         P.remove((path:gsub("/+$", "")) .. "/" .. e.name)
       end
@@ -919,20 +919,20 @@ function blockfs.mount(drive, opts)
 
   function P.rename(from, to)
     local node, fparent, fleaf = resolve(fs, from)
-    if not node or not fleaf then return false end      -- no source, or "/"
-    -- A directory cannot move into itself or its own subtree: the link
-    -- would succeed, the unlink would cut the only path to it, and the
-    -- whole subtree becomes an unreachable cycle fsck counts as leaked.
+    if not node or not fleaf then return false end      
+    
+    
+    
     if node.type == T_DIR then
       local f, t = splitPath(from), splitPath(to)
       local inside = #t >= #f
       for i = 1, #f do if t[i] ~= f[i] then inside = false; break end end
-      if inside and #t == #f then return true end       -- renamed onto itself
+      if inside and #t == #f then return true end       
       if inside then return false end
     end
     local existing, tparent, tleaf = resolve(fs, to)
     if not tparent or not tleaf then return false end
-    if existing and existing.num == node.num then return true end   -- same entry
+    if existing and existing.num == node.num then return true end   
     if existing then P.remove(to) end
     local ok = dirAdd(fs, tparent, tleaf, node.num)
     if not ok then return false end
@@ -946,7 +946,7 @@ function blockfs.mount(drive, opts)
     local node, parent, leaf = resolve(fs, path)
     if mode == "r" then
       if not node or node.type ~= T_FILE then return nil, "no such file" end
-    else                                                 -- w / a: create if absent
+    else                                                 
       if not node then
         if not parent or not leaf then return nil, "bad path" end
         node = allocInode(fs, T_FILE); if not node then return nil, "no inodes" end
@@ -963,7 +963,7 @@ function blockfs.mount(drive, opts)
 
   function P.read(h, count)
     local st = handles[h]; if not st then return nil, "bad handle" end
-    if st.pos >= st.node.size then return nil end        -- EOF (OC returns nil)
+    if st.pos >= st.node.size then return nil end        
     local data = readData(fs, st.node, st.pos, math.min(count, st.node.size - st.pos))
     st.pos = st.pos + #data
     return data
@@ -973,7 +973,7 @@ function blockfs.mount(drive, opts)
     local st = handles[h]; if not st then return false, "bad handle" end
     if st.mode == "r" then return false, "read-only handle" end
     local ok, err = writeData(fs, st.node, st.pos, data)
-    if not ok then writeSuperIfDirty(fs); return false, err end   -- rolled back
+    if not ok then writeSuperIfDirty(fs); return false, err end   
     st.pos = st.pos + #data
     writeInode(fs, st.node); writeSuperIfDirty(fs)
     return true
@@ -989,42 +989,42 @@ function blockfs.mount(drive, opts)
     return st.pos
   end
 
-  -- A nil handle is what a caller hands us when it forgot to check
-  -- open()'s return. Indexing `handles` with it raises "table index is
-  -- nil" from inside the driver, which points the reader at this file
-  -- instead of at their own missing check.
+  
+  
+  
+  
   function P.close(h)
     if h == nil or handles[h] == nil then return false, "bad file descriptor" end
     handles[h] = nil
     return true
   end
 
-  --- How many file handles are open on this volume right now.
-  --- The shell asks before it unmounts a volume to run format / fsck /
-  --- defrag: with nothing open it can unmount, act and remount without
-  --- troubling the operator; with something open it has to ask, because
-  --- unmounting pulls the volume out from under whatever holds them.
+  
+  
+  
+  
+  
   function P.openHandles()
     local n = 0
     for _ in pairs(handles) do n = n + 1 end
     return n
   end
 
-  -- Flush the clean bit so a later mount knows the volume was shut down
-  -- properly (fsck can then trust the free counts). Call on unmount.
+  
+  
   function P.sync() fs.clean = true; writeSuper(fs); fs.clean = false; writeSuper(fs) end
   function P.unmount() fs.clean = true; writeSuper(fs) end
 
   return P, fs
 end
 
--- ============================================================
--- Statistics + fragmentation
--- ============================================================
 
---- Volume stats without mounting: capacity, usage, inode use, and the
---- FRAGMENTATION ratio — the share of a file's data-block steps that
---- jump to a non-adjacent block (0 = perfectly contiguous). Pure read.
+
+
+
+
+
+
 function blockfs.stats(drive, opts)
   local fs, err = openVolume(drive, opts)
   if not fs then return nil, err end
@@ -1056,28 +1056,28 @@ function blockfs.stats(drive, opts)
   }
 end
 
--- ============================================================
--- fsck — consistency check (+ optional repair of the free counts)
--- ============================================================
 
---- Check the volume. opts.repair = true rebuilds the block bitmap and
---- free count from what the inodes actually reference (the safe repair:
---- reachable blocks become the truth), and clears the dirty flag.
---- Returns { ok, problems = {...}, repaired = bool }.
+
+
+
+
+
+
+
 function blockfs.check(drive, opts)
   opts = opts or {}
   local fs, err = openVolume(drive, opts)
   if not fs then return nil, err end
-  -- opts.yield (a function) is called between inodes during the scan so
-  -- a big fsck doesn't freeze other seats — but ONLY on a read-only
-  -- check: a --repair rewrites the bitmap from the scan results, and a
-  -- yield window there would let concurrent writes make the scan stale
-  -- before it's applied. Repairs stay atomic. (defrag has NO yield hook
-  -- for the same reason, deliberately — a torn snapshot is data loss.)
+  
+  
+  
+  
+  
+  
   local yield = (not opts.repair) and type(opts.yield) == "function"
     and opts.yield or nil
   local problems = {}
-  local used = {}                       -- block → times referenced
+  local used = {}                       
   local function mark(b)
     if b < fs.dataStart or b >= fs.totalBlocks then
       problems[#problems + 1] = "pointer out of range: " .. b; return
@@ -1092,7 +1092,7 @@ function blockfs.check(drive, opts)
       walkBlocks(fs, n, function(b) mark(b) end)
     end
   end
-  -- Compare against the bitmap.
+  
   local bitmapUsed, leaked = 0, 0
   for b = fs.dataStart, fs.totalBlocks - 1 do
     local bit = bitGet(fs, b)
@@ -1107,10 +1107,10 @@ function blockfs.check(drive, opts)
 
   local repaired = false
   if opts.repair then
-    -- Rebuild the bitmap from reachability: metadata + referenced blocks used.
-    -- Batched: the whole bitmap lands in one write per sector, and only
-    -- after every bit is decided -- a repair is not something to leave
-    -- half-applied on the drive.
+    
+    
+    
+    
     beginBatch(fs)
     for b = 0, fs.dataStart - 1 do bitSet(fs, b, 1) end
     local free = 0
@@ -1125,29 +1125,29 @@ function blockfs.check(drive, opts)
            leaked = leaked, referenced = fs.totalBlocks - fs.dataStart - fs.freeBlocks }
 end
 
--- ============================================================
--- Defragmentation
--- ============================================================
 
---- Rewrite every file's data blocks into contiguous runs, packed toward
---- the front of the data region, so the simulated head stops seeking.
---- opts.now for timestamps. Returns { moved = <blocks>, before, after }
---- (fragmentation ratios). Manual; the `drive` command also calls this
---- automatically when stats().fragmentation crosses a threshold.
----
---- Safety: relocating one file could overwrite sectors another file
---- still references, so we read EVERY file/dir's bytes into memory
---- FIRST (phase 1), then reset the allocation and lay them all back
---- down contiguously (phase 3). OC volumes are small, so holding the
---- content briefly is fine; a huge volume would want a scratch-region
---- pass instead.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function blockfs.defrag(drive, opts)
   opts = opts or {}
   local before = blockfs.stats(drive, opts)
   if not before then return nil, "not a TBFS volume" end
   local fs = openVolume(drive, opts)
 
-  -- Phase 1 — snapshot all content via the CURRENT (fragmented) mapping.
+  
   local content = {}
   for ino = ROOT_INODE, fs.inodeCount - 1 do
     local n = readInode(fs, ino)
@@ -1156,17 +1156,17 @@ function blockfs.defrag(drive, opts)
     end
   end
 
-  -- Phase 2 — free the whole data region; allocation now starts clean at
-  -- dataStart, so each rewrite packs contiguously from the front.
+  
+  
   beginBatch(fs)
   for b = fs.dataStart, fs.totalBlocks - 1 do bitSet(fs, b, 0) end
   endBatch(fs)
   fs.freeBlocks = fs.totalBlocks - fs.dataStart
   fs.allocHint = fs.dataStart
 
-  -- Phase 3 — rewrite each inode's data in inode order. writeData pulls
-  -- from allocHint upward and keeps a file's blocks adjacent, so files
-  -- land in tight back-to-back runs.
+  
+  
+  
   local moved = 0
   for ino = ROOT_INODE, fs.inodeCount - 1 do
     if content[ino] ~= nil then
@@ -1186,20 +1186,20 @@ function blockfs.defrag(drive, opts)
            after = after and after.fragmentation or 0 }
 end
 
--- ============================================================
--- Boot support (make an unmanaged drive BOOTABLE)
--- ============================================================
--- A drive formatted with a boot region (format opts.bootBytes > 0) holds
--- a stage-2 boot blob in a fixed CONTIGUOUS run of sectors. The whole
--- point: a ~15-line EEPROM can read that run and run() it without any
--- TBFS parser of its own. The blob (assembled by blockfs.bootBlob) is a
--- self-contained chunk that embeds this very driver, mounts the drive as
--- root, and hands off to /init.lua.
 
---- The default stage-2 bootstrap. Runs in the OC boot environment (the
---- globals `component` and `computer` exist). `blockfs` is already in
---- scope because bootBlob prepends the driver. Mounts the boot drive as
---- root and executes /init.lua from it.
+
+
+
+
+
+
+
+
+
+
+
+
+
 blockfs.BOOTSTRAP = [==[
 -- TBFS stage-2 bootstrap (loaded from the boot region by the EEPROM).
 local component = component or require("component")
@@ -1232,21 +1232,21 @@ if not fn then error("TBFS boot: init load error: " .. tostring(lErr)) end
 return fn()
 ]==]
 
---- Assemble a runnable stage-2 boot blob: the driver source embedded as
---- an inline module, then the bootstrap. `blockfsSrc` is the text of this
---- file (the caller reads /usr/lib/blockfs.lua — the library stays pure
---- and never reads its own file). `bootstrapSrc` defaults to BOOTSTRAP.
---- Returns the blob string (valid Lua).
+
+
+
+
+
 function blockfs.bootBlob(blockfsSrc, bootstrapSrc)
   bootstrapSrc = bootstrapSrc or blockfs.BOOTSTRAP
-  -- blockfsSrc ends with `return blockfs`, so the IIFE yields the module.
+  
   return "local blockfs = (function()\n" .. blockfsSrc .. "\nend)()\n" .. bootstrapSrc
 end
 
---- Write a boot blob into the volume's reserved boot region. The region
---- stores a 4-byte little-endian length, then the blob bytes. Fails if
---- the volume has no boot region or the blob doesn't fit. Returns
---- (true) or (false, reason).
+
+
+
+
 function blockfs.writeBoot(drive, blob)
   local fs, err = openVolume(drive)
   if not fs then return false, err end
@@ -1256,7 +1256,7 @@ function blockfs.writeBoot(drive, blob)
     return false, string.format("boot blob too large (%d > %d bytes)", #blob, capacity)
   end
   local payload = string.pack("<I4", #blob) .. blob
-  -- Write sector by sector across the contiguous boot region.
+  
   local off = 1
   for b = fs.bootStart, fs.bootStart + fs.bootBlocks - 1 do
     writeBlock(fs, b, payload:sub(off, off + fs.ss - 1))
@@ -1266,9 +1266,9 @@ function blockfs.writeBoot(drive, blob)
   return true
 end
 
---- Read the boot blob back (nil if no boot region / empty). Pure read;
---- this is essentially what the EEPROM does (read the contiguous run,
---- take the length-prefixed blob).
+
+
+
 function blockfs.readBoot(drive)
   local fs, err = openVolume(drive)
   if not fs then return nil, err end
@@ -1283,7 +1283,7 @@ function blockfs.readBoot(drive)
   return raw:sub(5, 4 + len)
 end
 
---- Is this a bootable TBFS volume (has a boot region with a blob)?
+
 function blockfs.isBootable(drive)
   local blob = blockfs.readBoot(drive)
   return blob ~= nil and #blob > 0

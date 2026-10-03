@@ -1,25 +1,25 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  stock — PURE inventory aggregation (no component, no I/O)   ║
--- ║                                                              ║
--- ║  Value-in/value-out so the interesting half unit-tests        ║
--- ║  off-box (test_stock.lua) while init.lua keeps only hardware  ║
--- ║  scanning, drawing and input. The pkg sandbox resolves this   ║
--- ║  through the /usr/modules user-lib root: require("stock.stock")║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
 
 local S = {}
 
--- ============================================================
--- Aggregation
--- ============================================================
---- Total a flat list of stack readings into one row per distinct item.
---
--- Input: array of { key, id, label, count, side, sideName, slot, max }
---        (one entry per occupied SLOT, as inv.stacks() returns, with the
---        side folded in by the caller).
--- Output: array of { key, id, label, total, stacks, sides = {name,…} },
---        sorted by total descending then label ascending.
---
+
+
+
+
+
+
+
+
+
+
+
 --! Identity is `key` (registry name + damage), NOT the label. Two mods
 --! can both ship a "Copper Ingot", and an anvil can rename any item —
 --! keying on the display name silently merges different items and splits
@@ -59,16 +59,16 @@ function S.aggregate(readings)
   return order
 end
 
--- ============================================================
--- Low-stock watches
--- ============================================================
---- Apply watch thresholds to an aggregated list.
---
--- `watches` is a map of key -> minimum. Rows gain `.min` and `.low`.
--- A watched item that is entirely ABSENT still has to appear, or the
--- monitor answers "you have plenty of everything" the moment a bin hits
--- zero — which is precisely when it should be shouting. Missing watched
--- items are synthesized at total 0 and sort to the top.
+
+
+
+
+
+
+
+
+
+
 function S.applyWatches(rows, watches, labels)
   rows = rows or {}
   watches = watches or {}
@@ -100,8 +100,8 @@ function S.applyWatches(rows, watches, labels)
   return out
 end
 
---- Just the rows below their threshold, worst deficit first — "what do I
---- need to go make?" is a different question from "what do I have".
+
+
 function S.lowStock(rows)
   local out = {}
   for _, row in ipairs(rows or {}) do
@@ -116,12 +116,12 @@ function S.lowStock(rows)
   return out
 end
 
--- ============================================================
--- Filtering + display
--- ============================================================
---- Case-insensitive substring filter over label AND registry id: an
---- operator hunting for an item will type either the name they see or
---- the one the mod uses, and shouldn't have to know which is which.
+
+
+
+
+
+
 function S.filter(rows, query)
   if not query or query == "" then return rows or {} end
   local q = tostring(query):lower()
@@ -136,8 +136,8 @@ function S.filter(rows, query)
   return out
 end
 
---- Human-readable count. Big warehouses reach numbers that do not fit a
---- column, and "12.4k" beats a truncated "12403" that reads as 1240.
+
+
 function S.fmtCount(n)
   n = tonumber(n) or 0
   if n < 10000 then return tostring(math.floor(n)) end
@@ -145,8 +145,8 @@ function S.fmtCount(n)
   return string.format("%.1fM", n / 1000000)
 end
 
---- Stacks-and-remainder, the unit a player actually thinks in.
---- 130 items at 64/stack = "2s+2".
+
+
 function S.fmtStacks(count, maxStack)
   count = tonumber(count) or 0
   maxStack = tonumber(maxStack) or 64
@@ -158,7 +158,7 @@ function S.fmtStacks(count, maxStack)
   return s .. "s+" .. r
 end
 
---- A total across every row — the one-line "how full is this base".
+
 function S.totals(rows)
   local items, distinct, slots = 0, 0, 0
   for _, row in ipairs(rows or {}) do
@@ -171,14 +171,14 @@ function S.totals(rows)
   return { items = items, distinct = distinct, slots = slots }
 end
 
--- ============================================================
--- Watch persistence (pure encode/decode; init.lua does the file I/O)
--- ============================================================
---- Watches are stored as plain lines so the file stays hand-editable and
---- can never be anything but data:  <key>\t<min>\t<label>
---- Deliberately not a Lua table literal — this file is written by a
---- program and read back by it, and a config that is code is a config
---- that can be made to run.
+
+
+
+
+
+
+
+
 function S.encodeWatches(watches, labels)
   local keys = {}
   for k in pairs(watches or {}) do keys[#keys + 1] = k end

@@ -1,17 +1,17 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  cluster.state — Cluster state store                         ║
--- ║  In-memory master state + load/save to persistence           ║
--- ╚══════════════════════════════════════════════════════════════╝
--- State persistence strategy: write-through on mutations, NOT journaled.
--- Losing the last ~500ms on crash is acceptable; losing the fact that a
--- Manager exists is not. Mutations that change registry membership or
--- job state call save() synchronously. Heartbeat updates do not — they're
--- rebuilt from the next heartbeat round on restart.
 
--- Boot-order-proof requires (#FIX round-1 "cluster services error on
--- boot"): the OpenOS "filesystem"/"event" aliases don't exist yet when
--- rc.d loads this via clusterd — prefer the TOS kernel modules, keep
--- the OpenOS names as fallbacks for off-box tests.
+
+
+
+
+
+
+
+
+
+
+
+
+
 local function firstRequire(...)
   for i = 1, select("#", ...) do
     local ok, mod = pcall(require, (select(i, ...)))
@@ -23,7 +23,7 @@ local fs        = firstRequire("kernel.fs", "filesystem")
 local computer  = require("computer")
 local event     = firstRequire("kernel.event", "event")
 
--- Best-effort log — not critical to state correctness.
+
 local log
 do
   local mod = firstRequire("kernel.log", "log")
@@ -34,65 +34,65 @@ local LOG_TAG = "cluster.state"
 
 local state = {}
 
--- Sentinel for "unset this field". `{ assigned_to = nil }` is an EMPTY
--- table in Lua: the key is never created, so the pairs() walk in
--- setAssignmentState never visits it and the old value silently survives.
--- Every requeue path meant to clear the assignee and none of them did,
--- which left pending assignments still naming the Manager they had just
--- been taken off — the "MGR" column in `cluster jobs`. Callers that mean
--- "delete this key" pass state.CLEAR.
+
+
+
+
+
+
+
 state.CLEAR = setmetatable({}, { __tostring = function() return "<clear>" end })
 
--- ============================================================
--- In-memory state (the canonical data; see §0.5.4 of the spec)
--- ============================================================
+
+
+
 
 local function freshData()
   return {
-    managers = {},                     -- [address] = { hostname, domain_id, ... }
+    managers = {},                     
     domain_id_counter = 1,
 
-    storage_node = nil,                -- { address, capacity, used, last_seen } or nil
+    storage_node = nil,                
 
-    jobs = {},                         -- [job_id] = { ... }
+    jobs = {},                         
     job_id_counter = 1,
     assignment_id_counter = 1,
 
-    -- Runtime-only; NOT persisted
+    
     _runtime = {
       compute_bound_in_flight = 0,
-      events = {},                     -- ring buffer; see pushEvent
+      events = {},                     
       events_head = 1,
       events_size = 0,
       EVENTS_MAX = 128,
-      lock_held = false,               -- cooperative lock for CLI ↔ daemon
+      lock_held = false,               
     },
   }
 end
 
 state._data = freshData()
 
--- ============================================================
--- Cooperative lock
--- ============================================================
--- Because TOS is cooperative, "acquiring" a lock means checking a flag
--- and yielding until it clears. Any state mutation that spans multiple
--- yield points MUST wrap in state.withLock().
+
+
+
+
+
+
 
 function state.withLock(fn, ...)
   local rt = state._data._runtime
   local waited = 0
   while rt.lock_held do
-    -- Cooperative yield; 50ms is short enough that contention doesn't
-    -- stall the CLI visibly but long enough that we aren't busy-looping.
+    
+    
     local ok, pull = pcall(event.pull, 0.05)
     if not ok then
-      -- event.pull missing — bare sleep as fallback
+      
       local deadline = computer.uptime() + 0.05
       while computer.uptime() < deadline do end
     end
     waited = waited + 1
-    -- Safety valve: if we've waited ~10s the other holder is wedged.
+    
     if waited > 200 then
       error("cluster.state: lock wait timed out (held by stuck caller)", 2)
     end
@@ -105,24 +105,24 @@ function state.withLock(fn, ...)
   return r1, r2, r3
 end
 
--- ============================================================
--- Persistence
--- ============================================================
 
-local _statePath  -- set by init()
+
+
+
+local _statePath  
 
 function state.init(statePath)
   _statePath = statePath
 end
 
---- Validate enough of the persisted shape that downstream code doesn't
--- have to defensively nil-check every field. Returns (ok, reason).
---
--- The reasons here are deliberately prose, not codes: this is a private
--- helper and its reason is the *detail* half of the caller's error.
--- state.load wraps them as "bad_state_shape: <reason>", so the stable
--- code is minted once at the public boundary rather than seven times
--- here. See error-conventions.md §4.
+
+
+
+
+
+
+
+
 local function validateShape(d)
   if type(d) ~= "table" then return false, "root not a table" end
   if type(d.managers) ~= "table" then return false, "managers not a table" end
@@ -141,9 +141,9 @@ function state.load(path)
   if not path then return false, "no_state_path" end
   if not fs.exists or not fs.exists(path) then
     log.info(LOG_TAG, "no persisted state at " .. path .. "; starting fresh")
-    -- Success, but the caller needs to tell a first boot from a restore:
-    -- a Master that came up with no managers because the file was absent
-    -- is a different situation from one that restored an empty registry.
+    
+    
+    
     return true, "cold_start"
   end
 
@@ -185,7 +185,7 @@ function state.load(path)
     return false, "bad_state_shape: " .. reason
   end
 
-  -- Merge persisted fields; leave _runtime untouched.
+  
   state._data.managers               = decoded.managers
   state._data.jobs                   = decoded.jobs
   state._data.domain_id_counter      = decoded.domain_id_counter
@@ -193,15 +193,15 @@ function state.load(path)
   state._data.assignment_id_counter  = decoded.assignment_id_counter
   state._data.storage_node           = decoded.storage_node
 
-  -- Mark every loaded Manager as "unknown heartbeat" until one arrives.
-  -- This prevents the sweep from immediately declaring everyone offline
-  -- using the pre-restart last_heartbeat timestamp.
+  
+  
+  
   local now = computer.uptime()
   local mgr_count = 0
   for _, m in pairs(state._data.managers) do
     m.last_heartbeat = now
     mgr_count = mgr_count + 1
-    -- Keep state as-is; if they don't heartbeat we'll demote them.
+    
   end
 
   log.info(LOG_TAG, "loaded state: " .. tostring(mgr_count) ..
@@ -213,8 +213,8 @@ function state.save(path)
   path = path or _statePath
   if not path then return false, "no_state_path" end
 
-  -- Build a shallow copy of _data without _runtime. We copy top-level
-  -- keys only; the nested tables are referenced (serialize will walk them).
+  
+  
   local out = {}
   for k, v in pairs(state._data) do
     if k ~= "_runtime" then out[k] = v end
@@ -223,7 +223,7 @@ function state.save(path)
   local blob = serialize.encode(out)
   local tmp = path .. ".tmp"
 
-  -- Ensure parent dir exists (/var/cluster)
+  
   local dir = path:match("(.+)/[^/]+$")
   if dir and fs.exists and not fs.exists(dir) then
     if fs.makeDirectory then fs.makeDirectory(dir) end
@@ -244,7 +244,7 @@ function state.save(path)
     return false, "write_failed: " .. tostring(err)
   end
 
-  -- Atomic replace: remove old if exists, rename tmp into place.
+  
   if fs.exists and fs.exists(path) and fs.remove then
     pcall(fs.remove, path)
   end
@@ -255,7 +255,7 @@ function state.save(path)
       return false, "rename_failed: " .. tostring(rerr)
     end
   else
-    -- No rename support? fall back to write-directly and cleanup.
+    
     if fs.writeFile then fs.writeFile(path, blob) end
     if fs.remove then pcall(fs.remove, tmp) end
   end
@@ -263,18 +263,18 @@ function state.save(path)
   return true
 end
 
--- Called by every mutating function that changes persistent state.
--- Consolidated here so we can add debouncing later if disk I/O becomes
--- a cost concern.
+
+
+
 local function persist()
   if not _statePath then return end
   local ok, err = pcall(state.save, _statePath)
   if not ok then log.error(LOG_TAG, "persist failed: " .. tostring(err)) end
 end
 
--- ============================================================
--- Manager operations
--- ============================================================
+
+
+
 
 function state.registerManager(address, reg)
   local now = computer.uptime()
@@ -282,7 +282,7 @@ function state.registerManager(address, reg)
 
   local domain_id
   if existing then
-    -- Re-registration after Manager restart: preserve domain_id, refresh fields.
+    
     domain_id = existing.domain_id
   else
     domain_id = state._data.domain_id_counter
@@ -318,15 +318,15 @@ function state.updateManagerHeartbeat(address, snapshot)
   if not m then return false, "unknown_manager" end
   m.last_snapshot = snapshot
   m.last_heartbeat = computer.uptime()
-  -- NOT persisted — pure runtime telemetry.
+  
 
-  -- ...with one exception. A Manager can gain or lose external storage
-  -- without re-registering (operator bolts a RAID on, edits the config,
-  -- restarts the service — or pulls the tape drive). The heartbeat carries
-  -- the currently-declared type (§4.2 external_type); fold it into the
-  -- persisted record, because that — not last_snapshot — is what the
-  -- scheduler reads for storage-preference matching (§9). Persist only on
-  -- an actual change: this runs every heartbeat_interval seconds.
+  
+  
+  
+  
+  
+  
+  
   if snapshot and snapshot.external_type then
     if not m.storage then
       m.storage = { external_type = "none", external_capacity = 0 }
@@ -365,8 +365,8 @@ function state.forgetManager(address)
   local m = state._data.managers[address]
   if not m then return false, "unknown_manager" end
 
-  -- Any running assignments on this Manager are left behind — caller
-  -- (jobs.onManagerOffline) is responsible for marking them lost first.
+  
+  
   state._data.managers[address] = nil
   state.pushEvent("manager_forgotten", { domain_id = m.domain_id, hostname = m.hostname })
   persist()
@@ -377,7 +377,7 @@ function state.listManagers(filter)
   local out = {}
   for addr, m in pairs(state._data.managers) do
     if (not filter) or filter(m) then
-      -- Shallow copy with address stitched in so the CLI can key on it.
+      
       local row = {}
       for k, v in pairs(m) do row[k] = v end
       row.address = addr
@@ -404,9 +404,9 @@ function state.getManagerByDomainId(domain_id)
   return nil
 end
 
--- ============================================================
--- Job operations
--- ============================================================
+
+
+
 
 function state.createJob(spec)
   local job_id = state._data.job_id_counter
@@ -422,7 +422,7 @@ function state.createJob(spec)
     storage_preference = spec.storage_preference,
     result_sink     = spec.result_sink or "inline",
     assignments     = {},
-    spec            = spec,        -- kept for retry
+    spec            = spec,        
   }
   persist()
   state.pushEvent("job_submitted", { job_id = job_id, by = spec.submitted_by })
@@ -458,7 +458,7 @@ function state.setAssignmentState(job_id, assignment_id, newState, extra)
     end
   end
 
-  -- Bookkeeping for the compute-bound cap.
+  
   if j.compute_profile == "compute_bound" then
     if prev ~= "running" and newState == "running" then
       state._data._runtime.compute_bound_in_flight =
@@ -489,8 +489,8 @@ function state.listJobs(filter)
   local out = {}
   for _, j in pairs(state._data.jobs) do
     if (not filter) or filter(j) then
-      -- Produce a row with an assignments counter summary for table
-      -- output. Full detail is via state.getJob.
+      
+      
       local done, total = 0, 0
       for _, a in pairs(j.assignments) do
         total = total + 1
@@ -514,9 +514,9 @@ function state.getJob(job_id)
   return state._data.jobs[job_id]
 end
 
--- ============================================================
--- Storage node
--- ============================================================
+
+
+
 
 function state.setStorageNode(info)
   state._data.storage_node = info
@@ -528,12 +528,12 @@ function state.updateStorageUsage(used_bytes)
   if not state._data.storage_node then return end
   state._data.storage_node.used = used_bytes
   state._data.storage_node.last_seen = computer.uptime()
-  -- NOT persisted — runtime telemetry.
+  
 end
 
--- ============================================================
--- Event ring buffer
--- ============================================================
+
+
+
 
 function state.pushEvent(kind, detail)
   local rt = state._data._runtime
@@ -552,7 +552,7 @@ function state.recentEvents(n)
   local rt = state._data._runtime
   n = math.min(n or 20, rt.events_size)
   local out = {}
-  -- Walk backward from the most recently written slot.
+  
   local cursor = rt.events_head - 1
   if cursor < 1 then cursor = rt.EVENTS_MAX end
   for _ = 1, n do
@@ -564,9 +564,9 @@ function state.recentEvents(n)
   return out
 end
 
--- ============================================================
--- Counters
--- ============================================================
+
+
+
 
 function state.incrementComputeBoundInFlight(delta)
   state._data._runtime.compute_bound_in_flight =

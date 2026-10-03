@@ -1,25 +1,25 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  TOS Module: snake — classic snake, per-user high scores     ║
--- ║                                                              ║
--- ║  Runs fully inside the pkg sandbox: draws through the        ║
--- ║  sandboxed `component` GPU proxy and pulls raw signals with  ║
--- ║  computer.pullSignal (kernel.display / kernel.event are NOT  ║
--- ║  reachable from package code). Rules live in snake/logic.lua ║
--- ║  (pure, unit-tested); this file is drawing + input only.     ║
--- ║                                                              ║
--- ║  Its own package on purpose (operator's model: each program  ║
--- ║  is independently installable). The small TUI kit below is   ║
--- ║  deliberately duplicated across the game packages rather     ║
--- ║  than shared through a dependency — the same way `tetris`    ║
--- ║  carries its own — so installing `snake` pulls in nothing    ║
--- ║  else.                                                       ║
--- ╚══════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local component = require("component")
 local computer  = require("computer")
 local L         = require("snake.logic")
 
--- ── Shared TUI kit: screen acquisition over a raw GPU proxy ───────────
+
 local function screen(o, minW, minH)
   local gpuAddr = component.list and component.list("gpu")()
   if not gpuAddr then o("No GPU found.", 0xFF0000); return nil end
@@ -78,10 +78,24 @@ local function screen(o, minW, minH)
   return D
 end
 
--- Per-user high scores. The sandbox hands us a session-bound `fs`, so
--- ~/ resolves to the CALLING user's home — every player keeps their own
--- board, exactly like tetris.
+
+
+
+
+
+
+
 local MAX_SCORES = 5
+local SCORE_FILE = ".snake_hs"
+local function scorePath()
+  if not (fs and fs.home) then return nil end
+  local ok, home = pcall(fs.home)
+  if not ok or type(home) ~= "string" then return nil end
+  
+  
+  if home == "/tmp" then return nil end
+  return home .. "/" .. SCORE_FILE
+end
 local function loadScores(path)
   if not (fs and fs.exists and fs.exists(path)) then return {} end
   local okR, data = pcall(fs.readFile, path)
@@ -111,21 +125,21 @@ local function recordScore(path, score)
   return t
 end
 
--- Key helper: OC delivers (char, code). Arrows are codes; letters chars.
 
--- ── Standard TOS shortcuts ────────────────────────────────────────────
--- Shared with the shell (tos/shell/keys.lua), so ^Q closes this the same
--- way it closes everything else TOS ships — and an operator who rebinds
--- `quit` with `keys set` has it reach here too.
---
--- Plain Q still works: it is what this program has always used and
--- taking it away would break muscle memory for no gain. What changed is
--- which one is ADVERTISED, because a shortcut you have to remember per
--- program is not a shortcut, it is trivia.
+
+
+
+
+
+
+
+
+
+
 local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
 local function stdQuit(ch, code)
   if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
-  return ch == 17 or code == 68 or code == 1   -- ^Q / F10 / Esc
+  return ch == 17 or code == 68 or code == 1   
 end
 local function quitLabel()
   if KEYS and KEYS.label then
@@ -138,10 +152,10 @@ end
 local function keyName(ch, code)
   if code == 200 then return "up"    elseif code == 208 then return "down"
   elseif code == 203 then return "left" elseif code == 205 then return "right"
-  -- #FIX (real Minecraft, 2026-08-11) — ^Q (char 17) and F10 also read
-  -- as "esc". Esc itself never arrives: it closes the screen GUI, so
-  -- every cancel and quit that listened only for it was unreachable.
-  -- Mapping them here fixes every call site at once.
+  
+  
+  
+  
   elseif code == 28 then return "enter"
   elseif stdQuit(ch, code) then return "esc" end
   if type(ch) == "number" and ch > 0 then
@@ -150,13 +164,13 @@ local function keyName(ch, code)
   return nil
 end
 
--- ============================================================
--- Snake
--- ============================================================
+
+
+
 
 local function snake(args, o)
   o = o or print
-  local BW, BH = 40, 16                     -- board cells
+  local BW, BH = 40, 16                     
   local D = screen(o, BW + 4, BH + 6)
   if not D then return end
   local T = D.T
@@ -164,7 +178,7 @@ local function snake(args, o)
   math.randomseed(math.floor((computer.uptime() * 1000) % 2147483647))
   local rand = function(n) return math.random(n) end
 
-  local ox = math.floor((D.W - BW) / 2)      -- board origin (inside the box)
+  local ox = math.floor((D.W - BW) / 2)      
   local oy = 3
   local s = L.newSnake(BW, BH)
   L.placeFood(s, rand)
@@ -183,9 +197,9 @@ local function snake(args, o)
     local txt = string.format(" Score %d ", s.score)
     D.set(D.W - #txt - 1, 1, txt, T.hi, T.bg)
   end
-  -- Incremental drawing: only the cells that changed. A full board
-  -- repaint every tick would be BW*BH gpu.set calls across the OC
-  -- bridge — the single most expensive thing a game can do here.
+  
+  
+  
   local function drawCell(x, y, ch, fg)
     D.set(ox + x - 1, oy + y - 1, ch, fg, T.bg)
   end
@@ -201,10 +215,10 @@ local function snake(args, o)
   while true do
     local timeout = math.max(0, nextTick - computer.uptime())
     local ev, _, ch, code = computer.pullSignal(timeout)
-    -- The seat came back after a Ctrl+B suspend. Repaint the whole
-    -- board — and come back PAUSED, because the snake was frozen while
-    -- we were away and dropping the operator straight back into motion
-    -- would kill a run they had no chance to react to.
+    
+    
+    
+    
     if ev == "tos_focus" then
       paused = true
       drawFrame(); drawScore()
@@ -235,8 +249,8 @@ local function snake(args, o)
       local prevHead = s.body[1]
       L.step(s, rand)
       if not s.alive then break end
-      -- Erase the vacated tail (unless we grew), demote the old head to
-      -- body, and paint the new head + any new food.
+      
+      
       if not s.grew and oldTail then drawCell(oldTail.x, oldTail.y, " ", T.fg) end
       if prevHead then drawCell(prevHead.x, prevHead.y, BODY, T.fg) end
       local h = s.body[1]
@@ -250,9 +264,10 @@ local function snake(args, o)
     end
   end
 
-  -- Game over.
+  
   pcall(computer.beep, 200, 0.4)
-  local scores = recordScore("/home/.snake_hs", s.score)
+  local path = scorePath()
+  local scores = path and recordScore(path, s.score) or { { score = s.score } }
   local by = oy + math.floor(BH / 2) - 3
   D.box(ox + 4, by, BW - 8, 8, "Game Over")
   D.centre(by + 2, "Score: " .. s.score, T.hi)

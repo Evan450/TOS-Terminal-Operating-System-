@@ -1,26 +1,26 @@
--- ╔══════════════════════════════════════════════════════════════╗
--- ║  cluster.store_client — Master → Storage Node                 ║
--- ╚══════════════════════════════════════════════════════════════╝
--- The Master's half of the Public storage tier. Speaks §4.5's STORE_PUT
--- / STORE_LEASE_EXTEND / STORE_RELEASE to whichever node answers on the
--- write port, so `jobs.lua` can hand out pointers instead of payloads —
--- design principle 5: "Data movement prefers pointers over payloads. The
--- 6 KB packet ceiling is never routed around with heroic chunking when a
--- scratch tier exists."
---
--- EVERY OPERATION IS OPTIONAL. A cluster with no Storage Node configured
--- is the normal case today, and it must keep working exactly as it did:
--- callers get `nil, "no_storage_node"` and fall back to inline. Nothing
--- here may turn a missing scratch tier into a failed job.
---
--- Error strings follow error-conventions.md §4.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 local computer = require("computer")
 
 local store_client = {}
 
-local RPC_TIMEOUT = 10       -- seconds to wait for STORE_PUT_ACK
-local WRITE_PORT  = 2101     -- §2.1: writes are TOS protocol, TRUSTED
+local RPC_TIMEOUT = 10       
+local WRITE_PORT  = 2101     
 
 local net, protocol, serialize, stateRef, log
 
@@ -43,7 +43,7 @@ function store_client.init(deps)
   return true
 end
 
---- Address of the configured Storage Node, or nil.
+
 function store_client.address()
   local sn = stateRef and stateRef._data and stateRef._data.storage_node
   return sn and sn.address or nil
@@ -53,9 +53,9 @@ function store_client.available()
   return store_client.address() ~= nil and net ~= nil and protocol ~= nil
 end
 
--- One request, one reply, keyed by the key we asked about. The Storage
--- Node answers STORE_PUT_ACK on success and STORE_ERROR on refusal, so
--- both are listened for and whichever names our key wins.
+
+
+
 local function rpc(kind, payload, key)
   local addr = store_client.address()
   if not addr then return nil, "no_storage_node" end
@@ -94,9 +94,9 @@ local function rpc(kind, payload, key)
   return ack
 end
 
---- STORE_PUT. `value` is any serializable Lua value; it is encoded here
---- so callers deal in tables, not blobs.
---- @return { key, lease_id, expires_at, size_bytes } | nil, err
+
+
+
 function store_client.put(key, value, opts)
   opts = opts or {}
   if not store_client.available() then return nil, "no_storage_node" end
@@ -108,8 +108,8 @@ function store_client.put(key, value, opts)
   }, key)
 end
 
---- STORE_RELEASE. Deleting a key needs the lease that created it, which
---- is what stops a stale release from removing someone else's rewrite.
+
+
 function store_client.release(key, lease_id)
   if not store_client.available() then return nil, "no_storage_node" end
   return rpc(protocol.TYPE.STORE_RELEASE, { key = key, lease_id = lease_id }, key)
@@ -121,13 +121,13 @@ function store_client.extend(key, lease_id, seconds)
     { key = key, lease_id = lease_id, extend_by = seconds }, key)
 end
 
--- ============================================================
--- Key naming (§4.6)
--- ============================================================
--- The convention is the spec's, not ours: assignment task lists and
--- collected results live under job-<id>/ rather than domain-<id>/,
--- "so that if a Manager dies mid-assignment the task list survives and
--- Master can redistribute to a replacement Manager without copying."
+
+
+
+
+
+
+
 
 function store_client.tasksKey(job_id, split_index)
   return string.format("job-%d/tasks/assignment-%d", job_id, split_index)
