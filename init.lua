@@ -568,6 +568,23 @@ local function loadModuleFile(path)
   return true, fn, err, "compile"
 end
 
+-- The words for a module that exists but could not be made into a chunk.
+-- A compile that ran out of memory is not a syntax error, and calling it
+-- one sends people hunting for a typo in a file that is fine: on a 1 MB
+-- machine `pkg` said "Syntax error in 'kernel.pkg' (...): not enough
+-- memory". (test_module_load_errors.lua)
+local function loadErrorText(name, path, err, mode)   --[[TEST-EXTRACT]]
+  local why = tostring(err)
+  if mode == "read" then
+    return "Read error in '" .. name .. "' (" .. path .. "): " .. why
+  end
+  if why:find("not enough memory", 1, true) then
+    return "Out of memory loading '" .. name .. "' (" .. path .. "): "
+      .. "too little free RAM to compile it"
+  end
+  return "Syntax error in '" .. name .. "' (" .. path .. "): " .. why
+end                                                    --[[/TEST-EXTRACT]]
+
 -- OpenOS library names served by the compat layer (tos/compat/init.lua).
 -- The layer used to be loaded whole at boot; now it loads on the FIRST
 -- require() of one of these names (see the fallback in tosRequireBody).
@@ -622,8 +639,7 @@ local function tosRequireBody(name)
     local found, fn, err, mode = loadModuleFile(path)
     if found then
       if not fn then
-        error((mode == "read" and "Read error in '" or "Syntax error in '")
-          .. name .. "' (" .. path .. "): " .. tostring(err), 2)
+        error(loadErrorText(name, path, err, mode), 2)
       end
       local ok, result = pcall(fn, name)
       if not ok then

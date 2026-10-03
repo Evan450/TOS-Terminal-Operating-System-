@@ -612,7 +612,7 @@ return function(C, S, deps)
 
   C.tutorial = function(args, o)
     local ok2, tut = pcall(require, "shell.tutorial")
-    if not ok2 then o("Tutorial module unavailable", T.error); return end
+    if not ok2 then o(helpers.loadFailure("tutorial", tut), T.error); return end
     -- --reset clears THIS account's marker, so the walkthrough is offered
     -- again at their next login. It is per-account now: resetting your own
     -- must not silently re-run it for everyone else on the machine, and the
@@ -1032,7 +1032,7 @@ return function(C, S, deps)
   --   vault tape decrypt <passphrase>            decrypt current tape archive
   C.vault = function(args, o)
     local okV, vmod = pcall(require, "kernel.vault")
-    if not okV or not vmod then o("vault module unavailable", T.error); return end
+    if not okV or not vmod then o(helpers.loadFailure("vault", vmod), T.error); return end
     local sub = args[1]
 
     -- Resolve the calling session for ACL-aware reads/writes.

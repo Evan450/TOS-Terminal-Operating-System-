@@ -27,7 +27,8 @@ only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
                            account's first login opens
 
 Every round boots a FRESH copy of TOS-Release (unarmed: no battery), with
---disk copied in as a second disk. --profile t1 is a T1 CPU, GPU and screen
+--disk copied in as a second disk at a fixed address, so TOS mounts it at
+/mnt/disk_5e55 and a script can type paths on it. --profile t1 is a T1 CPU, GPU and screen
 on one stick (192K unless --ram says otherwise) with no data card.
 
 --os openos boots OpenOS instead -- the copy inside Ocelot's jar, with
@@ -72,6 +73,10 @@ hs = _load_selftest_driver()
 DEFAULT_PASSWORD = "headless1"
 # OpenOS mounts a disk at /mnt/<first three characters of its address>.
 INSTALL_DISK_ADDRESS = "d15c0000-0000-4000-8000-000000000000"
+# TOS mounts an unlabelled disk at /mnt/disk_<first four characters of its
+# address> (kernel/init.lua sanitizeLabel). A random address would put
+# --disk somewhere a script cannot name.
+SESSION_DISK_ADDRESS = "5e550000-0000-4000-8000-000000000000"
 OPENOS_PREFIX = "assets/opencomputers/loot/openos/"
 OC_BIOS = "assets/opencomputers/lua/bios.lua"
 
@@ -250,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd += ["--disk", str(disk)]
     if args.install_disk:
         cmd += ["--disk-address", INSTALL_DISK_ADDRESS]
+    elif disk is not None:
+        cmd += ["--disk-address", SESSION_DISK_ADDRESS]
     if args.ram:
         cmd += ["--ram", args.ram]
     if config.is_file():

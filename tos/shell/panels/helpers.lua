@@ -76,6 +76,19 @@ function M.fileColor(S, f)
   return T.fg
 end
 
+--- Why a module could not be loaded, as one line a person can act on.
+--- `err` is what pcall(require, ...) returned. Running out of memory is
+--- said in those words: the loader's own text names a path and a compile,
+--- which reads like a broken file when the file is fine and the machine
+--- is simply too small. (test_module_load_errors.lua)
+function M.loadFailure(what, err)
+  local why = tostring(err or "unknown error")
+  if why:find("Out of memory", 1, true) or why:find("not enough memory", 1, true) then
+    return what .. " cannot load: not enough free memory on this machine."
+  end
+  return what .. " module unavailable: " .. why
+end
+
 function M.fmtSz(sz)
   if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
   if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end

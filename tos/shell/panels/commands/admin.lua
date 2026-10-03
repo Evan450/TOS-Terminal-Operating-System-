@@ -156,10 +156,24 @@ return function(C, S, deps)
   --   pkg make-disk <mount> [name…]    build an Optional Utilities disk from
   --                                    installed add-ons (parity with deploy)
   --   pkg uninstall <name>             remove an installed package
+  -- The smallest machine the package manager loads on, measured on the
+  -- headless OpenComputers machine (T1 CPU, 2026-10-03): at 1024 KB the
+  -- shell is up with ~200 KB free and compiling kernel.pkg runs out;
+  -- 1024 + 256 KB lists, verifies, signs and installs.
+  local PKG_MIN_KB = 1280
   C.pkg = function(args, o)
     if not adminOnly(o) then return end
     local okP, pkgMod = pcall(require, "kernel.pkg")
-    if not okP or not pkgMod then o("pkg module unavailable", T.error); return end
+    if not okP or not pkgMod then
+      local line = helpers.loadFailure("pkg", pkgMod)
+      o(line, T.error)
+      if line:find("not enough free memory", 1, true) then
+        local total = math.floor((computer.totalMemory and computer.totalMemory() or 0) / 1024)
+        o(string.format("The package manager needs %d KB of RAM; this machine has %d KB.",
+          PKG_MIN_KB, total), T.dim)
+      end
+      return
+    end
     local sub = args[1]
 
     --! A `--` word a verb does not know is refused, and nothing happens.
@@ -411,7 +425,9 @@ return function(C, S, deps)
       end
       local pass = promptInput("Signing passphrase: ", 96, true)
       if not pass or pass == "" then
-        o("Aborted. A signing passphrase is required (12+ characters).", T.dim)
+        local okK2, psK = pcall(require, "kernel.pkgsign")
+        o(string.format("Aborted. A signing passphrase is required (%d+ characters).",
+          okK2 and psK and psK.KDF_MIN_PASS or 20), T.dim)
         o("It IS the private key — the same passphrase always produces the", T.dim)
         o("same key, on any machine, so make it long and keep it.", T.dim)
         return
@@ -1183,7 +1199,7 @@ return function(C, S, deps)
   C.kiosk = function(args, o)
     if not adminOnly(o) then return end
     local okK, kioskMod = pcall(require, "shell.kiosk")
-    if not okK or not kioskMod then o("kiosk module unavailable", T.error); return end
+    if not okK or not kioskMod then o(helpers.loadFailure("kiosk", kioskMod), T.error); return end
     o("Kiosk = the LOCKED, guest-facing menu (allow-list + read-only).", T.title)
     -- We can't cleanly hand the panels shell over to kiosk in-place
     -- (panels owns the event loop). Suggest the operator log out and
@@ -1203,7 +1219,7 @@ return function(C, S, deps)
   -- `diag`"). `diag` is kept below as an alias.
   C.doctor = function(args, o)
     local okD, diagMod = pcall(require, "kernel.diag")
-    if not okD or not diagMod then o("doctor module unavailable", T.error); return end
+    if not okD or not diagMod then o(helpers.loadFailure("doctor", diagMod), T.error); return end
     local severityColor = {
       ok   = T.highlight or T.fg,
       info = T.dim       or T.fg,
@@ -1244,7 +1260,7 @@ return function(C, S, deps)
   -- the same split `optimize` uses.
   C.srm = function(args, o)
     local okS, srmMod = pcall(require, "kernel.srm")
-    if not okS or not srmMod then o("srm module unavailable", T.error); return end
+    if not okS or not srmMod then o(helpers.loadFailure("srm", srmMod), T.error); return end
     local SEV = {
       ok   = T.highlight or T.fg,
       info = T.dim       or T.fg,
@@ -3139,7 +3155,7 @@ return function(C, S, deps)
   C.netfs = function(args, o)
     local okNF, nf = pcall(require, "kernel.netfs")
     if not okNF or not nf then
-      o("netfs module unavailable on this system.", T.error)
+      o(helpers.loadFailure("netfs", nf), T.error)
       return
     end
     local sub = (args[1] or "status"):lower()
@@ -3449,7 +3465,7 @@ return function(C, S, deps)
   C.service = function(args, o)
     if not adminOnly(o) then return end
     local ok2, rcMod = pcall(require, "kernel.rc")
-    if not ok2 then o("RC module unavailable", T.error); return end
+    if not ok2 then o(helpers.loadFailure("service", rcMod), T.error); return end
     if not args[1] then
       local svcs = rcMod.list()
       if #svcs == 0 then o("No services registered", T.dim); return end
@@ -3475,7 +3491,7 @@ return function(C, S, deps)
   C.cron = function(args, o)
     if not adminOnly(o) then return end
     local ok2, cronMod = pcall(require, "kernel.cron")
-    if not ok2 then o("Cron module unavailable", T.error); return end
+    if not ok2 then o(helpers.loadFailure("cron", cronMod), T.error); return end
     if not args[1] or args[1] == "list" then
       local jobs = cronMod.list()
       if #jobs == 0 then o("No scheduled jobs", T.dim); return end

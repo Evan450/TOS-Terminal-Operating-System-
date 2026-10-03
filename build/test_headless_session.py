@@ -185,6 +185,16 @@ def test_stage_openos_copies_only_the_openos_tree(tmp_path):
     assert not (tmp_path / "escape.lua").exists()
 
 
+def test_the_session_disk_mounts_where_a_script_can_type_it():
+    # TOS names an unlabelled disk's mount "disk_" .. addr:sub(1, 4)
+    # (kernel/init.lua sanitizeLabel); scripts type /mnt/disk_5e55/...
+    assert "disk_" + hsess.SESSION_DISK_ADDRESS[:4] == "disk_5e55"
+    assert re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                        hsess.SESSION_DISK_ADDRESS)
+    init = (Path(__file__).resolve().parent.parent / "tos" / "kernel" / "init.lua").read_text(encoding="utf-8")
+    assert 'local fallback = "disk_" .. addr:sub(1, 4)' in init
+
+
 def test_the_install_disk_address_mounts_at_d15():
     # OpenOS mounts a disk at /mnt/<first three characters of its address>,
     # and every installer script types /mnt/d15/install.lua.
