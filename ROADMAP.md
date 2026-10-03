@@ -412,6 +412,8 @@ DONE once on 2026-09-23 (the pack published 09-24 00:18 UTC is signed). CORRECTI
 
 python tos.py pack --sign then publishes the utils branch:  publish.ps1 -Utils -Push
 
+FIRST ATTEMPT 2026-10-03 stopped at the index: make-repo-index refused selftest's manifest, which built its description with `..`. pkg decodes a manifest as data, so the package could not have installed either. On the headless machine: "package.lua parse error: Unexpected character '.'". FIXED the same day: one literal, and build-disk.lua now refuses any manifest pkg cannot decode. dist/ on disk is the UNSIGNED build from that attempt (no package.sig at all), so run `pack --sign` again before publishing.
+
 ### Mount packages as read-only archives instead of extracting them
 
 *Planned* · from the round *What the rest of the field does better (2026-09-20)*
