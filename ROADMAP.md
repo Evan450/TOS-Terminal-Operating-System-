@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**88 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 64 | Planned or under investigation. Most contributions belong here. |
+| Planned | 63 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -616,31 +616,6 @@ ADDRESSABLE LOCAL IPC. Fuchas' Libraries/ipc.lua (OETF #18)
     blocks sensitive names outright and names keystroke-logging
     other seats and clipboard sniffing as the attacks. Only the
     addressable-IPC half above is missing.
-```
-
-### Planned — GENERATED API REFERENCE
-
-```text
-GENERATED API REFERENCE, AND PERMISSION ANNOTATIONS THAT CAN
-    BE TESTED. PsychOS generates its reference every build: build.sh
-    runs finddesc.lua and gendoc.lua over lib/ and module/ and
-    emits doc/*.md plus an all-in-one apidoc.md, from a one-line
-    comment on the function line giving arg types, return types and
-    a description.
-      This is NOT a proposal to replace MANUAL.md. The manual is
-    the operator's book and stays written. What is missing is a
-    REFERENCE for the kernel API that cannot silently disagree with
-    37,054 lines of Lua -- and build/make_roadmap.py already makes
-    generated docs an established idiom here.
-      THE SHARPER HALF IS FUCHAS': annotate each function with the
-    permission it requires, at the definition (-- @permission
-    security.revoke). For us: every kernel entry point carries the
-    capability it enforces, and then a TEST THAT ANNOTATION AND
-    ENFORCEMENT AGREE. That is the missing verification half of
-    CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS
-    survey): one policy function makes the policy readable,
-    annotation-vs-enforcement makes it checkable. Fuchas writes the
-    annotations and never checks them; we would be the first to.
 ```
 
 ### Idea / far future — A READ-ONLY FOREIGN-VOLUME READER

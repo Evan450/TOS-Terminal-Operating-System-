@@ -2266,6 +2266,7 @@ end
 --! with both disks in and `pkg.findInRepos` finding the library, and
 --! installByName's own comment claimed the opposite. (federated repos
 --! slice 1, finding 1; test_pkg_cross_source.lua)
+
 function pkg.installWithDeps(repoDir, targetName, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts)
@@ -2886,6 +2887,7 @@ end
 --! without it would derive a different key than signing with it, so the
 --! same passphrase would produce two identities depending on whether a
 --! flag was typed.
+
 function pkg.signPackage(srcDir, passphrase, opts)
   opts = opts or {}
   local g, gErr = adminGate(opts); if not g then return nil, gErr end
