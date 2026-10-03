@@ -37,7 +37,8 @@ There are three depths of help, shallowest to deepest:
 
 Page/section numbers are stable (`Chapter.Section`), so a `(Manual 6.3)` flag in
 `help` — or a `MANUAL.md (Chapter 7)` line in a man page — always points to the
-same place.
+same place. They were renumbered once, in October 2026, to remove duplicate
+and lettered numbers such as 7.5a.
 
 ---
 
@@ -83,6 +84,88 @@ TOS is a Norton-Commander-inspired operating system for OpenComputers
 sixteen-color / 3 full RGB), RAM tier, and the data-card tier (which decides
 whether you get hardware SHA-256/AES or a software fallback). See the **System
 Configuration screen** (2.2) for what your machine has.
+
+### 1.1 What you need
+
+| | |
+|---|---|
+| **Memory** | At least 1 MB (one Tier 3.5 stick). On a machine that size TOS starts at the command line; the full panels interface needs 1.5 MB (two Tier 3 sticks). Below 1 MB it does not reach a usable shell. |
+| **Drive** | About 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own. Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), because OpenOS stays there until the install finishes. TOS does not fit on a floppy. |
+| **CPU** | Any tier, on the Lua 5.3 or 5.4 architecture (sneak-click the CPU to switch it). |
+| **To install from** | OpenOS, plus an Internet Card or a TOS install disk. |
+
+### 1.2 Installing TOS
+
+There are two ways in, and both end at the same installer:
+
+| Route | You need |
+|---|---|
+| **Over the network** (most people) | OpenOS and an Internet Card |
+| **From an install disk** | OpenOS, and a hard drive another TOS machine prepared |
+
+**Over the network.** On the OpenOS machine, type this one line:
+
+```
+wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua
+```
+
+> [!IMPORTANT]
+> Keep the leading slash in `/bootstrap.lua`. `wget` saves the file at the
+> root of the drive, and the root is not on OpenOS's search path, so plain
+> `bootstrap.lua` answers "command not found".
+
+`bootstrap.lua` downloads the release into a scratch folder, wherever there is
+most room (`/tmp`, `/home` or `/`; it needs about 1.4 MB), checks every file
+against the digests the release lists, and then starts the installer as if the
+folder were an install disk. It refuses an incomplete or mismatched download
+rather than install part of TOS. `bootstrap.lua <owner>/<repo> [branch]`
+installs from a fork instead.
+
+**From an install disk.** On a machine already running TOS, as root, put a
+spare hard drive in and run `deploy /mnt/<drive>`, which writes the whole system
+onto it. Move that drive to the OpenOS machine and run
+`/mnt/<drive>/install.lua`. (A release built from the source with
+`python tos.py build`, copied onto a drive, works the same way.)
+
+#### 1.2.1 What the installer asks
+
+| Step | What happens |
+|---|---|
+| **Hardware** | It lists memory, GPU, drive, network and crypto (a data card, or software). Below 1 MB of memory it warns that TOS will not reach a shell; below 1.5 MB, that TOS will start at the command line. |
+| **Existing install** | If the drive already has TOS accounts, you must type `FORCE-WIPE` to go on. Users, configuration and the system files are replaced; `/home` and `/tmp` are kept. The old `/init.lua` is kept as `/init.lua.pre-tos`. |
+| **Space** | It adds up what TOS needs on this drive and compares it with what is free. If it does not fit, nothing is copied and the install ends. |
+| **Copy** | Every file is copied and then checked. If any fails, the BIOS is not flashed later, so nothing is left half-bootable; run the installer again. |
+| **Clean install** | Offered when OpenOS's `/bin`, `/boot` and `/lib` are still on the drive. Saying yes removes them at the very end, so OpenOS will no longer boot from this drive. Your files and configuration stay. Say no and you can still do it later with `reclaim` (§7.6). |
+| **Device type** | Computer, Tablet or Server (below). |
+| **Hostname** | The machine's name on the network. The default is `tos-` and four random hex digits. |
+| **Security level** | Standard, Relaxed or Open (below). |
+| **Network** | Only with a network card: whether to encrypt traffic (default yes) and which port to listen on (default 42). |
+| **Battery** | Only for a tablet: the low and critical battery warnings (15% and 5%). |
+| **Verbose boot** | Whether boot shows its debug messages. |
+| **Summary** | Everything you chose. Yes saves it to `/etc/tos.cfg`. |
+| **BIOS** | It shows the TOS BIOS's size and SHA-256. Type `flash` to write it to the EEPROM; anything else skips it. |
+| **Reboot** | TOS starts. The first boot asks you to set root's password, then offers a short tour. |
+
+**Device type.**
+
+- **Computer** — a machine with a screen and keyboard.
+- **Tablet** — turns on battery monitoring and power saving, and asks for the battery warnings.
+- **Server** — boots *headless*: no login screen, reached over the network, with services started automatically. It warns if there is no network card, since a headless server without one cannot be reached at all.
+
+**Security level.** This is the most important question.
+
+- **Standard** (the default) — a password is needed to log in, and an account is locked after 5 wrong ones. Root is never locked, so you cannot lock yourself out of recovery; its wrong passwords are slowed down instead.
+- **Relaxed** — a password is needed, but nothing is locked.
+- **Open** — also allows a guest login with no password.
+
+You can change all of these later: `bootsettings`, `config` and Chapter 3.
+
+#### 1.2.2 If it goes wrong
+
+- **"Not enough space."** Use a Tier 3 drive, or install onto an empty Tier 2 drive from an install disk.
+- **The copy failed.** The BIOS was not flashed and the old system still boots. Run the installer again; partly copied files do no harm.
+- **The download was refused.** If a release was published in the last few minutes, the host may still be serving old copies: wait five minutes and try again. If it keeps happening, install from a disk.
+- **You want OpenOS back.** If you did not choose the clean install, rename `/init.lua.pre-tos` to `/init.lua`.
 
 ## 2. Booting
 
@@ -287,7 +370,7 @@ which half you are looking at.
 | Ctrl+T | System Monitor | Ctrl+C | Interrupt foreground |
 
 F2 is the `view` action in `/tos/shell/keys.lua`, so it is rebindable like any
-other — see [§4.1d](#41d-one-set-of-shortcuts-and-theyre-yours). Every legend
+other — see [§4.1.2](#412-one-set-of-shortcuts-and-theyre-yours). Every legend
 that names it reads the live binding, so a rebind re-labels the screen too.
 
 **Anything printable goes to the prompt.** That is what a CLI-first machine
@@ -308,7 +391,7 @@ The CLI's own keys are the ordinary line-editing ones: **↑/↓** history,
 **←/→ Home/End** to move within the line, **Tab** to complete a command name or
 path, **Ctrl+Q** to clear the line.
 
-### 4.1b Esc belongs to Minecraft, not to TOS
+#### 4.1.1 Esc belongs to Minecraft, not to TOS
 
 **Don't press Esc expecting a program to quit.** Esc is the game's key: it
 closes the screen GUI, so you step away from the terminal and the keypress never
@@ -328,7 +411,7 @@ OpenComputers build or an emulator delivers it — but nothing in TOS requires i
 and no help text will tell you to press it. If you find one that does, it's a
 bug: `usr/lib/tests/test_no_esc_exit.lua` exists to catch exactly that.
 
-### 4.1d One set of shortcuts, and they're yours
+#### 4.1.2 One set of shortcuts, and they're yours
 
 Every program TOS ships reads the **same** keybind table, so the combination
 that closes one closes all of them:
@@ -393,7 +476,7 @@ so they can't tell you a key that isn't bound any more.
 likes and nothing stops it. What being consistent buys is that TOS's own
 programs feel like one system.
 
-### 4.1c The menu bar is yours
+#### 4.1.3 The menu bar is yours
 
 The bar across the top is a **default, not a fixture**. `menu show` prints it as
 it currently stands; everything else edits it.
@@ -424,7 +507,7 @@ A malformed config never costs you the menu bar — bad entries are skipped, and
 edit list that somehow removes everything falls back to the built-ins. The bar is
 the surface you'd use to fix a broken bar, so it doesn't get to break.
 
-### 4.1a Two ways to say something
+#### 4.1.4 Two ways to say something
 
 TOS can put words on screen in two places, and the difference is the point.
 
@@ -466,7 +549,7 @@ operator to answer settles it for everybody.
 
 *See also:* `man notify`.
 
-### 4.1e Selecting text, and the clipboard
+#### 4.1.5 Selecting text, and the clipboard
 
 **Hold Shift and use the arrows.** It works at the command prompt, in the
 editor, and — a line at a time — in any view buffer, which is where a command's
@@ -697,11 +780,11 @@ tier-gated and hidden from `help` if their hardware/package isn't present.
 `ls` `cd` `pwd` `mkdir` `rm` `cp` `mv` `cat` `more` `touch` `df` `du`
 `find` `grep` `head` `tail` `wc` `tree` `programs` `trash` `vault` `keychain`
 
-### 6.1a Saying things
+### 6.2 Saying things
 `echo` (polite, above the command line) `notify` (a dialog box in the
-operator's face, every seat — see §4.1a)
+operator's face, every seat — see §4.1.4)
 
-### 6.2 System & session
+### 6.3 System & session
 `desktop` `settings` `mem` `hw` `ps` `monitor` (= `top`, live) `watch` `kill`
 `fg` `bg` `about` `uptime` `date` (= `time`) `whoami` `passwd` `logout` `reboot`
 `shutdown` `srm` `doctor` (= `diag`) `log` `verify` `menu`
@@ -709,34 +792,34 @@ operator's face, every seat — see §4.1a)
 (`srm` is the front door over `doctor` and `verify`, and the only command that
 reports a POST fault the BIOS caught — see §9.3.)
 
-### 6.3 Administration
+### 6.4 Administration
 `users` `useradd` `userdel` `usermod` `mount` `umount` `jbod` `flash` `lua` `run`
 `edit` `bootsettings` `service` `cron` `deploy` `backup` `kiosk`
 
 (`jbod` — disk pooling — appears only after you enable it with `bootsettings
 jbod on`; see Chapter 5 and `man jbod`.)
 
-### 6.4 Packages (see Chapter 7)
+### 6.5 Packages (see Chapter 7)
 `pkg` (`list`/`search`/`info`/`install`/`uninstall`/`enable`/`disable`/`commands`/
 `make-disk`); top-level `install` / `uninstall` shortcuts. With an internet card:
-`pkg repo`, `pkg remote`, `pkg fetch` (§7.6) and `internet` for card status.
+`pkg repo`, `pkg remote`, `pkg fetch` (§7.9) and `internet` for card status.
 
-### 6.5 Network (see Chapter 8)
+### 6.6 Network (see Chapter 8)
 `net` (incl. `net servers`) `ping` `hostname` `config` `chat` `mail` (add-on)
 `intercom` (add-on) `rsh` `scp` `screen`
 
-### 6.6 Customization & resilience
+### 6.7 Customization & resilience
 `theme` (= `colors`) `lang` `optimize` (incl. `optimize power`) `swap` `battery`
 `audio` `profile` `tutorial`
 `alias` / `unalias` (per-user command shorthand)
 
-### 6.6a Working out what a name means
+### 6.8 Working out what a name means
 `which` (what a command resolves to) `why` (why you were refused) `help` `man`
 
 Three things can answer to one name — a built-in, an installed package's command,
 and a program on the search path. `which` says which one wins.
 
-### 6.7 Peripherals (see Chapter 11)
+### 6.9 Peripherals (see Chapter 11)
 `redstone` (= `rs`) `robot` `inventory` (= `inv`) `component` `tape`
 `printer` (add-on) `write` (add-on)
 
@@ -1119,7 +1202,7 @@ fingerprint with them over a channel that is not the disk, then use `--force`.
 Services keep their enabled/disabled state across an upgrade but keep running
 the old code until restarted: `service stop <svc>` then `service start <svc>`.
 
-### 7.4 Finding packages
+### 7.5 Finding packages
 
 `pkg search` lists everything installable: what is on a mounted disk, and
 what the repos you have configured advertise.
@@ -1139,7 +1222,7 @@ reach. If the list is empty and you expected otherwise, `pkg search` says
 which case you are in — no repos configured, or repos configured that did
 not answer.
 
-### 7.45 Reclaiming space after installing over OpenOS
+### 7.6 Reclaiming space after installing over OpenOS
 
 Installing TOS onto a drive that already ran OpenOS leaves OpenOS behind.
 TOS replaces exactly one of its files — `/init.lua` — keeping the old one as
@@ -1171,7 +1254,7 @@ fall-throughs run under the TOS sandbox and tend to fail with a confusing
 `module 'computer' is not available in sandboxed code` rather than anything
 useful.
 
-### 7.5 Third-party and OpenOS packages
+### 7.7 Third-party and OpenOS packages
 
 `pkg` reads four manifest forms, so a loot disk or an OPPM repo installs like
 anything else:
@@ -1237,7 +1320,7 @@ OPPM manifests carry no file hashes, so installing one needs
 `--allow-unverified` — you are running unchecked code, and TOS makes you say
 so.
 
-### 7.5a Signed packages and the publisher trust store
+### 7.8 Signed packages and the publisher trust store
 
 **What hashes prove, and what they do not.** A manifest's `hashes` prove
 the files on the disk are the files the manifest describes — that the disk
@@ -1334,7 +1417,7 @@ works: verification is real arithmetic and takes noticeable time on a small
 machine. A data card cannot help (its ECC is a different curve, and Ed25519
 needs SHA-512 while the card offers SHA-256).
 
-### 7.6 Remote repositories (internet card)
+### 7.9 Remote repositories (internet card)
 
 With an **Internet Card** installed, `pkg` can fetch packages from a repo laid
 out the OPPM way — one `programs.cfg` at the root, sources underneath it.
@@ -1377,7 +1460,7 @@ fetched.
 executable code from a stranger. `pkg fetch` refuses it until you say
 `--allow-unverified`, exactly as a hashless floppy package does. That prompt is
 the point at which you are deciding to trust the repo — the fetch itself proves
-nothing. Under `pkg trust require on` (§7.5a) a fetched package must also be
+nothing. Under `pkg trust require on` (§7.8) a fetched package must also be
 signed by a publisher you trust, or fetched with `--allow-unsigned`.
 
 A fetched package can be signed two ways: its own `package.sig`, as Optional
@@ -2118,7 +2201,7 @@ before any cluster package is installed. *See also:* Appendix B.
 
 **compat** — `compat`
 List the OpenOS compatibility modules and whether each is loaded. *See also:*
-Chapter 7.5.
+§7.7.
 
 **component** — `component <type> [method] [args...]` **(admin; invoking a method: root)**
 List a component *type*'s available methods, or call one, through the
@@ -2311,7 +2394,7 @@ a URL and prints the first 20 lines — a check that the card works, not a pager
 shared box where the card is wanted for one service and not for everybody.
 Reaching the network from a *package* additionally requires the `internet`
 capability, which is never implied by `component`. Hidden from `help` on a
-machine with no card. *See also:* `pkg` (§7.6), `hw`, `config`.
+machine with no card. *See also:* `pkg` (§7.9), `hw`, `config`.
 
 **inventory** — `inventory` (alias `inv`) **(tier: inventory controller / robot)**
 List the contents of an attached inventory. *See also:* `redstone`, `robot`.
@@ -2451,7 +2534,7 @@ The zero-trust networking front end (Chapter 8). With no argument, shows status.
 Mount a directory that another TOS machine exports. *See also:* `man netfs`.
 
 **notify** — `notify <message> [--style info|warn|danger|error] [--title T]`
-The intrusive counterpart to `echo` (§4.1a). Raises a DOS-style modal dialog
+The intrusive counterpart to `echo` (§4.1.4). Raises a DOS-style modal dialog
 box on **every seat**, over whatever the operator was doing, instead of a line
 in the output area they'll see when they next look down. Also the operator
 surface for `kernel.notify`, the facility any program or service posts to when
@@ -2544,7 +2627,7 @@ With an internet card, `pkg repo add <name> <url>` / `repo list` / `repo remove`
 manage remote repositories, `pkg remote` lists what they offer, and `pkg fetch
 <name>` downloads and installs one — the configured repo list is the allowlist,
 and a fetch runs the ordinary install against a staging directory rather than a
-second, network-aware copy of it (§7.6).
+second, network-aware copy of it (§7.9).
 *Errors:* `unknown package`, `capability not allowed`, `hash mismatch`. *See
 also:* `man pkg`, `man packages`.
 
@@ -2579,7 +2662,7 @@ boot won't warn of an unsafe shutdown). *See also:* `shutdown`, Chapter 9.
 
 **reclaim** — `reclaim [--apply]` **(root)**
 Remove the OpenOS files left behind after installing TOS over OpenOS. Without
-`--apply` it only lists them, with sizes. *See also:* Chapter 7.45.
+`--apply` it only lists them, with sizes. *See also:* §7.6.
 
 **redstone** — `redstone [...]` (alias `rs`) **(tier: redstone card)**
 Read/set redstone signals on the sides of the machine. *See also:* `inventory`,

@@ -37,7 +37,9 @@ The roadmap also records work deliberately **not** done, with reasons. Reading t
 
 ## Getting set up
 
-You need a `lua` interpreter (5.3 or 5.4) and Python 3 for the test runner. One Python test (`build/test_sync_emulator.py`) needs **pytest** — `pip install pytest`. Without it that single test fails; everything else runs.
+You need a `lua` interpreter (5.3 or 5.4) and Python 3 for the test runner. The Python build tests (`build/test_*.py`) need **pytest** — `pip install pytest`. Without it those fail; everything else runs.
+
+`run_tests.py` is the runner to use. `run_tests.sh` beside it is a serial fallback for a machine with no Python: it runs the same Lua tests and skips the Python ones.
 
 ### One command for everything: `tos.py`
 
@@ -45,7 +47,7 @@ The individual tools live in different directories and different runtimes. `tos.
 
 ```
 python tos.py test [--serial]     the whole suite
-python tos.py build               strip TOS-Dev -> TOS-Release
+python tos.py build               strip the source into ../TOS-Release
 python tos.py pack [--sign]       build the add-on disks + repo index
 python tos.py sign <dir>|--all    sign package manifests in place
 python tos.py key                 print the public key you sign as
@@ -76,6 +78,12 @@ The suite runs against fakes. Two tools boot TOS on a real OpenComputers machine
 - `python build/headless-session.py SCRIPT` types at the keyboard and reads the screen back. A script is lines like `firstboot`, `type ls\n`, `wait 30 root@` and `snap after-ls`; `--help` lists them all.
 
 Both need Ocelot Desktop's jar and a JDK (version 9 or later).
+
+To try your change in the game instead, install it over the network onto a bare OpenOS machine with an internet card, pointing the bootstrap at your branch:
+
+```
+bootstrap.lua <your-fork> dev
+```
 
 > **Windows note.** Clone somewhere short, like `C:\src\tos`. Some package paths run to ~255 characters, and Windows' 260-character `MAX_PATH` will make the disk builder fail on a write with a path that *looks* fine.
 
@@ -108,54 +116,7 @@ Two rules the tooling enforces rather than trusts:
 
 ## Signing a package
 
-`pkg` supports Ed25519 publisher signatures. An operator adds your public key once (`pkg trust add <label> <key>`), and from then on your packages verify as yours — and with `pkg trust require on` they can refuse anything unsigned.
-
-The passphrase **is** the private key — the key is derived from it, not stored — so it is never a command-line flag. `tos.py` prompts for it without echoing, or reads `TOS_SIGNING_PASSPHRASE` if you have already exported it:
-
-```
-python tos.py key                      print your public key; signs nothing
-python tos.py pack --sign              build a signed pack  <- to PUBLISH
-python tos.py sign modules/mything     sign one source package, in place
-python tos.py sign --all               every discovered source package
-```
-
-**`pack --sign` is the one that publishes.** The other two sign the *source* manifests, which is what you want when handing someone a package directory to `pkg install` directly — but those signatures never reach the pack and cannot. The disk builder rewrites every manifest as it assembles, injecting the `hashes` block, so the shipped bytes differ from the source bytes; a signature over the source verifies as **invalid** against the shipped copy. `--sign` therefore signs the assembled manifests itself and ignores anything signed in the source tree.
-
-It must be at least 20 characters and use at least 10 distinct ones. **Generate it; do not invent one.** The key is derived by SHA-512 over `TOS-pkg-signing-key-v2`, your publisher label, and the passphrase, iterated 4096 times. That is deliberately cheap — it has to run on a Tier 1 CPU that every seat shares — and cheap means *the passphrase's own entropy is the whole defence*. A KDF that could genuinely protect a memorable phrase needs on the order of 10⁵–10⁶ rounds, which is not reachable here, so the length floor is enforced rather than advised. Whoever recovers your passphrase signs as you.
-
-**Your publisher label is part of your key.** It salts the derivation, so the same passphrase under `acme` and under `Acme Corp` are two different identities with two different public keys. Pick one label and keep using it. Case and surrounding whitespace are normalised (`Discover` and `discover` agree); anything else does not. The label is public — it is printed in the repo README beside the key — so unlike the passphrase it is fine on a command line.
-
-What the salt does and does not buy: it means one precomputed passphrase→key table cannot yield every publisher's key at once, so each identity has to be attacked separately. It adds no secrecy of its own and does nothing against someone targeting you specifically.
-
-Generate and store it in a password manager **before** you sign. It is never written to disk, so there is no keyfile to back up — the passphrase is the only copy. Lose it and every operator who trusted your key has to re-trust a new one.
-
-```bash
-# a generated passphrase, never typed from memory
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-Signing a package writes `package.sig` beside its `package.lua`. To ship, run `tos.py pack --sign` — which signs `dist/` itself, as above, rather than carrying anything across from the source tree.
-
-`programs.cfg` advertises each `package.sig`, so signatures travel over `pkg fetch` as well as on a floppy. That matters: `pkgremote` downloads only what the index lists, so an unadvertised signature means a package that is signed on the disk and arrives **unsigned** over the network — and with `pkg trust require on`, that is the difference between installing and being refused.
-
-To publish the key people should trust, print it without signing anything. On a TOS machine:
-
-```
-pkg trust key <publisher-label>       prints the public key you sign as
-pkg sign <directory> --as <name>      signs a package tree on-box
-```
-
-Both ask for the passphrase without echoing it. The argument is your *label*, which is public; the passphrase is never accepted on a command line, because the line is echoed as you type it and stays in the recall buffer for anyone at that seat. `--as` is required for the same reason it is required off-box: it salts the key, so signing without it would quietly produce a different identity.
-
-Publish the key it prints; never the passphrase.
-
-Lose the passphrase and you lose the identity: there is no recovery, and the only remedy is to publish a new key and ask people to re-trust it. Use something long, keep it somewhere you would keep a password, and do not reuse it.
-
-To try your change on a real machine, install it over the network onto a bare OpenOS box with an internet card, pointing the bootstrap at your branch:
-
-```
-bootstrap.lua <your-fork> dev
-```
+`pkg` verifies Ed25519 publisher signatures, and an operator can refuse anything unsigned. Most contributors never sign anything: the maintainer signs the Optional Utilities pack. If you publish packages of your own, read [docs/SIGNING.md](docs/SIGNING.md) first. Your passphrase is your private key, and losing it means starting again with a new identity.
 
 ## Making a change
 
@@ -164,7 +125,8 @@ bootstrap.lua <your-fork> dev
 3. **Run the suite.** `python run_tests.py`. Report the result in the PR — do not claim a fix works if you have not run it. If the change is about what a real machine does (boot, drawing, the keyboard, rebooting), also run `python tos.py selftest` or a headless session.
 4. **Keep the manifest honest.** If you add a runtime file under `/tos`, `/etc/rc.d`, `/usr/bin` or `/usr/modules`, add it to `tos/system_manifest.lua` as well. `test_manifest_completeness.lua` enforces this — a file missing from the manifest is silently absent from every fresh install and invisible to `verify`.
 5. **Update the docs in the same commit.** Version bumps touch `README.md`, `CHANGELOG.md`, and any version constant together. Documentation that contradicts the code is worse than none.
-6. **Regenerate the API reference** when you add or change a public kernel function (`function mod.name(` at the top level of a file in `tos/kernel/`) or the `---` comment above it: `python build/make_apiref.py` rewrites `docs/API.md`, and the suite fails while it is stale. A function that refuses callers below ADMIN — one that calls an admin gate such as `adminGate` — carries `--- @tier admin` in that comment; `build/test_apiref.py` fails on a gate without the mark, or a mark without the gate.
+6. **Regenerate the API reference** with `python build/make_apiref.py` when you add or change a public kernel function (`function mod.name(` at the top level of a file in `tos/kernel/`) or the `---` comment above it. It rewrites `docs/API.md`, and the suite fails while that is stale.
+   - A function that refuses callers below ADMIN (one that calls an admin gate such as `adminGate`) carries `--- @tier admin` in that comment. `build/test_apiref.py` fails on a gate without the mark, or a mark without the gate.
 
 ## Comment conventions
 

@@ -50,6 +50,7 @@ Fixes and loose ends from the TODO queue, one at a time, each with a test that f
 - **A machine with less than 1.5 MB of memory starts at the command line.** The full interface needs about 1.5 MB to be usable. On a 1 MB machine it loaded, then ran out of memory and crashed the machine on the first command, while the command line on the same machine had memory to spare. With no `ui` set, TOS now starts the command line below 1.5 MB and says why. `tui` opens the full interface anyway, and `bootsettings ui panels` makes it the default. Measured on a headless OpenComputers machine. `test_bootcfg.lua`: 6 of its new checks fail on the previous code.
 - **The memory TOS needs is stated as measured.** The README said 192 KB was enough to run TOS in a reduced mode and 256 KB enough for the whole system. On a headless OpenComputers machine with the default settings, this build needs 1 MB for the command line and 1.5 MB for the full interface. Below 1 MB it does not reach a usable shell. OpenOS boots in 192 KB on the same machine, as it does in the game, so the measurement can be trusted. The README, CONTRIBUTING and the installer's memory warnings now give the measured figures.
 - **Too little memory for logins now powers off instead of rebooting forever.** On a 512 KB machine the user system does not fit, so nobody can log in. TOS said so, then rebooted with the same memory into the same screen, over and over. It now says the machine needs 1 MB and how to fix it, and powers off when you press a key. `test_no_user_system.lua`.
+- **The installer checks the space before it copies anything.** It used to copy until the drive was full and then stop halfway. The common case is a Tier 2 drive that already holds OpenOS: TOS needs about 1.9 MB there, and 1.5 MB is free. It now adds up what the copy will take, including OpenComputers' 512-byte cost for each new file. If that is more than is free, it says how much it needs and that a Tier 3 drive holds both systems, and copies nothing. Its wording also caught up with the code: the clean install removes `/boot` as well as `/bin` and `/lib`, and the first boot asks you to set root's password rather than to log in. Run end to end on a headless OpenComputers machine: from OpenOS on a 4 MB drive the installer reaches TOS's first-boot setup in 44 seconds; on a 2 MB drive it refuses before copying. `test_install_space.lua`.
 - **A mesh port that belongs to another protocol is named.** TOS talks on modem port 42, which is not on the community's registry of claimed ports. Nothing said that moving it to, for example, 4096 puts TOS traffic on a Minitel network. That still works, but the boot log now warns once and names the protocol, `net status` shows the port, and the manual lists 42 and the claimed ports. `test_net_reserved_ports.lua`.
 
 ---
@@ -4140,14 +4141,9 @@ login pid) so multi-seat reports are diagnosable from `log`. (`test_screen_init`
 
 ---
 
-## v1.4.0 "Iris" — the Desktop, the Settings app, and a friendlier face
+## v1.4.0 "Iris", continued — sudo, app tabs and the round-4 fixes
 
-TOS grows a face that isn't a prompt: a tile-based **Desktop** home screen,
-a visual **Settings** app, and file-type glyphs in the browser — all layered
-on the existing panels shell (the prompt stays one keypress away, exactly
-where operators left it). Also folds in the earlier unreleased maintenance
-pass below (dead-code prune, one security fix, dormant features wired up,
-JBOD re-homed as opt-in, the mouse add-on).
+Part of v1.4.0. The release's overview is in the next section.
 
 ### Privilege elevation — `sudo`, without the root account
 A separate **elevation password** (root-configured via `sudo setup [admin|root]`)

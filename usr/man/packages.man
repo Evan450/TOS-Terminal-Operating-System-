@@ -3,14 +3,17 @@ NAME
 
 DESCRIPTION
     Add-ons in TOS are packages, managed by 'pkg' (the legacy module manager was
-    retired in v1.3.1; 'mod' is an alias). A package is a directory with a
-    package.lua manifest plus its files laid out at their install paths.
+    retired in v1.3.1). A package is a directory with a package.lua manifest
+    plus its files laid out at their install paths.
 
 INSTALLING
-    The bundled add-ons (tetris, tape, rc-pilot, the cluster packages) ship on
-    the Optional Utilities disk. Build it from TOS-Extras/build/build-disk.lua,
-    copy the result to a floppy, insert it, and either run /mnt/<label>/install.lua
-    or use 'pkg install' (no arg scans the disk). See 'man pkg' for the surface.
+    The bundled add-ons (games, tape tools, calc, mail, the cluster packages
+    and more) ship on the Optional Utilities disks. Insert one and run
+    'pkg install' with no argument: a picker lists every package in the set,
+    including those on a disk that is not inserted, and asks you to swap
+    disks when it needs to. 'pkg install <name>' installs one directly.
+    The disks carry no installer of their own; the picker is part of TOS.
+    See 'man pkg' for the rest.
 
 WRITING A PACKAGE
     A minimal manifest:

@@ -1,7 +1,7 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "5fa327eaa3baaf983ec17632a926f6f75fbc2a222d36886e2627e12f80ab8e38" },
-  { path = "/install.lua",                    critical = false , hash = "7d94465a54f30a3ebd307125728f35285736b87417271619e7748ffe0ff84dd4" },
+  { path = "/init.lua",                       critical = true  , hash = "77802bd12f7df7ae54032bec8254d66532f982aadca67e65c3547963fdb43c1c" },
+  { path = "/install.lua",                    critical = false , hash = "8b38cbb23b7c710fb9452f1585a3fdf224942bcfc686e8ad68b2a569c4d31482" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "8b7cc28731d4e93804d22f579bdb878ec60170d6d65f6b6173da407a513dc1ef" },
   { path = "/tos/kernel/log.lua",             critical = true  , hash = "3700d6aad36956c95ce647d1019bac1161f05a71652c3610199d40716d4db829" },
@@ -167,7 +167,7 @@ return {
   { path = "/usr/man/net.man",                critical = false , hash = "1ffcf776b63a6ceb153872738a95136f88fc02e71c3693557094514a5b2d313b" },
   { path = "/usr/man/networking.man",         critical = false , hash = "7e7111de8202a464ef4b3be482426cab5a6da2db06aa605d7fc7c3fe5470eae5" },
   { path = "/usr/man/notify.man",             critical = false , hash = "052a6fc4936701b03bca9597074527f9098f5170ab8f86d3e6791e731a17cd3a" },
-  { path = "/usr/man/packages.man",           critical = false , hash = "9836d1aa235d23df6f08825de6e18e45759066605b7288e8850814f71ead6554" },
+  { path = "/usr/man/packages.man",           critical = false , hash = "3e3cda1fa6f0b4fc6493fce16e39a9baec76898246d1930eed2aebe60f64b8be" },
   { path = "/usr/man/pkg.man",                critical = false , hash = "8ba1295afb638176f0a905ee936d38efc504fab0e56f098e8c39ffc1541e7a8e" },
   { path = "/usr/man/screen.man",             critical = false , hash = "d9c032bec59e3367b6cb5192d8c2eee764a170c1bf2501059b2ec898d1605f0a" },
   { path = "/usr/man/srm.man",                critical = false , hash = "c39b0b760fd071c8ba95c2da66d124e14723e1b5afd74349fbec1a56b271dd68" },
