@@ -50,6 +50,7 @@ python tos.py pack [--sign]       build the add-on disks + repo index
 python tos.py sign <dir>|--all    sign package manifests in place
 python tos.py key                 print the public key you sign as
 python tos.py check               fast drift checks, without the full suite
+python tos.py selftest            build, then run the boot battery on a real machine
 python tos.py roadmap             regenerate the queue and ROADMAP.md
 ```
 
@@ -66,6 +67,15 @@ python run_tests.py
 The suite is a couple of hundred files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
 
 One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. **`FAIL=0` is the contract, not any particular pass count** — the runner prints its own totals, and a number written down here only tells you how long ago someone edited this file. If it is red before you have changed anything, that is a bug in the tree and worth reporting on its own.
+
+### Testing on a real machine
+
+The suite runs against fakes. Two tools boot TOS on a real OpenComputers machine instead: Ocelot Brain, the machine inside Ocelot Desktop's jar, with no window.
+
+- `python tos.py selftest` builds, boots a fresh machine and runs the boot self-test battery. Exit 0 means every check passed.
+- `python build/headless-session.py SCRIPT` types at the keyboard and reads the screen back. A script is lines like `firstboot`, `type ls\n`, `wait 30 root@` and `snap after-ls`; `--help` lists them all.
+
+Both need Ocelot Desktop's jar and a JDK (version 9 or later).
 
 > **Windows note.** Clone somewhere short, like `C:\src\tos`. Some package paths run to ~255 characters, and Windows' 260-character `MAX_PATH` will make the disk builder fail on a write with a path that *looks* fine.
 
@@ -151,7 +161,7 @@ bootstrap.lua <your-fork> dev
 
 1. **Read before you edit.** Grep for every caller of a function you are changing. Kernel modules are wired together in `tos/kernel/init.lua`, and the panels shell dispatches through a command registry — changing a signature in one place usually means several.
 2. **Add a test.** `usr/lib/tests/test_*.lua` is auto-discovered by `run_tests.py`. Follow the existing shape: a `test(name, cond)` helper, prints `PASS`/`FAIL`, returns false if anything failed. If the thing you fixed had no coverage, a regression test for it is the most valuable part of the PR.
-3. **Run the suite.** `python run_tests.py`. Report the result in the PR — do not claim a fix works if you have not run it.
+3. **Run the suite.** `python run_tests.py`. Report the result in the PR — do not claim a fix works if you have not run it. If the change is about what a real machine does (boot, drawing, the keyboard, rebooting), also run `python tos.py selftest` or a headless session.
 4. **Keep the manifest honest.** If you add a runtime file under `/tos`, `/etc/rc.d`, `/usr/bin` or `/usr/modules`, add it to `tos/system_manifest.lua` as well. `test_manifest_completeness.lua` enforces this — a file missing from the manifest is silently absent from every fresh install and invisible to `verify`.
 5. **Update the docs in the same commit.** Version bumps touch `README.md`, `CHANGELOG.md`, and any version constant together. Documentation that contradicts the code is worse than none.
 6. **Regenerate the API reference** when you add or change a public kernel function (`function mod.name(` at the top level of a file in `tos/kernel/`) or the `---` comment above it: `python build/make_apiref.py` rewrites `docs/API.md`, and the suite fails while it is stale. A function that refuses callers below ADMIN — one that calls an admin gate such as `adminGate` — carries `--- @tier admin` in that comment; `build/test_apiref.py` fails on a gate without the mark, or a mark without the gate.

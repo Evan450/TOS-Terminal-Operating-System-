@@ -225,6 +225,11 @@ def tail(path: Path, n: int) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Screens are box-drawing and Unicode; a Windows console or pipe defaults
+    # to cp1252 and would crash printing the first frame.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ocelot", help="Ocelot Desktop's jar, or the folder holding it")

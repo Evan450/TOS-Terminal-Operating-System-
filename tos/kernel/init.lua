@@ -3227,7 +3227,24 @@ function kernel.uptime()
   return computer.uptime() - _G._TOS.bootTime
 end
 
+-- A reboot, once asked for, is what the shutdown in progress IS.
+--
+-- kernel.shutdown runs in whoever calls it, and the shell's `reboot` calls
+-- it INSIDE the shell process. Its first act is clearing `running`. The
+-- moment that process yields to the scheduler -- stopping a service, killing
+-- processes, a beep's gap -- the main loop sees running == false, falls out
+-- of loginAndStartShell, and calls kernel.shutdown() itself; the shell
+-- process, killed a few lines on, is never resumed to finish its own call.
+-- That second call carried no flag, so `reboot` powered the machine OFF.
+-- Found on the first headless session (build/headless-session.py): `reboot`
+-- typed at a real shell, a machine that never came back, and a trace showing
+-- shutdown(true) from the shell, then shutdown(nil) from the main loop 0.25 s
+-- later. (test_reboot_sticks.lua)
+local rebootRequested = false
+
 function kernel.shutdown(reboot)
+  if reboot then rebootRequested = true end
+  reboot = rebootRequested
   running = false
   shuttingDown = true
 

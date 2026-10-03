@@ -100,7 +100,7 @@ it does. The ones with side effects:
 
 ## Without installing it: headless
 
-`python TOS-Dev/tos.py selftest` builds the release, boots it on a fresh
+`python tos.py selftest`, from the repo root, builds the release, boots it on a fresh
 headless OpenComputers machine (Ocelot Brain, from Ocelot Desktop's jar) with
 these checks on a second disk, and exits 0 when everything passed, 2 on a
 failure, 1 when the report is incomplete. `--checks DIR` runs your own folder
