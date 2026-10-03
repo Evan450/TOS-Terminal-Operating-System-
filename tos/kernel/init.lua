@@ -2724,14 +2724,85 @@ function kernel.emergencyShell()
     for w in input:gmatch("%S+") do parts[#parts + 1] = w end
     local cmd = parts[1] and parts[1]:lower() or ""
 
+    --! The recovery set (2026-10): df, log and srm joined the original
+    --! seven. Each is built to survive the thing that may have broken:
+    --! df asks the disks themselves through raw component invokes, log
+    --! falls back from the kernel's in-memory ring to the file on disk,
+    --! and srm is a pcall'd require that says so when it will not load.
+    --! None of them is reached until the root password above.
+    --! (test_emergency_recovery.lua)
     if cmd == "help" then
       ePrint("Emergency commands:", T.title)
       ePrint("  ls [path]   - List files")
       ePrint("  cat <file>  - Show file")
       ePrint("  mem         - Memory info")
+      ePrint("  df          - Disks and free space")
+      ePrint("  log [N]     - Last N kernel log lines")
       ePrint("  verify      - Check system files")
+      ePrint("  srm [status|scan|repair [--restore]]")
+      ePrint("              - System Repair & Maintenance")
       ePrint("  reboot      - Reboot system")
       ePrint("  shutdown    - Shut down")
+    elseif cmd == "df" then
+      -- Raw invokes, past kernel.fs: the filesystem layer may be the fault.
+      local boot
+      pcall(function() boot = computer.getBootAddress() end)
+      local any = false
+      for addr in component.list("filesystem") do
+        any = true
+        local function q(m)
+          local ok2, v = pcall(component.invoke, addr, m)
+          if ok2 then return v end
+        end
+        local total, used = q("spaceTotal"), q("spaceUsed")
+        local label = q("getLabel")
+        ePrint(string.format("  %s %-12s %8s used of %8s%s%s", addr:sub(1, 8),
+          tostring(label or ""):gsub("%c", "?"):sub(1, 12),
+          used and (math.floor(used / 1024) .. "K") or "?",
+          total and (math.floor(total / 1024) .. "K") or "?",
+          q("isReadOnly") and "  read-only" or "", addr == boot and "  (boot)" or ""))
+      end
+      if not any then ePrint("No filesystems found.", T.error) end
+    elseif cmd == "log" then
+      local n = math.max(1, math.min(tonumber(parts[2]) or 20, 200))
+      local okL, entries = pcall(function() return log.recent(n) end)
+      if okL and type(entries) == "table" and #entries > 0 then
+        for _, e in ipairs(entries) do
+          ePrint(string.format("[%7.1f][%s] %s", tonumber(e.time) or 0,
+            tostring(e.source or "?"), tostring(e.msg or "")))
+        end
+      else
+        -- The ring lives in the kernel; the file may outlive it.
+        local okR, data = pcall(fs.readFile, "/var/log/kernel.log")
+        if okR and type(data) == "string" and data ~= "" then
+          local tail = {}
+          for l in data:gmatch("[^\n]+") do
+            tail[#tail + 1] = l
+            if #tail > n then table.remove(tail, 1) end
+          end
+          for _, l in ipairs(tail) do ePrint(l) end
+        else
+          ePrint("No log available (the ring and /var/log/kernel.log are both unreadable).", T.error)
+        end
+      end
+    elseif cmd == "srm" then
+      local sub = (parts[2] or "status"):lower()
+      local okS, srmMod = pcall(require, "kernel.srm")
+      if not okS or type(srmMod) ~= "table" then
+        ePrint("srm will not load: " .. tostring(srmMod), T.error)
+      elseif sub ~= "status" and sub ~= "scan" and sub ~= "repair" then
+        ePrint("Usage: srm [status | scan | repair [--restore]]", T.dim)
+      else
+        local okR, report = pcall(srmMod[sub], nil, { restore = parts[3] == "--restore" })
+        if not okR or type(report) ~= "table" then
+          ePrint("srm " .. sub .. " failed: " .. tostring(report), T.error)
+        else
+          for _, f in ipairs(report.findings or {}) do
+            ePrint("  " .. tostring(f.text), (f.sev == "err" and T.error)
+              or (f.sev == "warn" and T.warning) or (f.sev == "ok" and T.success) or T.dim)
+          end
+        end
+      end
     elseif cmd == "ls" then
       local path = parts[2] or "/"
       -- #SEC M17 — prefer securefs; fall through to raw fs only when

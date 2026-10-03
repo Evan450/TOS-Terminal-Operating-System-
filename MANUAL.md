@@ -255,9 +255,11 @@ you what to type instead (`watch` covers live refresh; `tui` then `edit` covers
 the editor). Everything else is the same program.
 
 > Below the CLI there is one more layer you will hopefully never see: the
-> **emergency terminal**, which the kernel runs when no shell could start. It has
-> seven commands and depends on nothing the other two need — that is the point of
-> it. See §9.3.
+> **emergency terminal**, which the kernel runs when no shell could start, after a
+> root password. It has the recovery basics — `ls`, `cat`, `mem`, `df`, `log`,
+> `verify`, `srm status|scan|repair`, `reboot`, `shutdown` — and depends on nothing
+> the other two need: `df` asks the disks directly, `log` falls back to the file
+> on disk, and `srm` says so if it cannot load. See §9.3.
 
 ### 4.1 Layout & keys
 
