@@ -144,6 +144,8 @@ Emulator checklist - editor horizontal scrolling:
 - resize the screen narrower with the cursor near the right edge; the next repaint must re-anchor the window
 - off-box tests cover the ARITHMETIC only; drawing needs a real GPU
 
+MOSTLY DONE 2026-10-03 on the headless machine, with colour snapshots (HeadlessTOS now writes snap-NAME.colors beside each snap): `edit` on a one-line, 150-character Lua file whose string literal runs past the screen, at 80x25. At the start the string's colour runs to column 79 with "&gt;" in 80 and no "&lt;". After End the left edge falls inside the string, and the string's tail keeps its colour up to the closing quote, then the comment colour; "&lt;" shows, "&gt;" does not, and the cursor cell sits at column 80. Typing QQQQQ scrolls on with the cursor still at the edge. Shift+Left x10 puts the selection background on exactly the last ten characters ("er itQQQQQ"). Home brings back the start, "&gt;" and no "&lt;". No flicker either: traced (--trace keeps every distinct frame) while typing one Q a second after End, then two Backspaces and two Lefts, all 10 scrolled frames carry "&lt;" in its cell and none shows "&gt;"; the window slides one column per character. STILL OPEN: only the resize item. TOS has no command that changes the resolution, so it needs a person, or a resolution command.
+
 ### Emulator checklist (needs OpenPrinter installed): Printer + word processor round
 
 *Planned* · from the round *Printer + word processor round (2026-08-11)*

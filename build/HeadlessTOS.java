@@ -92,6 +92,29 @@ public class HeadlessTOS {
     return sb.toString();
   }
 
+  /**
+   * Each cell's colours, one line per row: "RRGGBB/RRGGBB" (foreground /
+   * background) per cell, separated by spaces. A cell coloured from the
+   * palette is resolved through it, so this is what the screen shows.
+   * Text alone cannot check a syntax colour, a selection or a cursor;
+   * this is for checks that need them, not for pictures of the screen.
+   */
+  static String screenColors(Screen s) {
+    StringBuilder sb = new StringBuilder();
+    for (int y = 0; y < s.getHeight(); y++) {
+      for (int x = 0; x < s.getWidth(); x++) {
+        int fg = s.getForegroundColor(x, y);
+        if (s.isForegroundFromPalette(x, y)) fg = s.getPaletteColor(fg);
+        int bg = s.getBackgroundColor(x, y);
+        if (s.isBackgroundFromPalette(x, y)) bg = s.getPaletteColor(bg);
+        if (x > 0) sb.append(' ');
+        sb.append(String.format("%06x/%06x", fg & 0xffffff, bg & 0xffffff));
+      }
+      sb.append('\n');
+    }
+    return sb.toString();
+  }
+
   // ── Keys ──────────────────────────────────────────────────────────
   // OpenComputers' key_down carries a character and an LWJGL key code, and
   // code that checks the code (arrows, F-keys, Ctrl+letter) needs the real
@@ -274,7 +297,8 @@ public class HeadlessTOS {
    *   click X Y [BUTTON]  a click on the cell at column X, row Y (1-based)
    *   sleep SECS
    *   mark NAME           start a stopwatch; later waits report time since it
-   *   snap NAME           write the screen to snap-NAME.txt
+   *   snap NAME           write the screen to snap-NAME.txt, and each
+   *                       cell's colours to snap-NAME.colors
    *   off SECS            until the machine powers itself off
    *   powercycle          the power button, off then on: an UNCLEAN stop
    *
@@ -418,6 +442,7 @@ public class HeadlessTOS {
           break;
         case "snap":
           write(work.resolve("snap-" + w[1] + ".txt"), screenText(screen));
+          write(work.resolve("snap-" + w[1] + ".colors"), screenColors(screen));
           done = true;
           break;
         case "off":

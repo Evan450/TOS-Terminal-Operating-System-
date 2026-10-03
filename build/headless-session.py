@@ -39,6 +39,9 @@ address, so OpenOS mounts it at /mnt/d15 and a script can type
 
 Prints each step with its time (a `wait` after a `mark` also reports the
 time since the mark, which is how timings come back), then every `snap`.
+Each snap also leaves snap-NAME.colors in the run's work directory (keep
+it with --keep): every cell's foreground/background as RRGGBB/RRGGBB, for
+a check that needs a syntax colour, a selection or the cursor.
 Exit: 0 the script completed, 5 a step failed -- the screen at that moment
 is printed with the tail of kernel.log -- anything else the machine itself.
 """
