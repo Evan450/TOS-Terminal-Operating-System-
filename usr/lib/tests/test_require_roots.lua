@@ -61,6 +61,18 @@ if spBlock then
 end
 test("searchPaths is non-empty (" .. #searchPaths .. " patterns)", #searchPaths > 0)
 
+-- /lib holds OpenOS's libraries on a disk TOS was installed over, and
+-- searched ahead of /usr/lib it answered kernel-context requires --
+-- including, in Safe Mode, the OpenOS shim names compat would otherwise
+-- serve. TOS ships nothing there.
+do
+  local underLib
+  for _, p in ipairs(searchPaths) do
+    if p:sub(1, 5) == "/lib/" then underLib = p end
+  end
+  test("/lib is not searched by the kernel's require", underLib == nil, underLib)
+end
+
 local rootsBlock = sandboxSrc:match("local USER_LIB_ROOTS = (%b{})")
 test("USER_LIB_ROOTS found in sandbox.lua", rootsBlock ~= nil)
 local userRoots = {}

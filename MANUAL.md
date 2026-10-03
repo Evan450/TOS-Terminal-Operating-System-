@@ -1138,9 +1138,10 @@ not answer.
 Installing TOS onto a drive that already ran OpenOS leaves OpenOS behind.
 TOS replaces exactly one of its files — `/init.lua` — keeping the old one as
 `/init.lua.pre-tos`, so renaming it back boots OpenOS again while OpenOS's
-files are still there. TOS installs nothing into `/bin`, `/boot` or `/lib`, so
-those three trees are dead weight afterwards: roughly a megabyte on a 4 MB
-drive, which is most of the way to an install that fails for want of room.
+files are still there. TOS installs nothing into `/bin`, `/boot` or `/lib`, and
+never loads code from `/lib`, so those three trees are dead weight afterwards:
+roughly a megabyte on a 4 MB drive, which is most of the way to an install that
+fails for want of room.
 
 The installer offers to remove them at the end, but only when the file copy
 verified completely. A partial install skips the offer, so a machine can end

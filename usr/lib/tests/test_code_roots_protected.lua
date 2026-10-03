@@ -62,8 +62,8 @@ local bins = helpersSrc:match("M%.SYSTEM_BIN_DIRS%s*=%s*(%b{})")
 test("helpers.lua SYSTEM_BIN_DIRS found", bins ~= nil)
 for dir in (bins or ""):gmatch('"([^"]+)"') do addRoot(dir, "bin") end
 
-test("the roots include /lib and /bin (else this proves nothing)",
-  seen["/lib"] and seen["/bin"])
+test("the roots include /usr/lib and /bin (else this proves nothing)",
+  seen["/usr/lib"] and seen["/bin"])
 test("...and more than those two (" .. #roots .. " roots)", #roots > 2)
 
 -- ── The REAL guard, through the REAL ACL ───────────────────────────

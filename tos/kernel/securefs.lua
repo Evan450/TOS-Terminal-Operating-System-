@@ -251,10 +251,12 @@ local REMOVE_PROTECTED = {
   "/usr/modules", "/usr/lib", "/usr/bin",
   --! #SEC — the two CODE roots C18 missed, both OpenOS's and both searched
   --! AHEAD of the TOS roots they shadow:
-  --!   /lib  init.lua's require looks here before /usr/lib, and runs what it
-  --!         finds in the kernel's own _G. The shell pcall-requires add-on
+  --!   /lib  init.lua's require looked here before /usr/lib, and ran what it
+  --!         found in the kernel's own _G. The shell pcall-requires add-on
   --!         names in kernel context (`mouse` at every shell start), so an
   --!         ADMIN writing /lib/mouse.lua ran as the kernel at the next login.
+  --!         (/lib is no longer searched at all, since 2026-10; it stays
+  --!         here because OpenOS's boot code lives in it.)
   --!   /bin  the first of the shell's trusted SYSTEM_BIN_DIRS, ahead of
   --!         /usr/bin: /bin/ssh.lua ran instead of /usr/bin/ssh.lua, with the
   --!         session and fs.write of whoever typed `ssh` -- root included.
