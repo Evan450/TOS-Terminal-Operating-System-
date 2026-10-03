@@ -488,6 +488,21 @@ local MINIFIED = {
 }
 
 -- ── Manifest loading ───────────────────────────────────────────────
+--! The machine never RUNS a manifest; it decodes one. pkg reads every
+--! package.lua through kernel/serialize's data-only decoder, which refuses
+--! expressions -- so `"a" .. "b"`, which load() below evaluates without
+--! complaint, makes a package pkg will not install ("package.lua parse
+--! error") and make-repo-index will not list. selftest's description was
+--! built that way, and it surfaced only at publish time, after the pack had
+--! been built and signed. Decoding here too, with the caps of pkg's
+--! readManifestFile, refuses it at build time instead.
+--! (test_build_disk.lua, test_manifests.lua)
+local manifestDecoder = loadKernelModule("serialize.lua")
+if not manifestDecoder then
+  io.write("WARNING: kernel/serialize.lua not found -- manifests are not checked "
+    .. "against the decoder pkg reads them with\n")
+end
+
 local function loadManifest(path)
   local src = readAll(path)
   if not src then return nil, "cannot read " .. path end
@@ -499,6 +514,20 @@ local function loadManifest(path)
   if not ok then return nil, "eval error: " .. tostring(m) end
   if type(m) ~= "table" or type(m.name) ~= "string" then
     return nil, "manifest did not return a named package table"
+  end
+  if manifestDecoder then
+    local d, dErr = manifestDecoder.decode(src, { maxBytes = 64 * 1024,
+      maxCost = 64 * 1024, maxKeys = 1024 })
+    if type(d) ~= "table" then
+      local why = tostring(dErr):gsub("^.-%.lua:%d+: ", "")
+      local pos = tonumber(why:match("position (%d+)"))
+      if pos then
+        local _, nl = src:sub(1, pos):gsub("\n", "")
+        why = why .. ", line " .. (nl + 1)
+      end
+      return nil, "pkg cannot read this manifest (" .. why .. "): it must be "
+        .. "data only, with no expressions such as \"a\" .. \"b\""
+    end
   end
   return m
 end

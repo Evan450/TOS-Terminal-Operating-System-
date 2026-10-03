@@ -90,9 +90,9 @@ for _, name in ipairs(names) do
     io.stderr:write("error: " .. name .. " is in the set but has no manifest at " .. pkgPath .. "\n")
     os.exit(2)
   end
-  local manifest = serialize.decode(pkgSrc, { maxBytes = 256 * 1024 })
+  local manifest, mErr = serialize.decode(pkgSrc, { maxBytes = 256 * 1024 })
   if type(manifest) ~= "table" then
-    io.stderr:write("error: " .. name .. "'s manifest did not decode\n")
+    io.stderr:write("error: " .. name .. "'s manifest did not decode: " .. tostring(mErr) .. "\n")
     os.exit(2)
   end
 

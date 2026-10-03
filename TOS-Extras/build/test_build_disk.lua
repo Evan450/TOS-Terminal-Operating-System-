@@ -243,6 +243,47 @@ do
   rmrf(big)
 end
 
+-- A manifest pkg cannot decode fails the build. selftest's description
+-- was `"..." .. "..."`: load() evaluates that, pkg's data-only decoder
+-- refuses it, and the pack built and was signed before make-repo-index
+-- turned it away at publish time. The same scratch package builds with
+-- one literal and fails with the concatenation, so the failure is the
+-- expression and nothing else about the fixture.
+do
+  local tree = OUT .. "-decode"
+  local function mk(d)
+    if WINDOWS then os.execute('mkdir "' .. d:gsub("/", "\\") .. '" >nul 2>nul')
+    else os.execute('mkdir -p "' .. d .. '" 2>/dev/null') end
+  end
+  local function put(path, data)
+    local f = io.open(path, "wb"); if f then f:write(data); f:close() end
+  end
+  local function build(description)
+    rmrf(tree)
+    mk(tree .. "/modules/twopart")
+    put(tree .. "/modules/twopart/init.lua", "return function() end\n")
+    put(tree .. "/modules/twopart/package.lua", table.concat({
+      "return {",
+      '  name = "twopart", version = "1.0.0", kind = "command", category = "dev",',
+      "  description = " .. description .. ",",
+      '  files = { "/usr/modules/twopart/init.lua" },',
+      '  commands = { twopart = "/usr/modules/twopart/init.lua" },',
+      "}", "" }, "\n"))
+    local log = tree .. "/build.log"
+    local ok = os.execute(string.format('lua "%s/build-disk.lua" "%s" "%s/out" --limit 0 >"%s" 2>&1',
+      buildDir, tree, tree, log))
+    return (ok == true or ok == 0), readAll(log) or "", exists(tree .. "/out/twopart/package.lua")
+  end
+  local okLit, _, shippedLit = build('"one literal"')
+  test("(control) a one-literal description builds", true, okLit and shippedLit)
+  local okCat, said, shippedCat = build('"two " .. "halves"')
+  test("a description built with .. fails the build", false, okCat)
+  test("...saying pkg cannot read it, and where", true,
+    said:find("pkg cannot read this manifest", 1, true) ~= nil and said:find("line 3", 1, true) ~= nil)
+  test("...and ships no package", false, shippedCat)
+  rmrf(tree)
+end
+
 -- ── Output cleaning between builds ───────────────────────────
 local stale = OUT .. "/tape/usr/modules/left-behind.lua"
 local h = io.open(stale, "wb")

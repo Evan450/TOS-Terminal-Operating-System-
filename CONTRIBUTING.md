@@ -127,9 +127,11 @@ lua build/build-disk.lua
 lua build/test_manifests.lua      # manifest lint: capability and shape errors
 ```
 
-`test_manifests.lua` catches the mistakes that are otherwise silent: `commands` declared as an array instead of a name→path map (which `pkg.commands` drops without a word), sandboxed code using `crypto` or `vault` without declaring the capability, declaring a capability the sandbox will not grant, and a `kind = "service"` package with no `/etc/rc.d/<name>.lua`.
+`test_manifests.lua` catches the mistakes that are otherwise silent: `commands` declared as an array instead of a name→path map (which `pkg.commands` drops without a word), sandboxed code using `crypto` or `vault` without declaring the capability, declaring a capability the sandbox will not grant, a `kind = "service"` package with no `/etc/rc.d/<name>.lua`, and a manifest `pkg` cannot read.
 
-Two rules the tooling enforces rather than trusts:
+Three rules the tooling enforces rather than trusts:
+
+- **A manifest is data, not code.** `pkg` never runs `package.lua`: it decodes it with the kernel's data-only reader, so a manifest may hold literals and nothing else. No `..` to split a long description, no variables, no function calls. Lua itself runs such a file without complaint, which is why `build-disk.lua` checks with the kernel's reader too and refuses the manifest, naming the line.
 
 - **Below 1.0.0 does not ship.** `build-disk.lua`'s `SKIP` table holds pre-1.0 packages off the public pack, and the tests fail if one rejoins. An unfinished add-on that installs cleanly is worse than one nobody can reach.
 - **Hashes are not optional.** `pkg.install` refuses a package whose manifest does not declare a SHA-256 for every file, unless the operator explicitly passes `--allow-unverified`. The builder writes them; you should never have to.

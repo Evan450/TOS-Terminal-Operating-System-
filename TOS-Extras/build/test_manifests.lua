@@ -110,11 +110,36 @@ do
 end
 print("  (capability list from: " .. capSource .. ")")
 
+--! pkg does not run a manifest, it DECODES one, with kernel/serialize's
+--! data-only decoder -- and dofile() is happy with expressions that decoder
+--! refuses. selftest's description was `"..." .. "..."`: every check in
+--! this file passed, the pack built and was signed, and only
+--! make-repo-index (which decodes the same way) refused it, at publish
+--! time. On a machine it would have been "package.lua parse error" at
+--! install. So each manifest is decoded the way pkg's readManifestFile
+--! decodes it, with the same caps.
+local decoder
+for _, p in ipairs({ "../TOS-Dev/tos/kernel/serialize.lua", "../tos/kernel/serialize.lua",
+                     "TOS-Dev/tos/kernel/serialize.lua" }) do
+  local chunk = loadfile(p)
+  if chunk then
+    local okS, mod = pcall(chunk)
+    if okS and type(mod) == "table" and type(mod.decode) == "function" then decoder = mod; break end
+  end
+end
+test("found the kernel's manifest decoder", decoder ~= nil)
+local PKG_DECODE_CAPS = { maxBytes = 64 * 1024, maxCost = 64 * 1024, maxKeys = 1024 }
+
 for _, mpath in ipairs(manifests) do
   local dir = mpath:gsub("/package%.lua$", "")
   local label = dir:gsub("^%./", "")
   local ok, m = pcall(dofile, mpath)
   test(label .. ": manifest loads to a table", ok and type(m) == "table")
+  if decoder then
+    local d, dErr = decoder.decode(readFile(mpath) or "", PKG_DECODE_CAPS)
+    test(label .. ": manifest is data pkg can decode"
+      .. (type(d) == "table" and "" or ("  (" .. tostring(dErr) .. ")")), type(d) == "table")
+  end
   if ok and type(m) == "table" then
     -- (1) commands must be nil or a string->string MAP (no array entries).
     local cmdsOk = true

@@ -15,9 +15,9 @@ return {
   version     = "1.0.0",
   kind        = "command",
   category    = "dev",
-  description = "Boot self-test battery: checks that run inside the booted kernel on "
-             .. "real hardware, and `selftest` to arm, list and read them. For testing "
-             .. "your own additions to TOS. Root install.",
+  -- One string literal, not "a" .. "b": pkg reads this file with the
+  -- kernel's data-only decoder, which refuses any expression.
+  description = "Boot self-test battery: checks that run inside the booted kernel on real hardware, and `selftest` to arm, list and read them. For testing your own additions to TOS. Root install.",
   author      = "Strata Systems",
   files       = {
     "/usr/modules/selftest/init.lua",
