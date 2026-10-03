@@ -450,7 +450,7 @@ TOS\_SIGNING\_PASSPHRASE='...' TOS\_SIGNING\_NAME='...' \\
 
 lua TOS-Extras/build/build-disk.lua --sign That red check is the guard doing its job, not a break. Do NOT hand-copy the file into dist/ to silence it: the signature covers the manifest, which covers the hashes, which cover the files, so a hand-patched dist would carry a signature that no longer verifies — strictly worse than a stale one, because pkg would reject it.
 
-DONE once on 2026-09-23 (the pack published 09-24 00:18 UTC is signed). CORRECTION 2026-10-02: it was not current with that day's sources. The two cluster Master fixes landed 40 minutes after it; dist/ was re-signed with them at 03:38 UTC and never pushed. RE-OPENED 2026-10-02 for the queue sweep's add-on changes, to be signed ONCE when they are all in. So far: the new `selftest` package, cluster-master 1.0.2 (the fixes, under a number `pkg upgrade` will offer), tape-authenticator 1.0.3, and rc-pilot 1.2.0 (it carries the robot's EEPROM image now). And every package's bytes change once: the pack strips its Lua now. test\_build\_disk.lua is red on them until then. The operator runs, from the TOS source root:
+DONE once on 2026-09-23 (the pack published 09-24 00:18 UTC is signed). CORRECTION 2026-10-02: it was not current with that day's sources. The two cluster Master fixes landed 40 minutes after it; dist/ was re-signed with them at 03:38 UTC and never pushed. RE-OPENED 2026-10-02 for the queue sweep's add-on changes, to be signed ONCE when they are all in. So far: the new `selftest` package, cluster-master 1.0.2 (the fixes, under a number `pkg upgrade` will offer), tape-authenticator 1.0.3 (which now also names `tape-menu` instead of the retired `launcher tape`), rc-pilot 1.2.0 (it carries the robot's EEPROM image now), and snake 1.0.1 (high scores per player, 2026-10-03). And every package's bytes change once: the pack strips its Lua now. test\_build\_disk.lua is red on them until then. The operator runs, from the TOS source root:
 
 python tos.py pack --sign then publishes the utils branch:  publish.ps1 -Utils -Push
 
@@ -1082,8 +1082,35 @@ RC-PILOT CANNOT BE SET UP FROM ITS OWN INSTRUCTIONS. Found 2026-10-03 writing th
 - The chip reads its secret from the EEPROM DATA field, and nothing on TOS wrote that field: `flash` wrote only the code, `component eeprom setData` is refused (flash is the one EEPROM write path), and the sandbox hides the EEPROM from every program, the root `lua` prompt included. DONE 2026-10-03: `flash <file> --data` asks for it twice, masked, before anything is written, and refuses a BIOS, whose boot address and manifest anchor live in that field. test\_flash\_data.lua drives the real flash: 20 checks, 14 fail on the old code.
 - The robot never says its wireless card's address, and `rc` needs it in full. A robot runs no OS and usually has no screen, so the operator has no way to read it.
 - A chip with no secret ignores every frame without a sound, so a robot set up wrong looks exactly like one out of range.
+- `rc` can never HEAR the robot, which blocks the obvious fix for both of the above. Found 2026-10-03 designing it: the package sandbox's pullSignal drops every modem\_message (kernel/sandbox.lua PULL\_DROP, the anti-sniffing rule), and the `net` capability carries only TOS-protocol message types, which a bare-EEPROM robot does not speak. So the pong after `P` has never been shown on a real machine -- test\_rc\_pilot handed the host a raw pullSignal and could not see it -- and a discovery reply would be dropped the same way. Pinned as a \[known gap\] in test\_rc\_pilot.lua through the REAL sandbox pullSignal, so a fix fails that line and it gets rewritten.
 
-Plan for the last two (a pack change, so it rides the re-sign): the chip answers an unauthenticated {op="who"} broadcast with {op="here", keyed=true|false}, presence only and never a secret, and `rc scan` lists what answers: the full address, and whether that chip has a secret. Budget: the image is 3,683 of 4,096 bytes.
+OPERATOR DECISION, deliberately not made here, because it changes what a sandboxed package may hear:
+
+(a) a program holding peripheral.modem receives modem\_message
+
+for ports IT opened through its gated modem proxy, and only
+
+those, with every port the kernel uses (TOS net, mesh,
+
+cluster, rbmk telemetry) refused at open(). Narrow, and the
+
+shape OpenOS programs expect; the sandbox must track opens
+
+per process and close them on exit;
+
+(b) the same through ADDRESSABLE LOCAL IPC when that exists (WHAT
+
+THE REST OF THE FIELD DOES BETTER, below);
+
+(c) leave raw receive closed: `rc` stays send-only, the pong
+
+display goes, and the address has to come from the world
+
+(whether an Analyzer shows a robot's network card, or a card
+
+keeps its address when moved from a computer into the
+
+Assembler, is an in-game check). Recommendation: (a). Then, as one pack change riding one signing: the chip answers an unauthenticated {op="who"} broadcast with {op="here", keyed=true|false, kind="robot"|"drone"}, presence only and never a secret; it beeps once at start when it has no secret; and `rc scan` lists what answers. Budget: the image is 3,683 of 4,096 bytes.
 
 ### Put the compat number in the README, or decide not to
 
