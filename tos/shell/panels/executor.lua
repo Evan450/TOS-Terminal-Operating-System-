@@ -317,6 +317,7 @@ function M.build(S, deps)
           o("'" .. name .. "' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
           if S.lastOut and S.lastOut[1] then
             o(S.lastOut[1], T.error)
+            S.lastOut = nil
           else
             o("Its command group failed to load — check `log` for the reason.", T.dim)
           end
@@ -348,7 +349,14 @@ function M.build(S, deps)
     end
   end
 
+  local function withReport(buf)
+    local said = S.lastOut
+    if type(said) == "table" and said[1] then buf[#buf + 1] = said end
+    return buf
+  end
+
   local function exec(input)
+    S.lastOut = nil
     local hasPipe = input:find("|", 1, true)
     local hasRedirect = input:find("[>]") or input:find("<")
 
@@ -391,14 +399,14 @@ function M.build(S, deps)
 
           if i == #segments then finalBuf = buf end
         end
-        showOutput(helpers.expandBuf(S, finalBuf), "output")
+        showOutput(helpers.expandBuf(S, withReport(finalBuf)), "output")
         return
       end
     end
 
     local buf = execSingle(input, nil, true)
     if S._program then return end
-    showOutput(helpers.expandBuf(S, buf), input:match("^(%S+)") or "output")
+    showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
   end
 
   S.execOne = execSingle
