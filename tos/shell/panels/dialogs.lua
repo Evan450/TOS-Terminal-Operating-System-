@@ -282,8 +282,11 @@ function M.confirmTyped(S, message, word, opts)
     lines[#lines + 1] = ""
     lines[#lines + 1] = 'Type  ' .. word .. '  to confirm:'
     lines[#lines + 1] = "  " .. buf .. "_"
-    lines[#lines + 1] = (buf == word) and "  the word matches - choose Confirm"
-                                       or "  (Confirm stays inert until it matches)"
+    --! Name the button as it is labelled. `flash` calls it "Flash", and a
+    --! hint saying "choose Confirm" pointed at a button that was not on
+    --! the screen. (test_dialog_confirm.lua)
+    lines[#lines + 1] = (buf == word) and ("  the word matches - choose " .. labels[2])
+                                       or ("  (" .. labels[2] .. " stays inert until it matches)")
     return framedDraw(S, style, title, lines, labels, focus, opts.shadow)
   end
 
