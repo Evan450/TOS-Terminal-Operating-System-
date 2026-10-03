@@ -804,6 +804,19 @@ function kernel.boot(opts)
   end
 end
 
+local function noUserSystem(d, pull, beep)
+  local T = d.getTheme()
+  d.clear(T.bg)
+  d.set(2, 2, "Not enough memory for TOS to start.", T.error, T.bg)
+  d.set(2, 4, "The user system did not fit, so nobody", T.fg, T.bg)
+  d.set(2, 5, "can log in. TOS needs at least 1 MB", T.fg, T.bg)
+  d.set(2, 6, "(one Tier 3.5 memory stick).", T.fg, T.bg)
+  d.set(2, 8, "Add memory, then power on again.", T.dim, T.bg)
+  d.set(2, 10, "Press any key to power off.", T.dim, T.bg)
+  if beep then pcall(beep) end
+  repeat until pull(math.huge) == "key_down"
+end
+
 function kernel.loginAndStartShell()
   running = true
 
@@ -823,12 +836,10 @@ function kernel.loginAndStartShell()
 
     if not usersmod then
 
-      display.set(2, 3, "User system unavailable (low memory).", T.error, T.bg)
-      display.set(2, 4, "Cannot authenticate; rebooting with more RAM", T.dim, T.bg)
-      display.set(2, 5, "should restore normal login.", T.dim, T.bg)
-      if _G._TOS.audio then _G._TOS.audio.critical() else computer.beep(400, 0.5) end
-      computer.pullSignal(5)
-      kernel.reboot()
+      noUserSystem(display, computer.pullSignal, function()
+        if _G._TOS.audio then _G._TOS.audio.critical() else computer.beep(400, 0.5) end
+      end)
+      kernel.shutdown()
       return nil
     end
 

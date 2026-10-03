@@ -39,10 +39,13 @@ local function buildFields(ramLabel)
       set = function(c, v) c.verbosity = unlessDefault(v) end,
       show = function(v) return v end },
     { key = "ui", label = "Interface (all seats)", group = "basic",
-      values = { "home", "split", "cli" },
-      get = function(c) return c.ui or "home" end,
-      set = function(c, v) c.ui = unlessDefault(v, "home") end,
+      values = { AUTO, "home", "split", "cli" },
+      get = function(c) return c.ui or AUTO end,
+      set = function(c, v) c.ui = unlessDefault(v) end,
       show = function(v)
+        if v == AUTO then
+          return string.format("auto (panels from %d KB, else CLI)", bootcfg.PANELS_MIN_KB)
+        end
         if v == "cli" then return "CLI shell" end
         if v == "split" then return "panels (split: Shell + Desktop)" end
         return "panels (Home: one tab, two views)"

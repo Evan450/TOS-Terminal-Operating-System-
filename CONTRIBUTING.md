@@ -1,6 +1,6 @@
 # Contributing to TOS
 
-Thanks for looking. TOS is a Terminal Operating System for the OpenComputers Minecraft mod, written in Lua 5.3, and it runs on machines with as little as 192 KB of RAM — that constraint shapes most of the rules below.
+Thanks for looking. TOS is a Terminal Operating System for the OpenComputers Minecraft mod, written in Lua 5.3. Every byte it loads comes out of the machine's memory, and TOS already needs 1 MB to start (see the README's requirements) — that constraint shapes most of the rules below.
 
 ## The one thing to know first
 
@@ -15,7 +15,7 @@ Thanks for looking. TOS is a Terminal Operating System for the OpenComputers Min
 
 `main` is produced from `dev` by `build/strip.lua`. A commit to `main` is not "a fix that skipped review" — it is a change that the next release build silently overwrites. If you have already done it, cherry-pick onto `dev` and open the PR there.
 
-The split exists because comments cost real memory on a machine that has 192 KB of it, and the BIOS is fighting a hard 4 KiB EEPROM budget — roughly a third of `bios.lua` is comments that must not ship, and must not be lost either. `strip.lua` keeps every `--!`-marked comment (security notes, cross-file invariants, license headers) and drops the rest.
+The split exists because comments cost real memory on a machine where every kilobyte counts, and the BIOS is fighting a hard 4 KiB EEPROM budget — roughly a third of `bios.lua` is comments that must not ship, and must not be lost either. `strip.lua` keeps every `--!`-marked comment (security notes, cross-file invariants, license headers) and drops the rest.
 
 Installing from either branch works, since both carry the same tree shape and the same `tos/system_manifest.lua`:
 
@@ -121,7 +121,7 @@ python tos.py sign --all               every discovered source package
 
 **`pack --sign` is the one that publishes.** The other two sign the *source* manifests, which is what you want when handing someone a package directory to `pkg install` directly — but those signatures never reach the pack and cannot. The disk builder rewrites every manifest as it assembles, injecting the `hashes` block, so the shipped bytes differ from the source bytes; a signature over the source verifies as **invalid** against the shipped copy. `--sign` therefore signs the assembled manifests itself and ignores anything signed in the source tree.
 
-It must be at least 20 characters and use at least 10 distinct ones. **Generate it; do not invent one.** The key is derived by SHA-512 over `TOS-pkg-signing-key-v2`, your publisher label, and the passphrase, iterated 4096 times. That is deliberately cheap — it has to run on a 192 KB machine sharing one CPU — and cheap means *the passphrase's own entropy is the whole defence*. A KDF that could genuinely protect a memorable phrase needs on the order of 10⁵–10⁶ rounds, which is not reachable here, so the length floor is enforced rather than advised. Whoever recovers your passphrase signs as you.
+It must be at least 20 characters and use at least 10 distinct ones. **Generate it; do not invent one.** The key is derived by SHA-512 over `TOS-pkg-signing-key-v2`, your publisher label, and the passphrase, iterated 4096 times. That is deliberately cheap — it has to run on a Tier 1 CPU that every seat shares — and cheap means *the passphrase's own entropy is the whole defence*. A KDF that could genuinely protect a memorable phrase needs on the order of 10⁵–10⁶ rounds, which is not reachable here, so the length floor is enforced rather than advised. Whoever recovers your passphrase signs as you.
 
 **Your publisher label is part of your key.** It salts the derivation, so the same passphrase under `acme` and under `Acme Corp` are two different identities with two different public keys. Pick one label and keep using it. Case and surrounding whitespace are normalised (`Discover` and `discover` agree); anything else does not. The label is public — it is printed in the repo README beside the key — so unlike the passphrase it is fine on a command line.
 
@@ -179,7 +179,7 @@ Use `--!` for anything a future reader must not lose: why a check exists, what a
 
 Mark security-relevant code with a `#SEC` tag and the finding ID where one exists, matching the existing style.
 
-## Writing for a 192 KB machine
+## Writing for a small machine
 
 - **Memory is the budget.** Prefer iteration over building intermediate tables. A response held as a Lua string is real RAM. Reading a file with `*a` when you could stream it in 4 KB chunks is how an install OOMs.
 - **Yield in long loops.** OpenComputers gives the whole machine one CPU shared across every seat, and a loop that never yields triggers the "too long without yielding" watchdog. Use `proc.yieldCooperative()`.

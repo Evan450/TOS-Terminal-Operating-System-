@@ -181,8 +181,13 @@ local function printHardwareReport(hw)
   print(string.format("  Crypto:   %s", hw.hasDataCard and "Hardware (data card)" or "Software"))
   color(0xFFFFFF)
   print()
-  if hw.memKB < 128 then warn("Critically low memory! TOS may be unstable.")
-  elseif hw.memKB < 256 then warn("Low memory. Some features may be limited.") end
+
+  if hw.memKB < 1024 then
+    warn("Not enough memory: TOS needs at least 1 MB (one Tier 3.5 stick).")
+    warn("With less it stops at the emergency terminal, or does not boot.")
+  elseif hw.memKB < 1536 then
+    warn("TOS will start at the command line: the full interface needs 1.5 MB.")
+  end
   if hw.diskFreeKB < 80 then warn("Low disk space. TOS needs ~80KB minimum.") end
   print()
 end

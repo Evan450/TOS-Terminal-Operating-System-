@@ -269,6 +269,13 @@ function M.run(ctx)
   o("TOS CLI", D.c("title"))
   o("Every command the full interface has, loaded as you use them.", D.c("dim"))
   o("'help' lists them · 'tui' returns to the full interface · 'exit' logs out", D.c("dim"))
+
+  local auto = ctx.autoCLI
+  if auto and auto.haveKB and auto.needKB then
+    o(string.format("Started at the command line: this machine has %d KB of memory "
+      .. "and the full interface needs %d KB.", auto.haveKB, auto.needKB), D.c("warning"))
+    o("'tui' opens it anyway · 'bootsettings ui panels' makes it the default", D.c("dim"))
+  end
   o("")
 
   while true do

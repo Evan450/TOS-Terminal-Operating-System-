@@ -117,11 +117,15 @@ falls back to the `normal` profile. Two independent dials:
   scrolling debug text. Note: verbosity governs only the boot log — it does
   **not** hide the System Configuration screen; that is `showConfig`'s job (see
   2.2), so a `silent` boot can still reach Boot Settings.
-- **`ui`** — the startup *interface* for every seat: `panels` (the full TUI,
-  default) or `cli` (boot straight to the command line — the lightest possible
+- **`ui`** — the startup *interface* for every seat: `panels` (the full TUI)
+  or `cli` (boot straight to the command line — the lightest possible
   startup, and no loss of capability: the CLI runs the same commands and loads
   them as you use them. `tui` opens the panels interface on demand, so it is a
-  default and never a lockout).
+  default and never a lockout). Left unset it is **auto**: the panels on a
+  machine with 1.5 MB (1536 KB) of memory or more, the CLI below that, because
+  below it the panels load and then run out of memory on the first command.
+  The CLI says when it started for that reason. Set `panels` to insist on them
+  anyway (`bootsettings ui panels`), or `ramGate` to `plenty`.
 - **`repair`** — **one-shot self-repair**: set it (Boot Settings → "Self-repair
   next boot", or `bootsettings repair on`) and the next boot runs a repair pass
   right after the filesystem comes up, then clears the flag — even a crashing

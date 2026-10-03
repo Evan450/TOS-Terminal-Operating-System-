@@ -4,10 +4,15 @@ local W, H, cwd, who, st = 80, 25, "/", "root", nil
 
 local myDisplayIdx = nil
 
+local function installedKB()
+  local ok, total = pcall(computer.totalMemory)
+  return (ok and type(total) == "number") and math.floor(total / 1024) or nil
+end
+
 local function uiShape()
   local okB, bcM = pcall(require, "kernel.bootcfg")
   local cfg = _G._TOS and _G._TOS.bootcfg
-  if okB and bcM and bcM.ui then return bcM.ui(cfg) end
+  if okB and bcM and bcM.ui then return bcM.ui(cfg, installedKB()) end
   return "home"
 end
 
@@ -16,7 +21,8 @@ local function ctx()
            cwd = cwd, who = who, W = W, H = H, st = st,
            uiSplit = uiShape() == "split",
 
-           displayIdx = myDisplayIdx }
+           displayIdx = myDisplayIdx,
+           autoCLI = S._autoCLI }
 end
 
 local function runCLI()
@@ -58,7 +64,14 @@ function S.run(k, token)
   cwd = "/home/" .. who
   if not F.exists(cwd) then cwd = "/" end
 
-  local mode = (uiShape() == "cli") and "cli" or "tui"
+  local shape, chosen = uiShape()
+  local mode = (shape == "cli") and "cli" or "tui"
+
+  S._autoCLI = nil
+  if mode == "cli" and chosen == "auto" then
+    local okB, bcM = pcall(require, "kernel.bootcfg")
+    S._autoCLI = { haveKB = installedKB(), needKB = okB and bcM.PANELS_MIN_KB or nil }
+  end
 
   for _ = 1, 64 do
     local code

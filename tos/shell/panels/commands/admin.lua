@@ -1240,7 +1240,10 @@ return function(C, S, deps)
       o("  profile    : " .. cfg.profile
         .. (cfg.profile == "safe" and "   (SAFE MODE)" or "   (what loads)"), T.fg)
       o("  verbosity  : " .. (cfg.verbosity or "auto") .. "   (what it says)", T.fg)
-      o("  interface  : " .. (cfg.ui == "cli" and "cli" or "panels") .. "   (all seats)", T.fg)
+      local uiShown = cfg.ui == "cli" and "cli" or cfg.ui == "split" and "panels (split)"
+        or cfg.ui == "home" and "panels"
+        or ("auto (panels from " .. bootcfg.PANELS_MIN_KB .. " KB, else cli)")
+      o("  interface  : " .. uiShown .. "   (all seats)", T.fg)
       o("  repair     : " .. (cfg.repair and "RUN on next boot" or "off"), T.fg)
       o("  showConfig : " .. (cfg.showConfig and "on" or "off"), T.fg)
       o("  cpuTier    : " .. (cfg.cpuTier and ("Tier " .. cfg.cpuTier) or "auto"), T.fg)
@@ -1295,9 +1298,10 @@ return function(C, S, deps)
       elseif val == "1" or val == "2" or val == "3" then cfg.dataTier = tonumber(val); changed = true
       else o("datatier: auto | 1 | 2 | 3", T.error); return end
     elseif sub == "ui" or sub == "interface" then
-      if val == "panels" or val == "tui" then cfg.ui = nil; changed = true
-      elseif val == "cli" then cfg.ui = "cli"; changed = true
-      else o("ui: panels | cli", T.error); return end
+      if val == "panels" or val == "tui" or val == "home" then cfg.ui = "home"; changed = true
+      elseif val == "cli" or val == "split" then cfg.ui = val; changed = true
+      elseif val == "auto" then cfg.ui = nil; changed = true
+      else o("ui: auto (by memory) | panels | split | cli", T.error); return end
     elseif sub == "repair" then
       if val == "on" or val == "once" or val == "1" then cfg.repair = true; changed = true
       elseif val == "off" or val == "0" then cfg.repair = false; changed = true

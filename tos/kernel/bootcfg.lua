@@ -110,7 +110,8 @@ local function normalize(cfg)
   local dt = tonumber(cfg.dataTier)
   cfg.dataTier = (dt and dt >= 1 and dt <= 3) and math.floor(dt) or nil
 
-  if cfg.ui ~= "cli" and cfg.ui ~= "split" then cfg.ui = nil end
+  if cfg.ui == "panels" or cfg.ui == "tui" then cfg.ui = "home" end
+  if cfg.ui ~= "home" and cfg.ui ~= "cli" and cfg.ui ~= "split" then cfg.ui = nil end
 
   cfg.repair = cfg.repair == true
 
@@ -181,10 +182,16 @@ function bootcfg.ramOK(cfg, detected)
   return detected ~= false
 end
 
-function bootcfg.ui(cfg)
+bootcfg.PANELS_MIN_KB = 1536
+
+function bootcfg.ui(cfg, totalKB)
   local v = cfg and cfg.ui
-  if v == "cli" or v == "split" then return v end
-  return "home"
+  if v == "cli" or v == "split" or v == "home" then return v end
+  if cfg and cfg.ramGate == true then return "home", "auto" end
+  if type(totalKB) == "number" and totalKB > 0 and totalKB < bootcfg.PANELS_MIN_KB then
+    return "cli", "auto"
+  end
+  return "home", "auto"
 end
 
 bootcfg.PATH = PATH

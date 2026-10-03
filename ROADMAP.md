@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 62 | Planned or under investigation. Most contributions belong here. |
+| Planned | 63 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -243,6 +243,40 @@ PUT THE COMPAT NUMBER IN THE README, or decide not to. The
     were required by none of them". Then re-run the scan when the
     claim is made, so the number in the README is one somebody can
     reproduce.
+```
+
+### Planned — THE RAM FLOOR IS 1 MB
+
+```text
+THE RAM FLOOR IS 1 MB, NOT 192 KB. Measured 2026-10-03 on the
+    headless machine (build/headless-session.py --profile t1 --ram,
+    default OpenComputers config, fresh install, `firstboot` then one
+    command). The README said 192 KB minimum and 256 KB for the full
+    interface. On this build:
+      RAM      panels (default)       ui=cli               minimal + cli
+      <=384K   E-202: the kernel cannot even be compiled
+      512K     security skipped; login refuses; reboot loop  minimal auth
+      768K     emergency terminal     emergency terminal   prompt, core cmds won't load
+      896K     -                      core cmds won't load -
+      960K     -                      works, 35K free      -
+      1024K    1st command crashes    works, 34-48K free   works, 120K free
+      1152K    core cmds won't load   -                    -
+      1280K    works, 62K free        works, 220K free     works, 321K free
+      1536K    works, 198K free       works, 390K free     -
+      2048K    works, 736K free       -                    -
+    CALIBRATION, so this is not the emulator: OpenOS 1.8.9, copied from
+    the Ocelot workspace, boots at 192K on the same machine using ~155K,
+    as it does in-game.
+      Done the same day: the README, CONTRIBUTING and the installer's
+    warnings state the measured floor, and below 1.5 MB an unset `ui`
+    starts the CLI (bootcfg.PANELS_MIN_KB) rather than the panels
+    crashing on the first command.
+      OPEN, the real work: the footprint itself. The first wall is
+    compiling tos/kernel/init.lua (90 KB even minified), which alone
+    fails at 384K. Start with a per-stage memory profile -- the
+    headless machine can produce one now. Then a floor check in the
+    headless runs, so the documented number cannot drift again: 192 KB
+    was presumably true once, and nothing re-measured it.
 ```
 
 ### Planned — DRY-RUN CAPABILITY ENFORCEMENT
