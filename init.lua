@@ -347,7 +347,7 @@ _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
 
-  build = "7b569eb",
+  build = "dc6e704",
   variant = "minified",
   bootFS     = bootFS,
 
