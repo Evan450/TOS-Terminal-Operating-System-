@@ -347,7 +347,7 @@ _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
 
-  build = "91d4467",
+  build = "0b14a94",
   variant = "minified",
   bootFS     = bootFS,
 
@@ -368,10 +368,16 @@ local loading = {}
 --! command called mail.lua ran it unsandboxed at the next `mail`. The
 --! sandbox's USER_LIB_ROOTS never listed /usr/bin, so nothing sandboxed
 --! lost anything. test_pkg_protected_targets pins this.
+--! /lib is NOT searched. TOS installs nothing there; on a disk that ran
+--! OpenOS it holds OpenOS's libraries, and searched AHEAD of /usr/lib they
+--! answered names in the kernel's own _G: an add-on library of the same
+--! name was shadowed, and in Safe Mode -- compat off, so the shim names
+--! fall through to this list -- `require("term")` loaded OpenOS's real
+--! /lib/term.lua, the code Safe Mode exists not to run. Sandboxed programs
+--! could never reach /lib (sandbox USER_LIB_ROOTS). (test_require_roots)
 local searchPaths = {
   "/tos/?.lua",
   "/tos/?/init.lua",
-  "/lib/?.lua",
   "/usr/lib/?.lua",
   "/usr/modules/?.lua",
   "/usr/modules/?/init.lua",
