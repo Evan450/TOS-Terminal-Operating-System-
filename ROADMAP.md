@@ -474,7 +474,7 @@ WE ALREADY OWN THE THREE HARD PARTS:
 
 - fs.mount(path, proxy) takes anything filesystem-component- shaped, and netfs.lua and jbod.lua are existing producers of exactly that shape.
 - compress.lua already frames deflate as INDEPENDENTLY inflatable chunks (nChunks(u16), then cLen/cData pairs). That is random access at chunk granularity, which is what an archive mount needs. Written for swap and backups; the property generalises for free.
-- OC filesystem handles support seek (Reference/OpenOS: lib/devfs.lua:329, lib/core/full\_buffer.lua:12), so a mount seeks to a chunk instead of reading a 140 KB package whole on a 192 KB box.
+- OC filesystem handles support seek (OpenOS 1.8.9: lib/devfs.lua:329, lib/core/full\_buffer.lua:12), so a mount seeks to a chunk instead of reading a 140 KB package whole on a 192 KB box.
 
 SIGNING GETS SIMPLER, NOT HARDER: pkgsign signs a manifest of per-file hashes today; one archive is one hash and one signature, the archive is immutable after install, and srm scan stops walking a package's files. Uninstall becomes one remove.
 
