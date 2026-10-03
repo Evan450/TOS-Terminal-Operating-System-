@@ -113,7 +113,10 @@ function selftest.discover(fsMod)
   local roots = {}
   for _, d in ipairs(selftest.DIRS) do roots[#roots + 1] = d end
   for _, m in ipairs(mountRoots(fsMod)) do
-    roots[#roots + 1] = m .. "/selftest"
+
+    if not fsMod.exists(m .. "/selftest/package.lua") then
+      roots[#roots + 1] = m .. "/selftest"
+    end
 
     if fsMod.exists(m .. "/selftest.on") then
       roots[#roots + 1] = m
