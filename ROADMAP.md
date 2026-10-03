@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**91 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**90 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 67 | Planned or under investigation. Most contributions belong here. |
+| Planned | 66 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -804,45 +804,6 @@ OPERATOR DECISION, deliberately not made here: should `rsh` REFUSE
       print the loss once, so nobody enables it believing in a budget
       that is not there. The warning added above is the log-level
       version of that; whether it should be louder is the call.
-```
-
-## ACCIDENTAL-GLOBAL / COMPAT SWEEP (2026-08-23)
-
-### Planned — UNVERIFIED
-
-```text
-UNVERIFIED, NEEDS A LUA 5.3 BOX: gmatch's empty-match rule
-    differs between the two architectures TOS supports. Lua 5.4
-    refuses a match that ends where the previous one ended; 5.3
-    has no such guard and returns the empty match. (Counted
-    2026-09-06: TEN call sites, not ~15 -- core.lua x6, admin.lua,
-    extras.lua, context.lua, editor.lua -- and the two bare ones
-    named below; everything else already uses [^\n]+, which has
-    no empty match to disagree about. Still unverifiable here:
-    the emulator's Lua 5.3 lives inside a JNLua DLL that exports
-    no C API, so there is no 5.3 interpreter to run the probe.)
-    ~15 call sites
-    split text with  gmatch("([^
-]*)
-?")  and two with the
-    bare  gmatch("[^
-]*")  (compat/text.lua's wrap, and the
-    crash-dump printer in kernel/init.lua). If the recollection is
-    right, every one of them yields ONE EXTRA EMPTY LINE at the
-    end on a 5.3 CPU — and the two bare ones yield a blank line
-    between EVERY line. That would be a visible difference in
-    `cat`, `more`, the editor and the crash dump depending only on
-    which CPU is in the machine.
-    NOT FIXED, deliberately: only Lua 5.4 is installed on the dev
-    box, and 5.4 masks the behaviour completely, so there is no
-    way to see the bug or to prove a fix from here. Do NOT rewrite
-    fifteen call sites on a memory. Check it first:
-        lua5.3 -e 'for s in ("a
-b"):gmatch("[^
-]*") do print(("%q"):format(s)) end'
-    Three lines means 5.4-like and there is nothing to do; four
-    (with an empty one in the middle) confirms it, and then the
-    fix is one shared splitLines() helper, not fifteen edits.
 ```
 
 ## REAL MINECRAFT ROUND (2026-08-11)
