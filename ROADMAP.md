@@ -2,13 +2,13 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**90 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**88 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 66 | Planned or under investigation. Most contributions belong here. |
+| Planned | 64 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
 Items marked *Emulator checklist* need a real OpenComputers install to verify — the off-box suite runs on stock Lua and cannot see that class of bug. Those are good contributions if you play the mod.
@@ -270,6 +270,12 @@ THE HEADLESS BOOT TEST HAS A WORKING RECIPE. This is the missing
     already have nine checks. MISSING: an emulator that can be driven
     headlessly (ocvm, not Ocelot's GUI), the script -qc PTY trick, and
     a self-test mode that powers the machine OFF when it finishes.
+      2026-10-02: the last of those three exists now -- a selftest.on
+    carrying shutdown=true powers the machine off after the report
+    ("SHUTDOWN requested by marker"), and the battery is the selftest
+    package with sixteen checks. Still missing: ocvm (not on this
+    machine; Ocelot has no headless mode and no power-on flag), so the
+    one manual step is still pressing the power button.
     The README calls powering on "the one manual step" -- this is how
     it stops being one.
       Their 240 s budget has a reason worth keeping: pure-Lua
@@ -1135,16 +1141,6 @@ Emulator checklist:
         lands in a WORKING CLI, not a dead one
 ```
 
-### Planned — STILL OPEN from the decision below: the EMERGENCY TERMINAL is
-
-```text
-STILL OPEN from the decision below: the EMERGENCY TERMINAL is
-    untouched — still the same seven commands. Growing it toward
-    the recovery set (srm, log, df, repair) is its own round, and
-    the constraint stands: every dependency it takes on is a
-    dependency that might be the thing that broke.
-```
-
 ### Planned — BUILD-TIME FEATURE CONFIG
 
 ```text
@@ -1230,20 +1226,6 @@ CONSOLIDATE THE SECURITY POLICY INTO ONE FILE. Theirs is a
       * This is the one place our security STORY is quieter than
         our security POSTURE. The posture is good; you just can't
         read it in one sitting.
-```
-
-### Planned — OVERRIDES AS DATA
-
-```text
-OVERRIDES AS DATA, DEFAULTS AS CODE — for package caps. They
-    check two settings before applying the coded default:
-      perm|<pkg>|<perm>   then   perm|*|<perm>
-    so an operator pre-grants or pre-denies per-package or
-    globally without touching policy code. We ALREADY have this
-    shape for component TYPES (etc/component_caps.cfg, the
-    base/gated split, `component reload-caps`). What's missing is
-    the same for package CAPABILITIES. Extending something we
-    built, not importing a foreign idea.
 ```
 
 ### Idea / far future — "ASK" AS A THIRD STATE. We are binary and install-time: an
