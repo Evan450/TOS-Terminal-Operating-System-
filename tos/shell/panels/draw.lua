@@ -22,6 +22,13 @@ local function uwidthRow(s)
   return #tostring(s or "")
 end
 
+local function fitCells(S, s, cols)
+  s = tostring(s or "")
+  if tc.isAscii(s) then return (s .. S.padW):sub(1, cols) end
+  local cut = tc.slice(s, 1, cols)
+  return cut .. S.padW:sub(1, math.max(0, cols - tc.cells(cut)))
+end
+
 local BASE_MENUS = {
   { label = "File", items = {
     { label = "New File",      action = "newfile" },
@@ -377,7 +384,7 @@ local function renderFileListRow(S, fi, y, SZ_W, typeW, nameW, extraCols)
     fg, bg = helpers.fileColor(S, f), T.bg
   end
 
-  D.set(1, y, (line .. S.padW):sub(1, W), fg, bg)
+  D.set(1, y, fitCells(S, line, W), fg, bg)
   if W >= 4 then
     D.set(2, y, ui.fileGlyph(f.name, f.dir), fg, bg)
   end
@@ -533,23 +540,25 @@ function M.viewTab(S, tab)
       if tab.searchTerm and #tab.searchTerm > 0 then
         local pos = txt:find(tab.searchTerm, 1, true)
         if pos then
-          D.set(gutterW + 1, 1 + i, txt:sub(1, viewW), col, T.bg)
+          D.set(gutterW + 1, 1 + i, tc.slice(txt, 1, viewW), col, T.bg)
+
+          local cell = tc.cellOf(txt, pos)
           local matchText = txt:sub(pos, pos + #tab.searchTerm - 1)
-          if pos <= viewW then
-            D.set(gutterW + pos, 1 + i, matchText:sub(1, viewW - pos + 1), T.sel_fg, T.sel_bg)
+          if cell <= viewW then
+            D.set(gutterW + cell, 1 + i, tc.slice(matchText, 1, viewW - cell + 1), T.sel_fg, T.sel_bg)
           end
         else
-          D.set(gutterW + 1, 1 + i, txt:sub(1, viewW), col, T.bg)
+          D.set(gutterW + 1, 1 + i, tc.slice(txt, 1, viewW), col, T.bg)
         end
       else
-        D.set(gutterW + 1, 1 + i, txt:sub(1, viewW), col, T.bg)
+        D.set(gutterW + 1, 1 + i, tc.slice(txt, 1, viewW), col, T.bg)
       end
 
       if tab.selAnchor and selMod.lineRange(tab.selAnchor, tab.selCur or tab.selAnchor) then
         local from, to = selMod.lineRange(tab.selAnchor, tab.selCur or tab.selAnchor)
         if li >= from and li <= to then
           D.set(gutterW + 1, 1 + i,
-            (txt .. S.padW):sub(1, viewW), T.sel_fg or T.bg, T.sel_bg or T.highlight)
+            fitCells(S, txt, viewW), T.sel_fg or T.bg, T.sel_bg or T.highlight)
         end
       end
     end
@@ -772,8 +781,7 @@ function M.outLines(S, override)
   local top = S.OUT_ROW - n + 1
   for i = 1, n do
     local e = lines[i] or { "", T.fg }
-    D.set(1, top + i - 1, (tostring(e[1] or "") .. S.padW):sub(1, W),
-      e[2] or T.fg, T.bg)
+    D.set(1, top + i - 1, fitCells(S, e[1], W), e[2] or T.fg, T.bg)
   end
 end
 
