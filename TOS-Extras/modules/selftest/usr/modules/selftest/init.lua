@@ -74,7 +74,11 @@ function M.discover(F)
   local roots = {}
   for _, d in ipairs(DIRS) do roots[#roots + 1] = { dir = d, source = "installed" } end
   for _, m in ipairs(mountRoots(F)) do
-    roots[#roots + 1] = { dir = m .. "/selftest", source = "disk " .. m }
+    -- A selftest/ holding package.lua is this package on an Optional
+    -- Utilities disk, not a test disk's checks.
+    if not F.exists(m .. "/selftest/package.lua") then
+      roots[#roots + 1] = { dir = m .. "/selftest", source = "disk " .. m }
+    end
     -- A disk root counts only when the disk says it is a test disk.
     if F.exists(m .. "/selftest.on") then
       roots[#roots + 1] = { dir = m, source = "disk " .. m }

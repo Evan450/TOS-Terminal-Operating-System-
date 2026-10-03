@@ -64,7 +64,9 @@ you change on the machine.
 Get your check run in one of three ways:
 
 - **a test disk:** put the check in a `selftest/` folder on any disk.
-  Every mounted disk's `selftest/` is searched.
+  Every mounted disk's `selftest/` is searched, unless it holds a
+  `package.lua`: that is this package on an Optional Utilities disk, not
+  a folder of checks.
 - **your own package:** install it under `/usr/lib/selftest/`. That is a
   root install.
 - **here**, if it belongs with the battery.

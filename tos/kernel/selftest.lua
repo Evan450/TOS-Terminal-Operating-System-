@@ -198,7 +198,9 @@ end
 --- Check files live on a TEST DISK, not in the base image: the runner is
 --- small enough to ship dormant, but a battery of checks is not. Any
 --- mounted /mnt/<label>/selftest/ is searched, so on an ARMED machine
---- inserting the disk is the whole install step (see enabled).
+--- inserting the disk is the whole install step (see enabled). The one
+--- exception is a selftest/ holding a package.lua: that is the selftest
+--- package on an Optional Utilities disk, not a test disk's checks.
 function selftest.discover(fsMod)
   fsMod = fsMod or fs
   local out = {}
@@ -207,7 +209,15 @@ function selftest.discover(fsMod)
   local roots = {}
   for _, d in ipairs(selftest.DIRS) do roots[#roots + 1] = d end
   for _, m in ipairs(mountRoots(fsMod)) do
-    roots[#roots + 1] = m .. "/selftest"
+    -- A pack disk keeps each package in a folder named after it, so the
+    -- Optional Utilities disk carries a selftest/ too: the selftest
+    -- PACKAGE, with its checks under usr/lib/selftest/ for pkg to install.
+    -- Taken for a test disk's folder, it listed package.lua as a check,
+    -- and an armed boot with the disk in ran the manifest and logged a
+    -- FAIL. (test_selftest.lua)
+    if not fsMod.exists(m .. "/selftest/package.lua") then
+      roots[#roots + 1] = m .. "/selftest"
+    end
     -- Checks loose at a disk ROOT are accepted too -- requiring the
     -- folder is a rule nobody can see from the disk, and getting it
     -- wrong looks exactly like the battery being broken.

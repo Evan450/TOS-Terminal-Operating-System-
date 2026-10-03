@@ -345,6 +345,31 @@ do
   eq("only the declared test disk's check is found", 1, #found)
 end
 
+do
+  -- THE OPTIONAL UTILITIES DISK. A pack disk keeps each package in a
+  -- folder named after it, so disk2 carries selftest/ -- the selftest
+  -- PACKAGE: package.lua, package.sig, and its checks under
+  -- usr/lib/selftest/ for pkg to install. Discovery took that folder for
+  -- a test disk's: on the headless machine `selftest list` showed
+  -- package.lua as a check, and an armed boot with the disk in would run
+  -- the manifest and log "FAIL package :: check file returned neither a
+  -- function nor { run = f }".
+  local fs = ramFS({
+    ["/mnt/pack/optutil-set.lua"]                       = "",
+    ["/mnt/pack/selftest/package.lua"]                  = "return { name = 'selftest' }",
+    ["/mnt/pack/selftest/package.sig"]                  = "",
+    ["/mnt/pack/selftest/usr/lib/selftest/10-boot.lua"] = "",
+    ["/mnt/testdisk/selftest/10-a.lua"]                 = "",
+  })
+  fs._virtual["/mnt"] = true
+  fs._mounts = { { mountPoint = "/mnt/pack" }, { mountPoint = "/mnt/testdisk" } }
+  local found = selftest.discover(fs)
+  local blob = table.concat(found, " ")
+  test("a pack disk's selftest package is not taken for checks",
+    blob:find("package.lua", 1, true) == nil)
+  eq("...while a test disk's selftest/ still is", 1, #found)
+end
+
 -- ── #SEC: a disk never arms the battery ──────────────────────────
 -- Checks run INSIDE the kernel (no environment, on purpose), and every
 -- non-boot disk is mounted at boot. When a selftest.on on a disk armed the

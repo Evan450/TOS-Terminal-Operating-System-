@@ -137,7 +137,12 @@ files["/mnt/td/selftest/30-disk.lua"] = "return function(t) t.skip('needs a prin
 files["/mnt/loose/40-loose.lua"] = "return function(t) t.note('loose at the root') end\n"
 files["/mnt/loose/selftest.on"] = ""
 files["/mnt/other/50-not-a-check.lua"] = "error('must never load')\n"
-mounts = { "/mnt/td", "/mnt/loose", "/mnt/other" }
+-- The Optional Utilities disk keeps this package in a folder named
+-- selftest/, which is not a folder of checks. Both sides once took it for
+-- one: `selftest list` showed package.lua, and an armed boot ran it.
+files["/mnt/pack/selftest/package.lua"] = "return { name = 'selftest' }\n"
+files["/mnt/pack/selftest/usr/lib/selftest/60-packed.lua"] = "error('installed by pkg, not run from the disk')\n"
+mounts = { "/mnt/td", "/mnt/loose", "/mnt/other", "/mnt/pack" }
 local kernelSees = selftest.discover(F)
 local commandSees = mod.lib.discover(F)
 local same = #kernelSees == #commandSees
@@ -146,6 +151,8 @@ test("the command lists exactly the kernel's checks (" .. #kernelSees .. ")", sa
 said = cmd("list")
 test("a disk without selftest.on at its root lends no loose checks",
   said:find("50-not-a-check", 1, true) == nil)
+test("the selftest package on a pack disk is not listed as a check",
+  said:find("package.lua", 1, true) == nil)
 test("each check names where it came from", said:find("disk /mnt/td", 1, true) ~= nil
   and said:find("installed", 1, true) ~= nil)
 
