@@ -145,9 +145,13 @@ procPrincipal = nil   -- restore for the disable section below
 print()
 print("-- elevation backoff --")
 do
-  local realTime = os.time
-  local now = 1000000
-  os.time = function() return now end
+  -- The wait runs on computer.uptime(), in real seconds; os.time() is the
+  -- in-game clock on OpenComputers (test_backoff_clock.lua says why), so
+  -- this moves uptime.
+  local C = package.loaded["computer"]
+  local realUptime = C.uptime
+  local now = 100
+  C.uptime = function() return now end
   users.setElevation(rootS, "letmein9", T.ROOT)
   procPrincipal = rootS
   test("root creates erin", (users.create("root", "erin", "erinpass1", T.USER)))
@@ -182,7 +186,7 @@ do
   test("...and success clears the count", rec and rec.elevFailed == nil and rec.elevFailedAt == nil)
   test("another account was never throttled by erin's guesses",
     users.elevate({ user = "carol", tier = T.ADMIN }, "letmein9") ~= nil)
-  os.time = realTime
+  C.uptime = realUptime
 end
 
 -- ── Disable ────────────────────────────────────────────────────────

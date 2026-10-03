@@ -88,6 +88,8 @@ OCELOT CHECK FOR THE KELLER IMPORT: a round through sync-emulator.py (it now cre
 
 The first of the three is done: two rounds ran through the new arming (etc/selftest.on made by sync-emulator.py) on 2026-09-25.
 
+The third, 2026-10-03, on the headless machine (headless-session.py: sudo set up, three wrong elevation passwords as a USER, a fourth a second later): it was never asked to wait. Login's and sudo's backoff measured with os.time(), which on OpenComputers is the in-game clock, 72 game seconds to the real one, so every wait was 72 times short and one KDF outlasted it. Fixed the same day: both run on real seconds (computer.uptime(), stamped with the boot), and the same session now shows "try again in 4s". test\_backoff\_clock.lua. Left: installing several packages from media.
+
 ### Ocelot check for the Fermi import
 
 *Planned* · from the round *The Fermi import: a cloud session's 15 fixes (2026-09-23)*
