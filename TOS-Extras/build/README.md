@@ -40,7 +40,7 @@ lua build/build-disk.lua [<extras-root>] [<out-dir>]
 Signs every emitted manifest with an Ed25519 key, writing `package.sig`
 beside each `package.lua`. Recipients trust the key once with
 `pkg trust add <name> <key>` and everything from that key then installs
-without a fresh judgement call. See MANUAL §7.5a.
+without a fresh judgement call. See MANUAL §7.8.
 
 ```bash
 TOS_SIGNING_PASSPHRASE='a long signing passphrase' TOS_SIGNING_NAME='Me' lua build/build-disk.lua --sign
@@ -59,13 +59,13 @@ Two things about that command line are deliberate:
   is signature → manifest → hashes → files, and the hashes have to be final
   first.
 
-The builder drives `TOS-Dev/tos/kernel/pkgsign.lua` over a filesystem shim
+The builder drives the base OS's `tos/kernel/pkgsign.lua` over a filesystem shim
 rather than reimplementing the record, so a disk built here and a package
 signed on-box with `pkg sign` cannot disagree about what a signature is.
 
 ### What a package ships
 
-Every `.lua` file goes through `TOS-Dev/build/strip.lua` on its way into the
+Every `.lua` file goes through the base OS's `build/strip.lua` on its way into the
 pack, as the release tree does: comments are removed, `--!` lines are kept,
 and line numbers do not move, so a traceback still points at the source line.
 Write comments freely; they cost a machine nothing. A file that parses as

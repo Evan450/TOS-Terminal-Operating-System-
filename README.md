@@ -258,14 +258,14 @@ hand off the directory it just downloaded.
   `pkg` reads all four manifest forms including a real OPPM `programs.cfg` repo
   index, translates its source→destination file mapping and its dependency
   list, and grants a foreign package the compat capabilities it never had to
-  declare. See MANUAL §7.5.
+  declare. See MANUAL §7.7.
 - **Packages can be fetched over an internet card** — `pkg repo add <name>
   <url>` then `pkg fetch <name>`. The configured repo list *is* the allowlist:
   there is no default repo and no discovery, so a machine reaches only hosts an
   admin wrote down. A fetch downloads into a staging directory and then runs the
   **ordinary local install** against it, so hash verification, write-root
   confinement, conflict checks and the unverified-package gate are the same code
-  for a remote package as for a floppy. See MANUAL §7.6.
+  for a remote package as for a floppy. See MANUAL §7.9.
 - `require("internet")` works (OpenOS's `internet` library), gated by the
   `internet` capability. Still no shim for `thread` or `uuid`.
 - Loaded conditionally — skipped on low-RAM systems to save memory

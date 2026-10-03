@@ -2,7 +2,7 @@
 
 > **Scope:** a text-mode web browser package, the TOS-to-TOS fetch proxy that lets a machine without an internet card borrow one that has it, and the shared page cache that falls out of having both. Extends the cluster protocol spec's trust topology (§1) and reuses the storage tier's namespace and TTL model where it fits. Nothing here is implemented; every section is design.
 >
-> **Starting point:** `TOS-Dev/TODO.txt`, the deferred `[*]` OPERATOR IDEA of 2026-08-04. Its three conclusions are taken as settled and not re-argued: the browser is a **package** declaring `internet` + `fullscreen` and never ships in the base image; **HTML→text layout is the work**, not the fetch; and `kernel.internet`'s size caps want raising **per-call, never globally**, because a page is bigger than 64 K.
+> **Starting point:** the deferred "text-mode WEB BROWSER" idea of 2026-08-04 in `ROADMAP.md`. Its three conclusions are taken as settled and not re-argued: the browser is a **package** declaring `internet` + `fullscreen` and never ships in the base image; **HTML→text layout is the work**, not the fetch; and `kernel.internet`'s size caps want raising **per-call, never globally**, because a page is bigger than 64 K.
 
 ---
 

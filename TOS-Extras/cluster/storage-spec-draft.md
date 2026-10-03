@@ -47,7 +47,7 @@ The dedicated node stays **primary** because it is dramatically simpler: one mac
 
 ## 2. `netfs` — the remote filesystem proxy
 
-A TOS-level primitive, not a cluster one. It belongs in `TOS-Dev/tos/kernel/netfs.lua` and is consumed by the cluster, not owned by it.
+A TOS-level primitive, not a cluster one. It belongs in the base OS's `tos/kernel/netfs.lua` and is consumed by the cluster, not owned by it.
 
 ### 2.1 Shape
 

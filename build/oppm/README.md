@@ -16,8 +16,8 @@ There is no TOS source on that branch and there should never be. The package ins
 git switch --orphan master
 git rm -rf .                                   # nothing from another branch
 mkdir tos
-cp <TOS-Dev>/build/oppm/programs.cfg  programs.cfg
-cp <TOS-Dev>/bootstrap.lua            tos/bootstrap.lua
+cp <tos-source>/build/oppm/programs.cfg  programs.cfg
+cp <tos-source>/bootstrap.lua            tos/bootstrap.lua
 git add programs.cfg tos/bootstrap.lua
 git commit -m "OPPM index so oppm can find TOS"
 git push -u origin master

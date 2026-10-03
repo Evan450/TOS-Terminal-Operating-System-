@@ -78,7 +78,7 @@ leaves a log whose last line names the culprit and has no `SELFTEST END`.
 
 Only checks whose answer depends on **real hardware or a real booted
 kernel**. Anything that is a pure function of its inputs belongs in
-`TOS-Dev/usr/lib/tests/`, where it runs in a second on every commit.
+`usr/lib/tests/`, where it runs in a second on every commit.
 `sha256` and `ed25519` are proven by FIPS and RFC vectors off-box and gain
 nothing from a Minecraft round.
 
@@ -108,7 +108,7 @@ of checks instead, which is the quickest way to try a new one.
 
 ## Without installing it: the emulator workflow
 
-`TOS-Dev/build/sync-emulator.py` copies the release onto an Ocelot boot disk,
+`build/sync-emulator.py` copies the release onto an Ocelot boot disk,
 copies these checks (`usr/lib/selftest/`) onto a test floppy, and creates
 `etc/selftest.on` on the boot disk. A test disk's own `selftest.on` carries
 options only (`selftest.on.example` is a ready-made one); it never arms

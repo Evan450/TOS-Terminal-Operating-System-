@@ -11,6 +11,7 @@ answers off the real screen.
 
     python TOS-Dev/build/headless-session.py SCRIPT [--profile t3|t1]
         [--ram KB[,KB]] [--disk DIR] [--put PATH=TEXT] [--timeout SECS]
+        [--os tos|openos] [--install-disk] [--boot-tier N]
         [--trace] [--keep] [--internet]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
@@ -25,7 +26,13 @@ NAME`, `snap NAME`, `off SECS`, `powercycle`. Two more are expanded here:
 
 Every round boots a FRESH copy of TOS-Release (unarmed: no battery), with
 --disk copied in as a second disk. --profile t1 is a T1 CPU, GPU and screen
-on one 192K stick with no data card, the smallest box TOS claims to run on.
+on one stick (192K unless --ram says otherwise) with no data card.
+
+--os openos boots OpenOS instead -- the copy inside Ocelot's jar, with
+OpenComputers' own Lua BIOS -- which is where a player installs TOS from.
+--install-disk inserts a copy of TOS-Release as the second disk at a fixed
+address, so OpenOS mounts it at /mnt/d15 and a script can type
+`/mnt/d15/install.lua`. --boot-tier 2 makes the boot drive 2 MB.
 
 Prints each step with its time (a `wait` after a `mark` also reports the
 time since the mark, which is how timings come back), then every `snap`.
@@ -61,6 +68,10 @@ def _load_selftest_driver():
 hs = _load_selftest_driver()
 
 DEFAULT_PASSWORD = "headless1"
+# OpenOS mounts a disk at /mnt/<first three characters of its address>.
+INSTALL_DISK_ADDRESS = "d15c0000-0000-4000-8000-000000000000"
+OPENOS_PREFIX = "assets/opencomputers/loot/openos/"
+OC_BIOS = "assets/opencomputers/lua/bios.lua"
 
 
 def expand(lines: list[str]) -> list[str]:
@@ -128,6 +139,26 @@ def stage(run: Path, release: Path, disk: Path | None,
     return boot, staged, work
 
 
+def stage_openos(run: Path, jar: Path) -> tuple[Path, Path, Path]:
+    """A fresh OpenOS boot disk from the jar's loot copy: (boot, work, bios)."""
+    import zipfile
+    boot, work = run / "boot", run / "work"
+    boot.mkdir(parents=True)
+    work.mkdir()
+    with zipfile.ZipFile(jar) as z:
+        for name in z.namelist():
+            if name.startswith(OPENOS_PREFIX) and not name.endswith("/"):
+                rel = name[len(OPENOS_PREFIX):]
+                if not rel or ".." in rel.split("/"):
+                    continue
+                target = boot / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(z.read(name))
+        bios = work / "oc-bios.lua"
+        bios.write_bytes(z.read(OC_BIOS))
+    return boot, work, bios
+
+
 def main(argv: list[str] | None = None) -> int:
     # Screens are box-drawing and Unicode; a Windows console or pipe defaults
     # to cp1252 and would crash printing the first frame.
@@ -141,6 +172,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ram", help="memory sticks in KB, e.g. 256 or 384,384 "
                     "(192/256/384/512/768/1024; default 1024,1024, or 192 for t1)")
     ap.add_argument("--disk", help="a folder to insert as a second disk (copied first)")
+    ap.add_argument("--os", choices=["tos", "openos"], default="tos",
+                    help="what boots: a fresh TOS-Release (default), or OpenOS from the jar")
+    ap.add_argument("--install-disk", action="store_true",
+                    help="insert a copy of TOS-Release as the second disk, mounted by "
+                         "OpenOS at /mnt/d15")
+    ap.add_argument("--boot-tier", choices=["1", "2", "3"], default="3",
+                    help="the boot drive's tier (3 = 4 MB, 2 = 2 MB)")
     ap.add_argument("--put", action="append", metavar="PATH=TEXT",
                     help="write TEXT to PATH on the boot disk before it boots, e.g. "
                          "--put '/etc/boot.cfg=return { ui = \"cli\" }' (repeatable)")
@@ -174,21 +212,35 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
 
+    if args.install_disk and args.disk:
+        print("error: --install-disk and --disk both name the second disk", file=sys.stderr)
+        return 1
     run = Path(tempfile.mkdtemp(prefix="tos-session-"))
+    bios = hs.RELEASE / "bios.lua"
+    disk_src = hs.RELEASE if args.install_disk else (Path(args.disk) if args.disk else None)
     try:
-        boot, disk, work = stage(run, hs.RELEASE, Path(args.disk) if args.disk else None, args.put)
-    except ValueError as e:
+        if args.os == "openos":
+            boot, work, bios = stage_openos(run, jar)
+            disk = None
+            if disk_src is not None:
+                disk = run / "disk"
+                shutil.copytree(disk_src, disk)
+        else:
+            boot, disk, work = stage(run, hs.RELEASE, disk_src, args.put)
+    except (ValueError, KeyError) as e:
         shutil.rmtree(run, ignore_errors=True)
         print(f"error: {e}", file=sys.stderr)
         return 1
     (work / "script.txt").write_text("\n".join(steps) + "\n", encoding="utf-8")
     config = Path(args.config) if args.config else jar.parent / "OpenComputers.conf"
     cmd = [java, "-Xmx1G", "-cp", f"{classes}{os.pathsep}{jar}", "HeadlessTOS",
-           "--boot", str(boot), "--bios", str(hs.RELEASE / "bios.lua"), "--work", str(work),
+           "--boot", str(boot), "--bios", str(bios), "--work", str(work),
            "--timeout", str(args.timeout), "--profile", args.profile,
-           "--script", str(work / "script.txt")]
+           "--script", str(work / "script.txt"), "--boot-tier", args.boot_tier]
     if disk is not None:
         cmd += ["--disk", str(disk)]
+    if args.install_disk:
+        cmd += ["--disk-address", INSTALL_DISK_ADDRESS]
     if args.ram:
         cmd += ["--ram", args.ram]
     if config.is_file():
@@ -199,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.trace:
         cmd.append("--trace")
     stamp = hs.build_stamp(hs.RELEASE)
-    print(f"release: build {stamp or '?'}   profile: {args.profile}   machine: {run}")
+    print(f"release: build {stamp or '?'}   os: {args.os}   profile: {args.profile}   machine: {run}")
 
     try:
         done = subprocess.run(cmd, capture_output=True, text=True, errors="replace",

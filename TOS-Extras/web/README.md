@@ -6,5 +6,5 @@ text-mode web browser package plus the fetch proxy that lets a TOS box
 that turns a network of TOS machines into a small shared archive.
 
 The browser itself is a package (`internet` + `fullscreen` capabilities),
-never part of the base image — see `TOS-Dev/TODO.txt`, the deferred
-OPERATOR IDEA entry from 2026-08-04.
+never part of the base image — see the deferred "text-mode WEB BROWSER"
+idea of 2026-08-04 in `ROADMAP.md`.

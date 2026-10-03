@@ -136,11 +136,11 @@ every file it names has a real implementation.
   pool, so the cluster back end derives placement from the §4.6 namespace
   instead. Build order and current progress are §9 there.
 - **Dedicated unit tests for state/scheduler/jobs.** Mostly covered now.
-  `TOS-Dev/usr/lib/tests/test_cluster_storage_pref.lua` covers the
+  `usr/lib/tests/test_cluster_storage_pref.lua` covers the
   storage-preference path end to end — register payload → `state.lua`
   Manager record → heartbeat merge → `scheduler.pickDomain` selection and
   scoring — using the `_internal` table `scheduler.lua` exposes for exactly
-  this. `TOS-Dev/usr/lib/tests/test_cluster_jobs.lua` (207 checks) now
+  this. `usr/lib/tests/test_cluster_jobs.lua` (207 checks) now
   covers `jobs.lua`: splitting, the §4.3 assignment shape, queue ordering,
   dispatch and its rollback, all three retry policies, timeouts,
   Manager-offline redistribution, multi-chunk reassembly and buffer

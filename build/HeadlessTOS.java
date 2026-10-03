@@ -56,6 +56,9 @@ import totoro.ocelot.brain.workspace.Workspace;
  *   --ram LIST      the memory sticks, in KB, comma-separated: 192, 256,
  *                   384, 512, 768 or 1024 (the six OpenComputers sizes; at
  *                   most two). Default 1024,1024 for t3 and 192 for t1
+ *   --boot-tier N   the boot drive's tier, 1-3 (default 3: 4 MB; 2 is 2 MB)
+ *   --disk-address U  the second disk's address, so an OS that mounts by
+ *                   address (OpenOS: /mnt/<first 3>) puts it somewhere known
  *   --internet      add an internet card
  *   --script FILE   drive the machine: see runScript for the steps
  *   --trace         write every distinct screen to frames.txt
@@ -145,7 +148,17 @@ public class HeadlessTOS {
     }
   }
 
-  static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram) {
+  static Tier.TierVal tier(String n) {
+    switch (n) {
+      case "1": return Tier.One();
+      case "2": return Tier.Two();
+      case "3": return Tier.Three();
+      default: throw new IllegalArgumentException("no drive tier " + n + " (1, 2 or 3)");
+    }
+  }
+
+  static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram,
+                    String bootTier, String diskAddress) {
     boolean t1 = profile.equals("t1");
     String[] sticks = (ram != null ? ram : t1 ? "192" : "1024,1024").split(",");
     if (sticks.length > 2) throw new IllegalArgumentException("at most two memory sticks");
@@ -157,7 +170,7 @@ public class HeadlessTOS {
     Case pc = ws.add(new Case(Tier.Three()));
 
     String bootAddr = UUID.randomUUID().toString();
-    HDDManaged bootHdd = new HDDManaged(Tier.Three());
+    HDDManaged bootHdd = new HDDManaged(tier(bootTier));
     bootHdd.address_$eq(Option.apply(bootAddr));
     bootHdd.customRealPath_$eq(Option.apply(bootDir));
 
@@ -173,7 +186,7 @@ public class HeadlessTOS {
     pc.inventory().apply(5).put(bootHdd);
     if (diskDir != null) {
       HDDManaged testHdd = new HDDManaged(Tier.Two());
-      testHdd.address_$eq(Option.apply(UUID.randomUUID().toString()));
+      testHdd.address_$eq(Option.apply(diskAddress != null ? diskAddress : UUID.randomUUID().toString()));
       testHdd.customRealPath_$eq(Option.apply(diskDir));
       pc.inventory().apply(6).put(testHdd);
       System.out.println("[headless] second disk " + testHdd.address().get());
@@ -441,7 +454,8 @@ public class HeadlessTOS {
     String biosFile = opt(args, "--bios", null), workDir = opt(args, "--work", null);
     if (boot == null || biosFile == null || workDir == null) {
       System.err.println("usage: HeadlessTOS --boot DIR --bios FILE --work DIR [--disk DIR]"
-          + " [--timeout SECS] [--config FILE] [--profile t3|t1] [--ram KB[,KB]] [--internet]"
+          + " [--timeout SECS] [--config FILE] [--profile t3|t1] [--ram KB[,KB]] [--boot-tier N]"
+          + " [--disk-address UUID] [--internet]"
           + " [--script FILE] [--trace]");
       System.exit(64);
     }
@@ -466,7 +480,8 @@ public class HeadlessTOS {
     Ocelot.initialize();
 
     ws = new Workspace(work.resolve("ws"));
-    build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null));
+    build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null),
+        opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null));
     System.out.println("[headless] power on: " + (machine.start() ? "ok" : "refused"));
 
     int code = script != null ? runScript(Paths.get(script), timeout, work) : runUntilOff(timeout, work);

@@ -28,7 +28,7 @@ Capture at a readable resolution (a Tier 2 GPU on an 80×25 screen reads well; T
 
 ## Capturing
 
-TOS is developed against the Ocelot desktop emulator (`Documents\Ocelot Destop Emulator\`), which is the practical way to get a clean, croppable frame without launching Minecraft. Any screen recorder that can export a GIF will do for `boot.gif`.
+TOS is developed against Ocelot Desktop, the standalone OpenComputers emulator, which is the practical way to get a clean, croppable frame without launching Minecraft. Any screen recorder that can export a GIF will do for `boot.gif`.
 
 Two things to check before shooting:
 

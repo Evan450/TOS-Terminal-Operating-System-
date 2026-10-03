@@ -213,7 +213,7 @@ REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK. Needs the
     `pkg upgrade` will offer), tape-authenticator 1.0.3, and
     rc-pilot 1.2.0 (it carries the robot's EEPROM image now). And
     every package's bytes change once: the pack strips its Lua now. test_build_disk.lua is red on them until
-    then. The operator runs, from Minecraft/TOS-Dev:
+    then. The operator runs, from the TOS source root:
       python tos.py pack --sign
     then publishes the utils branch:  publish.ps1 -Utils -Push
 ```

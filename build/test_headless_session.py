@@ -148,3 +148,35 @@ def test_put_refuses_relative_climbing_or_valueless_paths(tmp_path, bad):
     # beside the machine rather than on it.
     with pytest.raises(ValueError):
         hsess.stage(tmp_path / "run", _release(tmp_path, armed=False), None, [bad])
+
+
+# ============================================================
+# stage_openos() -- OpenOS from the jar, to install TOS from
+# ============================================================
+
+def _fake_jar(tmp: Path) -> Path:
+    import zipfile
+    jar = tmp / "ocelot-desktop-v0.jar"
+    with zipfile.ZipFile(jar, "w") as z:
+        z.writestr("assets/opencomputers/loot/openos/init.lua", "-- openos init")
+        z.writestr("assets/opencomputers/loot/openos/lib/shell.lua", "-- shell")
+        z.writestr("assets/opencomputers/loot/openos/../../escape.lua", "nope")
+        z.writestr("assets/opencomputers/lua/bios.lua", "-- the stock Lua BIOS")
+        z.writestr("assets/opencomputers/loot/tape/tape.lua", "-- another disk")
+    return jar
+
+
+def test_stage_openos_copies_only_the_openos_tree(tmp_path):
+    boot, work, bios = hsess.stage_openos(tmp_path / "run", _fake_jar(tmp_path))
+    files = sorted(str(p.relative_to(boot)).replace("\\", "/") for p in boot.rglob("*") if p.is_file())
+    assert files == ["init.lua", "lib/shell.lua"]
+    assert bios.read_text() == "-- the stock Lua BIOS"
+    assert not (tmp_path / "escape.lua").exists()
+
+
+def test_the_install_disk_address_mounts_at_d15():
+    # OpenOS mounts a disk at /mnt/<first three characters of its address>,
+    # and every installer script types /mnt/d15/install.lua.
+    assert hsess.INSTALL_DISK_ADDRESS[:3] == "d15"
+    assert re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                        hsess.INSTALL_DISK_ADDRESS)

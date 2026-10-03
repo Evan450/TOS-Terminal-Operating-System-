@@ -253,7 +253,6 @@ local function printHardwareReport(hw)
   elseif hw.memKB < 1536 then
     warn("TOS will start at the command line: the full interface needs 1.5 MB.")
   end
-  if hw.diskFreeKB < 80 then warn("Low disk space. TOS needs ~80KB minimum.") end
   print()
 end
 
@@ -380,6 +379,45 @@ local function verifyCopy(srcDisk, manifest)
   return missing, sized
 end
 
+-- Bytes the copy will ADD to the target: each file's size, less what a file
+-- already at that path takes (a re-install overwrites it), plus
+-- OpenComputers' per-entry cost (`fileCost`, 512 bytes by default) for every
+-- file and directory that is new. Pure: `size(path)` and `exists(path)` are
+-- passed in, so test_install_space.lua runs it without a machine.
+--
+-- Checked BEFORE anything is written. Without it an install onto a drive
+-- that is too small -- a Tier 2 drive that already holds OpenOS is the
+-- common one -- copied until the drive filled and stopped halfway, which
+-- the README warned about and nothing on screen did.
+local FILE_COST = 512
+local function spaceNeeded(srcDisk, manifest, size, exists)   --[[TEST-EXTRACT]]
+  local need, dirs = 0, {}
+  for _, entry in ipairs(manifest) do
+    local bytes = size(srcDisk .. entry.path) or 0
+    if exists(entry.path) then
+      need = need + math.max(0, bytes - (size(entry.path) or 0))
+    else
+      need = need + bytes + FILE_COST
+    end
+    local dir = entry.path:match("^(.+)/[^/]+$")
+    while dir and dir ~= "" and not dirs[dir] do
+      dirs[dir] = true
+      if not exists(dir) then need = need + FILE_COST end
+      dir = dir:match("^(.+)/[^/]+$")
+    end
+  end
+  return need
+end                                                           --[[/TEST-EXTRACT]]
+
+local function freeOnTarget()
+  local okG, proxy = pcall(fs.get, "/")
+  if not okG or not proxy then return nil end
+  local okT, total = pcall(proxy.spaceTotal)
+  local okU, used = pcall(proxy.spaceUsed)
+  if not (okT and okU) or type(total) ~= "number" or total <= 0 then return nil end
+  return total - used
+end
+
 local function copyFromDisk(srcDisk)
   -- Load manifest first — installer is useless without it.
   local manifest, mErr = loadManifest(srcDisk)
@@ -388,6 +426,22 @@ local function copyFromDisk(srcDisk)
     return false
   end
   ok("Manifest loaded: " .. #manifest .. " files declared")
+
+  local need = spaceNeeded(srcDisk, manifest, fs.size, fs.exists)
+  local free = freeOnTarget()
+  if free and need > free then
+    print()
+    fail(string.format("Not enough space: TOS needs %d KB on this drive, and %d KB is free.",
+      math.ceil(need / 1024), math.floor(free / 1024)))
+    warn("Nothing was copied. Install onto a bigger drive: a Tier 3 drive")
+    warn("(4 MB) holds OpenOS and TOS together; a Tier 2 drive (2 MB) only")
+    warn("holds TOS on its own.")
+    return false, "space"
+  end
+  if free then
+    ok(string.format("Space: TOS needs %d KB, and %d KB is free", math.ceil(need / 1024),
+      math.floor(free / 1024)))
+  end
   print()
 
   -- Pre-create every directory mentioned in the manifest. fs.writeFile
@@ -779,7 +833,9 @@ if diskMode then
   -- the user to proceed to the questionnaire (so config can be saved
   -- against whatever copied successfully), but the BIOS flash gate
   -- below refuses unconditionally.
-  copyOk = copyFromDisk(srcDisk)
+  local copyWhy
+  copyOk, copyWhy = copyFromDisk(srcDisk)
+  if copyWhy == "space" then print(); return end
   if not copyOk then
     fail("Install file copy/verify did NOT fully succeed.")
     warn("BIOS flash will be skipped to avoid bricking the boot.")
@@ -793,7 +849,7 @@ if diskMode then
   if copyOk and hasOpenOsLeftovers() then
     color(0x00AAFF); print("--- Clean install ---"); color(0xFFFFFF)
     color(0xAAAAAA)
-    print("OpenOS library files (/bin, /lib) are still on this drive.")
+    print("OpenOS's own files (/bin, /boot, /lib) are still on this drive.")
     print("TOS doesn't use them. Removing them gives a pristine TOS tree;")
     print("your data (/home, /tmp, /mnt) and config are left untouched.")
     print("This happens last, right before reboot — OpenOS won't be")
@@ -838,7 +894,7 @@ elseif cfg.device == "server" then
 end
 print("  Verbose:    " .. (cfg.verbose and "Yes" or "No"))
 if diskMode and copyOk then
-  print("  Clean inst: " .. (cleanInstall and "Yes (remove /bin, /lib)" or "No"))
+  print("  Clean inst: " .. (cleanInstall and "Yes (remove /bin, /boot, /lib)" or "No"))
 end
 color(0xFFFFFF)
 print()
@@ -905,8 +961,7 @@ elseif diskMode then
 else
   print("Configuration applied!")
 end
-print("First boot: login as root/root — TOS forces a password change before")
-print("anything else, so set your new root password when prompted.")
+print("First boot asks you to set the root password before anything else.")
 if cleanInstall then
   color(0xFFFF00)
   print("Clean install: reboot now — OpenOS libraries were removed.")

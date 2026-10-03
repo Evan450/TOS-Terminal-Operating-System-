@@ -535,7 +535,7 @@ Two gaps flagged in `Plan.md` become blocking rather than tidy-up. One is
 now closed:
 
 - ~~**`jobs.lua` has no unit tests.**~~ **Done** —
-  `TOS-Dev/usr/lib/tests/test_cluster_jobs.lua` covers splitting, retry
+  `usr/lib/tests/test_cluster_jobs.lua` covers splitting, retry
   policy, timeout handling and multi-chunk reassembly, which are the paths
   `cancel` and `retry` drive. The worry that motivated this was that the
   agent would exercise them in orderings no human operator would produce,
