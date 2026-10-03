@@ -96,6 +96,36 @@ local function wallClock()
   return (os.time and os.time()) or computer.uptime()
 end
 
+--! #SEC — the guessing brakes (login's H-5 backoff and sudo's) run on
+--! REAL seconds, never on wallClock(). On OpenComputers os.time() is the
+--! IN-GAME clock: a game day is 86,400 of its seconds and lasts 20 real
+--! minutes, so 72 of them pass every real second. Measured with it, the
+--! first 5 s wait lasted 0.07 s and the 300 s cap about four seconds, and
+--! since one wrong guess costs a password KDF, which takes longer than
+--! that, neither brake ever refused anyone on a real machine. Seen on a
+--! headless OpenComputers machine: a fourth sudo attempt a second after
+--! the third was judged instead of told to wait.
+--! computer.uptime() is real seconds (server ticks) but starts again at
+--! every boot, so a stamp also records WHICH boot it was taken in. From an
+--! earlier boot -- or a bare number an older build wrote -- the time
+--! before the reboot is unknown, and only this boot's uptime counts: a
+--! reboot, which a lone USER may do, can make a wait longer but never
+--! shorter. (test_backoff_clock.lua)
+local function bootNumber()
+  return (_G._TOS and tonumber(_G._TOS.bootCount)) or 0
+end
+local function failStamp()
+  return { boot = bootNumber(), at = computer.uptime() }
+end
+local function sinceFail(stamp)
+  local now = computer.uptime()
+  if type(stamp) == "table" and stamp.boot == bootNumber() then
+    local at = tonumber(stamp.at)
+    if at and at <= now then return now - at end
+  end
+  return now
+end
+
 local function saveDB()
   if not fs then
     if log then log.error("users", "saveDB: fs not initialized") end
@@ -197,8 +227,7 @@ function users.elevate(session, password)
   local acct = s and type(s.user) == "string" and userDB[s.user] or nil
   local cd = acct and loginCooldown(acct.elevFailed) or 0
   if cd > 0 then
-    local elapsed = wallClock() - (tonumber(acct.elevFailedAt) or 0)
-
+    local elapsed = sinceFail(acct.elevFailedAt)
     if elapsed < cd then
       if log then
         log.warn("auth", string.format("Elevation throttled for '%s' (cooldown %ds)",
@@ -223,7 +252,7 @@ function users.elevate(session, password)
   if not ok then
     if acct then
       acct.elevFailed = (tonumber(acct.elevFailed) or 0) + 1
-      acct.elevFailedAt = wallClock()
+      acct.elevFailedAt = failStamp()
       saveDB()
     end
     if log then log.warn("auth", "Failed elevation attempt by " .. tostring(s.user)) end
@@ -780,9 +809,8 @@ function users.login(username, password, opts)
 
   local cd = loginCooldown(user.failedAttempts)
   if cd > 0 then
-    local last = tonumber(user.lastFailedAt) or 0
-    local elapsed = wallClock() - last
 
+    local elapsed = sinceFail(user.lastFailedAt)
     if elapsed < cd then
       local dummy = ensureDummyHash()
       if dummy and crypto and crypto.verifyPassword then
@@ -799,7 +827,7 @@ function users.login(username, password, opts)
   if not verified then
     user.failedAttempts = (user.failedAttempts or 0) + 1
 
-    user.lastFailedAt = wallClock()
+    user.lastFailedAt = failStamp()
     if log then
       log.warn("auth", string.format("Failed login for '%s' (attempt %d)",
         username, user.failedAttempts))

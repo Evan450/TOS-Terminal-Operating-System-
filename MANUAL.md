@@ -421,10 +421,13 @@ A role-aware tutorial then walks you through the basics.
 Passwords are salted and stretched (SHA-256 via the data card, or a software
 KDF). The user DB (`/etc/users.dat`) is admin-readable only and stores no
 plaintext. After repeated failures an account auto-locks (except the `root`
-rescue account); an **exponential login backoff** applies to *every* account and
-survives reboots (so even `root` can't be brute-forced quickly). Login never
-reveals whether a username exists or is locked — wrong credentials always get the
-same generic error.
+rescue account); an **exponential login backoff** applies to *every* account, so
+even `root` can't be brute-forced quickly: after three wrong passwords each
+attempt waits 5 seconds, doubling up to 5 minutes. The wait is real time, the
+count survives a reboot, and rebooting never shortens a wait. `sudo`'s
+elevation password gets the same backoff, per account. Login never reveals
+whether a username exists or is locked — wrong credentials always get the same
+generic error.
 
 Commands: `passwd` (change your own); (admin) `users`; and (root) `useradd`,
 `userdel`, `usermod <user> lock|unlock|admin|user|root`.

@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "348cc634cd5c9e2714a4c50aa772f3eaa847215aa3d8e30adc8cbbb178fd80dc" },
+  { path = "/init.lua",                       critical = true  , hash = "ba4f28d3257fbc4171b04b549dbbad077f719d4f13f52c67ad575ac04bbbfb2c" },
   { path = "/install.lua",                    critical = false , hash = "8b38cbb23b7c710fb9452f1585a3fdf224942bcfc686e8ad68b2a569c4d31482" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "8b7cc28731d4e93804d22f579bdb878ec60170d6d65f6b6173da407a513dc1ef" },
@@ -15,7 +15,7 @@ return {
   { path = "/tos/kernel/screen.lua",          critical = false , hash = "2b0255b3d5410d8e04cfa23894787f54a55f7740239514f1626df91fdd3168e2" },
   { path = "/tos/kernel/clipboard.lua",       critical = false , hash = "dc9c62a8e37662bf6620f0f506c31bda4b39c98c4fdd8eaf3726fd0463a20903" },
   { path = "/tos/kernel/config.lua",          critical = false , hash = "7da7867a1a23048aad91f3b88acff68302057dc06fd87ff1affeae0f9e1d2b7b" },
-  { path = "/tos/kernel/users.lua",           critical = false , hash = "31b49706db0700a75e1331249fa71dd93c859afb59321b9e37007a03752ca787" },
+  { path = "/tos/kernel/users.lua",           critical = false , hash = "2ed2851d166e9b65ed608a48e85f4f160197265dfa998a66ce28b4bff7cdff55" },
   { path = "/tos/kernel/securefs.lua",        critical = false , hash = "da4ebfedb3a3519324e2cc9efb20e942c6ea18a53d83c567b826a2ed494e8356" },
   { path = "/tos/kernel/sandbox.lua",         critical = false , hash = "e1fef2a548ff7a12928744f821850cc347c3cf47b7409521b7022422b1b9cf0d" },
   { path = "/tos/kernel/power.lua",           critical = false , hash = "ab59d36cf2dae36597e255915da349b2a5ee6a26d6b825102c61e84771dde61b" },
