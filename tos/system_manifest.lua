@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "0e7ae58a49a2dac7d44d13130a63730f5a0716549f71186c95f0f40ea82a85e7" },
+  { path = "/init.lua",                       critical = true  , hash = "47c05528d7935109175ff07f61ef0efdc9ccf7ddecd18197c49a50aef8c53432" },
   { path = "/install.lua",                    critical = false , hash = "8b38cbb23b7c710fb9452f1585a3fdf224942bcfc686e8ad68b2a569c4d31482" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "8b7cc28731d4e93804d22f579bdb878ec60170d6d65f6b6173da407a513dc1ef" },
@@ -118,7 +118,7 @@ return {
   { path = "/tos/shell/panels/chatapp.lua",   critical = false , hash = "510692d6764d18613b664b47711d93f85a4c4143dec8b4347a7778d9692704bb" },
 
   { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "c7b7f6a731e73ee956c1bb6e5549a3bfa8268a63f3ebdf57f85fa007893ca3a3" },
-  { path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "589dc0e3b42104ab972c35e434f9d81601175300133c11c578a48964e9190d40" },
+  { path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "d498209337b5e2a4ad8f33831f065996902e778eb579f0d0458f6a030b44f3ff" },
   { path = "/tos/shell/panels/commands/extras.lua", critical = false , hash = "c254611d9e495ce6c88fed832ae05ee4836d7c8b0fab50726b288b63e0f93f24" },
 
   { path = "/tos/compat/init.lua",            critical = false , hash = "478c512d563b85c8bbe854c2b1140ca3c5425476cfcd0cad85c2f87737490df7" },

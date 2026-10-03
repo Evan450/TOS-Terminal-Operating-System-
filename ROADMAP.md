@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**89 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**90 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 65 | Planned or under investigation. Most contributions belong here. |
+| Planned | 66 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (25) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (3)
+**By area:** [Testing in the game](#testing-in-the-game) (25) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -1072,6 +1072,18 @@ Translate TOS to other languages by the following priority table:
 *Planned* · from the round *The open queue, worked through (2026-10-01)*
 
 LICENCE HEADERS -- OPERATOR DECISION. The provenance lint's other half (A PROVENANCE LINT, below) wanted every shipped .lua to carry a licence header. Today 0 of the 197 shipped files do; LICENSE.txt at the root is the whole statement. Two calls are the licence holder's, not a session's: (1) GPL-3.0-only or GPL-3.0-or-later; (2) whether the RELEASE carries it. strip.lua keeps `--!` lines (licence headers are one of the three things it keeps), so a one-line `--! SPDX-License-Identifier: GPL-3.0-or-later` costs 46 bytes in each of the 138 release files: about 6.2 KB on a Tier 2 disk the 2026-09 audit already found tight. A plain `--` header would cost nothing in the release and carry the notice in source only. Once decided, the header goes in mechanically and test\_provenance.py grows the check.
+
+### Rc-pilot cannot be set up from its own instructions
+
+*Planned* · from the round *The open queue, worked through (2026-10-01)*
+
+RC-PILOT CANNOT BE SET UP FROM ITS OWN INSTRUCTIONS. Found 2026-10-03 writing the add-on READMEs. Three gaps at the seam between `rc` and the robot's chip, none of them visible to test\_rc\_pilot.lua, which hands the chip its secret directly:
+
+- The chip reads its secret from the EEPROM DATA field, and nothing on TOS wrote that field: `flash` wrote only the code, `component eeprom setData` is refused (flash is the one EEPROM write path), and the sandbox hides the EEPROM from every program, the root `lua` prompt included. DONE 2026-10-03: `flash <file> --data` asks for it twice, masked, before anything is written, and refuses a BIOS, whose boot address and manifest anchor live in that field. test\_flash\_data.lua drives the real flash: 20 checks, 14 fail on the old code.
+- The robot never says its wireless card's address, and `rc` needs it in full. A robot runs no OS and usually has no screen, so the operator has no way to read it.
+- A chip with no secret ignores every frame without a sound, so a robot set up wrong looks exactly like one out of range.
+
+Plan for the last two (a pack change, so it rides the re-sign): the chip answers an unauthenticated {op="who"} broadcast with {op="here", keyed=true|false}, presence only and never a secret, and `rc scan` lists what answers: the full address, and whether that chip has a secret. Budget: the image is 3,683 of 4,096 bytes.
 
 ### Put the compat number in the README, or decide not to
 

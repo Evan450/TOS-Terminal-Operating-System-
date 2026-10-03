@@ -2473,9 +2473,15 @@ Bring a background/stopped job to the foreground. *See also:* `bg`, `ps`.
 **find** — `find [path] <name-pattern>`
 Search for files by name under a path. *See also:* `grep`, `tree`.
 
-**flash** — `flash <file>` **(root)**
+**flash** — `flash <file> [--data]` **(root)**
 Write a new EEPROM (BIOS) image. *Danger:* a bad image can stop the machine
-booting — keep a known-good EEPROM. *See also:* Chapter 2.
+booting — keep a known-good EEPROM. A file that does not look like a BIOS
+needs `force` typed first; that is expected for a chip going into a robot or
+drone, as long as this computer's own EEPROM goes back in before it restarts.
+`--data` also writes the chip's data field, asked for twice and not shown:
+it is where rc-pilot's robot program keeps its shared secret. A BIOS is
+refused `--data`, because it keeps its boot address there. *See also:*
+Chapter 2.
 
 ### G
 
