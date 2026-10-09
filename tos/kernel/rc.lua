@@ -132,6 +132,212 @@ local function topoSort(svcs)
   return sorted
 end
 
+--! The peek reads CODE, not comments: block comments go first, then the
+--! rest of any line from a `--` that is not inside a string. Reading the
+--! raw source, a comment that mentioned `restart = true` made a service
+--! restart, and one that sketched a caps table stood in for the real
+--! one. (test_rc_peek_decay.lua)
+local function stripComments(src)
+  src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
+  local out = {}
+  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+    local i, inS, inD, cut = 1, false, false, #line
+    while i <= #line do
+      local c = line:sub(i, i)
+      if not inS and not inD and c == "-" and line:sub(i + 1, i + 1) == "-" then
+        cut = i - 1; break
+      end
+      if not inD and c == "'" and line:sub(i - 1, i - 1) ~= "\\" then inS = not inS end
+      if not inS and c == '"' and line:sub(i - 1, i - 1) ~= "\\" then inD = not inD end
+      i = i + 1
+    end
+    out[#out + 1] = line:sub(1, cut)
+  end
+  return table.concat(out, "\n")
+end
+
+local function peekServiceMeta(src)
+
+  local meta = {}
+  local code = stripComments(src)
+  local capsStr = code:match("caps%s*=%s*(%b{})")
+  if capsStr then
+    --! Decoded as DATA (kernel.serialize runs no code), so every literal
+    --! form reads alike: { "net" }, { ["net"] = true } and { net = true }.
+    --! The quoted-name scan read only the first two, so cluster-storaged's
+    --! `net = true` was dropped and the daemon started without the
+    --! network it serves. A table that is not a literal falls back to
+    --! that scan, and normalizeCaps grants only ALLOWED_SERVICE_CAPS
+    --! either way.
+    local okS, ser = pcall(require, "kernel.serialize")
+    local okD, decoded = false, nil
+    if okS and type(ser) == "table" and ser.decode then
+      okD, decoded = pcall(ser.decode, capsStr)
+    end
+    if okD and type(decoded) == "table" then
+      meta.caps = decoded
+    else
+      meta.caps = {}
+      for cap in capsStr:gmatch('"([%w%._]+)"') do
+        meta.caps[#meta.caps + 1] = cap
+      end
+      for cap in capsStr:gmatch("'([%w%._]+)'") do
+        meta.caps[#meta.caps + 1] = cap
+      end
+    end
+  end
+  meta.user = src:match('user%s*=%s*"([%w_-]+)"')
+             or src:match("user%s*=%s*'([%w_-]+)'")
+
+  if meta.user == "_kernel_" then
+    meta._kernelClaimed = true
+  end
+  meta.restart = code:match("restart%s*=%s*true") and true or false
+  local mr = code:match("maxRestart%s*=%s*(%d+)")
+  if mr then meta.maxRestart = tonumber(mr) end
+  return meta
+end
+
+local KERNEL_SERVICE_ALLOWLIST = {
+  ["10-discoveryd"] = true,
+  ["20-chatrelay"]  = true,
+  ["20-fileshare"]  = true,
+  ["20-rshd"]       = true,
+}
+
+local function kernelTokenOutsideComments(src)
+  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+
+    local code = {}
+    local i = 1
+    local inS, inD = false, false
+    while i <= #line do
+      local c = line:sub(i, i)
+      if not inS and not inD and c == "-" and line:sub(i+1, i+1) == "-" then
+        break
+      end
+      if not inD and c == "'" and line:sub(i-1, i-1) ~= "\\" then inS = not inS end
+      if not inS and c == '"' and line:sub(i-1, i-1) ~= "\\" then inD = not inD end
+      code[#code + 1] = c
+      i = i + 1
+    end
+    if table.concat(code):find('"_kernel_"', 1, true)
+       or table.concat(code):find("'_kernel_'", 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+local function buildKernelEnv()
+  local env = {
+
+    assert = assert, error = error, pcall = pcall, xpcall = xpcall,
+    type = type, tostring = tostring, tonumber = tonumber,
+    pairs = pairs, ipairs = ipairs, next = next, select = select,
+    rawequal = rawequal, rawlen = rawlen,
+    setmetatable = setmetatable, getmetatable = getmetatable,
+    math = math, string = string, table = table,
+    utf8 = utf8, coroutine = coroutine,
+    print = print,
+    require = gatedKernelRequire,
+    _VERSION = _VERSION,
+  }
+
+  if _G._TOS then
+    local tos = _G._TOS
+    env._TOS = setmetatable({}, {
+      __index    = tos,
+      __newindex = function(_, k)
+        error("_TOS is read-only from rc.d services (key=" .. tostring(k) .. ")", 2)
+      end,
+      __metatable = false,
+    })
+  end
+  env._G = env
+  return env
+end
+
+local function loadService(name)
+  local registered, failure
+  local path = RC_DIR .. "/" .. name
+  local svcName = name:gsub("%.lua$", "")
+
+  if log then log.info("rc", "Loading: " .. name) end
+
+  local source = fs.readFile(path)
+  if source then
+
+    local meta = peekServiceMeta(source)
+
+    if meta._kernelClaimed then
+      if not KERNEL_SERVICE_ALLOWLIST[svcName] then
+        if log then
+          log.warn("rc", "Refusing kernel-tier service '" .. name ..
+            "': not in C2 allowlist; demoting to user-tier")
+        end
+        meta.user = "root"
+      elseif not kernelTokenOutsideComments(source) then
+        if log then
+          log.warn("rc", "Refusing kernel-tier service '" .. name ..
+            "': _kernel_ token only appears in comments")
+        end
+        meta.user = "root"
+      end
+    end
+
+    local caps = normalizeCaps(meta.caps)
+    local session, sessErr = sessionForUser(meta.user)
+    if not session then
+      failure = "Skipping '" .. name .. "': " .. tostring(sessErr)
+      if log then log.warn("rc", failure) end
+    else
+      local svcEnv
+      if meta.user == "_kernel_" then
+        svcEnv = buildKernelEnv()
+      else
+
+        svcEnv = require("kernel.sandbox").build({
+          caps = caps, session = session,
+          allowUserLibs = true })
+      end
+      local fn, err = load(source, "=" .. path, "t", svcEnv)
+      if fn then
+        local ok, result = pcall(fn)
+        if ok then
+          if type(result) == "table" and result.start then
+
+            local disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled")
+            services[svcName] = {
+              start   = result.start,
+              stop    = result.stop,
+              running = false,
+              disabledAtBoot = disabledAtBoot,
+              path    = path,
+
+              deps    = result.deps or {},
+              restart = meta.restart or (result.restart and true) or false,
+              caps    = caps,
+              user    = meta.user,
+              restartCount = 0,
+              maxRestart   = meta.maxRestart or result.maxRestart or 5,
+            }
+            registered = services[svcName]
+          end
+
+        else
+          failure = "Error in " .. name .. ": " .. tostring(result)
+          if log then log.warn("rc", failure) end
+        end
+      else
+        failure = "Syntax error in " .. name .. ": " .. tostring(err)
+        if log then log.warn("rc", failure) end
+      end
+    end
+  end
+  return registered, failure
+end
+
 function rc.runAll()
   if not fs then return end
   if not fs.exists(RC_DIR) then
@@ -158,211 +364,7 @@ function rc.runAll()
   end
   table.sort(names)
 
-  --! The peek reads CODE, not comments: block comments go first, then the
-  --! rest of any line from a `--` that is not inside a string. Reading the
-  --! raw source, a comment that mentioned `restart = true` made a service
-  --! restart, and one that sketched a caps table stood in for the real
-  --! one. (test_rc_peek_decay.lua)
-  local function stripComments(src)
-    src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
-    local out = {}
-    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-      local i, inS, inD, cut = 1, false, false, #line
-      while i <= #line do
-        local c = line:sub(i, i)
-        if not inS and not inD and c == "-" and line:sub(i + 1, i + 1) == "-" then
-          cut = i - 1; break
-        end
-        if not inD and c == "'" and line:sub(i - 1, i - 1) ~= "\\" then inS = not inS end
-        if not inS and c == '"' and line:sub(i - 1, i - 1) ~= "\\" then inD = not inD end
-        i = i + 1
-      end
-      out[#out + 1] = line:sub(1, cut)
-    end
-    return table.concat(out, "\n")
-  end
-
-  local function peekServiceMeta(src)
-
-    local meta = {}
-    local code = stripComments(src)
-    local capsStr = code:match("caps%s*=%s*(%b{})")
-    if capsStr then
-      --! Decoded as DATA (kernel.serialize runs no code), so every literal
-      --! form reads alike: { "net" }, { ["net"] = true } and { net = true }.
-      --! The quoted-name scan read only the first two, so cluster-storaged's
-      --! `net = true` was dropped and the daemon started without the
-      --! network it serves. A table that is not a literal falls back to
-      --! that scan, and normalizeCaps grants only ALLOWED_SERVICE_CAPS
-      --! either way.
-      local okS, ser = pcall(require, "kernel.serialize")
-      local okD, decoded = false, nil
-      if okS and type(ser) == "table" and ser.decode then
-        okD, decoded = pcall(ser.decode, capsStr)
-      end
-      if okD and type(decoded) == "table" then
-        meta.caps = decoded
-      else
-        meta.caps = {}
-        for cap in capsStr:gmatch('"([%w%._]+)"') do
-          meta.caps[#meta.caps + 1] = cap
-        end
-        for cap in capsStr:gmatch("'([%w%._]+)'") do
-          meta.caps[#meta.caps + 1] = cap
-        end
-      end
-    end
-    meta.user = src:match('user%s*=%s*"([%w_-]+)"')
-               or src:match("user%s*=%s*'([%w_-]+)'")
-
-    if meta.user == "_kernel_" then
-      meta._kernelClaimed = true
-    end
-    meta.restart = code:match("restart%s*=%s*true") and true or false
-    local mr = code:match("maxRestart%s*=%s*(%d+)")
-    if mr then meta.maxRestart = tonumber(mr) end
-    return meta
-  end
-
-  local loaded = {}
-
-  local KERNEL_SERVICE_ALLOWLIST = {
-    ["10-discoveryd"] = true,
-    ["20-chatrelay"]  = true,
-    ["20-fileshare"]  = true,
-    ["20-rshd"]       = true,
-  }
-
-  local function kernelTokenOutsideComments(src)
-    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-
-      local code = {}
-      local i = 1
-      local inS, inD = false, false
-      while i <= #line do
-        local c = line:sub(i, i)
-        if not inS and not inD and c == "-" and line:sub(i+1, i+1) == "-" then
-          break
-        end
-        if not inD and c == "'" and line:sub(i-1, i-1) ~= "\\" then inS = not inS end
-        if not inS and c == '"' and line:sub(i-1, i-1) ~= "\\" then inD = not inD end
-        code[#code + 1] = c
-        i = i + 1
-      end
-      if table.concat(code):find('"_kernel_"', 1, true)
-         or table.concat(code):find("'_kernel_'", 1, true) then
-        return true
-      end
-    end
-    return false
-  end
-
-  local function buildKernelEnv()
-    local env = {
-
-      assert = assert, error = error, pcall = pcall, xpcall = xpcall,
-      type = type, tostring = tostring, tonumber = tonumber,
-      pairs = pairs, ipairs = ipairs, next = next, select = select,
-      rawequal = rawequal, rawlen = rawlen,
-      setmetatable = setmetatable, getmetatable = getmetatable,
-      math = math, string = string, table = table,
-      utf8 = utf8, coroutine = coroutine,
-      print = print,
-      require = gatedKernelRequire,
-      _VERSION = _VERSION,
-    }
-
-    if _G._TOS then
-      local tos = _G._TOS
-      env._TOS = setmetatable({}, {
-        __index    = tos,
-        __newindex = function(_, k)
-          error("_TOS is read-only from rc.d services (key=" .. tostring(k) .. ")", 2)
-        end,
-        __metatable = false,
-      })
-    end
-    env._G = env
-    return env
-  end
-
-  for _, name in ipairs(names) do
-    local path = RC_DIR .. "/" .. name
-    local svcName = name:gsub("%.lua$", "")
-
-    if log then log.info("rc", "Loading: " .. name) end
-
-    local source = fs.readFile(path)
-    if source then
-
-      local meta = peekServiceMeta(source)
-
-      if meta._kernelClaimed then
-        if not KERNEL_SERVICE_ALLOWLIST[svcName] then
-          if log then
-            log.warn("rc", "Refusing kernel-tier service '" .. name ..
-              "': not in C2 allowlist; demoting to user-tier")
-          end
-          meta.user = "root"
-        elseif not kernelTokenOutsideComments(source) then
-          if log then
-            log.warn("rc", "Refusing kernel-tier service '" .. name ..
-              "': _kernel_ token only appears in comments")
-          end
-          meta.user = "root"
-        end
-      end
-
-      local caps = normalizeCaps(meta.caps)
-      local session, sessErr = sessionForUser(meta.user)
-      if not session then
-        if log then
-          log.warn("rc", "Skipping '" .. name .. "': " .. tostring(sessErr))
-        end
-      else
-        local svcEnv
-        if meta.user == "_kernel_" then
-          svcEnv = buildKernelEnv()
-        else
-
-          svcEnv = require("kernel.sandbox").build({
-            caps = caps, session = session,
-            allowUserLibs = true })
-        end
-        local fn, err = load(source, "=" .. path, "t", svcEnv)
-        if fn then
-          local ok, result = pcall(fn)
-          if ok then
-            if type(result) == "table" and result.start then
-
-              local disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled")
-              services[svcName] = {
-                start   = result.start,
-                stop    = result.stop,
-                running = false,
-                disabledAtBoot = disabledAtBoot,
-                path    = path,
-
-                deps    = result.deps or {},
-                restart = meta.restart or (result.restart and true) or false,
-                caps    = caps,
-                user    = meta.user,
-                restartCount = 0,
-                maxRestart   = meta.maxRestart or result.maxRestart or 5,
-              }
-              loaded[svcName] = result
-            else
-              loaded[svcName] = true
-            end
-          else
-            if log then log.warn("rc", "Error in " .. name .. ": " .. tostring(result)) end
-          end
-        else
-          if log then log.warn("rc", "Syntax error in " .. name .. ": " .. tostring(err)) end
-        end
-      end
-    end
-  end
+  for _, name in ipairs(names) do loadService(name) end
 
   local order = topoSort(services)
 
@@ -402,8 +404,26 @@ end
 
 function rc.start(name)
   local svc = services[name]
+  if svc and svc.running then return false, "Already running" end
+
+  --! #SEC — the name becomes a path, so it must stay in /etc/rc.d. A name
+  --! like "../tmp/x" would load /tmp/x.lua as a service, bound to a root
+  --! session: an admin's file run as root. Only a plain file name passes.
+  if type(name) ~= "string" or not name:match("^[%w_][%w_.%-]*$") or name:find("..", 1, true) then
+    return false, "Unknown service: " .. tostring(name)
+  end
+  if fs and fs.exists(RC_DIR .. "/" .. name .. ".lua") then
+    local fresh, why = loadService(name .. ".lua")
+    if not fresh then
+      return false, why or ("Not a service: " .. name)
+    end
+    svc = fresh
+  elseif svc then
+
+    services[name] = nil
+    svc = nil
+  end
   if not svc then return false, "Unknown service: " .. name end
-  if svc.running then return false, "Already running" end
   local ok, err = pcall(svc.start)
   if ok then
     svc.running = true

@@ -1732,6 +1732,22 @@ function pkg.upgrade(name, opts)
                  dropped = orphaned, origin = source, enabled = wasEnabled }
 end
 
+function pkg.forgetModules(paths)
+  local from = package and package.loadedFrom
+  if type(from) ~= "table" or type(paths) ~= "table" then return 0 end
+  local gone = {}
+  for _, p in ipairs(paths) do gone[p] = true end
+  local n = 0
+  for modName, path in pairs(from) do
+    if gone[path] then
+      package.loaded[modName] = nil
+      from[modName] = nil
+      n = n + 1
+    end
+  end
+  return n
+end
+
 function pkg.describeConflicts(list)
   local parts = {}
   for _, c in ipairs(list or {}) do
@@ -2340,6 +2356,8 @@ function pkg.uninstall(name, opts)
       log.warn("pkg", "Could not remove " .. target .. ": " .. tostring(rmErr))
     end
   end
+
+  pkg.forgetModules(m.files)
 
   local destDir = fs.join(PKG_ROOT, name)
   local function rmrf(path)

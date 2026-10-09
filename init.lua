@@ -347,7 +347,7 @@ _G._TOS = {
   version    = "1.5.0",
   codename   = "Aletheia",
 
-  build = "a5ffdde",
+  build = "1448305",
   variant = "minified",
   bootFS     = bootFS,
 
@@ -359,6 +359,8 @@ _G._TOS = {
 
 local loaded = {}
 local loading = {}
+
+local loadedFrom = {}
 
 --! #SEC (pentest, Sep 2026) — /usr/bin is NOT a library root. It held
 --! package COMMAND files, which pkg runs by path inside the package's
@@ -489,6 +491,7 @@ local function tosRequireBody(name)
       end
       if result == nil then result = true end
       loaded[name] = result
+      loadedFrom[name] = path
       return result
     end
     tried[#tried + 1] = path
@@ -516,6 +519,7 @@ loaded["computer"] = computer
 if unicode then loaded["unicode"] = unicode end
 
 _G.package.loaded = loaded
+_G.package.loadedFrom = loadedFrom
 
 local bootcfgMod, bootCfg, verbosity
 do
