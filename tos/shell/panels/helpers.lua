@@ -76,6 +76,24 @@ function M.loadFailure(what, err)
   return what .. " module unavailable: " .. why
 end
 
+function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
+  local T = S.T
+  local text, isError
+  local okSB, sb = pcall(require, "kernel.sandbox")
+  if okSB and type(sb) == "table" and env and sb.finish then sb.finish(env) end
+  if okSB and type(sb) == "table" and sb.describeEnd then
+    text, isError = sb.describeEnd(ok, result)
+  elseif ok then
+    text = result ~= nil and tostring(result) or nil
+  else
+    text, isError = tostring(result), true
+  end
+  if not text then return end
+  if isError then o((errPrefix or "Error: ") .. text, T.error)
+  elseif ok then o(text, T.fg)
+  else o(text, T.dim) end
+end
+
 function M.fmtSz(sz)
   if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
   if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end

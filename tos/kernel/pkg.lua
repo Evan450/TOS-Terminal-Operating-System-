@@ -645,17 +645,7 @@ function pkg.capAllowed(pkgName, facet)
   return false, "not a package-grantable capability"
 end
 
-local function loadPkgEntry(pkgName, m, entryPath)
-  if pkgActive[pkgName] then
-    pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
-    return pkgActive[pkgName]
-  end
-
-  trimCache(lowMemory() and 0 or (PKG_CACHE_MAX - 1))
-  if not fs.exists(entryPath) then return nil end
-  local source = fs.readFile(entryPath)
-  if not source then return nil end
-
+local function grantedCaps(pkgName, m)
   local caps = {}
   if type(m.capabilities) == "table" then
     for _, c in ipairs(m.capabilities) do
@@ -672,6 +662,69 @@ local function loadPkgEntry(pkgName, m, entryPath)
       end
     end
   end
+  return caps
+end
+
+--! An OPPM package has no `commands` table: its programs land in /usr/bin
+--! and the shell runs them as PATH programs, with the shell's fixed set
+--! (fs.read, fs.write, compat.io). So the capabilities granted at install --
+--! the compat surface's `component`, or anything the manifest declared and
+--! the admin accepted -- never reached the program they were granted for,
+--! and the data loot disk's base64 died requiring the data card. The shell
+--! asks this for a resolved PATH program and adds what comes back; a file no
+--! package owns runs exactly as before. (test_pkg_program_caps.lua)
+
+function pkg.capsForFile(path)
+  local owner = pkg.ownerOfFile(path)
+  if owner and pkg.isEnabled(owner) then
+    return grantedCaps(owner, installed[owner]), owner
+  end
+  return nil
+end
+
+function pkg.ownerOfFile(path)
+  if type(path) ~= "string" or path == "" then return nil end
+  local key = targetKey(fs.normalize and fs.normalize(path) or path)
+  for pkgName, m in pairs(installed) do
+    if type(m.files) == "table" then
+      for _, f in ipairs(m.files) do
+        if type(f) == "string" and targetKey(f) == key then return pkgName end
+      end
+    end
+  end
+  return nil
+end
+
+--! A service package that declares defaultState = "disabled" (mail,
+--! intercom, cluster-master, cluster-manager) installs with BOTH its rc.d
+--! boot marker and its package byte off. `service start` cleared only the
+--! marker, so a service the operator had started still read "disabled" to
+--! `pkg list`, `pkg upgrade` reported "(was disabled; left disabled)" for
+--! it (headless machine, 2026-10-08), and its programs never got the
+--! package's caps. Starting the service is the operator's decision to
+--! enable the package, so the byte follows. (test_pkg_service_enable.lua)
+
+function pkg.noteServiceStarted(svcName, opts)
+  local g = adminGate(opts)
+  if not g then return nil end
+  if type(svcName) ~= "string" or not svcName:match("^[%w_%-%.]+$") then return nil end
+  local owner = pkg.ownerOfFile("/etc/rc.d/" .. svcName .. ".lua")
+  if not owner or pkg.isEnabled(owner) then return nil end
+  if pkg.setEnabled(owner, true, opts) then return owner end
+  return nil
+end
+
+local function loadPkgEntry(pkgName, m, entryPath)
+  if pkgActive[pkgName] then
+    pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
+    return pkgActive[pkgName]
+  end
+
+  trimCache(lowMemory() and 0 or (PKG_CACHE_MAX - 1))
+  if not fs.exists(entryPath) then return nil end
+  local source = fs.readFile(entryPath)
+  if not source then return nil end
+  local caps = grantedCaps(pkgName, m)
 
   local okSB, sandbox = pcall(require, "kernel.sandbox")
   if not okSB or not sandbox or not sandbox.build then return nil end

@@ -1842,9 +1842,7 @@ return function(C, S, deps)
       data = nil
       if taskFn then
         local tok, terr = pcall(taskFn, table.unpack(runArgs))
-        if not tok then
-          bgPrint("Error: " .. tostring(terr))
-        end
+        helpers.reportProgramEnd(S, function(t) bgPrint(t) end, tok, terr, "Error: ", taskEnv)
       end
       bgPrint("", "--- Task finished ---")
     end, {
@@ -1867,13 +1865,13 @@ return function(C, S, deps)
     local path = rp(args[1])
     local data = F.readFile(path)
     if not data then o("Cannot read: " .. args[1], T.error); return end
-    local fn2, err2 = load(data, "=" .. args[1], "t", makeProgramEnv{name=args[1], stdout=function(line) o(line, T.fg) end})
+    local runEnv = makeProgramEnv{name=args[1], stdout=function(line) o(line, T.fg) end}
+    local fn2, err2 = load(data, "=" .. args[1], "t", runEnv)
     if not fn2 then o("Compile error: " .. tostring(err2), T.error); return end
     local runArgs = {}
     for i = 2, #args do runArgs[#runArgs+1] = args[i] end
     local ok2, result = pcall(fn2, table.unpack(runArgs))
-    if not ok2 then o("Runtime error: " .. tostring(result), T.error)
-    elseif result ~= nil then o(tostring(result), T.fg) end
+    helpers.reportProgramEnd(S, o, ok2, result, "Runtime error: ", runEnv)
   end
 
   C.lua = function(args, o)
@@ -3080,6 +3078,14 @@ return function(C, S, deps)
     elseif args[1] == "start" and args[2] then
       local ok3, err = rcMod.start(args[2])
       o(ok3 and "Started: " .. args[2] or tostring(err), ok3 and T.highlight or T.error)
+      if ok3 then
+
+        local okP, pkgMod = pcall(require, "kernel.pkg")
+        if okP and type(pkgMod) == "table" and pkgMod.noteServiceStarted then
+          local owner = pkgMod.noteServiceStarted(args[2], { session = helpers.sessionOf(S) })
+          if owner then o("Package '" .. owner .. "' enabled with it.", T.dim) end
+        end
+      end
     elseif args[1] == "stop" and args[2] then
       local ok3, err = rcMod.stop(args[2])
       o(ok3 and "Stopped: " .. args[2] or tostring(err), ok3 and T.highlight or T.error)

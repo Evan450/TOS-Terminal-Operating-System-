@@ -65,12 +65,13 @@ function M.execute(S, action, makeProgramEnv)
     local data = F.readFile(S.ctxPath)
     if not data then o("Cannot read: " .. S.ctxFile.name, T.error)
     else
-      local fn2, err2 = load(data, "=" .. S.ctxFile.name, "t", makeProgramEnv{ name = S.ctxFile.name })
+
+      local runEnv = makeProgramEnv{ name = S.ctxFile.name, stdout = function(line) o(line, T.fg) end }
+      local fn2, err2 = load(data, "=" .. S.ctxFile.name, "t", runEnv)
       if not fn2 then o("Compile error: " .. tostring(err2), T.error)
       else
         local ok2, result = pcall(fn2)
-        if not ok2 then o("Runtime error: " .. tostring(result), T.error)
-        elseif result ~= nil then o(tostring(result), T.fg) end
+        helpers.reportProgramEnd(S, o, ok2, result, "Runtime error: ", runEnv)
       end
     end
     if #buf > 0 then
