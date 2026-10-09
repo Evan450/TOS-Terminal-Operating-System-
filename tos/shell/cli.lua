@@ -352,7 +352,18 @@ function M.run(ctx)
       return (a ~= nil and a:lower():sub(1, 1) == "y") and 1 or 2
     end,
 
-    drawAll        = function() end,     -- nothing to repaint; output already scrolled past
+    -- A built-in that takes the whole screen -- the package picker, the
+    -- tutorial, the tape toolbox -- draws straight to the GPU and calls
+    -- this when it hands back. The CLI keeps no copy of what it printed,
+    -- so it cannot put that back; it does what it does when a full-screen
+    -- program ends (tos_focus): a clean screen, the header and key bar,
+    -- and the prompt on row 3. This was a no-op, and on the headless
+    -- machine quitting the picker left a blank screen and a bare prompt,
+    -- with no header or key bar for the rest of the session. What a
+    -- built-in prints is buffered by the executor and shown after it
+    -- returns, so a command that repaints and then reports (`theme set`)
+    -- still keeps its message. (test_cli_takeover.lua)
+    drawAll        = function() redraw() end,
     drawOutRow     = function(text, color) if text then o(text, color) end end,
   }
 
