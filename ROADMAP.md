@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**84 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 61 | Planned or under investigation. Most contributions belong here. |
+| Planned | 60 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (20) · [Add-ons](#add-ons) (4) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (20) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -397,22 +397,6 @@ SLICE 2: REMOTE. Dependencies across configured repos; the manifest and per-requ
 *Planned* · from the round *Federated package repos (2026-09-27)*
 
 SLICE 3: RESOLUTION. Winner order: one shared copy satisfies everyone &gt; higher trust &gt; newer &gt; less disk; a tie asks. Private copies when no shared copy works; consensus and freshness across mirrors (a signature cannot stop a mirror serving an OLD signed version; agreement between repos can).
-
-### Rebuild and re-sign the Optional Utilities pack
-
-*Planned* · from the round *The mod source is the authority (2026-09-20)*
-
-REBUILD AND RE-SIGN THE OPTIONAL UTILITIES PACK. Needs the OPERATOR: TOS-Extras/dist ships package.sig beside every package.lua, and signing takes TOS\_SIGNING\_PASSPHRASE and TOS\_SIGNING\_NAME from the environment — a secret, deliberately never in argv or in a file (build/README.md). So the tape fix above is in modules/ and NOT in dist/, and test\_build\_disk.lua's "the published pack matches a fresh build" check is RED until the pack is rebuilt:
-
-TOS\_SIGNING\_PASSPHRASE='...' TOS\_SIGNING\_NAME='...' \\
-
-lua TOS-Extras/build/build-disk.lua --sign That red check is the guard doing its job, not a break. Do NOT hand-copy the file into dist/ to silence it: the signature covers the manifest, which covers the hashes, which cover the files, so a hand-patched dist would carry a signature that no longer verifies — strictly worse than a stale one, because pkg would reject it.
-
-DONE once on 2026-09-23 (the pack published 09-24 00:18 UTC is signed). CORRECTION 2026-10-02: it was not current with that day's sources. The two cluster Master fixes landed 40 minutes after it; dist/ was re-signed with them at 03:38 UTC and never pushed. RE-OPENED 2026-10-02 for the queue sweep's add-on changes, to be signed ONCE when they are all in. So far: the new `selftest` package, cluster-master 1.0.2 (the fixes, under a number `pkg upgrade` will offer), tape-authenticator 1.0.3 (which now also names `tape-menu` instead of the retired `launcher tape`), rc-pilot 1.2.0 (it carries the robot's EEPROM image now), and snake 1.0.1 (high scores per player, 2026-10-03). And every package's bytes change once: the pack strips its Lua now. test\_build\_disk.lua is red on them until then. The operator runs, from the TOS source root:
-
-python tos.py pack --sign then publishes the utils branch:  publish.ps1 -Utils -Push
-
-FIRST ATTEMPT 2026-10-03 stopped at the index: make-repo-index refused selftest's manifest, which built its description with `..`. pkg decodes a manifest as data, so the package could not have installed either. On the headless machine: "package.lua parse error: Unexpected character '.'". FIXED the same day: one literal, and build-disk.lua now refuses any manifest pkg cannot decode. dist/ on disk is the UNSIGNED build from that attempt (no package.sig at all), so run `pack --sign` again before publishing.
 
 ### Mount packages as read-only archives instead of extracting them
 
