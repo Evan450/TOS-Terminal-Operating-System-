@@ -704,6 +704,16 @@ function M.run(opts)
       end
     end
 
+    --- The key bar's ground: the ramp, with its caps at the EDGES and
+    --- never inside (rule 3). Whatever the bar says goes on top of it.
+    local function barBase()
+      fill(1, BAR, W, 1, mono and " " or "░", T.dim, T.bg)
+      if not mono then
+        set(1, BAR, "▓▒░", T.dim, T.bg)
+        if W > 6 then set(W - 2, BAR, "░▒▓", T.dim, T.bg) end
+      end
+    end
+
     local function drawFoot()
       -- Narrow screens keep the two-line description footer; wide ones have
       -- the detail panel instead and use the space for the key bar alone.
@@ -724,12 +734,7 @@ function M.run(opts)
           end
         end
       end
-      -- Rule 3 — ramp caps at the EDGES of the key bar, never inside.
-      fill(1, BAR, W, 1, mono and " " or "░", T.dim, T.bg)
-      if not mono then
-        set(1, BAR, "▓▒░", T.dim, T.bg)
-        if W > 6 then set(W - 2, BAR, "░▒▓", T.dim, T.bg) end
-      end
+      barBase()
       local keys = " Space · G Group · / Filter · A All · N None · R +Suggested · Enter Install · Q Quit "
       set(5, BAR, fitTo(keys, W - 9), T.fg, T.bg)
     end
@@ -796,8 +801,14 @@ function M.run(opts)
           if cat then
             local turnedOn, n = toggleGroup(cat)
             redraw()
-            set(2, BAR, fitTo(string.format(" %s %d in %s ",
-              turnedOn and "Selected" or "Cleared", n, catLabel(cat)), W - 6),
+            -- The notice takes the whole bar until the next key repaints
+            -- it. Painted over the start of the key bar instead, it ran
+            -- into the keys left beside it ("Selected 3 in Games  /
+            -- Filter · A All ..." on the headless machine) and covered
+            -- the left cap. (test_picker_bar_notice.lua)
+            barBase()
+            set(5, BAR, fitTo(string.format(" %s %d in %s ",
+              turnedOn and "Selected" or "Cleared", n, catLabel(cat)), W - 9),
               T.title, T.bg)
           end
         elseif ch == 47 or ch == 63 then                      -- / or ? = filter
