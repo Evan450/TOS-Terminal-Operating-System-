@@ -238,6 +238,18 @@ Emulator checklist:
 - put a real OPPM/loot-disk program on a floppy and check it installs AND runs (this is the one off-box tests cannot really prove — they stub the sandbox)
 - two packages shipping the same path: confirm the refusal
 
+MOSTLY DONE 2026-10-08 on the headless machine (a test disk with upsvc 1.0.0 and 2.0.0, and two packages shipping /usr/lib/clash.lua):
+
+- `pkg outdated` lists upsvc 1.0.0 -&gt; 2.0.0; `pkg upgrade` removes the file 2.0.0 dropped and keeps the boot-start choice (a started service still starts at boot afterwards).
+- the clash: "conflicts: /usr/lib/clash.lua is already installed by clasha", and clasha's file is untouched.
+- FOUND AND FIXED: a service installed since boot was "Unknown service" to `service start` until a reboot, and after an upgrade stop+start re-ran the boot-time code ("1.0.0/1.0.0"), then the new script with the OLD library ("2.0.0/1.0.0"). rc.start now loads the script from disk (names that leave /etc/rc.d refused), and an uninstall/upgrade forgets the modules the loader read from the removed files. Now "2.0.0/2.0.0" without a reboot (test\_rc\_reload.lua, test\_pkg\_lifecycle.lua).
+
+STILL OPEN: a real OPPM/loot-disk program; and `pkg upgrade` says
+
+"(was disabled; left disabled)" for a service the operator started
+
+-- that is the package's enable byte, not the boot marker.
+
 ### Emulator checklist: Picker off the floppy round
 
 *Planned* · from the round *Picker off the floppy round (2026-07-29)*

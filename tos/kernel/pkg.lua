@@ -2239,6 +2239,35 @@ function pkg.upgrade(name, opts)
                  dropped = orphaned, origin = source, enabled = wasEnabled }
 end
 
+--- Drop from the module cache every module the kernel loader read from
+--- one of `paths` (package.loadedFrom, kept by /init.lua), so the next
+--- require reads the file on disk. Code still running keeps the table it
+--- already holds.
+---
+--- An rc.d service loads its package's library through the kernel loader
+--- (sandbox.lua, allowUserLibs), which keeps it for the whole boot. On the
+--- headless machine a service restarted after `pkg upgrade` ran its new
+--- script against the OLD library ("2.0.0/1.0.0") until a reboot.
+--- Only modules recorded as coming from those exact files are dropped,
+--- never a name: a package shipping /usr/lib/computer.lua cannot make the
+--- real `computer` be forgotten. Returns how many were dropped.
+--- (test_pkg_lifecycle.lua)
+function pkg.forgetModules(paths)
+  local from = package and package.loadedFrom
+  if type(from) ~= "table" or type(paths) ~= "table" then return 0 end
+  local gone = {}
+  for _, p in ipairs(paths) do gone[p] = true end
+  local n = 0
+  for modName, path in pairs(from) do
+    if gone[path] then
+      package.loaded[modName] = nil
+      from[modName] = nil
+      n = n + 1
+    end
+  end
+  return n
+end
+
 --- One-line summary of a conflict list, for an error message.
 function pkg.describeConflicts(list)
   local parts = {}
@@ -3013,6 +3042,10 @@ function pkg.uninstall(name, opts)
       log.warn("pkg", "Could not remove " .. target .. ": " .. tostring(rmErr))
     end
   end
+  -- And forget the modules the kernel loader read from them. An upgrade is
+  -- this uninstall plus an install, so it is how a restarted service gets
+  -- its new library instead of the cached old one.
+  pkg.forgetModules(m.files)
 
   -- Remove the metadata directory recursively. We could end up with
   -- subdirs (state file is at the top, but future versions might

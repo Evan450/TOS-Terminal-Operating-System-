@@ -452,6 +452,11 @@ _G._TOS = {
 -- ============================================================
 local loaded = {}
 local loading = {}
+-- Which file each module was read from (package.loadedFrom). pkg uses it to
+-- forget exactly the modules whose files it removes, and never a name on
+-- its own: a built-in such as `computer` has no file here, so no package
+-- file can make it be dropped.
+local loadedFrom = {}
 
 -- Kernel /tos first so a package can never shadow a kernel module by name;
 -- user-installed roots after it, in the order pkg uses them.
@@ -648,6 +653,7 @@ local function tosRequireBody(name)
       end
       if result == nil then result = true end
       loaded[name] = result
+      loadedFrom[name] = path
       return result
     end
     tried[#tried + 1] = path
@@ -686,6 +692,7 @@ if unicode then loaded["unicode"] = unicode end
 
 -- Expose loaded table as package.loaded for OpenOS compat
 _G.package.loaded = loaded
+_G.package.loadedFrom = loadedFrom
 
 -- ============================================================
 -- Stage 1b: Boot configuration (the everything → nothing spectrum)

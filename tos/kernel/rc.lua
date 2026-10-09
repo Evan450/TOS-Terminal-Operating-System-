@@ -176,6 +176,280 @@ local function topoSort(svcs)
   return sorted
 end
 
+-- Two-pass load:
+--   Pass A: peek at each script to read the declared `caps` / `user`
+--           fields WITHOUT executing arbitrary service code at root.
+--   Pass B: reload the script inside a sandbox built from those caps
+--           and bound to the declared user's session.
+--
+-- We do the peek by looking for simple literal top-level assignments
+-- in the script source. This is deliberately conservative: a service
+-- that generates its manifest dynamically will fall through to the
+-- default caps, which is the safest possible posture. The review
+-- explicitly called out that the old code ran every rc.d script with
+-- full kernel authority just to read result.caps — now we never do.
+
+--! The peek reads CODE, not comments: block comments go first, then the
+--! rest of any line from a `--` that is not inside a string. Reading the
+--! raw source, a comment that mentioned `restart = true` made a service
+--! restart, and one that sketched a caps table stood in for the real
+--! one. (test_rc_peek_decay.lua)
+local function stripComments(src)
+  src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
+  local out = {}
+  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+    local i, inS, inD, cut = 1, false, false, #line
+    while i <= #line do
+      local c = line:sub(i, i)
+      if not inS and not inD and c == "-" and line:sub(i + 1, i + 1) == "-" then
+        cut = i - 1; break
+      end
+      if not inD and c == "'" and line:sub(i - 1, i - 1) ~= "\\" then inS = not inS end
+      if not inS and c == '"' and line:sub(i - 1, i - 1) ~= "\\" then inD = not inD end
+      i = i + 1
+    end
+    out[#out + 1] = line:sub(1, cut)
+  end
+  return table.concat(out, "\n")
+end
+
+local function peekServiceMeta(src)
+  -- Returns a table of declared metadata fields (caps, user, restart,
+  -- maxRestart, deps). Only accepts simple literal patterns so a
+  -- clever script can't trick the peek into granting itself extra
+  -- caps. Anything the peek can't parse is treated as absent.
+  local meta = {}
+  local code = stripComments(src)
+  local capsStr = code:match("caps%s*=%s*(%b{})")
+  if capsStr then
+    --! Decoded as DATA (kernel.serialize runs no code), so every literal
+    --! form reads alike: { "net" }, { ["net"] = true } and { net = true }.
+    --! The quoted-name scan read only the first two, so cluster-storaged's
+    --! `net = true` was dropped and the daemon started without the
+    --! network it serves. A table that is not a literal falls back to
+    --! that scan, and normalizeCaps grants only ALLOWED_SERVICE_CAPS
+    --! either way.
+    local okS, ser = pcall(require, "kernel.serialize")
+    local okD, decoded = false, nil
+    if okS and type(ser) == "table" and ser.decode then
+      okD, decoded = pcall(ser.decode, capsStr)
+    end
+    if okD and type(decoded) == "table" then
+      meta.caps = decoded
+    else
+      meta.caps = {}
+      for cap in capsStr:gmatch('"([%w%._]+)"') do
+        meta.caps[#meta.caps + 1] = cap
+      end
+      for cap in capsStr:gmatch("'([%w%._]+)'") do
+        meta.caps[#meta.caps + 1] = cap
+      end
+    end
+  end
+  meta.user = src:match('user%s*=%s*"([%w_-]+)"')
+             or src:match("user%s*=%s*'([%w_-]+)'")
+  -- #SEC C2 — the regex peek above can fire on `user = "_kernel_"`
+  -- found inside a comment, docstring, or string literal. Matching
+  -- elevates the service to a kernel-tier sandbox-bypassed env. We
+  -- harden against that two ways:
+  --   (a) only honour `_kernel_` for services whose filename is on a
+  --       hardcoded allowlist;
+  --   (b) ALWAYS verify the match isn't inside a `--` comment.
+  -- Anything else gets demoted to a regular user-tier service.
+  if meta.user == "_kernel_" then
+    meta._kernelClaimed = true
+  end
+  meta.restart = code:match("restart%s*=%s*true") and true or false
+  local mr = code:match("maxRestart%s*=%s*(%d+)")
+  if mr then meta.maxRestart = tonumber(mr) end
+  return meta
+end
+
+-- #SEC C2 — hardcoded allowlist of services that may run as `_kernel_`.
+-- A regex match on the source can be made to fire from inside a comment
+-- or string literal; without this list, any admin who drops a file into
+-- /etc/rc.d gains code execution at root in the next boot.
+local KERNEL_SERVICE_ALLOWLIST = {
+  ["10-discoveryd"] = true,
+  ["20-chatrelay"]  = true,
+  ["20-fileshare"]  = true,
+  ["20-rshd"]       = true,
+}
+
+-- Returns true iff the literal `_kernel_` token appears outside of any
+-- comment in `src`. Cheap line-by-line scan that strips comments first.
+local function kernelTokenOutsideComments(src)
+  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+    -- Strip from `--` onwards, but be string-literal-aware: a `--` inside
+    -- a quoted string doesn't start a comment. Conservative parse:
+    -- walk the line, tracking single/double quote state.
+    local code = {}
+    local i = 1
+    local inS, inD = false, false
+    while i <= #line do
+      local c = line:sub(i, i)
+      if not inS and not inD and c == "-" and line:sub(i+1, i+1) == "-" then
+        break  -- rest of line is comment
+      end
+      if not inD and c == "'" and line:sub(i-1, i-1) ~= "\\" then inS = not inS end
+      if not inS and c == '"' and line:sub(i-1, i-1) ~= "\\" then inD = not inD end
+      code[#code + 1] = c
+      i = i + 1
+    end
+    if table.concat(code):find('"_kernel_"', 1, true)
+       or table.concat(code):find("'_kernel_'", 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+-- #SEC H6 — explicit env for `_kernel_` services. The previous
+-- implementation used `__index = _G` plus `env._G = _G`, which gave
+-- every kernel-tier service full reach into the real global table —
+-- one buggy or compromised allowlisted service had complete authority.
+-- We now hand each service a fixed set of names it actually needs:
+-- pcall/print/string/table/etc, plus an explicit `require` and the
+-- read-only `_TOS` table. Anything else (`debug`, `package`, raw
+-- `os.execute`) is out of reach unless they explicitly require() it,
+-- which the require check below already gates via the safe list.
+-- #SEC CR-6 — gatedKernelRequire (module-level) replaces the raw require.
+local function buildKernelEnv()
+  local env = {
+    -- Base Lua (no debug, no rawset/rawget — same posture as sandbox)
+    assert = assert, error = error, pcall = pcall, xpcall = xpcall,
+    type = type, tostring = tostring, tonumber = tonumber,
+    pairs = pairs, ipairs = ipairs, next = next, select = select,
+    rawequal = rawequal, rawlen = rawlen,
+    setmetatable = setmetatable, getmetatable = getmetatable,
+    math = math, string = string, table = table,
+    utf8 = utf8, coroutine = coroutine,
+    print = print,
+    require = gatedKernelRequire,  -- #SEC CR-6 — gated, not raw
+    _VERSION = _VERSION,
+  }
+  -- _TOS exposed read-only via a metatable so a service can't mutate
+  -- the shared kernel state by clobbering a key.
+  if _G._TOS then
+    local tos = _G._TOS
+    env._TOS = setmetatable({}, {
+      __index    = tos,
+      __newindex = function(_, k)
+        error("_TOS is read-only from rc.d services (key=" .. tostring(k) .. ")", 2)
+      end,
+      __metatable = false,
+    })
+  end
+  env._G = env  -- shadow: code that touches _G sees this env, not real _G
+  return env
+end
+
+--- Load ONE /etc/rc.d script and register it if it is a service: the
+--- peek, the kernel-tier gates, the sandbox and the run, exactly as boot
+--- does them. runAll calls it for every script at boot; rc.start calls it
+--- again so a service starts from the file that is on disk now.
+--- Returns the service record; nil, why for a script that failed to load;
+--- nil for a plain script (it ran) or a file that cannot be read.
+-- #MEM — kernel.sandbox (one of the largest kernel modules) is only
+-- needed to build the env for USER-TIER services. The four shipped
+-- services are all kernel-tier (allowlist below) and use the explicit
+-- env from buildKernelEnv, so a stock install never loads sandbox at
+-- boot; it is require()d at the one call site that needs it (a
+-- third-party/package service), and later by pkg command dispatch.
+local function loadService(name)
+  local registered, failure
+  local path = RC_DIR .. "/" .. name
+  local svcName = name:gsub("%.lua$", "")
+
+  if log then log.info("rc", "Loading: " .. name) end
+
+  local source = fs.readFile(path)
+  if source then
+    -- Peek the declared caps/user before executing anything.
+    local meta = peekServiceMeta(source)
+
+    -- #SEC C2 — gate the kernel-tier claim.
+    if meta._kernelClaimed then
+      if not KERNEL_SERVICE_ALLOWLIST[svcName] then
+        if log then
+          log.warn("rc", "Refusing kernel-tier service '" .. name ..
+            "': not in C2 allowlist; demoting to user-tier")
+        end
+        meta.user = "root"  -- safe default for a former kernel claim
+      elseif not kernelTokenOutsideComments(source) then
+        if log then
+          log.warn("rc", "Refusing kernel-tier service '" .. name ..
+            "': _kernel_ token only appears in comments")
+        end
+        meta.user = "root"
+      end
+    end
+
+    local caps = normalizeCaps(meta.caps)
+    local session, sessErr = sessionForUser(meta.user)
+    if not session then
+      failure = "Skipping '" .. name .. "': " .. tostring(sessErr)
+      if log then log.warn("rc", failure) end
+    else
+      local svcEnv
+      if meta.user == "_kernel_" then
+        svcEnv = buildKernelEnv()
+      else
+        -- allowUserLibs: a service shim may require the library its own
+        -- package installed (`require("mail")`, `require("clusterd")`) —
+        -- the established pattern for every service add-on. It only
+        -- lifts the blocklist for names that resolve under /usr/lib or
+        -- /usr/modules, and rc.d services already carry `net` in their
+        -- default caps, so it widens nothing else. See the note in
+        -- sandbox.lua's makeSafeRequire.
+        svcEnv = require("kernel.sandbox").build({
+          caps = caps, session = session,
+          allowUserLibs = true })
+      end
+      local fn, err = load(source, "=" .. path, "t", svcEnv)
+      if fn then
+        local ok, result = pcall(fn)
+        if ok then
+          if type(result) == "table" and result.start then
+            -- #SVC — a sibling `<name>.disabled` marker (written by pkg.install
+            -- for service packages with defaultState="disabled") means: REGISTER
+            -- this service so `service start` can find it, but do NOT auto-start
+            -- it at boot. Without this the rc loader would start every installed
+            -- daemon on the next boot regardless of the package's disabled state.
+            local disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled")
+            services[svcName] = {
+              start   = result.start,
+              stop    = result.stop,
+              running = false,
+              disabledAtBoot = disabledAtBoot,
+              path    = path,
+              -- Phase 7 fields (from service table).
+              -- `caps`/`user` come from the peek-resolved values so
+              -- rc.list() reports the ENFORCED identity, not whatever
+              -- the service code decided to claim at runtime.
+              deps    = result.deps or {},
+              restart = meta.restart or (result.restart and true) or false,
+              caps    = caps,
+              user    = meta.user,
+              restartCount = 0,
+              maxRestart   = meta.maxRestart or result.maxRestart or 5,
+            }
+            registered = services[svcName]
+          end
+          -- (Anything else was a plain script: it has run, nothing to register.)
+        else
+          failure = "Error in " .. name .. ": " .. tostring(result)
+          if log then log.warn("rc", failure) end
+        end
+      else
+        failure = "Syntax error in " .. name .. ": " .. tostring(err)
+        if log then log.warn("rc", failure) end
+      end
+    end
+  end
+  return registered, failure
+end
+
 --- Run all startup scripts in /etc/rc.d/
 function rc.runAll()
   if not fs then return end
@@ -204,274 +478,9 @@ function rc.runAll()
   end
   table.sort(names)
 
-  -- Two-pass load:
-  --   Pass A: peek at each script to read the declared `caps` / `user`
-  --           fields WITHOUT executing arbitrary service code at root.
-  --   Pass B: reload the script inside a sandbox built from those caps
-  --           and bound to the declared user's session.
-  --
-  -- We do the peek by looking for simple literal top-level assignments
-  -- in the script source. This is deliberately conservative: a service
-  -- that generates its manifest dynamically will fall through to the
-  -- default caps, which is the safest possible posture. The review
-  -- explicitly called out that the old code ran every rc.d script with
-  -- full kernel authority just to read result.caps — now we never do.
-
-  --! The peek reads CODE, not comments: block comments go first, then the
-  --! rest of any line from a `--` that is not inside a string. Reading the
-  --! raw source, a comment that mentioned `restart = true` made a service
-  --! restart, and one that sketched a caps table stood in for the real
-  --! one. (test_rc_peek_decay.lua)
-  local function stripComments(src)
-    src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
-    local out = {}
-    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-      local i, inS, inD, cut = 1, false, false, #line
-      while i <= #line do
-        local c = line:sub(i, i)
-        if not inS and not inD and c == "-" and line:sub(i + 1, i + 1) == "-" then
-          cut = i - 1; break
-        end
-        if not inD and c == "'" and line:sub(i - 1, i - 1) ~= "\\" then inS = not inS end
-        if not inS and c == '"' and line:sub(i - 1, i - 1) ~= "\\" then inD = not inD end
-        i = i + 1
-      end
-      out[#out + 1] = line:sub(1, cut)
-    end
-    return table.concat(out, "\n")
-  end
-
-  local function peekServiceMeta(src)
-    -- Returns a table of declared metadata fields (caps, user, restart,
-    -- maxRestart, deps). Only accepts simple literal patterns so a
-    -- clever script can't trick the peek into granting itself extra
-    -- caps. Anything the peek can't parse is treated as absent.
-    local meta = {}
-    local code = stripComments(src)
-    local capsStr = code:match("caps%s*=%s*(%b{})")
-    if capsStr then
-      --! Decoded as DATA (kernel.serialize runs no code), so every literal
-      --! form reads alike: { "net" }, { ["net"] = true } and { net = true }.
-      --! The quoted-name scan read only the first two, so cluster-storaged's
-      --! `net = true` was dropped and the daemon started without the
-      --! network it serves. A table that is not a literal falls back to
-      --! that scan, and normalizeCaps grants only ALLOWED_SERVICE_CAPS
-      --! either way.
-      local okS, ser = pcall(require, "kernel.serialize")
-      local okD, decoded = false, nil
-      if okS and type(ser) == "table" and ser.decode then
-        okD, decoded = pcall(ser.decode, capsStr)
-      end
-      if okD and type(decoded) == "table" then
-        meta.caps = decoded
-      else
-        meta.caps = {}
-        for cap in capsStr:gmatch('"([%w%._]+)"') do
-          meta.caps[#meta.caps + 1] = cap
-        end
-        for cap in capsStr:gmatch("'([%w%._]+)'") do
-          meta.caps[#meta.caps + 1] = cap
-        end
-      end
-    end
-    meta.user = src:match('user%s*=%s*"([%w_-]+)"')
-               or src:match("user%s*=%s*'([%w_-]+)'")
-    -- #SEC C2 — the regex peek above can fire on `user = "_kernel_"`
-    -- found inside a comment, docstring, or string literal. Matching
-    -- elevates the service to a kernel-tier sandbox-bypassed env. We
-    -- harden against that two ways:
-    --   (a) only honour `_kernel_` for services whose filename is on a
-    --       hardcoded allowlist;
-    --   (b) ALWAYS verify the match isn't inside a `--` comment.
-    -- Anything else gets demoted to a regular user-tier service.
-    if meta.user == "_kernel_" then
-      meta._kernelClaimed = true
-    end
-    meta.restart = code:match("restart%s*=%s*true") and true or false
-    local mr = code:match("maxRestart%s*=%s*(%d+)")
-    if mr then meta.maxRestart = tonumber(mr) end
-    return meta
-  end
-
   -- Phase 1: load all scripts and register service tables
-  -- #MEM — kernel.sandbox (one of the largest kernel modules) is only
-  -- needed to build the env for USER-TIER services. The four shipped
-  -- services are all kernel-tier (allowlist below) and use the explicit
-  -- env from buildKernelEnv, so a stock install never loads sandbox at
-  -- boot; it is require()d at the one call site that needs it (a
-  -- third-party/package service), and later by pkg command dispatch.
-  local loaded = {}  -- svcName -> service table (or true for plain scripts)
+  for _, name in ipairs(names) do loadService(name) end
 
-  -- #SEC C2 — hardcoded allowlist of services that may run as `_kernel_`.
-  -- A regex match on the source can be made to fire from inside a comment
-  -- or string literal; without this list, any admin who drops a file into
-  -- /etc/rc.d gains code execution at root in the next boot.
-  local KERNEL_SERVICE_ALLOWLIST = {
-    ["10-discoveryd"] = true,
-    ["20-chatrelay"]  = true,
-    ["20-fileshare"]  = true,
-    ["20-rshd"]       = true,
-  }
-
-  -- Returns true iff the literal `_kernel_` token appears outside of any
-  -- comment in `src`. Cheap line-by-line scan that strips comments first.
-  local function kernelTokenOutsideComments(src)
-    for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-      -- Strip from `--` onwards, but be string-literal-aware: a `--` inside
-      -- a quoted string doesn't start a comment. Conservative parse:
-      -- walk the line, tracking single/double quote state.
-      local code = {}
-      local i = 1
-      local inS, inD = false, false
-      while i <= #line do
-        local c = line:sub(i, i)
-        if not inS and not inD and c == "-" and line:sub(i+1, i+1) == "-" then
-          break  -- rest of line is comment
-        end
-        if not inD and c == "'" and line:sub(i-1, i-1) ~= "\\" then inS = not inS end
-        if not inS and c == '"' and line:sub(i-1, i-1) ~= "\\" then inD = not inD end
-        code[#code + 1] = c
-        i = i + 1
-      end
-      if table.concat(code):find('"_kernel_"', 1, true)
-         or table.concat(code):find("'_kernel_'", 1, true) then
-        return true
-      end
-    end
-    return false
-  end
-
-  -- #SEC H6 — explicit env for `_kernel_` services. The previous
-  -- implementation used `__index = _G` plus `env._G = _G`, which gave
-  -- every kernel-tier service full reach into the real global table —
-  -- one buggy or compromised allowlisted service had complete authority.
-  -- We now hand each service a fixed set of names it actually needs:
-  -- pcall/print/string/table/etc, plus an explicit `require` and the
-  -- read-only `_TOS` table. Anything else (`debug`, `package`, raw
-  -- `os.execute`) is out of reach unless they explicitly require() it,
-  -- which the require check below already gates via the safe list.
-  -- #SEC CR-6 — gatedKernelRequire (module-level) replaces the raw require.
-  local function buildKernelEnv()
-    local env = {
-      -- Base Lua (no debug, no rawset/rawget — same posture as sandbox)
-      assert = assert, error = error, pcall = pcall, xpcall = xpcall,
-      type = type, tostring = tostring, tonumber = tonumber,
-      pairs = pairs, ipairs = ipairs, next = next, select = select,
-      rawequal = rawequal, rawlen = rawlen,
-      setmetatable = setmetatable, getmetatable = getmetatable,
-      math = math, string = string, table = table,
-      utf8 = utf8, coroutine = coroutine,
-      print = print,
-      require = gatedKernelRequire,  -- #SEC CR-6 — gated, not raw
-      _VERSION = _VERSION,
-    }
-    -- _TOS exposed read-only via a metatable so a service can't mutate
-    -- the shared kernel state by clobbering a key.
-    if _G._TOS then
-      local tos = _G._TOS
-      env._TOS = setmetatable({}, {
-        __index    = tos,
-        __newindex = function(_, k)
-          error("_TOS is read-only from rc.d services (key=" .. tostring(k) .. ")", 2)
-        end,
-        __metatable = false,
-      })
-    end
-    env._G = env  -- shadow: code that touches _G sees this env, not real _G
-    return env
-  end
-
-  for _, name in ipairs(names) do
-    local path = RC_DIR .. "/" .. name
-    local svcName = name:gsub("%.lua$", "")
-
-    if log then log.info("rc", "Loading: " .. name) end
-
-    local source = fs.readFile(path)
-    if source then
-      -- Peek the declared caps/user before executing anything.
-      local meta = peekServiceMeta(source)
-
-      -- #SEC C2 — gate the kernel-tier claim.
-      if meta._kernelClaimed then
-        if not KERNEL_SERVICE_ALLOWLIST[svcName] then
-          if log then
-            log.warn("rc", "Refusing kernel-tier service '" .. name ..
-              "': not in C2 allowlist; demoting to user-tier")
-          end
-          meta.user = "root"  -- safe default for a former kernel claim
-        elseif not kernelTokenOutsideComments(source) then
-          if log then
-            log.warn("rc", "Refusing kernel-tier service '" .. name ..
-              "': _kernel_ token only appears in comments")
-          end
-          meta.user = "root"
-        end
-      end
-
-      local caps = normalizeCaps(meta.caps)
-      local session, sessErr = sessionForUser(meta.user)
-      if not session then
-        if log then
-          log.warn("rc", "Skipping '" .. name .. "': " .. tostring(sessErr))
-        end
-      else
-        local svcEnv
-        if meta.user == "_kernel_" then
-          svcEnv = buildKernelEnv()
-        else
-          -- allowUserLibs: a service shim may require the library its own
-          -- package installed (`require("mail")`, `require("clusterd")`) —
-          -- the established pattern for every service add-on. It only
-          -- lifts the blocklist for names that resolve under /usr/lib or
-          -- /usr/modules, and rc.d services already carry `net` in their
-          -- default caps, so it widens nothing else. See the note in
-          -- sandbox.lua's makeSafeRequire.
-          svcEnv = require("kernel.sandbox").build({
-            caps = caps, session = session,
-            allowUserLibs = true })
-        end
-        local fn, err = load(source, "=" .. path, "t", svcEnv)
-        if fn then
-          local ok, result = pcall(fn)
-          if ok then
-            if type(result) == "table" and result.start then
-              -- #SVC — a sibling `<name>.disabled` marker (written by pkg.install
-              -- for service packages with defaultState="disabled") means: REGISTER
-              -- this service so `service start` can find it, but do NOT auto-start
-              -- it at boot. Without this the rc loader would start every installed
-              -- daemon on the next boot regardless of the package's disabled state.
-              local disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled")
-              services[svcName] = {
-                start   = result.start,
-                stop    = result.stop,
-                running = false,
-                disabledAtBoot = disabledAtBoot,
-                path    = path,
-                -- Phase 7 fields (from service table).
-                -- `caps`/`user` come from the peek-resolved values so
-                -- rc.list() reports the ENFORCED identity, not whatever
-                -- the service code decided to claim at runtime.
-                deps    = result.deps or {},
-                restart = meta.restart or (result.restart and true) or false,
-                caps    = caps,
-                user    = meta.user,
-                restartCount = 0,
-                maxRestart   = meta.maxRestart or result.maxRestart or 5,
-              }
-              loaded[svcName] = result
-            else
-              loaded[svcName] = true  -- plain script, already ran
-            end
-          else
-            if log then log.warn("rc", "Error in " .. name .. ": " .. tostring(result)) end
-          end
-        else
-          if log then log.warn("rc", "Syntax error in " .. name .. ": " .. tostring(err)) end
-        end
-      end
-    end
-  end
 
   -- Phase 2: topological sort by dependencies
   local order = topoSort(services)
@@ -517,8 +526,30 @@ end
 --- Start a specific service by name
 function rc.start(name)
   local svc = services[name]
+  if svc and svc.running then return false, "Already running" end
+  -- Start what is on DISK now. Services were loaded only at boot, so one a
+  -- package installed since then was "Unknown service" until a reboot, and
+  -- after `pkg upgrade` a stop and start re-ran the code loaded at boot:
+  -- the upgrade's own advice, "restart them to run the new code", did
+  -- nothing. Seen on the headless machine. (test_rc_reload.lua)
+  --! #SEC — the name becomes a path, so it must stay in /etc/rc.d. A name
+  --! like "../tmp/x" would load /tmp/x.lua as a service, bound to a root
+  --! session: an admin's file run as root. Only a plain file name passes.
+  if type(name) ~= "string" or not name:match("^[%w_][%w_.%-]*$") or name:find("..", 1, true) then
+    return false, "Unknown service: " .. tostring(name)
+  end
+  if fs and fs.exists(RC_DIR .. "/" .. name .. ".lua") then
+    local fresh, why = loadService(name .. ".lua")
+    if not fresh then
+      return false, why or ("Not a service: " .. name)
+    end
+    svc = fresh
+  elseif svc then
+    -- Its file is gone (the package was removed): never start a ghost.
+    services[name] = nil
+    svc = nil
+  end
   if not svc then return false, "Unknown service: " .. name end
-  if svc.running then return false, "Already running" end
   local ok, err = pcall(svc.start)
   if ok then
     svc.running = true

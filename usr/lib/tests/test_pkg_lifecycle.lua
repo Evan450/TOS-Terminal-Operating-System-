@@ -180,9 +180,29 @@ do
   test("plain install over a newer version is refused", not iOk)
   test("...and names `pkg upgrade`", tostring(iErr):find("pkg upgrade", 1, true) ~= nil)
 
+  -- The kernel loader has v1 cached, as a service started before the
+  -- upgrade would have it, beside a module from another package and one
+  -- the loader read from no file at all (as `computer` is).
+  local savedFrom = package.loadedFrom
+  package.loadedFrom = {
+    ["demo"]      = "/usr/modules/demo/init.lua",
+    ["demo.old"]  = "/usr/modules/demo/old.lua",
+    ["other.lib"] = "/usr/lib/other.lua",
+  }
+  package.loaded["demo"], package.loaded["demo.old"] = { v = 1 }, { v = 1 }
+  package.loaded["other.lib"], package.loaded["builtin.x"] = { v = 1 }, { v = 1 }
+
   local uOk, res = pkg.upgrade("demo", { session = ADMIN })
   test("upgrade succeeds", uOk)
   eq("registry now says v2", "2.0.0", pkg.info("demo").version)
+  -- On the headless machine a service restarted after an upgrade ran its
+  -- new script against the OLD library until a reboot.
+  eq("the cached v1 module is forgotten, so the next require reads v2", nil, package.loaded["demo"])
+  eq("...and the one from the file v2 dropped", nil, package.loaded["demo.old"])
+  test("...but another package's module is kept", package.loaded["other.lib"] ~= nil)
+  test("...and so is one read from no file", package.loaded["builtin.x"] ~= nil)
+  package.loaded["other.lib"], package.loaded["builtin.x"] = nil, nil
+  package.loadedFrom = savedFrom
   eq("upgrade reports the jump", "1.0.0", res and res.from)
   -- The reason upgrade can't just be "install over the top": the file the
   -- new version stopped shipping has to go, or it is stranded forever.
