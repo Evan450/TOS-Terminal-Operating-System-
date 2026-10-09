@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "e5c3487e3d3b68a455bd931a4b8154cb1fe18bb75b32c6780aef355526db4b4c" },
+  { path = "/init.lua",                       critical = true  , hash = "795d09da2adcd24115518593092f762bed883fd645c6f12c088812e4ec0a7fed" },
   { path = "/install.lua",                    critical = false , hash = "8b38cbb23b7c710fb9452f1585a3fdf224942bcfc686e8ad68b2a569c4d31482" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "8b7cc28731d4e93804d22f579bdb878ec60170d6d65f6b6173da407a513dc1ef" },
@@ -72,7 +72,7 @@ return {
 
   { path = "/tos/shell/init.lua",             critical = true  , hash = "872815bc384d85c42e896decb0ccca99e26f3563f6e208f071bca3a3f2885dd4" },
 
-  { path = "/tos/shell/cli.lua",              critical = true  , hash = "baf6d7c573b3a4c346b71364697fdc1ed1277ac7dfea3710e3319d3c2d2d1d5c" },
+  { path = "/tos/shell/cli.lua",              critical = true  , hash = "f7f705712c6ebe72380128cdea8423b74c5c0ebe5ec67052cf8b50853a997018" },
 
   { path = "/tos/shell/progenv.lua",          critical = false , hash = "2549d6849bc5e0d6d715ce9d5c6155dc807a3c3a120d5f3961a79cef3b09f389" },
 

@@ -249,7 +249,7 @@ function M.run(ctx)
       return (a ~= nil and a:lower():sub(1, 1) == "y") and 1 or 2
     end,
 
-    drawAll        = function() end,
+    drawAll        = function() redraw() end,
     drawOutRow     = function(text, color) if text then o(text, color) end end,
   }
 
