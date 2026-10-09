@@ -1,6 +1,6 @@
 return {
 
-  { path = "/init.lua",                       critical = true  , hash = "795d09da2adcd24115518593092f762bed883fd645c6f12c088812e4ec0a7fed" },
+  { path = "/init.lua",                       critical = true  , hash = "d9b336de4139cc78c8d4c8db2bf3b1b99aa2494eb39ff2239c1d247189f0690c" },
   { path = "/install.lua",                    critical = false , hash = "8b38cbb23b7c710fb9452f1585a3fdf224942bcfc686e8ad68b2a569c4d31482" },
 
   { path = "/tos/kernel/init.lua",            critical = true  , hash = "8b7cc28731d4e93804d22f579bdb878ec60170d6d65f6b6173da407a513dc1ef" },
@@ -83,7 +83,7 @@ return {
   { path = "/tos/shell/syntax.lua",           critical = false , hash = "727c8ac8b9f3f47dd109bb118ae61c34ba80f3403eb850935a1b5e03c4dbb83c" },
   { path = "/tos/shell/chat.lua",             critical = false , hash = "6fbaebe457449f9817ec8139b12ab299ed651946cfca1c4afa82fb88ae1aafc4" },
   { path = "/tos/shell/clustersetup.lua",     critical = false , hash = "e0c8a759eb50fde4bf902af56f8febc0cd85057ddf33b4057d12294ea3f4c78a" },
-  { path = "/tos/shell/pkgpicker.lua",        critical = false , hash = "9a2c445df0bb1670e27f36e1fa7284322f7af09246432e0033f7ef83d4dd300f" },
+  { path = "/tos/shell/pkgpicker.lua",        critical = false , hash = "9212b42323f5d2a81c6f8b2b372245870482a0af09afa89ee789c6a354f51287" },
   { path = "/tos/shell/tutorial.lua",         critical = false , hash = "0d4c2d65f8835d69e8ef1cb26319bf617a89592e22b776d4557272709ccd74a3" },
   { path = "/tos/shell/kiosk.lua",            critical = false , hash = "afb1850fad44654876cfb186cad91d8d6579b695801f8fc3e1f1aeb9d091091c" },
   { path = "/tos/shell/launcher.lua",         critical = false , hash = "0fa4a0588082907673dcc39c13d335a0aa98a157d82e5fc240ef030ee71a9358" },

@@ -550,6 +550,14 @@ function M.run(opts)
       end
     end
 
+    local function barBase()
+      fill(1, BAR, W, 1, mono and " " or "░", T.dim, T.bg)
+      if not mono then
+        set(1, BAR, "▓▒░", T.dim, T.bg)
+        if W > 6 then set(W - 2, BAR, "░▒▓", T.dim, T.bg) end
+      end
+    end
+
     local function drawFoot()
 
       if not twoPane then
@@ -569,12 +577,7 @@ function M.run(opts)
           end
         end
       end
-
-      fill(1, BAR, W, 1, mono and " " or "░", T.dim, T.bg)
-      if not mono then
-        set(1, BAR, "▓▒░", T.dim, T.bg)
-        if W > 6 then set(W - 2, BAR, "░▒▓", T.dim, T.bg) end
-      end
+      barBase()
       local keys = " Space · G Group · / Filter · A All · N None · R +Suggested · Enter Install · Q Quit "
       set(5, BAR, fitTo(keys, W - 9), T.fg, T.bg)
     end
@@ -635,8 +638,10 @@ function M.run(opts)
           if cat then
             local turnedOn, n = toggleGroup(cat)
             redraw()
-            set(2, BAR, fitTo(string.format(" %s %d in %s ",
-              turnedOn and "Selected" or "Cleared", n, catLabel(cat)), W - 6),
+
+            barBase()
+            set(5, BAR, fitTo(string.format(" %s %d in %s ",
+              turnedOn and "Selected" or "Cleared", n, catLabel(cat)), W - 9),
               T.title, T.bg)
           end
         elseif ch == 47 or ch == 63 then
