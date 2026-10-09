@@ -175,6 +175,37 @@ end
 -- Trimmed os table — drops functions that would bypass securefs
 -- or leak machine info a user program has no business touching.
 -- ============================================================
+-- OC's `unicode` library, probed the way kernel.ustr does (/init.lua puts
+-- it in package.loaded); absent off-box, where a sandbox simply has none.
+local unicodeLib = nil
+do
+  local okU, u = pcall(require, "unicode")
+  if okU and type(u) == "table" then unicodeLib = u end
+end
+
+-- checkArg exactly as OpenComputers' machine.lua defines it.
+local function sandboxCheckArg(n, have, ...)
+  have = type(have)
+  for i = 1, select("#", ...) do
+    if have == select(i, ...) then return end
+  end
+  error(string.format("bad argument #%d (%s expected, got %s)",
+    n, table.concat({ ... }, " or "), have), 3)
+end
+
+--! os.exit for a sandboxed program. OpenOS ends a program with
+--! os.exit([code]), and a PATH program here has no process of its own to
+--! end -- it runs inline, in the shell's. So exit raises an error carrying
+--! this private key, and every runner asks sandbox.exitStatus() before
+--! calling an error a failure. A program cannot forge it (the key is not
+--! reachable); it can only re-raise its own, which is just exiting.
+local EXIT_KEY = {}
+-- env -> flush its pending output line (sandbox.finish). Weak: an env the
+-- runner forgot to finish is collected with the program.
+local finishers = setmetatable({}, { __mode = "k" })
+local EXIT_MT = { __tostring = function(e) return "exit " .. tostring(rawget(e, "code")) end,
+                  __metatable = false }
+
 local function makeSafeOs()
   return {
     time     = os.time,
@@ -187,7 +218,21 @@ local function makeSafeOs()
     -- (including getenv) must request the `legacy` cap, which exposes the
     -- real os table below.
     -- os.remove / os.rename intentionally omitted — use fs/filesystem.
-    -- os.execute / os.exit intentionally omitted.
+    -- os.execute intentionally omitted.
+    --! sleep and exit are how OpenOS programs pause and end, and neither is
+    --! authority: sleep yields this process (kernel.process.sleep; outside
+    --! one it pulls through the event layer, as that function documents),
+    --! and exit ends only the program that calls it.
+    sleep = function(seconds)
+      local okP, procMod = pcall(require, "kernel.process")
+      if okP and type(procMod) == "table" and type(procMod.sleep) == "function" then
+        return procMod.sleep(tonumber(seconds) or 0)
+      end
+      error("os.sleep: the process scheduler is unavailable", 2)
+    end,
+    exit = function(code)
+      error(setmetatable({ [EXIT_KEY] = true, code = code }, EXIT_MT), 0)
+    end,
   }
 end
 
@@ -591,6 +636,49 @@ local function makeSafeComponent(caps)
   return safe
 end
 
+--! OpenOS's component library answers a TYPE NAME with that type's primary
+--! device -- component.gpu, component.data -- and that is how nearly every
+--! OpenOS program finds its hardware. A sandbox's `component` had no such
+--! field, so the data loot disk's data.lua died on `component.data[key]`
+--! (headless machine, 2026-10-09); only require("compat.component") had it,
+--! under the same `component` cap. Now the env's `component`, require
+--! ("component") and require("compat.component") are this one view.
+--! It reads through to the FILTERED table and resolves a type through its
+--! getPrimary/list/proxy, so a type the caps refuse is nil and a seat-scoped
+--! type is this seat's: no authority the table itself did not carry.
+--! (test_sandbox_openos_names.lua)
+local function componentFieldView(safe)
+  local function primary(ctype)
+    local okP, px = pcall(safe.getPrimary, ctype)
+    if okP and px then return px end
+    local okL, it = pcall(safe.list, ctype, true)
+    if okL and type(it) == "function" then
+      local addr = it()
+      if addr then return (safe.proxy(addr)) end
+    end
+    return nil
+  end
+  return setmetatable({}, {
+    __index = function(_, key)
+      local v = safe[key]
+      if v ~= nil then return v end
+      if type(key) == "string" then return primary(key) end
+      return nil
+    end,
+    -- Walks the library's functions without handing back the table itself.
+    __pairs = function()
+      local k
+      return function()
+        local v
+        k, v = next(safe, k)
+        return k, v
+      end
+    end,
+    __newindex  = function() error("component view is read-only", 2) end,
+    __metatable = false,
+  })
+end
+
 -- ============================================================
 -- Capability-checked require. Never returns a kernel.* module;
 -- only modules that live under /usr/lib, /usr/modules, or the
@@ -872,13 +960,36 @@ local COMPAT_FILE_CAP = {
   ["compat.shell_api"]  = "compat.io",
 }
 
+--! The OpenOS library names, each answered with the compat module that
+--! stands in for it. An OpenOS program says require("shell"), never
+--! require("compat.shell_api"), and the kernel's own require maps the names
+--! (OPENOS_SHIMS in /init.lua) -- but this require never did. "shell" and
+--! "filesystem" were refused outright as TOS internals and the rest were
+--! "not on the allowed list", so a foreign package installed, was granted
+--! the compat surface, and died on line 1. Found 2026-10-09 running the
+--! data loot disk's base64 on the headless machine.
+--! The alias goes through THIS require under the compat name, so it is
+--! answered exactly as `require("compat.x")` already was: the same cap
+--! (COMPAT_FILE_CAP, compat.internet's), the same isolated view and the
+--! same per-program bindings (term.gpu, process.info). It grants nothing
+--! that name did not. (test_sandbox_openos_names.lua)
+local OPENOS_NAMES = {
+  sides = "compat.sides", colors = "compat.colors", keyboard = "compat.keyboard",
+  text = "compat.text", serialization = "compat.serialization",
+  buffer = "compat.buffer", term = "compat.term", event = "compat.event",
+  shell = "compat.shell_api", filesystem = "compat.filesystem", io = "compat.io",
+  internet = "compat.internet", robot = "compat.robot",
+  process = "compat.process", note = "compat.note",
+}
+
 local function makeSafeRequire(opts, prebound, envRef)
   local cache = {}
   local loading = {}
   if prebound then
     for k, v in pairs(prebound) do cache[k] = v end
   end
-  return function(name)
+  local safeRequire
+  safeRequire = function(name)
     if type(name) ~= "string" then
       error("bad argument #1 to 'require' (string expected)", 2)
     end
@@ -886,6 +997,38 @@ local function makeSafeRequire(opts, prebound, envRef)
 
     if isKernelModule(name) then
       error("sandbox: cannot require kernel module '" .. name .. "'", 2)
+    end
+
+    -- OpenOS globals a program may also require by name: the env's own
+    -- copy, so require("unicode") == unicode as it is on OpenOS.
+    if name == "unicode" then
+      local u = envRef and envRef.env and envRef.env.unicode
+      if u == nil then error("sandbox: module 'unicode' is not available", 2) end
+      cache[name] = u
+      return u
+    end
+
+    local alias = OPENOS_NAMES[name]
+    if alias then
+      -- Safe Mode turns the compat layer off; the kernel's require refuses
+      -- these names then, and so does this one.
+      local T = _G._TOS
+      if T and T.compatDisabled then
+        error("sandbox: '" .. name .. "' is OpenOS's, and the compat layer is off in this boot profile", 2)
+      end
+      -- io and filesystem are already this env's globals under compat.io
+      -- (or the real ones under legacy); hand back the same tables.
+      local env = envRef and envRef.env
+      if (name == "io" or name == "filesystem") and env and env[name] ~= nil then
+        cache[name] = env[name]
+        return env[name]
+      end
+      local okA, mod = pcall(safeRequire, alias)
+      if not okA then
+        error("sandbox: require('" .. name .. "'): " .. tostring(mod):gsub("^sandbox: ", ""), 2)
+      end
+      cache[name] = mod
+      return mod
     end
 
     --! #SEC (pentest, Sep 2026) — two compat names are CAPABILITIES, not
@@ -901,23 +1044,12 @@ local function makeSafeRequire(opts, prebound, envRef)
     --!     component route. It now needs the `internet` cap.
     --! (test_sandbox_compat_caps.lua)
     if name == "compat.component" then
-      local safeC = prebound and prebound.component
-      if not safeC then
+      -- The same field-access view the env's `component` already is (see
+      -- componentFieldView), never one over the raw library.
+      local view = prebound and prebound.component
+      if not view then
         error("sandbox: 'compat.component' needs the component capability", 2)
       end
-      local view = setmetatable({}, {
-        __index = function(_, key)
-          local v = safeC[key]
-          if v ~= nil then return v end
-          if type(key) == "string" then
-            local okP, px = pcall(safeC.getPrimary, key)
-            if okP then return px end
-          end
-          return nil
-        end,
-        __newindex  = function() error("component view is read-only", 2) end,
-        __metatable = false,
-      })
       cache[name] = view
       return view
     end
@@ -1074,6 +1206,7 @@ local function makeSafeRequire(opts, prebound, envRef)
 
     error("sandbox: module '" .. name .. "' is not on the allowed list", 2)
   end
+  return safeRequire
 end
 
 -- ============================================================
@@ -1132,13 +1265,18 @@ function sandbox.build(opts)
 
   -- Output stream: opts.stdout is a function(text) — if absent, fall
   -- through to the global print so CLI scripts still produce output.
+  -- printSink is set below when io.write shares the runner's stdout, so
+  -- print and io.write keep their order.
+  local printSink = nil
   local function sandboxPrint(...)
     local parts = {}
     for i = 1, select("#", ...) do
       parts[i] = tostring(select(i, ...))
     end
     local line = table.concat(parts, "\t")
-    if opts.stdout then
+    if printSink then
+      printSink(line)
+    elseif opts.stdout then
       opts.stdout(line)
     elseif type(print) == "function" then
       -- OC's sandbox ships `print = nil` (machine.lua: "in boot/*_base.lua");
@@ -1157,9 +1295,19 @@ function sandbox.build(opts)
   -- is still useful on tables the sandbox itself owns, so we leave that
   -- intact but block the string-library attack by forbidding attempts to
   -- reach the string metatable.
+  --! On a REAL machine stringMT is nil: OpenComputers' machine.lua wraps
+  --! getmetatable so that getmetatable("") answers nil ("don't allow
+  --! messing with the string mt"). The comparison below then matched every
+  --! ABSENT field -- nil == nil -- so setmetatable refused any metatable
+  --! lacking one of __index, __newindex or __metatable, i.e. nearly all of
+  --! them: the data loot disk's data.lua, and the printer add-on's own
+  --! setmetatable(self, Printer). Off-box Lua has a real string metatable,
+  --! so no test ever saw it. Only a value that IS the string library or
+  --! its metatable is refused. (test_sandbox_setmetatable_oc.lua)
   local stringMT = getmetatable("")
   local realStringLib = string
   local function refersToString(v)
+    if v == nil then return false end
     return v == stringMT or v == realStringLib
   end
   local function safeGetMetatable(v)
@@ -1167,7 +1315,7 @@ function sandbox.build(opts)
       return nil  -- hide the shared string metatable entirely
     end
     local mt = getmetatable(v)
-    if mt == stringMT then return nil end
+    if stringMT ~= nil and mt == stringMT then return nil end
     return mt
   end
   local function safeSetMetatable(t, mt)
@@ -1198,7 +1346,7 @@ function sandbox.build(opts)
   -- returned both as globals and via require("component") / require("computer").
   local safeComp, safeCompr
   if caps["component"] then
-    safeComp  = makeSafeComponent(caps)
+    safeComp  = componentFieldView(makeSafeComponent(caps))
     safeCompr = makeSafeComputer()
   end
   local prebound = {}
@@ -1235,6 +1383,13 @@ function sandbox.build(opts)
     table       = shallowCopy(table),
     utf8        = utf8 and shallowCopy(utf8) or nil,
     coroutine   = shallowCopy(coroutine),
+    --! Two globals every OpenComputers program is born with (machine.lua
+    --! defines them before any OS runs) and OpenOS code leans on: unicode
+    --! for screen-width-aware strings, checkArg at the top of most library
+    --! functions. Both are pure; neither was here, so OpenOS code died on
+    --! its first unicode.len or checkArg.
+    unicode     = unicodeLib and shallowCopy(unicodeLib) or nil,
+    checkArg    = sandboxCheckArg,
 
     -- Bound I/O
     print       = sandboxPrint,
@@ -1314,6 +1469,83 @@ function sandbox.build(opts)
     local okLog, logMod = pcall(require, "kernel.log")
     if okLog and logMod and logMod.warn then
       logMod.warn("sandbox", "Built env with legacy cap — full os/io exposed")
+    end
+  end
+
+  --! A runner that hands the program an output function (the shell does:
+  --! stdout = o(line)) is saying where the program's output goes. print
+  --! always went there; io.write, io.stdout and io.stderr went to
+  --! compat.term -- straight onto the GPU -- and the shell's repaint wiped
+  --! them, so the data loot disk's base64 ran and showed nothing on either
+  --! shell (headless machine, 2026-10-09). Now all of them feed ONE line
+  --! sink, so io.write("a") print("b") keeps its order, and a last line
+  --! with no newline comes out when the runner calls sandbox.finish(env).
+  --! The program also gets its OWN default streams. compat.io keeps them
+  --! per process, and a PATH program runs inline in the shell's process, so
+  --! one program's io.output(f) used to become the shell's -- and the next
+  --! program run from it wrote into f. (test_sandbox_openos_names.lua)
+  if caps["compat.io"] and not caps["legacy"] and type(opts.stdout) == "function"
+     and type(env.io) == "table" then
+    local okB, bufferMod = pcall(require, "compat.buffer")
+    if okB and type(bufferMod) == "table" and type(bufferMod.new) == "function" then
+      local stdout, pending = opts.stdout, ""
+      local function emit(text)
+        pending = pending .. text
+        local start = 1
+        while true do
+          local nl = pending:find("\n", start, true)
+          if not nl then break end
+          stdout(pending:sub(start, nl - 1))
+          start = nl + 1
+        end
+        pending = pending:sub(start)
+      end
+      local function sinkStream()
+        return bufferMod.new("w", { write = function(_, data) emit(data) end,
+                                    close = function() end })
+      end
+      local real = env.io
+      local out, errS = sinkStream(), sinkStream()
+      local D = { input = real.stdin, output = out }
+      local function isStd(s) return s == out or s == errS or s == real.stdin end
+      local function swap(field, file, mode)
+        if type(file) == "string" then
+          local f, e = real.open(file, mode)
+          if not f then error(e, 3) end
+          file = f
+        end
+        local old = D[field]
+        if old ~= file and not isStd(old) and type(old) == "table"
+           and type(old.close) == "function" then
+          pcall(old.close, old)
+        end
+        D[field] = file
+      end
+      env.io = setmetatable({
+        stdout = out,
+        stderr = errS,
+        output = function(file) if file then swap("output", file, "w") end; return D.output end,
+        input  = function(file) if file then swap("input", file, "r") end; return D.input end,
+        write  = function(...) return D.output:write(...) end,
+        read   = function(...) return D.input:read(...) end,
+        lines  = function(path, ...)
+          if path == nil then return D.input:lines() end
+          return real.lines(path, ...)
+        end,
+        close  = function(file)
+          file = file or D.output
+          if isStd(file) then return true end
+          return file:close()
+        end,
+      }, { __index = real, __metatable = false })
+      printSink = function(line) emit(line .. "\n") end
+      finishers[env] = function()
+        if pending ~= "" then
+          local last = pending
+          pending = ""
+          stdout(last)
+        end
+      end
     end
   end
 
@@ -1564,6 +1796,42 @@ function sandbox.run(src, chunkname, opts, ...)
     return false, "compile error: " .. tostring(err)
   end
   return pcall(fn, ...)
+end
+
+--- A program has ended (however it ended): flush the last line it wrote
+--- without a newline to the runner's stdout. Runners that pass `stdout`
+--- call this; for any other env it does nothing.
+function sandbox.finish(env)
+  local f = finishers[env]
+  if f then
+    finishers[env] = nil
+    pcall(f)
+  end
+end
+
+--- Did a program's error come from os.exit? Returns its status -- the
+--- code it passed, or true for a bare os.exit() -- or nil for a real error.
+function sandbox.exitStatus(err)
+  if type(err) == "table" and rawget(err, EXIT_KEY) == true then
+    local code = rawget(err, "code")
+    if code == nil then return true end
+    return code
+  end
+  return nil
+end
+
+--- How a runner reports a program's end: (text, isError), or nil when there
+--- is nothing to say. os.exit() / exit(true) / exit(0) is a clean end; any
+--- other status is reported, dimly, as a status rather than as an error.
+function sandbox.describeEnd(ok, result)
+  if ok then
+    if result ~= nil then return tostring(result), false end
+    return nil
+  end
+  local code = sandbox.exitStatus(result)
+  if code == nil then return tostring(result), true end
+  if code == true or code == 0 then return nil end
+  return "exited with status " .. tostring(code), false
 end
 
 return sandbox

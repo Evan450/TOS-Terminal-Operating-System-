@@ -147,7 +147,15 @@ function shell.execute(command, ...)
   if not fn then
     return false, "Compile error: " .. tostring(err)
   end
-  return pcall(fn, ...)
+  local res = table.pack(pcall(fn, ...))
+  -- A child that called os.exit ended, it did not fail: OpenOS's
+  -- shell.execute answers true for exit(0)/exit(true).
+  if not res[1] and sandbox.exitStatus then
+    local code = sandbox.exitStatus(res[2])
+    if code == true or code == 0 then return true end
+    if code ~= nil then return false, "exited with status " .. tostring(code) end
+  end
+  return table.unpack(res, 1, res.n)
 end
 
 --- Parse a command line into program name and arguments.

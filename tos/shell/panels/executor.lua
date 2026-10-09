@@ -383,11 +383,19 @@ function M.build(S, deps)
       if resolved then
         local data = F.readFile(resolved)
         if data then
-          local fn2, err2 = load(data, "=" .. resolved, "t", makeProgramEnv{ name = resolved, stdout = function(line) o(line, T.fg) end })
+          -- A program a package installed runs with what that package was
+          -- granted at install (pkg.capsForFile), on top of the usual set.
+          local pkgCaps = nil
+          local okPk, pkgMod = pcall(require, "kernel.pkg")
+          if okPk and type(pkgMod) == "table" and pkgMod.capsForFile then
+            pkgCaps = pkgMod.capsForFile(resolved)
+          end
+          local progEnv = makeProgramEnv{ name = resolved,
+            caps = pkgCaps, stdout = function(line) o(line, T.fg) end }
+          local fn2, err2 = load(data, "=" .. resolved, "t", progEnv)
           if fn2 then
             local ok2, result = pcall(fn2, table.unpack(args))
-            if not ok2 then o("Error: " .. tostring(result), T.error)
-            elseif result ~= nil then o(tostring(result), T.fg) end
+            helpers.reportProgramEnd(S, o, ok2, result, "Error: ", progEnv)
             -- Same stale-shadow risk as package commands: a /usr/bin
             -- program can draw raw via its sandbox capabilities.
             invalidateDisplay()

@@ -89,6 +89,30 @@ function M.loadFailure(what, err)
   return what .. " module unavailable: " .. why
 end
 
+--- Report how a sandboxed program ended, through `o(text, colour)`. `ok`
+--- and `result` are what pcall returned. An os.exit() is a clean end, not
+--- an "Error: exit 0" -- kernel.sandbox knows the difference, and every
+--- runner (PATH, run, bg, the file browser) asks it the same way. `env`,
+--- when given, is the program's sandbox: its last unterminated line of
+--- output is flushed first, so it lands before the end report.
+function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
+  local T = S.T
+  local text, isError
+  local okSB, sb = pcall(require, "kernel.sandbox")
+  if okSB and type(sb) == "table" and env and sb.finish then sb.finish(env) end
+  if okSB and type(sb) == "table" and sb.describeEnd then
+    text, isError = sb.describeEnd(ok, result)
+  elseif ok then
+    text = result ~= nil and tostring(result) or nil
+  else
+    text, isError = tostring(result), true
+  end
+  if not text then return end
+  if isError then o((errPrefix or "Error: ") .. text, T.error)
+  elseif ok then o(text, T.fg)
+  else o(text, T.dim) end
+end
+
 function M.fmtSz(sz)
   if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
   if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end

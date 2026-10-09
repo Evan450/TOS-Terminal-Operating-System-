@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**83 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**81 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 59 | Planned or under investigation. Most contributions belong here. |
+| Planned | 57 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (19) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (17) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -196,59 +196,6 @@ Emulator checklist (needs a card AND a server with HTTP on):
 - a package whose index names ../.. must be refused and must write nothing
 - pull the card mid-download; confirm no .part is left and no half-installed package
 - a T1 (192K) box: fetch something near the 128K file cap and confirm it does not OOM (this is the one the off-box tests genuinely cannot prove)
-
-### Emulator checklist: Shell gaps + real OPPM round
-
-*Planned* · from the round *Shell gaps + real OPPM round (2026-08-04)*
-
-Emulator checklist:
-
-- `tail /var/log/tos.log`, then `watch tail /var/log/tos.log`
-- `alias ll ls -l` then `ll` in the SAME session (no re-login); `alias ls "ls -a"` then `ls` must not hang; `alias` lists, `unalias ll` removes; log out and back in and confirm it persisted
-- a USER-tier account: `alias x usermod` then `x` must still be refused (aliases carry no privilege)
-- `which ls` (built-in), `which tetris` with the package installed, `which share` (/usr/bin); install a package whose command shadows nothing and check the ordering
-- `which` on a package command must NOT start the program
-- put a REAL OPPM repo checkout on a floppy (programs.cfg at the root, sources under master/&lt;name&gt;/) and install one package from it; confirm files land where the index said and that `pkg info` shows origin openos with a dependency carrying no bogus version
-- a package whose destination is //etc must be REFUSED
-- PATH=/tmp with a planted /tmp/foo.lua: `foo` must not run
-
-MOSTLY DONE 2026-10-03 on the headless machine:
-
-- tail: works on /var/log/kernel.log once the kernel has flushed it (every 30 s; at 20 s after boot the file does not exist yet, which tail called "Cannot read" with no reason -- it now says "No such file"). The manual's /var/log/tos.log never existed; it names kernel.log now. `watch tail` not run.
-- `head -n 2 FILE` answered "Cannot read: -n" although the manual documents `head [-n N]`; and `ls -l` listed "0 items" because ls parsed no flags, so the manual's own `alias ll ls -l` broke. FIXED: head/tail take -n N, -N and a trailing count; ls takes -l (adds the modified time), -a (dotfiles, hidden by default and counted), a missing directory says "no such file" (test\_head\_tail\_args.lua, test\_ls\_flags.lua).
-- aliases: `alias ll ls -l` then `ll` in the same session, `alias` lists, `unalias ll` removes, and `alias kl ls -l` survives logging out and in. `alias ls "ls -a"` is REFUSED on purpose (the code says why); the manual claimed it worked and says so now.
-- a USER's `alias x usermod` then `x alice admin`: "Permission denied: 'usermod' needs ROOT". Aliases carry no privilege.
-- which: `cat` and `ls` built-in, `share` /usr/bin/share.lua.
-- `env PATH=/tmp` with /tmp/foo.lua planted: `foo` is "Unknown command"; it does not run.
-
-STILL OPEN: the OPPM repo checkout on a floppy (and its pkg info
-
-origin/dependency), the //etc destination refusal, `which` on an
-
-installed package command, and `watch tail`.
-
-### Emulator checklist: Pkg completeness round
-
-*Planned* · from the round *Pkg completeness round (2026-07-29)*
-
-Emulator checklist:
-
-- build a v2 of an add-on, `pkg outdated`, `pkg upgrade`
-- confirm a service keeps enabled/disabled across upgrade and that stop/start picks up the new code
-- put a real OPPM/loot-disk program on a floppy and check it installs AND runs (this is the one off-box tests cannot really prove — they stub the sandbox)
-- two packages shipping the same path: confirm the refusal
-
-MOSTLY DONE 2026-10-08 on the headless machine (a test disk with upsvc 1.0.0 and 2.0.0, and two packages shipping /usr/lib/clash.lua):
-
-- `pkg outdated` lists upsvc 1.0.0 -&gt; 2.0.0; `pkg upgrade` removes the file 2.0.0 dropped and keeps the boot-start choice (a started service still starts at boot afterwards).
-- the clash: "conflicts: /usr/lib/clash.lua is already installed by clasha", and clasha's file is untouched.
-- FOUND AND FIXED: a service installed since boot was "Unknown service" to `service start` until a reboot, and after an upgrade stop+start re-ran the boot-time code ("1.0.0/1.0.0"), then the new script with the OLD library ("2.0.0/1.0.0"). rc.start now loads the script from disk (names that leave /etc/rc.d refused), and an uninstall/upgrade forgets the modules the loader read from the removed files. Now "2.0.0/2.0.0" without a reboot (test\_rc\_reload.lua, test\_pkg\_lifecycle.lua).
-
-STILL OPEN: a real OPPM/loot-disk program; and `pkg upgrade` says
-
-"(was disabled; left disabled)" for a service the operator started
-
--- that is the package's enable byte, not the boot marker.
 
 ### Emulator checklist: Picker off the floppy round
 
