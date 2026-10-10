@@ -70,6 +70,16 @@ if peer and peer.hostname then hostname = peer.hostname end
 
 recordMessage(hostname .. " (" .. remoteAddr:sub(1, 8) .. ")", text, now)
 
+--! Say it arrived. Only an OPEN chat tab acknowledged a message, so a
+--! sender could not tell a machine that heard it from one that was
+--! switched off: a chat group counted every member it had SENT to as
+--! delivered (two headless machines, 2026-10-10). This service runs on
+--! every machine whether or not anyone is chatting, and this is where a
+--! message is recorded, so this is where it is acknowledged -- by the
+--! seq it came with. (test_chat_app.lua)
+pcall(net.send, remoteAddr, protocol.makePacket(protocol.TYPE.MSG_ACK,
+{ ref = packet.seq }, { to = remoteAddr }))
+
 if _G._TOS and _G._TOS.log then
 _G._TOS.log("chat", "[" .. hostname .. "] " .. text)
 end

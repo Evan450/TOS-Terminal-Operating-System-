@@ -48,16 +48,17 @@ end
 return out
 end
 
-function chat.resolveGroup(groups, name, peers, minLevel)
+function chat.resolveGroup(groups, name, peers, minLevel, resolveAlias)
 local members = groups and groups[(name or ""):lower()]
 if not members then return nil end
-local addrs, missing, seen = {}, {}, {}
+local addrs, missing, seen, nameOf = {}, {}, {}, {}
 for _, tok in ipairs(members) do
-local a = chat.resolveTarget(peers, tok, minLevel)
-if a and not seen[a] then seen[a] = true; addrs[#addrs + 1] = a
+local a = chat.resolveTarget(peers, tok, minLevel, resolveAlias)
+if a and not seen[a] then seen[a] = true; addrs[#addrs + 1] = a; nameOf[a] = tok
 elseif not a then missing[#missing + 1] = tok end
 end
-return addrs, missing
+
+return addrs, missing, nameOf
 end
 
 function chat.loadGroups(fs, serialize, path)
@@ -76,9 +77,25 @@ if not (fs and serialize) then return false, "fs/serialize unavailable" end
 return serialize.saveFile(fs, path, chat.normalizeGroups(groups))
 end
 
-function chat.resolveTarget(peers, target, minLevel)
+--! `resolveAlias` is net.aliases.resolve (passed in, so this stays pure).
+--! It was not consulted at all: `net` names a peer by "alias, full
+--! address, prefix, or scan-index", but chat knew only prefixes and
+--! hostnames -- and every fresh TOS is hostname "tos", so an alias is
+--! how two of them are told apart. A group whose members were aliases
+--! called every one "unreachable", with the peer on and TRUSTED (two
+--! headless machines, 2026-10-10). An alias still has to name a peer at
+--! minLevel. (test_chat_parse.lua)
+function chat.resolveTarget(peers, target, minLevel, resolveAlias)
 if not target or target == "" then return nil end
 minLevel = minLevel or 0
+if resolveAlias then
+local okA, addr = pcall(resolveAlias, target)
+if okA and type(addr) == "string" then
+for _, p in ipairs(peers or {}) do
+if p.address == addr and (p.level or 0) >= minLevel then return addr end
+end
+end
+end
 for _, p in ipairs(peers or {}) do
 if (p.level or 0) >= minLevel then
 if p.address and p.address:sub(1, #target) == target then return p.address end
@@ -236,7 +253,8 @@ drawInput()
 
 if _G._TOS and _G._TOS.audio then _G._TOS.audio.chat() end
 
-local ack = protocol.makePacket(protocol.TYPE.MSG_ACK, {}, { to = fromAddr })
+local ack = protocol.makePacket(protocol.TYPE.MSG_ACK, { ref = packet.seq },
+{ to = fromAddr })
 NM.send(fromAddr, ack)
 end
 
@@ -309,7 +327,8 @@ if n == 0 then addMessage("  (no trusted peers)", T.warning) end
 elseif name == "mail" then
 
 local mp, mtext = arg:match("^(%S+)%s+(.+)$")
-local dest = mp and chat.resolveTarget(trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED)
+local dest = mp and chat.resolveTarget(trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED,
+NM and NM.aliases and NM.aliases.resolve)
 local okLib, mailLib = pcall(require, "mail")
 if not mp or not mtext then
 addMessage("Usage: /mail <peer> <message>", T.warning)
@@ -331,7 +350,8 @@ addMessage("Unknown command: /" .. name .. "  (try /help)", T.warning)
 end
 
 elseif act.kind == "directed" then
-local destAddr = chat.resolveTarget(trustMgr.listPeers(), act.target, trustMgr.LEVEL.TRUSTED)
+local destAddr = chat.resolveTarget(trustMgr.listPeers(), act.target, trustMgr.LEVEL.TRUSTED,
+NM and NM.aliases and NM.aliases.resolve)
 if destAddr then
 local ok, err = NM.sendMessage(destAddr, act.text)
 if ok then addMessage("[" .. hostname .. "] " .. act.text, T.title)

@@ -953,7 +953,9 @@ if level < trustMgr.LEVEL.TRUSTED then
 return false, "Peer must be TRUSTED to send messages"
 end
 local pkt = protocol.message(text, encryptComms)
-return net.send(address, pkt)
+
+local ok, err = net.send(address, pkt)
+return ok, err, ok and pkt.seq or nil
 end
 
 function net.requestTrust(address)
