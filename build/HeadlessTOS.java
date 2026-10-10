@@ -176,6 +176,7 @@ public class HeadlessTOS {
   static Screen screen;
   static Machine machine;
   static Workspace ws;
+  static Case pcCase;      // for `pullcard`
   static Path bootPath;   // the boot disk's host directory, for `hostmv`
   // The disk drive and the floppies a script can swap through it, by name.
   static FloppyDiskDrive floppyDrive;
@@ -242,6 +243,7 @@ public class HeadlessTOS {
     eeprom.volatileData_$eq(bootAddr.getBytes(StandardCharsets.UTF_8));
 
     if (!t1) pc.inventory().apply(0).put(new DataCard.Tier3());
+    pcCase = pc;
     if (internet) pc.inventory().apply(2).put(new InternetCard());
     for (int i = 0; i < sticks.length; i++) pc.inventory().apply(3 + i).put(new Memory(stick(sticks[i])));
     pc.inventory().apply(5).put(bootHdd);
@@ -383,6 +385,8 @@ public class HeadlessTOS {
    *   off SECS            until the machine powers itself off
    *   powercycle          the power button, off then on: an UNCLEAN stop
    *   eject               take the floppy out of the disk drive
+   *   pullcard            take the internet card out of its slot (mid-download,
+   *                       say: what is left behind when the card goes)
    *   hostmv FROM TO      rename a file on the boot disk from OUTSIDE the
    *                       machine (paths relative to the disk's root, and
    *                       both must stay on it) -- what a person does to a
@@ -553,6 +557,13 @@ public class HeadlessTOS {
           done = true;
           break;
         }
+        case "pullcard":
+          if (pcCase == null || pcCase.inventory().apply(2).isEmpty()) {
+            failure = "pullcard: no internet card (run with --internet)"; break;
+          }
+          pcCase.inventory().apply(2).remove();
+          done = true;
+          break;
         case "eject":
           if (floppyDrive == null) { failure = "eject: no --floppy, so no disk drive"; break; }
           floppyDrive.inventory().apply(0).remove();

@@ -271,6 +271,7 @@ def test_the_runner_knows_the_floppy_steps():
 def test_the_runner_knows_hostmv_and_reports_beeps():
     java = (HERE / "HeadlessTOS.java").read_text(encoding="utf-8")
     assert 'case "hostmv": {' in java
+    assert 'case "pullcard":' in java
     # hostmv must never reach outside the boot disk's folder.
     assert "paths must stay on the boot disk" in java
     assert "EventBus.subscribe(new BeepLog())" in java

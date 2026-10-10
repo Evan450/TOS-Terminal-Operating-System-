@@ -20,7 +20,8 @@ A script is one step per line (HeadlessTOS.java's runScript lists them):
 `wait SECS REGEX`, `gone SECS REGEX`, `maybe SECS REGEX` (run the next step
 only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 (ctrl+q, f10, up, ...), `paste TEXT`, `click X Y`, `sleep SECS`, `mark NAME`,
-`snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, and
+`snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, `pullcard`
+(the internet card out of its slot), and
 `hostmv FROM TO` (rename a file on the boot disk from outside the machine,
 e.g. take the kernel away to see the BIOS's K4). Two more are expanded here:
 

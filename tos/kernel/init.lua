@@ -1149,6 +1149,61 @@ local function noUserSystem(d, pull, beep)   --[[TEST-EXTRACT]]
   repeat until pull(math.huge) == "key_down"
 end                                           --[[/TEST-EXTRACT]]
 
+--! FIRST BOOT, LOW MEMORY. A fresh install whose boot left under 32 KB free
+--! (a T1 machine at 1,280 KB with an internet card, on the headless machine,
+--! 2026-10-09) went straight to minimalAuth, past First Boot Setup, and was
+--! asked for "root password" -- which no one has set: it is the default,
+--! "root", and the screen never said so. Typing it anyway gives the
+--! restricted first-boot token (GUEST tier, password change only), so the
+--! operator landed in a shell that could do nothing, with nothing saying
+--! why. The full login runs First Boot Setup on that token; this does the
+--! same in a few plain lines. Returns a promoted token, or nil when root is
+--! not on its first boot. (test_minimal_firstboot.lua)
+local function minimalFirstBoot(d, usersmod, pull, W, T)   --[[TEST-EXTRACT-FB]]
+  local rootRec = usersmod.getUser and usersmod.getUser("root")
+  if not (rootRec and rootRec.firstBoot) then return nil end
+  local function readMasked(y, label)
+    d.fill(2, y, W - 3, 1, " ", T.fg, T.bg)
+    d.set(2, y, label, T.dim, T.bg)
+    local x0, buf = 2 + #label, ""
+    while true do
+      d.set(x0, y, string.rep("*", #buf) .. "_ ", T.fg, T.bg)
+      local sig, _, ch, co = pull(0.5)
+      if sig == "key_down" then
+        if co == 28 then return buf
+        elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
+        elseif ch and ch >= 32 and ch < 127 and #buf < 30 then buf = buf .. string.char(ch)
+        end
+      end
+    end
+  end
+  d.set(2, 3, "First boot: set a password for root.", T.dim, T.bg)
+  while true do
+    local p1 = readMasked(5, "New password: ")
+    local p2 = readMasked(6, "Confirm:      ")
+    d.fill(2, 8, W - 3, 1, " ", T.fg, T.bg)
+    if #p1 < 6 then
+      d.set(2, 8, "Password must be 6+ characters.", T.error, T.bg)
+    elseif p1 ~= p2 then
+      d.set(2, 8, "Passwords don't match. Try again.", T.error, T.bg)
+    else
+      local token = usersmod.login("root", "root", { setCurrent = true })
+      local okC, errC = false, "the default password was not accepted"
+      if token then okC, errC = usersmod.changePassword("root", "root", "root", p1) end
+      if okC and usersmod.promoteAfterFirstBoot then
+        okC, errC = usersmod.promoteAfterFirstBoot(token)
+      end
+      if okC then
+        d.set(2, 8, "Password set. Starting TOS...", T.success, T.bg)
+        pull(1)
+        return token
+      end
+      d.set(2, 8, "Could not set it: " .. tostring(errC), T.error, T.bg)
+    end
+    pull(1.5)
+  end
+end                                                         --[[/TEST-EXTRACT-FB]]
+
 function kernel.loginAndStartShell()
   running = true
 
@@ -1185,6 +1240,10 @@ function kernel.loginAndStartShell()
       kernel.shutdown()
       return nil
     end
+
+    -- A fresh install that reached here sets root's password first.
+    local fbToken = minimalFirstBoot(display, usersmod, computer.pullSignal, W, T)
+    if fbToken then return fbToken end
 
     display.set(2, 3, "Low memory mode. Enter root password.", T.dim, T.bg)
     display.set(2, 5, "Password: ", T.dim, T.bg)
