@@ -611,7 +611,7 @@ return function(C, S, deps)
   end
 
   C.tutorial = function(args, o)
-    local ok2, tut = pcall(require, "shell.tutorial")
+    local ok2, tut = helpers.requireRoomy(S, "shell.tutorial", "core")
     if not ok2 then o(helpers.loadFailure("tutorial", tut), T.error); return end
     -- --reset clears THIS account's marker, so the walkthrough is offered
     -- again at their next login. It is per-account now: resetting your own
@@ -1071,7 +1071,7 @@ return function(C, S, deps)
   --   vault tape encrypt <passphrase>            encrypt current tape archive
   --   vault tape decrypt <passphrase>            decrypt current tape archive
   C.vault = function(args, o)
-    local okV, vmod = pcall(require, "kernel.vault")
+    local okV, vmod = helpers.requireRoomy(S, "kernel.vault", "core")
     if not okV or not vmod then o(helpers.loadFailure("vault", vmod), T.error); return end
     local sub = args[1]
 

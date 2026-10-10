@@ -163,14 +163,21 @@ return function(C, S, deps)
   local PKG_MIN_KB = 1280
   C.pkg = function(args, o)
     if not adminOnly(o) then return end
-    local okP, pkgMod = pcall(require, "kernel.pkg")
+    local okP, pkgMod = helpers.requireRoomy(S, "kernel.pkg", "admin")
     if not okP or not pkgMod then
       local line = helpers.loadFailure("pkg", pkgMod)
       o(line, T.error)
       if line:find("not enough free memory", 1, true) then
         local total = math.floor((computer.totalMemory and computer.totalMemory() or 0) / 1024)
-        o(string.format("The package manager needs %d KB of RAM; this machine has %d KB.",
-          PKG_MIN_KB, total), T.dim)
+        -- "Needs 1280 KB; this machine has 1280 KB" contradicted itself:
+        -- with the memory there, what is short is FREE memory.
+        if total < PKG_MIN_KB then
+          o(string.format("The package manager needs %d KB of RAM; this machine has %d KB.",
+            PKG_MIN_KB, total), T.dim)
+        else
+          o("Something else is holding the memory it needs: close other tabs or "
+            .. "programs, or reboot, and try again.", T.dim)
+        end
       end
       return
     end
@@ -1199,7 +1206,7 @@ return function(C, S, deps)
   -- demote themselves into kiosk and then claim the shell is "broken".
   C.kiosk = function(args, o)
     if not adminOnly(o) then return end
-    local okK, kioskMod = pcall(require, "shell.kiosk")
+    local okK, kioskMod = helpers.requireRoomy(S, "shell.kiosk", "admin")
     if not okK or not kioskMod then o(helpers.loadFailure("kiosk", kioskMod), T.error); return end
     o("Kiosk = the LOCKED, guest-facing menu (allow-list + read-only).", T.title)
     -- We can't cleanly hand the panels shell over to kiosk in-place
@@ -1219,7 +1226,7 @@ return function(C, S, deps)
   -- messages: "run `doctor` to diagnose" reads better than "run
   -- `diag`"). `diag` is kept below as an alias.
   C.doctor = function(args, o)
-    local okD, diagMod = pcall(require, "kernel.diag")
+    local okD, diagMod = helpers.requireRoomy(S, "kernel.diag", "admin")
     if not okD or not diagMod then o(helpers.loadFailure("doctor", diagMod), T.error); return end
     local severityColor = {
       ok   = T.highlight or T.fg,
@@ -1260,7 +1267,7 @@ return function(C, S, deps)
   -- the machine is unhappy); everything that WRITES is admin-gated in-body,
   -- the same split `optimize` uses.
   C.srm = function(args, o)
-    local okS, srmMod = pcall(require, "kernel.srm")
+    local okS, srmMod = helpers.requireRoomy(S, "kernel.srm", "admin")
     if not okS or not srmMod then o(helpers.loadFailure("srm", srmMod), T.error); return end
     local SEV = {
       ok   = T.highlight or T.fg,
@@ -3152,7 +3159,7 @@ return function(C, S, deps)
   -- A share is someone else's disk: when their computer is off the mount
   -- is empty and the files vanish from a listing without being deleted.
   C.netfs = function(args, o)
-    local okNF, nf = pcall(require, "kernel.netfs")
+    local okNF, nf = helpers.requireRoomy(S, "kernel.netfs", "admin")
     if not okNF or not nf then
       o(helpers.loadFailure("netfs", nf), T.error)
       return
@@ -3463,7 +3470,7 @@ return function(C, S, deps)
   C.colors = C.theme
   C.service = function(args, o)
     if not adminOnly(o) then return end
-    local ok2, rcMod = pcall(require, "kernel.rc")
+    local ok2, rcMod = helpers.requireRoomy(S, "kernel.rc", "admin")
     if not ok2 then o(helpers.loadFailure("service", rcMod), T.error); return end
     if not args[1] then
       local svcs = rcMod.list()
@@ -3502,7 +3509,7 @@ return function(C, S, deps)
   -- ── Scheduled tasks ───────────────────────────────────
   C.cron = function(args, o)
     if not adminOnly(o) then return end
-    local ok2, cronMod = pcall(require, "kernel.cron")
+    local ok2, cronMod = helpers.requireRoomy(S, "kernel.cron", "admin")
     if not ok2 then o(helpers.loadFailure("cron", cronMod), T.error); return end
     if not args[1] or args[1] == "list" then
       local jobs = cronMod.list()

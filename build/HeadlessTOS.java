@@ -342,7 +342,12 @@ public class HeadlessTOS {
     // and components do not. One cable would merge their component
     // networks, and each would see (and bind) the other's screen.
     if (peerBoot != null) {
-      int slot = seats == 2 ? 2 : 1;
+      // The card slot nothing else took: t3's APU leaves slot 1 free, t1's
+      // GPU is IN slot 1 and leaves slot 0 (no data card), and a second
+      // seat's GPU takes that one, which leaves slot 2. Slot 1 for both
+      // profiles put the network card over t1's only GPU, and the machine
+      // shut down at boot with "0 GPUs".
+      int slot = seats == 2 ? 2 : t1 ? 0 : 1;
       if (slot == 2 && internet)
         throw new IllegalArgumentException("--peer-boot with --seats 2 and --internet: no free card slot");
       pc.inventory().apply(slot).put(new NetworkCard());

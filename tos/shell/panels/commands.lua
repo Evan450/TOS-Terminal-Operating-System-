@@ -450,6 +450,10 @@ function M.build(S, deps)
     return freed
   end
   M._releaseCategories = releaseCategories
+  -- ...and on this seat's state, for a command that runs short loading a
+  -- module of its own (helpers.requireRoomy): M's copy is the LAST seat
+  -- built, and each seat evicts from its own table.
+  S.releaseCommands = releaseCategories
 
   local function loadCategory(cat)
     if loaded[cat] then return end

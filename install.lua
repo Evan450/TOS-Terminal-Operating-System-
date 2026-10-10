@@ -244,12 +244,22 @@ local function printHardwareReport(hw)
   print(string.format("  Crypto:   %s", hw.hasDataCard and "Hardware (data card)" or "Software"))
   color(0xFFFFFF)
   print()
-  -- Measured on a headless OpenComputers machine (TODO: THE RAM FLOOR):
+  -- Measured on a headless OpenComputers machine (`tos.py floorcheck`):
   -- below 1 MB there is no usable shell, and the full interface needs
   -- 1.5 MB (bootcfg.PANELS_MIN_KB), so below that TOS starts at the CLI.
-  if hw.memKB < 1024 then
-    warn("Not enough memory: TOS needs at least 1 MB (one Tier 3.5 stick).")
-    warn("With less it stops at the emergency terminal, or does not boot.")
+  -- A network card or linked card brings up the network stack and its
+  -- services, about 170 KB more: with one, 1 MB starts the command line
+  -- but no command loads, so the floor is 1.25 MB. This warned only below
+  -- 1 MB, so a 1 MB machine with a network card -- a common build --
+  -- installed without a word and could not run a command.
+  local networked = hw.hasModem or hw.hasTunnel
+  if hw.memKB < 1024 or (networked and hw.memKB < 1280) then
+    if networked then
+      warn("Not enough memory: with a network card TOS needs 1.25 MB (1 MB without one).")
+    else
+      warn("Not enough memory: TOS needs at least 1 MB (one Tier 3.5 stick).")
+    end
+    warn("With less its commands do not load, or it does not boot.")
   elseif hw.memKB < 1536 then
     warn("TOS will start at the command line: the full interface needs 1.5 MB.")
   end

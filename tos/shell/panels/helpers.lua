@@ -89,6 +89,29 @@ function M.loadFailure(what, err)
   return what .. " module unavailable: " .. why
 end
 
+--- require() a module a command needs, making room for it if memory is
+--- short. The dispatcher already gives back the other command categories
+--- when a CATEGORY will not load (commands.lua releaseCategories), but a
+--- command that then loads a module of its own got no such retry: at
+--- 1280 KB with a network card, `pkg list` after `mem` failed with "needs
+--- 1280 KB; this machine has 1280 KB" -- the core category `mem` left
+--- loaded (~210 KB) was all that stood in kernel.pkg's way. On an
+--- out-of-memory failure the other categories go (never `keep`, the one
+--- running this command) and the require is tried once more. They reload
+--- on their next use. Returns what pcall(require, name) returns.
+--- (test_require_roomy.lua)
+function M.requireRoomy(S, name, keep)
+  local ok, mod = pcall(require, name)
+  if not ok and S and type(S.releaseCommands) == "function" then
+    local why = tostring(mod)
+    if why:find("memory", 1, true) or why:find("buffer alloc", 1, true) then
+      S.releaseCommands(keep)
+      ok, mod = pcall(require, name)
+    end
+  end
+  return ok, mod
+end
+
 --- Report how a sandboxed program ended, through `o(text, colour)`. `ok`
 --- and `result` are what pcall returned. An os.exit() is a clean end, not
 --- an "Error: exit 0" -- kernel.sandbox knows the difference, and every

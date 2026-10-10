@@ -546,6 +546,16 @@ PROFILE DONE 2026-10-10: memprofile = true in /etc/boot.cfg logs what each boot 
 
 FIRST CUT 2026-10-10: the five base services are network daemons, and each one returned at once from start() without a network -- but boot still compiled and ran every script, and 20-netfsd (root tier) pulled in kernel.netfs and the whole kernel.sandbox first. They now declare needs = "net", and rc leaves them unloaded on a machine with no network card or linked card; `service` says "not loaded: needs network hardware" instead of calling four idle daemons "running" (test\_rc\_needs.lua). Startup services fell from 115K to 21K. Boot complete went from 1363K to 1457K free at 2 MB and from 485K to 576K at 1152K. At 1152K the shell now starts loading with 494K free instead of 352K. A machine WITH a network card is unchanged. Not enough on its own: at 1024K `pkg` still cannot load. Still open: the floor check, and kernel.pkg's split.
 
+FLOOR CHECK DONE 2026-10-10: `python tos.py floorcheck` boots a fresh build at every size the README's Requirements name (t1, logged in, one command). It checks both sides of each floor, and fails if the README stops saying what a case checks (build/floorcheck.py; test\_floorcheck.py keeps its cases tied to the README, bootcfg.PANELS\_MIN\_KB and PKG\_MIN\_KB). Its first runs corrected the README three times:
+
+- 768K now starts the command line, but no command loads. The README said it fell back to the emergency terminal.
+- Every figure had been measured WITHOUT a network card, which the headless machine never had. A card costs about 170K (stack 108K, running services \~60K). With one, 1 MB starts the CLI but no command loads, so the floor is 1.25 MB (README, MANUAL 1.1).
+- Free after login is 280K at 1.5 MB (was \~200K) and \~800K at 2 MB (was \~730K).
+
+It also found `pkg` failing after `mem` at 1280K with a card, fixed by helpers.requireRoomy. The runner could not give a t1 machine a network card without losing its GPU; fixed too.
+
+Still open: kernel.pkg's split. At 1024K `pkg` loads only on a good day.
+
 ALSO MEASURED 2026-10-03: at 1024K the CLI runs but `pkg` does not load -- compiling kernel.pkg (117 KB stripped) needs more than the \~200 KB left once the shell is up. Every pkg command printed only "pkg module unavailable"; the reason, thrown away, was the loader's "Syntax error in 'kernel.pkg': not enough memory". At 1024+256K it lists, verifies, signs and installs (the signing checklist below ran there whole). Now `pkg` says "cannot load: not enough free memory" and gives 1280 KB against what the machine has, the loader says "Out of memory loading" instead of "Syntax error", eight more commands keep their reason (helpers.loadFailure), and the README and MANUAL 1.1 give the 1.25 MB floor for add-ons. Splitting kernel.pkg so its everyday verbs load alone is what would let 1 MB install packages; that is footprint work, the same as above.
 
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2

@@ -186,7 +186,7 @@ Configuration screen** (2.2) for what your machine has.
 
 | | |
 |---|---|
-| **Memory** | At least 1 MB (one Tier 3.5 stick). On a machine that size TOS starts at the command line; installing add-ons needs 1.25 MB, because the package manager does not load in 1 MB; the full panels interface needs 1.5 MB (two Tier 3 sticks). Below 1 MB it does not reach a usable shell. |
+| **Memory** | At least 1 MB (one Tier 3.5 stick), or 1.25 MB with a network card or linked card, whose network stack and services take about 170 KB more. On a machine that size TOS starts at the command line; installing add-ons needs 1.25 MB, because the package manager does not load in 1 MB; the full panels interface needs 1.5 MB (two Tier 3 sticks). Below 1 MB it does not reach a usable shell. |
 | **Drive** | About 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own, with about 150 KB left after first boot: enough to run, not to grow, so add-ons and `srm baseline --full` (about 220 KB) want a Tier 3 drive (4 MB). Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), because OpenOS stays there until the install finishes. TOS does not fit on a floppy. |
 | **CPU** | Any tier, on the Lua 5.3 or 5.4 architecture (sneak-click the CPU to switch it). |
 | **To install from** | OpenOS, plus an Internet Card or a TOS install disk. |
@@ -228,7 +228,7 @@ onto it. Move that drive to the OpenOS machine and run
 
 | Step | What happens |
 |---|---|
-| **Hardware** | It lists memory, GPU, drive, network and crypto (a data card, or software). Below 1 MB of memory it warns that TOS will not reach a shell; below 1.5 MB, that TOS will start at the command line. |
+| **Hardware** | It lists memory, GPU, drive, network and crypto (a data card, or software). Below 1 MB of memory, or 1.25 MB with a network card or linked card, it warns that TOS's commands will not load; below 1.5 MB, that TOS will start at the command line. |
 | **Existing install** | If the drive already has TOS accounts, you must type `FORCE-WIPE` to go on. Users, configuration and the system files are replaced; `/home` and `/tmp` are kept. The old `/init.lua` is kept as `/init.lua.pre-tos`. |
 | **Space** | It adds up what TOS needs on this drive and compares it with what is free. If it does not fit, nothing is copied and the install ends. |
 | **Copy** | Every file is copied and then checked. If any fails, the BIOS is not flashed later, so nothing is left half-bootable; run the installer again. |

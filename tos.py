@@ -16,6 +16,8 @@ from the right place, and tells you what it ran.
     python tos.py check               the drift-sensitive checks, quickly
     python tos.py selftest [opts]     build, then run the boot battery on a
                                       headless OpenComputers machine
+    python tos.py floorcheck [opts]   build, then boot at every memory size the
+                                      README names and check what it says
     python tos.py roadmap             regenerate the queue + ROADMAP.md
     python tos.py publish [args...]   hand off to the publisher (maintainer)
 
@@ -230,6 +232,30 @@ def cmd_selftest(args) -> int:
     return run(cmd, cwd=DEV)
 
 
+def cmd_floorcheck(args) -> int:
+    """Build the release, then check the README's memory claims on it.
+
+    Building first for the reason selftest does: a check of a stale
+    TOS-Release measures code you no longer have -- and the figures it
+    checks are the ones a player buys memory sticks by.
+    """
+    if not args.no_build:
+        say("build")
+        rc = cmd_build(args)
+        if rc != 0:
+            return rc
+        print()
+    say("the README's memory claims, on headless machines")
+    cmd = [sys.executable, "build/floorcheck.py"]
+    if args.only:
+        cmd += ["--only", args.only]
+    if args.jobs is not None:
+        cmd += ["--jobs", str(args.jobs)]
+    if args.keep:
+        cmd.append("--keep")
+    return run(cmd, cwd=DEV)
+
+
 def cmd_roadmap(args) -> int:
     # Maintainer-only: TODO.txt and these generators are deliberately not
     # published, so a contributor will not have them. Say that rather than
@@ -298,6 +324,13 @@ def main() -> int:
     e.add_argument("--timeout", type=float, help="seconds before a round counts as stuck")
     e.add_argument("--keep", action="store_true", help="keep the machine's directory")
     e.set_defaults(fn=cmd_selftest)
+
+    f = sub.add_parser("floorcheck", help="build, then check the README's memory floors")
+    f.add_argument("--no-build", action="store_true", help="test TOS-Release as it is")
+    f.add_argument("--only", help="sizes in KB, comma-separated (e.g. 768,1024)")
+    f.add_argument("--jobs", type=int, help="machines at once (default 3)")
+    f.add_argument("--keep", action="store_true", help="keep every machine's directory")
+    f.set_defaults(fn=cmd_floorcheck)
 
     r = sub.add_parser("roadmap", help="regenerate the queue and ROADMAP.md")
     r.set_defaults(fn=cmd_roadmap)
