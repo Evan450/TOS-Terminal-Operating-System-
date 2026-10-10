@@ -37,12 +37,23 @@ local PERMISSIONS = {
     cl_pair_init = true,
     cl_pair_conf = true,
   },
+  --! The pairing pair is allowed at EVERY level below BLOCKED, not only at
+  --! UNKNOWN. A Manager trusts its Master BEFORE the round trip (cluster-
+  --! manager's pair: "apply locally FIRST"), so the Master's confirm arrives
+  --! from a TRUSTED peer -- and was refused right here. Every pairing through
+  --! the wizard reported "no confirm received" while the Master had in fact
+  --! paired and the Manager went on to register (2-machine headless run,
+  --! 2026-10-10). Nothing is widened: these packets are authenticated by the
+  --! pairing code's MAC, not by level, and UNKNOWN peers could already send
+  --! them. (test_net_trusted_gate.lua)
   [LEVEL.KNOWN]   = { ping = true, pong = true, hello = true, hello_ack = true,
                        info_req = true, info_res = true,
-                       trust_req = true, trust_ack = true, trust_deny = true },
+                       trust_req = true, trust_ack = true, trust_deny = true,
+                       cl_pair_init = true, cl_pair_conf = true },
   [LEVEL.TRUSTED] = { ping = true, pong = true, hello = true, hello_ack = true,
                        info_req = true, info_res = true,
                        trust_req = true, trust_ack = true, trust_deny = true, trust_rev = true,
+                       cl_pair_init = true, cl_pair_conf = true,
                        msg = true, msg_ack = true,
                        file_req = true, file_res = true, file_deny = true,
                        challenge = true, chall_res = true,

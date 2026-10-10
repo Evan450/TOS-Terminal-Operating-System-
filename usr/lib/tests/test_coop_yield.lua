@@ -132,6 +132,29 @@ proc.tick(nil); proc.tick(nil); proc.tick(nil)
 eq("the sliced work still completes", true, slowDone)
 eq("a key typed mid-slice reaches the process afterwards", "kb-typed-mid-work", slowKeys[1])
 
+-- ── A key typed while a BACKLOG drains is kept, not dropped ────────
+-- With signals queued, a tick resumes the process with the queue's head --
+-- and dropped the tick's own signal, the key typed at that moment
+-- included. After any slow step that left a backlog, the next keys typed
+-- vanished: cluster-setup on the headless machine lost an Enter and an "n"
+-- this way (2026-10-10).
+local drained = {}
+local pidD = proc.spawn("drainer", function()
+  while true do
+    local a, b = coroutine.yield()
+    if a == "key_down" or a == "modem_message" then drained[#drained + 1] = b end
+  end
+end)
+proc.tick(nil)
+proc.setForeground(pidD, nil, { kernel = true })
+proc.signalKernel(pidD, "key_down", "queued-1")
+proc.signalKernel(pidD, "key_down", "queued-2")
+proc.tick(table.pack("key_down", "typed-3"))     -- typed while two wait
+proc.tick(table.pack("modem_message", "net-4"))  -- arrives while one waits
+proc.tick(nil); proc.tick(nil); proc.tick(nil)
+eq("a key typed while a backlog drains arrives, after the backlog",
+  "queued-1,queued-2,typed-3,net-4", table.concat(drained, ","))
+
 -- proc.pause: a wait that takes nothing from the process's input.
 local pausedKeys, pauseReturned = {}, nil
 local pidP = proc.spawn("pauser", function()

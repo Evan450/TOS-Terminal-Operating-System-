@@ -276,6 +276,12 @@ def test_the_runner_knows_hostmv_and_reports_beeps():
     assert 'case "seat": {' in java
     assert '"--seats"' in java
     assert '"--seats"' in (HERE / "headless-session.py").read_text(encoding="utf-8")
+    assert 'case "machine": {' in java
+    assert 'case "grab": {' in java and 'static String expand(' in java
+    assert "new Relay()" in java and '"--peer-boot"' in java
+    src = (HERE / "headless-session.py").read_text(encoding="utf-8")
+    assert '"--machines"' in src and '"--peer-put"' in src and '"--peer-boot"' in src
+    assert '"--peer-disk"' in src and '"--peer-disk"' in java
     # hostmv must never reach outside the boot disk's folder.
     assert "paths must stay on the boot disk" in java
     assert "EventBus.subscribe(new BeepLog())" in java

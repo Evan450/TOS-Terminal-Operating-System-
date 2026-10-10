@@ -23,7 +23,8 @@ only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 `snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, `pullcard`
 (the internet card out of its slot), `resolution W H` (resize the screen
 from outside, which raises the same screen_resized a real resize does),
-`seat N` (with --seats 2: type at and read screen N from then on), and
+`seat N` (with --seats 2: type at and read screen N from then on),
+`machine N` (with --machines 2: the same, for the second computer), and
 `hostmv FROM TO` (rename a file on the boot disk from outside the machine,
 e.g. take the kernel away to see the BIOS's K4). Two more are expanded here:
 
@@ -143,14 +144,8 @@ def expand(lines: list[str]) -> list[str]:
     return out
 
 
-def stage(run: Path, release: Path, disk: Path | None,
-          put: list[str] | None = None) -> tuple[Path, Path | None, Path]:
-    """A fresh, UNARMED machine: no /etc/selftest.on, so no battery runs.
-
-    `put` is PATH=TEXT pairs written onto the boot disk first -- a boot.cfg
-    to try a profile, a config file a checklist item needs.
-    """
-    boot, work = run / "boot", run / "work"
+def stage_boot(boot: Path, release: Path, put: list[str] | None) -> None:
+    """A fresh copy of `release` at `boot`, unarmed, with PATH=TEXT puts."""
     shutil.copytree(release, boot)
     marker = boot / "etc" / "selftest.on"
     if marker.exists():
@@ -162,6 +157,17 @@ def stage(run: Path, release: Path, disk: Path | None,
         target = boot / path.lstrip("/")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
+
+
+def stage(run: Path, release: Path, disk: Path | None,
+          put: list[str] | None = None) -> tuple[Path, Path | None, Path]:
+    """A fresh, UNARMED machine: no /etc/selftest.on, so no battery runs.
+
+    `put` is PATH=TEXT pairs written onto the boot disk first -- a boot.cfg
+    to try a profile, a config file a checklist item needs.
+    """
+    boot, work = run / "boot", run / "work"
+    stage_boot(boot, release, put)
     staged = None
     if disk is not None:
         staged = run / "disk"
@@ -248,6 +254,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
     ap.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    ap.add_argument("--machines", choices=["1", "2"], default="1",
+                    help="2 adds a second computer with its own fresh TOS, joined by "
+                         "network cards and a relay; `machine N` picks which one")
+    ap.add_argument("--peer-disk", metavar="DIR",
+                    help="like --disk, a copy of DIR as a second disk in the SECOND machine")
+    ap.add_argument("--peer-put", action="append", metavar="PATH=TEXT",
+                    help="like --put, onto the SECOND machine's disk (repeatable)")
     ap.add_argument("--seats", choices=["1", "2"], default="1",
                     help="2 adds a second GPU, screen and keyboard: two seats, picked by `seat N`")
     ap.add_argument("--floppy", action="append", metavar="NAME=DIR",
@@ -296,6 +309,16 @@ def main(argv: list[str] | None = None) -> int:
                 shutil.copytree(disk_src, disk)
         else:
             boot, disk, work = stage(run, hs.RELEASE, disk_src, args.put)
+        peer_boot = None
+        if args.machines == "2":
+            if args.os != "tos":
+                raise ValueError("--machines 2 boots TOS on both")
+            peer_boot = run / "boot2"
+            stage_boot(peer_boot, hs.RELEASE, args.peer_put)
+            if args.peer_disk:
+                shutil.copytree(args.peer_disk, run / "disk2")
+        elif args.peer_disk or args.peer_put:
+            raise ValueError("--peer-disk and --peer-put need --machines 2")
     except (ValueError, KeyError) as e:
         shutil.rmtree(run, ignore_errors=True)
         print(f"error: {e}", file=sys.stderr)
@@ -327,6 +350,10 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--internet")
     if args.seats != "1":
         cmd += ["--seats", args.seats]
+    if peer_boot is not None:
+        cmd += ["--peer-boot", str(peer_boot)]
+        if args.peer_disk:
+            cmd += ["--peer-disk", str(run / "disk2")]
     cmd += floppy_args
     if args.trace:
         cmd.append("--trace")

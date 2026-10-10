@@ -27,8 +27,11 @@ import totoro.ocelot.brain.entity.HDDManaged;
 import totoro.ocelot.brain.entity.InternetCard;
 import totoro.ocelot.brain.entity.Keyboard;
 import totoro.ocelot.brain.entity.Memory;
+import totoro.ocelot.brain.entity.NetworkCard;
+import totoro.ocelot.brain.entity.Relay;
 import totoro.ocelot.brain.entity.Screen;
 import totoro.ocelot.brain.entity.machine.Machine;
+import totoro.ocelot.brain.util.Direction$;
 import totoro.ocelot.brain.event.BeepEvent;
 import totoro.ocelot.brain.event.BeepPatternEvent;
 import totoro.ocelot.brain.event.Event;
@@ -67,6 +70,13 @@ import totoro.ocelot.brain.workspace.Workspace;
  *   --disk-address U  the second disk's address, so an OS that mounts by
  *                   address (OpenOS: /mnt/<first 3>) puts it somewhere known
  *   --internet      add an internet card
+ *   --peer-boot DIR a SECOND computer booting DIR: its own T3 case, disk,
+ *                   screen and keyboard, a network card in each machine and
+ *                   a relay between them; the script's `machine N` step
+ *                   picks which one the steps after it type at and read
+ *   --peer-disk DIR a second disk in the second computer, as --disk is in
+ *                   the first (address 5e550000-...-000000000002, so TOS
+ *                   mounts it at /mnt/disk_5e55 there too)
  *   --seats N       1 (default) or 2: a second GPU, screen and keyboard,
  *                   so TOS runs two seats; the script's `seat N` step
  *                   picks which screen the steps after it type at and read
@@ -163,6 +173,13 @@ public class HeadlessTOS {
     CODE.put(' ', 57);
   }
 
+  /** TEXT with each ${NAME} replaced by what `grab NAME` took. */
+  static String expand(String text, Map<String, String> vars) {
+    for (Map.Entry<String, String> e : vars.entrySet())
+      text = text.replace("${" + e.getKey() + "}", e.getValue());
+    return text;
+  }
+
   /** The character a named key sends with its code. */
   static char charFor(String name) {
     switch (name) {
@@ -178,6 +195,9 @@ public class HeadlessTOS {
   // ── The machine ───────────────────────────────────────────────────
   static Screen screen;   // the one the script is typing at and reading
   static final List<Screen> screens = new ArrayList<>();   // by seat, for `seat N`
+  static Machine peer;          // --peer-boot: the second computer
+  static Screen peerScreen;     // ...and its screen, for `machine 2`
+  static Path peerDiskDir;      // --peer-disk: a second disk in it
   static Machine machine;
   static Workspace ws;
   static Case pcCase;      // for `pullcard`
@@ -225,7 +245,7 @@ public class HeadlessTOS {
 
   static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram,
                     String bootTier, String diskAddress, List<String> floppySpecs, String floppyIn,
-                    int seats) {
+                    int seats, Path peerBoot) {
     boolean t1 = profile.equals("t1");
     String[] sticks = (ram != null ? ram : t1 ? "192" : "1024,1024").split(",");
     if (sticks.length > 2) throw new IllegalArgumentException("at most two memory sticks");
@@ -301,6 +321,49 @@ public class HeadlessTOS {
         if (f == null) throw new IllegalArgumentException("--floppy-in names no --floppy: " + floppyIn);
         floppyDrive.inventory().apply(0).put(f);
       }
+    }
+
+    // A second computer (--peer-boot): its own case, disk, screen and
+    // keyboard, a network card in each machine, and a RELAY between them --
+    // the block a player puts between two computers so that packets cross
+    // and components do not. One cable would merge their component
+    // networks, and each would see (and bind) the other's screen.
+    if (peerBoot != null) {
+      int slot = seats == 2 ? 2 : 1;
+      if (slot == 2 && internet)
+        throw new IllegalArgumentException("--peer-boot with --seats 2 and --internet: no free card slot");
+      pc.inventory().apply(slot).put(new NetworkCard());
+      Case pc2 = ws.add(new Case(Tier.Three()));
+      String addr2 = UUID.randomUUID().toString();
+      HDDManaged hdd2 = new HDDManaged(tier(bootTier));
+      hdd2.address_$eq(Option.apply(addr2));
+      hdd2.customRealPath_$eq(Option.apply(peerBoot));
+      EEPROM eeprom2 = new EEPROM();
+      eeprom2.codeBytes_$eq(Option.apply(bios));
+      eeprom2.label_$eq("Lua BIOS");
+      eeprom2.volatileData_$eq(addr2.getBytes(StandardCharsets.UTF_8));
+      pc2.inventory().apply(0).put(new DataCard.Tier3());
+      pc2.inventory().apply(1).put(new NetworkCard());
+      pc2.inventory().apply(3).put(new Memory(stick("1024")));
+      pc2.inventory().apply(4).put(new Memory(stick("1024")));
+      pc2.inventory().apply(5).put(hdd2);
+      if (peerDiskDir != null) {
+        HDDManaged disk2 = new HDDManaged(Tier.Two());
+        disk2.address_$eq(Option.apply("5e550000-0000-4000-8000-000000000002"));
+        disk2.customRealPath_$eq(Option.apply(peerDiskDir));
+        pc2.inventory().apply(6).put(disk2);
+      }
+      pc2.inventory().apply(8).put(new APU(Tier.Two()));
+      pc2.inventory().apply(9).put(eeprom2);
+      peerScreen = ws.add(new Screen(Tier.Three()));
+      Keyboard keyboard3 = ws.add(new Keyboard());
+      pc2.connect(peerScreen);
+      peerScreen.connect(keyboard3);
+      Relay relay = ws.add(new Relay());
+      relay.connect(Direction$.MODULE$.North(), pc);
+      relay.connect(Direction$.MODULE$.South(), pc2);
+      peer = pc2.machine();
+      System.out.println("[headless] peer: T3 case, 1024+1024K, boot disk " + addr2 + ", via a relay");
     }
 
     machine = pc.machine();
@@ -389,7 +452,11 @@ public class HeadlessTOS {
    *   maybe SECS REGEX    if the screen matches within SECS, the next step
    *                       runs; if not, the next step is skipped. For what
    *                       only sometimes appears (a first-login tour)
-   *   type TEXT           types TEXT; \n is Enter, \t Tab, \\ a backslash
+   *   type TEXT           types TEXT; \n is Enter, \t Tab, \\ a backslash;
+   *                       ${NAME} is what `grab NAME` took
+   *   grab NAME REGEX     remember REGEX's first group on the screen now as
+   *                       ${NAME} -- carry what one machine prints (an
+   *                       address, a pairing code) to where it is typed
    *   key NAME [N]        presses a key N times: enter, esc, tab, backspace,
    *                       up/down/left/right, home, end, pgup, pgdn, insert,
    *                       delete, f1-f12, or ctrl+LETTER / shift+NAME
@@ -415,6 +482,8 @@ public class HeadlessTOS {
    *                       to see the BIOS's K4
    *   insert NAME         put floppy NAME (a --floppy) in the drive
    *   seat N              type at and read screen N from here on (--seats 2)
+   *   machine N           type at and read machine N's screen (--peer-boot;
+   *                       machine 1 is seat 1)
    *
    * Every step prints a "[step]" line with its time, which is how a
    * measurement ("how long does pkg sign take on a T1") comes back.
@@ -429,6 +498,7 @@ public class HeadlessTOS {
     long deadline = start + (long) (timeout * 1e9);
     Deque<Runnable> input = new ArrayDeque<>();
     Map<String, Long> marks = new HashMap<>();
+    Map<String, String> vars = new HashMap<>();   // `grab`
     String lastMark = null;
     int si = 0, tick = 0, phase = 0;
     boolean skipNext = false;
@@ -514,7 +584,7 @@ public class HeadlessTOS {
           break;
         }
         case "type": {
-          String text = line.length() > 5 ? line.substring(5) : "";
+          String text = expand(line.length() > 5 ? line.substring(5) : "", vars);
           for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
             if (c == '\\' && i + 1 < text.length()) {
@@ -538,7 +608,7 @@ public class HeadlessTOS {
           break;
         }
         case "paste": {
-          String text = line.length() > 6 ? line.substring(6) : "";
+          String text = expand(line.length() > 6 ? line.substring(6) : "", vars);
           input.add(() -> screen.clipboard(text, USER));
           done = true;
           break;
@@ -601,6 +671,26 @@ public class HeadlessTOS {
             failure = "resolution: " + ex.getMessage();   // past the screen's maximum
             break;
           }
+          done = true;
+          break;
+        }
+        case "grab": {
+          if (w.length < 3) { failure = "grab takes NAME REGEX"; break; }
+          java.util.regex.Matcher gm = Pattern.compile(w[2], Pattern.MULTILINE).matcher(screenText(screen));
+          if (!gm.find() || gm.groupCount() < 1 || gm.group(1) == null) {
+            failure = "grab " + w[1] + ": nothing on the screen matches " + w[2];
+            break;
+          }
+          vars.put(w[1], gm.group(1));
+          note = " (" + w[1] + " = " + gm.group(1) + ")";
+          done = true;
+          break;
+        }
+        case "machine": {
+          int n = w.length > 1 ? Integer.parseInt(w[1]) : 0;
+          if (n == 1) screen = screens.get(0);
+          else if (n == 2 && peerScreen != null) screen = peerScreen;
+          else { failure = "machine: no machine " + n + (peerScreen == null ? " (needs --peer-boot)" : ""); break; }
           done = true;
           break;
         }
@@ -682,7 +772,8 @@ public class HeadlessTOS {
     if (boot == null || biosFile == null || workDir == null) {
       System.err.println("usage: HeadlessTOS --boot DIR --bios FILE --work DIR [--disk DIR]"
           + " [--timeout SECS] [--config FILE] [--profile t3|t1] [--ram KB[,KB]] [--boot-tier N]"
-          + " [--disk-address UUID] [--internet] [--seats 1|2] [--floppy NAME=DIR]... [--floppy-in NAME]"
+          + " [--disk-address UUID] [--internet] [--seats 1|2] [--peer-boot DIR]"
+          + " [--floppy NAME=DIR]... [--floppy-in NAME]"
           + " [--script FILE] [--trace]");
       System.exit(64);
     }
@@ -699,6 +790,8 @@ public class HeadlessTOS {
       System.exit(64);
     }
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
+    if (opt(args, "--peer-disk", null) != null)
+      peerDiskDir = Paths.get(opt(args, "--peer-disk", null)).toAbsolutePath();
     if (seats != 1 && seats != 2) {
       System.err.println("--seats is 1 or 2");
       System.exit(64);
@@ -716,11 +809,14 @@ public class HeadlessTOS {
     EventBus.subscribe(new BeepLog());
     build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null),
         opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null),
-        opts(args, "--floppy"), opt(args, "--floppy-in", null), seats);
+        opts(args, "--floppy"), opt(args, "--floppy-in", null), seats,
+        opt(args, "--peer-boot", null) != null ? Paths.get(opt(args, "--peer-boot", null)).toAbsolutePath() : null);
     System.out.println("[headless] power on: " + (machine.start() ? "ok" : "refused"));
+    if (peer != null) System.out.println("[headless] peer power on: " + (peer.start() ? "ok" : "refused"));
 
     int code = script != null ? runScript(Paths.get(script), timeout, work) : runUntilOff(timeout, work);
     if (machine.isRunning()) machine.stop();
+    if (peer != null && peer.isRunning()) peer.stop();
     Ocelot.shutdown();
     System.exit(code);
   }

@@ -10,6 +10,9 @@
 -- ║         moved every other program's, on every seat.             ║
 -- ║   H-07  term.screen() and the GPU fallback answered with the    ║
 -- ║         machine's FIRST screen / GPU, whoever asked.            ║
+-- ║   and   every term.write still drew through kernel.display --   ║
+-- ║         seat 1's GPU -- so a seat-2 program painted on seat 1   ║
+-- ║         (2-seat headless machine, 2026-10-10).                  ║
 -- ║                                                                ║
 -- ║  Drives the REAL compat.term (and, for the cursor, two REAL     ║
 -- ║  sandbox.build() environments, as the audit's repro did).       ║
@@ -39,9 +42,13 @@ package.loaded["computer"] = {
 }
 -- Two seats' hardware. component.list returns seat 1's FIRST, as a real
 -- bus would for whichever device was attached first.
-local GPU = { g1 = { tag = "gpu-1" }, g2 = { tag = "gpu-2" } }
+local fills = 0
+local GPU = { g1 = { tag = "gpu-1", address = "g1" }, g2 = { tag = "gpu-2", address = "g2" } }
 for addr, g in pairs(GPU) do
+  g.drawn = {}
   g.getResolution = function() return g.tag end
+  g.set = function(x, y, s) g.drawn[#g.drawn + 1] = { x = x, y = y, s = s } end
+  g.fill = function() fills = fills + 1 end
 end
 package.loaded["component"] = {
   list = function(t)
@@ -55,15 +62,17 @@ package.loaded["component"] = {
 }
 
 -- kernel.display: records where things are drawn. getGpu answers nil so
--- the seat fallback (H-07) is what is exercised.
-local sets, fills = {}, 0
+-- the seat fallback (H-07) is what is exercised -- and so every seat with a
+-- GPU draws on that GPU; displayGpu = GPU.g1 makes seat 1 kernel.display's.
+local sets = {}
+local displayGpu = nil
 package.loaded["kernel.display"] = {
   getSize = function() return 80, 25 end,
   set = function(x, y, s) sets[#sets + 1] = { x = x, y = y, s = s } end,
   fill = function() fills = fills + 1 end,
   clear = function() end,
   scrollUp = function() end,
-  getGpu = function() return nil end,
+  getGpu = function() return displayGpu end,
   invalidateColors = function() end,
 }
 local seat = nil
@@ -99,10 +108,11 @@ do
   seat = 2
   local bx, by = tB.getCursor()
   test("seat 2's program does not see seat 1's cursor (the audit's repro)", bx == 1 and by == 1)
-  sets = {}
+  sets, GPU.g2.drawn = {}, {}
   tB.write("B")
-  test("...and seat 2's write lands at seat 2's cursor",
-    sets[1] and sets[1].x == 1 and sets[1].y == 1 and sets[1].s == "B")
+  local d = GPU.g2.drawn[1]
+  test("...and seat 2's write lands at seat 2's cursor, on seat 2's GPU",
+    d and d.x == 1 and d.y == 1 and d.s == "B" and #sets == 0)
   seat = 1
   local ax, ay = tA.getCursor()
   test("seat 1's cursor is where seat 1 left it", ax == 40 and ay == 12)
@@ -127,6 +137,49 @@ do
   seat = 1
   test("cursor blink is per seat too", term.getCursorBlink() == false)
   seat = nil
+end
+
+-- ── which glass ──────────────────────────────────────────────────
+print()
+print("-- each seat draws on its own glass --")
+do
+  displayGpu = GPU.g1               -- seat 1 is the boot display's seat
+  local function clean() sets, GPU.g1.drawn, GPU.g2.drawn = {}, {}, {} end
+
+  seat = 1; clean()
+  term.setCursor(1, 1); term.write("one")
+  test("seat 1 -- kernel.display's own GPU -- draws through kernel.display, as before",
+    #sets == 1 and sets[1].s == "one" and #GPU.g1.drawn == 0 and #GPU.g2.drawn == 0)
+
+  seat = 2; clean()
+  term.setCursor(1, 1); term.write("two")
+  test("seat 2 draws on seat 2's GPU", #GPU.g2.drawn == 1 and GPU.g2.drawn[1].s == "two")
+  test("...and nothing of it reaches seat 1", #sets == 0 and #GPU.g1.drawn == 0)
+
+  clean()
+  term.setCursor(1, 2)
+  local co = coroutine.create(function() return term.read() end)
+  assert(coroutine.resume(co))
+  coroutine.resume(co, "key_down", "k2", string.byte("b"), 48, "player")
+  local okR, line = coroutine.resume(co, "key_down", "k2", 13, 28, "player")
+  local echoed = false
+  for _, e in ipairs(GPU.g2.drawn) do if e.s == "b" then echoed = true end end
+  test("term.read on seat 2 echoes on seat 2", okR and line == "b" and echoed)
+  test("...and not on seat 1", #sets == 0 and #GPU.g1.drawn == 0)
+
+  seat = nil; clean()
+  term.write("boot")
+  test("a seatless caller draws through kernel.display", #sets == 1 and #GPU.g2.drawn == 0)
+
+  seat = 9; clean()
+  term.write("?")
+  test("a seat whose devices are unknown keeps kernel.display, not a guess",
+    #sets == 1 and #GPU.g2.drawn == 0)
+
+  seat = 2
+  test("term.gpu() on seat 2 is seat 2's GPU even when kernel.display has one",
+    term.gpu() and term.gpu().getResolution() == "gpu-2")
+  seat, displayGpu = nil, nil
 end
 
 -- ── H-04: term.read ─────────────────────────────────────────────

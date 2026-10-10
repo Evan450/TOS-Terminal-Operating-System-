@@ -108,6 +108,22 @@ do
     #dead == 0)
   test("nfs_req is allowed from a TRUSTED peer", trust.isAllowed(A_ADDR, P.TYPE.NETFS_REQ))
   test("nfs_res is allowed from a TRUSTED peer", trust.isAllowed(A_ADDR, P.TYPE.NETFS_RES))
+  -- A Manager trusts its Master before pairing, so the Master's confirm
+  -- comes from a TRUSTED peer. It was allowed only at UNKNOWN, refused at
+  -- the gate, and every wizard pairing reported failure (headless, 2026-10-10).
+  test("cl_pair_conf is allowed from a TRUSTED peer",
+    trust.isAllowed(A_ADDR, P.TYPE.CLUSTER_PAIR_CONFIRM))
+  test("cl_pair_init is allowed from a TRUSTED peer",
+    trust.isAllowed(A_ADDR, P.TYPE.CLUSTER_PAIR_INIT))
+  local lost = {}
+  for name, wire in pairs(P.TYPE) do
+    if trust.isAllowed("unseen-peer", wire) and not trust.isAllowed(A_ADDR, wire) then
+      lost[#lost + 1] = name
+    end
+  end
+  table.sort(lost)
+  test("nothing an UNKNOWN peer may send is refused from a TRUSTED one ("
+    .. table.concat(lost, ", ") .. ")", #lost == 0)
 end
 
 print()

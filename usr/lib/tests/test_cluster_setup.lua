@@ -76,6 +76,11 @@ do
   -- The operator's literal question was whether they have to move files.
   test("says you never copy files by hand",
     text:find("never copy files by hand", 1, true) ~= nil)
+  -- The buttons on this screen install the role and go on to configure it.
+  test("says the wizard installs what you pick",
+    text:find("this wizard installs it", 1, true) ~= nil)
+  test("...and does not send you off to install it and run the wizard again",
+    text:find("cluster-setup' again", 1, true) == nil)
 end
 
 -- ============================================================

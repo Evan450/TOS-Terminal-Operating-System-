@@ -225,7 +225,12 @@ return function(C, S, deps)
       if not okA or not api or not api.startPairing then
         return nil, "the Master daemon is not up yet"
       end
-      return api.startPairing()
+      -- The window comes back as a table; wiz.pairingWindow reads it. The
+      -- api raises when no daemon is bound, which means "not up", not a
+      -- wizard crash.
+      local okS, w, err = pcall(api.startPairing)
+      if not okS then return nil, tostring(w) end
+      return wiz.pairingWindow(w, err)
     end
     ctx.pairWith = function(addr, code)
       local okM, mgr = pcall(require, "cluster-manager")
