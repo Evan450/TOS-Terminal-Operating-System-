@@ -67,6 +67,9 @@ import totoro.ocelot.brain.workspace.Workspace;
  *   --disk-address U  the second disk's address, so an OS that mounts by
  *                   address (OpenOS: /mnt/<first 3>) puts it somewhere known
  *   --internet      add an internet card
+ *   --seats N       1 (default) or 2: a second GPU, screen and keyboard,
+ *                   so TOS runs two seats; the script's `seat N` step
+ *                   picks which screen the steps after it type at and read
  *   --floppy NAME=DIR  a floppy labelled NAME over a host directory
  *                   (repeatable). Any floppy adds one disk drive; TOS
  *                   mounts a labelled disk at /mnt/NAME
@@ -173,7 +176,8 @@ public class HeadlessTOS {
   }
 
   // ── The machine ───────────────────────────────────────────────────
-  static Screen screen;
+  static Screen screen;   // the one the script is typing at and reading
+  static final List<Screen> screens = new ArrayList<>();   // by seat, for `seat N`
   static Machine machine;
   static Workspace ws;
   static Case pcCase;      // for `pullcard`
@@ -220,7 +224,8 @@ public class HeadlessTOS {
   }
 
   static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram,
-                    String bootTier, String diskAddress, List<String> floppySpecs, String floppyIn) {
+                    String bootTier, String diskAddress, List<String> floppySpecs, String floppyIn,
+                    int seats) {
     boolean t1 = profile.equals("t1");
     String[] sticks = (ram != null ? ram : t1 ? "192" : "1024,1024").split(",");
     if (sticks.length > 2) throw new IllegalArgumentException("at most two memory sticks");
@@ -266,6 +271,18 @@ public class HeadlessTOS {
     Keyboard keyboard = ws.add(new Keyboard());
     pc.connect(screen);
     screen.connect(keyboard);
+    screens.add(screen);
+    // A second seat: its own GPU (t3's APU leaves card slot 1 free; t1 has
+    // no data card, so slot 0), screen and keyboard. TOS pairs GPUs with
+    // screens at boot and runs a login on each.
+    if (seats == 2) {
+      pc.inventory().apply(t1 ? 0 : 1).put(new GraphicsCard(t1 ? Tier.One() : Tier.Three()));
+      Screen second = ws.add(new Screen(t1 ? Tier.One() : Tier.Three()));
+      Keyboard keyboard2 = ws.add(new Keyboard());
+      pc.connect(second);
+      second.connect(keyboard2);
+      screens.add(second);
+    }
 
     // A disk drive beside the case, as in the world: the floppies are swapped
     // through it by the script's `eject` / `insert NAME` steps.
@@ -387,12 +404,17 @@ public class HeadlessTOS {
    *   eject               take the floppy out of the disk drive
    *   pullcard            take the internet card out of its slot (mid-download,
    *                       say: what is left behind when the card goes)
+   *   resolution W H      resize the screen from OUTSIDE TOS: the call a GPU
+   *                       makes, so the machine gets the same screen_resized
+   *                       a real resize sends (another program's
+   *                       setResolution, a screen block broken in-world)
    *   hostmv FROM TO      rename a file on the boot disk from OUTSIDE the
    *                       machine (paths relative to the disk's root, and
    *                       both must stay on it) -- what a person does to a
    *                       disk with the machine off, e.g. remove the kernel
    *                       to see the BIOS's K4
    *   insert NAME         put floppy NAME (a --floppy) in the drive
+   *   seat N              type at and read screen N from here on (--seats 2)
    *
    * Every step prints a "[step]" line with its time, which is how a
    * measurement ("how long does pkg sign take on a T1") comes back.
@@ -444,7 +466,13 @@ public class HeadlessTOS {
           break;
         }
       }
-      if (!input.isEmpty()) continue;   // finish typing before the next step
+      // Finish typing before the next step -- at the same 20 TPS as
+      // everything else. The machine's clock is world TICKS (Machine.upTime
+      // is ticks / 20), so a `continue` that skipped the sleep below ran a
+      // typed command's ticks back to back: machine time raced ahead of
+      // the stopwatch, about 1.1 s for a 22-character command, and any
+      // "since mark" across typing came out short by that much.
+      if (!input.isEmpty()) { Thread.sleep(50); continue; }
 
       if (skipNext) {
         // The `maybe` before this step did not see its text: skip it.
@@ -564,6 +592,25 @@ public class HeadlessTOS {
           pcCase.inventory().apply(2).remove();
           done = true;
           break;
+        case "resolution": {
+          String[] a = line.split("\\s+");
+          if (a.length != 3) { failure = "resolution takes W H"; break; }
+          try {
+            screen.setResolution(Integer.parseInt(a[1]), Integer.parseInt(a[2]));
+          } catch (Exception ex) {
+            failure = "resolution: " + ex.getMessage();   // past the screen's maximum
+            break;
+          }
+          done = true;
+          break;
+        }
+        case "seat": {
+          int n = w.length > 1 ? Integer.parseInt(w[1]) : 0;
+          if (n < 1 || n > screens.size()) { failure = "seat: no screen " + n + " (--seats " + screens.size() + ")"; break; }
+          screen = screens.get(n - 1);
+          done = true;
+          break;
+        }
         case "eject":
           if (floppyDrive == null) { failure = "eject: no --floppy, so no disk drive"; break; }
           floppyDrive.inventory().apply(0).remove();
@@ -635,7 +682,7 @@ public class HeadlessTOS {
     if (boot == null || biosFile == null || workDir == null) {
       System.err.println("usage: HeadlessTOS --boot DIR --bios FILE --work DIR [--disk DIR]"
           + " [--timeout SECS] [--config FILE] [--profile t3|t1] [--ram KB[,KB]] [--boot-tier N]"
-          + " [--disk-address UUID] [--internet] [--floppy NAME=DIR]... [--floppy-in NAME]"
+          + " [--disk-address UUID] [--internet] [--seats 1|2] [--floppy NAME=DIR]... [--floppy-in NAME]"
           + " [--script FILE] [--trace]");
       System.exit(64);
     }
@@ -651,6 +698,11 @@ public class HeadlessTOS {
       System.err.println("unknown profile: " + profile);
       System.exit(64);
     }
+    int seats = Integer.parseInt(opt(args, "--seats", "1"));
+    if (seats != 1 && seats != 2) {
+      System.err.println("--seats is 1 or 2");
+      System.exit(64);
+    }
     String script = opt(args, "--script", null);
     if (flag(args, "--trace")) tracePath = work.resolve("frames.txt");
 
@@ -664,7 +716,7 @@ public class HeadlessTOS {
     EventBus.subscribe(new BeepLog());
     build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null),
         opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null),
-        opts(args, "--floppy"), opt(args, "--floppy-in", null));
+        opts(args, "--floppy"), opt(args, "--floppy-in", null), seats);
     System.out.println("[headless] power on: " + (machine.start() ? "ok" : "refused"));
 
     int code = script != null ? runScript(Paths.get(script), timeout, work) : runUntilOff(timeout, work);

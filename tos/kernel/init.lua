@@ -1447,7 +1447,11 @@ function kernel.loginAndStartShell()
         -- own success bool, so capture BOTH returns — previously only `token`
         -- was kept and the "shutdown" reason was dropped, so F10 just looped
         -- back to the login screen instead of powering off.
-        local ok, result, reason = pcall(loginScreen.run, {
+        -- Its OWN login: the module's state is the seat's display, and one
+        -- shared copy drew every seat's login on whichever seat started
+        -- last (shell/login.lua, newLogin).
+        local seatLogin = loginScreen.new and loginScreen.new() or loginScreen
+        local ok, result, reason = pcall(seatLogin.run, {
           display = dProxy,
           event   = event,
           users   = usersmod,

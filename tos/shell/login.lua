@@ -5,8 +5,6 @@
 
 local computer = require("computer")
 
-local login = {}
-
 -- ── Seat-safe input primitive (#FIX round-4 "two-screen boot binds one
 -- session") ──────────────────────────────────────────────────────────
 -- Login runs as a per-seat kernel PROCESS. Reading input with raw
@@ -33,6 +31,18 @@ local function sleep(sec)
   local dl = computer.uptime() + sec
   while computer.uptime() < dl do pull(dl - computer.uptime()) end
 end
+
+--! ONE INSTANCE PER SEAT. Everything from here to the end of newLogin
+--! reads the seat's display, W and H (and the modules) as upvalues that
+--! login.run sets. As one shared module, a 2-seat boot ran login.run twice
+--! into the SAME upvalues: whichever seat started last owned the screen
+--! for both, so the other seat's login drew its box -- and the echo of
+--! every key typed at it -- on the wrong screen, and that seat looked dead
+--! (headless machine, 2026-10-10). The kernel takes login.new() per seat;
+--! each call builds these closures afresh. Left unindented so the history
+--! of the code inside stays readable. (test_login_per_seat.lua)
+local function newLogin()
+local login = {}
 
 -- Module references
 local display, event, usermod, proc, log
@@ -265,6 +275,30 @@ local function firstBootSetup(username, oldPassword)
 
   local pass1, pass2
 
+  --! Every seat opens this box on a fresh install, and the first to answer
+  --! sets the password. That answer stands: the other seats leave for the
+  --! ordinary login. They used to stay and retry a change whose "current
+  --! password" was no longer the default, refused forever as "Current
+  --! password is incorrect" -- a password nobody at that seat was ever
+  --! asked for (2-seat headless machine, 2026-10-10). Checked about once a
+  --! second while waiting, so an idle seat does not sit on a stale box,
+  --! and once more right before the change. (test_login_per_seat.lua)
+  local nextCheck = 0
+  local function setElsewhere(now)
+    local t0 = computer.uptime()
+    if not now and t0 < nextCheck then return false end
+    nextCheck = t0 + 1
+    local u = usermod.getUser and usermod.getUser(username)
+    return u ~= nil and not u.firstBoot
+  end
+  local function leave()
+    display.fill(boxX + 2, boxY + 9, boxW - 4, 2, " ", theme.dim, boxBg)
+    display.set(boxX + 2, boxY + 9, ("Set at another screen. Log in with it."):sub(1, boxW - 4),
+      theme.highlight, boxBg)
+    sleep(2)
+    return false
+  end
+
   while true do
     -- First password
     display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, theme.input_bg)
@@ -277,6 +311,7 @@ local function firstBootSetup(username, oldPassword)
       display.set(inputX + #pass1, boxY + 5, "_", theme.highlight, theme.input_bg)
 
       local sig, _, char, code = pull(0.5)
+      if setElsewhere() then return leave() end
       if sig == "key_down" then
         if code == 28 then break
         elseif code == 14 then
@@ -295,6 +330,7 @@ local function firstBootSetup(username, oldPassword)
       display.set(inputX + #pass2, boxY + 7, "_", theme.highlight, theme.input_bg)
 
       local sig, _, char, code = pull(0.5)
+      if setElsewhere() then return leave() end
       if sig == "key_down" then
         if code == 28 then break
         elseif code == 14 then
@@ -338,6 +374,8 @@ local function firstBootSetup(username, oldPassword)
       say("Password must be 6+ characters!", theme.error)
     elseif pass1 ~= pass2 then
       say("Passwords don't match! Try again.", theme.error)
+    elseif setElsewhere(true) then
+      return leave()
     else
       -- Success
       local ok, err = usermod.changePassword(username, username, oldPassword, pass1)
@@ -452,6 +490,12 @@ function login.run(modules)
         tryTutorial(token)
         return token
       end
+      -- Another seat set the password first. This seat's token came from
+      -- the DEFAULT password, and promoteAfterFirstBoot unlocks any token
+      -- once the account's firstBoot flag is clear -- which the other
+      -- seat just cleared. Nothing promotes it on this path, but nothing
+      -- should be holding a live one either: end it here.
+      if usermod.logout then pcall(usermod.logout, token) end
     end
   end
 
@@ -673,3 +717,10 @@ function login.run(modules)
 end
 
 return login
+end -- newLogin
+
+-- require("shell.login").run still works for one seat; new() is the
+-- per-seat instance the kernel uses.
+local default = newLogin()
+default.new = newLogin
+return default

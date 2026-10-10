@@ -21,7 +21,9 @@ A script is one step per line (HeadlessTOS.java's runScript lists them):
 only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 (ctrl+q, f10, up, ...), `paste TEXT`, `click X Y`, `sleep SECS`, `mark NAME`,
 `snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, `pullcard`
-(the internet card out of its slot), and
+(the internet card out of its slot), `resolution W H` (resize the screen
+from outside, which raises the same screen_resized a real resize does),
+`seat N` (with --seats 2: type at and read screen N from then on), and
 `hostmv FROM TO` (rename a file on the boot disk from outside the machine,
 e.g. take the kernel away to see the BIOS's K4). Two more are expanded here:
 
@@ -246,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
     ap.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    ap.add_argument("--seats", choices=["1", "2"], default="1",
+                    help="2 adds a second GPU, screen and keyboard: two seats, picked by `seat N`")
     ap.add_argument("--floppy", action="append", metavar="NAME=DIR",
                     help="a floppy labelled NAME over a copy of DIR, swapped through a disk "
                          "drive by the script's `eject` / `insert NAME` steps; TOS mounts it "
@@ -321,6 +325,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd += ["--config", str(work / "OpenComputers.conf")]
     if args.internet:
         cmd.append("--internet")
+    if args.seats != "1":
+        cmd += ["--seats", args.seats]
     cmd += floppy_args
     if args.trace:
         cmd.append("--trace")

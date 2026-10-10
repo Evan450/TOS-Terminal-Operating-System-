@@ -289,7 +289,7 @@ local function framedDraw(S, ...)
   return res
 end
 
-local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow)
+local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow, closeIf)
   -- Build a first-letter hotkey map (lowercased).
   local hot = {}
   for i, l in ipairs(labels) do
@@ -300,6 +300,10 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
   while true do
     local lastFocus = focus
     local sig, _, b, c = pullSignal()
+    -- Answered somewhere else (another seat's copy of the same notice):
+    -- close with no answer of our own. Checked before the signal, so a
+    -- key that arrives in the same breath is not taken as a second one.
+    if closeIf and closeIf() then return nil end
     if sig == "key_down" then
       if c == 28 then return focus                       -- Enter
       -- ^Q cancels. Esc is still accepted, but it never arrives in real
@@ -338,6 +342,8 @@ end
 ---   escIndex = index returned on Esc (default last button),
 ---   shadow   = false to suppress the drop shadow,
 ---   redraw   = function() called to repaint under the box afterwards,
+---   closeIf  = function() polled each time the box wakes; true closes it
+---              and the dialog returns nil (answered elsewhere),
 --- }
 --- Use this for ANY interruptive prompt — install confirmations, results,
 --- "are you sure" — not only dangerous ones. For a quiet, non-intrusive
@@ -488,7 +494,8 @@ function M.dialog(S, opts)
   end
   local focus  = opts.default or 1
   local escIdx = opts.escIndex or #labels
-  local pick = dialogLoop(S, style, title, lines, labels, focus, escIdx, opts.shadow)
+  local pick = dialogLoop(S, style, title, lines, labels, focus, escIdx, opts.shadow,
+    opts.closeIf)
   --! `redraw == false` means "another box follows immediately -- leave
   --! the screen alone". Repainting the whole shell between questions is
   --! what made a sequence flicker: box, full redraw, box again, one row

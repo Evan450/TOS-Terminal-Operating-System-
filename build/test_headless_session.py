@@ -272,8 +272,20 @@ def test_the_runner_knows_hostmv_and_reports_beeps():
     java = (HERE / "HeadlessTOS.java").read_text(encoding="utf-8")
     assert 'case "hostmv": {' in java
     assert 'case "pullcard":' in java
+    assert 'case "resolution": {' in java
+    assert 'case "seat": {' in java
+    assert '"--seats"' in java
+    assert '"--seats"' in (HERE / "headless-session.py").read_text(encoding="utf-8")
     # hostmv must never reach outside the boot disk's folder.
     assert "paths must stay on the boot disk" in java
     assert "EventBus.subscribe(new BeepLog())" in java
     src = (HERE / "headless-session.py").read_text(encoding="utf-8")
     assert '"[beep]"' in src
+
+
+def test_typing_keeps_the_tick_pace():
+    # The machine's clock is ticks / 20, so a loop iteration that skips the
+    # 50 ms sleep makes machine time outrun the wall clock. Typing used to.
+    java = (HERE / "HeadlessTOS.java").read_text(encoding="utf-8")
+    assert "if (!input.isEmpty()) { Thread.sleep(50); continue; }" in java
+    assert "if (!input.isEmpty()) continue;" not in java

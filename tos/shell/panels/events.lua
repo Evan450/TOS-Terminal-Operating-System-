@@ -1302,8 +1302,18 @@ function M.run(S, deps)
               title   = notice.title,
               message = notice.message .. "\n\nFrom: " .. notice.from,
               buttons = notice.buttons,
+              -- Every seat shows the notice and the first answer settles it
+              -- for all of them -- so the other seats' boxes must CLOSE then.
+              -- Each seat blocks in its own copy of this dialog, and nothing
+              -- told it: answering on seat 1 left the box up on seat 2 until
+              -- someone answered it again there (2-seat headless machine,
+              -- 2026-10-10). result() turns non-nil only on settle(), not on
+              -- expiry, so a box nobody has read yet stays up.
+              -- (test_notice_cleared_elsewhere.lua)
+              closeIf = function() return nf.result(notice.id) ~= nil end,
             })
-            nf.settle(notice.id, okD and pick or 1)
+            -- nil: another seat answered it, and settled it with its answer.
+            if not (okD and pick == nil) then nf.settle(notice.id, okD and pick or 1) end
             -- Stamp the quiet window AFTER the box closes, from a fresh
             -- clock. dialogs.dialog BLOCKS until answered, so stamping it
             -- beforehand would spend the operator's guaranteed keyboard

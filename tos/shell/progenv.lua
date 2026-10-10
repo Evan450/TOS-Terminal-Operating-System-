@@ -69,6 +69,7 @@ function M.builder(S)
     end
     return sb.build{
       name    = opts.name or "shell:program",
+      pkgName = opts.pkgName,   -- set only for a file a package installed
       cwd     = S.cwd,
       session = (S.U and S.U.currentSession and S.U.currentSession()) or nil,
       caps    = caps,

@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**74 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**72 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 51 | Planned or under investigation. Most contributions belong here. |
+| Planned | 49 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (11) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (9) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -136,21 +136,6 @@ Emulator checklist - the RBMK SKALA panel (Extras, v0.2.0). NOTE: all of this is
 - colour on a TIER-2 GPU: the bands were chosen to survive 16 colours, unverified in-world.
 - off-box tests cover the arithmetic, the wire and the painted CELL CONTENTS (against a fake display that models state); what needs a GPU is alignment, colour on real hardware, and the multi-seat/multi-GPU behaviour.
 
-### Emulator checklist - editor horizontal scrolling
-
-*Planned* · from the round *Signed manifests round (2026-08-11)*
-
-Emulator checklist - editor horizontal scrolling:
-
-- open a file with a line longer than the screen; typing past the right edge must scroll, and the cursor must stay visible (it used to vanish and look like a freeze)
-- the "&lt;" and "&gt;" edge markers appear only when there is more text that way, and do not flicker while typing
-- a .lua file still highlights correctly once scrolled: a string literal spanning the left edge must not turn everything after it into code-coloured text
-- select across a scrolled region and confirm the highlight lands on the characters it claims
-- resize the screen narrower with the cursor near the right edge; the next repaint must re-anchor the window
-- off-box tests cover the ARITHMETIC only; drawing needs a real GPU
-
-MOSTLY DONE 2026-10-03 on the headless machine, with colour snapshots (HeadlessTOS now writes snap-NAME.colors beside each snap): `edit` on a one-line, 150-character Lua file whose string literal runs past the screen, at 80x25. At the start the string's colour runs to column 79 with "&gt;" in 80 and no "&lt;". After End the left edge falls inside the string, and the string's tail keeps its colour up to the closing quote, then the comment colour; "&lt;" shows, "&gt;" does not, and the cursor cell sits at column 80. Typing QQQQQ scrolls on with the cursor still at the edge. Shift+Left x10 puts the selection background on exactly the last ten characters ("er itQQQQQ"). Home brings back the start, "&gt;" and no "&lt;". No flicker either: traced (--trace keeps every distinct frame) while typing one Q a second after End, then two Backspaces and two Lefts, all 10 scrolled frames carry "&lt;" in its cell and none shows "&gt;"; the window slides one column per character. STILL OPEN: only the resize item. TOS has no command that changes the resolution, so it needs a person, or a resolution command.
-
 ### Emulator checklist (needs OpenPrinter installed): Printer + word processor round
 
 *Planned* · from the round *Printer + word processor round (2026-08-11)*
@@ -195,16 +180,6 @@ Emulator checklist:
 - `cluster-setup` on a box with NOTHING installed: does the explain screen actually make the choice obvious?
 - full Master-&gt;Manager pairing on two machines using only what the wizard prints (this is the real test of the address fix)
 - answer "no" to boot-start, reboot, confirm the service is NOT running; then `service start clusterd`, reboot, confirm it IS
-
-### Emulator checklist: Notify round
-
-*Planned* · from the round *Notify round (2026-07-28)*
-
-Emulator checklist:
-
-- `notify "test"` from one seat, confirm the box lands on BOTH seats and that answering on one clears both
-- hammer `notify` and confirm the 3s quiet window really gives the keyboard back
-- confirm a dialog raised while a fullscreen program is backgrounded does NOT paint over it (suspendIdleDraw)
 
 ### Emulator checklist for this round: Intercom round
 

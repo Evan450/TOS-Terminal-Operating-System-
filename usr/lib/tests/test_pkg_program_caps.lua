@@ -152,6 +152,40 @@ do
 end
 
 print()
+print("=== ...and run AS that package ===")
+print()
+
+-- The caps reached the program, but the package's NAME did not: the PATH
+-- runner built its sandbox with no pkgName, so a notice it raised was
+-- stamped "package" instead of its own name (the name the operator reads
+-- on the dialog, and its rate-limit key), and crypto.secret() -- scoped to
+-- that name -- did not exist for it at all. Found on the headless machine
+-- building a notify fixture, 2026-10-09.
+do
+  local function readSrc(rel)
+    for _, p in ipairs({ base .. "../../../" .. rel, rel, "TOS-Dev/" .. rel }) do
+      local f = io.open(p, "rb")
+      if f then local s = f:read("*a"); f:close(); return s end
+    end
+  end
+  local seen
+  package.loaded["kernel.sandbox"] = { build = function(o) seen = o; return {} end }
+  local progenv = assert(load(assert(readSrc("tos/shell/progenv.lua")), "=progenv"))()
+  local make = progenv.builder({ cwd = "/" })
+  make({ name = "/usr/bin/tool.lua", pkgName = "tool", caps = { net = true } })
+  test("progenv hands the owning package's name to the sandbox",
+    seen and seen.pkgName == "tool" and seen.caps.net)
+  make({ name = "/usr/bin/other.lua" })
+  test("...and no name for a file no package owns", seen and seen.pkgName == nil)
+  package.loaded["kernel.sandbox"] = nil
+
+  local ex = assert(readSrc("tos/shell/panels/executor.lua"))
+  test("the PATH runner passes capsForFile's owner as pkgName",
+    ex:find("pkgCaps, pkgOwner = pkgMod.capsForFile(resolved)", 1, true) ~= nil
+    and ex:find("pkgName = pkgOwner", 1, true) ~= nil)
+end
+
+print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
 else print("All tests passed."); return true end
