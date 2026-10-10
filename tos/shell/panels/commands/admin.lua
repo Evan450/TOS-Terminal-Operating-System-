@@ -101,23 +101,26 @@ o("knew the system was good — and to put it back — use 'srm scan' / 'srm rep
 end
 
 local PKG_MIN_KB = 1280
+
+local function memoryHint(why, o, what)
+local s = tostring(why)
+if not (s:find("not enough memory", 1, true) or s:find("not enough free memory", 1, true)
+or s:find("Out of memory", 1, true)) then return end
+local total = math.floor((computer.totalMemory and computer.totalMemory() or 0) / 1024)
+if total < PKG_MIN_KB then
+o(string.format("%s needs %d KB of RAM; this machine has %d KB.", what, PKG_MIN_KB, total), T.dim)
+else
+o("Something else is holding the memory it needs: close other tabs or "
+.. "programs, or reboot, and try again.", T.dim)
+end
+end
 C.pkg = function(args, o)
 if not adminOnly(o) then return end
 local okP, pkgMod = helpers.requireRoomy(S, "kernel.pkg", "admin")
 if not okP or not pkgMod then
 local line = helpers.loadFailure("pkg", pkgMod)
 o(line, T.error)
-if line:find("not enough free memory", 1, true) then
-local total = math.floor((computer.totalMemory and computer.totalMemory() or 0) / 1024)
-
-if total < PKG_MIN_KB then
-o(string.format("The package manager needs %d KB of RAM; this machine has %d KB.",
-PKG_MIN_KB, total), T.dim)
-else
-o("Something else is holding the memory it needs: close other tabs or "
-.. "programs, or reboot, and try again.", T.dim)
-end
-end
+memoryHint(line, o, "The package manager")
 return
 end
 local sub = args[1]
@@ -808,6 +811,7 @@ table.concat(summary.skipped, ", ")), T.dim)
 end
 else
 o("Install failed: " .. tostring(summary), T.error)
+memoryHint(summary, o, "Installing packages")
 end
 
 elseif mode == "dir" then
@@ -816,7 +820,10 @@ local ok2, info = pkgMod.install(target,
 { session = helpers.sessionOf(S), allowUnverified = allowUnverified,
 allowUnsigned = allowUnsigned, force = force })
 if ok2 then o("Installed: " .. tostring(info), T.highlight)
-else o("Install failed: " .. tostring(info), T.error) end
+else
+o("Install failed: " .. tostring(info), T.error)
+memoryHint(info, o, "Installing packages")
+end
 
 else
 

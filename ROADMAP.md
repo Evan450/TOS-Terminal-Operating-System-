@@ -554,7 +554,7 @@ FLOOR CHECK DONE 2026-10-10: `python tos.py floorcheck` boots a fresh build at e
 
 It also found `pkg` failing after `mem` at 1280K with a card, fixed by helpers.requireRoomy. The runner could not give a t1 machine a network card without losing its GPU; fixed too.
 
-Still open: kernel.pkg's split. At 1024K `pkg` loads only on a good day.
+Still open: kernel.pkg's split. At 1024K with no network card `pkg list` now loads (6 of 6 runs, after requireRoomy). `pkg install` still runs out reading the package's files. It used to call that "missing source file" for a file that was there; it now says it could not read the file, gives the reason, and says installing needs 1280 KB (test\_pkg\_read\_reason.lua).
 
 ALSO MEASURED 2026-10-03: at 1024K the CLI runs but `pkg` does not load -- compiling kernel.pkg (117 KB stripped) needs more than the \~200 KB left once the shell is up. Every pkg command printed only "pkg module unavailable"; the reason, thrown away, was the loader's "Syntax error in 'kernel.pkg': not enough memory". At 1024+256K it lists, verifies, signs and installs (the signing checklist below ran there whole). Now `pkg` says "cannot load: not enough free memory" and gives 1280 KB against what the machine has, the loader says "Out of memory loading" instead of "Syntax error", eight more commands keep their reason (helpers.loadFailure), and the README and MANUAL 1.1 give the 1.25 MB floor for add-ons. Splitting kernel.pkg so its everyday verbs load alone is what would let 1 MB install packages; that is footprint work, the same as above.
 
