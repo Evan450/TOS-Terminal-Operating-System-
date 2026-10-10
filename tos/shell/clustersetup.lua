@@ -41,8 +41,13 @@ end
 out[#out + 1] = ""
 end
 out[#out + 1] = "Both packages are on the ordinary Optional Utilities disk."
-out[#out + 1] = "You never copy files by hand. Install the one package this"
-out[#out + 1] = "machine needs, then run 'cluster-setup' again to configure it."
+--! This screen's buttons install the role picked and carry straight on
+--! into configuring it. It used to end "install the one package this
+--! machine needs, then run 'cluster-setup' again" -- the instructions for
+--! a flow the buttons below it had already replaced (headless machine,
+--! 2026-10-10).
+out[#out + 1] = "You never copy files by hand: pick one below, with that disk"
+out[#out + 1] = "in, and this wizard installs it, configures it and pairs it."
 return out
 end
 
@@ -74,6 +79,22 @@ return false, "pairing codes are longer than that — run 'cluster pair start'"
 .. " on the Master and copy what it prints"
 end
 return true, s
+end
+
+--! cluster.api.startPairing returns the window as a TABLE, { code,
+--! expires_in }, so that the second slot of its value, err answer is only
+--! ever an error. The wizard still took it as (code, secs): it got the
+--! table as the code and nil as the seconds, printed "Pairing window open
+--! for 0s", and died concatenating the table into the line that prints the
+--! code. Every Master's wizard stopped there, one line short of the thing a
+--! Manager needs from it (headless machine, 2026-10-10). The old
+--! (code, secs) shape is still read. (test_cluster_pairing_seam.lua)
+function M.pairingWindow(w, err)
+if type(w) == "table" then
+if type(w.code) ~= "string" then return nil, "the daemon opened no pairing code" end
+return w.code, tonumber(w.expires_in) or 0
+end
+return w, err
 end
 
 local function clampNumber(v, lo, hi, dflt)

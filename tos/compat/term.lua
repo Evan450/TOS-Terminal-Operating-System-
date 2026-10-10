@@ -61,16 +61,75 @@ local ok, dev = pcall(scr.seatDevices, seat)
 return (ok and type(dev) == "table") and dev or {}
 end
 
+--! WHERE TO DRAW. kernel.display holds ONE gpu, the boot display's --
+--! seat 1's. The cursor became per-seat (H-06), but every term.write still
+--! went through kernel.display, so a program on seat 2 read its keys from
+--! seat 2 and painted its prompt, its echo and its output on seat 1, over
+--! that seat's shell (2-seat headless machine, 2026-10-10).
+--!
+--! A caller whose seat is kernel.display's GPU -- every single-seat
+--! machine, every seatless caller, and a seat whose devices cannot be read
+--! -- draws through kernel.display exactly as before. Only a seat with a
+--! KNOWN, DIFFERENT GPU gets a drawer of its own: the same semantics as
+--! kernel.display (straight to the GPU, colours left as they are unless
+--! given, no dirty-cell shadow -- a second shadow over one glass is how a
+--! stale cache elides a write), aimed at that seat's GPU. markGlassDirty
+--! is unchanged, so the seat's shell still re-syncs after it.
+--! (test_compat_term_seat.lua)
+local seatDrawers = {}
+local function seatDrawer(g)
+local R = {}
+function R.getSize()
+local ok, w, h = pcall(g.getResolution)
+if ok and type(w) == "number" then return w, h end
+return display.getSize()
+end
+function R.set(x, y, text) pcall(g.set, x, y, text) end
+function R.fill(x, y, w, h, ch) pcall(g.fill, x, y, w, h, ch or " ") end
+function R.clear()
+local w, h = R.getSize()
+local th = display.getTheme and display.getTheme()
+pcall(g.setBackground, th and th.bg or 0x000000)
+pcall(g.fill, 1, 1, w, h, " ")
+end
+function R.scrollUp(startRow, endRow)
+local w, h = R.getSize()
+startRow, endRow = startRow or 1, endRow or h
+if endRow - startRow < 1 then return end
+pcall(g.copy, 1, startRow + 1, w, endRow - startRow, 0, -1)
+pcall(g.setBackground, 0x000000)
+pcall(g.setForeground, 0xFFFFFF)
+pcall(g.fill, 1, endRow, w, 1, " ")
+end
+function R.getGpu() return g end
+return R
+end
+
+local function target()
+local dev = seatDevices()
+if not (dev and dev.gpu) then return display end
+local okG, mine = pcall(function() return display.getGpu().address end)
+if okG and mine == dev.gpu then return display end
+local R = seatDrawers[dev.gpu]
+if not R then
+local ok, raw = pcall(component.proxy, dev.gpu)
+if not (ok and raw) then return display end
+R = seatDrawer(raw)
+seatDrawers[dev.gpu] = R
+end
+return R
+end
+
 function term.isAvailable()
 return true
 end
 
 function term.getViewport()
-return display.getSize()
+return target().getSize()
 end
 
 function term.clear()
-display.clear()
+target().clear()
 local c = cursor()
 c.x, c.y = 1, 1
 markGlassDirty()
@@ -97,12 +156,13 @@ end
 
 function term.write(text, wrap)
 text = tostring(text)
-local w, h = display.getSize()
+local D = target()
+local w, h = D.getSize()
 local c = cursor()
 
 local function scroll()
 while c.y > h do
-display.scrollUp(1, h)
+D.scrollUp(1, h)
 c.y = c.y - 1
 end
 end
@@ -112,7 +172,7 @@ local runChars = nil
 
 local function flushRun()
 if runChars and #runChars > 0 then
-display.set(runStart, c.y, table.concat(runChars))
+D.set(runStart, c.y, table.concat(runChars))
 runChars = nil
 runStart = nil
 end
@@ -133,7 +193,7 @@ flushRun()
 local spaces = 8 - ((c.x - 1) % 8)
 local tabStr = string.rep(" ", math.min(spaces, w - c.x + 1))
 if #tabStr > 0 and c.x <= w then
-display.set(c.x, c.y, tabStr)
+D.set(c.x, c.y, tabStr)
 c.x = c.x + #tabStr
 end
 else
@@ -158,9 +218,10 @@ markGlassDirty()
 end
 
 function term.clearLine()
-local w = display.getSize()
+local D = target()
+local w = D.getSize()
 local c = cursor()
-display.fill(1, c.y, w, 1, " ")
+D.fill(1, c.y, w, 1, " ")
 c.x = 1
 markGlassDirty()
 end
@@ -178,7 +239,7 @@ freeBuffer = true, freeAllBuffers = true,
 --! program on any seat. Only a caller with no seat at all still gets it.
 local function resolveSeatGpu()
 local g = nil
-pcall(function() g = display.getGpu and display.getGpu() end)
+pcall(function() g = target().getGpu() end)
 if g then return g end
 local dev = seatDevices()
 local addr
@@ -280,7 +341,8 @@ if dobreak == nil then dobreak = true end
 local line = ""
 local c = cursor()
 local startX, startY = c.x, c.y
-local w = display.getSize()
+local D = target()
+local w = D.getSize()
 
 local function redraw()
 
@@ -290,9 +352,9 @@ local show = pwchar and string.rep(pwchar, #line) or line
 
 local clearLen = w - startX + 1
 if clearLen > 0 then
-display.fill(startX, startY, clearLen, 1, " ")
+D.fill(startX, startY, clearLen, 1, " ")
 end
-display.set(startX, startY, show)
+D.set(startX, startY, show)
 c.x = startX + #show
 end
 

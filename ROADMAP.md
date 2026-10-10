@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**72 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**70 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 49 | Planned or under investigation. Most contributions belong here. |
+| Planned | 47 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (9) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -73,18 +73,6 @@ own header already draws this line -- a battery that
 installs software on the machine it is auditing is a
 
 different and much worse tool.
-
-### Ocelot check for the Fermi import
-
-*Planned* · from the round *The Fermi import: a cloud session's 15 fixes (2026-09-23)*
-
-OCELOT CHECK FOR THE FERMI IMPORT. Two things off-box tests cannot settle. (1) H-06's per-seat cursor: two seats, each running an OpenOS program that writes and reads a line; watch the status bar, since that is where this file regresses. (2) The sealed-traffic gate: a peer with encryptComms OFF talking to one that has it ON and holds a secret for it now has its unsealed packets dropped, with a log line, where they used to be accepted.
-
-The battery now covers what one machine can (selftest 91-95, 2026-09-23): H-03 on a real keyboard; term.read driven through a coroutine against the real GPU, plus what isyieldable() answers in kernel context; beep pauses, the cooldown and the 50 ms floor, timed; rename-over-existing on the host disk; UTF-8 tokens painted and read back. Each was run off-box against the old tree and fails there, except 94, which is a host-behaviour check. Both items above still need hardware this workspace lacks: a second seat, and a second computer.
-
-FIRST ROUND 2026-09-25: 102 pass, 1 fail, 2 skip. 91, 93, 94 and 95 pass on hardware; 93 confirms a 0.3 s beep holds the machine, the premise the cooldown rests on. The one failure was 92's, and it was real: see COMPONENT METHODS ARE CALLABLE TABLES below. isyieldable()'s answer was lost to the report format (fixed by t.note), so it is still to be read at the next round.
-
-SECOND ROUND 2026-09-25: 105 pass, 0 fail, 2 skip, on the rebuilt release. isyieldable() in kernel context: TRUE. See NET.WAITFOR COULD ONLY TIME OUT FROM KERNEL CONTEXT, above.
 
 ### Next real-minecraft round
 
@@ -170,16 +158,6 @@ Emulator checklist:
 - L toggles low-only; / filters by both label and mod id
 - ^B backgrounds it and the chip comes back with fresh numbers (drowsy, rescans on its 10s timer)
 - a BIG inventory (drawers/barrel with many slots): confirm the getAllStacks fast path doesn't stall the seat, and that a component WITHOUT getAllStacks still works
-
-### Emulator checklist: Cluster setup round
-
-*Planned* · from the round *Cluster setup round (2026-07-28)*
-
-Emulator checklist:
-
-- `cluster-setup` on a box with NOTHING installed: does the explain screen actually make the choice obvious?
-- full Master-&gt;Manager pairing on two machines using only what the wizard prints (this is the real test of the address fix)
-- answer "no" to boot-start, reboot, confirm the service is NOT running; then `service start clusterd`, reboot, confirm it IS
 
 ### Emulator checklist for this round: Intercom round
 

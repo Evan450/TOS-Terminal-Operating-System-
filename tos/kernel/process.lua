@@ -702,6 +702,23 @@ if wanted then enqueueSignal(p, table.unpack(signal, 1, signal.n)) end
 end
 elseif p.sigTail >= p.sigHead then
 
+--! ...and THIS tick's signal goes on the tail, by the same rule as
+--! the sliced case above. It was dropped: with a backlog, the
+--! process got the head and the key typed at that moment
+--! vanished. Any slow step that left something queued (keys typed
+--! while a package installed) made the next few keys disappear --
+--! cluster-setup on the headless machine lost an Enter at one
+--! prompt and an "n" at the next box this way (2026-10-10).
+--! (test_coop_yield.lua)
+if signal and signal[1] ~= nil then
+local wanted
+if isInput then
+wanted = (pid == inputFgPID)
+else
+wanted = not (p.signalInterest and not p.signalInterest[signal[1]])
+end
+if wanted then enqueueSignal(p, table.unpack(signal, 1, signal.n)) end
+end
 resumeData = p.signals[p.sigHead]
 p.signals[p.sigHead] = nil
 p.sigHead = p.sigHead + 1

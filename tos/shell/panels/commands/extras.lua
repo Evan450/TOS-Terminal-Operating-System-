@@ -185,7 +185,10 @@ local okA, api = pcall(require, "cluster.api")
 if not okA or not api or not api.startPairing then
 return nil, "the Master daemon is not up yet"
 end
-return api.startPairing()
+
+local okS, w, err = pcall(api.startPairing)
+if not okS then return nil, tostring(w) end
+return wiz.pairingWindow(w, err)
 end
 ctx.pairWith = function(addr, code)
 local okM, mgr = pcall(require, "cluster-manager")
