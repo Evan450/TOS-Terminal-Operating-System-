@@ -2,7 +2,7 @@
 
 **A multi-user operating system for the OpenComputers Minecraft mod.** Logins, per-user permissions, a capability sandbox, signed packages and an encrypted mesh network.
 
-**Requires OpenComputers 1.7.5 or newer, on Minecraft 1.12.2**, with a CPU set to the **Lua 5.3 or 5.4 architecture**, 1 MB of memory and a hard drive with about 1.9 MB free. Details under [Requirements](#requirements).
+**Requires OpenComputers 1.7.5 or newer, on Minecraft 1.12.2**, with a CPU set to the **Lua 5.3 or 5.4 architecture**, 1 MB of memory (1.25 MB with a network card) and a hard drive with about 1.9 MB free. Details under [Requirements](#requirements).
 
 Current release: **v1.5.0 "Aletheia"** — see [`CHANGELOG.md`](CHANGELOG.md) for what changed.
 
@@ -64,10 +64,12 @@ It is **keyboard-first and built to run infrastructure**: a base that has to kee
 | | Memory | What you get |
 |---|---|---|
 | Minimum | 1 MB (one Tier 3.5 stick) | The command line, which loads each command as you use it. TOS starts there by itself on a machine this size. About 35 KB stays free: too little for the package manager, which needs 1.25 MB (add a Tier 1.5 stick) and says so. |
-| Recommended | 1.5 MB (two Tier 3 sticks) | The full panels interface, with about 200 KB free after you log in. |
-| Comfortable | 2 MB (two Tier 3.5 sticks) | Room for add-ons, themes and the OpenOS compatibility layer: about 730 KB free after you log in. |
+| Recommended | 1.5 MB (two Tier 3 sticks) | The full panels interface, with about 280 KB free after you log in. |
+| Comfortable | 2 MB (two Tier 3.5 sticks) | Room for add-ons, themes and the OpenOS compatibility layer: about 800 KB free after you log in. |
 
-Below 1 MB TOS does not reach a usable shell. At 768 KB the main shell cannot load and the boot falls back to the emergency terminal; at 384 KB or less the kernel itself does not fit. (Measured on a fresh install, logged in, after one command.)
+**A network card needs another 256 KB.** A network card or linked card brings up the network stack and its services: about 170 KB that a machine without one never loads. With one, 1 MB starts the command line but none of its commands load, so the minimum is 1.25 MB, which also runs the package manager. The panels still run at 1.5 MB, with about 115 KB free.
+
+Below 1 MB TOS does not reach a usable shell. At 768 KB the command line starts, but its commands do not load; at 384 KB or less the kernel itself does not fit. (Measured on a fresh install with a T1 CPU, logged in, after one command. `python tos.py floorcheck` re-measures every figure in this section.)
 
 - **Drive**: about 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own, with about 150 KB left after first boot: enough to run, not to grow, so add-ons and `srm baseline --full` (about 220 KB) want a Tier 3 drive (4 MB). Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), since OpenOS is still there while TOS copies. TOS does not fit on a floppy.
 - **CPU**: any tier, on the Lua 5.3 or 5.4 architecture — sneak-click the CPU to switch it. On a 5.2 CPU the BIOS stops and says so.

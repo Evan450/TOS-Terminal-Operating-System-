@@ -182,9 +182,14 @@ print(string.format("  Crypto:   %s", hw.hasDataCard and "Hardware (data card)" 
 color(0xFFFFFF)
 print()
 
-if hw.memKB < 1024 then
+local networked = hw.hasModem or hw.hasTunnel
+if hw.memKB < 1024 or (networked and hw.memKB < 1280) then
+if networked then
+warn("Not enough memory: with a network card TOS needs 1.25 MB (1 MB without one).")
+else
 warn("Not enough memory: TOS needs at least 1 MB (one Tier 3.5 stick).")
-warn("With less it stops at the emergency terminal, or does not boot.")
+end
+warn("With less its commands do not load, or it does not boot.")
 elseif hw.memKB < 1536 then
 warn("TOS will start at the command line: the full interface needs 1.5 MB.")
 end

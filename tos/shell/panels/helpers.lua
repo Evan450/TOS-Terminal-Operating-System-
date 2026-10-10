@@ -76,6 +76,18 @@ end
 return what .. " module unavailable: " .. why
 end
 
+function M.requireRoomy(S, name, keep)
+local ok, mod = pcall(require, name)
+if not ok and S and type(S.releaseCommands) == "function" then
+local why = tostring(mod)
+if why:find("memory", 1, true) or why:find("buffer alloc", 1, true) then
+S.releaseCommands(keep)
+ok, mod = pcall(require, name)
+end
+end
+return ok, mod
+end
+
 function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
 local T = S.T
 local text, isError

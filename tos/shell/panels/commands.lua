@@ -307,6 +307,8 @@ return freed
 end
 M._releaseCategories = releaseCategories
 
+S.releaseCommands = releaseCategories
+
 local function loadCategory(cat)
 if loaded[cat] then return end
 local ok, mod = pcall(require, "shell.panels.commands." .. cat)
