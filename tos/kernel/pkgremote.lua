@@ -40,18 +40,18 @@ local MAX_PKG_BYTES     = 512 * 1024
 local MAX_FILES_PER_PKG = 64
 
 function pkgremote.init(modules)
-  modules = modules or {}
-  log = modules.log
+modules = modules or {}
+log = modules.log
 end
 
 local function inet()
-  local ok, m = pcall(require, "kernel.internet")
-  if ok then return m end
-  return nil
+local ok, m = pcall(require, "kernel.internet")
+if ok then return m end
+return nil
 end
 
 local function validRepoName(n)
-  return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
+return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
 end
 
 --! #SEC — a package name becomes a staging PATH below (and the staging
@@ -62,83 +62,83 @@ end
 --! REMOTE manifest, and "../../tos" there must not reach fs.remove.
 --! (test_pkgremote_deps.lua)
 local function validPkgName(n)
-  if type(n) ~= "string" or n == "" or #n > 64 then return false end
-  if #n == 1 then return n:match("^%w$") ~= nil end
-  return n:match("^%w[%w%-]*%w$") ~= nil
+if type(n) ~= "string" or n == "" or #n > 64 then return false end
+if #n == 1 then return n:match("^%w$") ~= nil end
+return n:match("^%w[%w%-]*%w$") ~= nil
 end
 pkgremote.validPkgName = validPkgName
 
 function pkgremote.repos()
-  local out = {}
-  if not fs.exists(REPO_CFG) then return out end
-  local data = fs.readFile(REPO_CFG)
-  if not data then return out end
-  local ok, raw = pcall(serialize.decode, data, { maxBytes = 16384 })
-  if not ok or type(raw) ~= "table" then
-    if log then log.warn("pkgremote", "Corrupt " .. REPO_CFG .. "; ignoring") end
-    return out
-  end
-  local im = inet()
-  for _, e in ipairs(raw) do
-    if type(e) == "table" and validRepoName(e.name) and type(e.url) == "string" then
-      local host = im and im.hostOf(e.url) or nil
+local out = {}
+if not fs.exists(REPO_CFG) then return out end
+local data = fs.readFile(REPO_CFG)
+if not data then return out end
+local ok, raw = pcall(serialize.decode, data, { maxBytes = 16384 })
+if not ok or type(raw) ~= "table" then
+if log then log.warn("pkgremote", "Corrupt " .. REPO_CFG .. "; ignoring") end
+return out
+end
+local im = inet()
+for _, e in ipairs(raw) do
+if type(e) == "table" and validRepoName(e.name) and type(e.url) == "string" then
+local host = im and im.hostOf(e.url) or nil
 
-      if host then
-        out[#out + 1] = {
-          name = e.name,
-          url  = (e.url:gsub("/+$", "")),
-          host = host,
-          description = type(e.description) == "string" and e.description or nil,
-        }
-      elseif log then
-        log.warn("pkgremote", "Repo '" .. tostring(e.name) .. "' has an unusable URL")
-      end
-    end
-  end
-  return out
+if host then
+out[#out + 1] = {
+name = e.name,
+url  = (e.url:gsub("/+$", "")),
+host = host,
+description = type(e.description) == "string" and e.description or nil,
+}
+elseif log then
+log.warn("pkgremote", "Repo '" .. tostring(e.name) .. "' has an unusable URL")
+end
+end
+end
+return out
 end
 
 local function saveRepos(list)
-  local clean = {}
-  for _, r in ipairs(list) do
-    clean[#clean + 1] = { name = r.name, url = r.url, description = r.description }
-  end
-  return fs.writeFileAtomic and fs.writeFileAtomic(REPO_CFG, serialize.encode(clean))
-    or fs.writeFile(REPO_CFG, serialize.encode(clean))
+local clean = {}
+for _, r in ipairs(list) do
+clean[#clean + 1] = { name = r.name, url = r.url, description = r.description }
+end
+return fs.writeFileAtomic and fs.writeFileAtomic(REPO_CFG, serialize.encode(clean))
+or fs.writeFile(REPO_CFG, serialize.encode(clean))
 end
 
 function pkgremote.addRepo(name, url, description)
-  if not validRepoName(name) then
-    return false, "invalid repo name (letters, digits, _ and - only)"
-  end
-  local im = inet()
-  if not im then return false, "internet module unavailable" end
-  local ok, err = im.parseUrl(url)
-  if not ok then return false, err end
-  local list = pkgremote.repos()
-  local replaced = false
-  for _, r in ipairs(list) do
-    if r.name == name then
-      r.url, r.description, replaced = (url:gsub("/+$", "")), description, true
-    end
-  end
-  if not replaced then
-    list[#list + 1] = { name = name, url = (url:gsub("/+$", "")), description = description }
-  end
-  local okW = saveRepos(list)
-  if not okW then return false, "could not write " .. REPO_CFG end
-  if log then log.info("pkgremote", "Repo '" .. name .. "' -> " .. url) end
-  return true
+if not validRepoName(name) then
+return false, "invalid repo name (letters, digits, _ and - only)"
+end
+local im = inet()
+if not im then return false, "internet module unavailable" end
+local ok, err = im.parseUrl(url)
+if not ok then return false, err end
+local list = pkgremote.repos()
+local replaced = false
+for _, r in ipairs(list) do
+if r.name == name then
+r.url, r.description, replaced = (url:gsub("/+$", "")), description, true
+end
+end
+if not replaced then
+list[#list + 1] = { name = name, url = (url:gsub("/+$", "")), description = description }
+end
+local okW = saveRepos(list)
+if not okW then return false, "could not write " .. REPO_CFG end
+if log then log.info("pkgremote", "Repo '" .. name .. "' -> " .. url) end
+return true
 end
 
 function pkgremote.removeRepo(name)
-  local list, out, found = pkgremote.repos(), {}, false
-  for _, r in ipairs(list) do
-    if r.name == name then found = true else out[#out + 1] = r end
-  end
-  if not found then return false, "no such repo: " .. tostring(name) end
-  if not saveRepos(out) then return false, "could not write " .. REPO_CFG end
-  return true
+local list, out, found = pkgremote.repos(), {}, false
+for _, r in ipairs(list) do
+if r.name == name then found = true else out[#out + 1] = r end
+end
+if not found then return false, "no such repo: " .. tostring(name) end
+if not saveRepos(out) then return false, "could not write " .. REPO_CFG end
+return true
 end
 
 --! A source path out of a remote index is used for two things: appended to
@@ -148,19 +148,19 @@ end
 --! another host), a protocol-relative "//" prefix, and query/fragment
 --! punctuation that would make the URL mean something else.
 local function safeRepoPath(p)
-  if type(p) ~= "string" or p == "" then return nil end
-  if #p > 256 then return nil end
-  if p:find("[%c]") then return nil end
-  if p:find("\\", 1, true) then return nil end
-  if p:sub(1, 1) == "/" then return nil end
-  if p:find("://", 1, true) then return nil end
-  if p:find("?", 1, true) or p:find("#", 1, true) then return nil end
-  if p:find("@", 1, true) then return nil end
-  for seg in p:gmatch("[^/]+") do
-    if seg == "." or seg == ".." then return nil end
-  end
+if type(p) ~= "string" or p == "" then return nil end
+if #p > 256 then return nil end
+if p:find("[%c]") then return nil end
+if p:find("\\", 1, true) then return nil end
+if p:sub(1, 1) == "/" then return nil end
+if p:find("://", 1, true) then return nil end
+if p:find("?", 1, true) or p:find("#", 1, true) then return nil end
+if p:find("@", 1, true) then return nil end
+for seg in p:gmatch("[^/]+") do
+if seg == "." or seg == ".." then return nil end
+end
 
-  return (p:gsub("/+", "/"))
+return (p:gsub("/+", "/"))
 end
 
 local indexCache = {}
@@ -176,28 +176,28 @@ local sigCache = {}
 local MAX_INDEX_COST = 64 * 1024
 
 function pkgremote.index(repo, opts)
-  opts = opts or {}
-  local im = inet()
-  if not im then return nil, "internet module unavailable" end
-  if not opts.refresh and indexCache[repo.name] then
-    return indexCache[repo.name].index
-  end
-  local url = repo.url .. "/programs.cfg"
-  local body, err = im.get(url, { maxBytes = MAX_INDEX_BYTES })
-  if not body then
-    return nil, "could not fetch " .. url .. ": " .. tostring(err)
-  end
-  --! The index is DATA, and is decoded by kernel.serialize with a byte
-  --! bound — never `load()`ed. A repo index is a table written by a
-  --! stranger; running it as Lua would be handing them the machine before
-  --! they had even shipped a package.
-  local ok, raw = pcall(serialize.decode, body, { maxBytes = MAX_INDEX_BYTES,
-    maxCost = MAX_INDEX_COST, maxKeys = 1024 })
-  if not ok or type(raw) ~= "table" then
-    return nil, "repo '" .. repo.name .. "' returned an index that is not a table"
-  end
-  indexCache[repo.name] = { index = raw }
-  return raw
+opts = opts or {}
+local im = inet()
+if not im then return nil, "internet module unavailable" end
+if not opts.refresh and indexCache[repo.name] then
+return indexCache[repo.name].index
+end
+local url = repo.url .. "/programs.cfg"
+local body, err = im.get(url, { maxBytes = MAX_INDEX_BYTES })
+if not body then
+return nil, "could not fetch " .. url .. ": " .. tostring(err)
+end
+--! The index is DATA, and is decoded by kernel.serialize with a byte
+--! bound — never `load()`ed. A repo index is a table written by a
+--! stranger; running it as Lua would be handing them the machine before
+--! they had even shipped a package.
+local ok, raw = pcall(serialize.decode, body, { maxBytes = MAX_INDEX_BYTES,
+maxCost = MAX_INDEX_COST, maxKeys = 1024 })
+if not ok or type(raw) ~= "table" then
+return nil, "repo '" .. repo.name .. "' returned an index that is not a table"
+end
+indexCache[repo.name] = { index = raw }
+return raw
 end
 
 function pkgremote.clearCache() indexCache = {}; sigCache = {} end
@@ -220,215 +220,215 @@ local MAX_SIG_BYTES = 4096
 --! this exists to fix. The fetch is refused and the next one asks again,
 --! as it already is when any of the package's own files fails to arrive.
 local function indexSignature(im, repo, opts)
-  if not opts.refresh and sigCache[repo.name] ~= nil then return sigCache[repo.name] end
-  local body, err, meta = im.get(repo.url .. "/programs.sig", { maxBytes = MAX_SIG_BYTES })
-  local answer
-  if type(body) == "string" then
-    local okD, rec = pcall(serialize.decode, body, { maxBytes = MAX_SIG_BYTES })
-    answer = (okD and type(rec) == "table") and body or false
-  else
-    meta = type(meta) == "table" and meta or {}
-    local status = tonumber(meta.status) or tonumber(tostring(err):match("^HTTP (%d%d%d)"))
-    if (status and status >= 400 and status < 500) or (meta.bytes or 0) > MAX_SIG_BYTES then
-      answer = false
-    else
-      return nil, "could not ask repo '" .. repo.name .. "' whether it signs its index: "
-        .. tostring(err) .. "  [E-501 ERR_NET_NO_ANSWER]"
-    end
-  end
-  sigCache[repo.name] = answer
-  return answer
+if not opts.refresh and sigCache[repo.name] ~= nil then return sigCache[repo.name] end
+local body, err, meta = im.get(repo.url .. "/programs.sig", { maxBytes = MAX_SIG_BYTES })
+local answer
+if type(body) == "string" then
+local okD, rec = pcall(serialize.decode, body, { maxBytes = MAX_SIG_BYTES })
+answer = (okD and type(rec) == "table") and body or false
+else
+meta = type(meta) == "table" and meta or {}
+local status = tonumber(meta.status) or tonumber(tostring(err):match("^HTTP (%d%d%d)"))
+if (status and status >= 400 and status < 500) or (meta.bytes or 0) > MAX_SIG_BYTES then
+answer = false
+else
+return nil, "could not ask repo '" .. repo.name .. "' whether it signs its index: "
+.. tostring(err) .. "  [E-501 ERR_NET_NO_ANSWER]"
+end
+end
+sigCache[repo.name] = answer
+return answer
 end
 
 function pkgremote.search(opts)
-  local out = {}
-  for _, repo in ipairs(pkgremote.repos()) do
-    local idx, err = pkgremote.index(repo, opts)
-    if idx then
-      for name, entry in pairs(idx) do
-        if type(name) == "string" and type(entry) == "table" and not entry.hidden then
-          out[#out + 1] = {
-            name        = name,
-            repo        = repo.name,
-            description = entry.description or entry.note,
-            version     = entry.version,
-          }
-        end
-      end
-    elseif log then
-      log.warn("pkgremote", tostring(err))
-    end
-  end
-  table.sort(out, function(a, b) return (a.name or "") < (b.name or "") end)
-  return out
+local out = {}
+for _, repo in ipairs(pkgremote.repos()) do
+local idx, err = pkgremote.index(repo, opts)
+if idx then
+for name, entry in pairs(idx) do
+if type(name) == "string" and type(entry) == "table" and not entry.hidden then
+out[#out + 1] = {
+name        = name,
+repo        = repo.name,
+description = entry.description or entry.note,
+version     = entry.version,
+}
+end
+end
+elseif log then
+log.warn("pkgremote", tostring(err))
+end
+end
+table.sort(out, function(a, b) return (a.name or "") < (b.name or "") end)
+return out
 end
 
 function pkgremote.fetch(name, opts)
-  opts = opts or {}
-  if not validPkgName(name) then
-    return nil, "not a package name: " .. tostring(name):sub(1, 64)
-      .. "  [E-602 ERR_PKG_BAD_NAME]"
-  end
-  local im = inet()
-  if not im then return nil, "internet module unavailable" end
-  if not im.available() then
-    local st = im.status()
-    return nil, st.reason or "internet is not available"
-  end
-  local repos = pkgremote.repos()
-  if #repos == 0 then
-    return nil, "no remote repositories configured (see 'pkg repo add')"
-  end
+opts = opts or {}
+if not validPkgName(name) then
+return nil, "not a package name: " .. tostring(name):sub(1, 64)
+.. "  [E-602 ERR_PKG_BAD_NAME]"
+end
+local im = inet()
+if not im then return nil, "internet module unavailable" end
+if not im.available() then
+local st = im.status()
+return nil, st.reason or "internet is not available"
+end
+local repos = pkgremote.repos()
+if #repos == 0 then
+return nil, "no remote repositories configured (see 'pkg repo add')"
+end
 
-  local repo, entry
-  local unusable = {}
-  for _, r in ipairs(repos) do
-    local idx, iErr = pkgremote.index(r, opts)
-    if idx and type(idx[name]) == "table" then
-      repo, entry = r, idx[name]
-      break
-    elseif not idx then
-      unusable[#unusable + 1] = tostring(iErr)
-    end
-  end
-  --! A repo may sign its WHOLE index: programs.sig beside programs.cfg,
-  --! covering the index's raw bytes. Staging a re-encoded one-entry index
-  --! (below) threw that signature away, so a package from a publisher the
-  --! machine trusts was recorded as `unsigned`. When the repo serves a
-  --! signature, the index is fetched again at that moment -- so the bytes
-  --! and the signature are a pair -- and this package's entry is taken
-  --! from THOSE bytes, the ones the signature covers. A repo with no
-  --! signature costs one request per session and is staged as before.
-  --! (test_pkgremote_signed_index.lua)
-  local signedIndex, sigBody
-  if entry then
-    local sig, sErr = indexSignature(im, repo, opts)
-    if sig == nil then return nil, sErr end
-    if sig then
-      local fresh, fErr = im.get(repo.url .. "/programs.cfg", { maxBytes = MAX_INDEX_BYTES })
-      local okD, freshIdx = false, nil
-      if type(fresh) == "string" then
-        okD, freshIdx = pcall(serialize.decode, fresh, { maxBytes = MAX_INDEX_BYTES,
-          maxCost = MAX_INDEX_COST, maxKeys = 1024 })
-      end
-      --! The session's cached copy may predate the signature, so this read
-      --! is the only copy the signature can cover. Without it, refuse.
-      if not (okD and type(freshIdx) == "table") then
-        return nil, "repo '" .. repo.name .. "' signs its index, and re-reading it failed: "
-          .. tostring(fErr or "it did not decode")
-      end
-      if type(freshIdx[name]) ~= "table" then
-        return nil, "package '" .. tostring(name) .. "' is no longer in repo '"
-          .. repo.name .. "''s signed index"
-      end
-      signedIndex, sigBody, entry = fresh, sig, freshIdx[name]
-    end
-  end
-  if not entry then
-    --! A repo whose index would not load used to vanish from the answer:
-    --! "not in any configured repo" when the truth was "that repo's index
-    --! is broken". Say both. (test_pkgremote_malformed.lua)
-    local why = "package '" .. tostring(name) .. "' is not in any configured repo"
-    if #unusable > 0 then why = why .. " (" .. table.concat(unusable, "; ") .. ")" end
-    return nil, why .. "  [E-601 ERR_PKG_NOT_FOUND]"
-  end
-  if type(entry.files) ~= "table" then
-    return nil, "package '" .. name .. "' declares no files"
-  end
-  --! #SEC — the entry is a stranger's data, and every key is used as a
-  --! string below. A `files` table written as an array ({ "a.lua" })
-  --! has number keys, and `src:gsub` on one THREW out of `pkg fetch`
-  --! instead of refusing. Check the whole shape before anything is staged
-  --! or downloaded: OPPM's files map is source path -> destination dir,
-  --! both strings. (test_pkgremote_malformed.lua)
-  for src, dest in pairs(entry.files) do
-    if type(src) ~= "string" or type(dest) ~= "string" then
-      return nil, "package '" .. name .. "' in repo '" .. repo.name
-        .. "' has a malformed file list (expected { [\"source/path\"] = \"/dest/dir\" }, got "
-        .. type(src) .. " -> " .. type(dest) .. ")"
-    end
-  end
+local repo, entry
+local unusable = {}
+for _, r in ipairs(repos) do
+local idx, iErr = pkgremote.index(r, opts)
+if idx and type(idx[name]) == "table" then
+repo, entry = r, idx[name]
+break
+elseif not idx then
+unusable[#unusable + 1] = tostring(iErr)
+end
+end
+--! A repo may sign its WHOLE index: programs.sig beside programs.cfg,
+--! covering the index's raw bytes. Staging a re-encoded one-entry index
+--! (below) threw that signature away, so a package from a publisher the
+--! machine trusts was recorded as `unsigned`. When the repo serves a
+--! signature, the index is fetched again at that moment -- so the bytes
+--! and the signature are a pair -- and this package's entry is taken
+--! from THOSE bytes, the ones the signature covers. A repo with no
+--! signature costs one request per session and is staged as before.
+--! (test_pkgremote_signed_index.lua)
+local signedIndex, sigBody
+if entry then
+local sig, sErr = indexSignature(im, repo, opts)
+if sig == nil then return nil, sErr end
+if sig then
+local fresh, fErr = im.get(repo.url .. "/programs.cfg", { maxBytes = MAX_INDEX_BYTES })
+local okD, freshIdx = false, nil
+if type(fresh) == "string" then
+okD, freshIdx = pcall(serialize.decode, fresh, { maxBytes = MAX_INDEX_BYTES,
+maxCost = MAX_INDEX_COST, maxKeys = 1024 })
+end
+--! The session's cached copy may predate the signature, so this read
+--! is the only copy the signature can cover. Without it, refuse.
+if not (okD and type(freshIdx) == "table") then
+return nil, "repo '" .. repo.name .. "' signs its index, and re-reading it failed: "
+.. tostring(fErr or "it did not decode")
+end
+if type(freshIdx[name]) ~= "table" then
+return nil, "package '" .. tostring(name) .. "' is no longer in repo '"
+.. repo.name .. "''s signed index"
+end
+signedIndex, sigBody, entry = fresh, sig, freshIdx[name]
+end
+end
+if not entry then
+--! A repo whose index would not load used to vanish from the answer:
+--! "not in any configured repo" when the truth was "that repo's index
+--! is broken". Say both. (test_pkgremote_malformed.lua)
+local why = "package '" .. tostring(name) .. "' is not in any configured repo"
+if #unusable > 0 then why = why .. " (" .. table.concat(unusable, "; ") .. ")" end
+return nil, why .. "  [E-601 ERR_PKG_NOT_FOUND]"
+end
+if type(entry.files) ~= "table" then
+return nil, "package '" .. name .. "' declares no files"
+end
+--! #SEC — the entry is a stranger's data, and every key is used as a
+--! string below. A `files` table written as an array ({ "a.lua" })
+--! has number keys, and `src:gsub` on one THREW out of `pkg fetch`
+--! instead of refusing. Check the whole shape before anything is staged
+--! or downloaded: OPPM's files map is source path -> destination dir,
+--! both strings. (test_pkgremote_malformed.lua)
+for src, dest in pairs(entry.files) do
+if type(src) ~= "string" or type(dest) ~= "string" then
+return nil, "package '" .. name .. "' in repo '" .. repo.name
+.. "' has a malformed file list (expected { [\"source/path\"] = \"/dest/dir\" }, got "
+.. type(src) .. " -> " .. type(dest) .. ")"
+end
+end
 
-  --! One root PER PACKAGE, not per repo: `pkg fetch` stages a package's
-  --! dependencies while the package itself is still staged, and a
-  --! per-repo root was wiped by the next fetch from the same repo. "." is
-  --! legal in neither a repo name nor a package name, so no two collide.
-  local root   = fs.join(STAGE_ROOT, repo.name .. "." .. name)
-  local pkgDir = fs.join(root, name)
-  pcall(fs.remove, root)
-  if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then
-    return nil, "could not create staging directory " .. pkgDir
-  end
-  --! Every refusal from here on leaves staging empty. Two of them (an
-  --! OPPM directory copy, an unsafe path) returned with the staged index
-  --! still on disk.
-  local function fail(msg)
-    pcall(fs.remove, root)
-    return nil, msg
-  end
+--! One root PER PACKAGE, not per repo: `pkg fetch` stages a package's
+--! dependencies while the package itself is still staged, and a
+--! per-repo root was wiped by the next fetch from the same repo. "." is
+--! legal in neither a repo name nor a package name, so no two collide.
+local root   = fs.join(STAGE_ROOT, repo.name .. "." .. name)
+local pkgDir = fs.join(root, name)
+pcall(fs.remove, root)
+if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then
+return nil, "could not create staging directory " .. pkgDir
+end
+--! Every refusal from here on leaves staging empty. Two of them (an
+--! OPPM directory copy, an unsafe path) returned with the staged index
+--! still on disk.
+local function fail(msg)
+pcall(fs.remove, root)
+return nil, msg
+end
 
-  local okIdx
-  if signedIndex then
-    okIdx = fs.writeFile(fs.join(root, "programs.cfg"), signedIndex)
-      and fs.writeFile(fs.join(root, "programs.sig"), sigBody)
-  else
-    okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
-      serialize.encode({ [name] = entry }))
-  end
-  if not okIdx then return fail("could not stage the package index") end
+local okIdx
+if signedIndex then
+okIdx = fs.writeFile(fs.join(root, "programs.cfg"), signedIndex)
+and fs.writeFile(fs.join(root, "programs.sig"), sigBody)
+else
+okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
+serialize.encode({ [name] = entry }))
+end
+if not okIdx then return fail("could not stage the package index") end
 
-  local count, total = 0, 0
-  for src in pairs(entry.files) do
-    local rel = safeRepoPath(src:gsub("^:", ""))
-    if src:sub(1, 1) == ":" then
-      return fail("package '" .. name ..
-        "' uses an OPPM directory-copy entry (" .. tostring(src) ..
-        "); TOS installs a declared file list")
-    end
-    if not rel then
+local count, total = 0, 0
+for src in pairs(entry.files) do
+local rel = safeRepoPath(src:gsub("^:", ""))
+if src:sub(1, 1) == ":" then
+return fail("package '" .. name ..
+"' uses an OPPM directory-copy entry (" .. tostring(src) ..
+"); TOS installs a declared file list")
+end
+if not rel then
 
-      if log then
-        log.warn("pkgremote", "Refused unsafe source path from repo '"
-          .. repo.name .. "': " .. tostring(src))
-      end
-      return fail("package '" .. name .. "' declares an unsafe file path: " .. tostring(src))
-    end
-    count = count + 1
-    if count > MAX_FILES_PER_PKG then
-      return fail("package '" .. name .. "' exceeds the " .. MAX_FILES_PER_PKG
-        .. "-file limit")
-    end
+if log then
+log.warn("pkgremote", "Refused unsafe source path from repo '"
+.. repo.name .. "': " .. tostring(src))
+end
+return fail("package '" .. name .. "' declares an unsafe file path: " .. tostring(src))
+end
+count = count + 1
+if count > MAX_FILES_PER_PKG then
+return fail("package '" .. name .. "' exceeds the " .. MAX_FILES_PER_PKG
+.. "-file limit")
+end
 
-    local url  = repo.url .. "/" .. rel
-    local dest = fs.join(root, rel)
-    local parent = dest:match("^(.*)/[^/]+$")
-    if parent and parent ~= "" then fs.makeDirectory(parent) end
+local url  = repo.url .. "/" .. rel
+local dest = fs.join(root, rel)
+local parent = dest:match("^(.*)/[^/]+$")
+if parent and parent ~= "" then fs.makeDirectory(parent) end
 
-    local okD, dErr, meta = im.download(url, dest, { maxBytes = MAX_FILE_BYTES })
-    if not okD then
-      return fail("downloading " .. rel .. ": " .. tostring(dErr))
-    end
-    total = total + ((meta and meta.bytes) or 0)
-    if total > MAX_PKG_BYTES then
-      return fail("package '" .. name .. "' exceeds the "
-        .. math.floor(MAX_PKG_BYTES / 1024) .. " KB total limit")
-    end
-  end
+local okD, dErr, meta = im.download(url, dest, { maxBytes = MAX_FILE_BYTES })
+if not okD then
+return fail("downloading " .. rel .. ": " .. tostring(dErr))
+end
+total = total + ((meta and meta.bytes) or 0)
+if total > MAX_PKG_BYTES then
+return fail("package '" .. name .. "' exceeds the "
+.. math.floor(MAX_PKG_BYTES / 1024) .. " KB total limit")
+end
+end
 
-  if count == 0 then
-    return fail("package '" .. name .. "' listed no installable files")
-  end
-  if log then
-    log.info("pkgremote", string.format("Fetched %s from %s (%d files, %d bytes)",
-      name, repo.name, count, total))
-  end
-  return pkgDir, nil, { repo = repo.name, files = count, bytes = total }
+if count == 0 then
+return fail("package '" .. name .. "' listed no installable files")
+end
+if log then
+log.info("pkgremote", string.format("Fetched %s from %s (%d files, %d bytes)",
+name, repo.name, count, total))
+end
+return pkgDir, nil, { repo = repo.name, files = count, bytes = total }
 end
 
 function pkgremote.cleanup(pkgDir)
-  if type(pkgDir) ~= "string" then return end
-  local root = pkgDir:match("^(" .. STAGE_ROOT:gsub("%-", "%%-") .. "/[^/]+)")
-  if root then pcall(fs.remove, root) end
+if type(pkgDir) ~= "string" then return end
+local root = pkgDir:match("^(" .. STAGE_ROOT:gsub("%-", "%%-") .. "/[^/]+)")
+if root then pcall(fs.remove, root) end
 end
 
 pkgremote.STAGE_ROOT = STAGE_ROOT

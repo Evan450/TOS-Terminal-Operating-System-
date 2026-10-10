@@ -85,13 +85,13 @@ function robot.swingDown(face, sneaky) return P.swing(DOWN,  face, sneaky) end
 --! second parameter since it was written (see the note in
 --! peripheral/robot.lua), while OpenOS is use(face, sneaky, duration).
 function robot.use(face, sneaky, duration)
-  return P.use(FRONT, sneaky, face, duration)
+return P.use(FRONT, sneaky, face, duration)
 end
 function robot.useUp(face, sneaky, duration)
-  return P.use(UP, sneaky, face, duration)
+return P.use(UP, sneaky, face, duration)
 end
 function robot.useDown(face, sneaky, duration)
-  return P.use(DOWN, sneaky, face, duration)
+return P.use(DOWN, sneaky, face, duration)
 end
 
 function robot.forward()   return P.forward()   end
@@ -107,9 +107,9 @@ function robot.turnRight() return P.turnRight() end
 --! watching for the intermediate one does not, and an unseeded
 --! math.random makes that unreproducible. Left twice, always.
 function robot.turnAround()
-  local ok, err = P.turnLeft()
-  if not ok then return ok, err end
-  return P.turnLeft()
+local ok, err = P.turnLeft()
+if not ok then return ok, err end
+return P.turnLeft()
 end
 
 function robot.tankCount()      return P.tankCount()      end

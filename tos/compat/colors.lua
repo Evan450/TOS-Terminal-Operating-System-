@@ -1,8 +1,8 @@
 local colors = {
-  white      = 0, orange   = 1, magenta    = 2, lightblue  = 3,
-  yellow     = 4, lime     = 5, pink       = 6, gray       = 7,
-  silver     = 8, cyan     = 9, purple     = 10, blue      = 11,
-  brown      = 12, green   = 13, red       = 14, black     = 15,
+white      = 0, orange   = 1, magenta    = 2, lightblue  = 3,
+yellow     = 4, lime     = 5, pink       = 6, gray       = 7,
+silver     = 8, cyan     = 9, purple     = 10, blue      = 11,
+brown      = 12, green   = 13, red       = 14, black     = 15,
 }
 
 --! Snapshot the names FIRST, then write. Inserting a NEW key into a table
@@ -15,11 +15,11 @@ local colors = {
 --! array for exactly this reason; so do we. Same fix in sides.lua and
 --! keyboard.lua. (test_compat_tables.lua)
 do
-  local names = {}
-  for name in pairs(colors) do names[#names + 1] = name end
-  for _, name in ipairs(names) do
-    local num = colors[name]
-    if colors[num] == nil then colors[num] = name end
-  end
+local names = {}
+for name in pairs(colors) do names[#names + 1] = name end
+for _, name in ipairs(names) do
+local num = colors[name]
+if colors[num] == nil then colors[num] = name end
+end
 end
 return colors

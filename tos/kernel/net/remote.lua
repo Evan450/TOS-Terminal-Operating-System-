@@ -56,352 +56,352 @@ function remote.isEnabled() return enabled end
 --! is an operator's decision, not a bug fix. It is recorded in TODO.txt.
 --! (test_sethook_absent.lua)
 local function sethookAvailable()
-  return type(debug) == "table" and type(debug.sethook) == "function"
+return type(debug) == "table" and type(debug.sethook) == "function"
 end
 
 function remote.stepBudgetAvailable() return sethookAvailable() end
 
 local warnedNoBudget = false
 local function warnBudgetOnce()
-  if warnedNoBudget or sethookAvailable() then return end
-  warnedNoBudget = true
-  if log and log.warn then
-    log.warn("remote", "debug.sethook is unavailable here (OpenComputers does "
-      .. "not expose it): remote commands run with NO step or memory budget. "
-      .. "Trust + challenge-response and the OC watchdog are the only limits.")
-  end
+if warnedNoBudget or sethookAvailable() then return end
+warnedNoBudget = true
+if log and log.warn then
+log.warn("remote", "debug.sethook is unavailable here (OpenComputers does "
+.. "not expose it): remote commands run with NO step or memory budget. "
+.. "Trust + challenge-response and the OC watchdog are the only limits.")
+end
 end
 local protocol = nil
 
 function remote.init(modules)
-  net      = modules.net
-  fs       = modules.fs
-  trustMgr = modules.trust
-  log      = modules.log
-  event    = modules.event
+net      = modules.net
+fs       = modules.fs
+trustMgr = modules.trust
+log      = modules.log
+event    = modules.event
 
-  protocol = require("kernel.net.protocol")
+protocol = require("kernel.net.protocol")
 
-  if net then
-    net.on(REMOTE_EXEC, function(packet, fromAddr)
-      remote.handleExec(packet, fromAddr)
-    end)
-  end
+if net then
+net.on(REMOTE_EXEC, function(packet, fromAddr)
+remote.handleExec(packet, fromAddr)
+end)
+end
 
-  if log then
-    log.info("remote", "Remote shell module initialized")
-  end
+if log then
+log.info("remote", "Remote shell module initialized")
+end
 
-  return true
+return true
 end
 
 function remote.execute(address, command)
-  if not net then return nil, "Network not available" end
-  if not protocol then return nil, "Protocol not loaded" end
+if not net then return nil, "Network not available" end
+if not protocol then return nil, "Protocol not loaded" end
 
-  local level = trustMgr.getLevel(address)
-  if level < trustMgr.LEVEL.TRUSTED then
-    return nil, "Peer is not TRUSTED"
-  end
+local level = trustMgr.getLevel(address)
+if level < trustMgr.LEVEL.TRUSTED then
+return nil, "Peer is not TRUSTED"
+end
 
-  if net.verifyPeer then
-    local vOk, vErr = net.verifyPeer(address)
-    if not vOk then
-      return nil, "Peer verification failed: " .. tostring(vErr)
-    end
-  end
+if net.verifyPeer then
+local vOk, vErr = net.verifyPeer(address)
+if not vOk then
+return nil, "Peer verification failed: " .. tostring(vErr)
+end
+end
 
-  if not command or command == "" then
-    return nil, "No command specified"
-  end
+if not command or command == "" then
+return nil, "No command specified"
+end
 
-  if type(command) ~= "string" then
-    return nil, "Command must be a string"
-  end
+if type(command) ~= "string" then
+return nil, "Command must be a string"
+end
 
-  if #command > CMD_LIMIT then
-    return nil, "Command too large (max " .. CMD_LIMIT .. " bytes)"
-  end
+if #command > CMD_LIMIT then
+return nil, "Command too large (max " .. CMD_LIMIT .. " bytes)"
+end
 
-  local received = false
-  local output   = nil
-  local exitCode = nil
+local received = false
+local output   = nil
+local exitCode = nil
 
-  local listeners = {
-    { type = REMOTE_RES,
-      id   = net.onceFrom(REMOTE_RES, address, function(rpkt)
-        local payload = rpkt.payload or {}
-        output   = type(payload.output) == "string" and payload.output or ""
-        exitCode = type(payload.exitCode) == "number" and payload.exitCode or 0
-        received = true
-      end) },
-  }
+local listeners = {
+{ type = REMOTE_RES,
+id   = net.onceFrom(REMOTE_RES, address, function(rpkt)
+local payload = rpkt.payload or {}
+output   = type(payload.output) == "string" and payload.output or ""
+exitCode = type(payload.exitCode) == "number" and payload.exitCode or 0
+received = true
+end) },
+}
 
-  local pkt = protocol.makePacket(REMOTE_EXEC, {
-    cmd = command,
-  }, { to = address })
+local pkt = protocol.makePacket(REMOTE_EXEC, {
+cmd = command,
+}, { to = address })
 
-  local ok, sendErr = net.send(address, pkt)
-  if not ok then
-    net.offAll(listeners)
-    return nil, "Send failed: " .. tostring(sendErr)
-  end
+local ok, sendErr = net.send(address, pkt)
+if not ok then
+net.offAll(listeners)
+return nil, "Send failed: " .. tostring(sendErr)
+end
 
-  if log then
-    log.info("remote", "Sent command to " .. address:sub(1, 8) ..
-      "...: " .. command:sub(1, 40))
-  end
+if log then
+log.info("remote", "Sent command to " .. address:sub(1, 8) ..
+"...: " .. command:sub(1, 40))
+end
 
-  net.waitFor(function() return received end, TIMEOUT)
-  net.offAll(listeners)
+net.waitFor(function() return received end, TIMEOUT)
+net.offAll(listeners)
 
-  if not received then
-    return nil, "Timeout waiting for response"
-  end
+if not received then
+return nil, "Timeout waiting for response"
+end
 
-  return output, exitCode
+return output, exitCode
 end
 
 function remote.handleExec(packet, fromAddr)
-  if not net or not protocol then return end
-  if not enabled then return end
+if not net or not protocol then return end
+if not enabled then return end
 
-  local level = trustMgr.getLevel(fromAddr)
-  if level < trustMgr.LEVEL.TRUSTED then
-    if log then
-      log.warn("remote", "Remote exec denied from non-trusted peer: " ..
-        fromAddr:sub(1, 8) .. "...")
-    end
+local level = trustMgr.getLevel(fromAddr)
+if level < trustMgr.LEVEL.TRUSTED then
+if log then
+log.warn("remote", "Remote exec denied from non-trusted peer: " ..
+fromAddr:sub(1, 8) .. "...")
+end
 
-    return
-  end
+return
+end
 
-  if net.verifyPeer then
-    local vOk, vErr = net.verifyPeer(fromAddr)
-    if not vOk then
-      if log then
-        log.warn("remote", "Refusing remote exec from " ..
-          fromAddr:sub(1, 8) .. ": " .. tostring(vErr))
-      end
-      return
-    end
-  end
+if net.verifyPeer then
+local vOk, vErr = net.verifyPeer(fromAddr)
+if not vOk then
+if log then
+log.warn("remote", "Refusing remote exec from " ..
+fromAddr:sub(1, 8) .. ": " .. tostring(vErr))
+end
+return
+end
+end
 
-  local payload = packet.payload or {}
-  local cmd = payload.cmd
+local payload = packet.payload or {}
+local cmd = payload.cmd
 
-  if type(cmd) ~= "string" or cmd == "" then
-    local res = protocol.makePacket(REMOTE_RES, {
-      output   = "Error: no command provided",
-      exitCode = 1,
-    }, { to = fromAddr })
-    net.send(fromAddr, res)
-    return
-  end
+if type(cmd) ~= "string" or cmd == "" then
+local res = protocol.makePacket(REMOTE_RES, {
+output   = "Error: no command provided",
+exitCode = 1,
+}, { to = fromAddr })
+net.send(fromAddr, res)
+return
+end
 
-  if #cmd > CMD_LIMIT then
-    if log then
-      log.warn("remote", "Oversized remote cmd from " ..
-        fromAddr:sub(1, 8) .. "... (" .. #cmd .. " bytes)")
-    end
-    local res = protocol.makePacket(REMOTE_RES, {
-      output   = "Error: command too large (max " .. CMD_LIMIT .. " bytes)",
-      exitCode = 1,
-    }, { to = fromAddr })
-    net.send(fromAddr, res)
-    return
-  end
+if #cmd > CMD_LIMIT then
+if log then
+log.warn("remote", "Oversized remote cmd from " ..
+fromAddr:sub(1, 8) .. "... (" .. #cmd .. " bytes)")
+end
+local res = protocol.makePacket(REMOTE_RES, {
+output   = "Error: command too large (max " .. CMD_LIMIT .. " bytes)",
+exitCode = 1,
+}, { to = fromAddr })
+net.send(fromAddr, res)
+return
+end
 
-  if computer.freeMemory and computer.freeMemory() < MIN_FREE_MEM then
-    if log then
-      log.warn("remote", "Refusing remote exec: low memory")
-    end
-    local res = protocol.makePacket(REMOTE_RES, {
-      output   = "Error: host low on memory, retry later",
-      exitCode = 1,
-    }, { to = fromAddr })
-    net.send(fromAddr, res)
-    return
-  end
+if computer.freeMemory and computer.freeMemory() < MIN_FREE_MEM then
+if log then
+log.warn("remote", "Refusing remote exec: low memory")
+end
+local res = protocol.makePacket(REMOTE_RES, {
+output   = "Error: host low on memory, retry later",
+exitCode = 1,
+}, { to = fromAddr })
+net.send(fromAddr, res)
+return
+end
 
-  if log then
-    log.info("remote", "Executing remote command from " ..
-      fromAddr:sub(1, 8) .. "...: " .. cmd:sub(1, 60))
-  end
+if log then
+log.info("remote", "Executing remote command from " ..
+fromAddr:sub(1, 8) .. "...: " .. cmd:sub(1, 60))
+end
 
-  local outputLines = {}
-  local outputSize = 0
-  local OUTPUT_LIMIT = 5120
+local outputLines = {}
+local outputSize = 0
+local OUTPUT_LIMIT = 5120
 
-  local function copyLib(lib, deny)
-    local c = {}
-    for k, v in pairs(lib) do
-      if not (deny and deny[k]) then c[k] = v end
-    end
-    return c
-  end
+local function copyLib(lib, deny)
+local c = {}
+for k, v in pairs(lib) do
+if not (deny and deny[k]) then c[k] = v end
+end
+return c
+end
 
-  local sandbox = {
-    print = function(...)
-      if outputSize >= OUTPUT_LIMIT then return end
-      local parts = {}
-      for i = 1, select("#", ...) do
-        parts[#parts + 1] = tostring((select(i, ...)))
-      end
-      local line = table.concat(parts, "\t")
+local sandbox = {
+print = function(...)
+if outputSize >= OUTPUT_LIMIT then return end
+local parts = {}
+for i = 1, select("#", ...) do
+parts[#parts + 1] = tostring((select(i, ...)))
+end
+local line = table.concat(parts, "\t")
 
-      local remaining = OUTPUT_LIMIT - outputSize
-      if #line > remaining then line = line:sub(1, math.max(0, remaining)) end
-      outputSize = outputSize + #line + 1
-      outputLines[#outputLines + 1] = line
-    end,
-    tostring = tostring,
-    tonumber = tonumber,
-    type     = type,
-    pairs    = pairs,
-    ipairs   = ipairs,
-    select   = select,
-    pcall    = pcall,
-    xpcall   = xpcall,
-    error    = error,
-    assert   = assert,
-    unpack   = table.unpack or unpack,
-    table    = copyLib(table),
-    string   = copyLib(string, { dump = true }),
-    math     = copyLib(math),
-    os       = { clock = os.clock, time = os.time, date = os.date },
-    computer = {
-      uptime      = computer.uptime,
-      freeMemory  = computer.freeMemory,
-      totalMemory = computer.totalMemory,
-    },
-  }
+local remaining = OUTPUT_LIMIT - outputSize
+if #line > remaining then line = line:sub(1, math.max(0, remaining)) end
+outputSize = outputSize + #line + 1
+outputLines[#outputLines + 1] = line
+end,
+tostring = tostring,
+tonumber = tonumber,
+type     = type,
+pairs    = pairs,
+ipairs   = ipairs,
+select   = select,
+pcall    = pcall,
+xpcall   = xpcall,
+error    = error,
+assert   = assert,
+unpack   = table.unpack or unpack,
+table    = copyLib(table),
+string   = copyLib(string, { dump = true }),
+math     = copyLib(math),
+os       = { clock = os.clock, time = os.time, date = os.date },
+computer = {
+uptime      = computer.uptime,
+freeMemory  = computer.freeMemory,
+totalMemory = computer.totalMemory,
+},
+}
 
-  if fs then
-    sandbox.fs = {
-      exists = function(path)
-        path = fs.normalize(path)
-        if path == "/public" or path:sub(1, 8) == "/public/" then return fs.exists(path) end
-        return false
-      end,
-      list = function(path)
-        path = fs.normalize(path)
-        if path == "/public" or path:sub(1, 8) == "/public/" then return fs.list(path) end
-        return {}
-      end,
-      isDirectory = function(path)
-        path = fs.normalize(path)
-        if path == "/public" or path:sub(1, 8) == "/public/" then return fs.isDirectory(path) end
-        return false
-      end,
-      readFile = function(path)
-        path = fs.normalize(path)
-        if path == "/public" or path:sub(1, 8) == "/public/" then return fs.readFile(path) end
-        return nil, "Access denied: only /public/ is accessible remotely"
-      end,
-    }
-  end
+if fs then
+sandbox.fs = {
+exists = function(path)
+path = fs.normalize(path)
+if path == "/public" or path:sub(1, 8) == "/public/" then return fs.exists(path) end
+return false
+end,
+list = function(path)
+path = fs.normalize(path)
+if path == "/public" or path:sub(1, 8) == "/public/" then return fs.list(path) end
+return {}
+end,
+isDirectory = function(path)
+path = fs.normalize(path)
+if path == "/public" or path:sub(1, 8) == "/public/" then return fs.isDirectory(path) end
+return false
+end,
+readFile = function(path)
+path = fs.normalize(path)
+if path == "/public" or path:sub(1, 8) == "/public/" then return fs.readFile(path) end
+return nil, "Access denied: only /public/ is accessible remotely"
+end,
+}
+end
 
-  local fn, loadErr = load(cmd, "=remote", "t", sandbox)
-  local exitCode = 0
+local fn, loadErr = load(cmd, "=remote", "t", sandbox)
+local exitCode = 0
 
-  if not fn then
-    outputLines[#outputLines + 1] = "Load error: " .. tostring(loadErr)
-    exitCode = 1
-  else
+if not fn then
+outputLines[#outputLines + 1] = "Load error: " .. tostring(loadErr)
+exitCode = 1
+else
 
-    local priorHook, priorMask, priorCount = nil, nil, nil
-    local hookInstalled = false
-    local stepsRun = 0
-    local tripped  = false
+local priorHook, priorMask, priorCount = nil, nil, nil
+local hookInstalled = false
+local stepsRun = 0
+local tripped  = false
 
-    warnBudgetOnce()
+warnBudgetOnce()
 
-    if debug and debug.sethook then
-      if debug.gethook then
-        local ok, h, m, c = pcall(debug.gethook)
-        if ok then priorHook, priorMask, priorCount = h, m, c end
-      end
+if debug and debug.sethook then
+if debug.gethook then
+local ok, h, m, c = pcall(debug.gethook)
+if ok then priorHook, priorMask, priorCount = h, m, c end
+end
 
-      local hook
-      hook = function()
-        if tripped then
-          error("remote exec: step budget exceeded", 0)
-        end
+local hook
+hook = function()
+if tripped then
+error("remote exec: step budget exceeded", 0)
+end
 
-        if computer.freeMemory and computer.freeMemory() < MIN_FREE_MEM then
-          tripped = true
-          pcall(debug.sethook, hook, "", 1)
-          error("remote exec: aborted (host low on memory)", 0)
-        end
-        stepsRun = stepsRun + STEP_TICK
-        if stepsRun >= STEP_BUDGET then
-          tripped = true
+if computer.freeMemory and computer.freeMemory() < MIN_FREE_MEM then
+tripped = true
+pcall(debug.sethook, hook, "", 1)
+error("remote exec: aborted (host low on memory)", 0)
+end
+stepsRun = stepsRun + STEP_TICK
+if stepsRun >= STEP_BUDGET then
+tripped = true
 
-          pcall(debug.sethook, hook, "", 1)
-          error("remote exec: step budget exceeded", 0)
-        end
-      end
+pcall(debug.sethook, hook, "", 1)
+error("remote exec: step budget exceeded", 0)
+end
+end
 
-      local ok = pcall(debug.sethook, hook, "", STEP_TICK)
-      if ok then hookInstalled = true end
-    end
+local ok = pcall(debug.sethook, hook, "", STEP_TICK)
+if ok then hookInstalled = true end
+end
 
-    local execOk, execErr = pcall(fn)
+local execOk, execErr = pcall(fn)
 
-    if hookInstalled then
-      if priorHook then
-        pcall(debug.sethook, priorHook, priorMask or "", priorCount or 0)
-      else
-        pcall(debug.sethook)
-      end
-    end
+if hookInstalled then
+if priorHook then
+pcall(debug.sethook, priorHook, priorMask or "", priorCount or 0)
+else
+pcall(debug.sethook)
+end
+end
 
-    if not execOk then
-      outputLines[#outputLines + 1] = "Runtime error: " .. tostring(execErr)
-      exitCode = 1
-    end
-  end
+if not execOk then
+outputLines[#outputLines + 1] = "Runtime error: " .. tostring(execErr)
+exitCode = 1
+end
+end
 
-  local output = table.concat(outputLines, "\n")
+local output = table.concat(outputLines, "\n")
 
-  if #output > OUTPUT_LIMIT then
-    output = output:sub(1, OUTPUT_LIMIT) .. "\n... (output truncated)"
-  end
+if #output > OUTPUT_LIMIT then
+output = output:sub(1, OUTPUT_LIMIT) .. "\n... (output truncated)"
+end
 
-  if log then
-    log.info("remote", "Command finished (exit=" .. exitCode ..
-      ", output=" .. #output .. " bytes)")
-  end
+if log then
+log.info("remote", "Command finished (exit=" .. exitCode ..
+", output=" .. #output .. " bytes)")
+end
 
-  local res = protocol.makePacket(REMOTE_RES, {
-    output   = output,
-    exitCode = exitCode,
-  }, { to = fromAddr })
+local res = protocol.makePacket(REMOTE_RES, {
+output   = output,
+exitCode = exitCode,
+}, { to = fromAddr })
 
-  local ok, err = net.send(fromAddr, res)
-  if not ok and log then
-    log.warn("remote", "Failed to send result: " .. tostring(err))
-  end
+local ok, err = net.send(fromAddr, res)
+if not ok and log then
+log.warn("remote", "Failed to send result: " .. tostring(err))
+end
 end
 
 remote.TYPE_EXEC = REMOTE_EXEC
 remote.TYPE_RES  = REMOTE_RES
 
 do
-  local T = rawget(_G, "_TOS")
-  if T and T.net and not net then
-    local okI = pcall(remote.init, {
-      net   = T.net,
-      fs    = T.fs,
-      trust = T.net.getTrust and T.net.getTrust() or nil,
-      log   = T.logObj,
-      event = T.event,
-    })
-    if okI and T.net.getServiceArm and T.net.getServiceArm("rshd") then
-      remote.setEnabled(true)
-    end
-  end
+local T = rawget(_G, "_TOS")
+if T and T.net and not net then
+local okI = pcall(remote.init, {
+net   = T.net,
+fs    = T.fs,
+trust = T.net.getTrust and T.net.getTrust() or nil,
+log   = T.logObj,
+event = T.event,
+})
+if okI and T.net.getServiceArm and T.net.getServiceArm("rshd") then
+remote.setEnabled(true)
+end
+end
 end
 
 return remote

@@ -2,104 +2,104 @@ local computer = require("computer")
 local M = {}
 
 function M.resolvePath(S, p)
-  if not p or p == "" then return S.cwd end
-  if p:sub(1, 1) == "/" then return p end
-  if p == "~" or p:sub(1, 2) == "~/" then
-    local home = "/home/" .. S.who
-    return home .. p:sub(2)
-  end
-  return S.F.join(S.cwd, p)
+if not p or p == "" then return S.cwd end
+if p:sub(1, 1) == "/" then return p end
+if p == "~" or p:sub(1, 2) == "~/" then
+local home = "/home/" .. S.who
+return home .. p:sub(2)
+end
+return S.F.join(S.cwd, p)
 end
 
 function M.loadFiles(S, b)
-  b.files = {}
-  if b.path ~= "/" then
-    b.files[1] = { name = "..", dir = true, sz = 0 }
-  end
-  local ok, list = pcall(S.F.list, b.path)
-  if not ok or not list then return end
-  local raw = {}
-  if type(list) == "table" then
-    for _, n in ipairs(list) do raw[#raw + 1] = n end
-  elseif type(list) == "function" then
-    for n in list do raw[#raw + 1] = n end
-  end
-  table.sort(raw, function(a, b2)
-    local ad, bd = a:sub(-1) == "/", b2:sub(-1) == "/"
-    if ad ~= bd then return ad end
-    return a < b2
-  end)
-  for _, n in ipairs(raw) do
-    local isDir = n:sub(-1) == "/"
-    local name  = isDir and n:sub(1, -2) or n
-    local sz    = 0
-    if not isDir then
-      pcall(function() sz = S.F.size(S.F.join(b.path, name)) end)
-    end
-    b.files[#b.files + 1] = { name = name, dir = isDir, sz = sz }
-  end
-  if b.sel > #b.files then b.sel = math.max(1, #b.files) end
+b.files = {}
+if b.path ~= "/" then
+b.files[1] = { name = "..", dir = true, sz = 0 }
+end
+local ok, list = pcall(S.F.list, b.path)
+if not ok or not list then return end
+local raw = {}
+if type(list) == "table" then
+for _, n in ipairs(list) do raw[#raw + 1] = n end
+elseif type(list) == "function" then
+for n in list do raw[#raw + 1] = n end
+end
+table.sort(raw, function(a, b2)
+local ad, bd = a:sub(-1) == "/", b2:sub(-1) == "/"
+if ad ~= bd then return ad end
+return a < b2
+end)
+for _, n in ipairs(raw) do
+local isDir = n:sub(-1) == "/"
+local name  = isDir and n:sub(1, -2) or n
+local sz    = 0
+if not isDir then
+pcall(function() sz = S.F.size(S.F.join(b.path, name)) end)
+end
+b.files[#b.files + 1] = { name = name, dir = isDir, sz = sz }
+end
+if b.sel > #b.files then b.sel = math.max(1, #b.files) end
 
-  b.freeStr = nil
-  pcall(function()
-    local best, bestLen = nil, -1
-    for _, m in ipairs(S.F.mounts() or {}) do
-      local mp = m.mountPoint or ""
-      if mp ~= "" and b.path:sub(1, #mp) == mp and #mp > bestLen then
-        best, bestLen = m, #mp
-      end
-    end
-    if best and best.total then
-      b.freeStr = M.fmtSz(math.max(0, (best.total or 0) - (best.used or 0)))
-    end
-  end)
+b.freeStr = nil
+pcall(function()
+local best, bestLen = nil, -1
+for _, m in ipairs(S.F.mounts() or {}) do
+local mp = m.mountPoint or ""
+if mp ~= "" and b.path:sub(1, #mp) == mp and #mp > bestLen then
+best, bestLen = m, #mp
+end
+end
+if best and best.total then
+b.freeStr = M.fmtSz(math.max(0, (best.total or 0) - (best.used or 0)))
+end
+end)
 end
 
 function M.refreshBrowser(S)
-  M.loadFiles(S, S.browser)
+M.loadFiles(S, S.browser)
 end
 
 function M.fileColor(S, f)
-  local T = S.T
-  if f.dir then return T.dir or T.dir_color or T.highlight end
-  if f.name:match("%.lua$") then return T.file_lua or T.file_exec or T.highlight end
-  if f.name:match("%.cfg$") or f.name:match("%.conf$") then return T.file_cfg or T.warning end
-  if f.name:match("%.log$") then return T.file_log or T.dim end
-  return T.fg
+local T = S.T
+if f.dir then return T.dir or T.dir_color or T.highlight end
+if f.name:match("%.lua$") then return T.file_lua or T.file_exec or T.highlight end
+if f.name:match("%.cfg$") or f.name:match("%.conf$") then return T.file_cfg or T.warning end
+if f.name:match("%.log$") then return T.file_log or T.dim end
+return T.fg
 end
 
 function M.loadFailure(what, err)
-  local why = tostring(err or "unknown error")
-  if why:find("Out of memory", 1, true) or why:find("not enough memory", 1, true) then
-    return what .. " cannot load: not enough free memory on this machine."
-  end
-  return what .. " module unavailable: " .. why
+local why = tostring(err or "unknown error")
+if why:find("Out of memory", 1, true) or why:find("not enough memory", 1, true) then
+return what .. " cannot load: not enough free memory on this machine."
+end
+return what .. " module unavailable: " .. why
 end
 
 function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
-  local T = S.T
-  local text, isError
-  local okSB, sb = pcall(require, "kernel.sandbox")
-  if okSB and type(sb) == "table" and env and sb.finish then sb.finish(env) end
-  if okSB and type(sb) == "table" and sb.describeEnd then
-    text, isError = sb.describeEnd(ok, result)
-  elseif ok then
-    text = result ~= nil and tostring(result) or nil
-  else
-    text, isError = tostring(result), true
-  end
-  if not text then return end
-  if isError then o((errPrefix or "Error: ") .. text, T.error)
-  elseif ok then o(text, T.fg)
-  else o(text, T.dim) end
+local T = S.T
+local text, isError
+local okSB, sb = pcall(require, "kernel.sandbox")
+if okSB and type(sb) == "table" and env and sb.finish then sb.finish(env) end
+if okSB and type(sb) == "table" and sb.describeEnd then
+text, isError = sb.describeEnd(ok, result)
+elseif ok then
+text = result ~= nil and tostring(result) or nil
+else
+text, isError = tostring(result), true
+end
+if not text then return end
+if isError then o((errPrefix or "Error: ") .. text, T.error)
+elseif ok then o(text, T.fg)
+else o(text, T.dim) end
 end
 
 function M.diskName(m)
-  local label = type(m) == "table" and m.label or nil
-  if type(label) == "string" and label ~= "" and label ~= "Unnamed" then return label end
-  local mp = type(m) == "table" and m.mountPoint or nil
-  local leaf = type(mp) == "string" and mp:match("([^/]+)/*$") or nil
-  return leaf or "disk"
+local label = type(m) == "table" and m.label or nil
+if type(label) == "string" and label ~= "" and label ~= "Unnamed" then return label end
+local mp = type(m) == "table" and m.mountPoint or nil
+local leaf = type(mp) == "string" and mp:match("([^/]+)/*$") or nil
+return leaf or "disk"
 end
 
 --! The disk is newer news than whatever result is up. A multi-line output
@@ -108,221 +108,221 @@ end
 --! the disk said nothing at all (headless machine, 2026-10-09).
 --! (test_disk_announce.lua)
 function M.announceDisk(S, F, kind, mntPath, label)
-  if type(mntPath) ~= "string" then return false end
-  local T = S.T
-  S.outLines = nil
-  if kind == "added" then
-    local info = M.classifyDisk(F, mntPath)
-    local msg = string.format('%s: "%s" -> %s', info.desc, label or "disk", mntPath)
-    if info.hint then msg = msg .. "   " .. info.hint end
-    S.lastOut = { msg, T.highlight }
-  else
-    S.lastOut = { 'Disk removed: "' .. M.diskName({ label = label, mountPoint = mntPath }) .. '"', T.dim }
-  end
-  return true
+if type(mntPath) ~= "string" then return false end
+local T = S.T
+S.outLines = nil
+if kind == "added" then
+local info = M.classifyDisk(F, mntPath)
+local msg = string.format('%s: "%s" -> %s', info.desc, label or "disk", mntPath)
+if info.hint then msg = msg .. "   " .. info.hint end
+S.lastOut = { msg, T.highlight }
+else
+S.lastOut = { 'Disk removed: "' .. M.diskName({ label = label, mountPoint = mntPath }) .. '"', T.dim }
+end
+return true
 end
 
 function M.fmtSz(sz)
-  if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
-  if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end
-  return sz .. "B"
+if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
+if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end
+return sz .. "B"
 end
 
 function M.selPath(S)
-  if S.browser.sel < 1 or S.browser.sel > #S.browser.files then return nil, nil end
-  local f = S.browser.files[S.browser.sel]
-  if f.name == ".." then return nil, nil end
-  return S.F.join(S.browser.path, f.name), f
+if S.browser.sel < 1 or S.browser.sel > #S.browser.files then return nil, nil end
+local f = S.browser.files[S.browser.sel]
+if f.name == ".." then return nil, nil end
+return S.F.join(S.browser.path, f.name), f
 end
 
 function M.classifyDisk(F, mnt)
-  if not F or not mnt or mnt == "" then return { kind = "data", desc = "disk" } end
-  local function exists(p)
-    local ok, r = pcall(F.exists, p)
-    return ok and r or false
-  end
-  local function has(rel) return exists(F.join(mnt, rel)) end
-  local function listNames(dir)
-    local names = {}
-    local ok, list = pcall(F.list, dir)
-    if ok and list then
-      if type(list) == "table" then for _, n in ipairs(list) do names[#names + 1] = n end
-      elseif type(list) == "function" then for n in list do names[#names + 1] = n end end
-    end
-    return names
-  end
+if not F or not mnt or mnt == "" then return { kind = "data", desc = "disk" } end
+local function exists(p)
+local ok, r = pcall(F.exists, p)
+return ok and r or false
+end
+local function has(rel) return exists(F.join(mnt, rel)) end
+local function listNames(dir)
+local names = {}
+local ok, list = pcall(F.list, dir)
+if ok and list then
+if type(list) == "table" then for _, n in ipairs(list) do names[#names + 1] = n end
+elseif type(list) == "function" then for n in list do names[#names + 1] = n end end
+end
+return names
+end
 
-  local function hasPackageDir(dir)
-    for _, n in ipairs(listNames(dir)) do
-      local clean = n:gsub("/$", "")
-      if clean ~= "" and clean ~= "." and clean ~= ".."
-         and not clean:find("[/\\]")
-         and exists(F.join(F.join(dir, clean), "package.lua")) then
-        return true
-      end
-    end
-    return false
-  end
+local function hasPackageDir(dir)
+for _, n in ipairs(listNames(dir)) do
+local clean = n:gsub("/$", "")
+if clean ~= "" and clean ~= "." and clean ~= ".."
+and not clean:find("[/\\]")
+and exists(F.join(F.join(dir, clean), "package.lua")) then
+return true
+end
+end
+return false
+end
 
-  if has("tos/kernel/init.lua") then
-    return { kind = "tos-install", desc = "TOS install disk",
-      hint = "(install image — run its install.lua on the target machine)" }
-  end
+if has("tos/kernel/init.lua") then
+return { kind = "tos-install", desc = "TOS install disk",
+hint = "(install image — run its install.lua on the target machine)" }
+end
 
-  if hasPackageDir(mnt) then
+if hasPackageDir(mnt) then
 
-    if has("optutil-set.lua") then
-      return { kind = "optional-utilities", desc = "Optional Utilities disk",
-        hint = "pkg install" }
-    end
-    return { kind = "package-repo", desc = "package repo disk", hint = "pkg install" }
-  end
+if has("optutil-set.lua") then
+return { kind = "optional-utilities", desc = "Optional Utilities disk",
+hint = "pkg install" }
+end
+return { kind = "package-repo", desc = "package repo disk", hint = "pkg install" }
+end
 
-  for _, n in ipairs(listNames(mnt)) do
-    local clean = n:gsub("/$", "")
-    if clean ~= "" and clean ~= "." and clean ~= ".." and not clean:find("[/\\]") then
-      local sub = F.join(mnt, clean)
-      if hasPackageDir(sub) then
-        if exists(F.join(sub, "optutil-set.lua")) then
+for _, n in ipairs(listNames(mnt)) do
+local clean = n:gsub("/$", "")
+if clean ~= "" and clean ~= "." and clean ~= ".." and not clean:find("[/\\]") then
+local sub = F.join(mnt, clean)
+if hasPackageDir(sub) then
+if exists(F.join(sub, "optutil-set.lua")) then
 
-          return { kind = "optional-utilities", desc = "Optional Utilities disk",
-            hint = "pkg install" }
-        end
-        return { kind = "package-repo", desc = "package repo disk", hint = "pkg install" }
-      end
-    end
-  end
+return { kind = "optional-utilities", desc = "Optional Utilities disk",
+hint = "pkg install" }
+end
+return { kind = "package-repo", desc = "package repo disk", hint = "pkg install" }
+end
+end
+end
 
-  if has("package.lua") then
-    return { kind = "package", desc = "single-package disk",
-      hint = "disk install " .. mnt }
-  end
+if has("package.lua") then
+return { kind = "package", desc = "single-package disk",
+hint = "disk install " .. mnt }
+end
 
-  if has("module.cfg") then
-    return { kind = "module", desc = "module disk (legacy)",
-      hint = "disk install " .. mnt }
-  end
-  return { kind = "data", desc = "data / blank disk" }
+if has("module.cfg") then
+return { kind = "module", desc = "module disk (legacy)",
+hint = "disk install " .. mnt }
+end
+return { kind = "data", desc = "data / blank disk" }
 end
 
 function M.scanMountedMedia(F)
-  if not F or not F.mounts then return nil end
-  local ok, mnts = pcall(F.mounts)
-  if not ok or type(mnts) ~= "table" then return nil end
-  for _, m in ipairs(mnts) do
-    if m.mountPoint and m.mountPoint ~= "/" then
-      local info = M.classifyDisk(F, m.mountPoint)
-      if info and info.kind ~= "data" then
-        info.mountPoint = m.mountPoint
-        info.label = m.label
-        return info
-      end
-    end
-  end
-  return nil
+if not F or not F.mounts then return nil end
+local ok, mnts = pcall(F.mounts)
+if not ok or type(mnts) ~= "table" then return nil end
+for _, m in ipairs(mnts) do
+if m.mountPoint and m.mountPoint ~= "/" then
+local info = M.classifyDisk(F, m.mountPoint)
+if info and info.kind ~= "data" then
+info.mountPoint = m.mountPoint
+info.label = m.label
+return info
+end
+end
+end
+return nil
 end
 
 function M.routeOutput(n, maxInline)
-  n = tonumber(n) or 0
-  if n <= 0 then return "none" end
-  if n == 1 then return "status" end
-  if n <= (maxInline or 8) then return "inline" end
-  return "tab"
+n = tonumber(n) or 0
+if n <= 0 then return "none" end
+if n == 1 then return "status" end
+if n <= (maxInline or 8) then return "inline" end
+return "tab"
 end
 
 function M.completeToken(prefix, candidates)
-  prefix = prefix or ""
-  local matches = {}
-  for _, c in ipairs(candidates or {}) do
-    if c:sub(1, #prefix) == prefix then matches[#matches + 1] = c end
-  end
-  if #matches == 0 then return prefix, matches end
-  if #matches == 1 then return matches[1], matches end
-  local cp = matches[1]
-  for i = 2, #matches do
-    local m, n = matches[i], 0
-    while n < #cp and n < #m and cp:sub(n + 1, n + 1) == m:sub(n + 1, n + 1) do n = n + 1 end
-    cp = cp:sub(1, n)
-  end
-  return cp, matches
+prefix = prefix or ""
+local matches = {}
+for _, c in ipairs(candidates or {}) do
+if c:sub(1, #prefix) == prefix then matches[#matches + 1] = c end
+end
+if #matches == 0 then return prefix, matches end
+if #matches == 1 then return matches[1], matches end
+local cp = matches[1]
+for i = 2, #matches do
+local m, n = matches[i], 0
+while n < #cp and n < #m and cp:sub(n + 1, n + 1) == m:sub(n + 1, n + 1) do n = n + 1 end
+cp = cp:sub(1, n)
+end
+return cp, matches
 end
 
 function M.completeCmdline(cmdline, cmds, listDir)
-  local before, token = (cmdline or ""):match("^(.-)(%S*)$")
-  if not before:find("%S") then
-    local comp, matches = M.completeToken(token, cmds or {})
-    if #matches == 1 then comp = comp .. " " end
-    return before .. comp, matches
-  end
-  local dirPart, base = token:match("^(.*/)([^/]*)$")
-  dirPart, base = dirPart or "", base or token
-  local entries = (listDir and listDir(dirPart)) or {}
-  local names = {}
-  for _, e in ipairs(entries) do names[#names + 1] = (type(e) == "table" and e.name or e) end
-  local comp, matches = M.completeToken(base, names)
-  if #matches == 1 then
-    for _, e in ipairs(entries) do
-      local nm = type(e) == "table" and e.name or e
-      if nm == comp then comp = comp .. ((type(e) == "table" and e.dir) and "/" or " "); break end
-    end
-  end
-  return before .. dirPart .. comp, matches
+local before, token = (cmdline or ""):match("^(.-)(%S*)$")
+if not before:find("%S") then
+local comp, matches = M.completeToken(token, cmds or {})
+if #matches == 1 then comp = comp .. " " end
+return before .. comp, matches
+end
+local dirPart, base = token:match("^(.*/)([^/]*)$")
+dirPart, base = dirPart or "", base or token
+local entries = (listDir and listDir(dirPart)) or {}
+local names = {}
+for _, e in ipairs(entries) do names[#names + 1] = (type(e) == "table" and e.name or e) end
+local comp, matches = M.completeToken(base, names)
+if #matches == 1 then
+for _, e in ipairs(entries) do
+local nm = type(e) == "table" and e.name or e
+if nm == comp then comp = comp .. ((type(e) == "table" and e.dir) and "/" or " "); break end
+end
+end
+return before .. dirPart .. comp, matches
 end
 
 function M.cmdScroll(len, cursor, avail)
-  if avail < 1 then avail = 1 end
-  local cur0 = (cursor or (len + 1)) - 1
-  if cur0 < 0 then cur0 = 0 elseif cur0 > len then cur0 = len end
-  local hs = 0
-  if cur0 > avail - 1 then hs = cur0 - (avail - 1) end
-  if hs < 0 then hs = 0 end
-  return hs
+if avail < 1 then avail = 1 end
+local cur0 = (cursor or (len + 1)) - 1
+if cur0 < 0 then cur0 = 0 elseif cur0 > len then cur0 = len end
+local hs = 0
+if cur0 > avail - 1 then hs = cur0 - (avail - 1) end
+if hs < 0 then hs = 0 end
+return hs
 end
 
 function M.wrapLine(text, width)
-  if #text <= width then return { text } end
-  local lines = {}
-  while #text > width do
-    local cut = width
-    local foundSpace = false
-    for i = width, math.max(1, width - 20), -1 do
-      if text:sub(i, i) == " " then cut = i - 1; foundSpace = true; break end
-    end
-    lines[#lines + 1] = text:sub(1, cut)
-    text = text:sub(cut + (foundSpace and 2 or 1))
-  end
-  if #text > 0 then lines[#lines + 1] = text end
-  return lines
+if #text <= width then return { text } end
+local lines = {}
+while #text > width do
+local cut = width
+local foundSpace = false
+for i = width, math.max(1, width - 20), -1 do
+if text:sub(i, i) == " " then cut = i - 1; foundSpace = true; break end
+end
+lines[#lines + 1] = text:sub(1, cut)
+text = text:sub(cut + (foundSpace and 2 or 1))
+end
+if #text > 0 then lines[#lines + 1] = text end
+return lines
 end
 
 function M.expandBuf(S, rawBuf)
-  local out = {}
+local out = {}
 
-  local reserve = (S.tier and S.tier >= 2) and 6 or 0
-  local wrapW = math.max(8, S.W - reserve)
-  --! #MEM (pentest, Sep 2026) — a line that already fits is passed through
-  --! as the SAME entry, not copied into a fresh { text, colour } table (nor
-  --! sent through wrapLine first, which built a one-line table for it too).
-  --! The executor wraps every command's output and a view tab then wrapped
-  --! it again, so `cat` of a 32 KB file held three tables per line and
-  --! peaked at 305 KB. Entries are only read after this -- by the draw
-  --! code, search and selection -- so sharing one is safe; only a line
-  --! that is actually wrapped costs anything. (test_view_memory.lua)
-  for _, e in ipairs(rawBuf) do
-    local isT = type(e) == "table"
-    local txt = isT and e[1] or e
-    if type(txt) ~= "string" then txt = tostring(txt) end
-    local col = isT and e[2] or S.T.fg
-    if #txt <= wrapW then
-      if isT and e[1] == txt and e[2] ~= nil then out[#out + 1] = e
-      else out[#out + 1] = { txt, col } end
-    else
-      for _, l in ipairs(M.wrapLine(txt, wrapW)) do
-        out[#out + 1] = { l, col }
-      end
-    end
-  end
-  return out
+local reserve = (S.tier and S.tier >= 2) and 6 or 0
+local wrapW = math.max(8, S.W - reserve)
+--! #MEM (pentest, Sep 2026) — a line that already fits is passed through
+--! as the SAME entry, not copied into a fresh { text, colour } table (nor
+--! sent through wrapLine first, which built a one-line table for it too).
+--! The executor wraps every command's output and a view tab then wrapped
+--! it again, so `cat` of a 32 KB file held three tables per line and
+--! peaked at 305 KB. Entries are only read after this -- by the draw
+--! code, search and selection -- so sharing one is safe; only a line
+--! that is actually wrapped costs anything. (test_view_memory.lua)
+for _, e in ipairs(rawBuf) do
+local isT = type(e) == "table"
+local txt = isT and e[1] or e
+if type(txt) ~= "string" then txt = tostring(txt) end
+local col = isT and e[2] or S.T.fg
+if #txt <= wrapW then
+if isT and e[1] == txt and e[2] ~= nil then out[#out + 1] = e
+else out[#out + 1] = { txt, col } end
+else
+for _, l in ipairs(M.wrapLine(txt, wrapW)) do
+out[#out + 1] = { l, col }
+end
+end
+end
+return out
 end
 
 --! #MEM (pentest, Sep 2026) — every "show me this file" (cat, more, the
@@ -337,53 +337,53 @@ local VIEW_FLOOR = 32 * 1024
 M.VIEW_STOPPED = "-- stopped after %d lines: memory is low. Read the rest with head, tail or grep."
 
 function M.readLinesCapped(F, path, add)
-  local shown, stopped = 0, false
-  local okR, err = M.eachLine(F, path, function(line)
+local shown, stopped = 0, false
+local okR, err = M.eachLine(F, path, function(line)
 
-    if shown % 64 == 0 then
-      local free = computer.freeMemory and computer.freeMemory() or math.huge
-      if free < VIEW_FLOOR + shown * 16 then stopped = true; return false end
-    end
-    add(line)
-    shown = shown + 1
-  end)
-  if not okR then return false, err end
-  return true, shown, stopped
+if shown % 64 == 0 then
+local free = computer.freeMemory and computer.freeMemory() or math.huge
+if free < VIEW_FLOOR + shown * 16 then stopped = true; return false end
+end
+add(line)
+shown = shown + 1
+end)
+if not okR then return false, err end
+return true, shown, stopped
 end
 
 local lineNumFmtCache = {}
 
 function M.formatLineNum(n, gutterW)
-  local fmt = lineNumFmtCache[gutterW]
-  if not fmt then
-    fmt = "%" .. (gutterW - 1) .. "d "
-    lineNumFmtCache[gutterW] = fmt
-  end
-  return string.format(fmt, n)
+local fmt = lineNumFmtCache[gutterW]
+if not fmt then
+fmt = "%" .. (gutterW - 1) .. "d "
+lineNumFmtCache[gutterW] = fmt
+end
+return string.format(fmt, n)
 end
 
 function M.padR(s, w)
-  s = tostring(s)
-  if #s >= w then return s:sub(1, w) end
-  return s .. string.rep(" ", w - #s)
+s = tostring(s)
+if #s >= w then return s:sub(1, w) end
+return s .. string.rep(" ", w - #s)
 end
 
 function M.padL(s, w)
-  s = tostring(s)
-  if #s >= w then return s:sub(1, w) end
-  return string.rep(" ", w - #s) .. s
+s = tostring(s)
+if #s >= w then return s:sub(1, w) end
+return string.rep(" ", w - #s) .. s
 end
 
 function M.liveTier(S)
-  if S and S.U and S.st then
+if S and S.U and S.st then
 
-    if S.U.getSession then
-      local s = S.U.getSession(S.st)
-      if s and type(s.tier) == "number" then return s.tier end
-    end
-    return 0
-  end
-  return (S and S.userTier) or 0
+if S.U.getSession then
+local s = S.U.getSession(S.st)
+if s and type(s.tier) == "number" then return s.tier end
+end
+return 0
+end
+return (S and S.userTier) or 0
 end
 
 --! #SEC — the registry tier of the command `name`, enforced. Returns
@@ -395,71 +395,71 @@ end
 --! ran for a GUEST. Package commands are not in the registry (tier 0) and
 --! run sandboxed, as they do from the prompt. (test_watch_tier.lua)
 function M.tierRefusal(S, name)
-  local okC, commandsMod = pcall(require, "shell.panels.commands")
-  local meta = okC and type(commandsMod) == "table" and commandsMod.entry
-    and commandsMod.entry(name) or nil
-  local need = meta and tonumber(meta.tier) or 0
-  if need <= 0 then return nil end
-  local have = M.liveTier(S)
-  if have >= need then return nil end
-  return "Permission denied: '" .. tostring(name) .. "' needs "
-    .. (M.tierName and M.tierName(need) or ("tier " .. need))
-    .. "  [E-403 ERR_TIER_REQUIRED]", need, have
+local okC, commandsMod = pcall(require, "shell.panels.commands")
+local meta = okC and type(commandsMod) == "table" and commandsMod.entry
+and commandsMod.entry(name) or nil
+local need = meta and tonumber(meta.tier) or 0
+if need <= 0 then return nil end
+local have = M.liveTier(S)
+if have >= need then return nil end
+return "Permission denied: '" .. tostring(name) .. "' needs "
+.. (M.tierName and M.tierName(need) or ("tier " .. need))
+.. "  [E-403 ERR_TIER_REQUIRED]", need, have
 end
 
 function M.rootOnly(S, o)
-  if M.liveTier(S) < 3 then
+if M.liveTier(S) < 3 then
 
-    local r = M.fail(S, "Permission denied: root only  [E-403 ERR_TIER_REQUIRED]", o)
-    S.lastDenial = { cmd = S.curCmd, need = 3, have = M.liveTier(S) }
-    return r
-  end
-  return true
+local r = M.fail(S, "Permission denied: root only  [E-403 ERR_TIER_REQUIRED]", o)
+S.lastDenial = { cmd = S.curCmd, need = 3, have = M.liveTier(S) }
+return r
+end
+return true
 end
 
 function M.adminOnly(S, o)
-  if M.liveTier(S) < 2 then
-    local r = M.fail(S, "Permission denied: admin access required  [E-403 ERR_TIER_REQUIRED]", o)
-    S.lastDenial = { cmd = S.curCmd, need = 2, have = M.liveTier(S) }
-    return r
-  end
-  return true
+if M.liveTier(S) < 2 then
+local r = M.fail(S, "Permission denied: admin access required  [E-403 ERR_TIER_REQUIRED]", o)
+S.lastDenial = { cmd = S.curCmd, need = 2, have = M.liveTier(S) }
+return r
+end
+return true
 end
 
 function M.tierName(n)
-  n = tonumber(n) or 0
-  return ({ [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" })[n]
-    or ("tier " .. n)
+n = tonumber(n) or 0
+return ({ [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" })[n]
+or ("tier " .. n)
 end
 
 function M.whyExplain(cmd, need, have, known)
-  local out = {}
-  local function add(t, tone) out[#out + 1] = { text = t, tone = tone } end
-  cmd = cmd or "?"
-  if not known then
-    add("Unknown command: " .. cmd, "err")
-    add("It isn't a built-in. If it came from a package, check `pkg list`;", "dim")
-    add("otherwise check the spelling — Tab completes command names.", "dim")
-    return out
-  end
-  need = tonumber(need) or 0
-  have = tonumber(have) or 0
-  add(cmd .. " — needs " .. M.tierName(need) .. "; you are " .. M.tierName(have) .. ".", "title")
-  if have >= need then
-    add("You have the access to run this.", "ok")
-    add("If it still failed, the cause is something else (a missing", "dim")
-    add("resource, file, or capability) — check `doctor` and `log`.", "dim")
-  elseif need >= 3 then
-    add("This is ROOT-only.", "err")
-    add("Fix: log in on the root account to run it (`logout`, then", "fix")
-    add("sign in as root).", "fix")
-  else
-    add("This needs administrator access.", "err")
-    add("Fix: have an admin run it, or sign in on an admin account", "fix")
-    add("(`logout`, then log in as an admin). An admin can also grant", "fix")
-    add("your account admin rights.", "fix")
-  end
-  return out
+local out = {}
+local function add(t, tone) out[#out + 1] = { text = t, tone = tone } end
+cmd = cmd or "?"
+if not known then
+add("Unknown command: " .. cmd, "err")
+add("It isn't a built-in. If it came from a package, check `pkg list`;", "dim")
+add("otherwise check the spelling — Tab completes command names.", "dim")
+return out
+end
+need = tonumber(need) or 0
+have = tonumber(have) or 0
+add(cmd .. " — needs " .. M.tierName(need) .. "; you are " .. M.tierName(have) .. ".", "title")
+if have >= need then
+add("You have the access to run this.", "ok")
+add("If it still failed, the cause is something else (a missing", "dim")
+add("resource, file, or capability) — check `doctor` and `log`.", "dim")
+elseif need >= 3 then
+add("This is ROOT-only.", "err")
+add("Fix: log in on the root account to run it (`logout`, then", "fix")
+add("sign in as root).", "fix")
+else
+add("This needs administrator access.", "err")
+add("Fix: have an admin run it, or sign in on an admin account", "fix")
+add("(`logout`, then log in as an admin). An admin can also grant", "fix")
+add("your account admin rights.", "fix")
+end
+return out
 end
 
 --! `why` had exactly ONE thing it could explain: the last tier gate that
@@ -479,152 +479,152 @@ end
 --! every command's output funnels through) and `why` explains THAT.
 
 function M.noteFailure(S, cmd, text)
-  if not S or S.lastFailure then return end
-  text = tostring(text or "")
-  if text == "" then return end
-  S.lastFailure = { cmd = cmd, text = text }
+if not S or S.lastFailure then return end
+text = tostring(text or "")
+if text == "" then return end
+S.lastFailure = { cmd = cmd, text = text }
 end
 
 function M.clearFailure(S)
-  if not S then return end
-  S.lastFailure = nil
-  S.lastDenial = nil
+if not S then return end
+S.lastFailure = nil
+S.lastDenial = nil
 end
 
 function M.fail(S, msg, o, cmd)
-  msg = tostring(msg or "failed")
-  if S then S.lastFailure = nil end
-  M.noteFailure(S, cmd or (S and S.curCmd), msg)
-  if o then o(msg, S.T.error)
-  elseif S then S.lastOut = { msg, S.T.error } end
-  return false
+msg = tostring(msg or "failed")
+if S then S.lastFailure = nil end
+M.noteFailure(S, cmd or (S and S.curCmd), msg)
+if o then o(msg, S.T.error)
+elseif S then S.lastOut = { msg, S.T.error } end
+return false
 end
 
 local FAILURES = {
-  { key = "is a protected system path", sym = "ERR_PATH_PROTECTED", lines = {
-      { "That is a guard, not a permission problem.", "err" },
-      { "TOS keeps its own files (/tos, /etc, /init.lua, /usr) behind a", "dim" },
-      { "check that sits ABOVE the user model, so a mistake — or a", "dim" },
-      { "tampered admin account — cannot overwrite the kernel and leave", "dim" },
-      { "the machine unbootable.", "dim" },
-      { "Fix: root can stand it down for one session with  protect off", "fix" },
-      { "(it lifts at logout, and every path it allows is logged). To", "fix" },
-      { "REMOVE TOS, boot another disk and delete it from there.", "fix" },
-    } },
-  { key = "Refusing to remove a system path without -r", sym = "ERR_RM_SYSTEM_PATH", lines = {
-      { "You named a system path, and rm will not touch one by accident.", "err" },
-      { "The protected-path guard has already been asked and allows it:", "dim" },
-      { "root has lifted protection, so the delete would really happen.", "dim" },
-      { "Fix: add -r to confirm, if you really mean it.", "fix" },
-    } },
-  { key = "Cannot remove directory without -r", sym = "ERR_NEEDS_RECURSIVE", lines = {
-      { "rm removes files; a directory needs the recursive flag.", "err" },
-      { "Fix:  rm -r <path>", "fix" },
-    } },
-  { key = "Not trashed:", sym = "ERR_TRASH_REFUSED", lines = {
-      { "The delete was REFUSED, not performed — the file is still there.", "err" },
-      { "TOS routes rm through the trash so a delete is undoable. When", "dim" },
-      { "the trash will not take a file (too large for its cap, or the", "dim" },
-      { "cap is full) the delete stops rather than quietly becoming", "dim" },
-      { "permanent.", "dim" },
-      { "Fix: empty it (`trash empty`), raise the cap, or delete for good", "fix" },
-      { "with  rm --hard <path>", "fix" },
-    } },
-  { key = "not enough memory", sym = "ERR_OUT_OF_MEMORY", lines = {
-      { "The machine ran out of RAM part-way through.", "err" },
-      { "Fix: close view tabs, `trash empty`, or reboot. `free` shows", "fix" },
-      { "what is left; more RAM sticks raise the ceiling.", "fix" },
-    } },
-  { key = "could not be loaded", sym = "ERR_CMD_UNLOADABLE", lines = {
-      { "The command exists — its command group would not fit in memory.", "err" },
-      { "Fix: free RAM (close tabs, reboot) and run it again.", "fix" },
-    } },
-  { key = "Unknown command:", sym = "ERR_UNKNOWN_CMD", lines = {
-      { "No command by that name is registered on this machine.", "err" },
-      { "Fix: `help` lists what there is, Tab completes names, and", "fix" },
-      { "`pkg list` shows what an add-on would provide.", "fix" },
-    } },
+{ key = "is a protected system path", sym = "ERR_PATH_PROTECTED", lines = {
+{ "That is a guard, not a permission problem.", "err" },
+{ "TOS keeps its own files (/tos, /etc, /init.lua, /usr) behind a", "dim" },
+{ "check that sits ABOVE the user model, so a mistake — or a", "dim" },
+{ "tampered admin account — cannot overwrite the kernel and leave", "dim" },
+{ "the machine unbootable.", "dim" },
+{ "Fix: root can stand it down for one session with  protect off", "fix" },
+{ "(it lifts at logout, and every path it allows is logged). To", "fix" },
+{ "REMOVE TOS, boot another disk and delete it from there.", "fix" },
+} },
+{ key = "Refusing to remove a system path without -r", sym = "ERR_RM_SYSTEM_PATH", lines = {
+{ "You named a system path, and rm will not touch one by accident.", "err" },
+{ "The protected-path guard has already been asked and allows it:", "dim" },
+{ "root has lifted protection, so the delete would really happen.", "dim" },
+{ "Fix: add -r to confirm, if you really mean it.", "fix" },
+} },
+{ key = "Cannot remove directory without -r", sym = "ERR_NEEDS_RECURSIVE", lines = {
+{ "rm removes files; a directory needs the recursive flag.", "err" },
+{ "Fix:  rm -r <path>", "fix" },
+} },
+{ key = "Not trashed:", sym = "ERR_TRASH_REFUSED", lines = {
+{ "The delete was REFUSED, not performed — the file is still there.", "err" },
+{ "TOS routes rm through the trash so a delete is undoable. When", "dim" },
+{ "the trash will not take a file (too large for its cap, or the", "dim" },
+{ "cap is full) the delete stops rather than quietly becoming", "dim" },
+{ "permanent.", "dim" },
+{ "Fix: empty it (`trash empty`), raise the cap, or delete for good", "fix" },
+{ "with  rm --hard <path>", "fix" },
+} },
+{ key = "not enough memory", sym = "ERR_OUT_OF_MEMORY", lines = {
+{ "The machine ran out of RAM part-way through.", "err" },
+{ "Fix: close view tabs, `trash empty`, or reboot. `free` shows", "fix" },
+{ "what is left; more RAM sticks raise the ceiling.", "fix" },
+} },
+{ key = "could not be loaded", sym = "ERR_CMD_UNLOADABLE", lines = {
+{ "The command exists — its command group would not fit in memory.", "err" },
+{ "Fix: free RAM (close tabs, reboot) and run it again.", "fix" },
+} },
+{ key = "Unknown command:", sym = "ERR_UNKNOWN_CMD", lines = {
+{ "No command by that name is registered on this machine.", "err" },
+{ "Fix: `help` lists what there is, Tab completes names, and", "fix" },
+{ "`pkg list` shows what an add-on would provide.", "fix" },
+} },
 
-  { key = "out of space", sym = "ERR_NO_SPACE", lines = {
-      { "The disk is full.", "err" },
-      { "Fix: `df` shows which disk; `trash empty` and removing files free", "fix" },
-      { "it. The write that failed changed nothing, so retry after.", "fix" },
-    } },
+{ key = "out of space", sym = "ERR_NO_SPACE", lines = {
+{ "The disk is full.", "err" },
+{ "Fix: `df` shows which disk; `trash empty` and removing files free", "fix" },
+{ "it. The write that failed changed nothing, so retry after.", "fix" },
+} },
 
-  { sym = "ERR_TIER_REQUIRED", lines = {
-      { "Your account's tier is too low for that command.", "err" },
-      { "Fix: `why <command>` shows the tier it needs; an admin can run it,", "fix" },
-      { "or sign in on an account that has that tier.", "fix" },
-    } },
-  { sym = "ERR_VAULT_UNLOCK", lines = {
-      { "It did not decrypt: the passphrase is wrong, or the encrypted", "err" },
-      { "data was changed after it was written.", "err" },
-      { "A vault checks its own integrity, so a wrong passphrase is", "dim" },
-      { "refused instead of producing garbage. Nothing was changed.", "dim" },
-      { "Fix: try the passphrase again (`keychain list` may have it).", "fix" },
-      { "If it is right, this copy is damaged; restore it from a backup.", "fix" },
-    } },
-  { sym = "ERR_DRIVE_TOO_SMALL", lines = {
-      { "The install would not fit on that drive, so nothing was erased.", "err" },
-      { "Fix: use a larger drive, or install onto a managed disk:", "fix" },
-      { "  deploy <mount-point>", "fix" },
-    } },
-  { sym = "ERR_NET_NO_ANSWER", lines = {
-      { "A remote host did not answer: it timed out, refused the", "err" },
-      { "connection, or the transfer broke off part-way.", "err" },
-      { "Nothing was changed, and the next attempt asks again.", "dim" },
-      { "Fix: `internet` shows whether the card can reach the network;", "fix" },
-      { "then try again.", "fix" },
-    } },
-  { sym = "ERR_PKG_NOT_FOUND", lines = {
-      { "No configured repo lists a package by that name.", "err" },
-      { "Fix: `pkg search <word>` lists what the repos offer, and", "fix" },
-      { "`pkg repo list` shows which repos this machine uses (an admin", "fix" },
-      { "adds one with  pkg repo add <name> <url>).", "fix" },
-    } },
-  { sym = "ERR_PKG_BAD_NAME", lines = {
-      { "A package name is letters, digits and inner dashes, 64 at most.", "err" },
-      { "A name that is not one is refused before it is used for", "dim" },
-      { "anything -- including one a repo's requirements asked for,", "dim" },
-      { "which means that repo is broken or hostile.", "dim" },
-      { "Fix: check the spelling; nothing was written.", "fix" },
-    } },
-  { sym = "ERR_PKG_DEPENDENCY", lines = {
-      { "Something the package requires could not be satisfied, so", "err" },
-      { "nothing was installed. The message says which requirement,", "err" },
-      { "and why: in no configured repo, installed but too old, or the", "dim" },
-      { "repo's copy does not meet the version asked for.", "dim" },
-      { "Fix: install or upgrade that one first (`pkg install` from a", "fix" },
-      { "disk, `pkg upgrade <name>`), or add a repo that has it.", "fix" },
-    } },
-  { sym = "ERR_KERNEL_PANIC", lines = {
-      { "The kernel hit an error it could not recover from, and stopped.", "err" },
-      { "The crash report is in /var/crash — `crash` reads it.", "dim" },
-      { "Fix: reboot. If it happens again, run  srm scan  (from another", "fix" },
-      { "disk, if this one will not boot).", "fix" },
-    } },
-  { key = "Permission denied", sym = "ERR_PERM_DENIED", lines = {
-      { "Your account is not allowed to touch that path.", "err" },
-      { "This one IS the permission model: the file's owner and mode", "dim" },
-      { "decide, so it depends on who you are as much as what you ran.", "dim" },
-      { "Fix: `whoami` shows your account and tier; an admin can grant", "fix" },
-      { "access, or run it for you.", "fix" },
-    } },
+{ sym = "ERR_TIER_REQUIRED", lines = {
+{ "Your account's tier is too low for that command.", "err" },
+{ "Fix: `why <command>` shows the tier it needs; an admin can run it,", "fix" },
+{ "or sign in on an account that has that tier.", "fix" },
+} },
+{ sym = "ERR_VAULT_UNLOCK", lines = {
+{ "It did not decrypt: the passphrase is wrong, or the encrypted", "err" },
+{ "data was changed after it was written.", "err" },
+{ "A vault checks its own integrity, so a wrong passphrase is", "dim" },
+{ "refused instead of producing garbage. Nothing was changed.", "dim" },
+{ "Fix: try the passphrase again (`keychain list` may have it).", "fix" },
+{ "If it is right, this copy is damaged; restore it from a backup.", "fix" },
+} },
+{ sym = "ERR_DRIVE_TOO_SMALL", lines = {
+{ "The install would not fit on that drive, so nothing was erased.", "err" },
+{ "Fix: use a larger drive, or install onto a managed disk:", "fix" },
+{ "  deploy <mount-point>", "fix" },
+} },
+{ sym = "ERR_NET_NO_ANSWER", lines = {
+{ "A remote host did not answer: it timed out, refused the", "err" },
+{ "connection, or the transfer broke off part-way.", "err" },
+{ "Nothing was changed, and the next attempt asks again.", "dim" },
+{ "Fix: `internet` shows whether the card can reach the network;", "fix" },
+{ "then try again.", "fix" },
+} },
+{ sym = "ERR_PKG_NOT_FOUND", lines = {
+{ "No configured repo lists a package by that name.", "err" },
+{ "Fix: `pkg search <word>` lists what the repos offer, and", "fix" },
+{ "`pkg repo list` shows which repos this machine uses (an admin", "fix" },
+{ "adds one with  pkg repo add <name> <url>).", "fix" },
+} },
+{ sym = "ERR_PKG_BAD_NAME", lines = {
+{ "A package name is letters, digits and inner dashes, 64 at most.", "err" },
+{ "A name that is not one is refused before it is used for", "dim" },
+{ "anything -- including one a repo's requirements asked for,", "dim" },
+{ "which means that repo is broken or hostile.", "dim" },
+{ "Fix: check the spelling; nothing was written.", "fix" },
+} },
+{ sym = "ERR_PKG_DEPENDENCY", lines = {
+{ "Something the package requires could not be satisfied, so", "err" },
+{ "nothing was installed. The message says which requirement,", "err" },
+{ "and why: in no configured repo, installed but too old, or the", "dim" },
+{ "repo's copy does not meet the version asked for.", "dim" },
+{ "Fix: install or upgrade that one first (`pkg install` from a", "fix" },
+{ "disk, `pkg upgrade <name>`), or add a repo that has it.", "fix" },
+} },
+{ sym = "ERR_KERNEL_PANIC", lines = {
+{ "The kernel hit an error it could not recover from, and stopped.", "err" },
+{ "The crash report is in /var/crash — `crash` reads it.", "dim" },
+{ "Fix: reboot. If it happens again, run  srm scan  (from another", "fix" },
+{ "disk, if this one will not boot).", "fix" },
+} },
+{ key = "Permission denied", sym = "ERR_PERM_DENIED", lines = {
+{ "Your account is not allowed to touch that path.", "err" },
+{ "This one IS the permission model: the file's owner and mode", "dim" },
+{ "decide, so it depends on who you are as much as what you ran.", "dim" },
+{ "Fix: `whoami` shows your account and tier; an admin can grant", "fix" },
+{ "access, or run it for you.", "fix" },
+} },
 }
 
 local function errorsMod()
-  local ok, errors = pcall(require, "kernel.errors")
-  return (ok and type(errors) == "table") and errors or nil
+local ok, errors = pcall(require, "kernel.errors")
+return (ok and type(errors) == "table") and errors or nil
 end
 
 local function linesFor(sym)
-  for _, f in ipairs(FAILURES) do
-    if f.sym == sym then
-      local out = {}
-      for _, l in ipairs(f.lines) do out[#out + 1] = { text = l[1], tone = l[2] } end
-      return out
-    end
-  end
+for _, f in ipairs(FAILURES) do
+if f.sym == sym then
+local out = {}
+for _, l in ipairs(f.lines) do out[#out + 1] = { text = l[1], tone = l[2] } end
+return out
+end
+end
 end
 
 --! A TAGGED message ("... [E-402 ERR_PATH_PROTECTED]") is identified by its
@@ -632,37 +632,37 @@ end
 --! without breaking `why`. Prose matching is the fallback, for messages that
 --! predate the registry and for the ones OC itself writes.
 function M.explainFailure(text)
-  if type(text) ~= "string" then return nil end
-  local errors = errorsMod()
-  local entry = errors and errors.parse(text)
-  local lines
-  if entry then
-    lines = linesFor(entry.sym)
-      or { { text = entry.title:sub(1, 1):upper() .. entry.title:sub(2) .. ".", tone = "err" } }
-  else
-    for _, f in ipairs(FAILURES) do
-      if f.key and text:find(f.key, 1, true) then
-        lines = linesFor(f.sym)
-        entry = errors and errors.find(f.sym)
-        break
-      end
-    end
-  end
-  if not lines then return nil end
-  return lines, entry, entry and errors.label(entry) or nil
+if type(text) ~= "string" then return nil end
+local errors = errorsMod()
+local entry = errors and errors.parse(text)
+local lines
+if entry then
+lines = linesFor(entry.sym)
+or { { text = entry.title:sub(1, 1):upper() .. entry.title:sub(2) .. ".", tone = "err" } }
+else
+for _, f in ipairs(FAILURES) do
+if f.key and text:find(f.key, 1, true) then
+lines = linesFor(f.sym)
+entry = errors and errors.find(f.sym)
+break
+end
+end
+end
+if not lines then return nil end
+return lines, entry, entry and errors.label(entry) or nil
 end
 
 function M.explainCode(q)
-  local errors = errorsMod()
-  local e = errors and errors.find(q)
-  if not e then return nil end
-  local out = { { text = errors.label(e) .. " — " .. e.title, tone = "title" } }
-  for _, l in ipairs(linesFor(e.sym) or {}) do out[#out + 1] = l end
-  if e.bios then
-    out[#out + 1] = { text = string.format("The EEPROM reports this one as %s: a long beep, then %d "
-      .. "short. `srm status` shows the last one.", e.bios, e.num % 100), tone = "dim" }
-  end
-  return out, e
+local errors = errorsMod()
+local e = errors and errors.find(q)
+if not e then return nil end
+local out = { { text = errors.label(e) .. " — " .. e.title, tone = "title" } }
+for _, l in ipairs(linesFor(e.sym) or {}) do out[#out + 1] = l end
+if e.bios then
+out[#out + 1] = { text = string.format("The EEPROM reports this one as %s: a long beep, then %d "
+.. "short. `srm status` shows the last one.", e.bios, e.num % 100), tone = "dim" }
+end
+return out, e
 end
 
 --! The ONE way to log a seat out.
@@ -689,21 +689,21 @@ end
 --! And five copies of a security rule is four chances to update it in the
 --! wrong number of places. (test_logout_elevation.lua)
 function M.logout(S)
-  if S and S._sudo and S.sudoDrop then pcall(S.sudoDrop) end
-  if S and S.E and S.E.push then S.E.push("tos_logout", S.displayIdx) end
+if S and S._sudo and S.sudoDrop then pcall(S.sudoDrop) end
+if S and S.E and S.E.push then S.E.push("tos_logout", S.displayIdx) end
 end
 
 function M.canPowerOff(S)
-  if M.liveTier(S) >= 2 then return true end
+if M.liveTier(S) >= 2 then return true end
 
-  local n = 0
-  local pids = _G._TOS and _G._TOS.shellPIDs
-  if type(pids) == "table" then
-    for _, pid in pairs(pids) do if pid then n = n + 1 end end
-  end
-  if n <= 1 then return true end
-  return false, n .. " operators are logged in. Ask an admin to power off, "
-    .. "or wait for the others to log out."
+local n = 0
+local pids = _G._TOS and _G._TOS.shellPIDs
+if type(pids) == "table" then
+for _, pid in pairs(pids) do if pid then n = n + 1 end end
+end
+if n <= 1 then return true end
+return false, n .. " operators are logged in. Ask an admin to power off, "
+.. "or wait for the others to log out."
 end
 
 --! #MEM (pentest, Sep 2026) — read a file a LINE at a time through a
@@ -718,77 +718,77 @@ end
 --! (test_helpers_eachline.lua)
 local LINE_CAP = 64 * 1024
 function M.eachLine(F, path, fn)
-  local h, err = F.open(path, "r")
-  if not h then return false, err end
-  local bytes, pending = 0, ""
-  local ok, perr = pcall(function()
-    while true do
-      local chunk = h:read(4096)
-      if not chunk then break end
-      bytes = bytes + #chunk
-      local data = (pending ~= "") and (pending .. chunk) or chunk
-      local start = 1
-      while true do
-        local nl = data:find("\n", start, true)
-        if not nl then break end
-        if fn(data:sub(start, nl - 1)) == false then pending = ""; return end
-        start = nl + 1
-      end
-      pending = data:sub(start)
-      if #pending > LINE_CAP then
-        if fn(pending) == false then pending = ""; return end
-        pending = ""
-      end
-    end
-    if pending ~= "" then fn(pending) end
-  end)
-  pcall(h.close, h)
-  if not ok then return false, tostring(perr) end
-  return true, bytes
+local h, err = F.open(path, "r")
+if not h then return false, err end
+local bytes, pending = 0, ""
+local ok, perr = pcall(function()
+while true do
+local chunk = h:read(4096)
+if not chunk then break end
+bytes = bytes + #chunk
+local data = (pending ~= "") and (pending .. chunk) or chunk
+local start = 1
+while true do
+local nl = data:find("\n", start, true)
+if not nl then break end
+if fn(data:sub(start, nl - 1)) == false then pending = ""; return end
+start = nl + 1
+end
+pending = data:sub(start)
+if #pending > LINE_CAP then
+if fn(pending) == false then pending = ""; return end
+pending = ""
+end
+end
+if pending ~= "" then fn(pending) end
+end)
+pcall(h.close, h)
+if not ok then return false, tostring(perr) end
+return true, bytes
 end
 
 function M.sessionOf(S)
-  if S and S.U then
-    if S.st and S.U.getSession then
-      local s = S.U.getSession(S.st)
-      if s then return s end
-    end
-    if S.U.currentSession then
-      local s = S.U.currentSession()
-      if s then return s end
-    end
-  end
-  return nil
+if S and S.U then
+if S.st and S.U.getSession then
+local s = S.U.getSession(S.st)
+if s then return s end
+end
+if S.U.currentSession then
+local s = S.U.currentSession()
+if s then return s end
+end
+end
+return nil
 end
 
 function M.canAccess(S, path, mode, o)
-  if S.U then
+if S.U then
 
-    local session = M.sessionOf(S)
-    local ok, reason
-    if session and S.U.canAccessAs then
-      ok, reason = S.U.canAccessAs(session, path, mode)
-    elseif S.U.canAccess then
-      ok, reason = S.U.canAccess(path, mode)
-    else
+local session = M.sessionOf(S)
+local ok, reason
+if session and S.U.canAccessAs then
+ok, reason = S.U.canAccessAs(session, path, mode)
+elseif S.U.canAccess then
+ok, reason = S.U.canAccess(path, mode)
+else
 
-      ok, reason = false, "access check unavailable"
-    end
-    if not ok then
-      return M.fail(S, "Permission denied: " .. (reason or path) .. "  [E-401 ERR_PERM_DENIED]", o)
-    end
-    return true
-  end
-  if mode == "w" then
-    for _, sp in ipairs({ "/tos", "/etc", "/var" }) do
-      if path == sp or path:sub(1, #sp + 1) == sp .. "/" then
-        if S.who ~= "root" then
-          return M.fail(S, "Permission denied: system path  [E-401 ERR_PERM_DENIED]", o)
-        end
-      end
-    end
-  end
-  return true
+ok, reason = false, "access check unavailable"
+end
+if not ok then
+return M.fail(S, "Permission denied: " .. (reason or path) .. "  [E-401 ERR_PERM_DENIED]", o)
+end
+return true
+end
+if mode == "w" then
+for _, sp in ipairs({ "/tos", "/etc", "/var" }) do
+if path == sp or path:sub(1, #sp + 1) == sp .. "/" then
+if S.who ~= "root" then
+return M.fail(S, "Permission denied: system path  [E-401 ERR_PERM_DENIED]", o)
+end
+end
+end
+end
+return true
 end
 
 function M.canWrite(S, path, o) return M.canAccess(S, path, "w", o) end
@@ -821,22 +821,22 @@ M.UNSAFE_PREFIXES  = { "/mnt/", "/tmp/", "/public/", "/home/", "/root/" }
 --! host resolves to /tmp. Segments are resolved, case-folded and
 --! stripped of a trailing dot or space, as users.pathKey does.
 function M.dirIsSafe(dir)
-  local d = tostring(dir or "")
-  if d == "" then return false end
-  local parts = {}
-  for seg in d:gsub("\\", "/"):gmatch("[^/]+") do
-    if seg == ".." then parts[#parts] = nil
-    elseif seg ~= "." then
-      seg = seg:gsub("\226\132\170", "k"):gsub("\196\176", "i"):lower():gsub("[%. ]+$", "")
-      if seg ~= "" then parts[#parts + 1] = seg end
-    end
-  end
-  d = "/" .. table.concat(parts, "/")
-  if d:sub(-1) ~= "/" then d = d .. "/" end
-  for _, p in ipairs(M.UNSAFE_PREFIXES) do
-    if d:sub(1, #p) == p then return false end
-  end
-  return true
+local d = tostring(dir or "")
+if d == "" then return false end
+local parts = {}
+for seg in d:gsub("\\", "/"):gmatch("[^/]+") do
+if seg == ".." then parts[#parts] = nil
+elseif seg ~= "." then
+seg = seg:gsub("\226\132\170", "k"):gsub("\196\176", "i"):lower():gsub("[%. ]+$", "")
+if seg ~= "" then parts[#parts + 1] = seg end
+end
+end
+d = "/" .. table.concat(parts, "/")
+if d:sub(-1) ~= "/" then d = d .. "/" end
+for _, p in ipairs(M.UNSAFE_PREFIXES) do
+if d:sub(1, #p) == p then return false end
+end
+return true
 end
 
 --! An alias carries NO privilege. It is expanded before dispatch, so the
@@ -845,48 +845,48 @@ end
 --! table is read from the caller's OWN profile through securefs, so one
 --! user cannot plant an alias in another user's shell.
 function M.aliases(S)
-  if S._aliases then return S._aliases end
-  local out = {}
-  local pmod = _G._TOS and _G._TOS.profile
-  if pmod and pmod.load then
-    local ok, p = pcall(pmod.load, M.sessionOf(S))
-    if ok and type(p) == "table" and type(p.aliases) == "table" then
-      for k, v in pairs(p.aliases) do
-        if type(k) == "string" and type(v) == "string" then out[k:lower()] = v end
-      end
-    end
-  end
-  S._aliases = out
-  return out
+if S._aliases then return S._aliases end
+local out = {}
+local pmod = _G._TOS and _G._TOS.profile
+if pmod and pmod.load then
+local ok, p = pcall(pmod.load, M.sessionOf(S))
+if ok and type(p) == "table" and type(p.aliases) == "table" then
+for k, v in pairs(p.aliases) do
+if type(k) == "string" and type(v) == "string" then out[k:lower()] = v end
+end
+end
+end
+S._aliases = out
+return out
 end
 
 function M.invalidateAliases(S) S._aliases = nil end
 
 local ALIAS_MAX_DEPTH = 8
 function M.expandAlias(S, parts)
-  if type(parts) ~= "table" or #parts == 0 then return parts end
-  local table_ = M.aliases(S)
-  if next(table_) == nil then return parts end
-  local seen = {}
-  for _ = 1, ALIAS_MAX_DEPTH do
-    local head = tostring(parts[1] or ""):lower()
-    local expansion = table_[head]
-    if not expansion or seen[head] then break end
-    seen[head] = true
-    local repl = M.tokenizeSimple(expansion)
-    if #repl == 0 then break end
-    local rest = {}
-    for i = 2, #parts do rest[#rest + 1] = parts[i] end
-    for _, a in ipairs(rest) do repl[#repl + 1] = a end
-    parts = repl
-  end
-  return parts
+if type(parts) ~= "table" or #parts == 0 then return parts end
+local table_ = M.aliases(S)
+if next(table_) == nil then return parts end
+local seen = {}
+for _ = 1, ALIAS_MAX_DEPTH do
+local head = tostring(parts[1] or ""):lower()
+local expansion = table_[head]
+if not expansion or seen[head] then break end
+seen[head] = true
+local repl = M.tokenizeSimple(expansion)
+if #repl == 0 then break end
+local rest = {}
+for i = 2, #parts do rest[#rest + 1] = parts[i] end
+for _, a in ipairs(rest) do repl[#repl + 1] = a end
+parts = repl
+end
+return parts
 end
 
 function M.tokenizeSimple(s)
-  local t = {}
-  for word in tostring(s):gmatch("%S+") do t[#t + 1] = word end
-  return t
+local t = {}
+for word in tostring(s):gmatch("%S+") do t[#t + 1] = word end
+return t
 end
 
 --! A disk's label is chosen by whoever formatted the disk, so it is never a
@@ -897,41 +897,41 @@ end
 --! its author said when an admin mounted it. (test_mount_points.lua)
 function M.safeMountName(raw, addr)
 
-  local okD, dm = pcall(require, "kernel.diskmount")
-  if okD and type(dm) == "table" and dm.sanitizeLabel then return dm.sanitizeLabel(raw, addr) end
-  local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
-  if type(raw) ~= "string" then return fallback end
-  local cleaned = raw:gsub("[^%w_%- ]", "_")
-  cleaned = cleaned:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-  if cleaned == "" or cleaned == "." or cleaned == ".." then return fallback end
-  if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
-  return cleaned
+local okD, dm = pcall(require, "kernel.diskmount")
+if okD and type(dm) == "table" and dm.sanitizeLabel then return dm.sanitizeLabel(raw, addr) end
+local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
+if type(raw) ~= "string" then return fallback end
+local cleaned = raw:gsub("[^%w_%- ]", "_")
+cleaned = cleaned:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+if cleaned == "" or cleaned == "." or cleaned == ".." then return fallback end
+if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
+return cleaned
 end
 
 function M.resolveProgram(F, name)
-  if type(name) ~= "string" or name == "" then return nil end
-  local function probe(dir)
-    local full = F.join(dir, name .. ".lua")
-    if F.exists(full) then return full end
-    full = F.join(dir, name)
-    if F.exists(full) then return full end
-    return nil
-  end
-  for _, dir in ipairs(M.SYSTEM_BIN_DIRS) do
-    local hit = probe(dir)
-    if hit then return hit, "system" end
-  end
-  local ok, envMod = pcall(require, "kernel.env")
-  if ok then
-    local pathStr = envMod.read(nil, "PATH") or "/usr/bin:/bin"
-    for dir in pathStr:gmatch("[^:]+") do
-      if M.dirIsSafe(dir) then
-        local hit = probe(dir)
-        if hit then return hit, "path" end
-      end
-    end
-  end
-  return nil
+if type(name) ~= "string" or name == "" then return nil end
+local function probe(dir)
+local full = F.join(dir, name .. ".lua")
+if F.exists(full) then return full end
+full = F.join(dir, name)
+if F.exists(full) then return full end
+return nil
+end
+for _, dir in ipairs(M.SYSTEM_BIN_DIRS) do
+local hit = probe(dir)
+if hit then return hit, "system" end
+end
+local ok, envMod = pcall(require, "kernel.env")
+if ok then
+local pathStr = envMod.read(nil, "PATH") or "/usr/bin:/bin"
+for dir in pathStr:gmatch("[^:]+") do
+if M.dirIsSafe(dir) then
+local hit = probe(dir)
+if hit then return hit, "path" end
+end
+end
+end
+return nil
 end
 
 return M

@@ -3,118 +3,118 @@ local sandbox = {}
 local KERNEL_MODULE_PREFIX = "kernel."
 
 local ALLOWED_MODULE_PREFIXES = {
-  "compat.",
-  "peripheral.",
+"compat.",
+"peripheral.",
 }
 
 local ALLOWED_MODULE_NAMES = {
-  compat        = true,
+compat        = true,
 
-  ["shell.keys"] = true,
+["shell.keys"] = true,
 }
 
 local BLOCKED_MODULE_NAMES = {
 
-  ["debug"]                   = true,
-  ["package"]                 = true,
-  ["os"]                      = true,
-  ["io"]                      = true,
-  ["component"]               = true,
-  ["computer"]                = true,
-  ["filesystem"]              = true,
-  ["shell.init"]              = true,
-  --! #SEC (pentest, Sep 2026) — shell.ext is not an extension API; it is
-  --! the lazy-loaded body of the net/ping/hostname/config/audio commands,
-  --! and the unsandboxed shell (commands/extras.lua) is its only caller.
-  --! It sat on the ALLOWED list under a stale description, and parts of it
-  --! reach _G._TOS directly (the peer-alias table, audio) instead of going
-  --! through a capability the program was granted. The alias writers do
-  --! re-check the live principal's tier; nothing else about it belongs in
-  --! a sandbox either.
-  ["shell.ext"]               = true,
-  ["shell.panels.init"]       = true,
-  ["shell.panels.commands"]   = true,
-  ["shell.panels.events"]     = true,
-  ["shell.panels.executor"]   = true,
-  ["shell.panels.state"]      = true,
-  ["shell.panels.draw"]       = true,
-  ["shell.panels.helpers"]    = true,
-  ["shell.panels.filebrowser"] = true,
-  ["shell.panels.editor"]     = true,
-  ["shell.panels.menus"]      = true,
-  ["shell.panels.dialogs"]    = true,
-  ["shell.panels.context"]    = true,
-  ["shell.panels.keymap"]     = true,
-  ["shell.panels.tabs"]       = true,
-  ["shell.panels.widgets"]    = true,
-  ["shell.panels.mouse"]      = true,
-  ["shell.panels.ui"]         = true,
-  ["shell.panels.desktop"]    = true,
-  ["shell.panels.settingsapp"] = true,
-  ["shell.panels.apps"]       = true,
-  ["shell.panels.monitorapp"] = true,
-  ["shell.panels.chatapp"]    = true,
+["debug"]                   = true,
+["package"]                 = true,
+["os"]                      = true,
+["io"]                      = true,
+["component"]               = true,
+["computer"]                = true,
+["filesystem"]              = true,
+["shell.init"]              = true,
+--! #SEC (pentest, Sep 2026) — shell.ext is not an extension API; it is
+--! the lazy-loaded body of the net/ping/hostname/config/audio commands,
+--! and the unsandboxed shell (commands/extras.lua) is its only caller.
+--! It sat on the ALLOWED list under a stale description, and parts of it
+--! reach _G._TOS directly (the peer-alias table, audio) instead of going
+--! through a capability the program was granted. The alias writers do
+--! re-check the live principal's tier; nothing else about it belongs in
+--! a sandbox either.
+["shell.ext"]               = true,
+["shell.panels.init"]       = true,
+["shell.panels.commands"]   = true,
+["shell.panels.events"]     = true,
+["shell.panels.executor"]   = true,
+["shell.panels.state"]      = true,
+["shell.panels.draw"]       = true,
+["shell.panels.helpers"]    = true,
+["shell.panels.filebrowser"] = true,
+["shell.panels.editor"]     = true,
+["shell.panels.menus"]      = true,
+["shell.panels.dialogs"]    = true,
+["shell.panels.context"]    = true,
+["shell.panels.keymap"]     = true,
+["shell.panels.tabs"]       = true,
+["shell.panels.widgets"]    = true,
+["shell.panels.mouse"]      = true,
+["shell.panels.ui"]         = true,
+["shell.panels.desktop"]    = true,
+["shell.panels.settingsapp"] = true,
+["shell.panels.apps"]       = true,
+["shell.panels.monitorapp"] = true,
+["shell.panels.chatapp"]    = true,
 
-  ["mail"]                    = true,
-  ["mailui"]                  = true,
-  ["mailapp"]                 = true,
+["mail"]                    = true,
+["mailui"]                  = true,
+["mailapp"]                 = true,
 
-  ["rbmk-cmd"]                = true,
-  ["rbmk-controld"]           = true,
-  ["rbmk.core"]               = true,
+["rbmk-cmd"]                = true,
+["rbmk-controld"]           = true,
+["rbmk.core"]               = true,
 
-  ["rbmk-skala"]              = true,
-  ["rbmk.skala"]              = true,
-  ["rbmk.wall"]               = true,
-  ["shell.panels.takeover"]   = true,
-  ["shell.login"]             = true,
-  ["shell.chat"]              = true,
-  ["shell.tutorial"]          = true,
-  ["shell.syntax"]            = true,
-  ["shell.panels"]            = true,
-  ["shell"]                   = true,
-  ["bios"]                    = true,
-  ["init"]                    = true,
-  ["install"]                 = true,
-  ["system_manifest"]         = true,
+["rbmk-skala"]              = true,
+["rbmk.skala"]              = true,
+["rbmk.wall"]               = true,
+["shell.panels.takeover"]   = true,
+["shell.login"]             = true,
+["shell.chat"]              = true,
+["shell.tutorial"]          = true,
+["shell.syntax"]            = true,
+["shell.panels"]            = true,
+["shell"]                   = true,
+["bios"]                    = true,
+["init"]                    = true,
+["install"]                 = true,
+["system_manifest"]         = true,
 }
 
 local function isKernelModule(name)
-  return type(name) == "string" and name:sub(1, #KERNEL_MODULE_PREFIX) == KERNEL_MODULE_PREFIX
+return type(name) == "string" and name:sub(1, #KERNEL_MODULE_PREFIX) == KERNEL_MODULE_PREFIX
 end
 
 local function isAllowedPrefix(name)
-  for _, p in ipairs(ALLOWED_MODULE_PREFIXES) do
-    if name:sub(1, #p) == p then return true end
-  end
-  return false
+for _, p in ipairs(ALLOWED_MODULE_PREFIXES) do
+if name:sub(1, #p) == p then return true end
+end
+return false
 end
 
 local function isUserLibName(name)
-  if name:find("[^%w_.-]") then return false end
-  if name:sub(1, 1) == "." then return false end
-  return true
+if name:find("[^%w_.-]") then return false end
+if name:sub(1, 1) == "." then return false end
+return true
 end
 
 local function shallowCopy(t)
-  local out = {}
-  for k, v in pairs(t) do out[k] = v end
-  return out
+local out = {}
+for k, v in pairs(t) do out[k] = v end
+return out
 end
 
 local unicodeLib = nil
 do
-  local okU, u = pcall(require, "unicode")
-  if okU and type(u) == "table" then unicodeLib = u end
+local okU, u = pcall(require, "unicode")
+if okU and type(u) == "table" then unicodeLib = u end
 end
 
 local function sandboxCheckArg(n, have, ...)
-  have = type(have)
-  for i = 1, select("#", ...) do
-    if have == select(i, ...) then return end
-  end
-  error(string.format("bad argument #%d (%s expected, got %s)",
-    n, table.concat({ ... }, " or "), have), 3)
+have = type(have)
+for i = 1, select("#", ...) do
+if have == select(i, ...) then return end
+end
+error(string.format("bad argument #%d (%s expected, got %s)",
+n, table.concat({ ... }, " or "), have), 3)
 end
 
 --! os.exit for a sandboxed program. OpenOS ends a program with
@@ -127,30 +127,30 @@ local EXIT_KEY = {}
 
 local finishers = setmetatable({}, { __mode = "k" })
 local EXIT_MT = { __tostring = function(e) return "exit " .. tostring(rawget(e, "code")) end,
-                  __metatable = false }
+__metatable = false }
 
 local function makeSafeOs()
-  return {
-    time     = os.time,
-    date     = os.date,
-    clock    = os.clock,
-    difftime = os.difftime,
+return {
+time     = os.time,
+date     = os.date,
+clock    = os.clock,
+difftime = os.difftime,
 
-    --! sleep and exit are how OpenOS programs pause and end, and neither is
-    --! authority: sleep yields this process (kernel.process.sleep; outside
-    --! one it pulls through the event layer, as that function documents),
-    --! and exit ends only the program that calls it.
-    sleep = function(seconds)
-      local okP, procMod = pcall(require, "kernel.process")
-      if okP and type(procMod) == "table" and type(procMod.sleep) == "function" then
-        return procMod.sleep(tonumber(seconds) or 0)
-      end
-      error("os.sleep: the process scheduler is unavailable", 2)
-    end,
-    exit = function(code)
-      error(setmetatable({ [EXIT_KEY] = true, code = code }, EXIT_MT), 0)
-    end,
-  }
+--! sleep and exit are how OpenOS programs pause and end, and neither is
+--! authority: sleep yields this process (kernel.process.sleep; outside
+--! one it pulls through the event layer, as that function documents),
+--! and exit ends only the program that calls it.
+sleep = function(seconds)
+local okP, procMod = pcall(require, "kernel.process")
+if okP and type(procMod) == "table" and type(procMod.sleep) == "function" then
+return procMod.sleep(tonumber(seconds) or 0)
+end
+error("os.sleep: the process scheduler is unavailable", 2)
+end,
+exit = function(code)
+error(setmetatable({ [EXIT_KEY] = true, code = code }, EXIT_MT), 0)
+end,
+}
 end
 
 --! #SEC — signals a sandboxed program must never SYNTHESIZE via
@@ -174,20 +174,20 @@ end
 --! to consult, refuse: never guess. (test_sandbox_push.lua)
 local reservedRule = nil
 local function isReservedSignal(name)
-  if reservedRule == nil then
-    local okE, ev = pcall(require, "kernel.event")
-    reservedRule = (okE and type(ev) == "table"
-                    and type(ev.reservedSignal) == "function" and ev.reservedSignal) or false
-  end
-  if not reservedRule then return true end
-  return reservedRule(name)
+if reservedRule == nil then
+local okE, ev = pcall(require, "kernel.event")
+reservedRule = (okE and type(ev) == "table"
+and type(ev.reservedSignal) == "function" and ev.reservedSignal) or false
+end
+if not reservedRule then return true end
+return reservedRule(name)
 end
 
 local PULL_DROP = {
-  modem_message      = true,
-  tos_shutdown       = true, tos_logout        = true,
-  tos_login_complete = true, tos_seat_changed  = true,
-  tos_shell_exited   = true,
+modem_message      = true,
+tos_shutdown       = true, tos_logout        = true,
+tos_login_complete = true, tos_seat_changed  = true,
+tos_shell_exited   = true,
 }
 
 --! "Inside a scheduler coroutine" is asked of the SCHEDULER. On
@@ -196,103 +196,103 @@ local PULL_DROP = {
 --! had no 3 s ceiling, and ignored its own timeout until some signal arrived
 --! to resume it. Same helper as net.waitFor's. (test_inprocess_callers.lua)
 local function inProcess()
-  local P = package.loaded["kernel.process"]
-  if P and type(P.inProcess) == "function" then return P.inProcess() end
-  return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
+local P = package.loaded["kernel.process"]
+if P and type(P.inProcess) == "function" then return P.inProcess() end
+return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
 end
 
 local function safePullSignal(timeout)
-  local computer = require("computer")
-  local deadline
-  if type(timeout) == "number" and timeout >= 0 and timeout ~= math.huge then
-    deadline = computer.uptime() + timeout
-  end
-  if inProcess() then
-    while true do
-      local sig = table.pack(coroutine.yield())
-      local name = sig[1]
-      if name ~= nil and not PULL_DROP[name] then
-        return table.unpack(sig, 1, sig.n)
-      end
+local computer = require("computer")
+local deadline
+if type(timeout) == "number" and timeout >= 0 and timeout ~= math.huge then
+deadline = computer.uptime() + timeout
+end
+if inProcess() then
+while true do
+local sig = table.pack(coroutine.yield())
+local name = sig[1]
+if name ~= nil and not PULL_DROP[name] then
+return table.unpack(sig, 1, sig.n)
+end
 
-      if deadline and computer.uptime() >= deadline then return nil end
-    end
-  end
+if deadline and computer.uptime() >= deadline then return nil end
+end
+end
 
-  local CEIL = 3
-  local stop = computer.uptime()
-    + ((type(timeout) == "number" and timeout >= 0 and timeout < CEIL) and timeout or CEIL)
-  while true do
-    local remaining = stop - computer.uptime()
-    if remaining < 0 then return nil end
-    local sig = table.pack(computer.pullSignal(remaining))
-    local name = sig[1]
-    if name == nil then return nil end
-    if not PULL_DROP[name] then return table.unpack(sig, 1, sig.n) end
-  end
+local CEIL = 3
+local stop = computer.uptime()
++ ((type(timeout) == "number" and timeout >= 0 and timeout < CEIL) and timeout or CEIL)
+while true do
+local remaining = stop - computer.uptime()
+if remaining < 0 then return nil end
+local sig = table.pack(computer.pullSignal(remaining))
+local name = sig[1]
+if name == nil then return nil end
+if not PULL_DROP[name] then return table.unpack(sig, 1, sig.n) end
+end
 end
 
 local function makeSafeComputer()
-  local computer = require("computer")
-  return {
-    uptime      = computer.uptime,
-    freeMemory  = computer.freeMemory,
-    totalMemory = computer.totalMemory,
-    address     = computer.address,
-    pullSignal  = safePullSignal,
-    pushSignal  = function(name, ...)
+local computer = require("computer")
+return {
+uptime      = computer.uptime,
+freeMemory  = computer.freeMemory,
+totalMemory = computer.totalMemory,
+address     = computer.address,
+pullSignal  = safePullSignal,
+pushSignal  = function(name, ...)
 
-      if isReservedSignal(name) then
-        return
-      end
-      return computer.pushSignal(name, ...)
-    end,
-    energy      = computer.energy,
-    maxEnergy   = computer.maxEnergy,
-  }
+if isReservedSignal(name) then
+return
+end
+return computer.pushSignal(name, ...)
+end,
+energy      = computer.energy,
+maxEnergy   = computer.maxEnergy,
+}
 end
 
 sandbox._safePullSignal = safePullSignal
 
 local BASE_COMPONENT_TYPES = {
-  gpu = true, screen = true, keyboard = true,
-  crafting = true, navigation = true, geolyzer = true,
-  note_block = true, sign = true,
+gpu = true, screen = true, keyboard = true,
+crafting = true, navigation = true, geolyzer = true,
+note_block = true, sign = true,
 }
 
 local GATED_COMPONENT_TYPES = {
-  modem                = "peripheral.modem",
-  tunnel               = "peripheral.modem",
-  redstone             = "peripheral.redstone",
-  robot                = "peripheral.robot",
-  inventory_controller = "peripheral.inventory",
-  transposer           = "peripheral.inventory",
-  tank_controller      = "peripheral.inventory",
-  tape_drive           = "peripheral.tape",
-  --! An internet card reaches OUTSIDE the Minecraft world: it is both an
-  --! exfiltration channel for anything the program can read and an inbound
-  --! channel of bytes a stranger wrote. Gated behind its own cap rather
-  --! than folded into the generic `component` grant, so a package that
-  --! wants a screen and a keyboard does not silently get the network.
-  internet             = "internet",
-  tractor_beam         = "peripheral.tractor",
-  piston               = "peripheral.piston",
-  hologram             = "peripheral.hologram",
-  --! OpenPrinter (PC-Logix) — the ONLY non-vanilla component type named in
-  --! this file, and it is here on purpose rather than left to
-  --! /etc/component_caps.cfg below. FEAT-5's config exists so an operator
-  --! can add types WE do not ship code for; TOS ships a first-party
-  --! `printer` driver package, and a package capability has to clear
-  --! pkg.lua's PKG_RUN_CAPS allowlist as well as this table. A cap an
-  --! operator can add to one side but not the other is a cap that silently
-  --! does nothing (see the package-cap overrides in pkg.lua, which close
-  --! that asymmetry for every OTHER mod). Costs nothing on a world without
-  --! the mod: the type simply never appears in component.list.
-  --! GATED, not base: a printer WRITES to the world — it consumes the
-  --! player's paper and ink and drops physical pages into a chest. That is
-  --! real-world actuation with a consumable cost, which is the same reason
-  --! piston and robot are gated.
-  openprinter          = "peripheral.printer",
+modem                = "peripheral.modem",
+tunnel               = "peripheral.modem",
+redstone             = "peripheral.redstone",
+robot                = "peripheral.robot",
+inventory_controller = "peripheral.inventory",
+transposer           = "peripheral.inventory",
+tank_controller      = "peripheral.inventory",
+tape_drive           = "peripheral.tape",
+--! An internet card reaches OUTSIDE the Minecraft world: it is both an
+--! exfiltration channel for anything the program can read and an inbound
+--! channel of bytes a stranger wrote. Gated behind its own cap rather
+--! than folded into the generic `component` grant, so a package that
+--! wants a screen and a keyboard does not silently get the network.
+internet             = "internet",
+tractor_beam         = "peripheral.tractor",
+piston               = "peripheral.piston",
+hologram             = "peripheral.hologram",
+--! OpenPrinter (PC-Logix) — the ONLY non-vanilla component type named in
+--! this file, and it is here on purpose rather than left to
+--! /etc/component_caps.cfg below. FEAT-5's config exists so an operator
+--! can add types WE do not ship code for; TOS ships a first-party
+--! `printer` driver package, and a package capability has to clear
+--! pkg.lua's PKG_RUN_CAPS allowlist as well as this table. A cap an
+--! operator can add to one side but not the other is a cap that silently
+--! does nothing (see the package-cap overrides in pkg.lua, which close
+--! that asymmetry for every OTHER mod). Costs nothing on a world without
+--! the mod: the type simply never appears in component.list.
+--! GATED, not base: a printer WRITES to the world — it consumes the
+--! player's paper and ink and drops physical pages into a chest. That is
+--! real-world actuation with a consumable cost, which is the same reason
+--! piston and robot are gated.
+openprinter          = "peripheral.printer",
 }
 
 local _extraBase  = {}
@@ -300,50 +300,50 @@ local _extraGated = {}
 local _extraLoaded = false
 
 local function loadComponentConfig()
-  if _extraLoaded then return end
-  _extraLoaded = true
-  local okF, fsMod = pcall(require, "kernel.fs")
-  local okS, serMod = pcall(require, "kernel.serialize")
-  if not (okF and okS) then return end
-  local path = "/etc/component_caps.cfg"
-  if not fsMod.exists(path) then return end
-  local raw = fsMod.readFile(path)
-  if not raw or #raw == 0 or #raw > 8192 then return end
-  local ok, cfg = pcall(serMod.decode, raw, { maxBytes = 8192 })
-  if not ok or type(cfg) ~= "table" then return end
+if _extraLoaded then return end
+_extraLoaded = true
+local okF, fsMod = pcall(require, "kernel.fs")
+local okS, serMod = pcall(require, "kernel.serialize")
+if not (okF and okS) then return end
+local path = "/etc/component_caps.cfg"
+if not fsMod.exists(path) then return end
+local raw = fsMod.readFile(path)
+if not raw or #raw == 0 or #raw > 8192 then return end
+local ok, cfg = pcall(serMod.decode, raw, { maxBytes = 8192 })
+if not ok or type(cfg) ~= "table" then return end
 
-  if type(cfg.base) == "table" then
-    for _, t in ipairs(cfg.base) do
-      if type(t) == "string" and #t <= 64 and t:match("^[%w_]+$") then
-        _extraBase[t] = true
-      end
-    end
-  end
-  if type(cfg.gated) == "table" then
-    for ctype, cap in pairs(cfg.gated) do
-      if type(ctype) == "string" and #ctype <= 64 and ctype:match("^[%w_]+$")
-         and type(cap) == "string" and #cap <= 64 and cap:match("^[%w_%.]+$") then
-        _extraGated[ctype] = cap
-      end
-    end
-  end
+if type(cfg.base) == "table" then
+for _, t in ipairs(cfg.base) do
+if type(t) == "string" and #t <= 64 and t:match("^[%w_]+$") then
+_extraBase[t] = true
+end
+end
+end
+if type(cfg.gated) == "table" then
+for ctype, cap in pairs(cfg.gated) do
+if type(ctype) == "string" and #ctype <= 64 and ctype:match("^[%w_]+$")
+and type(cap) == "string" and #cap <= 64 and cap:match("^[%w_%.]+$") then
+_extraGated[ctype] = cap
+end
+end
+end
 end
 
 function sandbox.reloadComponentConfig()
-  _extraBase  = {}
-  _extraGated = {}
-  _extraLoaded = false
-  loadComponentConfig()
-  return _extraBase, _extraGated
+_extraBase  = {}
+_extraGated = {}
+_extraLoaded = false
+loadComponentConfig()
+return _extraBase, _extraGated
 end
 
 local function isAllowedComponentType(ctype, caps)
-  if not ctype then return false end
-  loadComponentConfig()
-  if BASE_COMPONENT_TYPES[ctype] or _extraBase[ctype] then return true end
-  local gated = GATED_COMPONENT_TYPES[ctype] or _extraGated[ctype]
-  if gated and caps and caps[gated] then return true end
-  return false
+if not ctype then return false end
+loadComponentConfig()
+if BASE_COMPONENT_TYPES[ctype] or _extraBase[ctype] then return true end
+local gated = GATED_COMPONENT_TYPES[ctype] or _extraGated[ctype]
+if gated and caps and caps[gated] then return true end
+return false
 end
 
 local ALLOWED_COMPONENT_TYPES = BASE_COMPONENT_TYPES
@@ -351,105 +351,105 @@ local ALLOWED_COMPONENT_TYPES = BASE_COMPONENT_TYPES
 local SEAT_SCOPED_TYPES = { gpu = true, screen = true, keyboard = true }
 
 local function seatDeviceFilter()
-  local okS, scr = pcall(require, "kernel.screen")
-  if not okS or type(scr) ~= "table" or not scr.callerDevices then return nil end
-  local okD, dev = pcall(scr.callerDevices)
-  if not okD or type(dev) ~= "table" then return nil end
+local okS, scr = pcall(require, "kernel.screen")
+if not okS or type(scr) ~= "table" or not scr.callerDevices then return nil end
+local okD, dev = pcall(scr.callerDevices)
+if not okD or type(dev) ~= "table" then return nil end
 
-  if not dev.gpu then return nil end
-  local allow = { [dev.gpu] = true }
-  if dev.screen then allow[dev.screen] = true end
-  for _, kb in ipairs(dev.keyboards or {}) do allow[kb] = true end
-  return allow, dev
+if not dev.gpu then return nil end
+local allow = { [dev.gpu] = true }
+if dev.screen then allow[dev.screen] = true end
+for _, kb in ipairs(dev.keyboards or {}) do allow[kb] = true end
+return allow, dev
 end
 
 local function seatOwnAddress(ctype)
-  local allow, dev = seatDeviceFilter()
-  if not allow then return nil end
-  if ctype == "gpu"      then return dev.gpu end
-  if ctype == "screen"   then return dev.screen end
-  if ctype == "keyboard" then return (dev.keyboards or {})[1] end
-  return nil
+local allow, dev = seatDeviceFilter()
+if not allow then return nil end
+if ctype == "gpu"      then return dev.gpu end
+if ctype == "screen"   then return dev.screen end
+if ctype == "keyboard" then return (dev.keyboards or {})[1] end
+return nil
 end
 
 local function makeSafeComponent(caps)
-  caps = caps or {}
-  local comp = require("component")
-  local safe = {}
+caps = caps or {}
+local comp = require("component")
+local safe = {}
 
-  local function seatDenies(addr, ctype)
-    if not SEAT_SCOPED_TYPES[ctype] then return false end
-    local allow = seatDeviceFilter()
-    if not allow then return false end
-    return not allow[addr]
-  end
+local function seatDenies(addr, ctype)
+if not SEAT_SCOPED_TYPES[ctype] then return false end
+local allow = seatDeviceFilter()
+if not allow then return false end
+return not allow[addr]
+end
 
-  function safe.list(filter, exact)
-    local raw = comp.list(filter, exact)
+function safe.list(filter, exact)
+local raw = comp.list(filter, exact)
 
-    local allow = seatDeviceFilter()
-    return function()
-      while true do
-        local addr, ctype = raw()
-        if addr == nil then return nil end
-        local denied = allow and SEAT_SCOPED_TYPES[ctype] and not allow[addr]
-        if isAllowedComponentType(ctype, caps) and not denied then
-          return addr, ctype
-        end
-      end
-    end
-  end
+local allow = seatDeviceFilter()
+return function()
+while true do
+local addr, ctype = raw()
+if addr == nil then return nil end
+local denied = allow and SEAT_SCOPED_TYPES[ctype] and not allow[addr]
+if isAllowedComponentType(ctype, caps) and not denied then
+return addr, ctype
+end
+end
+end
+end
 
-  function safe.proxy(addr)
-    local ctype = comp.type(addr)
-    if not isAllowedComponentType(ctype, caps) then
-      return nil, "access denied"
-    end
-    if seatDenies(addr, ctype) then return nil, "not your seat" end
-    return comp.proxy(addr)
-  end
+function safe.proxy(addr)
+local ctype = comp.type(addr)
+if not isAllowedComponentType(ctype, caps) then
+return nil, "access denied"
+end
+if seatDenies(addr, ctype) then return nil, "not your seat" end
+return comp.proxy(addr)
+end
 
-  function safe.type(addr) return comp.type(addr) end
-  function safe.slot(addr) return comp.slot(addr) end
+function safe.type(addr) return comp.type(addr) end
+function safe.slot(addr) return comp.slot(addr) end
 
-  function safe.get(addr, ctype)
-    local result = comp.get(addr, ctype)
-    if result then
-      local t = comp.type(result)
-      if isAllowedComponentType(t, caps) then return result end
-    end
-    return nil, "access denied"
-  end
+function safe.get(addr, ctype)
+local result = comp.get(addr, ctype)
+if result then
+local t = comp.type(result)
+if isAllowedComponentType(t, caps) then return result end
+end
+return nil, "access denied"
+end
 
-  function safe.invoke(addr, method, ...)
-    local ctype = comp.type(addr)
-    if not isAllowedComponentType(ctype, caps) then
-      error("sandbox: access denied to " .. tostring(ctype))
-    end
-    if seatDenies(addr, ctype) then
-      error("sandbox: " .. tostring(ctype) .. " belongs to another seat")
-    end
-    return comp.invoke(addr, method, ...)
-  end
+function safe.invoke(addr, method, ...)
+local ctype = comp.type(addr)
+if not isAllowedComponentType(ctype, caps) then
+error("sandbox: access denied to " .. tostring(ctype))
+end
+if seatDenies(addr, ctype) then
+error("sandbox: " .. tostring(ctype) .. " belongs to another seat")
+end
+return comp.invoke(addr, method, ...)
+end
 
-  function safe.isAvailable(ctype)
-    if not isAllowedComponentType(ctype, caps) then return false end
-    return comp.isAvailable(ctype)
-  end
+function safe.isAvailable(ctype)
+if not isAllowedComponentType(ctype, caps) then return false end
+return comp.isAvailable(ctype)
+end
 
-  function safe.getPrimary(ctype)
-    if not isAllowedComponentType(ctype, caps) then
-      return nil, "access denied"
-    end
+function safe.getPrimary(ctype)
+if not isAllowedComponentType(ctype, caps) then
+return nil, "access denied"
+end
 
-    if SEAT_SCOPED_TYPES[ctype] then
-      local mine = seatOwnAddress(ctype)
-      if mine then return comp.proxy(mine) end
-    end
-    return comp.getPrimary(ctype)
-  end
+if SEAT_SCOPED_TYPES[ctype] then
+local mine = seatOwnAddress(ctype)
+if mine then return comp.proxy(mine) end
+end
+return comp.getPrimary(ctype)
+end
 
-  return safe
+return safe
 end
 
 --! OpenOS's component library answers a TYPE NAME with that type's primary
@@ -464,59 +464,59 @@ end
 --! type is this seat's: no authority the table itself did not carry.
 --! (test_sandbox_openos_names.lua)
 local function componentFieldView(safe)
-  local function primary(ctype)
-    local okP, px = pcall(safe.getPrimary, ctype)
-    if okP and px then return px end
-    local okL, it = pcall(safe.list, ctype, true)
-    if okL and type(it) == "function" then
-      local addr = it()
-      if addr then return (safe.proxy(addr)) end
-    end
-    return nil
-  end
-  return setmetatable({}, {
-    __index = function(_, key)
-      local v = safe[key]
-      if v ~= nil then return v end
-      if type(key) == "string" then return primary(key) end
-      return nil
-    end,
+local function primary(ctype)
+local okP, px = pcall(safe.getPrimary, ctype)
+if okP and px then return px end
+local okL, it = pcall(safe.list, ctype, true)
+if okL and type(it) == "function" then
+local addr = it()
+if addr then return (safe.proxy(addr)) end
+end
+return nil
+end
+return setmetatable({}, {
+__index = function(_, key)
+local v = safe[key]
+if v ~= nil then return v end
+if type(key) == "string" then return primary(key) end
+return nil
+end,
 
-    __pairs = function()
-      local k
-      return function()
-        local v
-        k, v = next(safe, k)
-        return k, v
-      end
-    end,
-    __newindex  = function() error("component view is read-only", 2) end,
-    __metatable = false,
-  })
+__pairs = function()
+local k
+return function()
+local v
+k, v = next(safe, k)
+return k, v
+end
+end,
+__newindex  = function() error("component view is read-only", 2) end,
+__metatable = false,
+})
 end
 
 local USER_LIB_ROOTS = { "/usr/lib", "/usr/modules" }
 
 local function nameToCandidatePaths(name)
-  local rel = name:gsub("%.", "/")
-  return {
-    rel .. ".lua",
-    rel .. "/init.lua",
-  }
+local rel = name:gsub("%.", "/")
+return {
+rel .. ".lua",
+rel .. "/init.lua",
+}
 end
 
 local function resolveUserLibPath(name)
-  local fs = nil
-  local ok, mod = pcall(require, "kernel.fs")
-  if ok then fs = mod end
-  if not fs then return nil end
-  for _, root in ipairs(USER_LIB_ROOTS) do
-    for _, rel in ipairs(nameToCandidatePaths(name)) do
-      local path = root .. "/" .. rel
-      if fs.exists(path) then return path end
-    end
-  end
-  return nil
+local fs = nil
+local ok, mod = pcall(require, "kernel.fs")
+if ok then fs = mod end
+if not fs then return nil end
+for _, root in ipairs(USER_LIB_ROOTS) do
+for _, rel in ipairs(nameToCandidatePaths(name)) do
+local path = root .. "/" .. rel
+if fs.exists(path) then return path end
+end
+end
+return nil
 end
 
 --! #SEC (pentest, Sep 2026) — EVERY module table a sandbox receives is its
@@ -546,43 +546,43 @@ end
 --! cannot see the hook at all; the kernel keeps the REAL module table and
 --! calls it directly. (test_sandbox_module_isolation.lua)
 local function isolatedModule(mod, hidden)
-  if type(mod) ~= "table" then return mod end
+if type(mod) ~= "table" then return mod end
 
-  local index = mod
-  if hidden then
-    index = function(_, k)
-      if hidden[k] then return nil end
-      return mod[k]
-    end
-  end
-  return setmetatable({}, {
-    __index = index,
-    __len   = function() return #mod end,
-    __pairs = function()
-      local k
-      return function()
-        local v
-        repeat
-          k, v = next(mod, k)
-        until k == nil or not (hidden and hidden[k])
-        return k, v
-      end
-    end,
-    __call  = function(_, ...) return mod(...) end,
-    __metatable = false,
-  })
+local index = mod
+if hidden then
+index = function(_, k)
+if hidden[k] then return nil end
+return mod[k]
+end
+end
+return setmetatable({}, {
+__index = index,
+__len   = function() return #mod end,
+__pairs = function()
+local k
+return function()
+local v
+repeat
+k, v = next(mod, k)
+until k == nil or not (hidden and hidden[k])
+return k, v
+end
+end,
+__call  = function(_, ...) return mod(...) end,
+__metatable = false,
+})
 end
 
 --! Per-module keys a sandbox must never reach. Keyed by require() name.
 local HIDDEN_MODULE_KEYS = {
-  ["compat.term"] = { _gpuForCaps = true },
-  --! compat.process._forProgram is the same shape of hook: the kernel
-  --! calls it to bind info()/running() to THIS sandbox's launch path
-  --! (below), so the sandbox must not be able to call it and answer its own
-  --! question. Forging a path is not authority here — file access still
-  --! goes through securefs with the caller's ACLs — but an unmasked hook on
-  --! a compat module is how H-01 happened, so the rule stays uniform.
-  ["compat.process"] = { _forProgram = true },
+["compat.term"] = { _gpuForCaps = true },
+--! compat.process._forProgram is the same shape of hook: the kernel
+--! calls it to bind info()/running() to THIS sandbox's launch path
+--! (below), so the sandbox must not be able to call it and answer its own
+--! question. Forging a path is not authority here — file access still
+--! goes through securefs with the caller's ACLs — but an unmasked hook on
+--! a compat module is how H-01 happened, so the rule stays uniform.
+["compat.process"] = { _forProgram = true },
 }
 
 --! #SEC (pentest, Sep 2026) — what the `net` capability means for a
@@ -594,14 +594,14 @@ local HIDDEN_MODULE_KEYS = {
 --! discovery records, so `findPeer("server").addr = me` redirected every
 --! other user's ssh/share. A program now gets an allowlist, and copies.
 local NET_FACADE = {
-  "send", "broadcast", "on", "off", "onceFrom", "offAll", "waitFor",
-  "sendMessage", "requestTrust", "discover", "getAddress", "getHostname",
-  "isAvailable", "modemCount",
+"send", "broadcast", "on", "off", "onceFrom", "offAll", "waitFor",
+"sendMessage", "requestTrust", "discover", "getAddress", "getHostname",
+"isAvailable", "modemCount",
 }
 local function copyPeer(p)
-  if type(p) ~= "table" then return p end
-  return { addr = p.addr, lastSeen = p.lastSeen, hostname = p.hostname,
-           device = p.device, trust = p.trust }
+if type(p) ~= "table" then return p end
+return { addr = p.addr, lastSeen = p.lastSeen, hostname = p.hostname,
+device = p.device, trust = p.trust }
 end
 
 --! #SEC — the message types a program holding `net` may SPEAK and HEAR:
@@ -625,113 +625,113 @@ end
 --! because any user may already read it (every chat tab listens for MSG).
 --! (test_sandbox_net_facade.lua)
 local NET_PROGRAM_TYPES = { "PING", "PONG", "HELLO", "HELLO_ACK", "INFO_REQ",
-                            "INFO_RES", "MSG", "MSG_ACK", "DENY", "ERROR" }
+"INFO_RES", "MSG", "MSG_ACK", "DENY", "ERROR" }
 
 local function snapshot(v, depth)
-  if type(v) ~= "table" then return v end
-  if depth > 16 then return nil end
-  local out = {}
-  for k, x in next, v do
-    if type(k) ~= "table" then out[k] = snapshot(x, depth + 1) end
-  end
-  return out
+if type(v) ~= "table" then return v end
+if depth > 16 then return nil end
+local out = {}
+for k, x in next, v do
+if type(k) ~= "table" then out[k] = snapshot(x, depth + 1) end
+end
+return out
 end
 
 local function netFacade(net)
-  local f = {}
-  for _, k in ipairs(NET_FACADE) do
-    if type(net[k]) == "function" then f[k] = net[k] end
-  end
+local f = {}
+for _, k in ipairs(NET_FACADE) do
+if type(net[k]) == "function" then f[k] = net[k] end
+end
 
-  local okP, P = pcall(function() return net.getProtocol and net.getProtocol() end)
-  local TYPE = okP and type(P) == "table" and type(P.TYPE) == "table" and P.TYPE or {}
-  local allowed = {}
-  for _, name in ipairs(NET_PROGRAM_TYPES) do
-    allowed[TYPE[name] or name:lower()] = true
-  end
-  local function refuse(t, verb)
-    return nil, "net: programs may not " .. verb .. " '" .. tostring(t) .. "' packets"
-  end
+local okP, P = pcall(function() return net.getProtocol and net.getProtocol() end)
+local TYPE = okP and type(P) == "table" and type(P.TYPE) == "table" and P.TYPE or {}
+local allowed = {}
+for _, name in ipairs(NET_PROGRAM_TYPES) do
+allowed[TYPE[name] or name:lower()] = true
+end
+local function refuse(t, verb)
+return nil, "net: programs may not " .. verb .. " '" .. tostring(t) .. "' packets"
+end
 
-  f.on, f.onceFrom, f.off, f.offAll, f.send, f.broadcast = nil, nil, nil, nil, nil, nil
+f.on, f.onceFrom, f.off, f.offAll, f.send, f.broadcast = nil, nil, nil, nil, nil, nil
 
-  local mine = {}
-  local function remember(msgType, id)
-    if id ~= nil then mine[msgType] = mine[msgType] or {}; mine[msgType][id] = true end
-    return id
-  end
-  local function copying(callback)
-    return function(packet, from) return callback(snapshot(packet, 0), from) end
-  end
+local mine = {}
+local function remember(msgType, id)
+if id ~= nil then mine[msgType] = mine[msgType] or {}; mine[msgType][id] = true end
+return id
+end
+local function copying(callback)
+return function(packet, from) return callback(snapshot(packet, 0), from) end
+end
 
-  if type(net.on) == "function" then
-    f.on = function(msgType, callback)
-      if not allowed[msgType] then return refuse(msgType, "listen for") end
-      if type(callback) ~= "function" then return nil, "net.on: callback must be a function" end
-      return remember(msgType, net.on(msgType, copying(callback)))
-    end
-  end
-  if type(net.onceFrom) == "function" then
-    f.onceFrom = function(msgType, addr, callback)
-      if not allowed[msgType] then return refuse(msgType, "listen for") end
-      if type(callback) ~= "function" then return nil, "net.onceFrom: callback must be a function" end
-      return remember(msgType, net.onceFrom(msgType, addr, copying(callback)))
-    end
-  end
-  if type(net.off) == "function" then
-    f.off = function(msgType, id)
-      if not (mine[msgType] and mine[msgType][id]) then return false end
-      mine[msgType][id] = nil
-      return net.off(msgType, id)
-    end
-    f.offAll = function(entries)
-      if type(entries) ~= "table" then return end
-      for _, e in ipairs(entries) do
-        if type(e) == "table" then f.off(e.type, e.id) end
-      end
-    end
-  end
-  if type(net.send) == "function" then
-    f.send = function(address, packet, port)
-      local pkt = snapshot(packet, 0)
-      if type(pkt) ~= "table" or not allowed[pkt.type] then
-        return refuse(type(pkt) == "table" and pkt.type or type(packet), "send")
-      end
-      return net.send(address, pkt, port)
-    end
-  end
-  if type(net.broadcast) == "function" then
-    f.broadcast = function(packet, port)
-      local pkt = snapshot(packet, 0)
-      if type(pkt) ~= "table" or not allowed[pkt.type] then
-        return refuse(type(pkt) == "table" and pkt.type or type(packet), "broadcast")
-      end
-      return net.broadcast(pkt, port)
-    end
-  end
-  local function copyList(list)
-    local out = {}
-    for i, p in ipairs(type(list) == "table" and list or {}) do out[i] = copyPeer(p) end
-    return out
-  end
-  if type(net.peers) == "function" then f.peers = function() return copyList(net.peers()) end end
-  if type(net.scan) == "function" then f.scan = function(t) return copyList(net.scan(t)) end end
-  if type(net.findPeer) == "function" then
-    f.findPeer = function(q) return copyPeer(net.findPeer(q)) end
-  end
-  if type(net.getProtocol) == "function" then
-    f.getProtocol = function() return isolatedModule(net.getProtocol()) end
-  end
-  if type(net.status) == "function" then
-    f.status = function()
-      local s, out = net.status(), {}
-      for k, v in pairs(type(s) == "table" and s or {}) do
-        if type(v) ~= "table" then out[k] = v end
-      end
-      return out
-    end
-  end
-  return f
+if type(net.on) == "function" then
+f.on = function(msgType, callback)
+if not allowed[msgType] then return refuse(msgType, "listen for") end
+if type(callback) ~= "function" then return nil, "net.on: callback must be a function" end
+return remember(msgType, net.on(msgType, copying(callback)))
+end
+end
+if type(net.onceFrom) == "function" then
+f.onceFrom = function(msgType, addr, callback)
+if not allowed[msgType] then return refuse(msgType, "listen for") end
+if type(callback) ~= "function" then return nil, "net.onceFrom: callback must be a function" end
+return remember(msgType, net.onceFrom(msgType, addr, copying(callback)))
+end
+end
+if type(net.off) == "function" then
+f.off = function(msgType, id)
+if not (mine[msgType] and mine[msgType][id]) then return false end
+mine[msgType][id] = nil
+return net.off(msgType, id)
+end
+f.offAll = function(entries)
+if type(entries) ~= "table" then return end
+for _, e in ipairs(entries) do
+if type(e) == "table" then f.off(e.type, e.id) end
+end
+end
+end
+if type(net.send) == "function" then
+f.send = function(address, packet, port)
+local pkt = snapshot(packet, 0)
+if type(pkt) ~= "table" or not allowed[pkt.type] then
+return refuse(type(pkt) == "table" and pkt.type or type(packet), "send")
+end
+return net.send(address, pkt, port)
+end
+end
+if type(net.broadcast) == "function" then
+f.broadcast = function(packet, port)
+local pkt = snapshot(packet, 0)
+if type(pkt) ~= "table" or not allowed[pkt.type] then
+return refuse(type(pkt) == "table" and pkt.type or type(packet), "broadcast")
+end
+return net.broadcast(pkt, port)
+end
+end
+local function copyList(list)
+local out = {}
+for i, p in ipairs(type(list) == "table" and list or {}) do out[i] = copyPeer(p) end
+return out
+end
+if type(net.peers) == "function" then f.peers = function() return copyList(net.peers()) end end
+if type(net.scan) == "function" then f.scan = function(t) return copyList(net.scan(t)) end end
+if type(net.findPeer) == "function" then
+f.findPeer = function(q) return copyPeer(net.findPeer(q)) end
+end
+if type(net.getProtocol) == "function" then
+f.getProtocol = function() return isolatedModule(net.getProtocol()) end
+end
+if type(net.status) == "function" then
+f.status = function()
+local s, out = net.status(), {}
+for k, v in pairs(type(s) == "table" and s or {}) do
+if type(v) ~= "table" then out[k] = v end
+end
+return out
+end
+end
+return f
 end
 
 --! #SEC — three more compat names are the FILE capability, not libraries.
@@ -745,9 +745,9 @@ end
 --! could not see a parent's caps. Same rule as compat.component and
 --! compat.internet below: the name needs the cap. (test_sandbox_compat_caps.lua)
 local COMPAT_FILE_CAP = {
-  ["compat.io"]         = "compat.io",
-  ["compat.filesystem"] = "compat.io",
-  ["compat.shell_api"]  = "compat.io",
+["compat.io"]         = "compat.io",
+["compat.filesystem"] = "compat.io",
+["compat.shell_api"]  = "compat.io",
 }
 
 --! The OpenOS library names, each answered with the compat module that
@@ -764,669 +764,669 @@ local COMPAT_FILE_CAP = {
 --! same per-program bindings (term.gpu, process.info). It grants nothing
 --! that name did not. (test_sandbox_openos_names.lua)
 local OPENOS_NAMES = {
-  sides = "compat.sides", colors = "compat.colors", keyboard = "compat.keyboard",
-  text = "compat.text", serialization = "compat.serialization",
-  buffer = "compat.buffer", term = "compat.term", event = "compat.event",
-  shell = "compat.shell_api", filesystem = "compat.filesystem", io = "compat.io",
-  internet = "compat.internet", robot = "compat.robot",
-  process = "compat.process", note = "compat.note",
+sides = "compat.sides", colors = "compat.colors", keyboard = "compat.keyboard",
+text = "compat.text", serialization = "compat.serialization",
+buffer = "compat.buffer", term = "compat.term", event = "compat.event",
+shell = "compat.shell_api", filesystem = "compat.filesystem", io = "compat.io",
+internet = "compat.internet", robot = "compat.robot",
+process = "compat.process", note = "compat.note",
 }
 
 local function makeSafeRequire(opts, prebound, envRef)
-  local cache = {}
-  local loading = {}
-  if prebound then
-    for k, v in pairs(prebound) do cache[k] = v end
-  end
-  local safeRequire
-  safeRequire = function(name)
-    if type(name) ~= "string" then
-      error("bad argument #1 to 'require' (string expected)", 2)
-    end
-    if cache[name] ~= nil then return cache[name] end
+local cache = {}
+local loading = {}
+if prebound then
+for k, v in pairs(prebound) do cache[k] = v end
+end
+local safeRequire
+safeRequire = function(name)
+if type(name) ~= "string" then
+error("bad argument #1 to 'require' (string expected)", 2)
+end
+if cache[name] ~= nil then return cache[name] end
 
-    if isKernelModule(name) then
-      error("sandbox: cannot require kernel module '" .. name .. "'", 2)
-    end
+if isKernelModule(name) then
+error("sandbox: cannot require kernel module '" .. name .. "'", 2)
+end
 
-    if name == "unicode" then
-      local u = envRef and envRef.env and envRef.env.unicode
-      if u == nil then error("sandbox: module 'unicode' is not available", 2) end
-      cache[name] = u
-      return u
-    end
+if name == "unicode" then
+local u = envRef and envRef.env and envRef.env.unicode
+if u == nil then error("sandbox: module 'unicode' is not available", 2) end
+cache[name] = u
+return u
+end
 
-    local alias = OPENOS_NAMES[name]
-    if alias then
+local alias = OPENOS_NAMES[name]
+if alias then
 
-      local T = _G._TOS
-      if T and T.compatDisabled then
-        error("sandbox: '" .. name .. "' is OpenOS's, and the compat layer is off in this boot profile", 2)
-      end
+local T = _G._TOS
+if T and T.compatDisabled then
+error("sandbox: '" .. name .. "' is OpenOS's, and the compat layer is off in this boot profile", 2)
+end
 
-      local env = envRef and envRef.env
-      if (name == "io" or name == "filesystem") and env and env[name] ~= nil then
-        cache[name] = env[name]
-        return env[name]
-      end
-      local okA, mod = pcall(safeRequire, alias)
-      if not okA then
-        error("sandbox: require('" .. name .. "'): " .. tostring(mod):gsub("^sandbox: ", ""), 2)
-      end
-      cache[name] = mod
-      return mod
-    end
+local env = envRef and envRef.env
+if (name == "io" or name == "filesystem") and env and env[name] ~= nil then
+cache[name] = env[name]
+return env[name]
+end
+local okA, mod = pcall(safeRequire, alias)
+if not okA then
+error("sandbox: require('" .. name .. "'): " .. tostring(mod):gsub("^sandbox: ", ""), 2)
+end
+cache[name] = mod
+return mod
+end
 
-    --! #SEC (pentest, Sep 2026) — two compat names are CAPABILITIES, not
-    --! libraries, and the "compat." prefix below admitted both for anyone:
-    --!   compat.component  OpenOS-style field access built over the RAW
-    --!     component library: .proxy, .list, and a raw proxy for any type
-    --!     (`.filesystem.remove("/init.lua")`, `.eeprom.set(...)`), with no
-    --!     cap consulted -- the whole C4 component split, undone by one
-    --!     require. It is now the same shape over THIS sandbox's filtered
-    --!     component table, and needs the `component` cap.
-    --!   compat.internet  reaches the card through the real component
-    --!     library; "the capability is the gate" held only for the
-    --!     component route. It now needs the `internet` cap.
-    --! (test_sandbox_compat_caps.lua)
-    if name == "compat.component" then
+--! #SEC (pentest, Sep 2026) — two compat names are CAPABILITIES, not
+--! libraries, and the "compat." prefix below admitted both for anyone:
+--!   compat.component  OpenOS-style field access built over the RAW
+--!     component library: .proxy, .list, and a raw proxy for any type
+--!     (`.filesystem.remove("/init.lua")`, `.eeprom.set(...)`), with no
+--!     cap consulted -- the whole C4 component split, undone by one
+--!     require. It is now the same shape over THIS sandbox's filtered
+--!     component table, and needs the `component` cap.
+--!   compat.internet  reaches the card through the real component
+--!     library; "the capability is the gate" held only for the
+--!     component route. It now needs the `internet` cap.
+--! (test_sandbox_compat_caps.lua)
+if name == "compat.component" then
 
-      local view = prebound and prebound.component
-      if not view then
-        error("sandbox: 'compat.component' needs the component capability", 2)
-      end
-      cache[name] = view
-      return view
-    end
-    if name == "compat.internet" and not (opts.caps and opts.caps["internet"]) then
-      error("sandbox: 'compat.internet' needs the internet capability", 2)
-    end
-    do
-      local need = COMPAT_FILE_CAP[name]
-      if need and not (opts.caps and (opts.caps[need] or opts.caps["legacy"])) then
-        error("sandbox: '" .. name .. "' needs the " .. need .. " capability", 2)
-      end
-    end
-    --! #SEC (pentest, Sep 2026) — `compat` itself is the layer's LOADER.
-    --! init() re-run after boot forwards opts.procSleep into the os.sleep
-    --! that every real-`os` caller shares, and setProcSleep() does it
-    --! outright, so a sandbox could make its function run inside whichever
-    --! process next slept. A sandbox gets the read-only part: has(), list().
-    if name == "compat" then
-      local okC, cm = pcall(require, "compat")
-      if not okC or type(cm) ~= "table" then
-        error("sandbox: the compat layer is unavailable", 2)
-      end
-      local view = { has = cm.has, list = cm.list }
-      cache[name] = view
-      return view
-    end
+local view = prebound and prebound.component
+if not view then
+error("sandbox: 'compat.component' needs the component capability", 2)
+end
+cache[name] = view
+return view
+end
+if name == "compat.internet" and not (opts.caps and opts.caps["internet"]) then
+error("sandbox: 'compat.internet' needs the internet capability", 2)
+end
+do
+local need = COMPAT_FILE_CAP[name]
+if need and not (opts.caps and (opts.caps[need] or opts.caps["legacy"])) then
+error("sandbox: '" .. name .. "' needs the " .. need .. " capability", 2)
+end
+end
+--! #SEC (pentest, Sep 2026) — `compat` itself is the layer's LOADER.
+--! init() re-run after boot forwards opts.procSleep into the os.sleep
+--! that every real-`os` caller shares, and setProcSleep() does it
+--! outright, so a sandbox could make its function run inside whichever
+--! process next slept. A sandbox gets the read-only part: has(), list().
+if name == "compat" then
+local okC, cm = pcall(require, "compat")
+if not okC or type(cm) ~= "table" then
+error("sandbox: the compat layer is unavailable", 2)
+end
+local view = { has = cm.has, list = cm.list }
+cache[name] = view
+return view
+end
 
-    if BLOCKED_MODULE_NAMES[name] then
+if BLOCKED_MODULE_NAMES[name] then
 
-      if not (opts and opts.allowUserLibs and resolveUserLibPath(name)) then
-        error("sandbox: module '" .. name .. "' is not available to sandboxed code", 2)
-      end
-    end
+if not (opts and opts.allowUserLibs and resolveUserLibPath(name)) then
+error("sandbox: module '" .. name .. "' is not available to sandboxed code", 2)
+end
+end
 
-    if ALLOWED_MODULE_NAMES[name] or isAllowedPrefix(name) then
+if ALLOWED_MODULE_NAMES[name] or isAllowedPrefix(name) then
 
-      local real = require(name)
-      local mod = isolatedModule(real, HIDDEN_MODULE_KEYS[name])
+local real = require(name)
+local mod = isolatedModule(real, HIDDEN_MODULE_KEYS[name])
 
-      --! #SEC (AUDIT 5, H-01) — close over the REAL module, not the view:
-      --! _gpuForCaps is masked on the view (HIDDEN_MODULE_KEYS above), so
-      --! the sandbox cannot call the builder with caps of its own
-      --! invention, and this closure is the only way to a mutating proxy.
-      if name == "compat.term" and type(real) == "table"
-         and type(real._gpuForCaps) == "function" then
-        local sbCaps = opts and opts.caps
-        mod.gpu = function() return real._gpuForCaps(sbCaps) end
-      end
-      --! Bind compat.process to THIS program. An OpenOS program calls
-      --! process.running() for one reason — to find the directory its own
-      --! script lives in — and the only thing that knows the answer is the
-      --! launcher, which handed us opts.name. envRef.env is this sandbox's
-      --! own globals, i.e. exactly the table the program already has as _G,
-      --! so returning it as info().env leaks nothing.
-      if name == "compat.process" and type(real) == "table"
-         and type(real._forProgram) == "function" then
-        local bound = real._forProgram(opts and opts.name,
-                                       envRef and envRef.env)
-        if type(bound) == "table" then
-          mod.info    = bound.info
-          mod.running = bound.running
-        end
-      end
-      cache[name] = mod
-      return mod
-    end
+--! #SEC (AUDIT 5, H-01) — close over the REAL module, not the view:
+--! _gpuForCaps is masked on the view (HIDDEN_MODULE_KEYS above), so
+--! the sandbox cannot call the builder with caps of its own
+--! invention, and this closure is the only way to a mutating proxy.
+if name == "compat.term" and type(real) == "table"
+and type(real._gpuForCaps) == "function" then
+local sbCaps = opts and opts.caps
+mod.gpu = function() return real._gpuForCaps(sbCaps) end
+end
+--! Bind compat.process to THIS program. An OpenOS program calls
+--! process.running() for one reason — to find the directory its own
+--! script lives in — and the only thing that knows the answer is the
+--! launcher, which handed us opts.name. envRef.env is this sandbox's
+--! own globals, i.e. exactly the table the program already has as _G,
+--! so returning it as info().env leaks nothing.
+if name == "compat.process" and type(real) == "table"
+and type(real._forProgram) == "function" then
+local bound = real._forProgram(opts and opts.name,
+envRef and envRef.env)
+if type(bound) == "table" then
+mod.info    = bound.info
+mod.running = bound.running
+end
+end
+cache[name] = mod
+return mod
+end
 
-    if isUserLibName(name) then
-      local resolved = resolveUserLibPath(name)
-      if resolved then
+if isUserLibName(name) then
+local resolved = resolveUserLibPath(name)
+if resolved then
 
-        local usersMod = _G._TOS and _G._TOS.users
-        if opts.session and usersMod and usersMod.canAccessAs then
-          local okR = usersMod.canAccessAs(opts.session, resolved, "r")
-          if not okR then
-            error("sandbox: access denied loading user lib '" .. name .. "'", 2)
-          end
-        end
+local usersMod = _G._TOS and _G._TOS.users
+if opts.session and usersMod and usersMod.canAccessAs then
+local okR = usersMod.canAccessAs(opts.session, resolved, "r")
+if not okR then
+error("sandbox: access denied loading user lib '" .. name .. "'", 2)
+end
+end
 
-        if opts.allowUserLibs then
-          local mod = require(name)
-          cache[name] = mod
-          return mod
-        end
-        --! #SEC (pentest, Sep 2026) — everyone else loads the library INSIDE
-        --! this sandbox. require(name) is the kernel loader, which compiles
-        --! the file with no environment -- the real _G -- so any package
-        --! could ship /usr/lib/x.lua beside a command that says require("x")
-        --! and have x run as the kernel: its declared capabilities, the
-        --! legacy ban and securefs all bypassed by one require. A library
-        --! now runs with exactly the authority of the code that required it,
-        --! one instance per sandbox, so it also cannot be shared and
-        --! poisoned. The first-party libraries reached this way (mouse,
-        --! printer, printerfmt) use only what a sandbox provides.
-        --! (test_sandbox_userlib_env.lua)
-        local env = envRef and envRef.env
-        if type(env) ~= "table" then
-          error("sandbox: no environment to load user lib '" .. name .. "' into", 2)
-        end
-        if loading[name] then
-          error("sandbox: circular require of '" .. name .. "'", 2)
-        end
-        local okF, kfs = pcall(require, "kernel.fs")
-        local src = okF and type(kfs) == "table" and kfs.readFile and kfs.readFile(resolved)
-        if type(src) ~= "string" then
-          error("sandbox: cannot read user lib '" .. name .. "'", 2)
-        end
-        local fn, lerr = load(src, "=" .. resolved, "t", env)
-        if not fn then
-          error("sandbox: cannot load user lib '" .. name .. "': " .. tostring(lerr), 2)
-        end
-        loading[name] = true
-        local okR, result = pcall(fn, name)
-        loading[name] = nil
-        if not okR then
-          error("sandbox: user lib '" .. name .. "' failed: " .. tostring(result), 2)
-        end
-        if result == nil then result = true end
-        cache[name] = result
-        return result
-      end
-    end
+if opts.allowUserLibs then
+local mod = require(name)
+cache[name] = mod
+return mod
+end
+--! #SEC (pentest, Sep 2026) — everyone else loads the library INSIDE
+--! this sandbox. require(name) is the kernel loader, which compiles
+--! the file with no environment -- the real _G -- so any package
+--! could ship /usr/lib/x.lua beside a command that says require("x")
+--! and have x run as the kernel: its declared capabilities, the
+--! legacy ban and securefs all bypassed by one require. A library
+--! now runs with exactly the authority of the code that required it,
+--! one instance per sandbox, so it also cannot be shared and
+--! poisoned. The first-party libraries reached this way (mouse,
+--! printer, printerfmt) use only what a sandbox provides.
+--! (test_sandbox_userlib_env.lua)
+local env = envRef and envRef.env
+if type(env) ~= "table" then
+error("sandbox: no environment to load user lib '" .. name .. "' into", 2)
+end
+if loading[name] then
+error("sandbox: circular require of '" .. name .. "'", 2)
+end
+local okF, kfs = pcall(require, "kernel.fs")
+local src = okF and type(kfs) == "table" and kfs.readFile and kfs.readFile(resolved)
+if type(src) ~= "string" then
+error("sandbox: cannot read user lib '" .. name .. "'", 2)
+end
+local fn, lerr = load(src, "=" .. resolved, "t", env)
+if not fn then
+error("sandbox: cannot load user lib '" .. name .. "': " .. tostring(lerr), 2)
+end
+loading[name] = true
+local okR, result = pcall(fn, name)
+loading[name] = nil
+if not okR then
+error("sandbox: user lib '" .. name .. "' failed: " .. tostring(result), 2)
+end
+if result == nil then result = true end
+cache[name] = result
+return result
+end
+end
 
-    error("sandbox: module '" .. name .. "' is not on the allowed list", 2)
-  end
-  return safeRequire
+error("sandbox: module '" .. name .. "' is not on the allowed list", 2)
+end
+return safeRequire
 end
 
 function sandbox.build(opts)
-  opts = opts or {}
-  local caps = opts.caps or {}
-  local session = opts.session
+opts = opts or {}
+local caps = opts.caps or {}
+local session = opts.session
 
-  local secfs = _G._TOS and _G._TOS.securefs
-  if not secfs then
-    local ok, mod = pcall(require, "kernel.securefs")
-    if ok then secfs = mod end
-  end
-  local boundFs = nil
-  if secfs and (caps["fs.read"] or caps["fs.write"]) then
-    boundFs = secfs.forSession(session)
-  end
+local secfs = _G._TOS and _G._TOS.securefs
+if not secfs then
+local ok, mod = pcall(require, "kernel.securefs")
+if ok then secfs = mod end
+end
+local boundFs = nil
+if secfs and (caps["fs.read"] or caps["fs.write"]) then
+boundFs = secfs.forSession(session)
+end
 
-  local function readOnlyFsView(fsImpl)
-    local READERS = {
-      "exists", "isDirectory", "list", "readFile", "size", "lastModified",
-      "normalize", "split", "join", "spaceTotal", "spaceUsed", "spaceFree",
-      "mounts", "home", "resolve",
-    }
-    local view = {}
-    for _, name in ipairs(READERS) do
-      local fn = fsImpl[name]
-      if type(fn) == "function" then
-        view[name] = function(...) return fn(...) end
-      end
-    end
-    if type(fsImpl.open) == "function" then
-      view.open = function(path, mode, ...)
-        mode = mode or "r"
-        if type(mode) ~= "string" or mode:find("[wa+]") then
-          return nil, "fs.write capability required"
-        end
-        return fsImpl.open(path, mode, ...)
-      end
-    end
-    return view
-  end
+local function readOnlyFsView(fsImpl)
+local READERS = {
+"exists", "isDirectory", "list", "readFile", "size", "lastModified",
+"normalize", "split", "join", "spaceTotal", "spaceUsed", "spaceFree",
+"mounts", "home", "resolve",
+}
+local view = {}
+for _, name in ipairs(READERS) do
+local fn = fsImpl[name]
+if type(fn) == "function" then
+view[name] = function(...) return fn(...) end
+end
+end
+if type(fsImpl.open) == "function" then
+view.open = function(path, mode, ...)
+mode = mode or "r"
+if type(mode) ~= "string" or mode:find("[wa+]") then
+return nil, "fs.write capability required"
+end
+return fsImpl.open(path, mode, ...)
+end
+end
+return view
+end
 
-  local printSink = nil
-  local function sandboxPrint(...)
-    local parts = {}
-    for i = 1, select("#", ...) do
-      parts[i] = tostring(select(i, ...))
-    end
-    local line = table.concat(parts, "\t")
-    if printSink then
-      printSink(line)
-    elseif opts.stdout then
-      opts.stdout(line)
-    elseif type(print) == "function" then
+local printSink = nil
+local function sandboxPrint(...)
+local parts = {}
+for i = 1, select("#", ...) do
+parts[i] = tostring(select(i, ...))
+end
+local line = table.concat(parts, "\t")
+if printSink then
+printSink(line)
+elseif opts.stdout then
+opts.stdout(line)
+elseif type(print) == "function" then
 
-      print(line)
-    end
-  end
+print(line)
+end
+end
 
-  --! On a REAL machine stringMT is nil: OpenComputers' machine.lua wraps
-  --! getmetatable so that getmetatable("") answers nil ("don't allow
-  --! messing with the string mt"). The comparison below then matched every
-  --! ABSENT field -- nil == nil -- so setmetatable refused any metatable
-  --! lacking one of __index, __newindex or __metatable, i.e. nearly all of
-  --! them: the data loot disk's data.lua, and the printer add-on's own
-  --! setmetatable(self, Printer). Off-box Lua has a real string metatable,
-  --! so no test ever saw it. Only a value that IS the string library or
-  --! its metatable is refused. (test_sandbox_setmetatable_oc.lua)
-  local stringMT = getmetatable("")
-  local realStringLib = string
-  local function refersToString(v)
-    if v == nil then return false end
-    return v == stringMT or v == realStringLib
-  end
-  local function safeGetMetatable(v)
-    if type(v) == "string" then
-      return nil
-    end
-    local mt = getmetatable(v)
-    if stringMT ~= nil and mt == stringMT then return nil end
-    return mt
-  end
-  local function safeSetMetatable(t, mt)
-    if type(t) ~= "table" then
-      error("bad argument #1 to 'setmetatable' (table expected)", 2)
-    end
-    if mt ~= nil then
-      if type(mt) ~= "table" then
-        error("bad argument #2 to 'setmetatable' (nil or table expected)", 2)
-      end
+--! On a REAL machine stringMT is nil: OpenComputers' machine.lua wraps
+--! getmetatable so that getmetatable("") answers nil ("don't allow
+--! messing with the string mt"). The comparison below then matched every
+--! ABSENT field -- nil == nil -- so setmetatable refused any metatable
+--! lacking one of __index, __newindex or __metatable, i.e. nearly all of
+--! them: the data loot disk's data.lua, and the printer add-on's own
+--! setmetatable(self, Printer). Off-box Lua has a real string metatable,
+--! so no test ever saw it. Only a value that IS the string library or
+--! its metatable is refused. (test_sandbox_setmetatable_oc.lua)
+local stringMT = getmetatable("")
+local realStringLib = string
+local function refersToString(v)
+if v == nil then return false end
+return v == stringMT or v == realStringLib
+end
+local function safeGetMetatable(v)
+if type(v) == "string" then
+return nil
+end
+local mt = getmetatable(v)
+if stringMT ~= nil and mt == stringMT then return nil end
+return mt
+end
+local function safeSetMetatable(t, mt)
+if type(t) ~= "table" then
+error("bad argument #1 to 'setmetatable' (table expected)", 2)
+end
+if mt ~= nil then
+if type(mt) ~= "table" then
+error("bad argument #2 to 'setmetatable' (nil or table expected)", 2)
+end
 
-      if refersToString(mt)
-         or refersToString(rawget(mt, "__index"))
-         or refersToString(rawget(mt, "__newindex"))
-         or refersToString(rawget(mt, "__metatable")) then
-        error("setmetatable: metatable referencing protected library denied", 2)
-      end
-    end
-    return setmetatable(t, mt)
-  end
+if refersToString(mt)
+or refersToString(rawget(mt, "__index"))
+or refersToString(rawget(mt, "__newindex"))
+or refersToString(rawget(mt, "__metatable")) then
+error("setmetatable: metatable referencing protected library denied", 2)
+end
+end
+return setmetatable(t, mt)
+end
 
-  local sandboxedStringCopy = shallowCopy(string)
+local sandboxedStringCopy = shallowCopy(string)
 
-  local safeComp, safeCompr
-  if caps["component"] then
-    safeComp  = componentFieldView(makeSafeComponent(caps))
-    safeCompr = makeSafeComputer()
-  end
-  local prebound = {}
-  if safeComp  then prebound.component = safeComp  end
-  if safeCompr then prebound.computer  = safeCompr end
+local safeComp, safeCompr
+if caps["component"] then
+safeComp  = componentFieldView(makeSafeComponent(caps))
+safeCompr = makeSafeComputer()
+end
+local prebound = {}
+if safeComp  then prebound.component = safeComp  end
+if safeCompr then prebound.computer  = safeCompr end
 
-  local envRef = {}
+local envRef = {}
 
-  local env = {
+local env = {
 
-    assert      = assert,
-    error       = error,
-    pcall       = pcall,
-    xpcall      = xpcall,
-    type        = type,
-    tostring    = tostring,
-    tonumber    = tonumber,
-    pairs       = pairs,
-    ipairs      = ipairs,
-    next        = next,
-    select      = select,
-    unpack      = table.unpack,
-    rawequal    = rawequal,
-    rawlen      = rawlen,
+assert      = assert,
+error       = error,
+pcall       = pcall,
+xpcall      = xpcall,
+type        = type,
+tostring    = tostring,
+tonumber    = tonumber,
+pairs       = pairs,
+ipairs      = ipairs,
+next        = next,
+select      = select,
+unpack      = table.unpack,
+rawequal    = rawequal,
+rawlen      = rawlen,
 
-    setmetatable = safeSetMetatable,
-    getmetatable = safeGetMetatable,
+setmetatable = safeSetMetatable,
+getmetatable = safeGetMetatable,
 
-    math        = shallowCopy(math),
-    string      = sandboxedStringCopy,
-    table       = shallowCopy(table),
-    utf8        = utf8 and shallowCopy(utf8) or nil,
-    coroutine   = shallowCopy(coroutine),
-    --! Two globals every OpenComputers program is born with (machine.lua
-    --! defines them before any OS runs) and OpenOS code leans on: unicode
-    --! for screen-width-aware strings, checkArg at the top of most library
-    --! functions. Both are pure; neither was here, so OpenOS code died on
-    --! its first unicode.len or checkArg.
-    unicode     = unicodeLib and shallowCopy(unicodeLib) or nil,
-    checkArg    = sandboxCheckArg,
+math        = shallowCopy(math),
+string      = sandboxedStringCopy,
+table       = shallowCopy(table),
+utf8        = utf8 and shallowCopy(utf8) or nil,
+coroutine   = shallowCopy(coroutine),
+--! Two globals every OpenComputers program is born with (machine.lua
+--! defines them before any OS runs) and OpenOS code leans on: unicode
+--! for screen-width-aware strings, checkArg at the top of most library
+--! functions. Both are pure; neither was here, so OpenOS code died on
+--! its first unicode.len or checkArg.
+unicode     = unicodeLib and shallowCopy(unicodeLib) or nil,
+checkArg    = sandboxCheckArg,
 
-    print       = sandboxPrint,
-    require     = makeSafeRequire(opts, prebound, envRef),
-  }
+print       = sandboxPrint,
+require     = makeSafeRequire(opts, prebound, envRef),
+}
 
-  envRef.env = env
-  env._G = env
-  env._ENV = env
-  env._VERSION = _VERSION
+envRef.env = env
+env._G = env
+env._ENV = env
+env._VERSION = _VERSION
 
-  if boundFs then
-    if caps["fs.write"] then
-      env.fs = boundFs
-    else
-      env.fs = readOnlyFsView(boundFs)
-    end
-  end
+if boundFs then
+if caps["fs.write"] then
+env.fs = boundFs
+else
+env.fs = readOnlyFsView(boundFs)
+end
+end
 
-  if caps["compat.io"] then
-    local ok, compatIo = pcall(require, "compat.io")
-    if ok then env.io = isolatedModule(compatIo) end
-    env.os = makeSafeOs()
-    local okFs, compatFs = pcall(require, "compat.filesystem")
-    if okFs then env.filesystem = isolatedModule(compatFs) end
-  end
+if caps["compat.io"] then
+local ok, compatIo = pcall(require, "compat.io")
+if ok then env.io = isolatedModule(compatIo) end
+env.os = makeSafeOs()
+local okFs, compatFs = pcall(require, "compat.filesystem")
+if okFs then env.filesystem = isolatedModule(compatFs) end
+end
 
-  if caps["legacy"] then
-    env.os = os
-    env.io = io
+if caps["legacy"] then
+env.os = os
+env.io = io
 
-    local okLog, logMod = pcall(require, "kernel.log")
-    if okLog and logMod and logMod.warn then
-      logMod.warn("sandbox", "Built env with legacy cap — full os/io exposed")
-    end
-  end
+local okLog, logMod = pcall(require, "kernel.log")
+if okLog and logMod and logMod.warn then
+logMod.warn("sandbox", "Built env with legacy cap — full os/io exposed")
+end
+end
 
-  --! A runner that hands the program an output function (the shell does:
-  --! stdout = o(line)) is saying where the program's output goes. print
-  --! always went there; io.write, io.stdout and io.stderr went to
-  --! compat.term -- straight onto the GPU -- and the shell's repaint wiped
-  --! them, so the data loot disk's base64 ran and showed nothing on either
-  --! shell (headless machine, 2026-10-09). Now all of them feed ONE line
-  --! sink, so io.write("a") print("b") keeps its order, and a last line
-  --! with no newline comes out when the runner calls sandbox.finish(env).
-  --! The program also gets its OWN default streams. compat.io keeps them
-  --! per process, and a PATH program runs inline in the shell's process, so
-  --! one program's io.output(f) used to become the shell's -- and the next
-  --! program run from it wrote into f. (test_sandbox_openos_names.lua)
-  if caps["compat.io"] and not caps["legacy"] and type(opts.stdout) == "function"
-     and type(env.io) == "table" then
-    local okB, bufferMod = pcall(require, "compat.buffer")
-    if okB and type(bufferMod) == "table" and type(bufferMod.new) == "function" then
-      local stdout, pending = opts.stdout, ""
-      local function emit(text)
-        pending = pending .. text
-        local start = 1
-        while true do
-          local nl = pending:find("\n", start, true)
-          if not nl then break end
-          stdout(pending:sub(start, nl - 1))
-          start = nl + 1
-        end
-        pending = pending:sub(start)
-      end
-      local function sinkStream()
-        return bufferMod.new("w", { write = function(_, data) emit(data) end,
-                                    close = function() end })
-      end
-      local real = env.io
-      local out, errS = sinkStream(), sinkStream()
-      local D = { input = real.stdin, output = out }
-      local function isStd(s) return s == out or s == errS or s == real.stdin end
-      local function swap(field, file, mode)
-        if type(file) == "string" then
-          local f, e = real.open(file, mode)
-          if not f then error(e, 3) end
-          file = f
-        end
-        local old = D[field]
-        if old ~= file and not isStd(old) and type(old) == "table"
-           and type(old.close) == "function" then
-          pcall(old.close, old)
-        end
-        D[field] = file
-      end
-      env.io = setmetatable({
-        stdout = out,
-        stderr = errS,
-        output = function(file) if file then swap("output", file, "w") end; return D.output end,
-        input  = function(file) if file then swap("input", file, "r") end; return D.input end,
-        write  = function(...) return D.output:write(...) end,
-        read   = function(...) return D.input:read(...) end,
-        lines  = function(path, ...)
-          if path == nil then return D.input:lines() end
-          return real.lines(path, ...)
-        end,
-        close  = function(file)
-          file = file or D.output
-          if isStd(file) then return true end
-          return file:close()
-        end,
-      }, { __index = real, __metatable = false })
-      printSink = function(line) emit(line .. "\n") end
-      finishers[env] = function()
-        if pending ~= "" then
-          local last = pending
-          pending = ""
-          stdout(last)
-        end
-      end
-    end
-  end
+--! A runner that hands the program an output function (the shell does:
+--! stdout = o(line)) is saying where the program's output goes. print
+--! always went there; io.write, io.stdout and io.stderr went to
+--! compat.term -- straight onto the GPU -- and the shell's repaint wiped
+--! them, so the data loot disk's base64 ran and showed nothing on either
+--! shell (headless machine, 2026-10-09). Now all of them feed ONE line
+--! sink, so io.write("a") print("b") keeps its order, and a last line
+--! with no newline comes out when the runner calls sandbox.finish(env).
+--! The program also gets its OWN default streams. compat.io keeps them
+--! per process, and a PATH program runs inline in the shell's process, so
+--! one program's io.output(f) used to become the shell's -- and the next
+--! program run from it wrote into f. (test_sandbox_openos_names.lua)
+if caps["compat.io"] and not caps["legacy"] and type(opts.stdout) == "function"
+and type(env.io) == "table" then
+local okB, bufferMod = pcall(require, "compat.buffer")
+if okB and type(bufferMod) == "table" and type(bufferMod.new) == "function" then
+local stdout, pending = opts.stdout, ""
+local function emit(text)
+pending = pending .. text
+local start = 1
+while true do
+local nl = pending:find("\n", start, true)
+if not nl then break end
+stdout(pending:sub(start, nl - 1))
+start = nl + 1
+end
+pending = pending:sub(start)
+end
+local function sinkStream()
+return bufferMod.new("w", { write = function(_, data) emit(data) end,
+close = function() end })
+end
+local real = env.io
+local out, errS = sinkStream(), sinkStream()
+local D = { input = real.stdin, output = out }
+local function isStd(s) return s == out or s == errS or s == real.stdin end
+local function swap(field, file, mode)
+if type(file) == "string" then
+local f, e = real.open(file, mode)
+if not f then error(e, 3) end
+file = f
+end
+local old = D[field]
+if old ~= file and not isStd(old) and type(old) == "table"
+and type(old.close) == "function" then
+pcall(old.close, old)
+end
+D[field] = file
+end
+env.io = setmetatable({
+stdout = out,
+stderr = errS,
+output = function(file) if file then swap("output", file, "w") end; return D.output end,
+input  = function(file) if file then swap("input", file, "r") end; return D.input end,
+write  = function(...) return D.output:write(...) end,
+read   = function(...) return D.input:read(...) end,
+lines  = function(path, ...)
+if path == nil then return D.input:lines() end
+return real.lines(path, ...)
+end,
+close  = function(file)
+file = file or D.output
+if isStd(file) then return true end
+return file:close()
+end,
+}, { __index = real, __metatable = false })
+printSink = function(line) emit(line .. "\n") end
+finishers[env] = function()
+if pending ~= "" then
+local last = pending
+pending = ""
+stdout(last)
+end
+end
+end
+end
 
-  if caps["component"] then
-    env.component = safeComp
-    env.computer  = safeCompr
-  end
+if caps["component"] then
+env.component = safeComp
+env.computer  = safeCompr
+end
 
-  if caps["load"] then
-    env.load = function(chunk, name, _mode, _e)
-      return load(chunk, name, "t", env)
-    end
-    env.loadstring = env.load
-  end
+if caps["load"] then
+env.load = function(chunk, name, _mode, _e)
+return load(chunk, name, "t", env)
+end
+env.loadstring = env.load
+end
 
-  if caps["notify"] then
-    local okN, nf = pcall(require, "kernel.notify")
-    if okN and nf and nf.post then
+if caps["notify"] then
+local okN, nf = pcall(require, "kernel.notify")
+if okN and nf and nf.post then
 
-      local ownIds = {}
-      env.notify = {
-        post = function(spec)
-          if type(spec) ~= "table" then return nil, "spec must be a table" end
+local ownIds = {}
+env.notify = {
+post = function(spec)
+if type(spec) ~= "table" then return nil, "spec must be a table" end
 
-          local copy = {}
-          for k, v in pairs(spec) do copy[k] = v end
-          local pkgName = opts.pkgName
-          copy.from = (type(pkgName) == "string"
-            and pkgName:match("^[%w][%w%-]*$")) and pkgName or "package"
-          local id, err = nf.post(copy)
-          if id ~= nil then ownIds[id] = true end
-          return id, err
-        end,
-        result = function(id)
-          if not ownIds[id] then return nil end
-          return nf.result(id)
-        end,
-      }
-    end
-  end
+local copy = {}
+for k, v in pairs(spec) do copy[k] = v end
+local pkgName = opts.pkgName
+copy.from = (type(pkgName) == "string"
+and pkgName:match("^[%w][%w%-]*$")) and pkgName or "package"
+local id, err = nf.post(copy)
+if id ~= nil then ownIds[id] = true end
+return id, err
+end,
+result = function(id)
+if not ownIds[id] then return nil end
+return nf.result(id)
+end,
+}
+end
+end
 
-  if caps["net"] then
-    local ok, net = pcall(require, "kernel.net")
-    if ok then
+if caps["net"] then
+local ok, net = pcall(require, "kernel.net")
+if ok then
 
-      env.net = opts.allowUserLibs and isolatedModule(net) or netFacade(net)
-    end
-  end
+env.net = opts.allowUserLibs and isolatedModule(net) or netFacade(net)
+end
+end
 
-  --! Exposes the KERNEL WRAPPER (bounded reads, timeouts, http/https only),
-  --! which is what well-behaved code and TOS's own callers should use. It
-  --! does NOT make those bounds a containment boundary: this same cap is
-  --! what unlocks the raw `internet` component type above, because an
-  --! OpenOS program doing require("internet") reaches for the card
-  --! directly and compat would be a fiction without it. The capability
-  --! grant is the boundary; the bounds are there so honest code cannot
-  --! accidentally OOM a 192 KB machine on somebody's web page.
-  if caps["internet"] then
-    local ok, inet = pcall(require, "kernel.internet")
-    if ok and inet then
-      env.internet = {
-        get      = function(url, o) return inet.get(url, o) end,
-        --! #SEC — a download lands through THIS program's securefs, and only
-        --! with fs.write. internet.download writes with the fs it is handed
-        --! and leaves vetting the path to its caller; this wrapper was that
-        --! caller and vetted nothing, so every download went through the RAW
-        --! kernel fs: any package declaring `internet` could replace
-        --! /tos/kernel/init.lua, /etc/users.dat or an /etc/rc.d script with
-        --! bytes it served, past every ACL and the protected-path guard.
-        --! `internet` is network reach; writing files is fs.write's. Only the
-        --! request options are forwarded, and `fs` is set last, so a caller
-        --! cannot hand in a filesystem of its own. (test_sandbox_internet_download.lua)
-        download = function(url, dest, o)
-          if not (caps["fs.write"] and boundFs) then
-            return false, "internet.download needs the fs.write capability"
-          end
-          local req = {}
-          if type(o) == "table" then
-            for _, k in ipairs({ "maxBytes", "timeout", "headers", "method", "body" }) do
-              req[k] = o[k]
-            end
-          end
-          req.fs = boundFs
-          return inet.download(url, dest, req)
-        end,
-        socket   = function(addr, port) return inet.socket(addr, port) end,
-        status   = function() return inet.status() end,
-        available = function() return inet.available() end,
-      }
-    end
-  end
+--! Exposes the KERNEL WRAPPER (bounded reads, timeouts, http/https only),
+--! which is what well-behaved code and TOS's own callers should use. It
+--! does NOT make those bounds a containment boundary: this same cap is
+--! what unlocks the raw `internet` component type above, because an
+--! OpenOS program doing require("internet") reaches for the card
+--! directly and compat would be a fiction without it. The capability
+--! grant is the boundary; the bounds are there so honest code cannot
+--! accidentally OOM a 192 KB machine on somebody's web page.
+if caps["internet"] then
+local ok, inet = pcall(require, "kernel.internet")
+if ok and inet then
+env.internet = {
+get      = function(url, o) return inet.get(url, o) end,
+--! #SEC — a download lands through THIS program's securefs, and only
+--! with fs.write. internet.download writes with the fs it is handed
+--! and leaves vetting the path to its caller; this wrapper was that
+--! caller and vetted nothing, so every download went through the RAW
+--! kernel fs: any package declaring `internet` could replace
+--! /tos/kernel/init.lua, /etc/users.dat or an /etc/rc.d script with
+--! bytes it served, past every ACL and the protected-path guard.
+--! `internet` is network reach; writing files is fs.write's. Only the
+--! request options are forwarded, and `fs` is set last, so a caller
+--! cannot hand in a filesystem of its own. (test_sandbox_internet_download.lua)
+download = function(url, dest, o)
+if not (caps["fs.write"] and boundFs) then
+return false, "internet.download needs the fs.write capability"
+end
+local req = {}
+if type(o) == "table" then
+for _, k in ipairs({ "maxBytes", "timeout", "headers", "method", "body" }) do
+req[k] = o[k]
+end
+end
+req.fs = boundFs
+return inet.download(url, dest, req)
+end,
+socket   = function(addr, port) return inet.socket(addr, port) end,
+status   = function() return inet.status() end,
+available = function() return inet.available() end,
+}
+end
+end
 
-  if caps["swap"] then
-    local ok, sw = pcall(require, "kernel.swap")
-    if ok and sw and sw.table then
-      env.swap = {
-        table     = function(o) return sw.table(o) end,
-        freeTable = function(p) return sw.freeTable(p) end,
-        usage     = sw.usage,
-      }
-    end
-  end
+if caps["swap"] then
+local ok, sw = pcall(require, "kernel.swap")
+if ok and sw and sw.table then
+env.swap = {
+table     = function(o) return sw.table(o) end,
+freeTable = function(p) return sw.freeTable(p) end,
+usage     = sw.usage,
+}
+end
+end
 
-  if caps["vault"] then
-    local ok, v = pcall(require, "kernel.vault")
-    if ok and v and v.encrypt and v.decrypt then
-      env.vault = {
-        encrypt     = function(plaintext, passphrase, o) return v.encrypt(plaintext, passphrase, o) end,
-        decrypt     = function(blob, passphrase) return v.decrypt(blob, passphrase) end,
-        isEncrypted = function(s) return v.isEncrypted(s) end,
-      }
-    end
-  end
+if caps["vault"] then
+local ok, v = pcall(require, "kernel.vault")
+if ok and v and v.encrypt and v.decrypt then
+env.vault = {
+encrypt     = function(plaintext, passphrase, o) return v.encrypt(plaintext, passphrase, o) end,
+decrypt     = function(blob, passphrase) return v.decrypt(blob, passphrase) end,
+isEncrypted = function(s) return v.isEncrypted(s) end,
+}
+end
+end
 
-  if caps["crypto"] then
-    local okC, kcrypto = pcall(require, "kernel.crypto")
-    if okC and kcrypto and kcrypto.hmac then
-      env.crypto = {
-        hash     = function(s) return kcrypto.hash(s) end,
-        hmac     = function(key, msg) return kcrypto.hmac(key, msg) end,
-        ctEquals = function(a, b) return kcrypto.ctEquals(a, b) end,
-        random   = function(n) return kcrypto.salt(n) end,
-      }
-      local pkgName = opts.pkgName
-      if type(pkgName) == "string" and pkgName:match("^[%w][%w%-]*$") then
-        env.crypto.secret = function()
+if caps["crypto"] then
+local okC, kcrypto = pcall(require, "kernel.crypto")
+if okC and kcrypto and kcrypto.hmac then
+env.crypto = {
+hash     = function(s) return kcrypto.hash(s) end,
+hmac     = function(key, msg) return kcrypto.hmac(key, msg) end,
+ctEquals = function(a, b) return kcrypto.ctEquals(a, b) end,
+random   = function(n) return kcrypto.salt(n) end,
+}
+local pkgName = opts.pkgName
+if type(pkgName) == "string" and pkgName:match("^[%w][%w%-]*$") then
+env.crypto.secret = function()
 
-          local sess = nil
-          local okP, procMod = pcall(require, "kernel.process")
-          if okP and procMod and procMod.currentSession then
-            sess = procMod.currentSession()
-          end
-          if not sess then
-            local usersMod = _G._TOS and _G._TOS.users
-            if not usersMod then
-              local okU, u = pcall(require, "kernel.users")
-              if okU then usersMod = u end
-            end
-            if usersMod and usersMod.currentSession then
-              sess = usersMod.currentSession()
-            end
-          end
-          local allowed = sess and (sess.isKernel or sess.isLogin
-            or (type(sess.tier) == "number" and sess.tier >= 2))
-          if not allowed then
-            return nil, "crypto.secret requires an admin session"
-          end
-          local okF, kfs = pcall(require, "kernel.fs")
-          if not okF or not kfs then return nil, "fs unavailable" end
-          local dir  = "/var/pkg/secrets"
-          local path = dir .. "/" .. pkgName
-          if kfs.exists(path) then
-            local data = kfs.readFile(path)
-            if data and #data >= 16 then return data end
-            return nil, "secret unreadable"
-          end
-          if not kfs.exists(dir) then kfs.makeDirectory(dir) end
-          local secret = kcrypto.salt(32)
-          local wOk, wErr = kfs.writeFile(path, secret)
-          if not wOk then return nil, "cannot store secret: " .. tostring(wErr) end
-          return secret
-        end
-      end
-    end
-  end
+local sess = nil
+local okP, procMod = pcall(require, "kernel.process")
+if okP and procMod and procMod.currentSession then
+sess = procMod.currentSession()
+end
+if not sess then
+local usersMod = _G._TOS and _G._TOS.users
+if not usersMod then
+local okU, u = pcall(require, "kernel.users")
+if okU then usersMod = u end
+end
+if usersMod and usersMod.currentSession then
+sess = usersMod.currentSession()
+end
+end
+local allowed = sess and (sess.isKernel or sess.isLogin
+or (type(sess.tier) == "number" and sess.tier >= 2))
+if not allowed then
+return nil, "crypto.secret requires an admin session"
+end
+local okF, kfs = pcall(require, "kernel.fs")
+if not okF or not kfs then return nil, "fs unavailable" end
+local dir  = "/var/pkg/secrets"
+local path = dir .. "/" .. pkgName
+if kfs.exists(path) then
+local data = kfs.readFile(path)
+if data and #data >= 16 then return data end
+return nil, "secret unreadable"
+end
+if not kfs.exists(dir) then kfs.makeDirectory(dir) end
+local secret = kcrypto.salt(32)
+local wOk, wErr = kfs.writeFile(path, secret)
+if not wOk then return nil, "cannot store secret: " .. tostring(wErr) end
+return secret
+end
+end
+end
+end
 
-  return env
+return env
 end
 
 function sandbox.run(src, chunkname, opts, ...)
-  local env = sandbox.build(opts)
-  local fn, err = load(src, chunkname, "t", env)
-  if not fn then
-    return false, "compile error: " .. tostring(err)
-  end
-  return pcall(fn, ...)
+local env = sandbox.build(opts)
+local fn, err = load(src, chunkname, "t", env)
+if not fn then
+return false, "compile error: " .. tostring(err)
+end
+return pcall(fn, ...)
 end
 
 function sandbox.finish(env)
-  local f = finishers[env]
-  if f then
-    finishers[env] = nil
-    pcall(f)
-  end
+local f = finishers[env]
+if f then
+finishers[env] = nil
+pcall(f)
+end
 end
 
 function sandbox.exitStatus(err)
-  if type(err) == "table" and rawget(err, EXIT_KEY) == true then
-    local code = rawget(err, "code")
-    if code == nil then return true end
-    return code
-  end
-  return nil
+if type(err) == "table" and rawget(err, EXIT_KEY) == true then
+local code = rawget(err, "code")
+if code == nil then return true end
+return code
+end
+return nil
 end
 
 function sandbox.describeEnd(ok, result)
-  if ok then
-    --! A returned string, number or boolean is shown (`run` on a one-line
-    --! `return 2 + 2` says 4). Anything else is not output: a program that
-    --! ends `return M` because it doubles as a library (the OpenOS cluster
-    --! worker setup does) printed "table: 000001ddb4ee7430" under its own
-    --! messages (headless machine, 2026-10-09). OpenOS shows neither.
-    local t = type(result)
-    if t == "string" or t == "number" or t == "boolean" then return tostring(result), false end
-    return nil
-  end
-  local code = sandbox.exitStatus(result)
-  if code == nil then return tostring(result), true end
-  if code == true or code == 0 then return nil end
-  return "exited with status " .. tostring(code), false
+if ok then
+--! A returned string, number or boolean is shown (`run` on a one-line
+--! `return 2 + 2` says 4). Anything else is not output: a program that
+--! ends `return M` because it doubles as a library (the OpenOS cluster
+--! worker setup does) printed "table: 000001ddb4ee7430" under its own
+--! messages (headless machine, 2026-10-09). OpenOS shows neither.
+local t = type(result)
+if t == "string" or t == "number" or t == "boolean" then return tostring(result), false end
+return nil
+end
+local code = sandbox.exitStatus(result)
+if code == nil then return tostring(result), true end
+if code == true or code == 0 then return nil end
+return "exited with status " .. tostring(code), false
 end
 
 return sandbox

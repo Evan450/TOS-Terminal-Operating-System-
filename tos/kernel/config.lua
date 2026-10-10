@@ -6,136 +6,136 @@ local config = {}
 local CONFIG_PATH = "/etc/tos.cfg"
 local defaults = {
 
-  device       = "computer",
-  hostname     = "tos",
+device       = "computer",
+hostname     = "tos",
 
-  compactUI    = false,
-  --! `refreshRate = 10` used to sit here, described as the "TUI refresh
-  --! target (ticks/sec)". Nothing read it, in any file, ever: the shell is
-  --! event-driven (it blocks in pullSignal and repaints on input), so there
-  --! is no frame rate to target. Removed rather than wired, because wiring
-  --! it would mean INVENTING a polling loop to make a documented knob true.
-  --! The real idle cadence is `optimize power` (kernel.power.PROFILES).
+compactUI    = false,
+--! `refreshRate = 10` used to sit here, described as the "TUI refresh
+--! target (ticks/sec)". Nothing read it, in any file, ever: the shell is
+--! event-driven (it blocks in pullSignal and repaints on input), so there
+--! is no frame rate to target. Removed rather than wired, because wiring
+--! it would mean INVENTING a polling loop to make a documented knob true.
+--! The real idle cadence is `optimize power` (kernel.power.PROFILES).
 
-  screenRes         = "auto",
-  screenColsPerBlock = 10,
-  screenRowsPerBlock = 4,
+screenRes         = "auto",
+screenColsPerBlock = 10,
+screenRowsPerBlock = 4,
 
-  --! `powerSave = false` ("Reduce refresh rate when on battery") was the
-  --! other dead knob: set on tablets at boot, read by nothing. It is now a
-  --! real profile with real consumers — the shell's idle repaint cadence,
-  --! the screen-blank timeout, and the display buffer mode. See
-  --! kernel.power.PROFILES for what each one changes and why it saves.
-  powerProfile = "balanced",
-  lowBatWarn   = 15,
-  critBatWarn  = 5,
-  showBattery  = false,
+--! `powerSave = false` ("Reduce refresh rate when on battery") was the
+--! other dead knob: set on tablets at boot, read by nothing. It is now a
+--! real profile with real consumers — the shell's idle repaint cadence,
+--! the screen-blank timeout, and the display buffer mode. See
+--! kernel.power.PROFILES for what each one changes and why it saves.
+powerProfile = "balanced",
+lowBatWarn   = 15,
+critBatWarn  = 5,
+showBattery  = false,
 
-  autoLockout  = true,
-  maxAttempts  = 5,
-  sessionTimeout = 0,
-  guestAccess  = false,
+autoLockout  = true,
+maxAttempts  = 5,
+sessionTimeout = 0,
+guestAccess  = false,
 
-  encryptComms = true,
-  listenPort   = 42,
+encryptComms = true,
+listenPort   = 42,
 
-  internet        = true,
-  internetMaxKB   = 64,
-  internetTimeout = 15,
+internet        = true,
+internetMaxKB   = 64,
+internetTimeout = 15,
 
-  headless     = false,
-  rackSlot     = 0,
-  autoServices = true,
+headless     = false,
+rackSlot     = 0,
+autoServices = true,
 
-  verbose      = false,
-  timezone     = 0,
+verbose      = false,
+timezone     = 0,
 }
 
 local active = {}
 
 function config.init(fsModule)
-  config._fs = fsModule
+config._fs = fsModule
 
-  for k, v in pairs(defaults) do
-    active[k] = v
-  end
+for k, v in pairs(defaults) do
+active[k] = v
+end
 
-  local saved = serialize.loadFile(fsModule, CONFIG_PATH)
-  if saved then
-    for k, v in pairs(saved) do
-      active[k] = v
-    end
-  end
+local saved = serialize.loadFile(fsModule, CONFIG_PATH)
+if saved then
+for k, v in pairs(saved) do
+active[k] = v
+end
+end
 
-  local component2 = require("component")
+local component2 = require("component")
 
-  local function detectProfile()
+local function detectProfile()
 
-    local tabAddr = component2.list("tablet")()
-    if tabAddr then return "tablet" end
+local tabAddr = component2.list("tablet")()
+if tabAddr then return "tablet" end
 
-    local hasGPU      = component2.list("gpu")() ~= nil
-    local hasScreen   = component2.list("screen")() ~= nil
-    local hasKeyboard = component2.list("keyboard")() ~= nil
+local hasGPU      = component2.list("gpu")() ~= nil
+local hasScreen   = component2.list("screen")() ~= nil
+local hasKeyboard = component2.list("keyboard")() ~= nil
 
-    if not hasGPU and not hasScreen and not hasKeyboard then
-      return "server"
-    end
+if not hasGPU and not hasScreen and not hasKeyboard then
+return "server"
+end
 
-    return "computer"
-  end
+return "computer"
+end
 
-  local profile = detectProfile()
-  active.device = profile
+local profile = detectProfile()
+active.device = profile
 
-  if profile == "tablet" then
-    active.showBattery = true
+if profile == "tablet" then
+active.showBattery = true
 
-    if saved == nil or saved.powerProfile == nil then
-      active.powerProfile = "save"
-    end
-  elseif profile == "server" then
-    active.headless = true
-  end
+if saved == nil or saved.powerProfile == nil then
+active.powerProfile = "save"
+end
+elseif profile == "server" then
+active.headless = true
+end
 
-  return true
+return true
 end
 
 function config.save()
-  return serialize.saveFile(config._fs, CONFIG_PATH, active)
+return serialize.saveFile(config._fs, CONFIG_PATH, active)
 end
 
 function config.get(key)
-  if active[key] ~= nil then return active[key] end
-  return defaults[key]
+if active[key] ~= nil then return active[key] end
+return defaults[key]
 end
 
 function config.set(key, value)
-  active[key] = value
+active[key] = value
 end
 
 function config.getAll()
-  local result = {}
-  for k, v in pairs(active) do
-    result[k] = v
-  end
-  return result
+local result = {}
+for k, v in pairs(active) do
+result[k] = v
+end
+return result
 end
 
 function config.isTablet()
-  return active.device == "tablet"
+return active.device == "tablet"
 end
 
 function config.isHeadless()
-  return active.headless == true
+return active.headless == true
 end
 
 function config.deviceType()
-  return active.device or "computer"
+return active.device or "computer"
 end
 
 function config.reset(key)
-  active[key] = defaults[key]
+active[key] = defaults[key]
 end
 
 config.DEFAULTS = defaults

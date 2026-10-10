@@ -29,40 +29,40 @@
 local process = {}
 
 local function currentProc()
-  local okP, procMod = pcall(require, "kernel.process")
-  if not okP or type(procMod) ~= "table" or not procMod.current then return nil end
-  local ok, cur = pcall(procMod.current)
-  if not ok then return nil end
-  return cur
+local okP, procMod = pcall(require, "kernel.process")
+if not okP or type(procMod) ~= "table" or not procMod.current then return nil end
+local ok, cur = pcall(procMod.current)
+if not ok then return nil end
+return cur
 end
 
 function process.info(levelOrThread)
-  local t = type(levelOrThread)
-  if t ~= "nil" and t ~= "number" and t ~= "thread" then
-    error("bad argument #1 (thread, number or nil expected, got " .. t .. ")", 2)
-  end
-  --! A LEVEL is accepted and IGNORED past level 1, and a thread is only
-  --! answered for when it is the running one. OpenOS walks a parent chain
-  --! of its own process records to answer "who called my caller"; our
-  --! processes are scheduler entries, and inventing a parent walk that
-  --! returned a DIFFERENT program's path would feed the path-finding use
-  --! above with the wrong answer. Level 1 (the default, and what every
-  --! measured caller passes) is exact; deeper levels return the same
-  --! record rather than a guess.
-  local cur = currentProc()
-  if not cur then return nil end
-  return {
-    path    = cur.progPath,
-    command = cur.name,
-    env     = nil,
-    data    = { vars = {} },
-  }
+local t = type(levelOrThread)
+if t ~= "nil" and t ~= "number" and t ~= "thread" then
+error("bad argument #1 (thread, number or nil expected, got " .. t .. ")", 2)
+end
+--! A LEVEL is accepted and IGNORED past level 1, and a thread is only
+--! answered for when it is the running one. OpenOS walks a parent chain
+--! of its own process records to answer "who called my caller"; our
+--! processes are scheduler entries, and inventing a parent walk that
+--! returned a DIFFERENT program's path would feed the path-finding use
+--! above with the wrong answer. Level 1 (the default, and what every
+--! measured caller passes) is exact; deeper levels return the same
+--! record rather than a guess.
+local cur = currentProc()
+if not cur then return nil end
+return {
+path    = cur.progPath,
+command = cur.name,
+env     = nil,
+data    = { vars = {} },
+}
 end
 
 function process.running(level)
-  local info = process.info(level)
-  if info then return info.path, info.env, info.command end
-  return nil
+local info = process.info(level)
+if info then return info.path, info.env, info.command end
+return nil
 end
 
 --! Kernel-only builder. sandbox.lua calls this with the program name it
@@ -77,30 +77,30 @@ end
 --! lied to itself about its path would only mislead itself -- but the
 --! uniform rule is cheaper to keep than the exception is to argue.
 function process._forProgram(name, env)
-  --! Only a path-shaped launch name becomes a path. The executor names
-  --! seat-bound processes "prog:<cmd>@<seat>" and the CLI may pass a bare
-  --! command word; neither is a path, and returning one would be the
-  --! wrong-answer failure this module exists to avoid.
-  local path = nil
-  if type(name) == "string" and name:find("/", 1, true)
-     and not name:find("^prog:") then
-    path = name
-  end
-  local bound = {}
-  function bound.info(levelOrThread)
-    local info = process.info(levelOrThread)
-    if not info then return nil end
-    info.path = path or info.path
-    info.env  = env
-    if path then info.command = path end
-    return info
-  end
-  function bound.running(level)
-    local info = bound.info(level)
-    if info then return info.path, info.env, info.command end
-    return nil
-  end
-  return bound
+--! Only a path-shaped launch name becomes a path. The executor names
+--! seat-bound processes "prog:<cmd>@<seat>" and the CLI may pass a bare
+--! command word; neither is a path, and returning one would be the
+--! wrong-answer failure this module exists to avoid.
+local path = nil
+if type(name) == "string" and name:find("/", 1, true)
+and not name:find("^prog:") then
+path = name
+end
+local bound = {}
+function bound.info(levelOrThread)
+local info = process.info(levelOrThread)
+if not info then return nil end
+info.path = path or info.path
+info.env  = env
+if path then info.command = path end
+return info
+end
+function bound.running(level)
+local info = bound.info(level)
+if info then return info.path, info.env, info.command end
+return nil
+end
+return bound
 end
 
 return process

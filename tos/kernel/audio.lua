@@ -13,10 +13,10 @@ local volume  = 1.0
 local MIN_TONE = 0.05
 
 local function tone(freq, dur)
-  if not enabled then return end
-  dur = dur * volume
-  if dur < MIN_TONE then dur = MIN_TONE end
-  pcall(computer.beep, freq, dur)
+if not enabled then return end
+dur = dur * volume
+if dur < MIN_TONE then dur = MIN_TONE end
+pcall(computer.beep, freq, dur)
 end
 
 --! #SEC L (audio.gap) — never pullSignal here: it POPS the next event (a
@@ -31,15 +31,15 @@ end
 local GAP = 0.05
 local procMod = nil
 local function gap()
-  if procMod == nil then
-    local ok, m = pcall(require, "kernel.process")
-    procMod = (ok and type(m) == "table" and type(m.pause) == "function") and m or false
-  end
-  if procMod and procMod.pause(GAP) then return end
-  local target = computer.uptime() + GAP
-  while computer.uptime() < target do
+if procMod == nil then
+local ok, m = pcall(require, "kernel.process")
+procMod = (ok and type(m) == "table" and type(m.pause) == "function") and m or false
+end
+if procMod and procMod.pause(GAP) then return end
+local target = computer.uptime() + GAP
+while computer.uptime() < target do
 
-  end
+end
 end
 
 --! Each tone PAUSES THE MACHINE for its own length: Ocelot's
@@ -54,113 +54,113 @@ end
 local COOLDOWN = 1.0
 local lastPlayed = {}
 local function allowed(name)
-  local now = computer.uptime()
-  local last = lastPlayed[name]
-  if last and now - last < COOLDOWN and now >= last then return false end
-  lastPlayed[name] = now
-  return true
+local now = computer.uptime()
+local last = lastPlayed[name]
+if last and now - last < COOLDOWN and now >= last then return false end
+lastPlayed[name] = now
+return true
 end
 
 function audio.success()
-  if not allowed("success") then return end
-  tone(1000, 0.1)
+if not allowed("success") then return end
+tone(1000, 0.1)
 end
 
 function audio.confirm()
-  if not allowed("confirm") then return end
-  tone(800, 0.08)
-  gap()
-  tone(1200, 0.1)
+if not allowed("confirm") then return end
+tone(800, 0.08)
+gap()
+tone(1200, 0.1)
 end
 
 function audio.error()
-  if not allowed("error") then return end
-  tone(300, 0.3)
+if not allowed("error") then return end
+tone(300, 0.3)
 end
 
 function audio.critical()
-  tone(400, 0.15)
-  gap()
-  tone(400, 0.15)
-  gap()
-  tone(400, 0.15)
+tone(400, 0.15)
+gap()
+tone(400, 0.15)
+gap()
+tone(400, 0.15)
 end
 
 function audio.warning()
-  if not allowed("warning") then return end
-  tone(500, 0.1)
-  gap()
-  tone(500, 0.1)
+if not allowed("warning") then return end
+tone(500, 0.1)
+gap()
+tone(500, 0.1)
 end
 
 function audio.notify()
-  if not allowed("notify") then return end
-  tone(1200, 0.06)
+if not allowed("notify") then return end
+tone(1200, 0.06)
 end
 
 function audio.shutdown()
-  if not allowed("shutdown") then return end
-  tone(800, 0.12)
-  gap()
-  tone(400, 0.15)
+if not allowed("shutdown") then return end
+tone(800, 0.12)
+gap()
+tone(400, 0.15)
 end
 
 function audio.boot()
-  if not allowed("boot") then return end
-  tone(1000, 0.15)
+if not allowed("boot") then return end
+tone(1000, 0.15)
 end
 
 function audio.bootComplete()
-  if not allowed("bootComplete") then return end
-  tone(800, 0.08)
-  gap()
-  tone(1000, 0.08)
-  gap()
-  tone(1200, 0.1)
+if not allowed("bootComplete") then return end
+tone(800, 0.08)
+gap()
+tone(1000, 0.08)
+gap()
+tone(1200, 0.1)
 end
 
 function audio.chat()
-  if not allowed("chat") then return end
-  tone(1000, 0.05)
-  gap()
-  tone(1400, 0.08)
+if not allowed("chat") then return end
+tone(1000, 0.05)
+gap()
+tone(1400, 0.08)
 end
 
 function audio.tick()
-  if not allowed("tick") then return end
-  tone(600, 0.02)
+if not allowed("tick") then return end
+tone(600, 0.02)
 end
 
 function audio.setEnabled(state)
-  enabled = state ~= false
+enabled = state ~= false
 end
 
 function audio.isEnabled()
-  return enabled
+return enabled
 end
 
 function audio.setVolume(v)
-  volume = math.max(0.1, math.min(2.0, tonumber(v) or 1.0))
+volume = math.max(0.1, math.min(2.0, tonumber(v) or 1.0))
 end
 
 function audio.getVolume()
-  return volume
+return volume
 end
 
 function audio._resetCooldown() lastPlayed = {} end
 audio.COOLDOWN = COOLDOWN
 
 function audio.init(config)
-  if config then
-    local audioEnabled = config.get("audio")
-    if audioEnabled ~= nil then
-      enabled = audioEnabled ~= false
-    end
-    local audioVolume = config.get("audioVolume")
-    if audioVolume then
-      audio.setVolume(audioVolume)
-    end
-  end
+if config then
+local audioEnabled = config.get("audio")
+if audioEnabled ~= nil then
+enabled = audioEnabled ~= false
+end
+local audioVolume = config.get("audioVolume")
+if audioVolume then
+audio.setVolume(audioVolume)
+end
+end
 end
 
 return audio
