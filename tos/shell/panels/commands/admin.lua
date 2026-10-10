@@ -161,24 +161,30 @@ return function(C, S, deps)
   -- shell is up with ~200 KB free and compiling kernel.pkg runs out;
   -- 1024 + 256 KB lists, verifies, signs and installs.
   local PKG_MIN_KB = 1280
+  -- Out of memory is said in those words, and with what the machine needs:
+  -- loading the manager, and installing (which reads, hashes and verifies
+  -- every file), both run out on a machine under PKG_MIN_KB. When the RAM
+  -- is there, what is short is FREE memory -- "needs 1280 KB; this machine
+  -- has 1280 KB" contradicted itself.
+  local function memoryHint(why, o, what)
+    local s = tostring(why)
+    if not (s:find("not enough memory", 1, true) or s:find("not enough free memory", 1, true)
+            or s:find("Out of memory", 1, true)) then return end
+    local total = math.floor((computer.totalMemory and computer.totalMemory() or 0) / 1024)
+    if total < PKG_MIN_KB then
+      o(string.format("%s needs %d KB of RAM; this machine has %d KB.", what, PKG_MIN_KB, total), T.dim)
+    else
+      o("Something else is holding the memory it needs: close other tabs or "
+        .. "programs, or reboot, and try again.", T.dim)
+    end
+  end
   C.pkg = function(args, o)
     if not adminOnly(o) then return end
     local okP, pkgMod = helpers.requireRoomy(S, "kernel.pkg", "admin")
     if not okP or not pkgMod then
       local line = helpers.loadFailure("pkg", pkgMod)
       o(line, T.error)
-      if line:find("not enough free memory", 1, true) then
-        local total = math.floor((computer.totalMemory and computer.totalMemory() or 0) / 1024)
-        -- "Needs 1280 KB; this machine has 1280 KB" contradicted itself:
-        -- with the memory there, what is short is FREE memory.
-        if total < PKG_MIN_KB then
-          o(string.format("The package manager needs %d KB of RAM; this machine has %d KB.",
-            PKG_MIN_KB, total), T.dim)
-        else
-          o("Something else is holding the memory it needs: close other tabs or "
-            .. "programs, or reboot, and try again.", T.dim)
-        end
-      end
+      memoryHint(line, o, "The package manager")
       return
     end
     local sub = args[1]
@@ -933,6 +939,7 @@ return function(C, S, deps)
           end
         else
           o("Install failed: " .. tostring(summary), T.error)
+          memoryHint(summary, o, "Installing packages")
         end
 
       elseif mode == "dir" then
@@ -941,7 +948,10 @@ return function(C, S, deps)
           { session = helpers.sessionOf(S), allowUnverified = allowUnverified,  -- #SEC CR-5
             allowUnsigned = allowUnsigned, force = force })
         if ok2 then o("Installed: " .. tostring(info), T.highlight)
-        else o("Install failed: " .. tostring(info), T.error) end
+        else
+          o("Install failed: " .. tostring(info), T.error)
+          memoryHint(info, o, "Installing packages")
+        end
 
       else  -- floppy / no-arg: prefer the full-screen picker, fall back to prompts
         -- Prefer the Optional Utilities TUI picker (the same installer

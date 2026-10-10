@@ -2656,10 +2656,18 @@ function pkg.install(srcDir, opts)
       -- the literal old expression so the common path cannot regress.
       src = fs.normalize(srcDir .. target)
     end
-    local data = fs.readFile(src)
+    local data, readErr = fs.readFile(src)
     if not data then
       -- Roll back: remove what we already wrote.
       for _, p in ipairs(copied) do pcall(fs.remove, p) end
+      --! readFile says WHY, and "missing" is only one answer. At 1 MB the
+      --! read of a 14 KB file on the floppy ran out of memory, and the
+      --! install said "missing source file" for a file that was there --
+      --! which sends a player looking for a damaged disk.
+      --! (test_pkg_read_reason.lua)
+      if fs.exists(src) then
+        return false, "cannot read source file " .. src .. ": " .. tostring(readErr or "read failed")
+      end
       return false, "missing source file: " .. src
     end
     -- #SEC CR-4 — verify before write when a hash is declared for this file.
@@ -3641,9 +3649,13 @@ function pkg.exportDisk(targetDir, opts)
       else
         local clean = true
         for _, target in ipairs(m.files or {}) do
-          local data = fs.readFile(target)  -- read the live installed file
+          local data, readErr = fs.readFile(target)  -- read the live installed file
           if not data then
-            problems[#problems + 1] = name .. ": missing installed file " .. target
+            -- As in install: a file that is there but cannot be read is not
+            -- "missing" (test_pkg_read_reason.lua).
+            problems[#problems + 1] = name .. (fs.exists(target)
+              and (": cannot read installed file " .. target .. ": " .. tostring(readErr or "read failed"))
+              or (": missing installed file " .. target))
             clean = false
           else
             -- Mirror at <pkgDir><target>: fs.join normalises the doubled
