@@ -282,6 +282,11 @@ do
   test("a table error is not mistaken for an exit", sandbox.exitStatus(eF) == nil)
   local t2, isErr2 = sandbox.describeEnd(false, "boom")
   test("a real error is still an error", t2 == "boom" and isErr2 == true)
+  test("a returned number is shown", sandbox.describeEnd(true, 4) == "4")
+  test("...and a string and a boolean",
+    sandbox.describeEnd(true, "hi") == "hi" and sandbox.describeEnd(true, false) == "false")
+  test("a returned table is not printed as an address", sandbox.describeEnd(true, {}) == nil)
+  test("...nor a function", sandbox.describeEnd(true, print) == nil)
 
   local env4 = run({ ["compat.io"] = true }, [[
     local ok, e = pcall(os.exit, 0)

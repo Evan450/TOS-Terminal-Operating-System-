@@ -20,6 +20,8 @@ import totoro.ocelot.brain.entity.CPU;
 import totoro.ocelot.brain.entity.Case;
 import totoro.ocelot.brain.entity.DataCard;
 import totoro.ocelot.brain.entity.EEPROM;
+import totoro.ocelot.brain.entity.FloppyDiskDrive;
+import totoro.ocelot.brain.entity.FloppyManaged;
 import totoro.ocelot.brain.entity.GraphicsCard;
 import totoro.ocelot.brain.entity.HDDManaged;
 import totoro.ocelot.brain.entity.InternetCard;
@@ -28,6 +30,7 @@ import totoro.ocelot.brain.entity.Memory;
 import totoro.ocelot.brain.entity.Screen;
 import totoro.ocelot.brain.entity.machine.Machine;
 import totoro.ocelot.brain.user.User;
+import totoro.ocelot.brain.util.DyeColor;
 import totoro.ocelot.brain.util.ExtendedTier;
 import totoro.ocelot.brain.util.Tier;
 import totoro.ocelot.brain.workspace.Workspace;
@@ -60,6 +63,10 @@ import totoro.ocelot.brain.workspace.Workspace;
  *   --disk-address U  the second disk's address, so an OS that mounts by
  *                   address (OpenOS: /mnt/<first 3>) puts it somewhere known
  *   --internet      add an internet card
+ *   --floppy NAME=DIR  a floppy labelled NAME over a host directory
+ *                   (repeatable). Any floppy adds one disk drive; TOS
+ *                   mounts a labelled disk at /mnt/NAME
+ *   --floppy-in NAME   the floppy in the drive at power-on (default: none)
  *   --script FILE   drive the machine: see runScript for the steps
  *   --trace         write every distinct screen to frames.txt
  *
@@ -79,6 +86,13 @@ public class HeadlessTOS {
   static boolean flag(String[] args, String name) {
     for (String a : args) if (a.equals(name)) return true;
     return false;
+  }
+
+  /** Every value of a repeatable option, in order. */
+  static List<String> opts(String[] args, String name) {
+    List<String> out = new ArrayList<>();
+    for (int i = 0; i + 1 < args.length; i++) if (args[i].equals(name)) out.add(args[i + 1]);
+    return out;
   }
 
   /** The screen's text, one line per row, trailing blanks trimmed. */
@@ -158,6 +172,25 @@ public class HeadlessTOS {
   static Screen screen;
   static Machine machine;
   static Workspace ws;
+  // The disk drive and the floppies a script can swap through it, by name.
+  static FloppyDiskDrive floppyDrive;
+  static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
+
+  /**
+   * A floppy labelled `name` over host directory `dir`, at an address fixed
+   * by its name -- the same floppy on every run, and every re-insert, as a
+   * real one would be.
+   */
+  static FloppyManaged floppy(String name, Path dir) {
+    FloppyManaged f = new FloppyManaged(Option.apply(name), DyeColor.Gray());
+    f.address_$eq(Option.apply(
+        UUID.nameUUIDFromBytes(("tos-headless-floppy:" + name).getBytes(StandardCharsets.UTF_8)).toString()));
+    f.customRealPath_$eq(Option.apply(dir));
+    // The constructor's Option is not the label; this is (and TOS mounts a
+    // labelled disk at /mnt/<label>).
+    f.label().setLabel(name);
+    return f;
+  }
 
   static ExtendedTier.ExtendedTierVal stick(String kb) {
     switch (kb.trim()) {
@@ -181,7 +214,7 @@ public class HeadlessTOS {
   }
 
   static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram,
-                    String bootTier, String diskAddress) {
+                    String bootTier, String diskAddress, List<String> floppySpecs, String floppyIn) {
     boolean t1 = profile.equals("t1");
     String[] sticks = (ram != null ? ram : t1 ? "192" : "1024,1024").split(",");
     if (sticks.length > 2) throw new IllegalArgumentException("at most two memory sticks");
@@ -226,6 +259,25 @@ public class HeadlessTOS {
     Keyboard keyboard = ws.add(new Keyboard());
     pc.connect(screen);
     screen.connect(keyboard);
+
+    // A disk drive beside the case, as in the world: the floppies are swapped
+    // through it by the script's `eject` / `insert NAME` steps.
+    if (!floppySpecs.isEmpty()) {
+      floppyDrive = ws.add(new FloppyDiskDrive());
+      pc.connect(floppyDrive);
+      for (String spec : floppySpecs) {
+        int eq = spec.indexOf('=');
+        if (eq <= 0) throw new IllegalArgumentException("--floppy takes NAME=DIR: " + spec);
+        String name = spec.substring(0, eq);
+        floppies.put(name, floppy(name, Paths.get(spec.substring(eq + 1)).toAbsolutePath()));
+        System.out.println("[headless] floppy " + name + " " + floppies.get(name).address().get());
+      }
+      if (floppyIn != null) {
+        FloppyManaged f = floppies.get(floppyIn);
+        if (f == null) throw new IllegalArgumentException("--floppy-in names no --floppy: " + floppyIn);
+        floppyDrive.inventory().apply(0).put(f);
+      }
+    }
 
     machine = pc.machine();
     System.out.println("[headless] profile " + profile + ", RAM " + String.join("+", sticks)
@@ -301,6 +353,8 @@ public class HeadlessTOS {
    *                       cell's colours to snap-NAME.colors
    *   off SECS            until the machine powers itself off
    *   powercycle          the power button, off then on: an UNCLEAN stop
+   *   eject               take the floppy out of the disk drive
+   *   insert NAME         put floppy NAME (a --floppy) in the drive
    *
    * Every step prints a "[step]" line with its time, which is how a
    * measurement ("how long does pkg sign take on a T1") comes back.
@@ -449,6 +503,20 @@ public class HeadlessTOS {
           if (!running && everRan) done = true;
           else if (inStep > secs) failure = String.format("off timed out after %.0fs", secs);
           break;
+        case "eject":
+          if (floppyDrive == null) { failure = "eject: no --floppy, so no disk drive"; break; }
+          floppyDrive.inventory().apply(0).remove();
+          done = true;
+          break;
+        case "insert": {
+          if (floppyDrive == null) { failure = "insert: no --floppy, so no disk drive"; break; }
+          FloppyManaged f = w.length > 1 ? floppies.get(w[1]) : null;
+          if (f == null) { failure = "insert: no --floppy named " + (w.length > 1 ? w[1] : "(none)"); break; }
+          if (floppyDrive.inventory().apply(0).nonEmpty()) { failure = "insert: the drive is not empty (eject first)"; break; }
+          floppyDrive.inventory().apply(0).put(f);
+          done = true;
+          break;
+        }
         case "powercycle":
           if (phase == 0) { machine.stop(); phase = 1; }
           else if (phase == 1 && !running) { machine.start(); phase = 2; }
@@ -506,7 +574,7 @@ public class HeadlessTOS {
     if (boot == null || biosFile == null || workDir == null) {
       System.err.println("usage: HeadlessTOS --boot DIR --bios FILE --work DIR [--disk DIR]"
           + " [--timeout SECS] [--config FILE] [--profile t3|t1] [--ram KB[,KB]] [--boot-tier N]"
-          + " [--disk-address UUID] [--internet]"
+          + " [--disk-address UUID] [--internet] [--floppy NAME=DIR]... [--floppy-in NAME]"
           + " [--script FILE] [--trace]");
       System.exit(64);
     }
@@ -532,7 +600,8 @@ public class HeadlessTOS {
 
     ws = new Workspace(work.resolve("ws"));
     build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null),
-        opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null));
+        opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null),
+        opts(args, "--floppy"), opt(args, "--floppy-in", null));
     System.out.println("[headless] power on: " + (machine.start() ? "ok" : "refused"));
 
     int code = script != null ? runScript(Paths.get(script), timeout, work) : runUntilOff(timeout, work);

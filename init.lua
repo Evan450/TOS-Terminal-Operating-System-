@@ -435,8 +435,8 @@ _G._TOS = {
   build      = "source",
   variant    = "source",
   bootFS     = bootFS,
-  -- #REV (#8) — the boot filesystem's component address. The shell's
-  -- auto-mount gate (shell.panels autoMount, #SEC H26) refuses to mount
+  -- #REV (#8) — the boot filesystem's component address. The
+  -- auto-mount gate (kernel.diskmount, #SEC H26) refuses to mount
   -- anything until this is set (fail-closed so an inserted disk can't
   -- shadow the boot FS). It was NEVER set, so EVERY inserted floppy was
   -- silently refused ("inserting a disk does nothing"). Set it here from

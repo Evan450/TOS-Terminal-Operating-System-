@@ -92,6 +92,36 @@ do
   eq("TOS with compat still reads as TOS", "tos", (M.classify(tosCompat)))
 end
 
+do
+  -- What the setup actually sees when someone runs it ON TOS: a sandboxed
+  -- program, so no _TOS and no kernel.* -- but TOS answers the OpenOS names
+  -- (term, shell, filesystem) to sandboxed programs, and require("compat")
+  -- is TOS's loader. Counted naively that is 1 TOS hit against 3 OpenOS
+  -- ones, and it read as OpenOS (headless machine, 2026-10-09).
+  local sandboxed = { tosKernel = true, tosCompat = true,
+                      ooFilesystem = true, ooShell = true, ooTerm = true }
+  local os4, _, r4 = M.classify(sandboxed)
+  eq("TOS seen from inside its sandbox is tos", "tos", os4)
+  test("...and says why the OpenOS names were not counted",
+    table.concat(r4, "\n"):find("compat layer", 1, true) ~= nil)
+  -- A real OpenOS box has no TOS compat loader, so nothing is discounted.
+  local env = M.probeEnvironment({
+    hasModule = function(n) return n == "filesystem" or n == "shell" or n == "term" end,
+    hasGlobal = function() return false end,
+    hasPath = function(p) return p == "/lib/core/boot.lua" end,
+    hasCompatLoader = function() return false end,
+  })
+  eq("OpenOS without a compat loader is still openos", "openos", (M.classify(env)))
+  local env2 = M.probeEnvironment({
+    hasModule = function(n) return n == "filesystem" or n == "shell" or n == "term" end,
+    hasGlobal = function() return false end,
+    hasPath = function(p) return p == "/tos/kernel/init.lua" end,
+    hasCompatLoader = function() return true end,
+  })
+  test("probeEnvironment reports the compat loader", env2.tosCompat == true)
+  eq("...and the sandboxed TOS probe reads as tos", "tos", (M.classify(env2)))
+end
+
 -- The refusal message is the whole point of the feature.
 do
   local _, _, reasons = M.classify(TOS)

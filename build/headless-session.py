@@ -12,6 +12,7 @@ answers off the real screen.
     python TOS-Dev/build/headless-session.py SCRIPT [--profile t3|t1]
         [--ram KB[,KB]] [--disk DIR] [--put PATH=TEXT] [--timeout SECS]
         [--os tos|openos] [--install-disk] [--boot-tier N]
+        [--floppy NAME=DIR]... [--floppy-in NAME]
         [--trace] [--keep] [--internet]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
@@ -19,7 +20,8 @@ A script is one step per line (HeadlessTOS.java's runScript lists them):
 `wait SECS REGEX`, `gone SECS REGEX`, `maybe SECS REGEX` (run the next step
 only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 (ctrl+q, f10, up, ...), `paste TEXT`, `click X Y`, `sleep SECS`, `mark NAME`,
-`snap NAME`, `off SECS`, `powercycle`. Two more are expanded here:
+`snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`. Two more are
+expanded here:
 
     firstboot [PASSWORD]   set root's password at First Boot Setup, skip the
                            tutorial, and wait for the shell prompt
@@ -30,6 +32,12 @@ Every round boots a FRESH copy of TOS-Release (unarmed: no battery), with
 --disk copied in as a second disk at a fixed address, so TOS mounts it at
 /mnt/disk_5e55 and a script can type paths on it. --profile t1 is a T1 CPU, GPU and screen
 on one stick (192K unless --ram says otherwise) with no data card.
+
+--floppy NAME=DIR (repeatable) adds a disk drive beside the case and a
+floppy labelled NAME over a copy of DIR; TOS mounts a labelled disk at
+/mnt/NAME. --floppy-in NAME is the one in the drive at power-on, and a
+script swaps them with `eject` and `insert NAME` -- the multi-floppy
+install flows, which a fixed second disk cannot reach.
 
 --os openos boots OpenOS instead -- the copy inside Ocelot's jar, with
 OpenComputers' own Lua BIOS -- which is where a player installs TOS from.
@@ -156,6 +164,37 @@ def stage(run: Path, release: Path, disk: Path | None,
     return boot, staged, work
 
 
+FLOPPY_NAME = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
+
+
+def stage_floppies(run: Path, specs: list[str], floppy_in: str | None) -> list[str]:
+    """Copy each NAME=DIR floppy into the run and return the runner's args.
+
+    A copy, like --disk: a session writes to its floppies (an install
+    stages, a picker leaves a marker), and the source folder -- often the
+    published pack -- must come back untouched.
+    """
+    out: list[str] = []
+    names: set[str] = set()
+    for spec in specs:
+        name, sep, src = spec.partition("=")
+        if not sep or not FLOPPY_NAME.match(name):
+            raise ValueError(f"--floppy takes NAME=DIR with a plain NAME: {spec!r}")
+        if name in names:
+            raise ValueError(f"--floppy {name} given twice")
+        if not Path(src).is_dir():
+            raise ValueError(f"--floppy {name}: no directory at {src}")
+        names.add(name)
+        dest = run / "floppies" / name
+        shutil.copytree(src, dest)
+        out += ["--floppy", f"{name}={dest}"]
+    if floppy_in is not None:
+        if floppy_in not in names:
+            raise ValueError(f"--floppy-in {floppy_in}: no --floppy by that name")
+        out += ["--floppy-in", floppy_in]
+    return out
+
+
 def stage_openos(run: Path, jar: Path) -> tuple[Path, Path, Path]:
     """A fresh OpenOS boot disk from the jar's loot copy: (boot, work, bios)."""
     import zipfile
@@ -203,6 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
     ap.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    ap.add_argument("--floppy", action="append", metavar="NAME=DIR",
+                    help="a floppy labelled NAME over a copy of DIR, swapped through a disk "
+                         "drive by the script's `eject` / `insert NAME` steps; TOS mounts it "
+                         "at /mnt/NAME (repeatable)")
+    ap.add_argument("--floppy-in", metavar="NAME", help="the floppy in the drive at power-on")
     ap.add_argument("--ocelot", help="Ocelot Desktop's jar, or the folder holding it")
     ap.add_argument("--java", help="the java to run the machine on")
     ap.add_argument("--javac", help="the javac to compile the runner with")
@@ -248,6 +292,12 @@ def main(argv: list[str] | None = None) -> int:
         shutil.rmtree(run, ignore_errors=True)
         print(f"error: {e}", file=sys.stderr)
         return 1
+    try:
+        floppy_args = stage_floppies(run, args.floppy or [], args.floppy_in)
+    except ValueError as e:
+        shutil.rmtree(run, ignore_errors=True)
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     (work / "script.txt").write_text("\n".join(steps) + "\n", encoding="utf-8")
     config = Path(args.config) if args.config else jar.parent / "OpenComputers.conf"
     cmd = [java, "-Xmx1G", "-cp", f"{classes}{os.pathsep}{jar}", "HeadlessTOS",
@@ -267,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
         cmd += ["--config", str(work / "OpenComputers.conf")]
     if args.internet:
         cmd.append("--internet")
+    cmd += floppy_args
     if args.trace:
         cmd.append("--trace")
     stamp = hs.build_stamp(hs.RELEASE)

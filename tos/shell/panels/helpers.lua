@@ -113,6 +113,44 @@ function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
   else o(text, T.dim) end
 end
 
+--- The name to give a disk from a fs.mounts() entry. Once a disk is
+--- removed its component is gone, getLabel() fails and the entry reads
+--- "Unnamed" -- so an ejected floppy labelled disk1 was announced as
+--- `Disk removed: "Unnamed"`. The mount point was named from the label
+--- when it mounted (/mnt/disk1), so it still says which disk it was.
+function M.diskName(m)
+  local label = type(m) == "table" and m.label or nil
+  if type(label) == "string" and label ~= "" and label ~= "Unnamed" then return label end
+  local mp = type(m) == "table" and m.mountPoint or nil
+  local leaf = type(mp) == "string" and mp:match("([^/]+)/*$") or nil
+  return leaf or "disk"
+end
+
+--- Say on the shell's output row that a disk arrived or left. `kind` is
+--- "added" or "removed"; mntPath and label are what the kernel's
+--- tos_disk_added / tos_disk_removed carry. Returns true when it said
+--- something. An insert is classified (helpers.classifyDisk) so the line
+--- names the one useful next step.
+--! The disk is newer news than whatever result is up. A multi-line output
+--! block (S.outLines) wins over lastOut when the shell draws, so after
+--! `pkg make-disk` -- three lines of output -- ejecting and re-inserting
+--! the disk said nothing at all (headless machine, 2026-10-09).
+--! (test_disk_announce.lua)
+function M.announceDisk(S, F, kind, mntPath, label)
+  if type(mntPath) ~= "string" then return false end
+  local T = S.T
+  S.outLines = nil
+  if kind == "added" then
+    local info = M.classifyDisk(F, mntPath)
+    local msg = string.format('%s: "%s" -> %s', info.desc, label or "disk", mntPath)
+    if info.hint then msg = msg .. "   " .. info.hint end
+    S.lastOut = { msg, T.highlight }
+  else
+    S.lastOut = { 'Disk removed: "' .. M.diskName({ label = label, mountPoint = mntPath }) .. '"', T.dim }
+  end
+  return true
+end
+
 function M.fmtSz(sz)
   if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
   if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end
@@ -1053,6 +1091,10 @@ end
 --! 2026), so a TBFS volume labelled "../../var/pkg/secrets" went wherever
 --! its author said when an admin mounted it. (test_mount_points.lua)
 function M.safeMountName(raw, addr)
+  -- The kernel mounts every disk by this rule (kernel.diskmount); the copy
+  -- below is only for a machine where that module did not load.
+  local okD, dm = pcall(require, "kernel.diskmount")
+  if okD and type(dm) == "table" and dm.sanitizeLabel then return dm.sanitizeLabel(raw, addr) end
   local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
   if type(raw) ~= "string" then return fallback end
   local cleaned = raw:gsub("[^%w_%- ]", "_")

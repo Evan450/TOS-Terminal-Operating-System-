@@ -152,6 +152,30 @@ test("non-admin error mentions privilege", true,
   type(gErr) == "string" and gErr:find("privileg", 1, true) ~= nil)
 
 print()
+-- ...and nothing tells the operator to run the installer that is not there.
+-- `pkg make-disk` finished with "insert the disk and run <target>/install.lua"
+-- for months after the picker left the disks, and MANUAL 7.1 and pkg.man
+-- still said make-disk wrote one (headless machine, 2026-10-09).
+do
+  local function slurp(p)
+    for _, pre in ipairs({ "", "../", "TOS-Dev/" }) do
+      local h = io.open(pre .. p, "rb")
+      if h then local s = h:read("*a"); h:close(); return s end
+    end
+    return ""
+  end
+  local admin = slurp("tos/shell/panels/commands/admin.lua")
+  local block = admin:match('sub == "make%-disk".-elseif sub == "enable"') or ""
+  test("make-disk's advice names `pkg install`", true, block:find("pkg install", 1, true) ~= nil)
+  test("...and no install.lua", nil, block:find('"/install.lua"', 1, true))
+  local man = slurp("usr/man/pkg.man")
+  test("pkg.man no longer says make-disk ships a picker", nil,
+    (man:match("make%-disk <mount> %[name %.%.%.%]%s+Build.-uninstall <name>") or "?install.lua"):find("install.lua", 1, true))
+  local manual = slurp("MANUAL.md")
+  test("MANUAL 7.1 no longer says make-disk writes install.lua", nil,
+    (manual:match("`pkg make%-disk <mount> %[name…%]`.-Targets") or ""):find("install.lua", 1, true))
+end
+
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")

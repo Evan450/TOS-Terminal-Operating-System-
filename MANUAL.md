@@ -970,9 +970,10 @@ v1.3.1; the `mod` command has since been removed too — its `enable`/`disable`/
   called `pkg`. (`install-dir`/`from-floppy` still work as hidden aliases.)
 - `pkg make-disk <mount> [name…]` — build an **Optional Utilities disk** from
   your installed add-ons, in-TOS (parity with `deploy`, which builds a whole-OS
-  image). Writes one package dir per add-on plus a self-contained picker
-  `install.lua`, so you can carry your add-on set to another TOS machine with no
-  dev box. Name args limit the export; omit to include every add-on. Targets
+  image). Writes one package dir per add-on plus the set manifest, so you can
+  carry your add-on set to another TOS machine with no dev box: insert it there
+  and run `pkg install` (the picker is part of TOS, not of the disk). Name args
+  limit the export; omit to include every add-on. Targets
   removable media only (system paths are refused).
 - `pkg uninstall <name>`.
 

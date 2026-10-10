@@ -1825,7 +1825,13 @@ end
 --- other status is reported, dimly, as a status rather than as an error.
 function sandbox.describeEnd(ok, result)
   if ok then
-    if result ~= nil then return tostring(result), false end
+    --! A returned string, number or boolean is shown (`run` on a one-line
+    --! `return 2 + 2` says 4). Anything else is not output: a program that
+    --! ends `return M` because it doubles as a library (the OpenOS cluster
+    --! worker setup does) printed "table: 000001ddb4ee7430" under its own
+    --! messages (headless machine, 2026-10-09). OpenOS shows neither.
+    local t = type(result)
+    if t == "string" or t == "number" or t == "boolean" then return tostring(result), false end
     return nil
   end
   local code = sandbox.exitStatus(result)

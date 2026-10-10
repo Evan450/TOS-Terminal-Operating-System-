@@ -145,28 +145,71 @@ end
 -- File operations
 -- ============================================================
 
+--! A mount point's PARENTS exist whether or not the disk below has them.
+--! TOS mounts a disk at /mnt/<label> without creating /mnt on the boot
+--! disk, so /mnt was a directory nobody could see: `ls /mnt` said "no such
+--! file" with two floppies mounted under it (headless machine,
+--! 2026-10-09), and the file browser and `cd` agreed. OpenOS shows mount
+--! paths as directories; so does this, by answering for every proper
+--! ancestor of a mount point and listing the mount names among what the
+--! disk below really holds. (test_fs_mount_parents.lua)
+--- The names of the mount points directly under `path` ("disk1/" ...),
+--- as a set; nil when there are none.
+local function mountChildren(path)
+  local norm = fs.normalize(path)
+  if not norm then return nil end
+  local prefix = norm == "/" and "/" or norm .. "/"
+  local out = nil
+  for mp in pairs(mounts) do
+    if mp ~= norm and #mp > #prefix and mp:sub(1, #prefix) == prefix then
+      local child = mp:sub(#prefix + 1):match("^[^/]+")
+      if child then
+        out = out or {}
+        out[child .. "/"] = true
+      end
+    end
+  end
+  return out
+end
+
 function fs.exists(path)
   local proxy, rel = resolve(path)
   if not proxy then return false end
   local ok, result = pcall(proxy.exists, rel)
-  if not ok then return false end
-  return result
+  if ok and result then return result end
+  return mountChildren(path) ~= nil
 end
 
 function fs.isDirectory(path)
   local proxy, rel = resolve(path)
   if not proxy then return false end
   local ok, result = pcall(proxy.isDirectory, rel)
-  if not ok then return false end
-  return result
+  if ok and result then return result end
+  return mountChildren(path) ~= nil
 end
 
 function fs.list(path)
   local proxy, rel = resolve(path)
   if not proxy then return {} end
   local ok, result = pcall(proxy.list, rel)
-  if not ok then return {} end
-  return result or {}
+  if not ok or type(result) ~= "table" then result = {} end
+  local extra = mountChildren(path)
+  if extra then
+    -- A copy, then the mount names the disk below does not already list.
+    local merged, seen = {}, {}
+    for _, name in ipairs(result) do
+      merged[#merged + 1] = name
+      seen[(tostring(name):gsub("/$", ""))] = true
+    end
+    local add = {}
+    for name in pairs(extra) do
+      if not seen[(name:gsub("/$", ""))] then add[#add + 1] = name end
+    end
+    table.sort(add)
+    for _, name in ipairs(add) do merged[#merged + 1] = name end
+    return merged
+  end
+  return result
 end
 
 --! CREATES PARENTS. The layer below does not, on any backend TOS runs on.

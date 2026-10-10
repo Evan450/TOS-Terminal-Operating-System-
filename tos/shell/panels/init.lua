@@ -122,55 +122,6 @@ function M.run(ctx)
   local widgetDefs = widgetsMod.makeWidgetDefs(S)
   pcall(widgetsMod.loadCustomWidgets, S, widgetDefs)
 
-  -- ── Auto-mount helper ──
-  -- Labels are attacker-controllable (any player with a filesystem can
-  -- set one to "../etc") so strip traversal bytes before the /mnt/ join.
-  -- On collision, suffix with an address stub so two disks can't silently
-  -- overwrite the same mount point.
-  -- One sanitiser for every mount a label names (helpers.safeMountName).
-  local function sanitizeMountLabel(raw, addr) return helpers.safeMountName(raw, addr) end
-  local function autoMount(addr)
-    local ok, px = pcall(component.proxy, addr)
-    if not ok or not px then return nil, nil end
-    -- #SEC H26 — refuse to auto-mount the BOOT filesystem under /mnt.
-    -- Without this gate, a freshly-attached disk OR an undefined bootAddr
-    -- (early hot-plug, or shell loading before the kernel finished
-    -- setting _TOS.bootAddr) could shadow the boot FS at /mnt/<label>
-    -- and bypass securefs's protected paths. Fail closed when the boot
-    -- address is unknown.
-    local bootAddr = _G._TOS and _G._TOS.bootAddr
-    if not bootAddr then
-      -- We can't tell which disk is the boot disk — refuse to mount
-      -- anything from auto-mount until init has set bootAddr. The
-      -- operator can still mount explicitly via `mount` command which
-      -- is admin-gated.
-      return nil, nil
-    end
-    if addr == bootAddr then
-      return nil, nil  -- never mount the boot drive under /mnt
-    end
-    local lbl     = (px.getLabel and px.getLabel()) or nil
-    local mntName = sanitizeMountLabel(lbl, addr)
-    local mntPath = "/mnt/" .. mntName
-    if S.F.exists(mntPath) then
-      mntPath = mntPath .. "_" .. addr:sub(1, 4)
-      -- If even the address-stubbed path collides (rare: same label AND
-      -- same 4-char prefix), walk an integer suffix until we land on a
-      -- free slot instead of mounting atop an existing entry.
-      local n = 2
-      local candidate = mntPath
-      while S.F.exists(candidate) and n < 100 do
-        candidate = mntPath .. "_" .. n
-        n = n + 1
-      end
-      mntPath = candidate
-    end
-    if not S.F.exists("/mnt") then pcall(S.F.makeDirectory, "/mnt") end
-    if not S.F.exists(mntPath) then pcall(S.F.makeDirectory, mntPath) end
-    S.F.mount(mntPath, px)
-    return mntPath, lbl or mntName
-  end
-
   -- ── Build command table ──
   local C = commandsMod.build(S, {
     rp             = function(p) return helpers.resolvePath(S, p) end,
@@ -245,7 +196,6 @@ function M.run(ctx)
   local result = eventsMod.run(S, {
     C              = C,
     exec           = exec,
-    autoMount      = autoMount,
     makeProgramEnv = makeProgramEnv,
     widgetDefs     = widgetDefs,
   })

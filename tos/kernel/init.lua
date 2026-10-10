@@ -14,6 +14,7 @@ local shuttingDown = false
 
 -- Sub-modules (loaded during boot)
 local log, hal, event, proc, fs, display
+local diskmount   -- nil when kernel.diskmount could not load
 
 -- Per-display Monitor HOST: display index → pid of a shell that hosts the
 -- System Monitor as a full-screen TAB (the panels shell registers via
@@ -118,54 +119,24 @@ function kernel.boot(opts)
   fs = require("kernel.fs")
   fs.init(opts.bootFS)
 
-  -- Sanitize a disk's user-supplied label into a safe mount-point name.
-  -- Labels are attacker-controllable (any player with a filesystem can
-  -- set one to "../etc" or "../../tos") so we MUST strip path separators
-  -- and traversal sequences before joining into /mnt/<label>. Fallback
-  -- to an address-derived stub if sanitization leaves nothing usable.
-  local function sanitizeLabel(raw, addr)
-    local fallback = "disk_" .. addr:sub(1, 4)
-    if type(raw) ~= "string" then return fallback end
-    -- Keep only alphanumerics, underscore, hyphen, and space. Any other
-    -- byte (including "/", "\\", ".", control chars, UTF-8) becomes "_".
-    local cleaned = raw:gsub("[^%w_%- ]", "_")
-    -- Collapse runs of whitespace/underscores and trim.
-    cleaned = cleaned:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if cleaned == "" then return fallback end
-    -- Length cap: keep mount paths short and predictable.
-    if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
-    -- Refuse labels that would shadow a system directory even after
-    -- the /mnt/ prefix is applied.
-    if cleaned == "." or cleaned == ".." then return fallback end
-    return cleaned
-  end
-
-  -- Auto-mount additional filesystems
-  local fsList = hal.list("filesystem")
+  -- Auto-mount additional filesystems at /mnt/<label>. kernel.diskmount
+  -- holds the label rule (labels are attacker-controllable) and mounts
+  -- hot-plugged disks the same way, from the component_added listener
+  -- below, whatever holds the seat.
   local bootAddr = opts.bootFS and opts.bootFS.address
-  local usedMountPoints = {}
-  for _, entry in ipairs(fsList) do
-    if entry.address ~= bootAddr then
-      local rawLabel
-      if entry.proxy then
-        -- getLabel can error on some proxies; always pcall.
-        local okL, lbl = pcall(entry.proxy.getLabel)
-        if okL then rawLabel = lbl end
+  local okDM, diskmountMod = pcall(require, "kernel.diskmount")
+  if okDM and type(diskmountMod) == "table" then
+    diskmount = diskmountMod
+    diskmount.init({ fs = fs, log = log, bootAddr = bootAddr })
+    for _, entry in ipairs(hal.list("filesystem")) do
+      if entry.address ~= bootAddr then
+        if not entry.proxy then entry.proxy = component.proxy(entry.address) end
+        diskmount.mount(entry.address, entry.proxy)
       end
-      local label = sanitizeLabel(rawLabel, entry.address)
-      local mountPoint = "/mnt/" .. label
-      -- De-dup: if two disks sanitize to the same name, suffix with the
-      -- address stub so each gets its own mount point.
-      if usedMountPoints[mountPoint] then
-        mountPoint = mountPoint .. "_" .. entry.address:sub(1, 4)
-      end
-      usedMountPoints[mountPoint] = true
-      if not entry.proxy then
-        entry.proxy = component.proxy(entry.address)
-      end
-      fs.mount(mountPoint, entry.proxy)
-      log.info("kernel", "Mounted " .. entry.address:sub(1, 8) .. " at " .. mountPoint)
     end
+  else
+    log.warn("kernel", "Disk mounting unavailable (" .. tostring(diskmountMod)
+      .. "): only the boot disk is mounted")
   end
 
   -- Ensure core directories exist
@@ -473,6 +444,15 @@ function kernel.boot(opts)
     if SEAT_COMPONENT_TYPES[ctype] then
       event.push("tos_seat_changed", "added", ctype, addr)
     end
+    -- A disk is mounted HERE, whatever holds the seat (kernel.diskmount
+    -- says why), and the shells are told so they can announce it.
+    if ctype == "filesystem" and diskmount then
+      local okP, px = pcall(component.proxy, addr)
+      if okP and px then
+        local mp, label = diskmount.mount(addr, px)
+        if mp then event.push("tos_disk_added", addr, mp, label) end
+      end
+    end
   end, "kernel")
 
   event.on("component_removed", function(_, addr, ctype)
@@ -480,6 +460,10 @@ function kernel.boot(opts)
     log.info("hotplug", "Removed: " .. ctype .. " [" .. addr:sub(1, 8) .. "]")
     if SEAT_COMPONENT_TYPES[ctype] then
       event.push("tos_seat_changed", "removed", ctype, addr)
+    end
+    if ctype == "filesystem" and diskmount then
+      local mp, label = diskmount.unmount(addr)
+      if mp then event.push("tos_disk_removed", addr, mp, label) end
     end
   end, "kernel")
 

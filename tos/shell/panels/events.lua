@@ -63,7 +63,7 @@ local function pullSignal()
   return require("computer").pullSignal(0.1)
 end
 
---- deps = { C, exec, autoMount, makeProgramEnv, widgetDefs }
+--- deps = { C, exec, makeProgramEnv, widgetDefs }
 function M.run(S, deps)
   local D, T, F = S.D, S.T, S.F
   local K, E = S.K, S.E
@@ -72,7 +72,6 @@ function M.run(S, deps)
   local tier = S.tier
   local C = deps.C
   local exec = deps.exec
-  local autoMount = deps.autoMount
   local makeProgramEnv = deps.makeProgramEnv
   local widgetDefs = deps.widgetDefs
 
@@ -694,7 +693,14 @@ function M.run(S, deps)
                   end
                   return false
                 end
-                if willRunProgram(first) then
+                -- ...and for a builtin the registry marks `slow` (pkg, srm,
+                -- find...), which can sit for seconds verifying or walking.
+                local function slowBuiltin(name)
+                  local okR, reg = pcall(require, "shell.panels.commands")
+                  local e = okR and reg and reg.entry and reg.entry(name)
+                  return type(e) == "table" and e.slow == true
+                end
+                if willRunProgram(first) or slowBuiltin(first) then
                   drawOutRow("Running " .. first .. "\226\128\166", T.dim)
                 end
                 exec(input)
@@ -1175,30 +1181,15 @@ function M.run(S, deps)
       if tab and tab.type == "shell" then
         if S.cmdline ~= "" then S.cmdline = ""; S.cmdCursor = 1; S.cmdSel = nil; S.lastOut = { "^C", T.dim } end; draw = 1
       end
-    elseif sig == "component_added" then
-      local addr, ctype = a2, ch
-      if ctype == "filesystem" then
-        local bootAddr = _G._TOS and _G._TOS.bootFS and _G._TOS.bootFS.address
-        if addr ~= bootAddr then
-          local ok2, mntPath, lbl = pcall(autoMount, addr)
-          if ok2 and mntPath then
-            -- Auto-detect & guide on insert: classify the disk and surface
-            -- the one most useful next step, instead of a bare "inserted".
-            local info = helpers.classifyDisk(F, mntPath)
-            local msg = string.format('%s: "%s" -> %s',
-              info.desc, lbl or "disk", mntPath)
-            if info.hint then msg = msg .. "   " .. info.hint end
-            S.lastOut = { msg, T.highlight }
-            pcall(refreshBrowser)
-          elseif not ok2 then S.lastOut = { "Disk insert error: " .. tostring(mntPath), T.error } end
-        end
-      end; draw = 3
-    elseif sig == "component_removed" then
-      local addr = a2; local ok2, mnts = pcall(F.mounts)
-      if ok2 and mnts then for _, m in ipairs(mnts) do
-        if m.address == addr then pcall(F.unmount, m.mountPoint)
-          S.lastOut = { 'Disk removed: "' .. (m.label or "disk") .. '"', T.dim }; pcall(refreshBrowser); break end
-      end end; draw = 3
+    elseif sig == "tos_disk_added" or sig == "tos_disk_removed" then
+      -- The kernel mounted (or unmounted) it -- kernel.diskmount, whatever
+      -- held the seat -- and the shell only says so.
+      if helpers.announceDisk(S, F, sig == "tos_disk_added" and "added" or "removed", ch, co) then
+        pcall(refreshBrowser)
+      end
+      draw = 3
+    elseif sig == "component_added" or sig == "component_removed" then
+      draw = 3
     elseif sig == "screen_resized" then
       -- Somebody added or broke a screen block. Every layout constant is
       -- derived from S.H — SUM_ROW, OUT_ROW, CMD_ROW, STAT_ROW and LIST_H all

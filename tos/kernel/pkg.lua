@@ -3527,9 +3527,10 @@ end
 -- packages, so an operator can replicate their add-on set onto another TOS
 -- machine without a dev box (and without the TOS-Extras source tree). The
 -- emitted layout is exactly what pkg.install/listAllAvailable expect:
---   <target>/install.lua            the picker (embedded below)
+--   <target>/optutil-set.lua        the set manifest
 --   <target>/<name>/package.lua     each package's manifest
 --   <target>/<name>/<install path>  each file, mirrored at its abs path
+-- No installer: `pkg install` runs the base image's picker on any TOS.
 
 -- Embedded pick-and-choose installer. Behaviour-identical to the dev-box
 -- TOS-Extras/build/install.lua (same kernel.pkg backend: admin gate, dep

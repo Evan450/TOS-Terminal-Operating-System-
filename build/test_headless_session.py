@@ -187,12 +187,13 @@ def test_stage_openos_copies_only_the_openos_tree(tmp_path):
 
 def test_the_session_disk_mounts_where_a_script_can_type_it():
     # TOS names an unlabelled disk's mount "disk_" .. addr:sub(1, 4)
-    # (kernel/init.lua sanitizeLabel); scripts type /mnt/disk_5e55/...
+    # (kernel/diskmount.lua sanitizeLabel, used at boot and on hot-plug);
+    # scripts type /mnt/disk_5e55/...
     assert "disk_" + hsess.SESSION_DISK_ADDRESS[:4] == "disk_5e55"
     assert re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
                         hsess.SESSION_DISK_ADDRESS)
-    init = (Path(__file__).resolve().parent.parent / "tos" / "kernel" / "init.lua").read_text(encoding="utf-8")
-    assert 'local fallback = "disk_" .. addr:sub(1, 4)' in init
+    rule = (Path(__file__).resolve().parent.parent / "tos" / "kernel" / "diskmount.lua").read_text(encoding="utf-8")
+    assert 'local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)' in rule
 
 
 def test_the_install_disk_address_mounts_at_d15():
@@ -201,3 +202,67 @@ def test_the_install_disk_address_mounts_at_d15():
     assert hsess.INSTALL_DISK_ADDRESS[:3] == "d15"
     assert re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
                         hsess.INSTALL_DISK_ADDRESS)
+
+
+# ============================================================
+# stage_floppies() -- the swappable floppies
+# ============================================================
+
+def _folder(tmp_path, name, files):
+    d = tmp_path / "src" / name
+    for rel, text in files.items():
+        p = d / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+    return d
+
+
+def test_floppies_are_copies_and_reach_the_runner_in_order(tmp_path):
+    one = _folder(tmp_path, "one", {"a/package.lua": "return {}"})
+    two = _folder(tmp_path, "two", {"b.txt": "x"})
+    run = tmp_path / "run"
+    run.mkdir()
+    args = hsess.stage_floppies(run, [f"disk1={one}", f"disk2={two}"], "disk1")
+    assert args == ["--floppy", f"disk1={run / 'floppies' / 'disk1'}",
+                    "--floppy", f"disk2={run / 'floppies' / 'disk2'}",
+                    "--floppy-in", "disk1"]
+    # A session writes to its floppies; the source must come back untouched.
+    (run / "floppies" / "disk1" / "a" / "package.lua").write_text("changed", encoding="utf-8")
+    assert (one / "a" / "package.lua").read_text(encoding="utf-8") == "return {}"
+
+
+def test_no_floppy_is_inserted_unless_asked(tmp_path):
+    one = _folder(tmp_path, "one", {"x": "1"})
+    run = tmp_path / "run"
+    run.mkdir()
+    assert "--floppy-in" not in hsess.stage_floppies(run, [f"disk1={one}"], None)
+
+
+@pytest.mark.parametrize("spec", ["nodir", "=x", "has space=x", "../up=x", "a/b=x", "x" * 33 + "=x"])
+def test_a_floppy_name_must_be_a_plain_label(tmp_path, spec):
+    # TOS mounts a labelled disk at /mnt/<label>; a name a script cannot
+    # type as a path segment is refused before anything is copied.
+    run = tmp_path / "run"
+    run.mkdir()
+    with pytest.raises(ValueError):
+        hsess.stage_floppies(run, [spec], None)
+
+
+def test_floppy_mistakes_are_refused(tmp_path):
+    one = _folder(tmp_path, "one", {"x": "1"})
+    run = tmp_path / "run"
+    run.mkdir()
+    with pytest.raises(ValueError, match="twice"):
+        hsess.stage_floppies(run, [f"d={one}", f"d={one}"], None)
+    with pytest.raises(ValueError, match="no directory"):
+        hsess.stage_floppies(tmp_path / "run2", [f"d={tmp_path / 'missing'}"], None)
+    with pytest.raises(ValueError, match="no --floppy"):
+        hsess.stage_floppies(tmp_path / "run3", [f"e={one}"], "other")
+
+
+def test_the_runner_knows_the_floppy_steps():
+    # The Java side is not run here; at least hold it to the names the
+    # docstring promises scripts can use.
+    java = (HERE / "HeadlessTOS.java").read_text(encoding="utf-8")
+    assert 'case "eject":' in java and 'case "insert": {' in java
+    assert '"--floppy"' in java and '"--floppy-in"' in java

@@ -37,6 +37,7 @@ M.MIN_SECRET  = 16
 -- discriminator is what each one has that the other does NOT.
 --
 --   TOS-only     _G._TOS            the kernel's global state table
+--                compat             TOS's OpenOS compat loader (has/list)
 --                kernel.pkg         package manager
 --                kernel.users       tier/session system
 --                /tos/kernel/init.lua
@@ -59,6 +60,18 @@ function M.probeEnvironment(probe)
     if probe.hasGlobal then return probe.hasGlobal(name) end
     return _G[name] ~= nil
   end
+  --! TOS's compat loader, as a sandbox sees it: a table with has() and
+  --! list(). OpenOS has no module by that name. Since TOS answers the
+  --! OpenOS names (term, shell, filesystem) to sandboxed programs too,
+  --! this is what keeps those answers from reading as OpenOS: run on a TOS
+  --! box, the probes saw /tos/kernel/init.lua against three OpenOS
+  --! libraries and called it OpenOS (headless machine, 2026-10-09).
+  local function hasCompatLoader()
+    if probe.hasCompatLoader then return probe.hasCompatLoader() end
+    local ok, mod = pcall(require, "compat")
+    return ok and type(mod) == "table" and type(mod.has) == "function"
+      and type(mod.list) == "function"
+  end
   local function hasPath(p)
     if probe.hasPath then return probe.hasPath(p) end
     local okF, fsMod = pcall(require, "filesystem")
@@ -72,6 +85,7 @@ function M.probeEnvironment(probe)
     tosPkg      = hasModule("kernel.pkg"),
     tosUsers    = hasModule("kernel.users"),
     tosKernel   = hasPath("/tos/kernel/init.lua"),
+    tosCompat   = hasCompatLoader(),
     ooFilesystem = hasModule("filesystem"),
     ooShell     = hasModule("shell"),
     ooTerm      = hasModule("term"),
@@ -96,10 +110,19 @@ function M.classify(env)
   tos(env.tosPkg,    "kernel.pkg (TOS package manager) loads")
   tos(env.tosUsers,  "kernel.users (TOS tier system) loads")
   tos(env.tosKernel, "/tos/kernel/init.lua exists on disk")
+  tos(env.tosCompat, "TOS's OpenOS compat layer answers (require 'compat')")
 
-  oo(env.ooFilesystem, "the 'filesystem' library loads (TOS calls it kernel.fs)")
-  oo(env.ooShell,      "the 'shell' library loads")
-  oo(env.ooTerm,       "the 'term' library loads")
+  -- Where TOS's compat layer is answering, the OpenOS library names are
+  -- IT answering: they say nothing about which OS this is.
+  if env.tosCompat then
+    if env.ooFilesystem or env.ooShell or env.ooTerm then
+      reasons[#reasons + 1] = "(the OpenOS libraries that load are TOS's compat layer, so they are not counted)"
+    end
+  else
+    oo(env.ooFilesystem, "the 'filesystem' library loads (TOS calls it kernel.fs)")
+    oo(env.ooShell,      "the 'shell' library loads")
+    oo(env.ooTerm,       "the 'term' library loads")
+  end
   oo(env.ooLibCore,    "/lib/core/boot.lua exists on disk")
 
   -- Absences are evidence too, and on a bare machine they may be the ONLY

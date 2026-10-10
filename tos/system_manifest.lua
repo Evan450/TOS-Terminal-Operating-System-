@@ -87,6 +87,7 @@ return {
   { path = "/tos/kernel/internet.lua",        critical = false },
   { path = "/tos/kernel/pkgremote.lua",       critical = false },
   { path = "/tos/kernel/jbod.lua",            critical = false },
+  { path = "/tos/kernel/diskmount.lua",       critical = false },
   { path = "/tos/kernel/netfs.lua",           critical = false },
   { path = "/tos/kernel/selftest.lua",        critical = false },
   { path = "/tos/kernel/keychain.lua",        critical = false },
