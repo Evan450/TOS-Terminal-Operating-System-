@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**78 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**76 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 54 | Planned or under investigation. Most contributions belong here. |
+| Planned | 53 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (14) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (13) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -113,6 +113,16 @@ NEXT REAL-MINECRAFT ROUND — the point of these four is that they were all reac
 - `keys reset`, then confirm ^Q works everywhere again
 - `menu show`, then `menu hide "Flash EEPROM"`, then `menu reset`; then the same with --system as root and as a non-admin (the second must be refused by securefs)
 - put deliberate junk in \~/.menu.cfg and confirm the bar still draws
+
+HEADLESS 2026-10-09 -- everything here a machine with no mods can show, run on the headless machine with the Optional Utilities pack:
+
+- exit keys: calc, write &lt;file&gt;, stock, snake, ttt play, tetris and the picker all leave on ^Q. stock did NOT -- its footer said "^Q quit" and only plain Q worked (fixed, stock 1.0.1, e212a02, waiting for the pack signing). rc with no address prints its setup help.
+- `keys set quit F4`: ^Q no longer leaves ttt, F4 leaves ttt, calc, write and stock; `keys set quit ^B` "is reserved by the kernel and never reaches a program"; `keys reset` brings ^Q back.
+- `menu show` / `menu hide "Flash EEPROM"` (one line fewer) / `menu reset`, and the same with --system as root (/etc/menu.cfg); as a USER --system says "Save failed (needs admin for /etc)". A junk \~/.menu.cfg ("junk junk {{{ not lua"): the bar draws.
+- RAM: POST "Total Memory: 2048KB", boot banner "1803K free / 2048K total", `mem` "1416K used / 2048K total" -- the totals agree.
+- the two-floppy flow: see MULTI-DISK. The 192K `reboot` line is moot: TOS needs 1 MB (THE RAM FLOOR IS 1 MB below).
+
+STILL FOR A REAL WORLD: printer/write, stock on a transposer, redstone/robot/inventory from a shell, a read-only boot disk (a managed hard drive cannot be made read-only here, and TOS does not fit a floppy), Esc closing the Minecraft screen.
 
 ### Emulator checklist - the RBMK SKALA panel (Extras, v0.2.0)
 
@@ -228,17 +238,6 @@ Emulator checklist for this round:
 - two machines: `intercom play` on one, confirm the other shows the chat line and (at alert+) the message box
 - hammer alerts and confirm the cooldown keeps the keyboard usable
 - `@group:` to 3 peers with one powered off; confirm it says "delivered to 2 of 3" and names the missing one
-
-### Emulator checklist for this round: SRM round
-
-*Planned* · from the round *SRM round (2026-07-28)*
-
-Emulator checklist for this round:
-
-- fail a boot on purpose (rename /tos/kernel/init.lua) and confirm K4 on screen + 4 short beeps, then that the next good boot explains and clears it
-- `srm baseline --full` on a fresh install, check the disk cost report is honest, then `srm scan` after an edit
-- `srm repair --restore` puts the edited file back
-- confirm the store survives a reboot and `srm status` is instant on a slow disk
 
 ### Run a verification round in real Minecraft OpenComputers
 
@@ -374,6 +373,8 @@ Get listed in `oppm list`: a PR adding this repo to OpenPrograms/openprograms.gi
 *Planned* · from the round *Planned (near future)*
 
 Install profiles: `install.lua --profile minimal|standard|full`, each writing a trimmed system\_manifest.lua. From the 2026-09-10 follow-up review, which measured the release at 1,619 KB of content (1,695 KB on disk with fileCost) and \~353 KB free on a Tier 2 disk -- down \~102 KB in six days with the file count flat, so this is content growth, not new files. The architecture already allows it (41 pcall(require) sites in kernel/init.lua, an 11-file critical set) and it composes with `deploy drive`, which copies exactly what the manifest lists. Their measured cut -- drop the installer, docs, networking, remote pkg, the package manager, compat, peripherals and the `extras` commands -- leaves the full Commander UI at \~1,060 KB. Not urgent this week; the growth curve decides when it becomes so, and this turns a deadline into a knob.
+
+2026-10-09: the curve got there. The release was 2,068.5 KB on disk and a 2 MB drive could not finish First Boot Setup. Minify now drops indentation (1,874 KB, \~150 KB left after first boot) and test\_release\_budget.lua fails past 1,920 KB (1b32fc9) -- the deadline is a test now, but \~46 KB of growth from it. The next lever after this one is the --! comments the release keeps (219 KB), an operator decision; then profiles.
 
 ### Anchor the network install to a key, not the transport
 
@@ -561,22 +562,6 @@ NOT GAPS from this pair, recorded so they are not re- investigated: Plan9k's MOD
 AUDIT LOG FOR CAPABILITY DENIALS. When the sandbox refuses a program a cap we log it, but there's no single place an operator can read "what got refused, to whom, when". Worth a dedicated append-only log rather than digging through the general log. (OCOS's permissive-mode flag that logs instead of denying is NOT for us — we're fail-closed by design and that stays. It's the record that's worth having, not the escape hatch.)
 
 ## Boot, memory and the kernel
-
-### Open - Safe Mode "unsafe power-off" (operator report)
-
-*Open bug* · from the round *Memory round (2026-07-24)*
-
-OPEN - Safe Mode "unsafe power-off" (operator report). NOT reproduced from code: there is no safe-profile-specific shutdown path (only bootcfg feature gates), and the generic zero-process path stamps /var/run/pwrstate "C" via kernel.shutdown, i.e. a CLEAN power-off. Candidates still to rule out, need the kernel.log + /var/crash from that boot:
-
-(a) shell/login failed -&gt; proc.count()==0 -&gt; 3 respawns -&gt;
-
-emergencyShell -&gt; break -&gt; kernel.shutdown (powers off
-
-rather than staying up);
-
-(b) an actual power cut leaving the stale "R" marker,
-
-which the next boot correctly reports as unsafe.
 
 ### Self-stripping, not build-time config — operator decision, 2026-08-11
 
