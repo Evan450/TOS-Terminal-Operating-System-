@@ -117,6 +117,7 @@ stop       = stop,
 deps       = {},
 restart    = true,
 caps       = { net = true },
+needs      = "net",
 user       = "_kernel_",
 getHistory = getHistory,
 }

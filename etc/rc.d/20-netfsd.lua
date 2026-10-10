@@ -62,6 +62,7 @@ stop    = stop,
 deps    = {},
 restart = true,
 caps    = { ["fs.read"] = true, ["fs.write"] = true, net = true },
+needs   = "net",
 
 user    = "root",
 }

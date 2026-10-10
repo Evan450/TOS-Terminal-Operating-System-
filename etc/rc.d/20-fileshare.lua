@@ -51,5 +51,6 @@ stop    = stop,
 deps    = {},
 restart = true,
 caps    = { ["fs.read"] = true, net = true },
+needs   = "net",
 user    = "_kernel_",
 }

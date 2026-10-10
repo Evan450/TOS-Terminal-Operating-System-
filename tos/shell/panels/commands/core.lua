@@ -1629,6 +1629,28 @@ o("A path's own size: 'du <path>'.  Removable media + pools: 'disk'.", T.dim)
 end
 
 C.mem = function(args, o)
+
+if args and args[1] == "--boot" then
+local prof = _G._TOS and _G._TOS.bootMem
+if type(prof) ~= "table" or #prof == 0 then
+o("This boot was not profiled.", T.warning)
+o("Add  memprofile = true  to /etc/boot.cfg and reboot.", T.dim)
+return
+end
+o("=== Memory each boot stage used ===", T.title)
+
+for i, m in ipairs(prof) do
+local nxt = prof[i + 1]
+if nxt then
+o(string.format(" %-30s %4dK  (%dK free after)", tostring(m.stage),
+math.floor(((m.free or 0) - (nxt.free or 0)) / 1024),
+math.floor((nxt.free or 0) / 1024)), T.fg)
+else
+o(string.format(" %-30s %5dK free", tostring(m.stage), math.floor((m.free or 0) / 1024)), T.dim)
+end
+end
+return
+end
 local fr, tot = computer.freeMemory(), computer.totalMemory()
 local used = tot - fr
 local pct  = tot > 0 and math.floor(used * 100 / tot) or 0

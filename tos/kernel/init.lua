@@ -42,6 +42,33 @@ end
 return detected
 end
 
+--! PER-STAGE MEMORY PROFILE -- off unless /etc/boot.cfg says
+--! memprofile = true, so an ordinary boot pays nothing for it. The RAM
+--! floor is set by what each stage leaves resident (THE RAM FLOOR IS 1 MB,
+--! TODO), and a raw computer.freeMemory() mid-boot mostly measures
+--! garbage: 147K free at "Boot complete" on a 1152K machine, 422K a moment
+--! later. OpenComputers gives the guest no collectgarbage, but its machine
+--! loop runs a full collection every 10 resumes -- so a mark yields ten
+--! times (pushing back any signal it pops, in order) and then reads. The
+--! table is _TOS.bootMem; `mem --boot` prints it. (test_boot_memprofile.lua)
+local bootMem = (bootCfg and bootCfg.memprofile == true) and {} or nil
+local function memMark(stage)
+if not bootMem then return end
+if type(collectgarbage) == "function" then
+pcall(collectgarbage, "collect")
+else
+local held = {}
+for _ = 1, 10 do
+local sig = table.pack(computer.pullSignal(0))
+if sig.n > 0 and sig[1] ~= nil then held[#held + 1] = sig end
+end
+for _, sig in ipairs(held) do pcall(computer.pushSignal, table.unpack(sig, 1, sig.n)) end
+end
+bootMem[#bootMem + 1] = { stage = stage, free = computer.freeMemory(),
+t = computer.uptime() }
+end
+
+memMark("1 core modules")
 bootEcho("  Loading kernel modules...", 0xAAAAAA)
 log = require("kernel.log")
 
@@ -55,6 +82,7 @@ log.info("kernel", "TOS Kernel v" .. _G._TOS.version .. " (build "
 _G._TOS.log    = function(src, msg) log.info(src, msg) end
 _G._TOS.logObj = log
 
+memMark("2 hardware detection")
 log.info("kernel", "Scanning hardware...")
 hal = require("kernel.hal")
 hal.scan()
@@ -73,6 +101,7 @@ if info.hasTunnel then
 log.info("kernel", "Linked card (tunnel) detected")
 end
 
+memMark("3 filesystem")
 log.info("kernel", "Initializing filesystem...")
 fs = require("kernel.fs")
 fs.init(opts.bootFS)
@@ -233,6 +262,7 @@ bootEcho("  " .. sum, warned > 0 and 0xFFAA00 or 0x00FF00)
 end
 end
 
+memMark("4 system configuration")
 local sysconfig = nil
 do
 log.info("kernel", "Loading configuration...")
@@ -249,6 +279,8 @@ else
 log.warn("kernel", "Config module not available: " .. tostring(mod))
 end
 end
+
+memMark("4b disk swap")
 
 if wants("swap", true) then
 
@@ -277,6 +309,8 @@ log.warn("kernel", "Swap module not available: " .. tostring(swapMod))
 end
 end
 
+memMark("4b2 internet card transport")
+
 do
 local okI, inetMod = pcall(require, "kernel.internet")
 if okI and inetMod then
@@ -284,6 +318,8 @@ pcall(inetMod.init, { log = log, config = sysconfig })
 _G._TOS.internet = inetMod
 end
 end
+
+memMark("4c jbod disk pooling")
 
 if wants("jbod", false) then
 local okJ, jbodMod = pcall(require, "kernel.jbod")
@@ -324,6 +360,7 @@ log.warn("kernel", "JBOD enabled but module unavailable: " .. tostring(jbodMod))
 end
 end
 
+memMark("5 event system")
 log.info("kernel", "Starting event system...")
 event = require("kernel.event")
 
@@ -366,9 +403,11 @@ log.info("screen", string.format("Screen resized externally -> %dx%d", nw or 0, 
 end
 end, "kernel")
 
+memMark("6 process manager")
 log.info("kernel", "Starting process manager...")
 proc = require("kernel.process")
 
+memMark("7 display system")
 local isHeadless = sysconfig and sysconfig.isHeadless()
 if isHeadless then
 log.info("kernel", "Headless mode — skipping display init")
@@ -407,6 +446,8 @@ log.info("kernel", string.format("Display: %dx%d, GPU Tier %d (%d-bit color)",
 dW or 0, dH or 0, display.getGpuTier(), display.getGpuDepth()))
 if resNote then log.warn("screen", resNote) end
 end
+
+memMark("8 power monitor")
 
 do
 if wants("power", ramOK()) then
@@ -468,6 +509,7 @@ end,
 })
 end
 
+memMark("9 security subsystem")
 do
 if computer.freeMemory() > MIN_FREE_FOR_OPTIONAL then
 local ok1, crypto = pcall(require, "kernel.crypto")
@@ -566,6 +608,8 @@ math.floor(computer.freeMemory() / 1024) .. "KB free)")
 end
 end
 
+memMark("9b theme manager")
+
 if display and display.isMonochrome and not display.isMonochrome()
 and wants("theme", ramOK()) then
 local okT, themeMod = pcall(require, "kernel.theme")
@@ -582,6 +626,7 @@ log.warn("kernel", "Theme module not available: " .. tostring(themeMod))
 end
 end
 
+memMark("10 network")
 if (hal.has("modem") or hal.has("tunnel"))
 and wants("net", ramOK()) then
 local ok, netMod = pcall(require, "kernel.net")
@@ -632,6 +677,8 @@ log.warn("kernel", "Skipping network (low memory: " ..
 math.floor(computer.freeMemory() / 1024) .. "KB free)")
 end
 end
+
+memMark("11 startup services and compatibility")
 
 if wants("services", ramOK()) then
 local ok, rcMod = pcall(require, "kernel.rc")
@@ -688,6 +735,8 @@ else
 log.info("kernel", "OpenOS compat: lazy (loads on first use)")
 end
 
+memMark("12 audio feedback system")
+
 if wants("audio", true) then
 local ok, audioMod = pcall(require, "kernel.audio")
 if ok then
@@ -709,12 +758,25 @@ _G._TOS.kernel = kernel
 _G._TOS.proc   = proc
 _G._TOS.event  = event
 
+memMark("13 boot complete")
+
 if type(collectgarbage) == "function" then
 pcall(collectgarbage, "setpause", 120)
 end
 
 local freeNow = (hal and hal.freeMemory and hal.freeMemory()) or computer.freeMemory()
 local bootDuration = computer.uptime() - _G._TOS.bootTime
+if bootMem then
+_G._TOS.bootMem = bootMem
+
+for i, m in ipairs(bootMem) do
+local nxt = bootMem[i + 1]
+log.info("memprofile", nxt
+and string.format("%-36s used %4dK, %5dK free after", m.stage,
+math.floor((m.free - nxt.free) / 1024), math.floor(nxt.free / 1024))
+or string.format("%-36s %5dK free", m.stage, math.floor(m.free / 1024)))
+end
+end
 log.info("kernel", "Boot complete! Free memory: " ..
 math.floor(freeNow / 1024) .. "KB")
 log.info("kernel", string.format("Boot time: %.1fs", bootDuration))
@@ -788,6 +850,8 @@ if bootPause > 0 then computer.pullSignal(bootPause) end
 end
 
 log.detachEarlyPrint()
+
+memMark("14 login -> shell / headless loop")
 
 kernel.boot = nil
 

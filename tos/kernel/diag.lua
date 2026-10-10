@@ -97,9 +97,12 @@ R("services: none registered", "info"); return
 end
 R(string.format("services: %d registered", #services), "info")
 for _, s in ipairs(services) do
-local sev = s.running and "ok" or "warn"
+
+local sev = s.running and "ok" or ((s.unavailable or s.enabled == false) and "info" or "warn")
 R(string.format("  %-20s %s", s.name or "?",
-s.running and "running" or "stopped"), sev)
+s.running and "running"
+or (s.unavailable and ("not loaded: " .. s.unavailable))
+or (s.enabled == false and "disabled") or "stopped"), sev)
 end
 end
 
