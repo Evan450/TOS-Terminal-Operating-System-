@@ -134,6 +134,7 @@ return {
   deps       = {},
   restart    = true,
   caps       = { net = true },
+  needs      = "net",  -- not loaded at all without a network (rc.lua NEEDS)
   user       = "_kernel_",
   getHistory = getHistory,
 }

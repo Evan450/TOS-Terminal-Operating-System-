@@ -3471,7 +3471,11 @@ return function(C, S, deps)
       o(string.format(" %-16s %s", "Service", "Status"), T.title)
       o(string.rep("-", 28), T.dim)
       for _, s in ipairs(svcs) do
-        local st2 = s.running and "running" or "stopped"
+        -- Not loaded (a missing need) and disabled are both "stopped" to
+        -- the old one-word column, which hid why nothing was running.
+        local st2 = s.running and "running"
+          or (s.unavailable and ("not loaded: " .. s.unavailable))
+          or (s.enabled == false and "disabled") or "stopped"
         o(string.format(" %-16s %s", s.name:sub(1,16), st2),
           s.running and T.highlight or T.dim)
       end

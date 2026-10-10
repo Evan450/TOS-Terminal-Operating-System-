@@ -128,9 +128,12 @@ local function checkServices(R)
   end
   R(string.format("services: %d registered", #services), "info")
   for _, s in ipairs(services) do
-    local sev = s.running and "ok" or "warn"
+    -- Off by design (disabled, or no hardware for it) is not a warning.
+    local sev = s.running and "ok" or ((s.unavailable or s.enabled == false) and "info" or "warn")
     R(string.format("  %-20s %s", s.name or "?",
-      s.running and "running" or "stopped"), sev)
+      s.running and "running"
+        or (s.unavailable and ("not loaded: " .. s.unavailable))
+        or (s.enabled == false and "disabled") or "stopped"), sev)
   end
 end
 

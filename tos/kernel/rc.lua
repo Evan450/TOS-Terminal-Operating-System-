@@ -260,10 +260,35 @@ local function peekServiceMeta(src)
     meta._kernelClaimed = true
   end
   meta.restart = code:match("restart%s*=%s*true") and true or false
+  -- `needs = "net"`: hardware the service is no use without. Read here,
+  -- before anything runs, so loadService can leave the script unloaded on
+  -- a machine that lacks it (see NEEDS). Declaring a need can only make a
+  -- service load LESS often, so the loose peek grants nothing.
+  meta.needs = code:match('needs%s*=%s*"([%w_]+)"')
+            or code:match("needs%s*=%s*'([%w_]+)'")
   local mr = code:match("maxRestart%s*=%s*(%d+)")
   if mr then meta.maxRestart = tonumber(mr) end
   return meta
 end
+
+--! #MEM — what a declared `needs` asks of the machine, and the reason
+--! `service` shows when it is missing. Every base service is a network
+--! daemon, and each one already returned from start() when there was no
+--! network -- but only after boot had compiled and run its script, and
+--! 20-netfsd pulled in kernel.netfs (and, as a root-tier service, the whole
+--! kernel.sandbox to build its env) before it looked. On a machine with no
+--! network card all of that stayed resident for nothing, and `service`
+--! listed four daemons as "running" that were doing nothing at all.
+--! _TOS.net is set once, at boot stage 10, so the answer holds until a
+--! reboot -- which is what the reason says. An unknown need is ignored:
+--! a newer service must still load on an older kernel.
+local NEEDS = {
+  net = {
+    met    = function() return _G._TOS ~= nil and _G._TOS.net ~= nil end,
+    reason = "needs network hardware",
+    hint   = "add a network card or linked card and reboot",
+  },
+}
 
 -- #SEC C2 — hardcoded allowlist of services that may run as `_kernel_`.
 -- A regex match on the source can be made to fire from inside a comment
@@ -386,6 +411,26 @@ local function loadService(name)
     end
 
     local caps = normalizeCaps(meta.caps)
+    local need = meta.needs and NEEDS[meta.needs]
+    if need and not need.met() then
+      -- Registered, never run: `service` can still name it and say why,
+      -- and the supervisor leaves it alone (restart = false, no start).
+      services[svcName] = {
+        running        = false,
+        unavailable    = need.reason,
+        hint           = need.hint,
+        disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled"),
+        path           = path,
+        deps           = {},
+        restart        = false,
+        caps           = caps,
+        user           = meta.user,
+        restartCount   = 0,
+        maxRestart     = 0,
+      }
+      if log then log.info("rc", "Not loading " .. name .. ": " .. need.reason) end
+      return services[svcName]
+    end
     local session, sessErr = sessionForUser(meta.user)
     if not session then
       failure = "Skipping '" .. name .. "': " .. tostring(sessErr)
@@ -490,7 +535,9 @@ function rc.runAll()
   -- next tick (this was previously dead code — see tryRestart).
   for _, svcName in ipairs(order) do
     local svc = services[svcName]
-    if svc and svc.disabledAtBoot and not svc.running then
+    if svc and svc.unavailable then
+      -- Its script was never loaded (see NEEDS); loadService logged why.
+    elseif svc and svc.disabledAtBoot and not svc.running then
       -- Registered but intentionally not started (disabled-by-default package).
       if log then log.info("rc", "Service registered (disabled): " .. svcName) end
     elseif svc and not svc.running then
@@ -544,6 +591,9 @@ function rc.start(name)
       return false, why or ("Not a service: " .. name)
     end
     svc = fresh
+    if svc.unavailable then
+      return false, name .. " " .. svc.unavailable .. " (" .. svc.hint .. ")"
+    end
   elseif svc then
     -- Its file is gone (the package was removed): never start a ghost.
     services[name] = nil
@@ -596,6 +646,7 @@ function rc.list()
       restartCount = svc.restartCount,
       caps         = svc.caps,
       user         = svc.user,
+      unavailable  = svc.unavailable,
     }
   end
   table.sort(result, function(a, b) return a.name < b.name end)

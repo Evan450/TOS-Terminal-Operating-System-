@@ -72,5 +72,6 @@ return {
   deps    = {},
   restart = true,
   caps    = { ["fs.read"] = true, net = true },
+  needs   = "net",  -- not loaded at all without a network (rc.lua NEEDS)
   user    = "_kernel_",
 }

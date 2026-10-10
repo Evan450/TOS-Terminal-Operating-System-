@@ -2126,9 +2126,14 @@ line is kept as ordinary text — a document does not fail to open over a typo.
 ## 12. Services & Scheduling
 
 - **rc.d:** `/etc/rc.d/` startup scripts with `start`/`stop`. `service [start|
-  stop|list] <name>`. The default set: discovery, chat relay, file share, remote
-  shell daemon. Kernel-tier (`_kernel_`) services come from a hardcoded allowlist;
-  everything else runs sandboxed.
+  stop|list] <name>`. The default set: discovery, chat relay, file share,
+  network filesystem, remote shell daemon (the last off until started).
+  Kernel-tier (`_kernel_`) services come from a hardcoded allowlist; everything
+  else runs sandboxed. A service that is useless without a network declares
+  `needs = "net"` in its table: on a machine with no network card or linked
+  card it is not loaded at all, which saves the memory its code would hold, and
+  `service` lists it as `not loaded: needs network hardware` (add the card and
+  reboot). All five defaults declare it.
 - **cron:** `cron [list|add <interval> <cmd>|rm <id>]` — persistent scheduled tasks.
 
 ---
@@ -2637,9 +2642,12 @@ Open the manual page for a command or concept (`/usr/man/<topic>`). The middle
 help depth, between `help` and this Manual. *Error:* `no manual entry for <topic>`
 — try `help <topic>` or this Manual. *See also:* `help`.
 
-**mem** — `mem`
+**mem** — `mem [--boot]`
 The memory report: RAM used/total with a usage bar, the RAM tier, swap usage, and
-a warning near the ~16 KB danger zone (Chapter 9, `man memory`). *See also:* `hw`,
+a warning near the ~16 KB danger zone (Chapter 9, `man memory`). `--boot` shows
+how much memory each boot stage used, when the boot was profiled: add
+`memprofile = true` to `/etc/boot.cfg` and reboot (it slows the boot a little, so
+it is off by default; the same table goes to the log). *See also:* `hw`,
 `monitor`, `doctor`, `optimize`.
 
 **menu** — `menu [show | list | add <label> <command...> [in <Menu>] | hide <item|Menu> | rename <name> <new> | move <item> <Menu> | remove <#> | reset] [--system]`
@@ -3124,7 +3132,7 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 
 | File | Purpose |
 |------|---------|
-| `/etc/boot.cfg` | Boot spectrum: `profile`, `verbosity`, `advanced`, `cpuTier`, `showConfig` (Ch 2) |
+| `/etc/boot.cfg` | Boot spectrum: `profile`, `verbosity`, `advanced`, `cpuTier`, `showConfig`, `memprofile` (Ch 2) |
 | `/etc/tos.cfg` | System config: device profile, hostname, thresholds, `swapMaxKB`, `critBatShutdown`, … |
 | `/etc/users.dat` | User DB (admin-read, atomic-written) |
 | `/etc/trust.dat` | Network trust DB + shared secrets |

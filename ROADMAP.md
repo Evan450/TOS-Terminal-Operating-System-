@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**68 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**66 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 45 | Planned or under investigation. Most contributions belong here. |
+| Planned | 43 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -542,6 +542,10 @@ Done the same day: the README, CONTRIBUTING and the installer's warnings state t
 
 OPEN, the real work: the footprint itself. The first wall is compiling tos/kernel/init.lua (90 KB even minified), which alone fails at 384K. Start with a per-stage memory profile -- the headless machine can produce one now. Then a floor check in the headless runs, so the documented number cannot drift again: 192 KB was presumably true once, and nothing re-measured it.
 
+PROFILE DONE 2026-10-10: memprofile = true in /etc/boot.cfg logs what each boot stage leaves resident, and `mem --boot` prints it (test\_boot\_memprofile.lua). On a 2 MB machine with no network card the big stages were startup services 115K, security 109K, display 65K and events 35K, with 1363K free at boot complete. At 1152K (t1) 485K was free at boot complete and 352K when the shell began to load.
+
+FIRST CUT 2026-10-10: the five base services are network daemons, and each one returned at once from start() without a network -- but boot still compiled and ran every script, and 20-netfsd (root tier) pulled in kernel.netfs and the whole kernel.sandbox first. They now declare needs = "net", and rc leaves them unloaded on a machine with no network card or linked card; `service` says "not loaded: needs network hardware" instead of calling four idle daemons "running" (test\_rc\_needs.lua). Startup services fell from 115K to 21K. Boot complete went from 1363K to 1457K free at 2 MB and from 485K to 576K at 1152K. At 1152K the shell now starts loading with 494K free instead of 352K. A machine WITH a network card is unchanged. Not enough on its own: at 1024K `pkg` still cannot load. Still open: the floor check, and kernel.pkg's split.
+
 ALSO MEASURED 2026-10-03: at 1024K the CLI runs but `pkg` does not load -- compiling kernel.pkg (117 KB stripped) needs more than the \~200 KB left once the shell is up. Every pkg command printed only "pkg module unavailable"; the reason, thrown away, was the loader's "Syntax error in 'kernel.pkg': not enough memory". At 1024+256K it lists, verifies, signs and installs (the signing checklist below ran there whole). Now `pkg` says "cannot load: not enough free memory" and gives 1280 KB against what the machine has, the loader says "Out of memory loading" instead of "Syntax error", eight more commands keep their reason (helpers.loadFailure), and the README and MANUAL 1.1 give the 1.25 MB floor for add-ons. Splitting kernel.pkg so its everyday verbs load alone is what would let 1 MB install packages; that is footprint work, the same as above.
 
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2
@@ -605,38 +609,6 @@ IT MUST BE CAPABILITY-GATED, which theirs is not. "Send to any PID" is authority
 Do not build it on the compat event queue: compat/event.lua deliberately blocks sensitive signal names, and IPC must not become the way around that filter.
 
 NOT A GAP, recorded so it is not re-investigated: Fuchas' PER-PROCESS SIGNAL QUEUES (computer.pushProcessSignal). The security half -- one process reading another's events -- is already handled at a different layer, where compat/event.lua blocks sensitive names outright and names keystroke-logging other seats and clipboard sniffing as the attacks. Only the addressable-IPC half above is missing.
-
-### The root cause is still there, and the rescue only makes it survivable
-
-*Planned* · from the round *The escape hatch needed the broken thing (2026-08-24)*
-
-THE ROOT CAUSE IS STILL THERE, and the rescue only makes it survivable: commands/core.lua is \~2,650 lines, the biggest file in the tree, and loading it needs one large contiguous buffer. That is why it -- and not admin.lua or extras.lua -- is the category that dies first on a tight box.
-
-Splitting it would lower the peak allocation, but it is not
-
-free: the v1.3 split into core/admin/extras exists to make the
-
-COMMON case cheap (a session that never touches admin never
-
-parses it), and cutting core again trades that for more files
-
-to require on a healthy box. Worth measuring before deciding --
-
-what is the actual peak while reading core.lua, and does a
-
-two-way split of it drop the floor enough to matter on a 192K
-
-machine? The `mem` reading before and after a known sequence
-
-(the OTHER open memory item, from the real-Minecraft round) is
-
-the same measurement, so do them together.
-
-### Observed, not diagnosed
-
-*Planned* · from the round *Real Minecraft round (2026-08-11)*
-
-OBSERVED, NOT DIAGNOSED: free memory read 251K in one screenshot and 56K a few actions later on what looks like the same session. That is a big drop for opening a menu or two. Could be the category lazy-load doing its job (core.lua is large), could be a leak. Needs a `mem` reading before and after a known sequence rather than a guess from two screenshots.
 
 ### Build-time feature config
 

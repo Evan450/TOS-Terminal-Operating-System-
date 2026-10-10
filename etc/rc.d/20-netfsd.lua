@@ -80,6 +80,7 @@ return {
   deps    = {},
   restart = true,
   caps    = { ["fs.read"] = true, ["fs.write"] = true, net = true },
+  needs   = "net",  -- not loaded at all without a network (rc.lua NEEDS)
   -- root, NOT _kernel_. This shipped claiming kernel tier -- copied from
   -- 20-fileshare.lua, which is on rc.lua's #SEC C2 allowlist -- so every
   -- boot logged "Refusing kernel-tier service '20-netfsd.lua': not in C2

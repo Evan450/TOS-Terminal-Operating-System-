@@ -1801,6 +1801,30 @@ return function(C, S, deps)
   -- mem — the dedicated MEMORY report: RAM used/total + bar, tier, swap, and the
   -- low-RAM danger zone. (`hw` covers hardware tiers; `monitor` is the live view.)
   C.mem = function(args, o)
+    -- `mem --boot`: what each boot stage left free, when this boot was
+    -- profiled (/etc/boot.cfg memprofile = true; kernel/init.lua memMark).
+    if args and args[1] == "--boot" then
+      local prof = _G._TOS and _G._TOS.bootMem
+      if type(prof) ~= "table" or #prof == 0 then
+        o("This boot was not profiled.", T.warning)
+        o("Add  memprofile = true  to /etc/boot.cfg and reboot.", T.dim)
+        return
+      end
+      o("=== Memory each boot stage used ===", T.title)
+      -- Marks are taken as each stage starts: a stage's cost is its mark
+      -- minus the next one's.
+      for i, m in ipairs(prof) do
+        local nxt = prof[i + 1]
+        if nxt then
+          o(string.format(" %-30s %4dK  (%dK free after)", tostring(m.stage),
+            math.floor(((m.free or 0) - (nxt.free or 0)) / 1024),
+            math.floor((nxt.free or 0) / 1024)), T.fg)
+        else
+          o(string.format(" %-30s %5dK free", tostring(m.stage), math.floor((m.free or 0) / 1024)), T.dim)
+        end
+      end
+      return
+    end
     local fr, tot = computer.freeMemory(), computer.totalMemory()
     local used = tot - fr
     local pct  = tot > 0 and math.floor(used * 100 / tot) or 0

@@ -75,7 +75,34 @@ function kernel.boot(opts)
     return detected
   end
 
+  --! PER-STAGE MEMORY PROFILE -- off unless /etc/boot.cfg says
+  --! memprofile = true, so an ordinary boot pays nothing for it. The RAM
+  --! floor is set by what each stage leaves resident (THE RAM FLOOR IS 1 MB,
+  --! TODO), and a raw computer.freeMemory() mid-boot mostly measures
+  --! garbage: 147K free at "Boot complete" on a 1152K machine, 422K a moment
+  --! later. OpenComputers gives the guest no collectgarbage, but its machine
+  --! loop runs a full collection every 10 resumes -- so a mark yields ten
+  --! times (pushing back any signal it pops, in order) and then reads. The
+  --! table is _TOS.bootMem; `mem --boot` prints it. (test_boot_memprofile.lua)
+  local bootMem = (bootCfg and bootCfg.memprofile == true) and {} or nil
+  local function memMark(stage)
+    if not bootMem then return end
+    if type(collectgarbage) == "function" then
+      pcall(collectgarbage, "collect")
+    else
+      local held = {}
+      for _ = 1, 10 do
+        local sig = table.pack(computer.pullSignal(0))
+        if sig.n > 0 and sig[1] ~= nil then held[#held + 1] = sig end
+      end
+      for _, sig in ipairs(held) do pcall(computer.pushSignal, table.unpack(sig, 1, sig.n)) end
+    end
+    bootMem[#bootMem + 1] = { stage = stage, free = computer.freeMemory(),
+                              t = computer.uptime() }
+  end
+
   -- ── Stage 1: Core modules ──────────────────────────────
+  memMark("1 core modules")
   bootEcho("  Loading kernel modules...", 0xAAAAAA)
   log = require("kernel.log")
   -- earlyMinLevel = the verbosity "muter" (#3): which log levels echo to the
@@ -96,6 +123,7 @@ function kernel.boot(opts)
   _G._TOS.logObj = log
 
   -- ── Stage 2: Hardware detection ────────────────────────
+  memMark("2 hardware detection")
   log.info("kernel", "Scanning hardware...")
   hal = require("kernel.hal")
   hal.scan()
@@ -115,6 +143,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 3: Filesystem ────────────────────────────────
+  memMark("3 filesystem")
   log.info("kernel", "Initializing filesystem...")
   fs = require("kernel.fs")
   fs.init(opts.bootFS)
@@ -326,6 +355,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 4: System configuration ─────────────────────
+  memMark("4 system configuration")
   local sysconfig = nil
   do
     log.info("kernel", "Loading configuration...")
@@ -344,6 +374,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 4b: Disk swap (spill-to-disk "slow RAM") ────────
+  memMark("4b disk swap")
   -- Cheap, so it loads in every profile except `minimal` (which strips the
   -- machine to a bare shell). ramOK=true: it relieves RAM rather than costing
   -- it. Volatile by design — swap.init() wipes /var/swap on every boot.
@@ -377,6 +408,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 4b2: Internet card transport ────────────────────
+  memMark("4b2 internet card transport")
   -- Detection-gated inside the module and essentially free to load: it
   -- opens nothing, listens for nothing, and holds no state. A machine
   -- with no card gets a module whose every call answers "no internet card
@@ -392,6 +424,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 4c: JBOD disk pooling (opt-in) ──────────────────
+  memMark("4c jbod disk pooling")
   -- OFF in every profile; loads only when /etc/boot.cfg has
   -- advanced.jbod = true. ramOK=false so it never loads by RAM gate — a
   -- deliberate operator choice, since pooling reshapes the mount tree.
@@ -438,6 +471,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 5: Event system ──────────────────────────────
+  memMark("5 event system")
   log.info("kernel", "Starting event system...")
   event = require("kernel.event")
 
@@ -489,10 +523,12 @@ function kernel.boot(opts)
   end, "kernel")
 
   -- ── Stage 6: Process manager ───────────────────────────
+  memMark("6 process manager")
   log.info("kernel", "Starting process manager...")
   proc = require("kernel.process")
 
   -- ── Stage 7: Display system ────────────────────────────
+  memMark("7 display system")
   local isHeadless = sysconfig and sysconfig.isHeadless()
   if isHeadless then
     log.info("kernel", "Headless mode — skipping display init")
@@ -536,6 +572,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 8: Power monitor (optional) ─────────────────
+  memMark("8 power monitor")
   -- Only load optional modules if we have enough RAM (MIN_FREE_FOR_OPTIONAL,
   -- hoisted next to the ramOK() helper above). Shell needs ~30KB to load,
   -- so keep at least 40KB free. ramOK() honors the operator's Boot Settings
@@ -635,6 +672,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 9: Security subsystem (optional) ────────────
+  memMark("9 security subsystem")
   do
     if computer.freeMemory() > MIN_FREE_FOR_OPTIONAL then
       local ok1, crypto = pcall(require, "kernel.crypto")
@@ -764,6 +802,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 9b: Theme manager (optional) ────────────────
+  memMark("9b theme manager")
   -- Lives between security and network because (a) it needs securefs
   -- to persist to /home/<user>/.theme.cfg under the right ACL, and
   -- (b) it must exist before the login event fires so the kernel
@@ -787,6 +826,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 10: Network (optional) ──────────────────────
+  memMark("10 network")
   if (hal.has("modem") or hal.has("tunnel"))
      and wants("net", ramOK()) then
     local ok, netMod = pcall(require, "kernel.net")
@@ -861,6 +901,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 11: Startup services & compatibility ─────────
+  memMark("11 startup services and compatibility")
   -- Run startup scripts from /etc/rc.d/. Now a gateable FEATURE
   -- ("services") so Safe Mode / minimal can refuse to run third-party
   -- service code at boot; the normal profile stays RAM-gated as before.
@@ -963,6 +1004,7 @@ function kernel.boot(opts)
   end
 
   -- ── Stage 12: Audio feedback system ─────────────────────
+  memMark("12 audio feedback system")
   -- Cheap (a couple of beep helpers); loads in every profile but `minimal`.
   if wants("audio", true) then
     local ok, audioMod = pcall(require, "kernel.audio")
@@ -997,6 +1039,7 @@ function kernel.boot(opts)
   _G._TOS.event  = event
 
   -- ── Stage 13: Boot complete ─────────────────────────────
+  memMark("13 boot complete")
   -- #MEM — keep the collector tight on small heaps. Lua's default GC pause
   -- (200%) lets garbage accumulate to twice the live set before a full
   -- cycle runs; on a 512KB–1MB box that float alone can eat the headroom
@@ -1015,6 +1058,19 @@ function kernel.boot(opts)
   -- argument: this is a report, so always collect and tell the truth.
   local freeNow = (hal and hal.freeMemory and hal.freeMemory()) or computer.freeMemory()
   local bootDuration = computer.uptime() - _G._TOS.bootTime
+  if bootMem then
+    _G._TOS.bootMem = bootMem
+    -- Each mark is taken as a stage STARTS, so a stage's own cost is its
+    -- mark minus the NEXT one. Printing each mark with the delta from the
+    -- one before pinned every stage's cost on its successor.
+    for i, m in ipairs(bootMem) do
+      local nxt = bootMem[i + 1]
+      log.info("memprofile", nxt
+        and string.format("%-36s used %4dK, %5dK free after", m.stage,
+          math.floor((m.free - nxt.free) / 1024), math.floor(nxt.free / 1024))
+        or string.format("%-36s %5dK free", m.stage, math.floor(m.free / 1024)))
+    end
+  end
   log.info("kernel", "Boot complete! Free memory: " ..
     math.floor(freeNow / 1024) .. "KB")
   log.info("kernel", string.format("Boot time: %.1fs", bootDuration))
@@ -1109,6 +1165,7 @@ function kernel.boot(opts)
   log.detachEarlyPrint()
 
   -- ── Stage 14: Login → Shell / Headless Loop ─────────────
+  memMark("14 login -> shell / headless loop")
   -- #MEM — boot() is one-shot: /init.lua calls it exactly once per power-on
   -- (kernel.reboot goes through computer.shutdown, which restarts from the
   -- BIOS). Dropping the reference lets the GC reclaim boot's compiled chunk
