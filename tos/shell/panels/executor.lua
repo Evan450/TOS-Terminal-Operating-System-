@@ -133,7 +133,9 @@ function M.build(S, deps)
       if fitted and screenMod and screenMod.restore then
         pcall(screenMod.restore, seat)
       end
-      S._program = nil
+      -- Clear the record only if it is still OURS: with two programs
+      -- backgrounded, the older one's exit must not erase the newer one's.
+      if S._program and S._program.pid == pid then S._program = nil end
       -- Drop the program's tab chip. Closing by IDENTITY, not by a
       -- remembered index: other tabs may have opened or closed while
       -- the program was in the background.
@@ -528,8 +530,16 @@ function M.build(S, deps)
     -- Only the plain single-command path may hand off the seat: a
     -- program inside a pipeline has no stdout to give anyone, and a
     -- redirect wants a buffer to write.
+    --! Skip the output only when THIS command handed the seat to a
+    --! program. It tested "is any program recorded", and the record stays
+    --! for the program's whole life -- so once one was backgrounded with
+    --! Ctrl+B, every command after it ran and showed nothing: `echo`,
+    --! `ps`, all of it, until the program exited (headless machine,
+    --! 2026-10-10; `mkdir` there proved the commands were running).
+    --! (test_bg_program_output.lua)
+    local before = S._program
     local buf = execSingle(input, nil, true)
-    if S._program then return end   -- a full-screen program owns the seat
+    if S._program and S._program ~= before then return end   -- it owns the seat now
     showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
   end
 

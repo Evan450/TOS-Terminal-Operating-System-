@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**68 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 46 | Planned or under investigation. Most contributions belong here. |
+| Planned | 45 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -262,19 +262,6 @@ COST, and compress.lua's own header already says it: a data- card call draws a p
 No data card -&gt; compress.lua falls back to a stored blob, so the fileCost win survives without compression.
 
 securefs must still mediate the mount point, exactly as the jbod header says ("a TRANSPORT, not an access layer").
-
-### Stage 1b leftover — the runner is verified only off-box
-
-*Planned* · from the round *In progress: multitasking for full-screen programs*
-
-STAGE 1b LEFTOVER — the runner is verified only off-box:
-
-1. executor.lua: when the command comes from pkg.getCommand, spawn it as a seat-bound process (display = S.displayIdx, principal/token from the seat, background = the manifest policy) instead of pcall-ing it inline, then setForeground it.
-2. The shell must then NOT draw. Today execSingle returns an output buffer and the shell repaints + reprints the prompt — straight over the program. Needs a "handed off" result so the shell skips its post-command redraw and returns to its event loop; it is not foreground, so it receives no input.
-3. A kernel-level SUSPEND HOTKEY, intercepted in the kernel loop exactly like Ctrl+T (kernel/init.lua:1439) so the sandboxed program never sees it: drop the program to the background and hand the seat back to the shell with `tos_focus`. Ctrl+Z (ch 26) is the obvious key — CHECK IT IS UNBOUND FIRST.
-4. Resume: the Ctrl+T switcher already lists processes and can foreground one. Needs to signal `tos_focus` on the way in.
-5. Programs must repaint on `tos_focus`. It is NOT in the sandbox's PULL\_DROP, so it already reaches sandboxed code — but calc/snake/ttt/tetris currently ignore unknown signals and would show a stale screen (the tick-driven ones self-heal within a frame; the input-driven ones would not). Four small package updates + a documented convention for third parties.
-6. On program EXIT: hand the seat back to the shell the same way.
 
 ### Operator decision: `pkg` and `service` read-only subcommands are admin-only
 

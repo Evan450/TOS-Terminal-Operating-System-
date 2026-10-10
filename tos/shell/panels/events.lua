@@ -1375,6 +1375,12 @@ function M.run(S, deps)
       if now - (S._lastStatusT or 0) >= ((pol and pol.idleSeconds()) or 1) then
         S._lastStatusT = now
         drawStatusBar()
+        -- A backgrounded program's chip changes state by itself (busy ->
+        -- frozen); repaint the top bar when one did. (test_program_tab.lua)
+        local okAp, appsMod = pcall(require, "shell.panels.apps")
+        if okAp and appsMod and appsMod.chipsChanged and appsMod.chipsChanged(S) then
+          drawTopBar()
+        end
         -- The tiles view's header rail carries the clock the file view
         -- doesn't have room for, so it ticks on the same cadence as
         -- the status bar rather than getting its own timer.

@@ -121,6 +121,13 @@ do
     while true do coroutine.yield() end
   end, { display = 1 })
   proc.setForeground(shellPid, 1, { kernel = true })
+  -- The moment after Ctrl+B, before the scheduler has ticked: bgState says
+  -- "live". That read as idle, and the chip came up plain, as if frozen.
+  apps.refreshTabs(S)
+  test("the moment it is backgrounded the chip is BUSY, not plain",
+    S.tabs[2].live == true)
+  test("chipsChanged reports the first state once", apps.chipsChanged(S) == true)
+  test("...and not again while nothing changes", apps.chipsChanged(S) == false)
   for _ = 1, 4 do proc.tick(nil) end
 
   apps.refreshTabs(S)
@@ -131,8 +138,16 @@ do
   -- should stop claiming to be live.
   clock = clock + proc.BG_GRACE + 1
   proc.tick(nil)
+  -- Nothing repainted the top bar when it froze: the idle tick asks.
+  test("chipsChanged notices the freeze by itself", apps.chipsChanged(S) == true)
   apps.refreshTabs(S)
   test("a FROZEN program's chip is no longer busy", S.tabs[2].live == false)
+  local ev2
+  for _, p in ipairs({ "tos/shell/panels/events.lua", "../../../tos/shell/panels/events.lua" }) do
+    local h = io.open(p, "rb"); if h then ev2 = h:read("*a"):gsub("\r\n", "\n"); h:close(); break end
+  end
+  test("the shell's idle tick repaints the top bar when a chip changed",
+    ev2 ~= nil and ev2:find("appsMod.chipsChanged(S) then\n          drawTopBar()", 1, true) ~= nil)
   proc.kill(shellPid, { kernel = true })
 end
 
