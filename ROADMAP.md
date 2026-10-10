@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**76 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**74 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 53 | Planned or under investigation. Most contributions belong here. |
+| Planned | 51 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (13) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (11) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -73,12 +73,6 @@ own header already draws this line -- a battery that
 installs software on the machine it is auditing is a
 
 different and much worse tool.
-
-### Ocelot check for slice 1: install a package whose library is on a second floppy
-
-*Planned* · from the round *Federated package repos (2026-09-27)*
-
-OCELOT CHECK FOR SLICE 1: install a package whose library is on a SECOND floppy; `pkg upgrade` against a disk carrying a stranger- signed copy (refused, old version intact); an install refused for a version contradiction. And TIME the signed upgrade on a T1: it now verifies Ed25519 twice (before removal, and in install against the bytes install reads).
 
 ### Ocelot check for the Fermi import
 
@@ -191,22 +185,6 @@ Emulator checklist:
 - L toggles low-only; / filters by both label and mod id
 - ^B backgrounds it and the chip comes back with fresh numbers (drowsy, rescans on its 10s timer)
 - a BIG inventory (drawers/barrel with many slots): confirm the getAllStacks fast path doesn't stall the seat, and that a component WITHOUT getAllStacks still works
-
-### Emulator checklist (needs a card and a server with HTTP on): Internet card + remote pkg round
-
-*Planned* · from the round *Internet card + remote pkg round (2026-08-04)*
-
-Emulator checklist (needs a card AND a server with HTTP on):
-
-- no card: `internet` says so; `pkg fetch x` fails cleanly
-- card with server HTTP off: status must blame the SERVER, not read as "no card"
-- `internet off` then `internet get <url>` -&gt; refused; `internet on` -&gt; works
-- `pkg repo add oc <url>` -&gt; `pkg remote` lists packages
-- `pkg fetch <name>` on a hashless repo must REFUSE, then work with --allow-unverified
-- confirm /var/pkg/remote is EMPTY afterwards (both on success and after a deliberate failure)
-- a package whose index names ../.. must be refused and must write nothing
-- pull the card mid-download; confirm no .part is left and no half-installed package
-- a T1 (192K) box: fetch something near the 128K file cap and confirm it does not OOM (this is the one the off-box tests genuinely cannot prove)
 
 ### Emulator checklist: Cluster setup round
 

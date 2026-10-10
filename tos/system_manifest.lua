@@ -1,9 +1,9 @@
 return {
 
-{ path = "/init.lua",                       critical = true  , hash = "1ad3c5d5efd2bb96ac80fdcf265e3de5b4378c6dc1dbe1401a2017e62072fce3" },
+{ path = "/init.lua",                       critical = true  , hash = "1e72d3a15fd0a4112360ad4d588c2521e6205521ad445690d5c21a4757606d52" },
 { path = "/install.lua",                    critical = false , hash = "6b1d4fc0f9aba7fe0d1ef6f4603de14c53a94ab0449df55d97136cea12c0ba10" },
 
-{ path = "/tos/kernel/init.lua",            critical = true  , hash = "f64dfe571bc1bff63099a1d609a11436592dbf7c5b9fe79d4ff62a86fc831cbf" },
+{ path = "/tos/kernel/init.lua",            critical = true  , hash = "17b22bf9d76c746e4d2a0cd73058e2cdf0869cb515b956c7d43bdf80fcf77fa3" },
 { path = "/tos/kernel/log.lua",             critical = true  , hash = "a1eab3805948dad04dc5a666de61dd76b7b3b444fa6eb3786383b948f6a0965e" },
 { path = "/tos/kernel/hal.lua",             critical = true  , hash = "c0a3b3fcd077e534957561448196cae3cef2c30ca29a4cc4e0b0e46e6e30e643" },
 { path = "/tos/kernel/event.lua",           critical = true  , hash = "59ee3d3d8333da8f29e392c72add794b9376583fca918095709e46ae5520461f" },
