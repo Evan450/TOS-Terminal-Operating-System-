@@ -278,6 +278,8 @@ def test_the_runner_knows_hostmv_and_reports_beeps():
     assert '"--seats"' in (HERE / "headless-session.py").read_text(encoding="utf-8")
     assert 'case "machine": {' in java
     assert 'case "grab": {' in java and 'static String expand(' in java
+    assert 'new TapeDrive()' in java and '"--tape"' in java
+    assert '"--tape"' in (HERE / "headless-session.py").read_text(encoding="utf-8")
     assert "new Relay()" in java and '"--peer-boot"' in java
     src = (HERE / "headless-session.py").read_text(encoding="utf-8")
     assert '"--machines"' in src and '"--peer-put"' in src and '"--peer-boot"' in src

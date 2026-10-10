@@ -137,8 +137,8 @@ function M.open(S)
       if _G._TOS and _G._TOS.audio then pcall(_G._TOS.audio.chat) end
       if NM.send and protocol.makePacket then
         pcall(function()
-          NM.send(fromAddr, protocol.makePacket(protocol.TYPE.MSG_ACK, {},
-            { to = fromAddr }))
+          NM.send(fromAddr, protocol.makePacket(protocol.TYPE.MSG_ACK,
+            { ref = packet.seq }, { to = fromAddr }))
         end)
       end
     end)
@@ -154,6 +154,11 @@ function M.onClose(S, tab)
     local protocol = NM.getProtocol()
     if protocol then pcall(NM.off, protocol.TYPE.MSG, tab._listenerId) end
     tab._listenerId = nil
+  end
+  if tab._ackListenerId and NM and NM.off and NM.getProtocol then
+    local protocol = NM.getProtocol()
+    if protocol then pcall(NM.off, protocol.TYPE.MSG_ACK, tab._ackListenerId) end
+    tab._ackListenerId = nil
   end
 end
 
@@ -334,7 +339,7 @@ local function doSend(S, tab)
       -- Mail is an ADD-ON (stage 5); the mesh transport under it is base.
       local mp, mtext = arg:match("^(%S+)%s+(.+)$")
       local dest = mp and trustMgr and chatCore.resolveTarget(
-        trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED)
+        trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED, NM and NM.aliases and NM.aliases.resolve)
       local okLib, mailLib = pcall(require, "mail")
       if not mp or not mtext then
         M.addMessage(tab, "Usage: /mail <peer> <message>", T.warning)
@@ -362,9 +367,9 @@ local function doSend(S, tab)
     -- quietly skipped — "sent to 2 of 4" is the difference between an
     -- operator knowing their message landed and assuming it did.
     local groups = loadGroups()
-    local addrs, missing = chatCore.resolveGroup(groups, act.group,
+    local addrs, missing, nameOf = chatCore.resolveGroup(groups, act.group,
       (trustMgr and trustMgr.listPeers()) or {},
-      trustMgr and trustMgr.LEVEL.TRUSTED or 2)
+      trustMgr and trustMgr.LEVEL.TRUSTED or 2, NM and NM.aliases and NM.aliases.resolve)
     if not addrs then
       M.addMessage(tab, "No such group: @" .. act.group .. "  (/group to list)", T.error)
     elseif #addrs == 0 then
@@ -373,23 +378,37 @@ local function doSend(S, tab)
         M.addMessage(tab, "  unreachable: " .. m, T.dim)
       end
     else
-      local sent = 0
-      for _, a in ipairs(addrs) do
-        if NM.sendMessage(a, "@" .. act.group .. " " .. act.text) then sent = sent + 1 end
-      end
+      --! "Delivered" means ACKNOWLEDGED. A send that left this machine says
+      --! nothing about a member that is switched off: a group counted every
+      --! member it had sent to as delivered (two headless machines,
+      --! 2026-10-10). Each member that takes the message answers MSG_ACK
+      --! { ref = seq } (its chatrelay service, always running); the tick
+      --! below gives them ACK_WAIT seconds and then reports, naming whoever
+      --! did not answer. A send the transport refused is named at once,
+      --! with its reason -- "no shared secret" was silently a 0.
+      local sent = {}
       M.addMessage(tab, "[" .. hostname .. " -> @" .. act.group .. "] " .. act.text, T.title)
-      if sent < #addrs or #missing > 0 then
-        M.addMessage(tab, string.format("  delivered to %d of %d member(s)",
-          sent, #addrs + #missing), T.warning)
-        for _, m in ipairs(missing) do
-          M.addMessage(tab, "  unreachable: " .. m, T.dim)
-        end
+      for _, a in ipairs(addrs) do
+        local name = (nameOf and nameOf[a]) or tostring(a):sub(1, 8)
+        local ok, err, seq = NM.sendMessage(a, "@" .. act.group .. " " .. act.text)
+        if ok then sent[#sent + 1] = { addr = a, seq = seq, name = name }
+        else M.addMessage(tab, "  not sent to " .. name .. ": " .. tostring(err), T.warning) end
+      end
+      for _, m in ipairs(missing) do
+        M.addMessage(tab, "  unreachable: " .. m, T.dim)
+      end
+      local total = #addrs + #missing
+      if #sent == 0 then
+        M.addMessage(tab, string.format("  delivered to 0 of %d member(s)", total), T.warning)
+      else
+        M.watchAcks(S, tab, { group = act.group, sent = sent, total = total,
+          deadline = (computer.uptime and computer.uptime() or 0) + M.ACK_WAIT })
       end
     end
 
   elseif act.kind == "directed" then
     local destAddr = trustMgr and chatCore.resolveTarget(
-      trustMgr.listPeers(), act.target, trustMgr.LEVEL.TRUSTED)
+      trustMgr.listPeers(), act.target, trustMgr.LEVEL.TRUSTED, NM and NM.aliases and NM.aliases.resolve)
     if destAddr then
       local ok, err = NM.sendMessage(destAddr, act.text)
       if ok then M.addMessage(tab, "[" .. hostname .. "] " .. act.text, T.title)
@@ -513,9 +532,65 @@ end
 
 --- Live: repaint when the listener marked us dirty while front, or when a
 --- new announcement arrived while this tab was the one being looked at.
+-- ── Group delivery: who answered ────────────────────────────
+--- Seconds a group send waits for its members' MSG_ACKs before reporting.
+M.ACK_WAIT = 4
+
+--- Start waiting for the acknowledgements of one group send. `w` =
+--- { group, sent = { {addr, seq, name}, ... }, total, deadline }. The
+--- MSG_ACK listener is registered once per tab and dropped in onClose.
+function M.watchAcks(S, tab, w)
+  tab._acks = tab._acks or {}
+  tab._acks[#tab._acks + 1] = w
+  local NM = S.NM
+  local protocol = NM and NM.getProtocol and NM.getProtocol()
+  if tab._ackListenerId or not (protocol and NM.on) then return end
+  tab._ackListenerId = NM.on(protocol.TYPE.MSG_ACK, function(packet, fromAddr)
+    local ref = type(packet) == "table" and type(packet.payload) == "table"
+      and packet.payload.ref or nil
+    for _, pending in ipairs(tab._acks or {}) do
+      for _, s in ipairs(pending.sent) do
+        -- An ack without a ref is from a TOS older than this: take it as
+        -- answering the newest thing we sent that machine.
+        if s.addr == fromAddr and not s.got and (ref == nil or ref == s.seq) then
+          s.got = true
+          tab._dirty = true
+        end
+      end
+    end
+  end)
+end
+
+--- Report every group send whose members have all answered, or whose wait
+--- is over. Returns true when it added lines.
+function M.settleAcks(tab, now)
+  if not tab._acks or #tab._acks == 0 then return false end
+  local T, keep, said = tab._theme or {}, {}, false
+  for _, w in ipairs(tab._acks) do
+    local got, all = 0, true
+    for _, s in ipairs(w.sent) do
+      if s.got then got = got + 1 else all = false end
+    end
+    if all or now >= w.deadline then
+      M.addMessage(tab, string.format("  @%s: delivered to %d of %d member(s)",
+        w.group, got, w.total), (got == w.total) and T.highlight or T.warning)
+      for _, s in ipairs(w.sent) do
+        if not s.got then M.addMessage(tab, "  no answer from " .. s.name, T.dim) end
+      end
+      said = true
+    else
+      keep[#keep + 1] = w
+    end
+  end
+  tab._acks = keep
+  return said
+end
+
 function M.tick(S, tab)
   local newAnn = drainAnnouncements(S, tab)
-  if tab._dirty or newAnn then return 3 end
+  tab._theme = S.T
+  local settled = M.settleAcks(tab, computer.uptime and computer.uptime() or 0)
+  if tab._dirty or newAnn or settled then return 3 end
   return 0
 end
 

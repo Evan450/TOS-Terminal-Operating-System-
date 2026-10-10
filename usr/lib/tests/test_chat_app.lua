@@ -202,6 +202,88 @@ chatApp.handleKey(S, tab, 17, 16)     -- Ctrl+Q
 eq("tab closed", 1, #S.tabs)
 eq("listener unregistered on close", 1, listener.offCalls)
 
+-- ── A group's "delivered" means ACKNOWLEDGED ───────────────────────
+-- Two headless machines, 2026-10-10: a group counted every member it had
+-- SENT to as delivered, so one switched off was never named; a member named
+-- by its alias was "unreachable" with the machine on; and a send the
+-- transport refused (no shared secret) was a silent 0.
+do
+  local clock = 100
+  package.loaded["computer"].uptime = function() return clock end
+  package.loaded["kernel.fs"] = {
+    exists = function(p) return p == "/etc/chat-groups.cfg" end,
+    readFile = function() return '{ ops = { "alpha", "m2", "ghost" } }' end,
+  }
+  package.loaded["kernel.serialize"] = require("kernel.serialize")
+  local ackCb, seq, refuse = nil, 0, {}
+  local G = {
+    LEVEL = { TRUSTED = 2 },
+    listPeers = function() return {
+      { address = "aaaa1111", hostname = "alpha", level = 2 },
+      { address = "cccc3333", hostname = "tos",   level = 2 },
+    } end,
+    getLevel = function() return 2 end,
+    getPeer = function() return nil end,
+  }
+  local NM2 = {
+    getProtocol = function() return { TYPE = { MSG = "MSG", MSG_ACK = "MSG_ACK" },
+      makePacket = function(t, p) return { type = t, payload = p } end } end,
+    getTrust = function() return G end,
+    getHostname = function() return "myhost" end,
+    aliases = { resolve = function(s) return s == "m2" and "cccc3333" or nil end },
+    on = function(t, cb) if t == "MSG_ACK" then ackCb = cb end; return 9 end,
+    off = function() end,
+    send = function() end,
+    sendMessage = function(addr)
+      if refuse[addr] then return false, refuse[addr] end
+      seq = seq + 1; return true, nil, seq
+    end,
+  }
+  local S2 = newS(); S2.NM = NM2
+  local tab2 = chatApp.open(S2)
+  local function say(str)
+    for i = 1, #str do chatApp.handleKey(S2, tab2, str:byte(i), 0) end
+    chatApp.handleKey(S2, tab2, 13, 28)
+  end
+  local function lines(from)
+    local t = {}
+    for i = from, #tab2.messages do t[#t + 1] = tab2.messages[i].text end
+    return table.concat(t, "\n")
+  end
+
+  local mark = #tab2.messages + 1
+  say("@ops: hello")
+  test("the member named by its alias is sent to (not 'unreachable')",
+    seq == 2 and not lines(mark):find("unreachable: m2", 1, true))
+  test("the unknown member is named at once", lines(mark):find("unreachable: ghost", 1, true) ~= nil)
+  test("nothing is called delivered before anyone answers",
+    not lines(mark):find("delivered to", 1, true))
+  ackCb({ payload = { ref = 1 } }, "aaaa1111")         -- alpha answers
+  ackCb({ payload = { ref = 99 } }, "cccc3333")        -- not an answer to this
+  clock = clock + 1; chatApp.tick(S2, tab2)
+  test("...nor while the wait is on", not lines(mark):find("delivered to", 1, true))
+  clock = clock + chatApp.ACK_WAIT; chatApp.tick(S2, tab2)
+  test("after the wait: delivered to the one that answered, of all three",
+    lines(mark):find("@ops: delivered to 1 of 3 member(s)", 1, true) ~= nil, lines(mark))
+  test("...naming the one that did not (switched off)",
+    lines(mark):find("no answer from m2", 1, true) ~= nil)
+
+  mark = #tab2.messages + 1
+  package.loaded["kernel.fs"].readFile = function() return '{ ops = { "alpha", "m2" } }' end
+  say("@ops: again")
+  ackCb({ payload = { ref = seq - 1 } }, "aaaa1111")
+  ackCb({ payload = {} }, "cccc3333")                   -- an older TOS: no ref
+  chatApp.tick(S2, tab2)
+  test("when every member answers it says so at once",
+    lines(mark):find("@ops: delivered to 2 of 2 member(s)", 1, true) ~= nil, lines(mark))
+
+  mark = #tab2.messages + 1
+  refuse["cccc3333"] = "TRUSTED peer has no shared secret"
+  say("@ops: third")
+  test("a refused send is named, with the reason",
+    lines(mark):find("not sent to m2: TRUSTED peer has no shared secret", 1, true) ~= nil, lines(mark))
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

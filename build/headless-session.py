@@ -254,6 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
     ap.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    ap.add_argument("--tape", action="store_true",
+                    help="a tape drive beside the (first) machine, with a blank tape in it")
     ap.add_argument("--machines", choices=["1", "2"], default="1",
                     help="2 adds a second computer with its own fresh TOS, joined by "
                          "network cards and a relay; `machine N` picks which one")
@@ -348,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd += ["--config", str(work / "OpenComputers.conf")]
     if args.internet:
         cmd.append("--internet")
+    if args.tape:
+        cmd.append("--tape")
     if args.seats != "1":
         cmd += ["--seats", args.seats]
     if peer_boot is not None:

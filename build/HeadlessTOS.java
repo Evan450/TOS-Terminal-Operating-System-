@@ -30,6 +30,8 @@ import totoro.ocelot.brain.entity.Memory;
 import totoro.ocelot.brain.entity.NetworkCard;
 import totoro.ocelot.brain.entity.Relay;
 import totoro.ocelot.brain.entity.Screen;
+import totoro.ocelot.brain.entity.TapeDrive;
+import totoro.ocelot.brain.entity.tape.Tape;
 import totoro.ocelot.brain.entity.machine.Machine;
 import totoro.ocelot.brain.util.Direction$;
 import totoro.ocelot.brain.event.BeepEvent;
@@ -70,6 +72,8 @@ import totoro.ocelot.brain.workspace.Workspace;
  *   --disk-address U  the second disk's address, so an OS that mounts by
  *                   address (OpenOS: /mnt/<first 3>) puts it somewhere known
  *   --internet      add an internet card
+ *   --tape          a Computronics tape drive beside the (first) computer,
+ *                   with a blank iron tape in it
  *   --peer-boot DIR a SECOND computer booting DIR: its own T3 case, disk,
  *                   screen and keyboard, a network card in each machine and
  *                   a relay between them; the script's `machine N` step
@@ -198,6 +202,7 @@ public class HeadlessTOS {
   static Machine peer;          // --peer-boot: the second computer
   static Screen peerScreen;     // ...and its screen, for `machine 2`
   static Path peerDiskDir;      // --peer-disk: a second disk in it
+  static boolean withTape;      // --tape
   static Machine machine;
   static Workspace ws;
   static Case pcCase;      // for `pullcard`
@@ -321,6 +326,14 @@ public class HeadlessTOS {
         if (f == null) throw new IllegalArgumentException("--floppy-in names no --floppy: " + floppyIn);
         floppyDrive.inventory().apply(0).put(f);
       }
+    }
+
+    // A tape drive (--tape), as a player would put one beside the case.
+    if (withTape) {
+      TapeDrive drive = ws.add(new TapeDrive());
+      pc.connect(drive);
+      drive.inventory().apply(0).put(new Tape(Tape.Kind$.MODULE$.Iron(), Option.apply("intercom")));
+      System.out.println("[headless] tape drive with a blank iron tape");
     }
 
     // A second computer (--peer-boot): its own case, disk, screen and
@@ -772,7 +785,7 @@ public class HeadlessTOS {
     if (boot == null || biosFile == null || workDir == null) {
       System.err.println("usage: HeadlessTOS --boot DIR --bios FILE --work DIR [--disk DIR]"
           + " [--timeout SECS] [--config FILE] [--profile t3|t1] [--ram KB[,KB]] [--boot-tier N]"
-          + " [--disk-address UUID] [--internet] [--seats 1|2] [--peer-boot DIR]"
+          + " [--disk-address UUID] [--internet] [--tape] [--seats 1|2] [--peer-boot DIR]"
           + " [--floppy NAME=DIR]... [--floppy-in NAME]"
           + " [--script FILE] [--trace]");
       System.exit(64);
@@ -790,6 +803,7 @@ public class HeadlessTOS {
       System.exit(64);
     }
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
+    withTape = flag(args, "--tape");
     if (opt(args, "--peer-disk", null) != null)
       peerDiskDir = Paths.get(opt(args, "--peer-disk", null)).toAbsolutePath();
     if (seats != 1 && seats != 2) {

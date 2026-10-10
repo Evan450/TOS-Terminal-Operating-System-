@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**70 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**69 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 47 | Planned or under investigation. Most contributions belong here. |
+| Planned | 46 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (14) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -158,17 +158,6 @@ Emulator checklist:
 - L toggles low-only; / filters by both label and mod id
 - ^B backgrounds it and the chip comes back with fresh numbers (drowsy, rescans on its 10s timer)
 - a BIG inventory (drawers/barrel with many slots): confirm the getAllStacks fast path doesn't stall the seat, and that a component WITHOUT getAllStacks still works
-
-### Emulator checklist for this round: Intercom round
-
-*Planned* · from the round *Intercom round (2026-07-28)*
-
-Emulator checklist for this round:
-
-- record a real tape, note the positions, catalog them, and check `intercom test` brackets the right recording (this is the one thing off-box tests CANNOT prove — 4096 B/s is the assumed rate; if the stop lands early or late, set bytesPerSecond from what you measure)
-- two machines: `intercom play` on one, confirm the other shows the chat line and (at alert+) the message box
-- hammer alerts and confirm the cooldown keeps the keyboard usable
-- `@group:` to 3 peers with one powered off; confirm it says "delivered to 2 of 3" and names the missing one
 
 ### Run a verification round in real Minecraft OpenComputers
 

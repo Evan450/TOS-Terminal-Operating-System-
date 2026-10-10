@@ -78,6 +78,39 @@ test("empty target -> nil", chat.resolveTarget(peers, "", TRUSTED) == nil)
 -- Below the gate, the KNOWN peer resolves.
 eq("lower gate resolves KNOWN peer", "9911223344", chat.resolveTarget(peers, "charlie", 1))
 
+-- Aliases (net.aliases.resolve, passed in). Chat never asked: every fresh
+-- TOS is hostname "tos", so an alias is how two are told apart, and a group
+-- of aliases called every member unreachable (headless machines, 2026-10-10).
+do
+  local ALIASES = { m2 = "ff00aa11bb", half = "9911223344", gone = "dead000000" }
+  local function resolveAlias(s) return ALIASES[s] end
+  eq("an alias resolves to its TRUSTED peer", "ff00aa11bb",
+    chat.resolveTarget(peers, "m2", TRUSTED, resolveAlias))
+  test("...not without the resolver (the old behaviour)",
+    chat.resolveTarget(peers, "m2", TRUSTED) == nil)
+  test("an alias for a peer below the gate is refused",
+    chat.resolveTarget(peers, "half", TRUSTED, resolveAlias) == nil)
+  test("an alias for an address that is no peer at all is refused",
+    chat.resolveTarget(peers, "gone", TRUSTED, resolveAlias) == nil)
+  eq("a token that is no alias still resolves by hostname", "ab12cd34ef",
+    chat.resolveTarget(peers, "alpha", TRUSTED, resolveAlias))
+  test("a resolver that throws is not fatal",
+    chat.resolveTarget(peers, "alpha", TRUSTED, function() error("boom") end) == "ab12cd34ef")
+  local addrs, missing = chat.resolveGroup({ ops = { "m2", "ghost" } }, "ops",
+    peers, TRUSTED, resolveAlias)
+  test("a group of aliases resolves its members, naming the rest",
+    addrs and #addrs == 1 and addrs[1] == "ff00aa11bb" and missing[1] == "ghost")
+  -- ...and every caller hands the resolver over.
+  local function count(rel)
+    local f = io.open(rel, "rb"); if not f then return -1 end
+    local s = f:read("*a"); f:close()
+    local _, n = s:gsub("NM and NM%.aliases and NM%.aliases%.resolve", "")
+    return n
+  end
+  eq("chat.lua passes net.aliases.resolve at both call sites", 2, count("tos/shell/chat.lua"))
+  eq("the chat tab passes it at all three", 3, count("tos/shell/panels/chatapp.lua"))
+end
+
 -- ── Groups: the multi-operator addressing mode ─────────────────────
 print()
 do

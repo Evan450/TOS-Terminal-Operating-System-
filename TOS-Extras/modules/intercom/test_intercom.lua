@@ -283,6 +283,47 @@ do
   eq("duration honours bytesPerSecond", 2, delay)
 end
 
+-- Stop by POSITION. Computronics for 1.7.10 plays 1024-byte packets every
+-- 250 ms (4096 B/s); for 1.12, and Ocelot, 1500-byte ones (6000 B/s). Timed
+-- at 4096, a [0]..[8192] cue on Ocelot's drive stopped at byte 13500.
+local function runDrive(pkt, opts)
+  local d = fakeDrive(65536)
+  d.getState = function() return d.playing and "PLAYING" or "STOPPED" end
+  local cue = { name = "x", start = 0, stop = 8192, text = "hi", severity = "info" }
+  local poll, cancelled, t = nil, nil, 0
+  local ok = ic.playCue(d, cue, {
+    interval = function(_, fn) poll = fn; return 7 end,
+    cancelTimer = function(id) cancelled = id end,
+    clock = function() return t end,
+  })
+  local n = 0
+  while d.playing and n < 1000 do
+    n = n + 1; t = t + 0.05                       -- one 50 ms poll
+    if pkt > 0 and n % 5 == 0 then d.pos = d.pos + pkt end
+    if opts and opts.endsAt and n == opts.endsAt then d.playing = false end
+    if poll then poll() end
+  end
+  return d, ok, cancelled, t
+end
+
+for _, pkt in ipairs({ 1024, 1500 }) do
+  local d, ok, cancelled = runDrive(pkt)
+  test(pkt .. "-byte packets: playCue starts it", ok)
+  test(pkt .. "-byte packets: stopped at the cue's end, within one packet",
+    not d.playing and d.pos >= 8192 and d.pos < 8192 + pkt)
+  eq(pkt .. "-byte packets: ...and the poll cancelled itself", 7, cancelled)
+end
+do
+  local d, _, cancelled = runDrive(1500, { endsAt = 3 })
+  eq("playback that ends by itself ends the poll too", 7, cancelled)
+  eq("...with the drive stopped once, by the poll", 2, d.stops)  -- seekTo's + the poll's
+end
+do
+  local _, _, cancelled, t = runDrive(0)              -- a drive that never moves
+  eq("a stuck drive is given up on", 7, cancelled)
+  test("...at the cue at the slowest rate, plus two seconds", t >= 10 and t < 10.2)
+end
+
 do
   local d = fakeDrive(4096)
   d.isReady = function() return false end

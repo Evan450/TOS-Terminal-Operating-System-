@@ -21,9 +21,15 @@
 -- kernel.net / kernel.fs / kernel.event. The base image keeps a thin
 -- `intercom` command stub that pcall-requires this package and prints an
 -- install hint when it's absent — exactly how `drive` relates to blockfs.
+--
+-- 1.0.1 — a receiving machine hears announcements at all. Its handler read
+-- the mesh envelope as if it were the announcement and refused every one.
+-- test_intercom_mesh_seam.lua (TOS-Dev) drives the real transport. And a
+-- cue stops at its end on either Computronics: by the drive's position,
+-- not a clock at 4096 B/s (1.12 plays 6000, and ran ~46% past the end).
 return {
   name        = "intercom",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "service",
   category    = "network",
   description = "Announcement system: plays cataloged tape messages and broadcasts the same words to the network.",

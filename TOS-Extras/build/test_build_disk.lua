@@ -412,6 +412,7 @@ do
     --! reason also empties the list.
     local PENDING_RESIGN = {
       stock = "stock 1.0.1: ^Q closes the monitor (2026-10-09)",
+      intercom = "intercom 1.0.1: the receiver reads the mesh envelope; cues stop by position (2026-10-10)",
     }
 
     if nShipped == 0 then

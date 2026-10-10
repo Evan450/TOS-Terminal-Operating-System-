@@ -1356,7 +1356,11 @@ function net.sendMessage(address, text)
     return false, "Peer must be TRUSTED to send messages"
   end
   local pkt = protocol.message(text, encryptComms)
-  return net.send(address, pkt)
+  -- The packet's seq comes back third: a receiver acknowledges a message
+  -- with MSG_ACK { ref = seq }, which is how a chat group send can tell
+  -- "delivered" from merely "sent" (shell/panels/chatapp.lua).
+  local ok, err = net.send(address, pkt)
+  return ok, err, ok and pkt.seq or nil
 end
 
 --- Request trust from a remote machine
