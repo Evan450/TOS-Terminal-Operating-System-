@@ -335,6 +335,40 @@ do
 end
 
 do
+  -- A file that exists but cannot be read or hashed says WHY. On the
+  -- headless machine (2026-10-09) a scan once reported "UNREADABLE
+  -- /tos/kernel/display.lua" for a file nobody had touched, which the next
+  -- scan read fine -- and nothing in the report told a read error from a
+  -- failed hash or a full memory.
+  local fs, deps = seeded()
+  srm.baseline(deps, { paths = CRIT, content = true })
+  local realRead = fs.readFile
+  fs.readFile = function(p)
+    if p == "/tos/kernel/init.lua" then return nil, "not enough memory" end
+    return realRead(p)
+  end
+  local rep = srm.scan(deps)
+  fs.readFile = realRead
+  local line
+  for _, f in ipairs(rep.findings) do
+    if f.text:find("UNREADABLE", 1, true) then line = f.text end
+  end
+  test("an unreadable file is reported", line ~= nil)
+  test("...with the read's own reason", line ~= nil and line:find("not enough memory", 1, true) ~= nil)
+
+  local realHash = crypto.hash
+  crypto.hash = function() error("sha256: input too large") end
+  rep = srm.scan(deps)
+  crypto.hash = realHash
+  line = nil
+  for _, f in ipairs(rep.findings) do
+    if f.text:find("UNREADABLE", 1, true) then line = f.text end
+  end
+  test("a failed hash says it was the hash, and why",
+    line ~= nil and line:find("hash failed", 1, true) ~= nil and line:find("input too large", 1, true) ~= nil)
+end
+
+do
   local fs, deps = seeded()
   srm.baseline(deps, { paths = CRIT })
   fs.remove("/tos/kernel/fs.lua")
@@ -553,6 +587,22 @@ do
 
   local rep3 = srm.status(deps)
   eq("a clean POST is reported as ok", 0, rep3.counts.err)
+
+  -- The boot that follows a failed POST clears the EEPROM line and keeps
+  -- the fault for itself; the failed screen said "Then run 'srm'", and
+  -- `srm` answered "no parked fault" (headless machine, 2026-10-09).
+  local savedTOS = _G._TOS
+  _G._TOS = { postFault = { code = "K4", why = "the kernel was missing", err = "E-104 ERR_KERNEL_MISSING" } }
+  local rep4 = srm.status(deps)
+  local said, cleared = false, false
+  for _, f in ipairs(rep4.findings) do
+    if f.text:find("FAILED POST", 1, true) and f.text:find("K4", 1, true) and f.sev == "warn" then said = true end
+    if f.text:find("cleared it from the EEPROM", 1, true) then cleared = true end
+  end
+  test("after the boot cleared it, status still names the fault", said)
+  test("...and says this boot reported and cleared it", cleared)
+  eq("...as a warning, not an error: the machine booted", 0, rep4.counts.err)
+  _G._TOS = savedTOS
 end
 
 -- ============================================================

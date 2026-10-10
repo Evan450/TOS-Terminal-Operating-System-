@@ -349,7 +349,7 @@ local function readHashed(deps, path, keep)
   local size = #content
   local ok, hash = pcall(crypto.hash, content)
   if not keep then content = nil; gc() end
-  if not ok or type(hash) ~= "string" then return nil, "hash failed" end
+  if not ok or type(hash) ~= "string" then return nil, "hash failed: " .. tostring(hash) end
   return hash, size, content
 end
 
@@ -533,9 +533,13 @@ function srm.scan(deps, opts)
       rep.missing[#rep.missing + 1] = path
       add(rep, "MISSING  " .. path, "err")
     else
-      local hash = hashFile(deps, path)
+      local hash, why = hashFile(deps, path)
       if not hash then
-        add(rep, "UNREADABLE  " .. path, "err")
+        --! Say why. "UNREADABLE /tos/kernel/display.lua" came back once on
+        --! the headless machine for a file nobody had touched and that the
+        --! next scan read fine, with nothing to tell a read error from a
+        --! failed hash or a full memory. (test_srm.lua)
+        add(rep, "UNREADABLE  " .. path .. "  (" .. tostring(why or "no reason given") .. ")", "err")
         rep.drift[#rep.drift + 1] = path
       elseif hash ~= rec.hash then
         rep.drift[#rep.drift + 1] = path
@@ -830,7 +834,14 @@ function srm.status(deps, opts)
   opts = opts or {}
   local rep = newReport("status")
 
+  local TOS = _G._TOS or {}
   local fault = srm.readFault(deps)
+  --! The boot that succeeds after a failed POST reports the parked code and
+  --! clears it from the EEPROM, and keeps it as _TOS.postFault -- so the
+  --! failed screen's "Then run 'srm'" still finds it here, for the rest of
+  --! this boot. It said "POST: no parked fault" instead (headless machine,
+  --! 2026-10-09). A warning, not an error: the machine booted.
+  local consumed = not fault and type(TOS.postFault) == "table" and TOS.postFault or nil
   if fault then
     add(rep, "LAST BOOT FAILED POST — SRM " .. fault.code, "err")
     add(rep, "  " .. fault.why, "err")
@@ -841,11 +852,15 @@ function srm.status(deps, opts)
     else
       add(rep, "  clears automatically on the next successful boot", "info")
     end
+  elseif consumed and consumed.code then
+    add(rep, "THE BOOT BEFORE THIS ONE FAILED POST — SRM " .. tostring(consumed.code)
+      .. (consumed.err and (" / " .. consumed.err) or ""), "warn")
+    add(rep, "  " .. tostring(consumed.why or "?"), "warn")
+    add(rep, "  this boot reported it and cleared it from the EEPROM", "info")
   else
     add(rep, "POST: no parked fault from SRM Basic", "ok")
   end
 
-  local TOS = _G._TOS or {}
   if TOS.unsafeShutdown then
     add(rep, "last shutdown was UNSAFE (power loss / forced off)", "warn")
   end

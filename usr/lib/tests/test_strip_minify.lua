@@ -122,6 +122,42 @@ do
   end
 end
 
+-- ── Leading indentation goes; strings keep every space ──
+-- The release had grown to 2,068 KB on disk, past the 2 MB Tier 2 drive the
+-- README promises, and ~194 KB of it was indentation (2026-10-09).
+do
+  local srcI = table.concat({
+    "local function f(x)",
+    "    if x then",
+    "        --! kept: a marked comment",
+    "        return [[",
+    "    a long string",
+    "        keeps its indent]]",
+    "    end",
+    '    return "two  spaces\\',
+    '    inside"',
+    "end",
+    "return f",
+  }, "\n") .. "\n"
+  local o = strip.strip(srcI, { minify = true })
+  test("no code line starts with spaces or tabs",
+    (o:gsub("%[%[.-%]%]", ""):gsub('"[^"]*"', ""):find("\n[ \t]") == nil))
+  test("a long string keeps its own indentation",
+    o:find("[[\n    a long string\n        keeps its indent]]", 1, true) ~= nil)
+  test("a marked comment survives, flush left", o:find("\n--! kept: a marked comment", 1, true) ~= nil)
+  local fn = load(o, "=indent", "t")
+  test("...and it still compiles", fn ~= nil)
+  if fn then
+    local okF, f = pcall(fn)
+    eq("...and the long string is byte-for-byte the same",
+      "    a long string\n        keeps its indent", okF and f(true))
+    eq("...as is a string continued across a line",
+      "two  spaces\n    inside", okF and f(false))
+  end
+  local lines = select(2, srcI:gsub("\n", "")) - select(2, o:gsub("\n", ""))
+  eq("no line numbers move", 0, lines)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

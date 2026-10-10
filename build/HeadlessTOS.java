@@ -29,6 +29,10 @@ import totoro.ocelot.brain.entity.Keyboard;
 import totoro.ocelot.brain.entity.Memory;
 import totoro.ocelot.brain.entity.Screen;
 import totoro.ocelot.brain.entity.machine.Machine;
+import totoro.ocelot.brain.event.BeepEvent;
+import totoro.ocelot.brain.event.BeepPatternEvent;
+import totoro.ocelot.brain.event.Event;
+import totoro.ocelot.brain.event.EventBus;
 import totoro.ocelot.brain.user.User;
 import totoro.ocelot.brain.util.DyeColor;
 import totoro.ocelot.brain.util.ExtendedTier;
@@ -172,6 +176,7 @@ public class HeadlessTOS {
   static Screen screen;
   static Machine machine;
   static Workspace ws;
+  static Path bootPath;   // the boot disk's host directory, for `hostmv`
   // The disk drive and the floppies a script can swap through it, by name.
   static FloppyDiskDrive floppyDrive;
   static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
@@ -284,6 +289,30 @@ public class HeadlessTOS {
         + "K, boot disk " + bootAddr);
   }
 
+  // ── Beeps ─────────────────────────────────────────────────────────
+  // A machine with no speaker in the room still beeps: Brain publishes
+  // every computer.beep on its EventBus. Printed as "[beep] ..." lines, so
+  // a POST fault's beep code (bios.lua: one long 400 Hz, then N short
+  // 900 Hz) can be read off a headless run as it would be heard.
+  static final long T0 = System.nanoTime();
+  static class BeepLog extends scala.runtime.AbstractPartialFunction<Event, scala.runtime.BoxedUnit> {
+    @Override public boolean isDefinedAt(Event e) {
+      return e instanceof BeepEvent || e instanceof BeepPatternEvent;
+    }
+    @Override @SuppressWarnings("unchecked")
+    public <A1 extends Event, B1> B1 applyOrElse(A1 e, scala.Function1<A1, B1> dflt) {
+      if (!isDefinedAt(e)) return dflt.apply(e);
+      double t = (System.nanoTime() - T0) / 1e9;
+      if (e instanceof BeepEvent) {
+        BeepEvent b = (BeepEvent) e;
+        System.out.printf("[beep] %.1fs %dHz %dms%n", t, b.frequency(), b.duration());
+      } else {
+        System.out.printf("[beep] %.1fs pattern %s%n", t, ((BeepPatternEvent) e).pattern());
+      }
+      return (B1) scala.runtime.BoxedUnit.UNIT;
+    }
+  }
+
   // ── Run until it powers itself off ────────────────────────────────
   static int runUntilOff(double timeout, Path work) throws Exception {
     long start = System.nanoTime();
@@ -354,6 +383,11 @@ public class HeadlessTOS {
    *   off SECS            until the machine powers itself off
    *   powercycle          the power button, off then on: an UNCLEAN stop
    *   eject               take the floppy out of the disk drive
+   *   hostmv FROM TO      rename a file on the boot disk from OUTSIDE the
+   *                       machine (paths relative to the disk's root, and
+   *                       both must stay on it) -- what a person does to a
+   *                       disk with the machine off, e.g. remove the kernel
+   *                       to see the BIOS's K4
    *   insert NAME         put floppy NAME (a --floppy) in the drive
    *
    * Every step prints a "[step]" line with its time, which is how a
@@ -503,6 +537,22 @@ public class HeadlessTOS {
           if (!running && everRan) done = true;
           else if (inStep > secs) failure = String.format("off timed out after %.0fs", secs);
           break;
+        case "hostmv": {
+          String[] a = line.split("\\s+");
+          if (a.length != 3) { failure = "hostmv takes FROM TO"; break; }
+          Path root = bootPath.normalize();
+          Path from = root.resolve(a[1].replaceFirst("^/+", "")).normalize();
+          Path to = root.resolve(a[2].replaceFirst("^/+", "")).normalize();
+          if (!from.startsWith(root) || !to.startsWith(root)) { failure = "hostmv: paths must stay on the boot disk"; break; }
+          try {
+            Files.move(from, to);
+          } catch (Exception ex) {
+            failure = "hostmv: " + ex;
+            break;
+          }
+          done = true;
+          break;
+        }
         case "eject":
           if (floppyDrive == null) { failure = "eject: no --floppy, so no disk drive"; break; }
           floppyDrive.inventory().apply(0).remove();
@@ -579,6 +629,7 @@ public class HeadlessTOS {
       System.exit(64);
     }
     Path bootDir = Paths.get(boot).toAbsolutePath();
+    bootPath = bootDir;
     Path diskDir = disk != null ? Paths.get(disk).toAbsolutePath() : null;
     byte[] bios = Files.readAllBytes(Paths.get(biosFile));
     Path work = Paths.get(workDir).toAbsolutePath();
@@ -599,6 +650,7 @@ public class HeadlessTOS {
     Ocelot.initialize();
 
     ws = new Workspace(work.resolve("ws"));
+    EventBus.subscribe(new BeepLog());
     build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null),
         opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null),
         opts(args, "--floppy"), opt(args, "--floppy-in", null));

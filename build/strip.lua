@@ -197,8 +197,20 @@ end
 function M.emit(tokens, opts)
   opts = opts or {}
   local out = {}
-  for _, tok in ipairs(tokens) do
-    if tok.type == "line_comment" and not tok.marked then
+  for i, tok in ipairs(tokens) do
+    if opts.minify and tok.type == "code" then
+      --! Minify drops LEADING INDENTATION, in code only. Lua does not care
+      --! where a line starts; strings and long strings are their own tokens,
+      --! so a multi-line string keeps every space it had. Line numbers do
+      --! not move. It was ~194 KB of the release, which had grown to 2,068
+      --! KB on disk (content + 512 B per file) -- more than the 2 MB Tier 2
+      --! drive the README says holds TOS, and First Boot Setup failed with
+      --! "Persist failed: not enough space" on one (headless machine,
+      --! 2026-10-09). (test_strip_minify.lua)
+      local text = tok.text:gsub("\n[ \t]+", "\n")
+      if i == 1 then text = text:gsub("^[ \t]+", "") end
+      out[#out + 1] = text
+    elseif tok.type == "line_comment" and not tok.marked then
       -- Drop the comment text; the trailing newline (if any) is in
       -- the next token (a "code" token starting with `\n`) so we
       -- naturally preserve line count.

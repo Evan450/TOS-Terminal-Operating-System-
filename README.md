@@ -69,7 +69,7 @@ It is **keyboard-first and built to run infrastructure**: a base that has to kee
 
 Below 1 MB TOS does not reach a usable shell. At 768 KB the main shell cannot load and the boot falls back to the emergency terminal; at 384 KB or less the kernel itself does not fit. (Measured on a fresh install, logged in, after one command.)
 
-- **Drive**: about 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own. Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), since OpenOS is still there while TOS copies. TOS does not fit on a floppy.
+- **Drive**: about 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own, with about 150 KB left after first boot: enough to run, not to grow, so add-ons and `srm baseline --full` (about 220 KB) want a Tier 3 drive (4 MB). Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), since OpenOS is still there while TOS copies. TOS does not fit on a floppy.
 - **CPU**: any tier, on the Lua 5.3 or 5.4 architecture — sneak-click the CPU to switch it. On a 5.2 CPU the BIOS stops and says so.
 - **GPU**: any tier, detected automatically. Tier 1 is monochrome, so themes are off there; Tier 2 snaps themes to its 16 colours; Tier 3 shows them exactly.
 - **Several screens**: each GPU and screen pair is its own seat, with its own login. One computer has one CPU, so it works best when people take turns — see [MANUAL Chapter 1](MANUAL.md#1-what-tos-is).

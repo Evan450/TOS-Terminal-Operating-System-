@@ -266,3 +266,13 @@ def test_the_runner_knows_the_floppy_steps():
     java = (HERE / "HeadlessTOS.java").read_text(encoding="utf-8")
     assert 'case "eject":' in java and 'case "insert": {' in java
     assert '"--floppy"' in java and '"--floppy-in"' in java
+
+
+def test_the_runner_knows_hostmv_and_reports_beeps():
+    java = (HERE / "HeadlessTOS.java").read_text(encoding="utf-8")
+    assert 'case "hostmv": {' in java
+    # hostmv must never reach outside the boot disk's folder.
+    assert "paths must stay on the boot disk" in java
+    assert "EventBus.subscribe(new BeepLog())" in java
+    src = (HERE / "headless-session.py").read_text(encoding="utf-8")
+    assert '"[beep]"' in src

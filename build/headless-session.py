@@ -20,8 +20,9 @@ A script is one step per line (HeadlessTOS.java's runScript lists them):
 `wait SECS REGEX`, `gone SECS REGEX`, `maybe SECS REGEX` (run the next step
 only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 (ctrl+q, f10, up, ...), `paste TEXT`, `click X Y`, `sleep SECS`, `mark NAME`,
-`snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`. Two more are
-expanded here:
+`snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, and
+`hostmv FROM TO` (rename a file on the boot disk from outside the machine,
+e.g. take the kernel away to see the BIOS's K4). Two more are expanded here:
 
     firstboot [PASSWORD]   set root's password at First Boot Setup, skip the
                            tutorial, and wait for the shell prompt
@@ -46,7 +47,9 @@ address, so OpenOS mounts it at /mnt/d15 and a script can type
 `/mnt/d15/install.lua`. --boot-tier 2 makes the boot drive 2 MB.
 
 Prints each step with its time (a `wait` after a `mark` also reports the
-time since the mark, which is how timings come back), then every `snap`.
+time since the mark, which is how timings come back), every beep the
+machine makes as a `[beep]` line (a POST fault's beep code can be read off
+a run), then every `snap`.
 Each snap also leaves snap-NAME.colors in the run's work directory (keep
 it with --keep): every cell's foreground/background as RRGGBB/RRGGBB, for
 a check that needs a syntax colour, a selection or the cursor.
@@ -330,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
     except subprocess.TimeoutExpired as e:
         code, out = 2, str(e.stdout or "") + "\n(the JVM itself had to be killed)"
     for line in out.splitlines():
-        if line.startswith(("[step]", "[headless]")):
+        if line.startswith(("[step]", "[headless]", "[beep]")):
             print(line)
 
     for snap in sorted(work.glob("snap-*.txt"), key=lambda p: p.stat().st_mtime):
@@ -342,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
                       else work / "screen.txt", 60).rstrip())
         print("--- kernel.log (last 30 lines)")
         print(hs.tail(boot / "var" / "log" / "kernel.log", 30))
-        other = [l for l in out.splitlines() if not l.startswith(("[step]", "[headless]"))]
+        other = [l for l in out.splitlines() if not l.startswith(("[step]", "[headless]", "[beep]"))]
         if other:
             print("--- runner output (last 20 lines)")
             print("\n".join(other[-20:]))

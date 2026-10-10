@@ -236,6 +236,12 @@ function kernel.boot(opts)
     bootEcho("    (run 'srm' for the full report)", 0xAAAAAA)
     local okC, errC = srmMod.clearFault({ eeprom = ep })
     if not okC then log.warn("srm", "could not clear the parked code: " .. tostring(errC)) end
+    --! Remembered for THIS boot. The failed POST's own screen says "Any key
+    --! reboots. Then run 'srm'", and the echo above flashes past before the
+    --! login screen -- so `srm` must still know, after the EEPROM line is
+    --! gone. It said "POST: no parked fault" on the headless machine.
+    --! (test_srm.lua)
+    if _G._TOS then _G._TOS.postFault = fault end
   end)
 
   local diskFree = math.floor(fs.spaceFree("/") / 1024)
