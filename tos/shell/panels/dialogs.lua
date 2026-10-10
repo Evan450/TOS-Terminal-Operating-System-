@@ -215,7 +215,7 @@ if not ok then error(res, 0) end
 return res
 end
 
-local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow)
+local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow, closeIf)
 
 local hot = {}
 for i, l in ipairs(labels) do
@@ -226,6 +226,8 @@ local rects = framedDraw(S, style, title, lines, labels, focus, shadow)
 while true do
 local lastFocus = focus
 local sig, _, b, c = pullSignal()
+
+if closeIf and closeIf() then return nil end
 if sig == "key_down" then
 if c == 28 then return focus
 
@@ -385,7 +387,8 @@ end
 end
 local focus  = opts.default or 1
 local escIdx = opts.escIndex or #labels
-local pick = dialogLoop(S, style, title, lines, labels, focus, escIdx, opts.shadow)
+local pick = dialogLoop(S, style, title, lines, labels, focus, escIdx, opts.shadow,
+opts.closeIf)
 --! `redraw == false` means "another box follows immediately -- leave
 --! the screen alone". Repainting the whole shell between questions is
 --! what made a sequence flicker: box, full redraw, box again, one row

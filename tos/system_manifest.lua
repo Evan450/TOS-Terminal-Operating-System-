@@ -1,9 +1,9 @@
 return {
 
-{ path = "/init.lua",                       critical = true  , hash = "1e72d3a15fd0a4112360ad4d588c2521e6205521ad445690d5c21a4757606d52" },
+{ path = "/init.lua",                       critical = true  , hash = "a0b169d5d62a749305cbd3acba1973d0d081db2243769b8503f6c97292451f43" },
 { path = "/install.lua",                    critical = false , hash = "6b1d4fc0f9aba7fe0d1ef6f4603de14c53a94ab0449df55d97136cea12c0ba10" },
 
-{ path = "/tos/kernel/init.lua",            critical = true  , hash = "17b22bf9d76c746e4d2a0cd73058e2cdf0869cb515b956c7d43bdf80fcf77fa3" },
+{ path = "/tos/kernel/init.lua",            critical = true  , hash = "684f85fbb8f07c8d7dfd734bd1f7a272c3b2243d1761eb3296feea4b16ae9fd4" },
 { path = "/tos/kernel/log.lua",             critical = true  , hash = "a1eab3805948dad04dc5a666de61dd76b7b3b444fa6eb3786383b948f6a0965e" },
 { path = "/tos/kernel/hal.lua",             critical = true  , hash = "c0a3b3fcd077e534957561448196cae3cef2c30ca29a4cc4e0b0e46e6e30e643" },
 { path = "/tos/kernel/event.lua",           critical = true  , hash = "59ee3d3d8333da8f29e392c72add794b9376583fca918095709e46ae5520461f" },
@@ -75,11 +75,11 @@ return {
 
 { path = "/tos/shell/cli.lua",              critical = true  , hash = "77d5030b08871217370bf93d7c50335e014ab1e27af15f5d7abbd276c8fc7795" },
 
-{ path = "/tos/shell/progenv.lua",          critical = false , hash = "1840fa55ba88f288d910772c14d38a51c75bf3e544112839b9deb12be5ab8d4a" },
+{ path = "/tos/shell/progenv.lua",          critical = false , hash = "ab1a1558a52fc70bbefda8acb772dbf95324a41246def22d9f48df770e27852a" },
 
 { path = "/tos/shell/keys.lua",             critical = false , hash = "ed27934dec3ed9e5b9314a11fc623da89950ea7035b198ba47a70f93970e470b" },
 { path = "/tos/shell/ext.lua",              critical = false , hash = "76fdb24664d82f4b391e098286d235b3b112682e037bd40dce2c47a8d2aa4694" },
-{ path = "/tos/shell/login.lua",            critical = false , hash = "cb25b41c6c377822c43d14700e3098c47b1b664fe9e708340e54a17562803365" },
+{ path = "/tos/shell/login.lua",            critical = false , hash = "0bcb28c34d702c8fe3ab02cbe112e9c5a2731a5e87ae604e0807c9dffd8eae24" },
 { path = "/tos/shell/colophon.lua",         critical = false , hash = "da4b460f84c7f71ea8c88ce3bdff6354c23590787a7b27f1750d2f571da6973d" },
 { path = "/tos/shell/syntax.lua",           critical = false , hash = "12c93b7c9a28e5b43032f4bf0ef6982ad8701ef0bbcb81a590115587c2bf0c6f" },
 { path = "/tos/shell/chat.lua",             critical = false , hash = "ad4d1d7dbb9b082c91b0c87e8656312366ec33bdbfd72baa2d952b5cd9364a7e" },
@@ -93,13 +93,13 @@ return {
 { path = "/tos/shell/panels/init.lua",      critical = false , hash = "679fa1ab4fdfd3d5ad0cd6a0a425bce1d159e4006a2cf13aa50ef5ff76918407" },
 { path = "/tos/shell/panels/commands.lua",  critical = false , hash = "d3a530a645888ee960b156cf79a0725b31eb415f8db239605a858a839f84e075" },
 { path = "/tos/shell/panels/context.lua",   critical = false , hash = "a2b843d7012343b18c66bfd869aea2873714614550f15550d5efbc3a92294ba6" },
-{ path = "/tos/shell/panels/dialogs.lua",   critical = false , hash = "9ddbcb55976b3c94fa7673e775dab51b5e160bb684ba121e248775d81d23fa5f" },
+{ path = "/tos/shell/panels/dialogs.lua",   critical = false , hash = "82c67fa9d0cbbed9f7dda46bb24ed42ff2de1629e51c77a3fef72a99071905ed" },
 { path = "/tos/shell/panels/draw.lua",      critical = false , hash = "0f1ae09c00d43ae9c34442cc403fee446df25d0968e9a75d0b71d9b33b122567" },
 { path = "/tos/shell/panels/apps.lua",      critical = false , hash = "193f5f526530d5141433f27964e2a637f22536c6813d680db2cb42273b7f75bf" },
 { path = "/tos/shell/panels/takeover.lua",  critical = false , hash = "5b0f34fe1b3941db89cc4e1918551af1e79b35512e383156a1f8fbd482858d2b" },
 { path = "/tos/shell/panels/editor.lua",    critical = false , hash = "56707c054bf5902464299f94e68b0d85333e0a5249ddfc5ae802515344505312" },
-{ path = "/tos/shell/panels/events.lua",    critical = false , hash = "119f7731f00ee6cb2afad0ce196bd266e2ecf9c209e956806d3fe0d554af3e96" },
-{ path = "/tos/shell/panels/executor.lua",  critical = false , hash = "7e89afbfa96fb13901cb52f43a6c20546234890361d07fa237f67e9f103bba54" },
+{ path = "/tos/shell/panels/events.lua",    critical = false , hash = "0d10a5c98bd2399a2f4d6c4fe4f83c07d1d352a7a3d9ba339f9f93784a2870f5" },
+{ path = "/tos/shell/panels/executor.lua",  critical = false , hash = "d4e6741e9dc72232ae52223120d0eab3f6b1e0b67c1f375d266480329cfe8dd9" },
 { path = "/tos/shell/panels/filebrowser.lua", critical = false , hash = "c57f12921da2e68ec227826f17cd06c418d2357d49fd477f5c7879009f9a7d84" },
 { path = "/tos/shell/panels/helpers.lua",   critical = false , hash = "70ec2cfa625a5bec304386272d3e0f076ae8bf96db12d4a5e635a4bd37790595" },
 { path = "/tos/shell/panels/keymap.lua",    critical = false , hash = "1b3401cd56646c3e817bbbade960fcc4cbf403c5ad4b87e680f21b233115b361" },

@@ -1047,7 +1047,8 @@ if useMinimalAuth then
 token = minimalAuth()
 elseif loginScreen then
 
-local ok, result, reason = pcall(loginScreen.run, {
+local seatLogin = loginScreen.new and loginScreen.new() or loginScreen
+local ok, result, reason = pcall(seatLogin.run, {
 display = dProxy,
 event   = event,
 users   = usersmod,

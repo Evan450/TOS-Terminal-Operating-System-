@@ -1010,8 +1010,11 @@ style   = notice.style,
 title   = notice.title,
 message = notice.message .. "\n\nFrom: " .. notice.from,
 buttons = notice.buttons,
+
+closeIf = function() return nf.result(notice.id) ~= nil end,
 })
-nf.settle(notice.id, okD and pick or 1)
+
+if not (okD and pick == nil) then nf.settle(notice.id, okD and pick or 1) end
 
 S._noticeShownAt = computer.uptime()
 

@@ -299,12 +299,12 @@ if resolved then
 local data = F.readFile(resolved)
 if data then
 
-local pkgCaps = nil
+local pkgCaps, pkgOwner = nil, nil
 local okPk, pkgMod = pcall(require, "kernel.pkg")
 if okPk and type(pkgMod) == "table" and pkgMod.capsForFile then
-pkgCaps = pkgMod.capsForFile(resolved)
+pkgCaps, pkgOwner = pkgMod.capsForFile(resolved)
 end
-local progEnv = makeProgramEnv{ name = resolved,
+local progEnv = makeProgramEnv{ name = resolved, pkgName = pkgOwner,
 caps = pkgCaps, stdout = function(line) o(line, T.fg) end }
 local fn2, err2 = load(data, "=" .. resolved, "t", progEnv)
 if fn2 then

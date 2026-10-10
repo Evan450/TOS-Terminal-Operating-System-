@@ -44,6 +44,7 @@ for k, v in pairs(opts.caps) do caps[k] = v end
 end
 return sb.build{
 name    = opts.name or "shell:program",
+pkgName = opts.pkgName,
 cwd     = S.cwd,
 session = (S.U and S.U.currentSession and S.U.currentSession()) or nil,
 caps    = caps,
