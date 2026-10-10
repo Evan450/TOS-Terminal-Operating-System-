@@ -54,39 +54,6 @@ function M.run(ctx)
   local widgetDefs = widgetsMod.makeWidgetDefs(S)
   pcall(widgetsMod.loadCustomWidgets, S, widgetDefs)
 
-  local function sanitizeMountLabel(raw, addr) return helpers.safeMountName(raw, addr) end
-  local function autoMount(addr)
-    local ok, px = pcall(component.proxy, addr)
-    if not ok or not px then return nil, nil end
-
-    local bootAddr = _G._TOS and _G._TOS.bootAddr
-    if not bootAddr then
-
-      return nil, nil
-    end
-    if addr == bootAddr then
-      return nil, nil
-    end
-    local lbl     = (px.getLabel and px.getLabel()) or nil
-    local mntName = sanitizeMountLabel(lbl, addr)
-    local mntPath = "/mnt/" .. mntName
-    if S.F.exists(mntPath) then
-      mntPath = mntPath .. "_" .. addr:sub(1, 4)
-
-      local n = 2
-      local candidate = mntPath
-      while S.F.exists(candidate) and n < 100 do
-        candidate = mntPath .. "_" .. n
-        n = n + 1
-      end
-      mntPath = candidate
-    end
-    if not S.F.exists("/mnt") then pcall(S.F.makeDirectory, "/mnt") end
-    if not S.F.exists(mntPath) then pcall(S.F.makeDirectory, mntPath) end
-    S.F.mount(mntPath, px)
-    return mntPath, lbl or mntName
-  end
-
   local C = commandsMod.build(S, {
     rp             = function(p) return helpers.resolvePath(S, p) end,
     openViewTab    = function(buf, label) return editorMod.openViewTab(S, buf, label) end,
@@ -148,7 +115,6 @@ function M.run(ctx)
   local result = eventsMod.run(S, {
     C              = C,
     exec           = exec,
-    autoMount      = autoMount,
     makeProgramEnv = makeProgramEnv,
     widgetDefs     = widgetDefs,
   })

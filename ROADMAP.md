@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**81 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**78 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 57 | Planned or under investigation. Most contributions belong here. |
+| Planned | 54 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (17) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (14) · [Add-ons](#add-ons) (4) · [Packages](#packages) (12) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (15) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -103,6 +103,7 @@ NEXT REAL-MINECRAFT ROUND — the point of these four is that they were all reac
 - `redstone`/`robot`/`inventory` from a shell, same
 - boot from a read-only disk on purpose and confirm the banner, `df` and `doctor` all say so
 - a T1 (192K) box: type `reboot` under memory pressure and confirm it now explains itself
+- \[headless 2026-10-09: runs end to end, U too -- MULTI-DISK checklist; still worth seeing in a real world\]
 - THE TWO-FLOPPY FLOW END TO END, which has never once run correctly: insert disk 1, confirm disk 2's packages are listed and dimmed with "On disk 2 (not inserted)", tick one, install, swap when asked, confirm it finishes in ONE run. Then the same again pressing U at the prompt and confirm the already-installed packages are really gone.
 - check the boot banner's RAM line against `mem` — they read from the same place now and must agree
 - THE EXIT KEYS, on every full-screen program: open `write`, `calc`, `stock`, `snake`, `ttt`, `tetris`, the picker and `rc-pilot` and confirm each one can actually be left WITHOUT touching Esc. This is the check that would have caught #7 and it takes two minutes.
@@ -196,39 +197,6 @@ Emulator checklist (needs a card AND a server with HTTP on):
 - a package whose index names ../.. must be refused and must write nothing
 - pull the card mid-download; confirm no .part is left and no half-installed package
 - a T1 (192K) box: fetch something near the 128K file cap and confirm it does not OOM (this is the one the off-box tests genuinely cannot prove)
-
-### Emulator checklist: Picker off the floppy round
-
-*Planned* · from the round *Picker off the floppy round (2026-07-29)*
-
-Emulator checklist:
-
-- `pkg install` with a disk in: picker opens from the BASE image (no install.lua on the floppy at all)
-- the swap prompt should now be a framed modal listing the packages waiting on the next disk
-- `pkg install --all --dry-run` then `--all --yes`
-- insert a disk built by `pkg make-disk` and confirm it is still announced as an "Optional Utilities disk"
-
-### Emulator checklist: Multi-disk round
-
-*Planned* · from the round *Multi-disk round (2026-07-29)*
-
-Emulator checklist:
-
-- boot with ONLY disk2 inserted: confirm disk1's packages are listed, dimmed, and say "On disk 1 (not inserted)"
-- select across both disks, install, swap when asked, confirm it finishes in ONE run
-- same again but press U at the prompt: confirm the already-installed packages are really gone afterwards
-- confirm tape + tape-authenticator land on one disk
-
-### Emulator checklist: Installer + worker round
-
-*Planned* · from the round *Installer + worker round (2026-07-28)*
-
-Emulator checklist:
-
-- picker on an 80x25 and on a 50x16 screen (two-pane vs fallback); check the panel doesn't overrun the divider
-- select `drive` with blockfs NOT installed: confirm \[+\] appears on blockfs and both install
-- insert only disk2 and check the From field + the "not on any inserted disk" warning make it obvious
-- run cluster-worker-setup ON TOS and confirm the refusal actually names cluster-setup
 
 ### Emulator checklist: Cluster setup round
 

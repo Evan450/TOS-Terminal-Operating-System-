@@ -94,6 +94,34 @@ function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
   else o(text, T.dim) end
 end
 
+function M.diskName(m)
+  local label = type(m) == "table" and m.label or nil
+  if type(label) == "string" and label ~= "" and label ~= "Unnamed" then return label end
+  local mp = type(m) == "table" and m.mountPoint or nil
+  local leaf = type(mp) == "string" and mp:match("([^/]+)/*$") or nil
+  return leaf or "disk"
+end
+
+--! The disk is newer news than whatever result is up. A multi-line output
+--! block (S.outLines) wins over lastOut when the shell draws, so after
+--! `pkg make-disk` -- three lines of output -- ejecting and re-inserting
+--! the disk said nothing at all (headless machine, 2026-10-09).
+--! (test_disk_announce.lua)
+function M.announceDisk(S, F, kind, mntPath, label)
+  if type(mntPath) ~= "string" then return false end
+  local T = S.T
+  S.outLines = nil
+  if kind == "added" then
+    local info = M.classifyDisk(F, mntPath)
+    local msg = string.format('%s: "%s" -> %s', info.desc, label or "disk", mntPath)
+    if info.hint then msg = msg .. "   " .. info.hint end
+    S.lastOut = { msg, T.highlight }
+  else
+    S.lastOut = { 'Disk removed: "' .. M.diskName({ label = label, mountPoint = mntPath }) .. '"', T.dim }
+  end
+  return true
+end
+
 function M.fmtSz(sz)
   if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
   if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end
@@ -868,6 +896,9 @@ end
 --! 2026), so a TBFS volume labelled "../../var/pkg/secrets" went wherever
 --! its author said when an admin mounted it. (test_mount_points.lua)
 function M.safeMountName(raw, addr)
+
+  local okD, dm = pcall(require, "kernel.diskmount")
+  if okD and type(dm) == "table" and dm.sanitizeLabel then return dm.sanitizeLabel(raw, addr) end
   local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
   if type(raw) ~= "string" then return fallback end
   local cleaned = raw:gsub("[^%w_%- ]", "_")

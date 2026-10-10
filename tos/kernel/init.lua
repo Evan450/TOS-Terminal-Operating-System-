@@ -7,6 +7,7 @@ local running = false
 local shuttingDown = false
 
 local log, hal, event, proc, fs, display
+local diskmount
 
 local monitorHosts = {}
 
@@ -76,45 +77,20 @@ function kernel.boot(opts)
   fs = require("kernel.fs")
   fs.init(opts.bootFS)
 
-  local function sanitizeLabel(raw, addr)
-    local fallback = "disk_" .. addr:sub(1, 4)
-    if type(raw) ~= "string" then return fallback end
-
-    local cleaned = raw:gsub("[^%w_%- ]", "_")
-
-    cleaned = cleaned:gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
-    if cleaned == "" then return fallback end
-
-    if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
-
-    if cleaned == "." or cleaned == ".." then return fallback end
-    return cleaned
-  end
-
-  local fsList = hal.list("filesystem")
   local bootAddr = opts.bootFS and opts.bootFS.address
-  local usedMountPoints = {}
-  for _, entry in ipairs(fsList) do
-    if entry.address ~= bootAddr then
-      local rawLabel
-      if entry.proxy then
-
-        local okL, lbl = pcall(entry.proxy.getLabel)
-        if okL then rawLabel = lbl end
+  local okDM, diskmountMod = pcall(require, "kernel.diskmount")
+  if okDM and type(diskmountMod) == "table" then
+    diskmount = diskmountMod
+    diskmount.init({ fs = fs, log = log, bootAddr = bootAddr })
+    for _, entry in ipairs(hal.list("filesystem")) do
+      if entry.address ~= bootAddr then
+        if not entry.proxy then entry.proxy = component.proxy(entry.address) end
+        diskmount.mount(entry.address, entry.proxy)
       end
-      local label = sanitizeLabel(rawLabel, entry.address)
-      local mountPoint = "/mnt/" .. label
-
-      if usedMountPoints[mountPoint] then
-        mountPoint = mountPoint .. "_" .. entry.address:sub(1, 4)
-      end
-      usedMountPoints[mountPoint] = true
-      if not entry.proxy then
-        entry.proxy = component.proxy(entry.address)
-      end
-      fs.mount(mountPoint, entry.proxy)
-      log.info("kernel", "Mounted " .. entry.address:sub(1, 8) .. " at " .. mountPoint)
     end
+  else
+    log.warn("kernel", "Disk mounting unavailable (" .. tostring(diskmountMod)
+      .. "): only the boot disk is mounted")
   end
 
   local coreDirs = {
@@ -353,6 +329,14 @@ function kernel.boot(opts)
     if SEAT_COMPONENT_TYPES[ctype] then
       event.push("tos_seat_changed", "added", ctype, addr)
     end
+
+    if ctype == "filesystem" and diskmount then
+      local okP, px = pcall(component.proxy, addr)
+      if okP and px then
+        local mp, label = diskmount.mount(addr, px)
+        if mp then event.push("tos_disk_added", addr, mp, label) end
+      end
+    end
   end, "kernel")
 
   event.on("component_removed", function(_, addr, ctype)
@@ -360,6 +344,10 @@ function kernel.boot(opts)
     log.info("hotplug", "Removed: " .. ctype .. " [" .. addr:sub(1, 8) .. "]")
     if SEAT_COMPONENT_TYPES[ctype] then
       event.push("tos_seat_changed", "removed", ctype, addr)
+    end
+    if ctype == "filesystem" and diskmount then
+      local mp, label = diskmount.unmount(addr)
+      if mp then event.push("tos_disk_removed", addr, mp, label) end
     end
   end, "kernel")
 

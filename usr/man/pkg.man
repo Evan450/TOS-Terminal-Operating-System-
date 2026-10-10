@@ -45,9 +45,10 @@ SUBCOMMANDS
     make-disk <mount> [name ...]
                    Build an Optional Utilities disk from your INSTALLED add-ons
                    (parity with `deploy`, which builds a whole-OS image). Emits
-                   one package dir per add-on plus a self-contained picker
-                   install.lua, so the disk installs on any TOS machine with no
-                   dev box. Name args limit the export; omit for all add-ons.
+                   one package dir per add-on plus the set manifest; on any TOS
+                   machine, insert it and run `pkg install` (the picker is in
+                   the base image, not on the disk). Name args limit the
+                   export; omit for all add-ons.
                    Targets removable media only (system paths are refused).
     uninstall <name>   Remove an installed package.
 

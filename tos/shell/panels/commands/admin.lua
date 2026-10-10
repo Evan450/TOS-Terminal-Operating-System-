@@ -937,8 +937,8 @@ return function(C, S, deps)
           o("  Warnings:", T.warning)
           for _, p in ipairs(summary.problems) do o("   ! " .. p, T.warning) end
         end
-        o("On the target machine, insert the disk and run "
-          .. summary.target .. "/install.lua", T.dim)
+
+        o("On the target machine, insert the disk and run 'pkg install'.", T.dim)
       else
         o("make-disk failed: " .. tostring(summary), T.error)
       end

@@ -489,16 +489,19 @@ function M.run(opts)
         set(PANEX + 10, y, fitTo(tostring(value), PANEW - 10), color or T.fg, T.bg)
         y = y + 1
       end
-      local function wrap(text, color)
+      --! Indented notes wrap too. "selectable — the installer will ask for it"
+      --! sat at column 10 of a 40-column panel and read "...will as…" at
+      --! 80x25 (headless machine, 2026-10-09). (test_picker_panel_wrap.lua)
+      local function wrap(text, color, indent)
 
-        local w = PANEW
+        local w = PANEW - (indent or 0)
         local cur = ""
         for word in tostring(text or ""):gmatch("%S+") do
           if cur == "" then cur = word
           elseif ulen(cur) + 1 + ulen(word) <= w then cur = cur .. " " .. word
-          else line(cur, color); cur = word end
+          else line(cur, color, indent); cur = word end
         end
-        if cur ~= "" then line(cur, color) end
+        if cur ~= "" then line(cur, color, indent) end
       end
 
       line(e.name or "?", T.title)
@@ -525,7 +528,7 @@ function M.run(opts)
       else
 
         field("On disk", tostring(e.disk or "?") .. "  (not inserted)", T.warn)
-        line("selectable — the installer will ask for it", T.dim, 10)
+        wrap("selectable — the installer will ask for it", T.dim, 10)
       end
 
       local reqs = {}
@@ -537,7 +540,7 @@ function M.run(opts)
         field("Needs", table.concat(reqs, ", "))
         local miss = missingDeps(e)
         if #miss > 0 then
-          line("not on any inserted disk: " .. table.concat(miss, ", "), T.err, 10)
+          wrap("not on any inserted disk: " .. table.concat(miss, ", "), T.err, 10)
         end
       end
       if e.recommends and #e.recommends > 0 then
@@ -683,9 +686,16 @@ function M.run(opts)
           return "cancel"
         elseif code == 28 then
           local total = 0
+          --! What the progress screen shows, kept so it can be painted again
+          --! under a modal. The "Next disk" box was left on screen after
+          --! Continue, over the rows of the packages still installing, until
+          --! the run ended (headless machine, 2026-10-09).
+          --! (test_picker_swap_repaint.lua)
+          local shown, lastDone = {}, 0
           return "install", function(name, status, detail)
 
             local function bar(done)
+              lastDone = done
               local BARY = H - 1
               local w = math.max(10, W - 18)
               local frac = (total > 0) and math.min(1, done / total) or 0
@@ -694,6 +704,15 @@ function M.run(opts)
               set(2, BARY, "[" .. string.rep(mono and "#" or "█", fillN)
                 .. string.rep(" ", w - fillN) .. "]", T.title, T.bg)
               set(w + 5, BARY, string.format("%d/%d", done, total), T.dim, T.bg)
+            end
+            local function repaint()
+              fill(1, 1, W, H, " ", T.fg, T.bg)
+              set(2, 1, "Installing…", T.title, T.bg)
+              for y, r in pairs(shown) do
+                if r.name then set(2, y, fitTo(r.name, W - 20), T.fg, T.bg) end
+                if r.mark then set(W - 16, y, r.mark, r.color, T.bg) end
+              end
+              bar(lastDone)
             end
             if status == "swap" then
 
@@ -709,6 +728,7 @@ function M.run(opts)
                   buttons = { "Continue", "Stop (keep)", "Undo all" },
                   default = 1, escIndex = 2,
                 })
+                repaint()
                 return (pick == 3 and "undo") or (pick == 2 and "abort") or "retry"
               end
 
@@ -721,27 +741,39 @@ function M.run(opts)
               while true do
                 local ev2, _, ch2, co2 = computer.pullSignal()
                 if ev2 == "key_down" then
-                  if co2 == 28 then return "retry" end
-                  if ch2 == 97 or ch2 == 65 or co2 == 1 then return "abort" end
-                  if ch2 == 117 or ch2 == 85 then return "undo" end
+                  local choice = (co2 == 28 and "retry")
+                    or ((ch2 == 97 or ch2 == 65 or co2 == 1) and "abort")
+                    or ((ch2 == 117 or ch2 == 85) and "undo") or nil
+                  if choice then repaint(); return choice end
                 end
               end
             elseif status == "begin" then
               total = detail or 0
+              shown, lastDone = {}, 0
               fill(1, 1, W, H, " ", T.fg, T.bg)
               set(2, 1, "Installing…", T.title, T.bg)
               bar(0)
             elseif status == "row" then
               local y = 2 + (detail or 0)
-              if y < H - 2 then set(2, y, fitTo(name, W - 20), T.fg, T.bg) end
+              if y < H - 2 then
+                set(2, y, fitTo(name, W - 20), T.fg, T.bg)
+                shown[y] = { name = name }
+              end
               bar((detail or 1) - 1)
             elseif status == "ok" then
               local y = 2 + (detail or 0)
-              if y < H - 2 then set(W - 16, y, "installed", T.ok, T.bg) end
+              if y < H - 2 then
+                set(W - 16, y, "installed", T.ok, T.bg)
+                if shown[y] then shown[y].mark, shown[y].color = "installed", T.ok end
+              end
               bar(detail or 0)
             elseif status == "fail" then
               local y = 2 + (detail or 0)
-              if y < H - 2 then set(W - 16, y, fitTo(tostring(name), 15), T.err, T.bg) end
+              if y < H - 2 then
+                local why = fitTo(tostring(name), 15)
+                set(W - 16, y, why, T.err, T.bg)
+                if shown[y] then shown[y].mark, shown[y].color = why, T.err end
+              end
               bar(detail or 0)
             elseif status == "done" then
               bar(total)
