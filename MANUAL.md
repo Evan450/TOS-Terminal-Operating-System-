@@ -584,7 +584,7 @@ otherwise you could never take a binding away. Give several to keep several:
 them before any program sees them — accepting a rebind would write a setting
 that silently does nothing:
 
-| `^B` | background the current program |
+| `^B` | background the current program — it waits as a chip in the top bar; Tab on an empty line (or a click on the chip, with the `mouse` add-on) brings it back, right-click closes it |
 | `^T` | switch tasks / open the Monitor |
 | `^C` | interrupt the foreground program |
 

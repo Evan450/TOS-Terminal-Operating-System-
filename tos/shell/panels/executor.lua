@@ -106,7 +106,8 @@ end
 if fitted and screenMod and screenMod.restore then
 pcall(screenMod.restore, seat)
 end
-S._program = nil
+
+if S._program and S._program.pid == pid then S._program = nil end
 
 local okT, tabsMod = pcall(require, "shell.panels.tabs")
 if okT and tabsMod then
@@ -411,8 +412,16 @@ return
 end
 end
 
+--! Skip the output only when THIS command handed the seat to a
+--! program. It tested "is any program recorded", and the record stays
+--! for the program's whole life -- so once one was backgrounded with
+--! Ctrl+B, every command after it ran and showed nothing: `echo`,
+--! `ps`, all of it, until the program exited (headless machine,
+--! 2026-10-10; `mkdir` there proved the commands were running).
+--! (test_bg_program_output.lua)
+local before = S._program
 local buf = execSingle(input, nil, true)
-if S._program then return end
+if S._program and S._program ~= before then return end
 showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
 end
 

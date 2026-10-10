@@ -1061,6 +1061,11 @@ if now - (S._lastStatusT or 0) >= ((pol and pol.idleSeconds()) or 1) then
 S._lastStatusT = now
 drawStatusBar()
 
+local okAp, appsMod = pcall(require, "shell.panels.apps")
+if okAp and appsMod and appsMod.chipsChanged and appsMod.chipsChanged(S) then
+drawTopBar()
+end
+
 if homeMod.isTiles(S, curTab) then homeMod.drawHeader(S, curTab) end
 end
 elseif curTab and curTab.type == "desktop"

@@ -107,7 +107,13 @@ local proc, p = alive(S, tab)
 if not p then return end
 if proc.bgState then
 local ok, state = pcall(proc.bgState, tab.pid)
-tab.live = ok and state == "drowsy" or false
+--! Busy unless FROZEN. Right after Ctrl+B the scheduler has not yet
+--! recorded when the program went to the background, and bgState
+--! answers "live" for that tick -- this read only "drowsy" as busy,
+--! so the chip came up plain, as if frozen, the moment it appeared
+--! (headless machine, 2026-10-10). A program tab exists only while
+--! its program is behind the shell, so "live" means still running.
+tab.live = ok and state ~= "frozen" or false
 end
 end,
 
@@ -127,6 +133,30 @@ for _, tab in ipairs(snapshot) do
 local app = registry[tab.type]
 if app and app.refresh then pcall(app.refresh, S, tab) end
 end
+end
+
+--! A chip changes on its own: busy, then plain once the scheduler freezes
+--! the program BG_GRACE seconds later. Chips were refreshed only when the
+--! top bar happened to repaint, so on a quiet screen a frozen program kept
+--! showing busy indefinitely. Costs nothing without a program tab.
+function M.chipsChanged(S)
+if not S or type(S.tabs) ~= "table" then return false end
+local any = false
+for _, t in ipairs(S.tabs) do if t.type == "program" then any = true; break end end
+if not any then
+local was = S._chipSig
+S._chipSig = nil
+return was ~= nil
+end
+M.refreshTabs(S)
+local sig = {}
+for _, t in ipairs(S.tabs) do
+if t.type == "program" then sig[#sig + 1] = tostring(t.pid) .. (t.live and "+" or "-") end
+end
+sig = table.concat(sig, ",")
+local changed = sig ~= S._chipSig
+S._chipSig = sig
+return changed
 end
 
 function M._reset() registry = {}; ensured = false end
