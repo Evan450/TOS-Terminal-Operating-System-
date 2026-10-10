@@ -213,6 +213,48 @@ do
   eq("keys with separators are refused", "", bad)
 end
 
+-- ── The monitor leaves on the quit key ──────────────────────────────
+-- Its footer says "^Q quit". keyName maps the quit key to "esc" (so it
+-- cancels a prompt) and the main view left only on plain Q, so ^Q did
+-- nothing: on the headless machine (2026-10-09) stock kept the seat and the
+-- rest of the session typed into it. Runs the real command on a fake GPU,
+-- with no inventory hardware, and feeds it one key.
+print("-- the quit key --")
+do
+  local function runWith(ch, code)
+    local gpu = {
+      getResolution = function() return 80, 25 end, getDepth = function() return 8 end,
+      set = function() end, fill = function() end,
+      setForeground = function() end, setBackground = function() end,
+      getForeground = function() return 0xFFFFFF end, getBackground = function() return 0 end,
+    }
+    package.loaded["component"] = {
+      list = function(kind) local done = false
+        return function() if kind == "gpu" and not done then done = true; return "gpu-1" end end end,
+      proxy = function() return gpu end,
+    }
+    local pulls, fed = 0, false
+    package.loaded["computer"] = {
+      uptime = function() return pulls end,
+      pullSignal = function()
+        pulls = pulls + 1
+        if pulls > 50 then error("the monitor did not leave", 0) end
+        if not fed then fed = true; return "key_down", "kb", ch, code end
+        return nil
+      end,
+    }
+    package.loaded["shell.keys"] = nil
+    package.loaded["stock"] = nil
+    local mod = dofile("modules/stock/init.lua")
+    local ok, err = pcall(mod.commands.stock, {}, function() end)
+    return ok, err, pulls
+  end
+  local ok, err = runWith(17, 16)                      -- ^Q
+  test("^Q leaves the monitor (" .. tostring(err) .. ")", ok)
+  local okQ, errQ = runWith(113, 16)                   -- q, as it always did
+  test("plain Q still leaves it (" .. tostring(errQ) .. ")", okQ)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")

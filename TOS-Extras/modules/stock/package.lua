@@ -24,9 +24,12 @@
 --
 -- Aggregation, thresholds and formatting are PURE (stock/stock.lua) and
 -- unit-tested off-box by test_stock.lua — 53 assertions, no hardware.
+--
+-- 1.0.1 — ^Q (the quit key) closes the monitor, as its footer says; only
+-- plain Q did. test_stock.lua runs the real command and feeds it the key.
 return {
   name        = "stock",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "automation",
   description = "Inventory monitor: totals every adjacent chest, warns on low stock.",

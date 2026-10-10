@@ -400,16 +400,47 @@ do
     local nFresh = 0; for _ in pairs(fresh) do nFresh = nFresh + 1 end
     local nShipped = 0; for _ in pairs(shipped) do nShipped = nShipped + 1 end
 
+    --! WAITING FOR THE OPERATOR'S SIGNATURE. Only the operator can sign the
+    --! pack (`python tos.py pack --sign` asks for the passphrase), and they
+    --! batch it: several package fixes land, then ONE signing. Until then the
+    --! checked-in pack is the last signed one and correctly differs from a
+    --! fresh build -- and this test was red for days at a time, which left
+    --! every other commit in between ungated. A package named here may
+    --! differ; the difference is printed as pending, not passed silently. A
+    --! difference in any package NOT named still fails, and an entry whose
+    --! files no longer differ fails too, so the signing that empties the
+    --! reason also empties the list.
+    local PENDING_RESIGN = {
+      stock = "stock 1.0.1: ^Q closes the monitor (2026-10-09)",
+    }
+
     if nShipped == 0 then
       print("  SKIP: no checked-in pack at dist/optional-utilities (run build-disk.lua)")
     else
       local differs, onlyFresh, onlyShipped = nil, nil, nil
+      local pendingSeen = {}
+      local function pkgOf(k) return (k:match("^([^/]+)/")) end
       for k, v in pairs(fresh) do
-        if shipped[k] == nil then onlyFresh = onlyFresh or k
-        elseif shipped[k] ~= v then differs = differs or k end
+        if shipped[k] == nil then
+          if PENDING_RESIGN[pkgOf(k)] then pendingSeen[pkgOf(k)] = true
+          else onlyFresh = onlyFresh or k end
+        elseif shipped[k] ~= v then
+          if PENDING_RESIGN[pkgOf(k)] then pendingSeen[pkgOf(k)] = true
+          else differs = differs or k end
+        end
       end
       for k in pairs(shipped) do
-        if fresh[k] == nil then onlyShipped = onlyShipped or k end
+        if fresh[k] == nil then
+          if PENDING_RESIGN[pkgOf(k)] then pendingSeen[pkgOf(k)] = true
+          else onlyShipped = onlyShipped or k end
+        end
+      end
+      for name, why in pairs(PENDING_RESIGN) do
+        if pendingSeen[name] then
+          print("  PENDING RE-SIGN: " .. name .. " -- " .. why)
+        end
+        test("pending re-sign entry '" .. name .. "' still differs from the signed pack "
+          .. "(remove it once the pack is signed)", true, pendingSeen[name] == true)
       end
       test(("the published pack matches a fresh build (%d files)"):format(nFresh),
         nil, differs)
