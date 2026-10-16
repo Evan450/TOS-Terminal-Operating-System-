@@ -129,6 +129,14 @@ def test_running_out_of_memory_after_the_shell_started_proves_no_command_loads(m
     assert r.holds and r.went_down
 
 
+def test_the_machine_s_own_out_of_memory_counts_too(monkeypatch):
+    # Ocelot reports it as Error.OutOfMemory when the machine, not Lua, runs out.
+    case = next(c for c in fc.CASES if c.kb == 768)
+    r = _run(case, monkeypatch, 5, SHELL_UP
+             + "[step]  13 FAILED: the machine went down: Error.OutOfMemory\n")
+    assert r.holds and r.went_down
+
+
 def test_going_down_before_the_shell_started_does_not(monkeypatch):
     case = next(c for c in fc.CASES if c.kb == 768)
     r = _run(case, monkeypatch, 5, "[step]   1 FAILED: the machine went down: not enough memory\n")

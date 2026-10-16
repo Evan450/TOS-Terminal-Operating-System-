@@ -196,59 +196,62 @@ end
 
 function M.emit(tokens, opts)
   opts = opts or {}
-  local out = {}
-  for i, tok in ipairs(tokens) do
-    if opts.minify and tok.type == "code" then
-      --! Minify drops LEADING INDENTATION, in code only. Lua does not care
-      --! where a line starts; strings and long strings are their own tokens,
-      --! so a multi-line string keeps every space it had. Line numbers do
-      --! not move. It was ~194 KB of the release, which had grown to 2,068
-      --! KB on disk (content + 512 B per file) -- more than the 2 MB Tier 2
-      --! drive the README says holds TOS, and First Boot Setup failed with
-      --! "Persist failed: not enough space" on one (headless machine,
-      --! 2026-10-09). (test_strip_minify.lua)
-      local text = tok.text:gsub("\n[ \t]+", "\n")
-      if i == 1 then text = text:gsub("^[ \t]+", "") end
-      out[#out + 1] = text
+  -- The output as pieces. A FREE piece is code, or what a stripped comment
+  -- left behind (nothing, or its newlines); its whitespace means nothing to
+  -- Lua. Strings, long strings and kept (--!) comments are verbatim, and
+  -- adjacent free pieces are merged so a rule can see across a stripped
+  -- comment.
+  local pieces = {}
+  local function put(text, free)
+    local last = pieces[#pieces]
+    if free and last and last.free then last.text = last.text .. text
+    else pieces[#pieces + 1] = { text = text, free = free } end
+  end
+  for _, tok in ipairs(tokens) do
+    if tok.type == "code" then
+      put(tok.text, true)
     elseif tok.type == "line_comment" and not tok.marked then
-      -- Drop the comment text; the trailing newline (if any) is in
-      -- the next token (a "code" token starting with `\n`) so we
-      -- naturally preserve line count.
+      -- Drop the comment text; its trailing newline is in the next code
+      -- token, so the line count is kept.
     elseif tok.type == "block_comment" and not tok.marked then
-      -- Replace with whatever newlines the comment spanned, so
-      -- multi-line block comments don't collapse the file.
-      local nlCount = select(2, tok.text:gsub("\n", ""))
-      out[#out + 1] = string.rep("\n", nlCount)
+      -- Keep the newlines a multi-line block comment spanned.
+      put(string.rep("\n", select(2, tok.text:gsub("\n", ""))), true)
     else
-      out[#out + 1] = tok.text
+      put(tok.text, false)
     end
   end
 
-  local result = table.concat(out)
-
-  -- Optional minify: collapse runs of 2+ blank lines into one. Off by
-  -- default because it shifts line numbers in stack traces; the BIOS
-  -- (where every byte matters) explicitly opts in.
   if opts.minify then
-    -- Normalise line endings FIRST. This repo is developed on Windows and
-    -- checks out CRLF, which broke minify silently in two ways: every
-    -- collapse pattern below is written against "\n", so on CRLF input
-    -- NONE of them matched (blank lines were never collapsed), and every
-    -- surviving line carried a "\r" that was then burned onto the EEPROM.
-    -- The BIOS image was shipping ~150 bytes of pure carriage returns
-    -- against a hard 4 KiB budget. Lua accepts \n, \r\n and \r equally,
-    -- so emitting LF-only is purely a saving.
-    result = result:gsub("\r\n", "\n"):gsub("\r", "\n")
-    -- Strip trailing whitespace on each line (post-comment lines are
-    -- often just "      " left over from the indented code that had
-    -- a trailing comment).
-    result = result:gsub("[ \t]+\n", "\n")
-    -- Collapse runs of blank lines.
-    result = result:gsub("\n\n\n+", "\n\n")
-    -- Strip leading newlines from the file.
-    result = result:gsub("^\n+", "")
+    for k, piece in ipairs(pieces) do
+      --! Line endings go to LF everywhere, strings included: the repo is
+      --! checked out CRLF on Windows, every rule below is written against
+      --! "\n", and the BIOS once shipped ~150 bytes of carriage returns
+      --! against its 4 KiB budget. Lua reads a long string's line ends as
+      --! "\n" anyway, and a quoted string cannot hold a raw CR.
+      local t = piece.text:gsub("\r\n", "\n"):gsub("\r", "\n")
+      if piece.free then
+        --! Whitespace is rewritten in FREE pieces only, never in a string:
+        --! leading indentation (~194 KB of the release when it first went
+        --! over a 2 MB drive, 2026-10-09), trailing spaces, inner runs of
+        --! spaces collapsed to one (~13 KB: column-aligned tables and
+        --! assignments), and blank lines. The blank-line and trailing rules
+        --! used to run over the whole OUTPUT, long strings included, so a
+        --! long string with a trailing space or a run of blank lines would
+        --! have shipped changed. (test_strip_minify.lua)
+        t = t:gsub("[ \t]+\n", "\n")
+        t = t:gsub("\n[ \t]+", "\n")
+        if k == 1 then t = t:gsub("^[ \t]+", "") end
+        t = t:gsub("[ \t][ \t]+", " ")
+        t = t:gsub("\n\n+", "\n")
+      end
+      piece.text = t
+    end
   end
 
+  local out = {}
+  for i, piece in ipairs(pieces) do out[i] = piece.text end
+  local result = table.concat(out)
+  if opts.minify then result = result:gsub("^\n+", "") end
   return result
 end
 

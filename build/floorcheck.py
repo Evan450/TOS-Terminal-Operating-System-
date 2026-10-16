@@ -188,7 +188,9 @@ def run_case(case: Case, keep: bool, timeout: int) -> Result:
     if not r.holds and case.down_after:
         started = re.search(r"^\[step\]\s+\d+ wait \d+ " + re.escape(case.down_after)
                             + r"\s+ok at", out, re.M)
-        if started and "went down: not enough memory" in out:
+        # OpenComputers says it two ways: "not enough memory" from Lua,
+        # "Error.OutOfMemory" from the machine itself.
+        if started and re.search(r"went down: (not enough memory|Error\.OutOfMemory)", out):
             r.holds = r.went_down = True
     m = re.search(r"^release: build (\S+)", out, re.M)
     r.stamp = m.group(1) if m else None
@@ -245,6 +247,9 @@ def report(results: list[Result]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # A failing case prints the machine's screen, which is not all cp1252.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", help="sizes in KB, comma-separated (e.g. 768,1024)")

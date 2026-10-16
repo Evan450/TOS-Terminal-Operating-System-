@@ -158,6 +158,45 @@ do
   eq("no line numbers move", 0, lines)
 end
 
+-- ── Inside a line: runs of spaces go, in code only; so do blank lines ──
+-- Column-aligned tables and assignments were ~13 KB of the release once
+-- indentation had gone, the day it reached its 2 MB-drive budget
+-- (2026-10-16). And the blank-line and trailing-space rules used to run
+-- over the whole output, long strings included.
+do
+  local srcW = table.concat({
+    "local t = {",
+    '  { path = "/a",          critical = true  },',
+    '  { path = "/bb",         critical = false },',
+    "}",
+    "",
+    "",
+    "local s   =   [[line with a trailing space ",
+    "",
+    "",
+    "",
+    "after three blank lines]]",
+    'local q = "two  spaces"   ..   "  and  more  "',
+    "-- a comment that goes",
+    "",
+    "return t, s, q",
+  }, "\n") .. "\n"
+  local o = strip.strip(srcW, { minify = true })
+  test("a run of spaces in code is one space", o:find('"/a", critical = true }', 1, true) ~= nil
+    and o:find("local s = [[", 1, true) ~= nil and o:find('" .. "', 1, true) ~= nil)
+  test("no blank line survives in code", (o:gsub("%[%[.-%]%]", "[[]]"):find("\n\n") == nil))
+  local fn = load(o, "=ws", "t")
+  test("...and it still compiles", fn ~= nil)
+  if fn then
+    local okW, t, s, q = pcall(fn)
+    eq("a long string keeps its trailing space and its blank lines",
+      "line with a trailing space \n\n\n\nafter three blank lines", okW and s)
+    eq("a quoted string keeps its runs of spaces", "two  spaces  and  more  ", okW and q)
+    test("...and the table is the same table", okW and t[2].path == "/bb" and t[2].critical == false
+      and t[1].critical == true)
+  end
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
