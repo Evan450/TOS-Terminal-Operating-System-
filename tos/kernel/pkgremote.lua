@@ -5,17 +5,12 @@
 --! to say --allow-unverified when an index ships no hashes.
 --!
 --! Four rules hold the line here:
---!   1. HOST ALLOWLIST. Only repos an admin has written into
---!      /etc/pkg-repos.cfg are AUTHORITIES, and there is no default repo.
---!      Revised for federated repos (docs/FEDERATED-REPOS.md): a package
---!      may NAME other repos, this machine learns of them (KNOWN_CFG),
---!      and a fetch may look in one for what no configured repo has. What
---!      it takes from there is held to pkg's floor -- signed by a key this
---!      machine trusts, or one the admin pins there and then; never
---!      unsigned; pkg trust discovered off turns it off. Hosts carry no
---!      trust; signatures carry all of it. An index still cannot send a
---!      fetch to another host: every file of a package comes from the
---!      repo its index came from.
+--!   1. HOST ALLOWLIST. Only repos an admin wrote into /etc/pkg-repos.cfg
+--!      are AUTHORITIES; there is no default repo. A package may NAME
+--!      others (KNOWN_CFG), and a fetch looks in one only for what no
+--!      configured repo has; pkg's floor holds what it takes (a key
+--!      trusted here, never unsigned). An index cannot send a fetch to
+--!      another host: a package's files come from its index's repo.
 --!   2. PATHS FROM A STRANGER ARE NOT PATHS. Every source path in a
 --!      remote index is vetted BEFORE it is used to build either a URL or
 --!      a staging destination. This is the sharp edge: the index says
@@ -155,17 +150,10 @@ if not saveRepos(out) then return false, "could not write " .. REPO_CFG end
 return true
 end
 
---! /var/pkg/known-repos.cfg:
---!   return { { url = "https://host/path", from = { "mail-client" } }, ... }
---! What installed packages said about where they, and what they require,
---! can be found. KNOWN is not CONFIGURED: this file is not the allowlist
---! (REPO_CFG is, and only an admin writes it), it is written as a side
---! effect of installing, and a repo in it is trusted with nothing. It is
---! kept apart from REPO_CFG so that no install can ever add to the
---! allowlist. Bounded (MAX_KNOWN, the newest kept): growth follows what the
---! operator installs. Every entry reads back through the same URL rule a
---! manifest was held to; one that fails is dropped, not trusted.
---! (test_pkg_known_repos.lua)
+--! #SEC /var/pkg/known-repos.cfg -- what installed packages said about
+--! where they come from. KNOWN is not CONFIGURED: written by installs,
+--! trusted with nothing, and kept apart from REPO_CFG so no install can
+--! add to the allowlist. Every entry reads back through pkg's URL rule.
 local function readKnown()
 local out = {}
 if not fs.exists(KNOWN_CFG) then return out end
@@ -418,10 +406,8 @@ local st = im.status()
 return nil, st.reason or "internet is not available"
 end
 local repos = pkgremote.repos()
---! Repos nobody configured are read only when the caller says what the
---! floor allows (opts.discoveredPolicy, from pkg trust discovered) and
---! it is not "off". pkg.installRemote holds whatever comes from one to
---! that floor; this module only finds it. (test_pkg_discovered.lua)
+--! Repos nobody configured are read only under a discoveredPolicy other
+--! than "off"; pkg.installRemote holds what comes from one to the floor.
 local discovery = opts.discoveredPolicy ~= nil and opts.discoveredPolicy ~= "off"
 local others = discovery and discoveredCandidates(repos, opts.hints) or {}
 if #repos == 0 and #others == 0 then

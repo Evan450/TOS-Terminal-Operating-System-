@@ -201,17 +201,6 @@ if mr then meta.maxRestart = tonumber(mr) end
 return meta
 end
 
---! #MEM — what a declared `needs` asks of the machine, and the reason
---! `service` shows when it is missing. Every base service is a network
---! daemon, and each one already returned from start() when there was no
---! network -- but only after boot had compiled and run its script, and
---! 20-netfsd pulled in kernel.netfs (and, as a root-tier service, the whole
---! kernel.sandbox to build its env) before it looked. On a machine with no
---! network card all of that stayed resident for nothing, and `service`
---! listed four daemons as "running" that were doing nothing at all.
---! _TOS.net is set once, at boot stage 10, so the answer holds until a
---! reboot -- which is what the reason says. An unknown need is ignored:
---! a newer service must still load on an older kernel.
 local NEEDS = {
 net = {
 met    = function() return _G._TOS ~= nil and _G._TOS.net ~= nil end,
