@@ -244,7 +244,8 @@ local foreignDraw = false
 local fullscreen, bgPolicy = false, "drowsy"
 if not fn then
 
-local okP, pkgMod = pcall(require, "kernel.pkg")
+local okP, pkgMod = false, nil
+if helpers.mayHavePackages() then okP, pkgMod = pcall(require, "kernel.pkg") end
 if okP and pkgMod and pkgMod.getCommand then
 fn = pkgMod.getCommand(name)
 foreignDraw = fn ~= nil
@@ -301,7 +302,8 @@ local data = F.readFile(resolved)
 if data then
 
 local pkgCaps, pkgOwner = nil, nil
-local okPk, pkgMod = pcall(require, "kernel.pkg")
+local okPk, pkgMod = false, nil
+if helpers.mayHavePackages() then okPk, pkgMod = pcall(require, "kernel.pkg") end
 if okPk and type(pkgMod) == "table" and pkgMod.capsForFile then
 pkgCaps, pkgOwner = pkgMod.capsForFile(resolved)
 end

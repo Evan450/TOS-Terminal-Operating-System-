@@ -42,7 +42,11 @@ S._mouseLib = false
 local F = S.F
 if F and F.exists and not F.exists("/usr/lib/mouse.lua") then return nil end
 
-local okP, pkgMod = pcall(require, "kernel.pkg")
+local okH, H = pcall(require, "shell.panels.helpers")
+local okP, pkgMod = false, nil
+if not (okH and H.mayHavePackages) or H.mayHavePackages() then
+okP, pkgMod = pcall(require, "kernel.pkg")
+end
 if okP and pkgMod and pkgMod.info and pkgMod.info("mouse")
 and pkgMod.isEnabled and not pkgMod.isEnabled("mouse") then
 return nil

@@ -537,8 +537,10 @@ local first = (input:match("^(%S+)") or ""):lower()
 local F = S.F
 local function willRunProgram(name)
 if name == "" or (C and C[name]) then return false end
+if helpers.mayHavePackages() then
 local okP, pkgMod = pcall(require, "kernel.pkg")
 if okP and pkgMod and pkgMod.getCommand and pkgMod.getCommand(name) then return true end
+end
 if F and F.exists and F.join then
 for _, dir in ipairs({ "/bin", "/usr/bin", "/tos/shell" }) do
 if F.exists(F.join(dir, name .. ".lua")) or F.exists(F.join(dir, name)) then return true end

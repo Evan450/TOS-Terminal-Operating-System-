@@ -68,6 +68,26 @@ if f.name:match("%.log$") then return T.file_log or T.dim end
 return T.fg
 end
 
+function M.mayHavePackages()
+if package.loaded["kernel.pkg"] ~= nil then return true end
+local kfs = _G._TOS and _G._TOS.fs
+if type(kfs) ~= "table" or not kfs.exists or not kfs.list then return true end
+local okE, there = pcall(kfs.exists, "/var/pkg/installed")
+if not okE then return true end
+if not there then return false end
+local okL, list = pcall(kfs.list, "/var/pkg/installed")
+if not okL then return true end
+if type(list) == "function" then
+for n in list do if tostring(n):gsub("/$", "") ~= "" then return true end end
+return false
+end
+if type(list) ~= "table" then return true end
+for _, n in ipairs(list) do
+if tostring(n):gsub("/$", "") ~= "" then return true end
+end
+return false
+end
+
 function M.loadFailure(what, err)
 local why = tostring(err or "unknown error")
 if why:find("Out of memory", 1, true) or why:find("not enough memory", 1, true) then

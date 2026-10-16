@@ -133,7 +133,12 @@ if item.run then d.personal[#d.personal + 1] = { label = item.label, run = item.
 end
 end)
 d.pkgCommands = {}
-local okP, pkgMod = pcall(require, "kernel.pkg")
+
+local okH, H = pcall(require, "shell.panels.helpers")
+local okP, pkgMod = false, nil
+if not (okH and H.mayHavePackages) or H.mayHavePackages() then
+okP, pkgMod = pcall(require, "kernel.pkg")
+end
 if okP and pkgMod and pkgMod.commands then
 local okL, list = pcall(pkgMod.commands)
 if okL and type(list) == "table" then d.pkgCommands = list end
