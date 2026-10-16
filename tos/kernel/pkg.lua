@@ -2236,7 +2236,7 @@ function pkg.upgrade(name, opts)
   if not licOk then return false, "license check failed: " .. tostring(licErr) end
   local conflicts = pkg.findConflicts(m, name)
   if #conflicts > 0 and not opts.force then
-    return false, "conflicts: " .. pkg.describeConflicts(conflicts)
+    return false, "conflicts: " .. pkg.describeConflicts(conflicts) .. "  [E-613 ERR_PKG_CONFLICT]"
   end
   --! #SEC (pentest, Sep 2026) — refusals install() would make AFTER the old
   --! version is gone are made here, while it is still installed. A candidate
@@ -2249,7 +2249,7 @@ function pkg.upgrade(name, opts)
   local svcOk, svcErr = serviceInstallGate(m, opts)
   if not svcOk then return false, "refusing to upgrade '" .. name .. "': " .. svcErr end
   local prot = protectedTargetRefusal(m)
-  if prot then return false, "refusing to upgrade '" .. name .. "': " .. prot end
+  if prot then return false, "refusing to upgrade '" .. name .. "': " .. prot .. "  [E-612 ERR_PKG_PROTECTED_TARGET]" end
   --! The signature gate, too. It lived only in install(), which runs AFTER
   --! the old version is removed, so a candidate whose signature did not
   --! verify -- or an unsigned one under `pkg trust require on` -- deleted
@@ -2280,6 +2280,7 @@ function pkg.upgrade(name, opts)
           .. "over another channel, then use --force.",
           name, describeKey(curKey, cur._sigLabel), tostring(pkgDir),
           newKey and ("a different key: " .. describeKey(newKey)) or "no valid signature")
+          .. "  [E-611 ERR_PKG_WRONG_PUBLISHER]"
       end
       if log then
         log.warn("pkg", "Upgrading '" .. name .. "' to a different publisher (--force): "
@@ -2499,6 +2500,7 @@ local function signGate(manifestPath, opts, manifestBytes)
     return verdict, "refusing to install '" .. tostring(manifestPath)
       .. "': its signature does not verify (" .. tostring(verdict.reason)
       .. "). This is tampering or corruption, not a missing signature, and there is no override."
+      .. "  [E-609 ERR_PKG_SIGNATURE_INVALID]"
   end
 
   --! `pkg trust require on` has to mean signed BY SOMEONE THIS MACHINE
@@ -2518,6 +2520,7 @@ local function signGate(manifestPath, opts, manifestBytes)
     if verdict.state == "unsigned" then
       return verdict, "refusing to install an unsigned package: this machine is set to "
         .. "require signatures (pkg trust require off, or --allow-unsigned for one install)."
+        .. "  [E-610 ERR_PKG_SIGNATURE_REQUIRED]"
     end
     if verdict.state == "unknown" then
       return verdict, "refusing to install '" .. tostring(manifestPath)
@@ -2525,7 +2528,7 @@ local function signGate(manifestPath, opts, manifestBytes)
         .. "is set to require signatures. Trust the publisher with 'pkg trust add <name> "
         .. tostring(verdict.key) .. "' (fingerprint " .. tostring(verdict.fingerprint)
         .. " -- compare it with the publisher over a channel that is NOT this package), "
-        .. "or use --allow-unsigned for one install."
+        .. "or use --allow-unsigned for one install." .. "  [E-610 ERR_PKG_SIGNATURE_REQUIRED]"
     end
   end
 
@@ -2548,7 +2551,7 @@ function pkg._verificationGate(m, allowUnverified)
   local why = haveHashes and "manifest is missing hashes for some files"
     or "manifest declares no file hashes"
   return false, "refusing to install unverified package '" .. tostring(m and m.name)
-    .. "' (" .. why .. "). Re-run with --allow-unverified to override.", false
+    .. "' (" .. why .. "). Re-run with --allow-unverified to override." .. "  [E-607 ERR_PKG_UNVERIFIED]", false
 end
 
 --- @tier admin
@@ -2623,14 +2626,14 @@ function pkg.install(srcDir, opts)
   -- unowned /etc files. No --force: see protectedTargetRefusal.
   do
     local why = protectedTargetRefusal(m, opts._priorFiles)
-    if why then return false, "refusing to install '" .. tostring(m.name) .. "': " .. why end
+    if why then return false, "refusing to install '" .. tostring(m.name) .. "': " .. why .. "  [E-612 ERR_PKG_PROTECTED_TARGET]" end
   end
 
   -- #SEC/#SAFETY — conflicts. Checked BEFORE any file is written, because
   -- the failure this prevents is a half-overwritten pair of packages.
   local conflicts = pkg.findConflicts(m, opts.upgrading and m.name or nil)
   if #conflicts > 0 and not opts.force then
-    return false, "conflicts: " .. pkg.describeConflicts(conflicts)
+    return false, "conflicts: " .. pkg.describeConflicts(conflicts) .. "  [E-613 ERR_PKG_CONFLICT]"
   end
   if #conflicts > 0 and log then
     log.warn("pkg", "Installing " .. tostring(m.name) .. " over conflicts (--force): "
@@ -2667,6 +2670,7 @@ function pkg.install(srcDir, opts)
       return false, string.format("refusing to install '%s': it must be signed by %s, "
         .. "and this copy has %s", tostring(m.name), describeKey(opts.expectKey),
         verifiedKey(verdict) and describeKey(verifiedKey(verdict)) or "no valid signature")
+        .. "  [E-611 ERR_PKG_WRONG_PUBLISHER]"
     end
     sigVerdict = verdict
     if log then
@@ -2765,7 +2769,7 @@ function pkg.install(srcDir, opts)
       if expected then
         if not cryptoMod.ctEquals(cryptoMod.hash(data), expected) then
           for _, p in ipairs(copied) do pcall(fs.remove, p) end
-          return false, "hash mismatch on " .. target
+          return false, "hash mismatch on " .. target .. "  [E-608 ERR_PKG_HASH_MISMATCH]"
         end
       end
     end

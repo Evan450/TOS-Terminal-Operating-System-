@@ -3292,6 +3292,13 @@ hit — and the E-number's last digit is that same beep count.
 | E-604 | `ERR_PKG_FILE_MISSING` | a file the package lists is not where it says | |
 | E-605 | `ERR_PKG_FILE_UNREADABLE` | a file the package lists is there but could not be read | |
 | E-606 | `ERR_PKG_UNTRUSTED_SOURCE` | a package only in a repo nobody configured, not signed by a key trusted here | |
+| E-607 | `ERR_PKG_UNVERIFIED` | the package lists no file hashes, so its files cannot be checked | |
+| E-608 | `ERR_PKG_HASH_MISMATCH` | a file is not the one the package's manifest describes | |
+| E-609 | `ERR_PKG_SIGNATURE_INVALID` | the package's signature does not verify: it changed after signing | |
+| E-610 | `ERR_PKG_SIGNATURE_REQUIRED` | this machine installs only packages signed by a key it trusts | |
+| E-611 | `ERR_PKG_WRONG_PUBLISHER` | the package is not signed by the publisher it has to be | |
+| E-612 | `ERR_PKG_PROTECTED_TARGET` | the package would write a path no package may own | |
+| E-613 | `ERR_PKG_CONFLICT` | the package conflicts with something already installed | |
 | E-801 | `ERR_UNKNOWN_CMD` | no command by that name | |
 | E-802 | `ERR_CMD_UNLOADABLE` | the command exists but would not fit in memory | |
 
