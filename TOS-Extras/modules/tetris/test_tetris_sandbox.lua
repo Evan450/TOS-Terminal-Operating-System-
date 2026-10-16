@@ -126,6 +126,15 @@ local function makeFixture(opts)
     if name == "component" then return component end
     if name == "computer" then return computer end
     if name == "compat.serialization" then return serialization end
+    -- The shared shortcut table, as the real sandbox allows it. Only when a
+    -- test names the label it should report; otherwise it is absent, as on
+    -- an older base image.
+    if name == "shell.keys" and opts.quitLabel then
+      return {
+        is = function(action, ch, code) return action == "quit" and (ch == 17 or code == 68) end,
+        label = function(action) return action == "quit" and opts.quitLabel or "" end,
+      }
+    end
     if type(name) == "string" and name:sub(1, 7) == "kernel." then
       error("sandbox: cannot require kernel module '" .. name .. "'", 2)
     end
@@ -367,6 +376,25 @@ do
   -- out and that panel is what ended it.
   test("^Q ended the session (no GAME OVER panel drawn)", false, gameOver)
 end
+
+-- ── The quit footer fits the panel ──────────────────────────────
+-- On the headless machine the panel's last control line read "P:pause ^Q /
+-- F10:quit": 21 columns in a panel 16 wide, over its right border. The label
+-- comes from the shared shortcut table, so it is as long as the operator's
+-- bindings make it.
+local function footerFor(label)
+  local f = makeFixture({ quitLabel = label, signals = { { "key_down", "kb", 113, 16 } } })
+  local m = loadTetris(f)
+  pcall(m.commands.tetris, {}, f.o)
+  for _, c in ipairs(f.gpuCalls) do
+    if c[1] == "set" and tostring(c[4]):find("^P:pause ") then return tostring(c[4]) end
+  end
+end
+local def = footerFor("^Q / F10")
+test("the default bindings' footer fits the 16-column panel", true, def ~= nil and #def <= 16)
+test("...and names the first key", "P:pause ^Q:quit", def)
+test("a single short binding is shown whole", "P:pause F4:quit", footerFor("F4"))
+test("a binding too long to name falls back to plain Q", "P:pause Q:quit", footerFor("Ctrl+Shift+F12"))
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))

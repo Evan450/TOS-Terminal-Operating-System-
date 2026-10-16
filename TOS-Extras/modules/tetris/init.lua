@@ -425,7 +425,17 @@ local function play(o)
       gpu.set(pnx, cy + 2, "Z: rot CCW")
       gpu.set(pnx, cy + 3, "D/dn: soft")
       gpu.set(pnx, cy + 4, "SPC: drop")
-      gpu.set(pnx, cy + 5, "P:pause " .. quitLabel() .. ":quit")
+      -- The panel is pniw (16) columns inside its border. The default quit
+      -- label, "^Q / F10", made this line 21 and it ran over the border on
+      -- the headless machine. Name the first key when they don't all fit,
+      -- and plain Q -- which always quits here -- when even that doesn't.
+      local label = quitLabel()
+      local quitLine = "P:pause " .. label .. ":quit"
+      if #quitLine > pniw then
+        quitLine = "P:pause " .. (label:match("^(.-) / ") or label) .. ":quit"
+      end
+      if #quitLine > pniw then quitLine = "P:pause Q:quit" end
+      gpu.set(pnx, cy + 5, quitLine)
     end
   end
 

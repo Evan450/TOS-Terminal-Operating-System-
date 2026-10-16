@@ -303,6 +303,25 @@ do
   test("...and do not raise", (pcall(L.cellAt, "x", {}, gx, gy, CW, CH)))
 end
 
+-- ── Arrow keys move the cursor one cell ────────────────────────────
+-- On the headless machine, Up then Enter from the centre put X in the
+-- top-LEFT cell: init.lua stepped Up by 4. The move is pure now.
+do
+  eq("Up from the centre is the top-middle cell", 2, L.step(5, "up"))
+  eq("Down from the centre is the bottom-middle cell", 8, L.step(5, "down"))
+  eq("Left from the centre is the middle-left cell", 4, L.step(5, "left"))
+  eq("Right from the centre is the middle-right cell", 6, L.step(5, "right"))
+  eq("Up from the top row wraps to the bottom of its column", 7, L.step(1, "up"))
+  local sameCol, backDown = true, true
+  for c = 1, 9 do
+    if L.step(c, "up") % 3 ~= c % 3 or L.step(c, "down") % 3 ~= c % 3 then sameCol = false end
+    if L.step(L.step(c, "up"), "down") ~= c then backDown = false end
+  end
+  test("Up and Down keep every cell in its column", sameCol)
+  test("Up then Down comes back to the same cell, from every cell", backDown)
+  eq("anything else leaves the cursor where it is", 5, L.step(5, "enter"))
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

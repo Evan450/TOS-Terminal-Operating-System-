@@ -409,10 +409,8 @@ local function ttt(args, o)
         redraw()
       elseif not over then
         local moved = false
-        if k == "up" then cursor = ((cursor - 4 - 1) % 9) + 1; redraw()
-        elseif k == "down" then cursor = ((cursor + 3 - 1) % 9) + 1; redraw()
-        elseif k == "left" then cursor = ((cursor - 2) % 9) + 1; redraw()
-        elseif k == "right" then cursor = (cursor % 9) + 1; redraw()
+        if k == "up" or k == "down" or k == "left" or k == "right" then
+          cursor = L.step(cursor, k); redraw()
         elseif k == "enter" or k == " " then
           moved = L.play(b, cursor, cur)
           if not moved then pcall(computer.beep, 200, 0.05) end

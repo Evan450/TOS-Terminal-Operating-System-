@@ -411,9 +411,11 @@ do
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
     local PENDING_RESIGN = {
-      -- Empty: the operator signed the pack on 2026-10-16 (stock 1.0.1 and
+      -- The operator signed the pack on 2026-10-16 (stock 1.0.1 and
       -- intercom 1.0.1 included). Name a package here when a fix to it
       -- lands ahead of the next signing.
+      ttt = "ttt 1.0.1: Up moves the cursor up its column (2026-10-16)",
+      tetris = "tetris 1.1.2: the quit footer fits the side panel (2026-10-16)",
     }
 
     if nShipped == 0 then

@@ -3,6 +3,10 @@
 -- this file when both are present.
 return {
   name        = "tetris",
+  -- 1.1.2 — the quit footer fits the side panel. With the default
+  -- bindings it read "P:pause ^Q / F10:quit", 21 columns in a 16-column
+  -- panel, over its border. It names the first key when they don't all
+  -- fit (test_tetris_sandbox.lua).
   -- 1.1.1 — fix multi-line clears. Completing 2+ rows at once cleared the
   -- WRONG rows (the lock loop interleaved remove+insert, shifting indices),
   -- leaving completed lines on the board — "they clear one at a time".
@@ -11,7 +15,7 @@ return {
   -- GPU proxy, scores via the session-bound fs). The 1.0.0 build still
   -- required kernel.display/kernel.event, which pkg blocks, so the
   -- game could not launch at all after the kernel.modules→pkg pivot.
-  version     = "1.1.1",
+  version     = "1.1.2",
   kind        = "command",
   category    = "games",
   description = "Classic Tetris with per-user high scores. Requires a T2+ screen.",

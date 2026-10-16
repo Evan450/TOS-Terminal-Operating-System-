@@ -14,9 +14,13 @@
 -- or in the help bar — finding it is the point. (It is photosensitivity-
 -- safe and pinned by tests, including one asserting the command it
 -- reveals is still the command the base image actually listens for.)
+--
+-- 1.0.1 — Up moves the cursor up its column; it stepped back 4 cells, so
+-- from the centre Up then Enter placed X top-left. test_ttt.lua pins the
+-- arrows (logic.lua's L.step).
 return {
   name        = "ttt",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "games",
   description = "Tic-tac-toe vs an unbeatable AI, or 2-player. Requires a T2+ screen.",

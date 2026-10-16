@@ -155,6 +155,19 @@ function L.play(b, cell, player)
   return true
 end
 
+--- PURE — the cell the cursor moves to from `cell` (1..9) on an arrow:
+--- a row up or down within its column, a cell left or right, wrapping
+--- round the board. init.lua had Up as `cell - 4`, so from the centre it
+--- landed top-LEFT and Up then Enter put X a cell off; from the corner it
+--- jumped to the middle row. (test_ttt.lua)
+function L.step(cell, dir)
+  if dir == "up" then return ((cell - 3 - 1) % 9) + 1
+  elseif dir == "down" then return ((cell + 3 - 1) % 9) + 1
+  elseif dir == "left" then return ((cell - 2) % 9) + 1
+  elseif dir == "right" then return (cell % 9) + 1 end
+  return cell
+end
+
 --- PURE — which cell (1..9) does a click at (x, y) land in? nil when the
 --- click misses the board entirely, INCLUDING the separator columns and
 --- rows between cells: a click on a grid line is not a move, and
