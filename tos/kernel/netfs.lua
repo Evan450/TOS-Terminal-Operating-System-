@@ -103,6 +103,19 @@ _exports = list
 return true
 end
 
+function netfs.arm(on)
+local ok, err = true, nil
+if on then
+ok, err = netfs.loadExports(fs)
+if not ok and log and log.warn then
+log.warn("netfs", "not serving: " .. tostring(err))
+end
+end
+enabled = (on and ok) and true or false
+if not enabled then _exports = {} end
+return ok, err
+end
+
 function netfs._findExport(name)
 for _, e in ipairs(_exports) do
 if e.name == name then return e end
@@ -507,5 +520,30 @@ HANDLE_IDLE = HANDLE_IDLE,
 handles     = function() return _handles end,
 resetHandles = function() _handles = {}; _nextHandle = 1 end,
 }
+
+--! Lazy self-initialization, as kernel.net.transfer and kernel.net.remote
+--! do it. Nothing in the kernel ever called netfs.init: the module shipped
+--! with only its tests wiring it, so a loaded kernel.netfs had no net to
+--! answer NETFS_REQ on (handleRequest returned at its first line) and the
+--! client half of `netfs mount` timed out with "no_network". It now wires
+--! itself from the live _TOS handles wherever it loads -- the first inbound
+--! NETFS_REQ (net's lazy dispatch), the `netfs` command, or anything else
+--! that requires it -- and applies the arm netfsd recorded in net, so a
+--! service started before this module loaded still governs it. No recorded
+--! arm ⇒ disabled. Off-box tests (no _TOS.net) keep using explicit init().
+do
+local T = rawget(_G, "_TOS")
+if T and T.net and not net then
+local okI = pcall(netfs.init, {
+net   = T.net,
+fs    = T.fs,
+trust = T.net.getTrust and T.net.getTrust() or nil,
+log   = T.logObj,
+})
+if okI and T.net.getServiceArm and T.net.getServiceArm("netfsd") then
+netfs.arm(true)
+end
+end
+end
 
 return netfs

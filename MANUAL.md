@@ -1500,6 +1500,7 @@ signs proves nothing at all.
 pkg trust list                 # who this machine trusts, with fingerprints
 pkg trust remove <name>        # stop accepting them (installed packages unaffected)
 pkg trust require on           # refuse unsigned packages outright
+pkg trust discovered tofu      # what pkg fetch may take from repos nobody configured (§7.9)
 pkg verify-sig /mnt/xx/foo     # who signed this? — without installing it
 ```
 
@@ -1557,16 +1558,25 @@ out the OPPM way — one `programs.cfg` at the root, sources underneath it.
 pkg repo add oc https://example.com/oc/master    Register a repo
 pkg repo list                                     What this machine will fetch from
 pkg repo remove oc                                Stop trusting it
+pkg repo forget <number|url|all>                  Drop repos learned from packages
 pkg remote                                        What the repos offer
 pkg fetch <name> [--allow-unverified]             Download it and install it
 internet                                          Card status (is it even usable?)
 ```
 
-**The repo list is the allowlist.** There is no default repository, no
-discovery, and no way for a repo's index to introduce another host — a fetch
-that would leave the configured origin is refused. Adding a repo is an admin
-action and a standing decision about where this machine accepts executable code
-from, which is why it is gated exactly like an install.
+**The repo list is the allowlist.** There is no default repository. Adding a repo is an admin action and a standing decision about where this machine accepts executable code from, which is why it is gated exactly like an install. A configured repo is an authority: what it serves goes through the ordinary install, signed or not. An index cannot send a fetch to another host, because every file of a package comes from the repo its index came from.
+
+**A package can say where it comes from.** A manifest may list `repos`, the URLs of repos that carry it, and a table-form requirement may list `repos` for that one (`{ name = "libgui", repos = { "https://…" } }`). Each URL must be plain http or https: a host, an optional port and a path, with no `user@`, query, fragment or `..`, and at most four per list. Installing the package records them as **known**: `pkg repo list` shows them under the configured repos, with the package that named each one. Known is not configured. Known repos live in `/var/pkg/known-repos.cfg`, apart from the allowlist, so no install can add to it. They are trusted with nothing. Up to 32 are kept, the newest. `pkg repo forget` drops them.
+
+**A fetch can look further, under a floor.** When no configured repo has a package, `pkg fetch` looks in the repos the requirement names, then in the known ones, at most eight per package. A repo nobody configured carries no trust, so what comes from one stands on its own signature. It is checked in staging, before anything installs:
+
+| The package is… | What happens |
+|---|---|
+| Signed by a key you trust | It installs, through the ordinary door. |
+| Signed by a key you do not know | You are shown its fingerprint, the repo and what requires it, and asked to name the publisher. Naming it is `pkg trust add`; Enter refuses. Never offered for a `service` or `driver`, which run outside the sandbox: trust their key first, by hand. |
+| Unsigned, or its signature does not verify | Refused. No `--allow-…` flag changes that. An unsigned package installs only from a repo you added. |
+
+Compare a fingerprint with the publisher somewhere that is not the repo it came from: a key that arrives with the package it signs proves nothing. `pkg trust discovered` sets the floor. `tofu` (trust on first use, the default) works as above. `trusted` takes only what is signed by a key already trusted here, and never asks. `off` reads configured repos only. A trust store that will not read counts as `off`. A requirement that pins a `key` (§7.3) gets exactly that publisher's copy, from wherever it is found. The refusals carry E-606 (`why E-606`).
 
 **A fetch is a download followed by an ordinary install.** `pkg` downloads the
 index and the package's files into a staging directory under `/var/pkg/remote`,
@@ -1578,7 +1588,7 @@ the same code, so they cannot drift. Staging is cleared after every fetch,
 successful or not.
 
 **A fetch brings what the package requires.** Its `requires` are fetched from
-the configured repos too, each through that same door and with the same
+the configured repos too (and, under the floor above, from the repos they name), each through that same door and with the same
 `--allow-…` flags you gave, and installed first. Everything is downloaded and
 every requirement checked before anything is installed, so if one requirement
 is in no configured repo — or a repo has it only in a version that does not meet
@@ -3279,6 +3289,9 @@ hit — and the E-number's last digit is that same beep count.
 | E-601 | `ERR_PKG_NOT_FOUND` | no configured repo has a package by that name | |
 | E-602 | `ERR_PKG_BAD_NAME` | that is not a valid package name | |
 | E-603 | `ERR_PKG_DEPENDENCY` | something the package requires could not be satisfied | |
+| E-604 | `ERR_PKG_FILE_MISSING` | a file the package lists is not where it says | |
+| E-605 | `ERR_PKG_FILE_UNREADABLE` | a file the package lists is there but could not be read | |
+| E-606 | `ERR_PKG_UNTRUSTED_SOURCE` | a package only in a repo nobody configured, not signed by a key trusted here | |
 | E-801 | `ERR_UNKNOWN_CMD` | no command by that name | |
 | E-802 | `ERR_CMD_UNLOADABLE` | the command exists but would not fit in memory | |
 

@@ -1,6 +1,6 @@
 return {
 
-{ path = "/init.lua",                       critical = true  , hash = "797179ba4e1ba7e1690fd8cd728cc0e73e998228123172b28743dd34e5de17db" },
+{ path = "/init.lua",                       critical = true  , hash = "59c8574d7b5c6841a6e1e1bb204d0a481b46f67c06dcd6ff7a6b8fb918d5eac3" },
 { path = "/install.lua",                    critical = false , hash = "44dbacef0310561f21d85038d1da1afd9b8a2c3a017bbc00fdbe3a2a337c3130" },
 
 { path = "/tos/kernel/init.lua",            critical = true  , hash = "60e9ab9645769c4a657234a9bf7b50e3f62b0d1621f4589a8808e145d01c46d6" },
@@ -29,7 +29,7 @@ return {
 { path = "/tos/kernel/audio.lua",           critical = false , hash = "29a3d1f281c68258b4cf5f93e4ba976b80d23237cafa1a56c0005f2763ecbeae" },
 { path = "/tos/kernel/theme.lua",           critical = false , hash = "fdd98c5dc06ac253f5fbd3c9e6880f0eb7d1e3e91fe002360645c48456dc61f1" },
 { path = "/tos/kernel/monitor.lua",         critical = false , hash = "c259b21eb9f41f2529e7fa860a93c3dab3a1f9a8172c26b2c56bef47bf6a1a24" },
-{ path = "/tos/kernel/pkg.lua",             critical = false , hash = "3f2d9e1cd18a74251ff2742a2bd0502f864100f62bf653a78931942bebcf2b03" },
+{ path = "/tos/kernel/pkg.lua",             critical = false , hash = "e52232fb3ecf1141db0eee08caf172136fe70ebc4259ea8bc0b3f60ec07a56ba" },
 { path = "/tos/kernel/swap.lua",            critical = false , hash = "90a86f9be1927d58f0062a1b09aa84ad83b23a14d64687dcd2f9ae0aca0bcc0d" },
 { path = "/tos/kernel/compress.lua",        critical = false , hash = "f7199bd27e9b955e7d3146abaf00f43785d8559923f2de36201e606380c77f46" },
 { path = "/tos/kernel/sysinfo.lua",         critical = false , hash = "00beb937e7a4e9b9dba6aeed809bde25b8f73ab29c6b7ecb144ffe728df9ebfa" },
@@ -39,20 +39,20 @@ return {
 { path = "/tos/kernel/repair.lua",          critical = false , hash = "ee81184d17d10758da8528084a15454932e7e9b9adc7aeece3228e09d82ed3b9" },
 { path = "/tos/kernel/netrepair.lua",       critical = false , hash = "6b0864ce176193d7b50876338055b610cf2c58e511a64c3fa519b000bf0038b7" },
 { path = "/tos/kernel/srm.lua",             critical = false , hash = "beee4444e10840af3a7467889202ed49e102711eb87307c374369b0993ca7a6e" },
-{ path = "/tos/kernel/errors.lua",          critical = false , hash = "604c34ece500924502b53ff9264f6726d9e93fd4c7a465e4f9e7cf76b723ad20" },
+{ path = "/tos/kernel/errors.lua",          critical = false , hash = "1bbdb7ff423cc9b5159dbbec406cc915cfd5d58a15d0eb4caa4962f9c2c8f180" },
 { path = "/tos/kernel/notify.lua",          critical = false , hash = "3c2bf2ca94b76cad4cb49442388d948db22b2bf52ed2dd99c4fd7ae4882f1f31" },
 { path = "/tos/kernel/sha256.lua",          critical = false , hash = "c7495e9afb564a678ff9e44c02bc4a066e3f464fc1dfe1b92edbb8f82f17b502" },
 
 { path = "/tos/kernel/sha512.lua",          critical = false , hash = "6143d5d59730db3c92d34246b7b247d83faa975ab1d3624eae3f40f7a0449546" },
 { path = "/tos/kernel/ed25519.lua",         critical = false , hash = "a8240e61cbec33c524ef59b3d3257998aeea9a82c75003d7ad6ef6271290aea1" },
-{ path = "/tos/kernel/pkgsign.lua",         critical = false , hash = "03289337f77cde6e403f07c66f675af6e3b62a62bcf2c96a0978a29f21ae8e9f" },
+{ path = "/tos/kernel/pkgsign.lua",         critical = false , hash = "83e7ea35a7a735b4276a31ffcdf3007c4762c9e9d3e56f6806296ca898e2675c" },
 { path = "/tos/kernel/backup.lua",          critical = false , hash = "978dbae0843401c478e7c09ffe9ba5c0b7f45561a3db74bbf5e2c5ab2922bf71" },
 { path = "/tos/kernel/diag.lua",            critical = false , hash = "9cb593654a313dd0741484a33aed6c8943c7696b5831472e8f33010d167580b6" },
 { path = "/tos/kernel/internet.lua",        critical = false , hash = "bbbbbadb6e8f8cb5bf10b1515db14cd2b2f2d7505113eff5653a59519219070b" },
-{ path = "/tos/kernel/pkgremote.lua",       critical = false , hash = "db31338005419d68197c69127717a0b0ba9c30774c73595698e51ed1cf59241b" },
+{ path = "/tos/kernel/pkgremote.lua",       critical = false , hash = "bbd6ddcb26b48cb81b7146d5966618eefa1b340643059bb894afde023d8591c5" },
 { path = "/tos/kernel/jbod.lua",            critical = false , hash = "4405c99b3681b18fa2109163cffa18347fdf12f3c1a58d1fef3c2d12613cc2ad" },
 { path = "/tos/kernel/diskmount.lua",       critical = false , hash = "0609246be416ce7b7a2ce1e33b866ce2862e7f869aaecf9a29c5a9e5282cdf00" },
-{ path = "/tos/kernel/netfs.lua",           critical = false , hash = "5e0470f52fe03faaa7b7e33f48f650862ca3fcfcff4bf85e3e28bc63617cc43e" },
+{ path = "/tos/kernel/netfs.lua",           critical = false , hash = "68873019443bf6be989addedab68fdecf559a92fd1be57483a5c9478a123a3bc" },
 { path = "/tos/kernel/selftest.lua",        critical = false , hash = "976740a404f5a7cedf910c54e14f429f65a16a01cad03f9ed30a02885107e78c" },
 { path = "/tos/kernel/keychain.lua",        critical = false , hash = "699968af66e7631c3894d876b9b50a6ff4c6fc0bf001474818bfa41196afaae0" },
 { path = "/tos/kernel/profile.lua",         critical = false , hash = "93ca7bcfebf7d5456eedb5b029039c302ea6baa24b57d9efbf678cdfd57b7975" },
@@ -61,7 +61,7 @@ return {
 { path = "/tos/kernel/trash.lua",           critical = false , hash = "d4947c613d8cfdde8a870ed3d2c53097827659c414e96889393527e31fa36746" },
 { path = "/tos/kernel/vault.lua",           critical = false , hash = "19a0224ba9a6791079e289836cbe6cc8c8ad485a62dd8c003cf502d374f4ed59" },
 
-{ path = "/tos/kernel/net/init.lua",        critical = false , hash = "9aa26ab844738c9b625cf7526320d6136bbe3b7e4f6afc4b34e78aa644e0aa40" },
+{ path = "/tos/kernel/net/init.lua",        critical = false , hash = "8fff3411b9ed7a3fc6a60e10b8511cc214708d3aa954413dec8996f5d34c0e3e" },
 { path = "/tos/kernel/net/protocol.lua",    critical = false , hash = "15443dc9811af3dcad701e8ae3b5ab81da5dc31c2cd76e70cbfb41ff620577bd" },
 { path = "/tos/kernel/net/trust.lua",       critical = false , hash = "0a7a18ea413a74388c04da0e99a49a9cbef5fda5905a7de915f347d74c8a2e7e" },
 { path = "/tos/kernel/net/transfer.lua",    critical = false , hash = "c8a89c4b43b3c9be8e8f6f3560ab9c9e2fd905794b94e9f112c0d253e0341c45" },
@@ -101,7 +101,7 @@ return {
 { path = "/tos/shell/panels/events.lua",    critical = false , hash = "df90a92752114109a24288179f488ac329af58a56f50f3661528d68956407086" },
 { path = "/tos/shell/panels/executor.lua",  critical = false , hash = "7b6455f27912745e7af948044333f20d785ef0ebe1caa3f329dd56069136173f" },
 { path = "/tos/shell/panels/filebrowser.lua", critical = false , hash = "c57f12921da2e68ec227826f17cd06c418d2357d49fd477f5c7879009f9a7d84" },
-{ path = "/tos/shell/panels/helpers.lua",   critical = false , hash = "c95123b8193b7f88c8ff09fd7e1ccfbb5d775b13b34ff5bdd0d7707aee69fefd" },
+{ path = "/tos/shell/panels/helpers.lua",   critical = false , hash = "18aa6a6e21d79701e58dcc5c655f834005f8d4e77a03c5af9a90e88fd86d92f2" },
 { path = "/tos/shell/panels/keymap.lua",    critical = false , hash = "1b3401cd56646c3e817bbbade960fcc4cbf403c5ad4b87e680f21b233115b361" },
 { path = "/tos/shell/panels/menus.lua",     critical = false , hash = "8e22365a86e44fdf6c24448cc27c9e8358a3335cc58e887314f526c76f4a37e4" },
 { path = "/tos/shell/panels/mouse.lua",     critical = false , hash = "28991c65c9b1375a23a81cd7bbf26b26a1e31da7c4f4e6659b24795a7f6f4a23" },
@@ -119,7 +119,7 @@ return {
 { path = "/tos/shell/panels/chatapp.lua",   critical = false , hash = "4a69f4655fc8fd4b9c14e28874ae1afc12a1569d82d77a7c67539b95837103fa" },
 
 { path = "/tos/shell/panels/commands/core.lua",   critical = false , hash = "7e2ac3956a01c904918812eaa89b69d2750fda19d9199567a32358b024ce40f9" },
-{ path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "a0b867d9d30c6451e0b37f8e0f0083c950e40b01c41201e8dfcb75df06d061ef" },
+{ path = "/tos/shell/panels/commands/admin.lua",  critical = false , hash = "acb5dbef83f81ba4dc743581f3ec98da39129735894e6ad0e3d5f264d0c918ec" },
 { path = "/tos/shell/panels/commands/extras.lua", critical = false , hash = "05e23318ada724c442ecd0db8215253ed9480f63152f51f3f39610e4aefe428a" },
 
 { path = "/tos/compat/init.lua",            critical = false , hash = "c88c38b7cbca9de2841e76af310791cc8d0800fd8a2d6bc6cb9044f41e18e256" },
@@ -146,7 +146,7 @@ return {
 { path = "/etc/rc.d/10-discoveryd.lua",     critical = false , hash = "47a09c7e6dde215fef2a99d82ced02614047db6be97ae806163842010c5b36b0" },
 { path = "/etc/rc.d/20-chatrelay.lua",      critical = false , hash = "108800e0bd84570977864ff2b8a53b51a198da485a4a4fae1eb80d6c8ba59401" },
 { path = "/etc/rc.d/20-fileshare.lua",      critical = false , hash = "dee1848bf5f9ad6b3fa185778c29ef8b7bae713d50d667743a3d370c912bb784" },
-{ path = "/etc/rc.d/20-netfsd.lua",         critical = false , hash = "5c0fd52706fb19f11e8e1187d6c20808bc48a591d401941dc4504c0d2454590c" },
+{ path = "/etc/rc.d/20-netfsd.lua",         critical = false , hash = "f59426e121bc49e5e4435a6175e8603883eab7f35d0d7db9cbb1c2a1dbc5b2f8" },
 { path = "/etc/rc.d/20-rshd.lua",           critical = false , hash = "b7e8a83c04dfc015f77dbe3f98d4c2373d6c342a6ec48e7e7a2d87c715ec2f0c" },
 
 { path = "/etc/rc.d/20-rshd.disabled",      critical = false , hash = "ce6de280f9fc4d6e2a9ac82d835083cc0bcfeba041510c86ef60bf589d81e283" },

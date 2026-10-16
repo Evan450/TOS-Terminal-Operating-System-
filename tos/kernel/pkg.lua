@@ -200,6 +200,59 @@ and #s <= 32
 and s:match("^[%w%.%-]+$") ~= nil
 end
 
+--! A REPO HINT (docs/FEDERATED-REPOS.md, slice 2) is a URL a manifest
+--! gives for where it, or something it requires, can be found: the
+--! directory holding an OPPM-shaped repo's programs.cfg. It is a string a
+--! stranger wrote that this machine may later REQUEST, so the rule is
+--! narrow: http or https, a plain host (and port), and a path of plain
+--! characters. No user@, no query or fragment (they would change what the
+--! URL means once programs.cfg is appended), no "." or ".." segments, no
+--! backslash, space or control character. One rule, here, handed to
+--! kernel.pkgremote at init so the store of learned repos reads back
+--! through the same check. (test_pkg_known_repos.lua)
+--! Forward-declared: the remote helpers are defined far below, next to the
+--! other repo plumbing, and are called from pkg.install and
+--! pkg.listAvailable before that. Without this they resolve to a nil
+--! GLOBAL and only fail when the path that calls them runs.
+local remoteMod
+local MAX_REPO_HINTS = 4
+local function validRepoHint(u)
+if type(u) ~= "string" or #u > 200 then return false end
+local host, rest = u:match("^https?://([%w%.%-]+)(.*)$")
+if not host or host:sub(1, 1) == "." or host:sub(1, 1) == "-"
+or host:find("..", 1, true) then
+return false
+end
+local port, path = rest:match("^:(%d+)(.*)$")
+if port then
+if #port > 5 then return false end
+rest = path
+end
+if rest == "" then return true end
+if not rest:match("^/[%w%-%._~/%%+]*$") then return false end
+for seg in rest:gmatch("[^/]+") do
+if seg == "." or seg == ".." then return false end
+end
+return true
+end
+
+function pkg.repoHints(m)
+local out, seen = {}, {}
+local function add(list)
+if type(list) ~= "table" then return end
+for _, u in ipairs(list) do
+local k = type(u) == "string" and (u:gsub("/+$", "")) or nil
+if k and not seen[k] then seen[k] = true; out[#out + 1] = k end
+end
+end
+if type(m) ~= "table" then return out end
+add(m.repos)
+for _, req in ipairs(type(m.requires) == "table" and m.requires or {}) do
+if type(req) == "table" then add(req.repos) end
+end
+return out
+end
+
 local function validateManifest(m)
 if type(m) ~= "table" then return false, "manifest is not a table" end
 if not validName(m.name) then return false, "invalid name: " .. tostring(m.name) end
@@ -305,6 +358,35 @@ end
 if type(req.name) ~= "string" or req.name == "" then
 return false, "requires[" .. i .. "] pins a key but names no package"
 end
+end
+end
+end
+
+local function checkRepos(list, where)
+if list == nil then return true end
+if type(list) ~= "table" then return false, where .. " must be an array of repo URLs" end
+local n = 0
+for j, u in pairs(list) do
+n = n + 1
+if type(j) ~= "number" or not validRepoHint(u) then
+return false, where .. "[" .. tostring(j) .. "] is not an http(s) repo URL"
+end
+end
+if n > MAX_REPO_HINTS then
+return false, where .. " names more than " .. MAX_REPO_HINTS .. " repos"
+end
+return true
+end
+do
+local okR, rErr = checkRepos(m.repos, "repos")
+if not okR then return false, rErr end
+for i, req in ipairs(type(m.requires) == "table" and m.requires or {}) do
+if type(req) == "table" and req.repos ~= nil then
+if type(req.name) ~= "string" or req.name == "" then
+return false, "requires[" .. i .. "] names repos but no package"
+end
+local okQ, qErr = checkRepos(req.repos, "requires[" .. i .. "].repos")
+if not okQ then return false, qErr end
 end
 end
 end
@@ -2079,8 +2161,9 @@ for _, p in ipairs(copied) do pcall(fs.remove, p) end
 --! (test_pkg_read_reason.lua)
 if fs.exists(src) then
 return false, "cannot read source file " .. src .. ": " .. tostring(readErr or "read failed")
+.. "  [E-605 ERR_PKG_FILE_UNREADABLE]"
 end
-return false, "missing source file: " .. src
+return false, "missing source file: " .. src .. "  [E-604 ERR_PKG_FILE_MISSING]"
 end
 
 if cryptoMod then
@@ -2139,6 +2222,12 @@ end
 fs.writeFile(fs.join(destDir, "state"), defaultEnabled)
 
 installed[m.name] = m
+
+local hints = pkg.repoHints(m)
+if #hints > 0 then
+local rm = remoteMod()
+if rm and rm.learn then pcall(rm.learn, hints, m.name) end
+end
 
 pkg.syncCriticalBackup()
 
@@ -2615,11 +2704,8 @@ end
 return cryptoMod.hash(packageName .. "|" .. userKey)
 end
 
---! Forward-declared: the remote helpers below are defined further
---! down, next to the other repo plumbing, and this is called from
---! here. Without this it resolves to a nil GLOBAL and only fails
---! when someone actually passes includeRemote.
-local remoteMod
+--! (remoteMod is forward-declared above validRepoHint: pkg.install
+--! calls it too, and that is earlier still.)
 
 --! `opts.includeRemote` also lists what the CONFIGURED REPOS advertise,
 --! not just what is on a disk right now.
@@ -2912,8 +2998,23 @@ pkg._loadAnyManifest     = loadAnyManifest
 function remoteMod()
 local ok, m = pcall(require, "kernel.pkgremote")
 if not ok or type(m) ~= "table" then return nil, "remote package support unavailable" end
-if m.init and log then pcall(m.init, { log = log }) end
+
+if m.init then pcall(m.init, { log = log, validRepoHint = validRepoHint }) end
 return m
+end
+
+function pkg.knownRepos()
+local m = remoteMod()
+if not m or not m.known then return {} end
+return m.known()
+end
+
+function pkg.forgetRepo(which, opts)
+local g, gErr = adminGate(opts)
+if not g then return false, gErr end
+local m, mErr = remoteMod()
+if not m then return false, mErr end
+return m.forget(which)
 end
 
 --! The gate lives HERE and the storage lives in kernel.pkgsign, so there
@@ -2955,6 +3056,17 @@ end
 function pkg.trustRequired()
 local ps = withSign(); if not ps then return false end
 return ps.requiresSignature()
+end
+
+function pkg.discoveredPolicy()
+local ps = withSign(); if not ps or not ps.discoveredPolicy then return "off" end
+return ps.discoveredPolicy()
+end
+
+function pkg.trustDiscovered(v, opts)
+local g, gErr = adminGate(opts); if not g then return false, gErr end
+local ps, e = withSign(); if not ps then return false, e end
+return ps.setDiscoveredPolicy(v)
 end
 
 function pkg.checkSignature(srcDir)
@@ -3059,11 +3171,80 @@ if not g then return false, gErr end
 local m, mErr = remoteMod()
 if not m then return false, mErr end
 
+local function with(extra)
+local o = {}
+for k, v in pairs(opts) do o[k] = v end
+for k, v in pairs(extra) do o[k] = v end
+return o
+end
+local policy = pkg.discoveredPolicy()
+
+--! THE FLOOR (docs/FEDERATED-REPOS.md, slice 2), for a package found
+--! only in a repo nobody configured: one its requirer named, or one this
+--! machine learned of. "An admin added this repo" was the old trust
+--! signal; such a repo has none, so the package's own signature carries
+--! all of it, checked here on the staged bytes BEFORE anything installs:
+--!   * signed by a key trusted here: on through the ordinary door;
+--!   * signed by an UNKNOWN key: only under `pkg trust discovered tofu`,
+--!     and only when the admin, shown the fingerprint, names the
+--!     publisher there and then (opts.confirmKey) -- which is
+--!     `pkg trust add`, through its own gate. Never for a service or a
+--!     driver: those run outside the sandbox, and need the explicit
+--!     add first;
+--!   * unsigned, or a signature that does not verify: never. No
+--!     --allow-* flag reaches this: an unsigned package has no identity
+--!     to resolve against, and comes only from a repo an admin added.
+--! pkg.install then verifies again, against the bytes IT reads.
+--! (test_pkg_discovered.lua)
+local TAG = "  [E-606 ERR_PKG_UNTRUSTED_SOURCE]"
+local function floor(n, man, mpath, mbytes, url, by)
+local ps = withSign()
+local where = "'" .. n .. "' is only in a repo this machine was not configured with ("
+.. tostring(url) .. ")"
+if not ps then return false, where .. ", and signatures cannot be checked here" .. TAG end
+local v = ps.verifyManifest(mpath, mbytes)
+if v.state == "trusted" then return true end
+if v.state == "invalid" then
+return false, where .. ", and its signature does not verify (" .. tostring(v.reason) .. ")" .. TAG
+end
+if v.state ~= "unknown" then
+return false, where .. ", and it is unsigned. An unsigned package installs only from a "
+.. "repo an admin added (pkg repo add)" .. TAG
+end
+local add = "pkg trust add <name> " .. tostring(v.key)
+if man.kind == "service" or man.kind == "driver" then
+return false, where .. ". It is a " .. man.kind .. ", which runs outside the sandbox, and "
+.. "its key (" .. tostring(v.fingerprint) .. ") is not trusted here: trust it first, "
+.. "with  " .. add .. TAG
+end
+if policy ~= "tofu" or type(opts.confirmKey) ~= "function" then
+return false, where .. ", and its key (" .. tostring(v.fingerprint) .. ") is not trusted "
+.. "here" .. (policy ~= "tofu" and (" (pkg trust discovered is " .. policy .. ")") or "")
+.. ". To trust it:  " .. add .. TAG
+end
+local label = opts.confirmKey({ name = n, repo = url, by = by, kind = man.kind,
+key = v.key, fingerprint = v.fingerprint, signer = v.signer })
+if type(label) ~= "string" or label == "" then
+return false, "not installed: the key of '" .. n .. "' (" .. tostring(v.fingerprint)
+.. ") was not trusted" .. TAG
+end
+local okT, tErr = pkg.trustAdd(label, v.key, opts)
+if not okT then
+return false, "could not trust the key of '" .. n .. "': " .. tostring(tErr) .. TAG
+end
+if log then
+log.info("pkg", "Trusted key " .. tostring(v.fingerprint) .. " as '" .. label
+.. "' (first use, for '" .. n .. "' from " .. tostring(url) .. ")")
+end
+return true
+end
+
 local staged, order, seen = {}, {}, {}
 local function cleanupAll()
 for _, s in ipairs(staged) do m.cleanup(s.dir) end
 end
-local function stage(n, depth, wanted, by)
+
+local function stage(n, depth, wanted, by, hints, pin)
 if seen[n] then return true end
 local who = by and ("dependency '" .. tostring(n) .. "' of '" .. by .. "': ") or ""
 if depth > MAX_FETCH_DEPTH then
@@ -3073,7 +3254,7 @@ if #staged >= MAX_FETCH_PACKAGES then
 return false, depRefusal("the fetch would bring in more than " .. MAX_FETCH_PACKAGES .. " packages")
 end
 seen[n] = true
-local dir, err, meta = m.fetch(n, opts)
+local dir, err, meta = m.fetch(n, with({ hints = hints, discoveredPolicy = policy }))
 if not dir then
 if by then
 return false, depRefusal(who .. tostring(err) .. " (if you have it on a disk, `pkg install "
@@ -3081,10 +3262,14 @@ return false, depRefusal(who .. tostring(err) .. " (if you have it on a disk, `p
 end
 return false, err
 end
-local entry = { name = n, dir = dir, meta = meta }
+local entry = { name = n, dir = dir, meta = meta, expectKey = pin }
 staged[#staged + 1] = entry
-local man = loadAnyManifest(dir)
+local man, _, mpath, mbytes = loadAnyManifest(dir)
 if type(man) ~= "table" then return false, who .. "no readable manifest" end
+if meta and meta.discovered then
+local okF, fErr = floor(n, man, mpath, mbytes, meta.discovered, by)
+if not okF then return false, by and depRefusal(who .. fErr) or fErr end
+end
 if wanted and not pkg.satisfiesConstraint(man.version or "0.0.0", wanted) then
 return false, depRefusal(who .. "needs " .. wanted .. ", and the repo has "
 .. tostring(man.version or "no version"))
@@ -3099,7 +3284,9 @@ return false, depRefusal(("'%s' needs %s %s, and %s is installed -- `pkg upgrade
 n, rn, rc, tostring(have.version or "?"), rn))
 end
 else
-local ok, e = stage(rn, depth + 1, rc, n)
+local rHints = type(req) == "table" and type(req.repos) == "table" and req.repos or nil
+local rPin = type(req) == "table" and type(req.key) == "string" and req.key:lower() or nil
+local ok, e = stage(rn, depth + 1, rc, n, rHints, rPin)
 if not ok then return false, e end
 end
 end
@@ -3116,9 +3303,11 @@ if not okS then cleanupAll(); return false, sErr end
 --! index that ships no hashes is unverified code, and installing it still
 --! requires the operator to have said --allow-unverified. Remote
 --! provenance is not a reason to relax that — it is the reason it exists.
+--! A requirement's key pin goes with it (expectKey): install refuses any
+--! copy its own verification does not attribute to exactly that key.
 local done, meta = {}, nil
 for _, s in ipairs(order) do
-local ok, iErr = pkg.install(s.dir, opts)
+local ok, iErr = pkg.install(s.dir, s.expectKey and with({ expectKey = s.expectKey }) or opts)
 if not ok then
 cleanupAll()
 local msg = (s.name ~= name and ("dependency '" .. s.name .. "': ") or "") .. tostring(iErr)
@@ -3126,8 +3315,9 @@ local msg = (s.name ~= name and ("dependency '" .. s.name .. "': ") or "") .. to
 return false, s.name ~= name and depRefusal(msg) or msg
 end
 if log then
-log.info("pkg", "Installed '" .. tostring(s.name) .. "' from repo '"
-.. tostring(s.meta and s.meta.repo) .. "'"
+log.info("pkg", "Installed '" .. tostring(s.name) .. "' from "
+.. (s.meta and s.meta.discovered and (tostring(s.meta.discovered) .. ", a repo nobody configured")
+or ("repo '" .. tostring(s.meta and s.meta.repo) .. "'"))
 .. (s.name ~= name and (" as a dependency of '" .. name .. "'") or ""))
 end
 if s.name == name then meta = s.meta else done[#done + 1] = s.name end

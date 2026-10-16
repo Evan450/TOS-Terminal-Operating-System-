@@ -6,9 +6,16 @@
 --!
 --! Four rules hold the line here:
 --!   1. HOST ALLOWLIST. Only repos an admin has written into
---!      /etc/pkg-repos.cfg are fetched. There is no default repo, no
---!      discovery, and no way for an index to introduce another host —
---!      a fetch that would leave the configured origin is refused.
+--!      /etc/pkg-repos.cfg are AUTHORITIES, and there is no default repo.
+--!      Revised for federated repos (docs/FEDERATED-REPOS.md): a package
+--!      may NAME other repos, this machine learns of them (KNOWN_CFG),
+--!      and a fetch may look in one for what no configured repo has. What
+--!      it takes from there is held to pkg's floor -- signed by a key this
+--!      machine trusts, or one the admin pins there and then; never
+--!      unsigned; pkg trust discovered off turns it off. Hosts carry no
+--!      trust; signatures carry all of it. An index still cannot send a
+--!      fetch to another host: every file of a package comes from the
+--!      repo its index came from.
 --!   2. PATHS FROM A STRANGER ARE NOT PATHS. Every source path in a
 --!      remote index is vetted BEFORE it is used to build either a URL or
 --!      a staging destination. This is the sharp edge: the index says
@@ -32,6 +39,10 @@ local pkgremote = {}
 local log = nil
 
 local REPO_CFG   = "/etc/pkg-repos.cfg"
+local KNOWN_CFG  = "/var/pkg/known-repos.cfg"
+local MAX_KNOWN  = 32
+
+local MAX_DISCOVERED = 8
 local STAGE_ROOT = "/var/pkg/remote"
 
 local MAX_INDEX_BYTES   = 128 * 1024
@@ -39,9 +50,12 @@ local MAX_FILE_BYTES    = 128 * 1024
 local MAX_PKG_BYTES     = 512 * 1024
 local MAX_FILES_PER_PKG = 64
 
+local validHint = function() return false end
+
 function pkgremote.init(modules)
 modules = modules or {}
 log = modules.log
+if type(modules.validRepoHint) == "function" then validHint = modules.validRepoHint end
 end
 
 local function inet()
@@ -139,6 +153,134 @@ end
 if not found then return false, "no such repo: " .. tostring(name) end
 if not saveRepos(out) then return false, "could not write " .. REPO_CFG end
 return true
+end
+
+--! /var/pkg/known-repos.cfg:
+--!   return { { url = "https://host/path", from = { "mail-client" } }, ... }
+--! What installed packages said about where they, and what they require,
+--! can be found. KNOWN is not CONFIGURED: this file is not the allowlist
+--! (REPO_CFG is, and only an admin writes it), it is written as a side
+--! effect of installing, and a repo in it is trusted with nothing. It is
+--! kept apart from REPO_CFG so that no install can ever add to the
+--! allowlist. Bounded (MAX_KNOWN, the newest kept): growth follows what the
+--! operator installs. Every entry reads back through the same URL rule a
+--! manifest was held to; one that fails is dropped, not trusted.
+--! (test_pkg_known_repos.lua)
+local function readKnown()
+local out = {}
+if not fs.exists(KNOWN_CFG) then return out end
+local data = fs.readFile(KNOWN_CFG)
+if not data then return out end
+local ok, raw = pcall(serialize.decode, data, { maxBytes = 16384 })
+if not ok or type(raw) ~= "table" then
+if log then log.warn("pkgremote", "Corrupt " .. KNOWN_CFG .. "; ignoring") end
+return out
+end
+for _, e in ipairs(raw) do
+if type(e) == "table" and validHint(e.url) then
+local from = {}
+for _, f in ipairs(type(e.from) == "table" and e.from or {}) do
+if validPkgName(f) then from[#from + 1] = f end
+end
+out[#out + 1] = { url = (e.url:gsub("/+$", "")), from = from }
+end
+end
+while #out > MAX_KNOWN do table.remove(out, 1) end
+return out
+end
+
+local function saveKnown(list)
+local clean = {}
+for _, e in ipairs(list) do clean[#clean + 1] = { url = e.url, from = e.from } end
+local body = serialize.encode(clean)
+if fs.writeFileAtomic then return fs.writeFileAtomic(KNOWN_CFG, body) end
+return fs.writeFile(KNOWN_CFG, body)
+end
+
+function pkgremote.known() return readKnown() end
+
+function pkgremote.learn(urls, from)
+if type(urls) ~= "table" then return 0 end
+local list = readKnown()
+local configured = {}
+for _, r in ipairs(pkgremote.repos()) do configured[r.url] = true end
+local added = 0
+for _, u in ipairs(urls) do
+if validHint(u) then
+local url = (u:gsub("/+$", ""))
+if not configured[url] then
+local hit
+for _, e in ipairs(list) do if e.url == url then hit = e; break end end
+if not hit then
+hit = { url = url, from = {} }
+list[#list + 1] = hit
+added = added + 1
+end
+if validPkgName(from) then
+local has = false
+for _, f in ipairs(hit.from) do if f == from then has = true end end
+if not has and #hit.from < 8 then hit.from[#hit.from + 1] = from end
+end
+end
+end
+end
+while #list > MAX_KNOWN do table.remove(list, 1) end
+local ok = saveKnown(list)
+if not ok then return 0, "could not write " .. KNOWN_CFG end
+if added > 0 and log then
+log.info("pkgremote", ("Learned %d repo(s) from '%s' (known, not trusted)"):format(
+added, tostring(from)))
+end
+return added
+end
+
+function pkgremote.forget(which)
+local list = readKnown()
+if which == "all" then
+if not saveKnown({}) then return false, "could not write " .. KNOWN_CFG end
+return true, #list
+end
+local idx = tonumber(which)
+if not idx then
+local url = type(which) == "string" and (which:gsub("/+$", "")) or nil
+for i, e in ipairs(list) do if e.url == url then idx = i end end
+end
+if not idx or not list[idx] then
+return false, "no known repo " .. tostring(which) .. " (see 'pkg repo list')"
+end
+table.remove(list, idx)
+if not saveKnown(list) then return false, "could not write " .. KNOWN_CFG end
+return true, 1
+end
+
+local function discoveredRepo(url)
+if not validHint(url) then return nil end
+url = (url:gsub("/+$", ""))
+local okC, crypto = pcall(require, "kernel.crypto")
+local im = inet()
+if not okC or type(crypto) ~= "table" or type(crypto.hash) ~= "function" or not im then
+return nil
+end
+local host = im.hostOf and im.hostOf(url)
+local h = tostring(crypto.hash(url) or "")
+if not host or not h:match("^%x+$") or #h < 12 then return nil end
+return { name = "k" .. h:sub(1, 12), url = url, host = host, discovered = true }
+end
+
+local function discoveredCandidates(repos, hints)
+local configured, seen, out = {}, {}, {}
+for _, r in ipairs(repos) do configured[r.url] = true end
+local function consider(u)
+if #out >= MAX_DISCOVERED or type(u) ~= "string" then return end
+local url = (u:gsub("/+$", ""))
+if configured[url] or seen[url] then return end
+seen[url] = true
+local r = discoveredRepo(url)
+if r then out[#out + 1] = r end
+end
+for _, u in ipairs(type(hints) == "table" and hints or {}) do consider(u) end
+for _, k in ipairs(readKnown()) do consider(k.url) end
+return out
 end
 
 --! A source path out of a remote index is used for two things: appended to
@@ -276,7 +418,13 @@ local st = im.status()
 return nil, st.reason or "internet is not available"
 end
 local repos = pkgremote.repos()
-if #repos == 0 then
+--! Repos nobody configured are read only when the caller says what the
+--! floor allows (opts.discoveredPolicy, from pkg trust discovered) and
+--! it is not "off". pkg.installRemote holds whatever comes from one to
+--! that floor; this module only finds it. (test_pkg_discovered.lua)
+local discovery = opts.discoveredPolicy ~= nil and opts.discoveredPolicy ~= "off"
+local others = discovery and discoveredCandidates(repos, opts.hints) or {}
+if #repos == 0 and #others == 0 then
 return nil, "no remote repositories configured (see 'pkg repo add')"
 end
 
@@ -289,6 +437,18 @@ repo, entry = r, idx[name]
 break
 elseif not idx then
 unusable[#unusable + 1] = tostring(iErr)
+end
+end
+
+if not entry then
+for _, r in ipairs(others) do
+local idx, iErr = pkgremote.index(r, opts)
+if idx and type(idx[name]) == "table" then
+repo, entry = r, idx[name]
+break
+elseif not idx then
+unusable[#unusable + 1] = tostring(iErr)
+end
 end
 end
 --! A repo may sign its WHOLE index: programs.sig beside programs.cfg,
@@ -329,6 +489,7 @@ if not entry then
 --! "not in any configured repo" when the truth was "that repo's index
 --! is broken". Say both. (test_pkgremote_malformed.lua)
 local why = "package '" .. tostring(name) .. "' is not in any configured repo"
+.. (#others > 0 and (", nor in the " .. #others .. " other repo(s) it was pointed to") or "")
 if #unusable > 0 then why = why .. " (" .. table.concat(unusable, "; ") .. ")" end
 return nil, why .. "  [E-601 ERR_PKG_NOT_FOUND]"
 end
@@ -422,7 +583,8 @@ if log then
 log.info("pkgremote", string.format("Fetched %s from %s (%d files, %d bytes)",
 name, repo.name, count, total))
 end
-return pkgDir, nil, { repo = repo.name, files = count, bytes = total }
+return pkgDir, nil, { repo = repo.name, url = repo.url, files = count, bytes = total,
+discovered = repo.discovered and repo.url or nil }
 end
 
 function pkgremote.cleanup(pkgDir)
@@ -433,6 +595,8 @@ end
 
 pkgremote.STAGE_ROOT = STAGE_ROOT
 pkgremote.REPO_CFG   = REPO_CFG
+pkgremote.KNOWN_CFG  = KNOWN_CFG
+pkgremote.MAX_KNOWN  = MAX_KNOWN
 
 pkgremote._safeRepoPath = safeRepoPath
 
