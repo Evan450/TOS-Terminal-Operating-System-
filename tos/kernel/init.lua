@@ -1903,7 +1903,11 @@ function kernel.loginAndStartShell()
             if not (switched and proc.get and proc.get(switched)) then
               if shellPid and proc.get and proc.get(shellPid) then
                 proc.setForeground(shellPid, ctrlTIdx, { kernel = true })
-                (proc.signalKernel or proc.signal)(shellPid, "tos_focus")
+                -- ";(" or Lua reads this line as a call on what
+                -- setForeground returned: closing the CLI's monitor raised
+                -- there, and the shell never repainted over it.
+                -- (test_call_chain_lint.lua)
+                ;(proc.signalKernel or proc.signal)(shellPid, "tos_focus")
               end
             end
           end, {
@@ -2331,6 +2335,7 @@ function kernel.monitorList(displayIdx, seatSession)
       rows[#rows + 1] = {
         kind = "svc", name = s.name, running = s.running or false,
         enabled = s.enabled ~= false, canAct = seatTier >= 2,
+        status = mon.svcStatus(s),
       }
     end
   end
@@ -2369,12 +2374,8 @@ function kernel.monitorAct(action, id)
       for _, s in ipairs(svcs) do if s.name == id then svc = s; break end end
     end
     if not svc then return false, "no such service" end
-    local act = svc.running and rcMod.stop or rcMod.start
-    local ok2, err = pcall(act, svc.name)
-    log.info("kernel", (svc.running and "Stopped " or "Started ")
-      .. tostring(svc.name) .. " from monitor by " .. tostring(seatUser or "kernel")
-      .. ((ok2 ~= false) and "" or (" (" .. tostring(err) .. ")")))
-    if ok2 == false then return false, tostring(err) end
+    local done, err = mon.svcToggle(rcMod, svc, seatUser)
+    if not done then return false, err end
     return true
   end
 
@@ -2400,7 +2401,7 @@ function kernel.monitorAct(action, id)
       .. ") from monitor tab")
     return true
   elseif action == "kill" then
-    if p.pid == caller.pid then return false, "that is this shell" end
+    if p.pid == caller.pid then return false, "Refused: PID " .. p.pid .. " is the shell this Monitor runs in" end
     if not mon.canAct(seatTier, seatUser, displayIdx, pEntry) then
       return false, "not permitted"
     end
@@ -2412,7 +2413,7 @@ function kernel.monitorAct(action, id)
     -- Suspending the CALLER (the shell hosting the Monitor tab) would
     -- freeze the seat instantly — the shell stops being scheduled with
     -- nothing left to wake it. Kill and switch already refuse self.
-    if p.pid == caller.pid then return false, "that is this shell" end
+    if p.pid == caller.pid then return false, "Refused: PID " .. p.pid .. " is the shell this Monitor runs in" end
     if not mon.canAct(seatTier, seatUser, displayIdx, pEntry) then
       return false, "not permitted"
     end
@@ -2513,7 +2514,10 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
   -- borders), so the name column absorbs the extra screen width instead
   -- of clipping at the old hard-coded 26.
   local nameW = math.max(20, dw - 2 - 30)
-  local svcW  = math.max(27, dw - 2 - 22)
+  -- Service names are short; the status beside them is what needs room
+  -- ("not loaded: needs network hardware" is 34). Given every spare column
+  -- the name pushed that status off the right edge.
+  local svcW  = math.max(12, math.min(28, dw - 2 - 4 - 34))
   local listTop = dy + 4               -- vitals(dy+1), blank(dy+2), colhdr(dy+3)
   local listH   = math.max(1, dh - 6)  -- rows available for the unified list
 
@@ -2521,6 +2525,7 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
   -- foreground is the monitor itself, so the caller passes the shell pid.
   local fgPID  = opts.fgPID or proc.getForeground(displayIdx)
   local switchedPid = nil   -- set if the operator switches to a process
+  local note = nil          -- a refusal, shown on the help row until a key
   local rows   = {}
   local sel    = 1
   local scroll = 0
@@ -2611,9 +2616,8 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
           end
         else  -- svc
           local s = r.s
-          local status = s.running and "running"
-            or (s.enabled == false and "disabled" or "stopped")
-          local line = string.format("   %-" .. svcW .. "s %s", (s.name or "?"):sub(1, svcW), status)
+          local line = string.format("   %-" .. svcW .. "s %s", (s.name or "?"):sub(1, svcW),
+            mon.svcStatus(s))
           if selected then
             dsp.set(dx + 1, y, dsp.fit(line, dw - 2), T.sel_fg, T.sel_bg)
           else
@@ -2632,7 +2636,12 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
     else
       help = " [Enter] switch  [K]ill  [T]SR   up/down move   [^Q] close"
     end
-    dsp.set(dx + 1, dy + dh - 2, dsp.fit(help, dw - 2), T.dim, T.panel_bg)
+    if note then
+      dsp.fill(dx + 1, dy + dh - 2, dw - 2, 1, " ", T.fg, T.panel_bg)
+      dsp.set(dx + 1, dy + dh - 2, dsp.fit(" " .. note, dw - 2), T.error or T.fg, T.panel_bg)
+    else
+      dsp.set(dx + 1, dy + dh - 2, dsp.fit(help, dw - 2), T.dim, T.panel_bg)
+    end
   end
 
   drawFrame()
@@ -2641,6 +2650,7 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
   while true do
     local sig, _, ch, co = pull()
     if sig == "key_down" then
+      note = nil
       if ch == 17 or ch == 113 then            -- Ctrl+Q / q = close
         break
       elseif co == 200 then                    -- Up
@@ -2662,7 +2672,8 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
             proc.setForeground(p.pid, displayIdx, { kernel = true })
             -- Kernel context (no caller PID): proc.signal would be denied, so use
             -- the kernel-acknowledged path or the switched-to process won't repaint.
-            (proc.signalKernel or proc.signal)(p.pid, "tos_focus")
+            -- ";(" -- without it this was a call on setForeground's result.
+            ;(proc.signalKernel or proc.signal)(p.pid, "tos_focus")
             log.info("kernel", "Switched to PID " .. p.pid .. " (" .. tostring(p.name) .. ")")
             switchedPid = p.pid
             break
@@ -2689,12 +2700,8 @@ function kernel.taskSwitcher(displayIdx, seatSession, opts)
         elseif r and r.kind == "svc" then
           if co == 28 or ch == 115 or ch == 83 then    -- Enter / s/S = start-stop
             if seatTier >= 2 and okRC and rcMod then
-              local s = r.s
-              local act = s.running and rcMod.stop or rcMod.start
-              local ok2, err = pcall(act, s.name)
-              log.info("kernel", ((s.running and "Stopped ") or "Started ")
-                .. tostring(s.name) .. " from monitor by " .. tostring(seatUser or "kernel")
-                .. ((ok2 ~= false) and "" or (" (" .. tostring(err) .. ")")))
+              local done, err = mon.svcToggle(rcMod, r.s, seatUser)
+              note = (not done) and err or nil
               rebuild(); drawContent()
             end
           end

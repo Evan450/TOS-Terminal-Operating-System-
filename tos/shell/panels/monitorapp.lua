@@ -163,8 +163,10 @@ function M.draw(S, tab)
           D.set(1, y, line:sub(1, W), color, T.bg)
         end
       else -- svc
-        local status = r.running and "running"
-          or (r.enabled == false and "disabled" or "stopped")
+        -- The kernel words it (monitor.svcStatus), so a service that was
+        -- never loaded says why instead of "stopped".
+        local status = r.status or (r.running and "running"
+          or (r.enabled == false and "disabled" or "stopped"))
         local line = string.format("   %-33s %s", tostring(r.name):sub(1, 33), status)
         if selected then
           D.fill(1, y, W, 1, " ", T.sel_fg or T.bg, T.sel_bg or T.highlight)

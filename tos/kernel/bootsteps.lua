@@ -94,7 +94,13 @@ end
 --!
 --! @param screenW,screenH  the LIVE resolution, not the one measured at boot
 --! @param headerBottom     last row the wordmark/status block used
---! @return barRow, barW, barX
+--! @return barRow, barW, barX, logRows
+-- logRows is how many narration rows fit under the bar: three, fewer on a
+-- short screen. The bar used to be clamped to screenH - 4 to keep three,
+-- which on a T1 50x16 (header to row 13) lifted it onto the Verifying line
+-- and the narration onto "Loading kernel..."; the headless machine showed
+-- "Veri[####...]est.". Now the bar stays under the header and the narration
+-- gives way, down to one row. (test_splash_resize.lua)
 function bootsteps.splashGeometry(screenW, screenH, headerBottom)
   screenW = (type(screenW) == "number" and screenW > 0) and math.floor(screenW) or 50
   screenH = (type(screenH) == "number" and screenH > 0) and math.floor(screenH) or 16
@@ -103,9 +109,13 @@ function bootsteps.splashGeometry(screenW, screenH, headerBottom)
   -- barW+2 counts the [ ] brackets. Clamp to 1 so a screen narrower than the
   -- minimum bar starts at the left edge rather than at column zero.
   local barX = math.max(1, math.floor((screenW - (barW + 2)) / 2) + 1)
-  local barRow = math.min(screenH - 4, headerBottom + 1)
-  if barRow < 1 then barRow = 1 end
-  return barRow, barW, barX
+  -- headerBottom is the next free row; the bar leaves one blank row under the
+  -- header when three narration rows still fit, and a short screen gives up
+  -- that gap before it gives up narration.
+  local barRow = headerBottom + 1
+  if screenH - barRow < 3 then barRow = headerBottom end
+  barRow = math.max(1, math.min(screenH - 1, barRow))
+  return barRow, barW, barX, math.max(0, math.min(3, screenH - barRow))
 end
 
 --- Does that bar actually fit on that screen? The property the bug broke.

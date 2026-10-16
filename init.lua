@@ -864,19 +864,19 @@ end
 -- boot took effect: this session runs from the fallback drive but the EEPROM
 -- was left untouched, and the floppy→HDD migration offer is suppressed.
 if _G._BIOS_ONETIME then
-  earlyPrint("  ONE-TIME BOOT: EEPROM unchanged, boot config preserved", tc(0xFFAA00))
+  earlyPrint(splashPad("ONE-TIME BOOT: EEPROM unchanged, boot config preserved"), tc(0xFFAA00))
 end
 -- Safe Mode is LOUD on purpose: the operator must never wonder why their
 -- services/packages aren't running. (A one-time safe boot chosen at the
 -- POST screen prints its own notice there — this covers the saved profile.)
 if bootCfg and bootCfg.profile == "safe" then
-  earlyPrint("  SAFE MODE: services, cron, packages, net, themes are OFF", tc(0xFFAA00))
-  earlyPrint("  (Boot Settings -> Profile to leave Safe Mode)", tc(0xAAAAAA))
+  earlyPrint(splashPad("SAFE MODE: services, cron, packages, net, themes are OFF"), tc(0xFFAA00))
+  earlyPrint(splashPad("(Boot Settings -> Profile to leave Safe Mode)"), tc(0xAAAAAA))
 end
 if totalKB < 128 then
-  earlyPrint("  WARNING: Low memory - features limited!", tc(0xFF0000))
+  earlyPrint(splashPad("WARNING: Low memory - features limited!"), tc(0xFF0000))
 elseif totalKB < 256 then
-  earlyPrint("  NOTE: Limited memory - some features may be skipped", tc(0xFFFF00))
+  earlyPrint(splashPad("NOTE: Limited memory - some features may be skipped"), tc(0xFFFF00))
 end
 end   -- drawBootHeader
 
@@ -1259,17 +1259,27 @@ if verbosity == "splash" and gpu then
   -- not the bar.
   local okSteps, bootsteps = pcall(require, "kernel.bootsteps")
   local headerBottom = cursorY
-  local barRow, barW, barX
+  local barRow, barW, barX, logRows, narrW
+  local LOG_ROWS = 3                            -- rolling high-level narration
   local function geom()
     if okSteps and bootsteps and bootsteps.splashGeometry then
-      barRow, barW, barX = bootsteps.splashGeometry(screenW, screenH, headerBottom)
+      barRow, barW, barX, logRows = bootsteps.splashGeometry(screenW, screenH, headerBottom)
     else
       barW   = math.max(10, math.min(40, screenW - 6))
       barX   = math.max(1, math.floor((screenW - (barW + 2)) / 2) + 1)
-      barRow = math.max(1, math.min(screenH - 4, headerBottom + 1))
+      barRow = math.max(1, math.min(screenH - 1, headerBottom + 1))
     end
+    logRows = logRows or math.max(0, math.min(LOG_ROWS, screenH - barRow))
+    -- Narration runs to the screen edge, not the bar's width: a warning is
+    -- shown verbatim, and at barW + 2 Safe Mode's read "! Package command
+    -- dispatch disabled (boot".
+    narrW = screenW - barX + 1
+    -- Blank the band the bar owns, edge to edge. Where it has to sit on a
+    -- header row, the bar's own 42 columns would leave the ends of that row
+    -- showing either side of it.
+    gpu.setBackground(0x000000)
+    pcall(gpu.fill, 1, barRow, screenW, logRows + 1, " ")
   end
-  local LOG_ROWS = 3                            -- rolling high-level narration
   local stagesShown = 0                         -- distinct boot stages reached
   local stageTotal  = 16                        -- denominator (set once bootsteps loads)
   local fillCh   = isMonochrome and "#" or "█"
@@ -1297,7 +1307,7 @@ if verbosity == "splash" and gpu then
     drawBootHeader()
     headerBottom = cursorY
     geom()
-    cursorY = math.min(screenH, barRow + LOG_ROWS + 1)
+    cursorY = math.min(screenH, barRow + logRows + 1)
     return true
   end
 
@@ -1308,11 +1318,13 @@ if verbosity == "splash" and gpu then
     gpu.setForeground(tc(0x00AAFF))
     gpu.set(barX, barRow, "[" .. string.rep(fillCh, fill)
       .. string.rep(" ", barW - fill) .. "]")
-    for i = 1, LOG_ROWS do
-      local e = logLines[i]
+    -- The newest logRows lines, when fewer rows fit than are kept.
+    local first = math.max(0, #logLines - logRows)
+    for i = 1, logRows do
+      local e = logLines[first + i]
       gpu.setForeground((e and e[2]) or tc(0xAAAAAA))
       gpu.set(barX, barRow + i, (((e and e[1]) or "")
-        .. string.rep(" ", barW + 2)):sub(1, barW + 2))
+        .. string.rep(" ", narrW)):sub(1, narrW))
     end
   end
   local function pushLine(text, color)
@@ -1322,7 +1334,7 @@ if verbosity == "splash" and gpu then
 
   geom()
   redraw()
-  cursorY = math.min(screenH, barRow + LOG_ROWS + 1)  -- earlyPrint goes below
+  cursorY = math.min(screenH, barRow + logRows + 1)  -- earlyPrint goes below
 
   bootProgress = function(msg, level)
     msg = tostring(msg or "")
@@ -1331,8 +1343,7 @@ if verbosity == "splash" and gpu then
       -- Never simplify or hide a problem — show it verbatim, coloured, so the
       -- bar can't paper over a warning/error.
       local mark = (level == 2) and "! " or "!! "
-      pushLine((mark .. msg):sub(1, barW + 2),
-        (level == 2) and tc(0xFFAA00) or tc(0xFF4040))
+      pushLine(mark .. msg, (level == 2) and tc(0xFFAA00) or tc(0xFF4040))
     else
       local stage = stageFor(msg)
       if stage and stage ~= lastStage then

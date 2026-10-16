@@ -92,6 +92,43 @@ function monitor.nextSelectable(rows, sel, dir)
   return sel
 end
 
+--- One service's state in words, for every view that lists services. A
+--- service whose need is missing (rc's `needs`, e.g. no network card) was
+--- never loaded and cannot be started; the Monitor tab, the CLI switcher and
+--- this text listing each said "stopped", while `service` said why.
+--- (test_monitor.lua)
+function monitor.svcStatus(s)
+  s = s or {}
+  if s.running then return "running" end
+  if s.unavailable then return "not loaded: " .. tostring(s.unavailable) end
+  if s.enabled == false then return "disabled" end
+  return "stopped"
+end
+
+--- Start a stopped service or stop a running one, for the Monitor tab and
+--- the CLI switcher. Returns true, or false and the reason. rc.start and
+--- rc.stop REFUSE by returning (false, why); both callers used to treat any
+--- call that did not raise as done, so Enter on a service that could not
+--- load said "Starting 10-discoveryd" and logged "Started" for a service
+--- that never ran. (test_monitor.lua)
+function monitor.svcToggle(rcMod, s, who)
+  local verb = s.running and "stop" or "start"
+  local fn = rcMod and rcMod[verb]
+  local okCall, okAct, why
+  if fn then okCall, okAct, why = pcall(fn, s.name) end
+  local done = okCall == true and okAct ~= false and okAct ~= nil
+  local err = (not fn and "rc unavailable") or (not okCall and tostring(okAct))
+    or tostring(why or "refused")
+  local okL, log = pcall(require, "kernel.log")
+  if okL and log and log.info then
+    log.info("kernel", (done and ((s.running and "Stopped ") or "Started ")
+      or ("Could not " .. verb .. " ")) .. tostring(s.name) .. " from monitor by "
+      .. tostring(who or "kernel") .. (done and "" or (": " .. err)))
+  end
+  if done then return true end
+  return false, err
+end
+
 -- Render the unified row list as plain text for the scrollable `monitor` live
 -- tab (the roomy, per-seat counterpart to the Ctrl+T switcher — no truncation,
 -- scrolls like any view tab). Returns an array of { text=, tone= } where tone ∈
@@ -108,9 +145,7 @@ function monitor.textRows(procs, services)
       add("-- " .. (r.text or "") .. " --", "header")
     elseif r.kind == "svc" then
       local s = r.s or {}
-      local status = s.running and "running" or "stopped"
-      if s.enabled == false then status = status .. ", disabled" end
-      add(string.format("  %-22s [%s]", tostring(s.name or "?"), status), "svc")
+      add(string.format("  %-22s [%s]", tostring(s.name or "?"), monitor.svcStatus(s)), "svc")
     end
   end
   if #out == 0 then add("(no visible processes)", "dim") end

@@ -89,17 +89,75 @@ def need_extras() -> Path:
     return EXTRAS
 
 
+def read_masked(prompt: str, getch, out, newline: str = "\n") -> str:
+    """Read a line from `getch`, echoing one * per character typed.
+
+    getpass echoed nothing at all, so there was no telling whether the
+    passphrase had been typed, or a paste had landed, before Enter was
+    pressed. Backspace takes a character (and its *) back; Ctrl+C stops;
+    other control keys are ignored, and so is the second code an arrow or
+    function key sends on Windows. (build/test_tospy_secret.py)
+    """
+    out.write(prompt)
+    out.flush()
+    chars: list[str] = []
+    while True:
+        ch = getch()
+        if ch in ("\r", "\n"):
+            break
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        if ch in ("", "\x04", "\x1a") and not chars:
+            raise EOFError
+        if ch in ("\x00", "\xe0"):
+            getch()
+            continue
+        if ch in ("\b", "\x7f"):
+            if chars:
+                chars.pop()
+                out.write("\b \b")
+                out.flush()
+            continue
+        if ch < " ":
+            continue
+        chars.append(ch)
+        out.write("*")
+        out.flush()
+    out.write(newline)
+    out.flush()
+    return "".join(chars)
+
+
+def ask_secret(prompt: str) -> str:
+    """A passphrase from the terminal, shown as stars; getpass when stdin is
+    not a terminal (a pipe, or Git Bash's mintty, which is not a console)."""
+    if not sys.stdin.isatty():
+        return getpass.getpass(prompt)
+    if os.name == "nt":
+        import msvcrt
+        return read_masked(prompt, msvcrt.getwch, sys.stdout)
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        return read_masked(prompt, lambda: sys.stdin.read(1), sys.stdout, "\r\n")
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 def passphrase_env() -> dict:
     """Environment carrying the signing passphrase, prompting if needed.
 
-    Never taken from argv, and never echoed. The key is DERIVED from this
-    string rather than stored, so it is the private key: argv reaches shell
-    history, `ps` output and CI logs. getpass keeps it off the screen too.
+    Never taken from argv, and only a * per character reaches the screen.
+    The key is DERIVED from this string rather than stored, so it is the
+    private key: argv reaches shell history, `ps` output and CI logs.
     """
     env = dict(os.environ)
     if not env.get("TOS_SIGNING_PASSPHRASE"):
         try:
-            entered = getpass.getpass("Signing passphrase (not echoed): ")
+            entered = ask_secret("Signing passphrase (shown as *): ")
         except (EOFError, KeyboardInterrupt):
             raise Fail("no passphrase given.")
         if not entered:

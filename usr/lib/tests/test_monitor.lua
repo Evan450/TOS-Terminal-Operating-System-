@@ -78,6 +78,59 @@ local trDis = m.textRows({}, { { name = "x", running = false, enabled = false } 
 local annotated = false
 for _, l in ipairs(trDis) do if l.text:find("disabled", 1, true) then annotated = true end end
 test("textRows disabled service annotated", true, annotated)
+
+-- ── svcStatus: one wording for every view that lists services ─────────
+-- On the headless machine (no network card) the Monitor tab listed the
+-- four network services as "stopped", as if Enter would start them, while
+-- `service` said "not loaded: needs network hardware".
+test("svcStatus: running", "running", m.svcStatus({ running = true }))
+test("svcStatus: a service whose need is missing says so",
+  "not loaded: needs network hardware",
+  m.svcStatus({ running = false, enabled = true, unavailable = "needs network hardware" }))
+test("svcStatus: disabled", "disabled", m.svcStatus({ running = false, enabled = false }))
+test("svcStatus: stopped", "stopped", m.svcStatus({ running = false, enabled = true }))
+test("svcStatus: nothing known is stopped, not a crash", "stopped", m.svcStatus(nil))
+local trNeed = m.textRows({}, { { name = "20-fileshare", running = false, enabled = true,
+  unavailable = "needs network hardware" } })
+local saysWhy = false
+for _, l in ipairs(trNeed) do
+  if l.text:find("not loaded: needs network hardware", 1, true) then saysWhy = true end
+end
+test("textRows says why a service was not loaded", true, saysWhy)
+
+-- ── svcToggle: a refusal is not a success ─────────────────────────────
+-- rc.start refuses by RETURNING (false, why). On the headless machine
+-- Enter on 10-discoveryd (no network card) said "Starting 10-discoveryd"
+-- because only a raise counted as failure.
+local logged = {}
+package.loaded["kernel.log"] = { info = function(_, msg) logged[#logged + 1] = msg end }
+local calls = {}
+local fakeRC = {
+  start = function(name)
+    calls[#calls + 1] = "start " .. name
+    if name == "10-discoveryd" then
+      return false, "10-discoveryd needs network hardware (add a network card or linked card and reboot)"
+    end
+    if name == "broken" then error("boom") end
+    return true
+  end,
+  stop = function(name) calls[#calls + 1] = "stop " .. name; return true end,
+}
+local done, why = m.svcToggle(fakeRC, { name = "10-discoveryd", running = false }, "root")
+test("svcToggle: a refused start is not done", false, done)
+test("...and carries rc's reason", true, tostring(why):find("needs network hardware", 1, true) ~= nil)
+test("...and the log does not say Started", true,
+  logged[#logged]:find("Could not start 10-discoveryd", 1, true) ~= nil
+  and not logged[#logged]:find("Started", 1, true))
+test("svcToggle: a start that works is done", true, (m.svcToggle(fakeRC, { name = "ok", running = false })))
+test("...and is logged as Started", true, logged[#logged]:find("Started ok", 1, true) ~= nil)
+test("svcToggle: a running service is stopped", "stop svc", (function()
+  m.svcToggle(fakeRC, { name = "svc", running = true }); return calls[#calls] end)())
+local d2, w2 = m.svcToggle(fakeRC, { name = "broken", running = false })
+test("svcToggle: a start that raises is not done", false, d2)
+test("...and says what raised", true, tostring(w2):find("boom", 1, true) ~= nil)
+test("svcToggle: no rc at all is a reason, not a crash", false, (m.svcToggle(nil, { name = "x" })))
+package.loaded["kernel.log"] = nil
 local trEmpty = m.textRows({}, {})
 test("textRows empty -> one placeholder", 1, #trEmpty)
 test("textRows empty placeholder is dim", "dim", trEmpty[1].tone)

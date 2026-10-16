@@ -143,6 +143,36 @@ do
   test("a screen narrower than the minimum bar starts at column 1", x3 == 1)
 end
 
+-- ── The bar never climbs into the header ───────────────────────────
+-- On the headless machine a T1 50x16 splash boot showed "Veri[####...]est.":
+-- the header (wordmark, four lines, Verifying, Loading kernel) ends on row 13,
+-- so the next free row is 14, and the old clamp to screenH - 4 put the bar on
+-- row 12 and the first narration row on "Loading kernel...".
+print()
+print("-- the bar stays under the header --")
+do
+  local row, _, _, rows = bootsteps.splashGeometry(80, 25, 14)
+  eq("80x25: one blank row, then the bar on 15", 15, row)
+  eq("...with 3 narration rows", 3, rows)
+  row, _, _, rows = bootsteps.splashGeometry(50, 16, 14)
+  eq("50x16: the gap goes first, so the bar is on row 14, under the header", 14, row)
+  eq("...with the 2 narration rows that fit", 2, rows)
+  -- A header that reaches the last row: the bar sits on its final line rather
+  -- than leave no room to show a warning.
+  row, _, _, rows = bootsteps.splashGeometry(50, 16, 17)
+  eq("a full-height header still keeps one narration row", 1, rows)
+  eq("...under a bar on row 15", 15, row)
+  local bad = 0
+  for _, wh in ipairs({ {50,16}, {80,25}, {40,12}, {12,6} }) do
+    for hb = 1, wh[2] + 1 do
+      local r, _, _, n = bootsteps.splashGeometry(wh[1], wh[2], hb)
+      if not (n >= 1 and r + n <= wh[2] and (r >= hb or r == wh[2] - 1)) then bad = bad + 1 end
+    end
+  end
+  eq("at every header height the bar is under it (or on the last row but one)"
+    .. " with narration on screen", 0, bad)
+end
+
 -- ── /init.lua must actually recompute ──────────────────────────────
 -- The pure function is only half the fix; the boot file has to call it
 -- again after the resolution moves. Driving the real boot file needs a
@@ -173,6 +203,19 @@ do
     local geomAt = src:find("local function geom()", 1, true)
     test("bootsteps is required before geom() closes over it",
       reqAt ~= nil and geomAt ~= nil and reqAt < geomAt)
+    -- Where the bar has to sit on a header row, the bar's own columns alone
+    -- left "Veri" and "est." showing either side of it.
+    test("geom() blanks the bar's band edge to edge",
+      src:match("local function geom%(%).-gpu%.fill, 1, barRow, screenW, logRows %+ 1") ~= nil)
+    test("narration shows as many rows as geometry says fit",
+      src:find("for i = 1, logRows do", 1, true) ~= nil
+      and not src:find("for i = 1, LOG_ROWS do", 1, true))
+    -- Safe Mode's warning read "! Package command dispatch disabled (boot".
+    test("a warning is not clipped to the bar's width",
+      not src:find("(mark .. msg):sub(1, barW + 2)", 1, true)
+      and src:find("narrW = screenW - barX + 1", 1, true) ~= nil)
+    test("the Safe Mode banner centres with the rest of a splash",
+      src:find('splashPad("SAFE MODE: ', 1, true) ~= nil)
   end
 end
 

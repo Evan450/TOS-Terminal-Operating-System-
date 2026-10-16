@@ -177,6 +177,31 @@ S.activeTab = 2
 mon.handleKey(S, tab, 17, nil)            -- Ctrl+Q
 eq("Ctrl+Q closes the monitor tab", 1, #S.tabs)
 
+-- ── A service row shows the kernel's words for its state ──────────
+-- On a machine with no network card the four network services read
+-- "stopped" here; monitorList now carries monitor.svcStatus's wording.
+do
+  local S2 = newS()
+  local painted = {}
+  S2.D.set = function(x, y, s) painted[#painted + 1] = tostring(s) end
+  local keep = canned.rows
+  canned.rows = {
+    { kind = "header", text = "Services" },
+    { kind = "svc", name = "clusterd", running = false, enabled = true, canAct = true,
+      status = "not loaded: needs network hardware" },
+  }
+  local tab2 = mon.open(S2)
+  mon.draw(S2, tab2)
+  local said = false
+  for _, s in ipairs(painted) do
+    if s:find("clusterd", 1, true) and s:find("not loaded: needs network hardware", 1, true) then
+      said = true
+    end
+  end
+  eq("an unloaded service says why, not 'stopped'", true, said)
+  canned.rows = keep
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false
