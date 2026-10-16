@@ -695,7 +695,14 @@ public class HeadlessTOS {
         case "grab": {
           if (w.length < 3) { failure = "grab takes NAME REGEX"; break; }
           java.util.regex.Matcher gm = Pattern.compile(w[2], Pattern.MULTILINE).matcher(screenText(screen));
-          if (!gm.find() || gm.groupCount() < 1 || gm.group(1) == null) {
+          // The value kept is capture group 1. A pattern without one used to
+          // fail as "nothing on the screen matches", with the text plainly
+          // on the screen: say which it is.
+          if (gm.groupCount() < 1) {
+            failure = "grab " + w[1] + ": " + w[2] + " has no (capture group); grab keeps group 1";
+            break;
+          }
+          if (!gm.find() || gm.group(1) == null) {
             failure = "grab " + w[1] + ": nothing on the screen matches " + w[2];
             break;
           }

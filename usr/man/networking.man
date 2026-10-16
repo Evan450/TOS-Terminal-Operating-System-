@@ -35,10 +35,10 @@ THE WIRE
 TOOLS
     ping <addr>                    Reachability check.
     chat                           TUI chat with trusted peers.
-    rsh <addr> <cmd>               Remote shell on a TRUSTED, verified peer
+    rsh <peer> <lua>               Run Lua on a TRUSTED, verified peer
                                    (sandboxed, step-budgeted). Off until the
                                    rshd service is started.
-    scp <addr>:<path> <local>      Copy a file from a peer (/public by default).
+    scp <peer>:<path> <local>      Copy a file from a peer (/public by default).
     hostname [name]                Show or set this machine's hostname.
 
 SEE ALSO
