@@ -2,14 +2,11 @@ local C,M=component,computer
 local function f(t)for a in C.list(t)do return C.proxy(a)end end
 local m,r,d,e=f("modem"),f("robot"),f("drone"),f("eeprom")
 if not m then M.beep(200,1.5)while true do M.pullSignal(60)end end
-
 local S=e and e.getData and e.getData()
 if type(S)~="string"or #S<16 then S=nil end
-
 local KS="428a2f9871374491b5c0fbcfe9b5dba53956c25b59f111f1923f82a4ab1c5ed5d807aa9812835b01243185be550c7dc372be5d7480deb1fe9bdc06a7c19bf174e49b69c1efbe47860fc19dc6240ca1cc2de92c6f4a7484aa5cb0a9dc76f988da983e5152a831c66db00327c8bf597fc7c6e00bf3d5a7914706ca63511429296727b70a852e1b21384d2c6dfc53380d13650a7354766a0abb81c2c92e92722c85a2bfe8a1a81a664bc24b8b70c76c51a3d192e819d6990624f40e3585106aa07019a4c1161e376c082748774c34b0bcb5391c0cb34ed8aa4a5b9cca4f682e6ff3748f82ee78a5636f84c878148cc7020890befffaa4506cebbef9a3f7c67178f2"
 local K={}for i=1,64 do K[i]=tonumber(KS:sub(i*8-7,i*8),16)end
 local function R(x,n)return((x>>n)|(x<<(32-n)))&0xFFFFFFFF end
-
 local function H(s)
 local l=#s
 s=s.."\128"..("\0"):rep((55-l)%64)..(">I8"):pack(l*8)
@@ -31,7 +28,6 @@ a0,b0,c0,d0,e0,f0,g0,h0=(a0+a)&0xFFFFFFFF,(b0+b)&0xFFFFFFFF,(c0+c)&0xFFFFFFFF,(d
 end
 return(">I4I4I4I4I4I4I4I4"):pack(a0,b0,c0,d0,e0,f0,g0,h0)
 end
-
 local function X(k,s)
 if #k>64 then k=H(k)end
 k=k..("\0"):rep(64-#k)
@@ -39,19 +35,16 @@ local i,o="",""
 for j=1,64 do local b=k:byte(j)i=i..string.char(b~0x36)o=o..string.char(b~0x5C)end
 return(H(o..H(i..s)):gsub(".",function(c)return("%02x"):format(c:byte())end))
 end
-
 local function Q(a,b)
 if #a~=#b then return false end
 local x=0 for i=1,#a do x=x|(a:byte(i)~b:byte(i))end return x==0
 end
-
 local N,O={},{}
 local function seen(n)
 if N[n]then return true end
 N[n]=true O[#O+1]=n
 if #O>64 then N[table.remove(O,1)]=nil end
 end
-
 local V={["move:f"]={0,0,1},["move:b"]={0,0,-1},["move:l"]={-1,0,0},["move:r"]={1,0,0},up={0,1,0},down={0,-1,0},["turn:l"]={0,0,0},["turn:r"]={0,0,0},stop={0,0,0}}
 local function go(op,g)pcall(function()
 if op=="select"then r.select(math.max(1,math.min(g,16)))

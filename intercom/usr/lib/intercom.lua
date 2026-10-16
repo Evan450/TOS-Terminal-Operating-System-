@@ -33,7 +33,7 @@
 
 local M = {}
 
-M._VERSION = "1.0.0"
+M._VERSION = "1.0.1"
 
 
 
@@ -344,15 +344,50 @@ function M.playCue(drive, cue, opts)
   local rate = opts.bytesPerSecond or M.BYTES_PER_SECOND
   local seconds = (cue.stop - cue.start) / rate
 
-  
-  
-  
+  local function finish()
+    pcall(drive.stop)
+    if opts.onDone then pcall(opts.onDone) end
+  end
+
+  --! STOP BY POSITION, NOT BY CLOCK. The byte rate is not one number:
+  --! Computronics for 1.7.10 plays a 1024-byte packet every 250 ms (4096
+  --! B/s); for 1.12 -- and Ocelot, which emulates that one -- a 1500-byte
+  --! packet (6000 B/s). Timed at 4096, a [0]..[8192] cue on the headless
+  --! machine's drive stopped at byte 13500: every announcement ran ~46%
+  --! into the next recording (2026-10-10). So a repeating timer -- still a
+  --! timer, never a wait in the seat -- reads the drive's position and stops
+  --! it at the cue's end, on either version, within one packet. It also
+  --! gives up if playback has ended, and at a cap that is the cue at the
+  --! slowest rate Computronics allows (1024 B/s, speed 0.25), so it can
+  --! never outlive the cue. Without event.interval (a bare harness, or an
+  --! injected timer) it falls back to the one-shot timer at `rate`.
+  local interval = opts.interval or (not opts.timer and event and event.interval)
+  local cancel = opts.cancelTimer or (event and event.cancelTimer)
   local timer = opts.timer or (event and event.timer)
-  if timer then
-    timer(seconds, function()
-      pcall(drive.stop)
-      if opts.onDone then pcall(opts.onDone) end
+  if interval and drive.getPosition then
+    local clock = opts.clock or (computer and computer.uptime) or function() return 0 end
+    local giveUpAt = clock() + (cue.stop - cue.start) / 1024 + 2
+    local id, done = nil, false
+    id = interval(0.05, function()
+      if done then return end
+      local okP, pos = pcall(drive.getPosition)
+      local ended = false
+      if drive.getState then
+        local okS, st = pcall(drive.getState)
+        ended = okS and st ~= "PLAYING"
+      end
+      if (okP and type(pos) == "number" and pos >= cue.stop) or ended
+         or clock() >= giveUpAt then
+        done = true
+        if cancel and id then pcall(cancel, id) end
+        finish()
+      end
     end, "intercom")
+  elseif timer then
+    
+    
+    
+    timer(seconds, finish, "intercom")
   end
   return true, seconds
 end
@@ -633,9 +668,20 @@ function M.start()
     
     
     
-    if type(msg) ~= "table" or type(msg.text) ~= "string" then return false end
-    msg.from = msg.from or (env and env.from and tostring(env.from):sub(1, 8)) or "?"
-    local ok, plan = pcall(M.deliver, msg)
+    --! The transport hands a handler the message ENVELOPE -- { id, from,
+    --! to, ts, sealed, how, readable, payload } -- and the announcement is
+    --! its PAYLOAD, as mail reads it. This looked for msg.text, which an
+    --! envelope never has, and refused every announcement ever sent: on two
+    --! headless machines the receiver's handler was called and returned at
+    --! once, and the box, the chat line and the log stayed empty
+    --! (2026-10-10). test_intercom.lua only ever called M.deliver directly.
+    --! (test_intercom_mesh_seam.lua drives the real transport.)
+    if type(msg) ~= "table" then return false end
+    local ann = msg.payload
+    if type(ann) ~= "table" or type(ann.text) ~= "string" then return false end
+    ann.from = ann.from or (msg.from and tostring(msg.from):sub(1, 8))
+      or (env and env.from and tostring(env.from):sub(1, 8)) or "?"
+    local ok, plan = pcall(M.deliver, ann)
     return ok and plan and plan.accept or false
   end)
   running = true

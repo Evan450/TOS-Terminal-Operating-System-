@@ -329,7 +329,12 @@ local function monitor(o)
         elseif k == "back" then query = query:sub(1, -2)
         elseif k and #k == 1 then query = query .. k end
         cursor, top = 1, 1
-      elseif k == "q" then
+      --! The quit key (^Q, or whatever `keys set quit` made it) arrives as
+      --! "esc" -- keyName maps it there so it cancels a prompt -- and the main
+      --! view only ever left on plain Q. So the footer's "^Q quit" did
+      --! nothing, and on the headless machine stock kept the seat while the
+      --! rest of a session typed into it (2026-10-09). (test_stock.lua)
+      elseif k == "q" or k == "esc" then
         break
       elseif k == "r" then
         refresh(); status = "Rescanned."
