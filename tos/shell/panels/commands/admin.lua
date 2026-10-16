@@ -2139,6 +2139,8 @@ return function(C, S, deps)
       return
     end
     local path = rp(args[1])
+    local refused = helpers.safeModeRefusal(path)
+    if refused then o(refused, T.error); return end
     local data = F.readFile(path)
     if not data then o("Cannot read: " .. args[1], T.error); return end
     local fn2, err2 = load(data, "=" .. args[1], "t", makeProgramEnv{name=args[1]})
@@ -2208,6 +2210,8 @@ return function(C, S, deps)
     if not adminOnly(o) then return end
     if not args[1] then o("Usage: run <file.lua>", T.dim); return end
     local path = rp(args[1])
+    local refused = helpers.safeModeRefusal(path)
+    if refused then o(refused, T.error); return end
     local data = F.readFile(path)
     if not data then o("Cannot read: " .. args[1], T.error); return end
     local runEnv = makeProgramEnv{name=args[1], stdout=function(line) o(line, T.fg) end}
@@ -3600,6 +3604,34 @@ return function(C, S, deps)
   -- ── Scheduled tasks ───────────────────────────────────
   C.cron = function(args, o)
     if not adminOnly(o) then return end
+    -- The boot profile turned cron off (Safe Mode, minimal): the scheduler
+    -- never loaded its jobs, so its list was empty -- "No scheduled jobs"
+    -- while /etc/cron.dat held them, on the headless machine -- and an
+    -- add or rm reached a scheduler with no disk. Say what is true: list
+    -- the saved jobs from the file, and change nothing.
+    if _G._TOS and _G._TOS.cronDisabled then
+      o("Cron is off in this boot profile: no job runs.", T.warning)
+      local raw = F.readFile("/etc/cron.dat")
+      local okS, ser = pcall(require, "kernel.serialize")
+      local okD, saved = false, nil
+      if raw and okS and ser then okD, saved = pcall(ser.decode, raw, { maxBytes = 65536 }) end
+      local jobs = {}
+      if okD and type(saved) == "table" and type(saved.jobs) == "table" then
+        for id, j in pairs(saved.jobs) do
+          if type(j) == "table" then jobs[#jobs + 1] = { id = id, name = tostring(j.name) } end
+        end
+      end
+      table.sort(jobs, function(a, b) return tostring(a.id) < tostring(b.id) end)
+      if #jobs > 0 then
+        o(#jobs .. " saved job(s), which run again after a normal boot:", T.dim)
+        for _, j in ipairs(jobs) do o(string.format(" %-4s %s", tostring(j.id), j.name), T.dim) end
+      end
+      if args[1] and args[1] ~= "list" then
+        o("cron: jobs cannot be changed in this boot profile; boot normally to edit them."
+          .. "  [E-404 ERR_SAFE_MODE]", T.error)
+      end
+      return
+    end
     local ok2, cronMod = helpers.requireRoomy(S, "kernel.cron", "admin")
     if not ok2 then o(helpers.loadFailure("cron", cronMod), T.error); return end
     if not args[1] or args[1] == "list" then

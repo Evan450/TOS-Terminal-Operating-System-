@@ -76,6 +76,25 @@ function M.fileColor(S, f)
   return T.fg
 end
 
+--- In Safe Mode, why the program FILE at `path` may not run -- or nil.
+--- Safe Mode runs nothing third-party: no services, no cron, no package
+--- commands. Its gate was pkg's dispatch, which a package's own program
+--- walks round: on the headless machine a package's /usr/bin/plain.lua ran
+--- by name, with its package's caps, after `bootsettings profile safe`.
+--- PATH, `run`, `bg` and the file browser's Run all ask this. A file no
+--- package owns runs as before. (test_safe_mode_programs.lua)
+function M.safeModeRefusal(path)
+  local T = _G._TOS
+  if not (T and T.pkgDispatchDisabled) then return nil end
+  local okP, pkgMod = pcall(require, "kernel.pkg")
+  local owner = okP and type(pkgMod) == "table" and pkgMod.ownerOfFile
+    and pkgMod.ownerOfFile(path) or nil
+  if not owner then return nil end
+  return "Safe Mode: " .. tostring(path) .. " belongs to the package '" .. tostring(owner)
+    .. "', and package code does not run in this boot. Reboot normally to use it."
+    .. "  [E-404 ERR_SAFE_MODE]"
+end
+
 --- Could any package be installed? One directory listing, never
 --- kernel.pkg itself. Every unknown command (a typo), every /usr/bin
 --- program, the Home launcher and the mouse driver asked kernel.pkg, and
@@ -848,6 +867,12 @@ local FAILURES = {
       { "The package conflicts with one already installed (the message", "err" },
       { "names it). Nothing was installed.", "err" },
       { "Fix: uninstall the other one first:  pkg uninstall <name>", "fix" },
+    } },
+  { sym = "ERR_SAFE_MODE", lines = {
+      { "The boot profile has this turned off. Safe Mode runs nothing", "err" },
+      { "third-party: no services, cron jobs, package commands or programs.", "err" },
+      { "The pkg admin verbs still work, to remove what broke.", "dim" },
+      { "Fix: bootsettings profile normal, then reboot.", "fix" },
     } },
   { sym = "ERR_KERNEL_PANIC", lines = {
       { "The kernel hit an error it could not recover from, and stopped.", "err" },

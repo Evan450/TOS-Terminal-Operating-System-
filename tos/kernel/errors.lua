@@ -58,6 +58,7 @@ local LIST = {
   { 401, "ERR_PERM_DENIED",     "your account is not allowed to do that" },
   { 402, "ERR_PATH_PROTECTED",  "that path is guarded against changes, even by an admin" },
   { 403, "ERR_TIER_REQUIRED",   "that needs a higher account tier" },
+  { 404, "ERR_SAFE_MODE", "Safe Mode, or another boot profile, has that turned off" },
 
   { 501, "ERR_NET_NO_ANSWER",   "a remote host did not answer (timed out, refused, or broke off)" },
 

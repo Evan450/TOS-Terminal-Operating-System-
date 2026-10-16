@@ -70,6 +70,7 @@ local function packU16(n)
   return string.char(n & 0xFF, (n >> 8) & 0xFF)
 end
 local function packU32(n)
+  n = math.floor(n)
   return string.char(n & 0xFF, (n >> 8) & 0xFF, (n >> 16) & 0xFF, (n >> 24) & 0xFF)
 end
 
@@ -165,7 +166,10 @@ local function encodeSnapshot(srcRoot, entries, session)
 
   -- Header
   local rootBytes = srcRoot
-  local now = (os.time and os.time()) or 0
+  -- A whole second: OC's os.time() is game time, usually fractional, and
+  -- packU32 is bitwise -- "number has no integer representation" killed
+  -- every snapshot taken off a whole second. (test_backup_snapshot.lua)
+  local now = math.floor((os.time and os.time()) or 0)
   emit(MAGIC)
   emit(packU32(now))
   emit(packU32(#entries))

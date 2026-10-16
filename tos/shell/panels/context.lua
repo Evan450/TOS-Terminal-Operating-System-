@@ -67,8 +67,10 @@ function M.execute(S, action, makeProgramEnv)
   elseif action == "ctx_run" then
     local buf = {}
     local function o(t, c) buf[#buf + 1] = { tostring(t), c or T.fg } end
-    local data = F.readFile(S.ctxPath)
-    if not data then o("Cannot read: " .. S.ctxFile.name, T.error)
+    local refused = helpers.safeModeRefusal(S.ctxPath)
+    local data = not refused and F.readFile(S.ctxPath)
+    if refused then o(refused, T.error)
+    elseif not data then o("Cannot read: " .. S.ctxFile.name, T.error)
     else
       -- Output goes in the view tab with any error, not wherever the global
       -- print happens to point.

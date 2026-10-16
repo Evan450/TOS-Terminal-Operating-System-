@@ -386,6 +386,11 @@ function M.build(S, deps)
       -- note there for the full rationale.
       local resolved = helpers.resolveProgram(F, name)
       if resolved then
+        local refused = helpers.safeModeRefusal and helpers.safeModeRefusal(resolved)
+        if refused then
+          if helpers.fail then helpers.fail(S, refused, o) else o(refused, T.error) end
+          return buf
+        end
         local data = F.readFile(resolved)
         if data then
           -- A program a package installed runs with what that package was
