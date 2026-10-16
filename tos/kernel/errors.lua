@@ -62,6 +62,13 @@ local LIST = {
 { 604, "ERR_PKG_FILE_MISSING", "a file the package lists is not where it says" },
 { 605, "ERR_PKG_FILE_UNREADABLE", "a file the package lists is there but could not be read" },
 { 606, "ERR_PKG_UNTRUSTED_SOURCE", "a package only in a repo nobody configured, not signed by a key trusted here" },
+{ 607, "ERR_PKG_UNVERIFIED", "the package lists no file hashes, so its files cannot be checked" },
+{ 608, "ERR_PKG_HASH_MISMATCH", "a file is not the one the package's manifest describes" },
+{ 609, "ERR_PKG_SIGNATURE_INVALID", "the package's signature does not verify: it changed after signing" },
+{ 610, "ERR_PKG_SIGNATURE_REQUIRED", "this machine installs only packages signed by a key it trusts" },
+{ 611, "ERR_PKG_WRONG_PUBLISHER", "the package is not signed by the publisher it has to be" },
+{ 612, "ERR_PKG_PROTECTED_TARGET", "the package would write a path no package may own" },
+{ 613, "ERR_PKG_CONFLICT", "the package conflicts with something already installed" },
 
 { 801, "ERR_UNKNOWN_CMD",     "no command by that name" },
 { 802, "ERR_CMD_UNLOADABLE",  "the command exists but would not fit in memory" },
