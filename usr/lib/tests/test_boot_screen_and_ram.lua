@@ -129,48 +129,65 @@ do
   eq("no stick data and no count", "2048K", hal.ramSummary(nil, 2048, 0))
   eq("no memory at all is not a crash", "?", hal.ramSummary(nil, 0, 0))
 
-  -- ramSticks reads capacities out of getDeviceInfo, in bytes or KB.
-  local sticks = hal.ramSticks({
-    ["a"] = { class = "memory", capacity = "1048576" },   -- 1024K, bytes
-    ["b"] = { class = "memory", capacity = "524288"  },   -- 512K,  bytes
-    ["c"] = { class = "processor", capacity = "999" },    -- ignored
-  })
-  test("ramSticks found both sticks", sticks and #sticks == 2)
-  eq("ramSticks converts bytes to KB, largest first", 1024, sticks and sticks[1])
-  eq("...and the smaller one", 512, sticks and sticks[2])
-  eq("the operator's mixed box summarises correctly", "T3.5 + T2.5",
-    hal.ramSummary(sticks))
-  eq("no memory entries yields nil", nil,
-    hal.ramSticks({ ["a"] = { class = "processor" } }))
-
-  -- ── The unit is DETERMINED, not guessed ────────────────────────────
-  -- #FIX (real Minecraft, 2026-08-11). The old code decided whether a
-  -- capacity was bytes or kilobytes with `>= 4096`, and a real machine
-  -- printed these two lines three apart in its own boot log:
-  --     CPU T3 | GPU T2 | RAM 4K | 11 components
-  --     Boot complete! Free memory: 1300KB
-  -- The sticks now have to reconcile with computer.totalMemory (stubbed
-  -- at 2048K above), and a set that reconciles with NEITHER reading is
-  -- refused rather than reported.
-  do
-    -- Capacities in KILOBYTES that add up correctly: left alone.
-    local kb = hal.ramSticks({
-      ["a"] = { class = "memory", capacity = "1024" },
-      ["b"] = { class = "memory", capacity = "1024" },
-    })
-    test("KB capacities are recognised", kb and #kb == 2)
-    eq("...and not divided again", 1024, kb and kb[1])
-    eq("...so the summary is right", "2x T3.5", hal.ramSummary(kb))
-
-    -- The in-game shape: one entry that reconciles with nothing. Under
-    -- the old heuristic 4096 crossed the threshold and became "4K".
-    local bogus = hal.ramSticks({ ["a"] = { class = "memory", capacity = "4096" } })
-    eq("a capacity that matches no reading is refused", nil, bogus)
-    -- And the display falls back to the machine's real total instead of
-    -- inventing a tier. 2097152 bytes stubbed above.
-    eq("the summary reports the honest total", "2048K", hal.ramSummary(bogus))
-    test("...which is emphatically not '4K'", hal.ramSummary(bogus) ~= "4K")
+  -- ── ramSticks reads what the hosts REALLY report ───────────────────
+  -- The fixtures here used to be {class="memory", capacity="1048576"}: a
+  -- shape no host produces. OpenComputers' memory bank carries no capacity,
+  -- only a clock (the call budget of its tier, x1000); Ocelot's is the same
+  -- with an "MRAM 1x<level>" product. The one class-"memory" device with a
+  -- capacity is the EEPROM, which is where a real machine's "RAM 4K" came
+  -- from (#FIX 2026-08-11 read it as a stick). On the headless machine the
+  -- Boot Settings row said "RAM for extras [2048K]" for two T3.5 sticks.
+  local C = package.loaded["computer"]
+  local function totalIs(kb) C.totalMemory = function() return kb * 1024 end end
+  local function bank(clock, product)
+    return { class = "memory", description = "Memory bank",
+             vendor = "MightyPirates GmbH & Co. KG",
+             product = product or "Multipurpose RAM Type", clock = clock }
   end
+  local EEPROM = { class = "memory", description = "EEPROM", vendor = "x",
+                   product = "FlashStick2k", capacity = "4096", size = "4096" }
+  local CPU = { class = "processor", description = "CPU", clock = "1500" }
+
+  totalIs(2048)
+  local sticks = hal.ramSticks({ a = bank("1500"), b = bank("1500"), e = EEPROM, c = CPU })
+  test("two T3-band banks and a 2048K total are two T3.5 sticks",
+    sticks and #sticks == 2 and sticks[1] == 1024 and sticks[2] == 1024)
+  eq("...so the summary names them", "2x T3.5", hal.ramSummary(sticks))
+  eq("the EEPROM and the CPU are not counted as sticks", 2,
+    hal.ramBanks({ a = bank("1500"), b = bank("1500"), e = EEPROM, c = CPU }))
+
+  -- 1536K over two sticks: what the total alone could never tell apart.
+  totalIs(1536)
+  eq("the operator's mixed box: T3.5 + T2.5", "T3.5 + T2.5",
+    hal.ramSummary(hal.ramSticks({ a = bank("1500"), b = bank("1000") })))
+  eq("the same total in two T3s reads as two T3s", "2x T3",
+    hal.ramSummary(hal.ramSticks({ a = bank("1500"), b = bank("1500") })))
+
+  totalIs(2048)
+  eq("Ocelot's bank shape reads the same", "2x T3.5",
+    hal.ramSummary(hal.ramSticks({ a = bank("1500", "MRAM 1x5"), b = bank("1500", "MRAM 1x5") })))
+  totalIs(192)
+  eq("one T1 stick", "T1", hal.ramSummary(hal.ramSticks({ a = bank("500") })))
+
+  -- Two different sets with one total: say nothing, never pick one.
+  totalIs(1280)
+  local four = { a = bank("500"), b = bank("500"), c = bank("1000"), d = bank("1000") }
+  eq("2x256+2x384 and 2x192+512+384 both make 1280K: no answer", nil, hal.ramSticks(four))
+  eq("...and the summary reports the count and total", "4 sticks, 1280K",
+    hal.ramSummary(hal.ramSticks(four), 1280, hal.ramBanks(four)))
+
+  -- Anything that doesn't reconcile is refused, not reported.
+  totalIs(2048)
+  eq("a pack with other call budgets: no answer", nil,
+    hal.ramSticks({ a = bank("750"), b = bank("750") }))
+  eq("a total that matches no stock sizes: no answer", nil,
+    hal.ramSticks({ a = bank("500") }))
+  eq("the EEPROM alone is not a stick", nil, hal.ramSticks({ e = EEPROM }))
+  eq("...and counts as no banks", 0, hal.ramBanks({ e = EEPROM }))
+  eq("no deviceInfo at all", nil, hal.ramSticks({}))
+  test("the summary falls back to the real total, emphatically not '4K'",
+    hal.ramSummary(hal.ramSticks({ e = EEPROM }), 2048, 0) == "2048K")
+  C.totalMemory = function() return 2097152 end
 
   -- sysinfo delegates to the SAME implementation (one tier table, not two).
   local sysinfo = require("kernel.sysinfo")
@@ -224,6 +241,25 @@ do
     generic and generic.label == "RAM for extras (override)")
   eq("a failing probe yields no label", nil,
     bootsettings.ramLabel(function() error("no hardware") end))
+
+  -- The LIVE probe, as the boot editor runs it: deviceInfo and totalMemory
+  -- from the computer API. It counted sticks with component.list("memory"),
+  -- which nothing populates, so the headless machine's row read "[2048K]".
+  local C = package.loaded["computer"]
+  local function bank(clock)
+    return { class = "memory", description = "Memory bank",
+             product = "Multipurpose RAM Type", clock = clock }
+  end
+  C.getDeviceInfo = function() return { a = bank("1500"), b = bank("1500") } end
+  C.totalMemory = function() return 2048 * 1024 end
+  eq("the live probe names two T3.5 sticks", "2x T3.5", bootsettings.ramLabel())
+  C.getDeviceInfo = function()
+    return { a = bank("500"), b = bank("500"), c = bank("1000"), d = bank("1000") }
+  end
+  C.totalMemory = function() return 1280 * 1024 end
+  eq("an ambiguous set still gets its stick count", "4 sticks, 1280K",
+    bootsettings.ramLabel())
+  C.getDeviceInfo, C.totalMemory = nil, function() return 2097152 end
 end
 
 -- ============================================================

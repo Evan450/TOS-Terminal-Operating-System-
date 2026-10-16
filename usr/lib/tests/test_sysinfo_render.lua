@@ -69,6 +69,15 @@ test("real Total Memory", screenHas("Total Memory"))
 test("real Free Memory", screenHas("Free Memory"))
 test("honest RAM module count", screenHas("RAM Modules"))
 test("module count value 2", screenHas("RAM Modules") and screenHas(" 2"))
+-- With the sticks known the row names them: "2" reads the same for 2x T3.5
+-- and T3.5 + T2.5.
+for y = 1, H do for x = 1, W do buf[y][x] = " " end end
+inv.memory.summary = "T3.5 + T2.5"
+si.render(inv, { W = W, H = H, set = set, title = "Acme - System Configuration" })
+test("RAM Modules names the sticks when known", screenHas("RAM Modules   : T3.5 + T2.5"))
+inv.memory.summary = nil
+for y = 1, H do for x = 1, W do buf[y][x] = " " end end
+si.render(inv, { W = W, H = H, set = set, title = "Acme - System Configuration" })
 test("Data Card named as such", screenHas("Data Card"))
 test("data card tier", screenHas("Tier 2"))
 test("graphics value", screenHas("GPU T2 / 4-bit"))

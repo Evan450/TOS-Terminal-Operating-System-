@@ -224,15 +224,15 @@ function sysinfo.gather(deps, overrides, onProgress)
   inv.memory.totalKB = math.floor(total / 1024)
   inv.memory.freeKB  = math.floor(free / 1024)
   inv.memory.tier    = memTier(inv.memory.totalKB)
-  -- Honest module count: each installed RAM stick is a "memory" component.
-  -- Reported exactly when listable; the tier above is the educated fallback.
-  inv.memory.modules = 0
-  for _ in component.list("memory") do inv.memory.modules = inv.memory.modules + 1 end
+  local h = hal()
+  -- Honest module count. A stick is not a component (component.list
+  -- "memory" is always empty); each one is a "Memory bank" in deviceInfo.
+  inv.memory.modules = h and h.ramBanks and h.ramBanks(deviceInfo) or 0
   -- Name the memory ACTUALLY installed ("2x T3.5", "T3.5 + T2.5") instead of
   -- the coarse total-only guess ("T2+" read the same for 512K and 2048K).
-  -- Per-stick capacities come from deviceInfo — the only source that can tell
-  -- mixed tiers apart; without it we report capacity rather than guess.
-  local h = hal()
+  -- Per-stick sizes come from deviceInfo (each bank's clock, settled by the
+  -- total) — the only source that can tell mixed tiers apart; without them
+  -- we report capacity rather than guess.
   inv.memory.sticks  = h and h.ramSticks and h.ramSticks(deviceInfo) or nil
   inv.memory.summary = sysinfo.ramSummary(inv.memory.totalKB, inv.memory.modules,
                                           inv.memory.sticks)
@@ -621,11 +621,14 @@ function sysinfo.render(inv, ctx)
     if inv.tunnel and inv.tunnel.present then return "Linked (tunnel)" end
     return "none"
   end
-  -- RAM: report the exact installed-stick count when listable; otherwise the
-  -- educated guess (the memory TIER) rather than a made-up number.
+  -- RAM: name the installed sticks when they are known ("2x T3.5", "T3.5 +
+  -- T2.5"; a bare "2" can't tell those apart), the count when only that is;
+  -- otherwise the educated guess (the memory TIER) rather than a made-up
+  -- number. Until hal counted memory banks the count was always 0, so every
+  -- machine showed the guess: "T2+ (est)" alike for 512K and 2048K.
   local ramLabel, ramVal
   if (mem.modules or 0) > 0 then
-    ramLabel, ramVal = "RAM Modules", tostring(mem.modules)
+    ramLabel, ramVal = "RAM Modules", mem.summary or tostring(mem.modules)
   else
     ramLabel, ramVal = "Memory Tier", (mem.tier or "?") .. "  (est)"
   end

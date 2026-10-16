@@ -1550,8 +1550,11 @@ return function(C, S, deps)
       o("  showConfig : " .. (cfg.showConfig and "on" or "off"), T.fg)
       o("  cpuTier    : " .. (cfg.cpuTier and ("Tier " .. cfg.cpuTier) or "auto"), T.fg)
       o("  dataTier   : " .. (cfg.dataTier and ("Tier " .. cfg.dataTier) or "auto"), T.fg)
+      -- The words the visual editor uses. "plenty"/"tight" described a
+      -- memory situation, not what the override does; the editor dropped
+      -- them and this kept printing them. (test_bootsettings_ramgate.lua)
       o("  ramGate    : " .. (cfg.ramGate == nil and "auto (measure)"
-        or (cfg.ramGate and "plenty (force on)" or "tight (force off)")), T.fg)
+        or (cfg.ramGate and "always load the extras" or "never load the extras")), T.fg)
       local anyAdv = false
       for _, f in ipairs(bootcfg.FEATURES) do
         local v = cfg.advanced and cfg.advanced[f]
@@ -1610,9 +1613,10 @@ return function(C, S, deps)
       else o("repair: on (runs once next boot, then clears) | off", T.error); return end
     elseif sub == "ramgate" or sub == "ram" then
       if val == "auto" then cfg.ramGate = nil; changed = true
-      elseif val == "plenty" or val == "on" then cfg.ramGate = true; changed = true
-      elseif val == "tight" or val == "off" then cfg.ramGate = false; changed = true
-      else o("ramgate: auto (measure) | plenty (force extras on) | tight (force off)", T.error); return end
+      -- plenty/tight/on/off still accepted: scripts and habits that use them.
+      elseif val == "always" or val == "plenty" or val == "on" then cfg.ramGate = true; changed = true
+      elseif val == "never" or val == "tight" or val == "off" then cfg.ramGate = false; changed = true
+      else o("ramgate: auto (measure free RAM) | always | never  (load the optional extras)", T.error); return end
     elseif sub == "reset" then
       cfg = bootcfg._normalize({}); changed = true
     else

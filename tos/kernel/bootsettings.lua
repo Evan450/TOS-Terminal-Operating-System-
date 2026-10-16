@@ -52,10 +52,9 @@ function bootsettings.ramLabel(probe)
   local ok, hw = pcall(function()
     if probe then return probe() end
     local computer  = require("computer")
-    local component = require("component")
     local totalKB = math.floor(((computer.totalMemory and computer.totalMemory()) or 0) / 1024)
-    local modules = 0
-    for _ in component.list("memory") do modules = modules + 1 end
+    -- Sticks are not components; hal counts the memory banks in deviceInfo.
+    local modules = hal.ramBanks() or 0
     -- Per-stick capacities are what let mixed tiers be named honestly
     -- ("T3.5 + T2.5"); without them the summary reports capacity instead.
     return { totalKB = totalKB, modules = modules, sticks = hal.ramSticks() }

@@ -305,7 +305,7 @@ falls back to the `normal` profile. Two independent dials:
   machine with 1.5 MB (1536 KB) of memory or more, the CLI below that, because
   below it the panels load and then run out of memory on the first command.
   The CLI says when it started for that reason. Set `panels` to insist on them
-  anyway (`bootsettings ui panels`), or `ramGate` to `plenty`.
+  anyway (`bootsettings ui panels`), or `ramGate` to `always`.
 - **`repair`** — **one-shot self-repair**: set it (Boot Settings → "Self-repair
   next boot", or `bootsettings repair on`) and the next boot runs a repair pass
   right after the filesystem comes up, then clears the flag — even a crashing
@@ -325,9 +325,10 @@ toggle.)
 **Telling TOS what it has.** Detection is trusted where it's reliable (GPU,
 screen, modem — no overrides offered, on purpose) and overridable where it
 isn't: `cpuTier` and `dataTier` pin/correct tiers the heuristics can misjudge,
-and `ramGate` declares your memory situation for the optional boot stages —
-`auto` measures free RAM (default), `plenty` forces the extras to load, `tight`
-makes TOS behave like a low-memory box. `showConfig` toggles the POST screen.
+and `ramGate` decides the optional boot stages — `auto` measures free RAM
+(default), `always` loads the extras anyway, `never` makes TOS behave like a
+low-memory box. Its row in the editor names the memory sticks installed
+("RAM for extras [2x T3.5]"). `showConfig` toggles the POST screen.
 
 ### 2.2 The System Configuration screen (POST)
 
@@ -363,7 +364,7 @@ While the POST screen shows `Press DEL for Boot Settings, S for Safe Mode
 Missed the window? Run `bootsettings` from the shell — it's a CLI editor
 (`bootsettings show`, `bootsettings profile safe`, `bootsettings verbosity
 verbose`, `bootsettings ui cli`, `bootsettings repair on`, `bootsettings
-cputier 2`, `bootsettings datatier 3`, `bootsettings ramgate tight`,
+cputier 2`, `bootsettings datatier 3`, `bootsettings ramgate never`,
 `bootsettings net off`, `bootsettings reset`). Both write `/etc/boot.cfg`;
 changes apply on the next boot.
 
@@ -2036,7 +2037,10 @@ English — partial translations are valid by design.
 Currently translated surfaces: the login screen and the Desktop (a Russian
 starter catalog ships in the base image). Command output, `help`, and man
 pages are English for now. Rarer languages can ship as ordinary packages
-that just install a file into `/usr/lang`.
+that just install a file into `/usr/lang`. Copying one in by hand takes root,
+because `/usr` is a protected system path (5.1): `lang dump` to `/tmp`,
+translate, then `protect off`, copy the file to `/usr/lang/<code>.lang`, and
+`protect on`.
 
 ## 11. Peripherals
 
@@ -2314,8 +2318,9 @@ Edit `/etc/boot.cfg` from the shell (the visual editor is **Delete** during
 POST). Settings: `profile` (minimal/normal/full/diagnostic/**safe** — Safe
 Mode), `verbosity`, `ui` (panels/cli startup interface), `repair` (on = run
 self-repair once next boot), `show` (POST screen), `cputier`/`datatier`
-(hardware overrides), `ramgate` (auto/plenty/tight — declare your RAM
-situation for the optional stages), plus one on/off/auto toggle per optional
+(hardware overrides), `ramgate` (auto/always/never — load the optional
+stages by measured free RAM, always, or never; the older `plenty`/`tight`
+still work), plus one on/off/auto toggle per optional
 feature (`net`, `services`, `cron`, `packages`, ...). `bootsettings show`
 prints everything; changes apply on the next boot. This is how the MACHINE
 starts; its other settings are `config` (`/etc/tos.cfg`), and your own are

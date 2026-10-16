@@ -2999,6 +2999,8 @@ return function(C, S, deps)
         "-- TOS language catalog template (every t() key seen this session).",
         "-- Translate the values, set meta.code/name, save as /usr/lang/<code>.lang,",
         "-- then run `lang <code>`. Untranslated keys keep their English default.",
+        "-- /usr is a protected system path: as root, `protect off` to copy this",
+        "-- in and `protect on` after -- or ship the catalog as a package.",
         "return {",
         '  meta = { code = "xx", name = "Language name" },',
         "  strings = {",
@@ -3009,11 +3011,20 @@ return function(C, S, deps)
       lines[#lines + 1] = "  },"
       lines[#lines + 1] = "}"
       if not canWrite(path) then o("Cannot write: " .. path, T.error); return end
-      if F.writeFile(path, table.concat(lines, "\n") .. "\n") then
+      local okW, wErr = F.writeFile(path, table.concat(lines, "\n") .. "\n")
+      if okW then
         o("Template with " .. #keys .. " key(s) -> " .. path, T.highlight)
         refreshBrowser()
       else
+        -- Say why. On the headless machine `lang dump /usr/lang/xx.lang`
+        -- printed only "Write failed" to root: /usr is protected (securefs),
+        -- and the template's own instructions say to save it there.
         o("Write failed: " .. path, T.error)
+        if wErr then o(tostring(wErr), T.dim) end
+        if path:sub(1, 10) == "/usr/lang/" then
+          o("Dump to /tmp (the default), then copy it in under `protect off`,", T.dim)
+          o("or ship the catalog as a package.", T.dim)
+        end
       end
       return
     end

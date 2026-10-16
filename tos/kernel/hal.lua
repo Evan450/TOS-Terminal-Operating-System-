@@ -58,89 +58,80 @@ function hal.stickTier(kb)
   return e and e.name or nil
 end
 
---- Per-stick capacities in KB, largest first — or nil when the host can't
---- tell us. This is the ONLY way to report memory honestly: totalMemory()
---- alone cannot distinguish 2x768K from 1024K+512K (both are 1536K over two
---- sticks), which is exactly how a T3.5+T2.5 machine got reported as "tier 3".
---- @param deviceInfo table|nil  injected for tests; defaults to the live call
-function hal.ramSticks(deviceInfo)
+-- What a memory stick tells the machine about itself. Neither host reports
+-- a capacity: OpenComputers' bank is {class="memory", description="Memory
+-- bank", product="Multipurpose RAM Type", clock=...}, Ocelot's the same with
+-- product "MRAM 1x<level>". The only class-"memory" device that carries a
+-- capacity is the EEPROM (4096 bytes), and that is the "RAM 4K" a real
+-- machine once printed in its boot log: reading capacities found the EEPROM
+-- and never a stick. What a bank does report is its clock, the call budget
+-- of its tier times 1000 -- callBudgets[stickLevel // 2], so 500 / 1000 /
+-- 1500 with the default budgets, one value for each PAIR of stock sizes.
+local BAND_SIZES = { ["500"] = { 192, 256 }, ["1000"] = { 384, 512 },
+                     ["1500"] = { 768, 1024 } }
+
+local function memoryBanks(deviceInfo)
   if deviceInfo == nil then
     local ok, di = pcall(function() return computer.getDeviceInfo() end)
     if not ok then return nil end
     deviceInfo = di
   end
   if type(deviceInfo) ~= "table" then return nil end
-  local raws = {}
+  local banks = {}
   for _, d in pairs(deviceInfo) do
-    if type(d) == "table" and d.class == "memory" then
-      local cap = tonumber(d.capacity or d.size)
-      if cap and cap > 0 then raws[#raws + 1] = cap end
+    if type(d) == "table" and d.class == "memory" and d.description == "Memory bank" then
+      banks[#banks + 1] = d
     end
   end
-  if #raws == 0 then return nil end
+  return banks
+end
 
-  -- #FIX (real Minecraft, 2026-08-11) — DECIDE THE UNIT, DON'T GUESS IT.
-  -- This used to read `if cap >= 4096 then cap = cap / 1024 end`, on the
-  -- reasoning that no stock stick is 4096 K or larger and none is under
-  -- 4096 bytes. The boot log from a real machine disproved it in the most
-  -- direct way available — three lines apart:
-  --     CPU T3 | GPU T2 | RAM 4K | 11 components
-  --     Boot complete! Free memory: 1300KB
-  -- A capacity that arrives as exactly 4096 lands on the wrong side of
-  -- that threshold and comes out as "4K" on a machine with megabytes.
-  --
-  -- The determination was available all along: the sticks have to add up
-  -- to what computer.totalMemory() reports. Try both readings and keep
-  -- whichever reconciles. OC hands the machine slightly less than the
-  -- installed total (the mod keeps some back), so the comparison is a
-  -- ratio with slack rather than equality.
-  local sum = 0
-  for _, c in ipairs(raws) do sum = sum + c end
+--- How many memory sticks are installed, or nil when the host can't say.
+--- Sticks are not components, so component.list("memory") is always empty;
+--- getDeviceInfo is the only place they appear.
+function hal.ramBanks(deviceInfo)
+  local banks = memoryBanks(deviceInfo)
+  return banks and #banks or nil
+end
 
-  local totalBytes
-  do
-    local okT, t = pcall(function() return computer.totalMemory() end)
-    totalBytes = okT and tonumber(t) or nil
+--- Per-stick capacities in KB, largest first -- or nil when they can't be
+--- worked out. totalMemory() alone cannot tell 2x768K from 1024K+512K (both
+--- 1536K over two sticks), which is how a T3.5+T2.5 machine got reported as
+--- "tier 3". The clock narrows each stick to two sizes; the machine's total
+--- picks between them, since totalMemory() is the plain sum of the installed
+--- sizes (OC scales its 64-bit allowance back out of what it reports). The
+--- answer must be the ONLY combination that adds up: two sticks always
+--- resolve, but from three on two different sets can share a total
+--- (2x256 + 2x384 = 2x192 + 512 + 384), and then this says nothing rather
+--- than pick one. Non-default call budgets or ramSizes match nothing, and
+--- likewise give nil. (test_boot_screen_and_ram.lua)
+--- @param deviceInfo table|nil  injected for tests; defaults to the live call
+function hal.ramSticks(deviceInfo)
+  local banks = memoryBanks(deviceInfo)
+  if not banks or #banks == 0 then return nil end
+  local pairsOf = {}
+  for i, d in ipairs(banks) do
+    pairsOf[i] = BAND_SIZES[tostring(d.clock)]
+    if not pairsOf[i] then return nil end
   end
+  local okT, t = pcall(function() return computer.totalMemory() end)
+  local totalKB = okT and tonumber(t) and tonumber(t) / 1024
+  if not totalKB then return nil end
 
-  local function plausible(a, b)
-    -- Within 25%: OC reserves a slice of installed RAM, and the exact
-    -- fraction varies by version and config.
-    if not a or not b or a <= 0 or b <= 0 then return false end
-    local hi, lo = math.max(a, b), math.min(a, b)
-    return (lo / hi) >= 0.75
-  end
-
-  local divide
-  if totalBytes then
-    local asBytes = plausible(sum, totalBytes)              -- capacities are bytes
-    local asKB    = plausible(sum * 1024, totalBytes)       -- capacities are KB
-    if asBytes and not asKB then divide = true
-    elseif asKB and not asBytes then divide = false
-    elseif asBytes and asKB then
-      -- Both readings fit (only possible on a tiny machine where the two
-      -- interpretations are within slack of each other). Prefer bytes,
-      -- which is what OC documents.
-      divide = true
-    else
-      -- NEITHER reading reconciles with totalMemory. Report nothing
-      -- rather than a number we cannot justify: hal.ramSummary falls back
-      -- to the honest "N sticks, <totalKB>K" form, and a missing detail
-      -- is much cheaper than a confident wrong one.
-      return nil
+  local found, foundKey
+  for mask = 0, 2 ^ #pairsOf - 1 do
+    local pick, sum, m = {}, 0, mask
+    for i, pr in ipairs(pairsOf) do
+      pick[i] = pr[m % 2 + 1]; sum = sum + pick[i]; m = math.floor(m / 2)
     end
-  else
-    -- No totalMemory to check against (off-box tests, early boot). Keep
-    -- the old heuristic — it is a guess, but it is the only thing left.
-    divide = (sum >= 4096)
+    if math.abs(sum - totalKB) < 1 then
+      table.sort(pick, function(a, b) return a > b end)
+      local key = table.concat(pick, ",")
+      if foundKey and foundKey ~= key then return nil end
+      found, foundKey = pick, key
+    end
   end
-
-  local sticks = {}
-  for _, c in ipairs(raws) do
-    sticks[#sticks + 1] = divide and math.floor(c / 1024) or math.floor(c)
-  end
-  table.sort(sticks, function(a, b) return a > b end)
-  return sticks
+  return found
 end
 
 --- Human summary of installed memory: "2x T3.5", "T3.5 + T2.5", or an honest
@@ -187,7 +178,7 @@ function hal.ramSummary(sticks, totalKB, modules)
     if okT and tonumber(t) then totalKB = math.floor(tonumber(t) / 1024) end
   end
   totalKB = math.floor(tonumber(totalKB) or 0)
-  modules = tonumber(modules) or 0
+  modules = tonumber(modules) or hal.ramBanks() or 0
   if totalKB <= 0 then return "?" end
   if modules == 1 then return hal.stickTier(totalKB) or (totalKB .. "K") end
   if modules > 1 then return modules .. " sticks, " .. totalKB .. "K" end
