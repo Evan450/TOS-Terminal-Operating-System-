@@ -1845,6 +1845,8 @@ piece of storage that survives a machine whose disk is the problem.
 | `I5` | 5 | `/init.lua` could not be opened |
 | `I6` | 6 | `/init.lua` would not compile |
 
+When the fault is the disk itself (`K4`, `I5`, `I6`), the screen also offers **d: other disk**. Any key reboots as before, onto the same disk. **d** reboots and passes that disk over once. Any other bootable disk is then offered through the usual "Boot drive changed" question: **Y** saves it, **Shift+Enter** boots it once. A machine whose only disk is the broken one is offered that disk again rather than stopping at `D2`.
+
 *SRM Advanced* is the `srm` command. It has a disk and room to work, so it
 covers everything the 4 KiB EEPROM has no space for. On the first successful
 boot after a POST failure it reads the parked code, explains it in English in
@@ -3179,7 +3181,8 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 - **`SRM <code> - POST FAILED`:** the EEPROM caught a boot fault before the OS
   could load. The two-character code is also the beep count (`K4` is four short
   beeps after a long one). `srm status` reports it on the next successful boot,
-  and `why K4` explains it.
+  and `why K4` explains it. For `K4`, `I5` and `I6`, press **d** to boot another
+  disk instead (§ SRM Basic).
 - **A command vanished from `help`:** that's install-aware help — its hardware or
   package isn't present. Check `pkg list` / attach the peripheral.
 - **One slow login after upgrading from an early 1.3.1 build:** if an account's

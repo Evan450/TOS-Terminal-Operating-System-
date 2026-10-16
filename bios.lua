@@ -27,16 +27,17 @@ if y>h then g.copy(1,2,w,h-1,0,-1)y=h end
 g.fill(1,y,w,1," ")g.set(1,y,tostring(t):sub(1,w))y=y+1
 end)then g=nil end
 end
-local function K()while p.pullSignal(1e9)~="key_down"do end p.shutdown(true)end
-local function F(n,t)
+local function K(o)local e,_,c repeat e,_,c=p.pullSignal(1e9)until e=="key_down"if o and c==100 then E("setData","SKP:"..o)end p.shutdown(true)end
+local function F(n,t,o)
 local x=(E("getData")or""):gsub("\nSRM:%S*","")
 E("setData",x.."\nSRM:"..n)
 P("SRM "..n.." - POST FAILED",R)
 if t then P(t,0xff6600)end
 P("Any key reboots. Then run 'srm'",D)
+if o then P("d: other disk",D)end
 p.beep(400,.4)
 for _=1,n:byte(2)-48 do p.beep(900,.1)end
-K()
+K(o)
 end
 local function T(x)
 local v=X(x)
@@ -62,6 +63,7 @@ local k,r=pcall(z.exists,"/init.lua")
 return k and r
 end
 local a=p.getBootAddress()
+local sk=a:match"^SKP:(.+)"
 local f,b,blob
 if a and a~=""then
 local px=X(a)
@@ -73,7 +75,7 @@ end
 if not f and not blob then
 for x in l("filesystem")do
 local z=X(x)
-if z and ex(z)then f,b,a=z,x,x break end
+if z and ex(z)then f,b,a=z,x,x if x~=sk then break end end
 end
 end
 if not f and not blob then
@@ -117,14 +119,14 @@ if not o2 then P("TBFS boot failed: "..tostring(e2),R)end
 K()
 end
 local q=f.open("/init.lua","r")
-if not q then F("I5","cannot open /init.lua")end
+if not q then F("I5","cannot open /init.lua",a)end
 local z={}
 repeat local x=f.read(q,4096)if x then z[#z+1]=x end until not x
 f.close(q)
 z=table.concat(z)
-if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing")end
+if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing",a)end
 local fn,er=load(z,"=init.lua","t")
-if not fn then F("I6",er)end
+if not fn then F("I6",er,a)end
 P("POST OK",G)pcall(p.beep)
 P("Booting: "..(f.getLabel()or a:sub(1,8)),D)
 _G._BIOS_CY=y
