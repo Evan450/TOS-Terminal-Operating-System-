@@ -110,19 +110,11 @@ end
 -- Systems" is trusted by reading.
 local _trust, _trustLoaded = nil, false
 
---! `discovered`: what a fetch may take from a repo the admin did NOT
---! configure -- one a package named, or one this machine learned of from
---! what it installed (federated repos slice 2, "the floor"). Stored here,
---! beside requireSignature, because it is the same kind of decision, and
---! read the same fail-closed way.
---!   tofu     (default) signed by a trusted key: installs. Signed by an
---!            unknown key: its fingerprint is shown and the admin may pin
---!            it, then and there -- never for a service or driver. Unsigned:
---!            never.
---!   trusted  only what is signed by a key already trusted here.
---!   off      never: only configured repos are read.
---! A store that will not read, or a value this code does not know, reads
---! as "off": losing the setting must never widen what is fetched.
+--! `discovered`: what a fetch may take from a repo nobody configured.
+--! tofu (default): trusted keys; an unknown key only if the admin pins it
+--! there and then, never for a service or driver; never unsigned.
+--! trusted: trusted keys only. off: configured repos only. Unreadable or
+--! unknown reads as "off": losing it must never widen what is fetched.
 local DISCOVERED = { tofu = true, trusted = true, off = true }
 
 local function emptyTrust()

@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**65 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**64 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 42 | Planned or under investigation. Most contributions belong here. |
+| Planned | 41 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -509,50 +509,6 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 - THE MANIFEST MUST BE UPDATED BY THE SAME OPERATION, or `verify` and `srm scan` cry deletion about every removed file forever and the operator learns to ignore them — which costs more than the disk saved. Stripped entries get marked, not deleted, so the difference between "removed on purpose" and "missing" survives.
 - BOOT PROFILES AND STRIPPING ARE DIFFERENT LAYERS and now interact: a profile gates what LOADS, stripping removes what EXISTS. A profile that would load a stripped feature must degrade with a clear line in the boot log, never panic. Today the load paths pcall-and-warn, which is most of the way there — but it has never been tested against a file that is genuinely absent rather than merely skipped.
 - NOT a package. `pkg uninstall` already covers add-ons; this is about the BASE IMAGE, which pkg does not own.
-
-### The RAM floor is 1 MB, not 192 KB
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-THE RAM FLOOR IS 1 MB, NOT 192 KB. Measured 2026-10-03 on the headless machine (build/headless-session.py --profile t1 --ram, default OpenComputers config, fresh install, `firstboot` then one command). The README said 192 KB minimum and 256 KB for the full interface. On this build:
-
-```text
-  RAM      panels (default)       ui=cli               minimal + cli
-  <=384K   E-202: the kernel cannot even be compiled
-  512K     security skipped; login refuses; reboot loop  minimal auth
-  768K     emergency terminal     emergency terminal   prompt, core cmds won't load
-  896K     -                      core cmds won't load -
-  960K     -                      works, 35K free      -
-  1024K    1st command crashes    works, 34-48K free   works, 120K free
-  1152K    core cmds won't load   -                    -
-  1280K    works, 62K free        works, 220K free     works, 321K free
-  1536K    works, 198K free       works, 390K free     -
-  2048K    works, 736K free       -                    -
-```
-
-CALIBRATION, so this is not the emulator: OpenOS 1.8.9, copied from the Ocelot workspace, boots at 192K on the same machine using \~155K, as it does in-game.
-
-Done the same day: the README, CONTRIBUTING and the installer's warnings state the measured floor, and below 1.5 MB an unset `ui` starts the CLI (bootcfg.PANELS\_MIN\_KB) rather than the panels crashing on the first command.
-
-OPEN, the real work: the footprint itself. The first wall is compiling tos/kernel/init.lua (90 KB even minified), which alone fails at 384K. Start with a per-stage memory profile -- the headless machine can produce one now. Then a floor check in the headless runs, so the documented number cannot drift again: 192 KB was presumably true once, and nothing re-measured it.
-
-PROFILE DONE 2026-10-10: memprofile = true in /etc/boot.cfg logs what each boot stage leaves resident, and `mem --boot` prints it (test\_boot\_memprofile.lua). On a 2 MB machine with no network card the big stages were startup services 115K, security 109K, display 65K and events 35K, with 1363K free at boot complete. At 1152K (t1) 485K was free at boot complete and 352K when the shell began to load.
-
-FIRST CUT 2026-10-10: the five base services are network daemons, and each one returned at once from start() without a network -- but boot still compiled and ran every script, and 20-netfsd (root tier) pulled in kernel.netfs and the whole kernel.sandbox first. They now declare needs = "net", and rc leaves them unloaded on a machine with no network card or linked card; `service` says "not loaded: needs network hardware" instead of calling four idle daemons "running" (test\_rc\_needs.lua). Startup services fell from 115K to 21K. Boot complete went from 1363K to 1457K free at 2 MB and from 485K to 576K at 1152K. At 1152K the shell now starts loading with 494K free instead of 352K. A machine WITH a network card is unchanged. Not enough on its own: at 1024K `pkg` still cannot load. Still open: the floor check, and kernel.pkg's split.
-
-FLOOR CHECK DONE 2026-10-10: `python tos.py floorcheck` boots a fresh build at every size the README's Requirements name (t1, logged in, one command). It checks both sides of each floor, and fails if the README stops saying what a case checks (build/floorcheck.py; test\_floorcheck.py keeps its cases tied to the README, bootcfg.PANELS\_MIN\_KB and PKG\_MIN\_KB). Its first runs corrected the README three times:
-
-- 768K now starts the command line, but no command loads. The README said it fell back to the emergency terminal.
-- Every figure had been measured WITHOUT a network card, which the headless machine never had. A card costs about 170K (stack 108K, running services \~60K). With one, 1 MB starts the CLI but no command loads, so the floor is 1.25 MB (README, MANUAL 1.1).
-- Free after login is 280K at 1.5 MB (was \~200K) and \~800K at 2 MB (was \~730K).
-
-It also found `pkg` failing after `mem` at 1280K with a card, fixed by helpers.requireRoomy. The runner could not give a t1 machine a network card without losing its GPU; fixed too.
-
-SECOND CUT 2026-10-16: the first unknown command of a session (any typo) loaded the whole package manager to ask whether a package provides it, and kept it: \~116K resident at 2 MB (a probe in pkg's self-init named the executor's lookup), and at 1 MB a typo took free memory from 63K to 22K. /usr/bin programs, the Home launcher and the mouse driver asked the same way. helpers.mayHavePackages answers from one listing of /var/pkg/installed; a machine with no packages never loads kernel.pkg for them (test\_no\_pkg\_for\_typos.lua). After: 150K free after a typo at 1 MB; 908K -&gt; 905K at 2 MB.
-
-Still open: kernel.pkg's split. At 1024K with no network card `pkg list` now loads (6 of 6 runs, after requireRoomy). `pkg install` still runs out reading the package's files. It used to call that "missing source file" for a file that was there; it now says it could not read the file, gives the reason, and says installing needs 1280 KB (test\_pkg\_read\_reason.lua).
-
-ALSO MEASURED 2026-10-03: at 1024K the CLI runs but `pkg` does not load -- compiling kernel.pkg (117 KB stripped) needs more than the \~200 KB left once the shell is up. Every pkg command printed only "pkg module unavailable"; the reason, thrown away, was the loader's "Syntax error in 'kernel.pkg': not enough memory". At 1024+256K it lists, verifies, signs and installs (the signing checklist below ran there whole). Now `pkg` says "cannot load: not enough free memory" and gives 1280 KB against what the machine has, the loader says "Out of memory loading" instead of "Syntax error", eight more commands keep their reason (helpers.loadFailure), and the README and MANUAL 1.1 give the 1.25 MB floor for add-ons. Splitting kernel.pkg so its everyday verbs load alone is what would let 1 MB install packages; that is footprint work, the same as above.
 
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2
 

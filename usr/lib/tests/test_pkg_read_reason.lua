@@ -134,7 +134,8 @@ test("a file that is not there is still \"missing\"",
   ok == false and why:find("missing source file: " .. SRC, 1, true) ~= nil, why)
 test("...with its own code (E-604)", why:find("[E-604 ERR_PKG_FILE_MISSING]", 1, true) ~= nil, why)
 
-local pkgSrc = readSrc("tos/kernel/pkg.lua")
+-- pkg is two files; the install half is kernel.pkgops.
+local pkgSrc = readSrc("tos/kernel/pkg.lua") .. (readSrc("tos/kernel/pkgops.lua") or "")
 test("the installed-file mirror says the same (cannot read vs missing)",
   pkgSrc:find('": cannot read installed file "', 1, true) ~= nil
   and pkgSrc:find('": missing installed file "', 1, true) ~= nil)

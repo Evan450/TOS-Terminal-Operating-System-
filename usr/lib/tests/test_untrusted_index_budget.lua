@@ -102,6 +102,9 @@ pkg.init({ fs = fsMock, log = nil, users = package.loaded["kernel.users"] })
 
 files["/mnt/evil/pa/package.lua"] = nested(60 * 1024)    -- under the size cap: the budget refuses it
 files["/mnt/evil/pb/package.lua"] = nested(300 * 1024)   -- over the size cap: never read
+-- The reader lives in kernel.pkgops, which loads on first use: load it
+-- before counting, so this measures the manifest, not the module.
+local _ = pkg._loadAnyManifest
 local kbA, mA = allocKB(function() return pkg._loadAnyManifest("/mnt/evil/pa") end)
 test(string.format("a hostile 60 KB package.lua is refused after %.0f KB", kbA), mA == nil and kbA < LIMIT_KB)
 local _, mB = allocKB(function() return pkg._loadAnyManifest("/mnt/evil/pb") end)

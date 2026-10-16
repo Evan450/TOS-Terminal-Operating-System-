@@ -163,9 +163,9 @@ return function(C, S, deps)
   local PKG_MIN_KB = 1280
   -- `pkg trust discovered`, in words (kernel.pkgsign, DISCOVERED).
   local DISCOVERED_SAYS = {
-    tofu    = "signed by a trusted key, or a new key you approve when asked; never unsigned.",
-    trusted = "only what is signed by a key already trusted here.",
-    off     = "nothing; only configured repos are read.",
+    tofu    = "trusted keys, or a new key you approve; never unsigned.",
+    trusted = "trusted keys only.",
+    off     = "nothing; configured repos only.",
   }
   -- Out of memory is said in those words, and with what the machine needs:
   -- loading the manager, and installing (which reads, hashes and verifies
@@ -502,15 +502,13 @@ return function(C, S, deps)
         local known = pkgMod.knownRepos()
         if #known > 0 then
           o("", T.dim)
-          o("Known (named by packages installed here; not configured and", T.title)
-          o("not trusted):", T.title)
+          o("Known (named by installed packages; not trusted):", T.title)
           for i, k in ipairs(known) do
             o(string.format(" %2d %s", i, k.url), T.fg)
             if #k.from > 0 then o("      from " .. table.concat(k.from, ", "), T.dim) end
           end
-          o("`pkg fetch` looks in these only for what no configured repo", T.dim)
-          o("has, and takes from one only what `pkg trust discovered`", T.dim)
-          o("allows. Forget one:  pkg repo forget <number|url|all>", T.dim)
+          o("Read only for what configured repos lack (pkg trust", T.dim)
+          o("discovered). Forget:  pkg repo forget <number|url|all>", T.dim)
         end
       elseif act == "add" then
         if not args[3] or not args[4] then
@@ -585,13 +583,9 @@ return function(C, S, deps)
       -- Trust on first use (pkg trust discovered tofu): a package found only
       -- in a repo nobody configured, signed by a key this machine does not
       -- know.
-      --! The details go IN the confirmation box, not through o(): the panels
-      --! shell shows a command's output only when the command ends, so on
-      --! the headless machine the question "Publisher name?" arrived with
-      --! no fingerprint on the screen to compare -- an admin asked to trust
-      --! a key blind. confirmTyped draws a framed box in the panels and
-      --! prints the message first in the CLI, and wants a typed word: this
-      --! is a standing decision about who may ship code to this machine.
+      --! #SEC The fingerprint goes IN the confirmation box: the panels shell
+      --! draws a command's output only when it ends, so an o() line above the
+      --! question was not on screen when the admin answered it.
       local function confirmKey(info)
         if not (confirmTyped and promptInput) then return nil end
         local msg = "'" .. tostring(info.name) .. "' is only in a repo this machine was not "

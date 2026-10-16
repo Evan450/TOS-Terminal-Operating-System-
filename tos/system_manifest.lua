@@ -61,6 +61,7 @@ return {
   { path = "/tos/kernel/theme.lua",           critical = false },
   { path = "/tos/kernel/monitor.lua",         critical = false },
   { path = "/tos/kernel/pkg.lua",             critical = false },
+  { path = "/tos/kernel/pkgops.lua",          critical = false },
   { path = "/tos/kernel/swap.lua",            critical = false },
   { path = "/tos/kernel/compress.lua",        critical = false },
   { path = "/tos/kernel/sysinfo.lua",         critical = false },

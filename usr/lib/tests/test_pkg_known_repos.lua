@@ -194,7 +194,7 @@ do
   local admin = f and f:read("*a"):gsub("\r\n", "\n") or ""
   if f then f:close() end
   test("`pkg repo list` shows known repos apart, as not configured or trusted",
-    admin:find("not configured and", 1, true) ~= nil and admin:find('o("not trusted):"', 1, true) ~= nil)
+    admin:find("Known (named by installed packages; not trusted):", 1, true) ~= nil)
   test("`pkg repo forget` exists", admin:find('act == "forget"', 1, true) ~= nil)
 end
 
