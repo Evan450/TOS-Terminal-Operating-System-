@@ -264,6 +264,11 @@ end
 else
 local resolved = helpers.resolveProgram(F, name)
 if resolved then
+local refused = helpers.safeModeRefusal and helpers.safeModeRefusal(resolved)
+if refused then
+if helpers.fail then helpers.fail(S, refused, o) else o(refused, T.error) end
+return buf
+end
 local data = F.readFile(resolved)
 if data then
 local pkgCaps, pkgOwner = nil, nil

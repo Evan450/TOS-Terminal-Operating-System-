@@ -55,8 +55,10 @@ editor.openEditTab(S, S.ctxPath)
 elseif action == "ctx_run" then
 local buf = {}
 local function o(t, c) buf[#buf + 1] = { tostring(t), c or T.fg } end
-local data = F.readFile(S.ctxPath)
-if not data then o("Cannot read: " .. S.ctxFile.name, T.error)
+local refused = helpers.safeModeRefusal(S.ctxPath)
+local data = not refused and F.readFile(S.ctxPath)
+if refused then o(refused, T.error)
+elseif not data then o("Cannot read: " .. S.ctxFile.name, T.error)
 else
 local runEnv = makeProgramEnv{ name = S.ctxFile.name, stdout = function(line) o(line, T.fg) end }
 local fn2, err2 = load(data, "=" .. S.ctxFile.name, "t", runEnv)

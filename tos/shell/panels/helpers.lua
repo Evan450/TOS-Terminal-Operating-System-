@@ -62,6 +62,17 @@ if f.name:match("%.cfg$") or f.name:match("%.conf$") then return T.file_cfg or T
 if f.name:match("%.log$") then return T.file_log or T.dim end
 return T.fg
 end
+function M.safeModeRefusal(path)
+local T = _G._TOS
+if not (T and T.pkgDispatchDisabled) then return nil end
+local okP, pkgMod = pcall(require, "kernel.pkg")
+local owner = okP and type(pkgMod) == "table" and pkgMod.ownerOfFile
+and pkgMod.ownerOfFile(path) or nil
+if not owner then return nil end
+return "Safe Mode: " .. tostring(path) .. " belongs to the package '" .. tostring(owner)
+.. "', and package code does not run in this boot. Reboot normally to use it."
+.. "  [E-404 ERR_SAFE_MODE]"
+end
 function M.mayHavePackages()
 if package.loaded["kernel.pkg"] ~= nil then return true end
 local kfs = _G._TOS and _G._TOS.fs
@@ -629,6 +640,12 @@ local FAILURES = {
 { "The package conflicts with one already installed (the message", "err" },
 { "names it). Nothing was installed.", "err" },
 { "Fix: uninstall the other one first:  pkg uninstall <name>", "fix" },
+} },
+{ sym = "ERR_SAFE_MODE", lines = {
+{ "The boot profile has this turned off. Safe Mode runs nothing", "err" },
+{ "third-party: no services, cron jobs, package commands or programs.", "err" },
+{ "The pkg admin verbs still work, to remove what broke.", "dim" },
+{ "Fix: bootsettings profile normal, then reboot.", "fix" },
 } },
 { sym = "ERR_KERNEL_PANIC", lines = {
 { "The kernel hit an error it could not recover from, and stopped.", "err" },

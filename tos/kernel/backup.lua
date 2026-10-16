@@ -22,6 +22,7 @@ local function packU16(n)
 return string.char(n & 0xFF, (n >> 8) & 0xFF)
 end
 local function packU32(n)
+n = math.floor(n)
 return string.char(n & 0xFF, (n >> 8) & 0xFF, (n >> 16) & 0xFF, (n >> 24) & 0xFF)
 end
 local function unpackU8(s, off)
@@ -97,7 +98,7 @@ end
 end
 local body = table.concat(bodyParts)
 local rootBytes = srcRoot
-local now = (os.time and os.time()) or 0
+local now = math.floor((os.time and os.time()) or 0)
 emit(MAGIC)
 emit(packU32(now))
 emit(packU32(#entries))
