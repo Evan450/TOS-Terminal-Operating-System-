@@ -425,7 +425,17 @@ local function play(o)
       gpu.set(pnx, cy + 2, "Z: rot CCW")
       gpu.set(pnx, cy + 3, "D/dn: soft")
       gpu.set(pnx, cy + 4, "SPC: drop")
-      gpu.set(pnx, cy + 5, "P:pause " .. quitLabel() .. ":quit")
+      
+      
+      
+      
+      local label = quitLabel()
+      local quitLine = "P:pause " .. label .. ":quit"
+      if #quitLine > pniw then
+        quitLine = "P:pause " .. (label:match("^(.-) / ") or label) .. ":quit"
+      end
+      if #quitLine > pniw then quitLine = "P:pause Q:quit" end
+      gpu.set(pnx, cy + 5, quitLine)
     end
   end
 

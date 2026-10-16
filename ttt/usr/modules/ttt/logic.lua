@@ -160,6 +160,19 @@ end
 
 
 
+function L.step(cell, dir)
+  if dir == "up" then return ((cell - 3 - 1) % 9) + 1
+  elseif dir == "down" then return ((cell + 3 - 1) % 9) + 1
+  elseif dir == "left" then return ((cell - 2) % 9) + 1
+  elseif dir == "right" then return (cell % 9) + 1 end
+  return cell
+end
+
+
+
+
+
+
 
 function L.cellAt(x, y, gx, gy, cw, ch)
   if type(x) ~= "number" or type(y) ~= "number" then return nil end
