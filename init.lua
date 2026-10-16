@@ -320,7 +320,7 @@ end
 _G._TOS = {
 version = "1.5.0",
 codename = "Aletheia",
-build = "226c8a9",
+build = "e6834d8",
 variant = "minified",
 bootFS = bootFS,
 bootAddr = bootFS and bootFS.address or nil,

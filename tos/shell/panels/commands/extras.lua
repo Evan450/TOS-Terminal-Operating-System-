@@ -1385,13 +1385,21 @@ local ok2, chatApp = pcall(require, "shell.panels.chatapp")
 if not ok2 then o("Chat unavailable: " .. tostring(chatApp), T.error); return end
 chatApp.open(S)
 end
+local function peerAddress(s)
+local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
+if type(s) == "string" and A and A.resolve then
+local addr = A.resolve(s)
+if addr then return addr end
+end
+return s
+end
 C.rsh = function(args, o)
 if not adminOnly(o) then return end
-if not args[1] or not args[2] then o("Usage: rsh <address> <command>", T.dim); return end
+if not args[1] or not args[2] then o("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)", T.dim); return end
 if not NM then o("No network available", T.error); return end
 local ok2, remoteMod = pcall(require, "kernel.net.remote")
 if not ok2 then o("Remote module unavailable", T.error); return end
-local addr = args[1]
+local addr = peerAddress(args[1])
 local cmd = table.concat(args, " ", 2)
 o("Executing on " .. addr:sub(1,8) .. "...", T.dim)
 local result, err = remoteMod.execute(addr, cmd)
@@ -1401,24 +1409,26 @@ end
 C.scp = function(args, o)
 if not adminOnly(o) then return end
 if not args[1] or not args[2] then
-o("Usage: scp <address>:<remote_path> <local_path>", T.dim)
-o("   or: scp <local_path> <address>:<remote_path>", T.dim)
+o("Usage: scp <peer>:<remote_path> <local_path>", T.dim)
+o("  Copies a file from a TRUSTED peer's /public.", T.dim)
 return
 end
 if not NM then o("No network available", T.error); return end
 local ok2, transferMod = pcall(require, "kernel.net.transfer")
 if not ok2 then o("Transfer module unavailable", T.error); return end
-local addr, rpath = args[1]:match("^([^:]+):(.+)$")
-if addr then
+local name, rpath = args[1]:match("^([^:]+):(.+)$")
+if name then
+local addr = peerAddress(name)
 local lpath = rp(args[2])
-o("Downloading " .. rpath .. " from " .. addr:sub(1,8) .. "...", T.dim)
+o("Downloading " .. rpath .. " from " .. name
+.. (addr ~= name and (" (" .. addr:sub(1, 8) .. ")") or "") .. "...", T.dim)
 local ok3, err = transferMod.request(addr, rpath, lpath)
 if ok3 then
 refreshBrowser()
 o("Downloaded: " .. rpath .. " -> " .. lpath, T.highlight)
 else o("Transfer failed: " .. tostring(err), T.error) end
 else
-o("Usage: scp <address>:<remote_path> <local_path>", T.dim)
+o("Usage: scp <peer>:<remote_path> <local_path>", T.dim)
 end
 end
 C.screen = function(args, o)

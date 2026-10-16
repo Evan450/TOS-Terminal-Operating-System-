@@ -1785,7 +1785,7 @@ intercom log 20              What this box has heard
 *See also:* `man intercom`.
 
 ### 8.6 Tools
-`chat` (TUI chat with trusted peers), `rsh <addr> <cmd>` (remote shell — sandboxed,
+`chat` (TUI chat with trusted peers), `rsh <peer> <lua>` (remote Lua — sandboxed,
 step-budgeted, TRUSTED + challenge-verified only), `scp <addr>:<path> <local>`
 (file transfer, `/public` only by default). Remote exec is **off** until the
 `rshd` service starts.
@@ -2851,9 +2851,12 @@ file`, `is a directory` (without `-r`).
 Drive an attached robot (move, turn, interact). *See also:* `inventory`,
 `redstone`.
 
-**rsh** — `rsh <addr> <command>` **(admin; tier: modem; TRUSTED peer)**
-Run a command on a TRUSTED remote machine (Chapter 8). *See also:* `scp`, `ssh`,
-`net`.
+**rsh** — `rsh <peer> <lua>` **(admin; tier: modem; TRUSTED peer)**
+Run a chunk of Lua on a TRUSTED remote machine, in a step-budgeted sandbox whose
+`print` comes back to you: `rsh two print(1+2)` answers `3` (Chapter 8). It is Lua,
+not a shell line: `rsh two ls` is a syntax error there. `<peer>` is an alias from
+`net alias`, a full address, or a prefix that matches one aliased address, as
+everywhere in `net`. *See also:* `scp`, `ssh`, `net`.
 
 **run** — `run <file> [args...]` **(admin)**
 Execute a Lua script file in the session sandbox with `...` set to the arguments
@@ -2862,9 +2865,10 @@ Execute a Lua script file in the session sandbox with `...` set to the arguments
 
 ### S
 
-**scp** — `scp <addr> <src> <dst>` **(admin; needs a modem and a TRUSTED peer)**
-Copy a file to/from a TRUSTED remote machine (Chapter 8). *See also:* `rsh`,
-`share`, `net`.
+**scp** — `scp <peer>:<path> <local>` **(admin; needs a modem and a TRUSTED peer)**
+Copy a file from a TRUSTED peer's `/public` (Chapter 8); `<peer>` is named as for
+`rsh`. It only downloads: nothing on the far side accepts an upload. *See also:*
+`rsh`, `share`, `net`.
 
 **screen** — `screen [list | next | <index> | res [auto|max|WxH]]`
 Manage display seats (`list`/`next`/`<index>` need multiple screens) and the
