@@ -8,7 +8,7 @@ real task turned into a sequence of `cd`s that you had to remember in the
 right order. This does not replace any of them -- it finds them, runs them
 from the right place, and tells you what it ran.
 
-    python tos.py test [--serial]     the whole suite
+    python tos.py test [--serial]     build, then the whole suite
     python tos.py build               strip TOS-Dev -> TOS-Release
     python tos.py pack [--sign]       build the add-on disks + repo index
     python tos.py sign <dir>|--all    sign package manifests
@@ -56,7 +56,8 @@ class Fail(Exception):
 
 
 def say(msg: str) -> None:
-    print(f"==> {msg}")
+    # Flushed: the tools run() starts write to the same terminal unbuffered.
+    print(f"==> {msg}", flush=True)
 
 
 def run(cmd: list[str], cwd: Path, env: dict | None = None) -> int:
@@ -125,6 +126,20 @@ def passphrase_env() -> dict:
 # ── Commands ─────────────────────────────────────────────────────────
 
 def cmd_test(args) -> int:
+    """Build the release, then run the whole suite.
+
+    Building first because several tests read TOS-Release, not the source:
+    test_release_budget weighs it against a 2 MB drive. Run against a stale
+    build, the suite passed for a day of commits that had taken the real
+    release past its budget, and build-99ad262 shipped over it (TODO, THE
+    RAM FLOOR IS 1 MB). A build takes about two seconds.
+    """
+    if not args.no_build:
+        say("build")
+        rc = cmd_build(args)
+        if rc != 0:
+            return rc
+        print()
     extra = ["--serial"] if args.serial else []
     return run([sys.executable, "run_tests.py", *extra, *args.rest], cwd=DEV)
 
@@ -291,8 +306,9 @@ def main() -> int:
         epilog="Paths resolve from this file, so it works from any directory.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    t = sub.add_parser("test", help="run the whole test suite")
+    t = sub.add_parser("test", help="build, then run the whole test suite")
     t.add_argument("--serial", action="store_true", help="no parallelism")
+    t.add_argument("--no-build", action="store_true", help="test TOS-Release as it is")
     t.add_argument("rest", nargs="*", help="passed through to run_tests.py")
     t.set_defaults(fn=cmd_test)
 
