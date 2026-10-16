@@ -320,7 +320,7 @@ end
 _G._TOS = {
 version = "1.5.0",
 codename = "Aletheia",
-build = "5bd016c",
+build = "761b48c",
 variant = "minified",
 bootFS = bootFS,
 bootAddr = bootFS and bootFS.address or nil,
@@ -578,16 +578,16 @@ earlyPrint(splashPad("TOS v" .. _G._TOS.version .. " [" .. _G._TOS.codename .. "
 earlyPrint(splashPad("Memory: " .. freeKB .. "K free / " .. totalKB .. "K total"), tc(0xAAAAAA))
 end
 if _G._BIOS_ONETIME then
-earlyPrint("  ONE-TIME BOOT: EEPROM unchanged, boot config preserved", tc(0xFFAA00))
+earlyPrint(splashPad("ONE-TIME BOOT: EEPROM unchanged, boot config preserved"), tc(0xFFAA00))
 end
 if bootCfg and bootCfg.profile == "safe" then
-earlyPrint("  SAFE MODE: services, cron, packages, net, themes are OFF", tc(0xFFAA00))
-earlyPrint("  (Boot Settings -> Profile to leave Safe Mode)", tc(0xAAAAAA))
+earlyPrint(splashPad("SAFE MODE: services, cron, packages, net, themes are OFF"), tc(0xFFAA00))
+earlyPrint(splashPad("(Boot Settings -> Profile to leave Safe Mode)"), tc(0xAAAAAA))
 end
 if totalKB < 128 then
-earlyPrint("  WARNING: Low memory - features limited!", tc(0xFF0000))
+earlyPrint(splashPad("WARNING: Low memory - features limited!"), tc(0xFF0000))
 elseif totalKB < 256 then
-earlyPrint("  NOTE: Limited memory - some features may be skipped", tc(0xFFFF00))
+earlyPrint(splashPad("NOTE: Limited memory - some features may be skipped"), tc(0xFFFF00))
 end
 end
 drawBootHeader()
@@ -863,17 +863,21 @@ if verbosity == "splash" and gpu then
 --! (test_splash_resize.lua)
 local okSteps, bootsteps = pcall(require, "kernel.bootsteps")
 local headerBottom = cursorY
-local barRow, barW, barX
+local barRow, barW, barX, logRows, narrW
+local LOG_ROWS = 3
 local function geom()
 if okSteps and bootsteps and bootsteps.splashGeometry then
-barRow, barW, barX = bootsteps.splashGeometry(screenW, screenH, headerBottom)
+barRow, barW, barX, logRows = bootsteps.splashGeometry(screenW, screenH, headerBottom)
 else
 barW = math.max(10, math.min(40, screenW - 6))
 barX = math.max(1, math.floor((screenW - (barW + 2)) / 2) + 1)
-barRow = math.max(1, math.min(screenH - 4, headerBottom + 1))
+barRow = math.max(1, math.min(screenH - 1, headerBottom + 1))
 end
+logRows = logRows or math.max(0, math.min(LOG_ROWS, screenH - barRow))
+narrW = screenW - barX + 1
+gpu.setBackground(0x000000)
+pcall(gpu.fill, 1, barRow, screenW, logRows + 1, " ")
 end
-local LOG_ROWS = 3
 local stagesShown = 0
 local stageTotal = 16
 local fillCh = isMonochrome and "#" or "█"
@@ -900,7 +904,7 @@ cursorY = 1
 drawBootHeader()
 headerBottom = cursorY
 geom()
-cursorY = math.min(screenH, barRow + LOG_ROWS + 1)
+cursorY = math.min(screenH, barRow + logRows + 1)
 return true
 end
 local function redraw()
@@ -910,11 +914,12 @@ local fill = math.floor(barW * math.min(1, stagesShown / stageTotal) + 0.5)
 gpu.setForeground(tc(0x00AAFF))
 gpu.set(barX, barRow, "[" .. string.rep(fillCh, fill)
 .. string.rep(" ", barW - fill) .. "]")
-for i = 1, LOG_ROWS do
-local e = logLines[i]
+local first = math.max(0, #logLines - logRows)
+for i = 1, logRows do
+local e = logLines[first + i]
 gpu.setForeground((e and e[2]) or tc(0xAAAAAA))
 gpu.set(barX, barRow + i, (((e and e[1]) or "")
-.. string.rep(" ", barW + 2)):sub(1, barW + 2))
+.. string.rep(" ", narrW)):sub(1, narrW))
 end
 end
 local function pushLine(text, color)
@@ -923,13 +928,12 @@ while #logLines > LOG_ROWS do table.remove(logLines, 1) end
 end
 geom()
 redraw()
-cursorY = math.min(screenH, barRow + LOG_ROWS + 1)
+cursorY = math.min(screenH, barRow + logRows + 1)
 bootProgress = function(msg, level)
 msg = tostring(msg or "")
 if level and level >= 2 then
 local mark = (level == 2) and "! " or "!! "
-pushLine((mark .. msg):sub(1, barW + 2),
-(level == 2) and tc(0xFFAA00) or tc(0xFF4040))
+pushLine(mark .. msg, (level == 2) and tc(0xFFAA00) or tc(0xFF4040))
 else
 local stage = stageFor(msg)
 if stage and stage ~= lastStage then

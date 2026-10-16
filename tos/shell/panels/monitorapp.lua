@@ -118,8 +118,8 @@ if r.isFg then color = T.highlight or T.fg end
 D.set(1, y, line:sub(1, W), color, T.bg)
 end
 else
-local status = r.running and "running"
-or (r.enabled == false and "disabled" or "stopped")
+local status = r.status or (r.running and "running"
+or (r.enabled == false and "disabled" or "stopped"))
 local line = string.format("   %-33s %s", tostring(r.name):sub(1, 33), status)
 if selected then
 D.fill(1, y, W, 1, " ", T.sel_fg or T.bg, T.sel_bg or T.highlight)

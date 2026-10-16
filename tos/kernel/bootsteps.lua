@@ -62,16 +62,17 @@ end
 --!
 --! @param screenW,screenH  the LIVE resolution, not the one measured at boot
 --! @param headerBottom     last row the wordmark/status block used
---! @return barRow, barW, barX
+--! @return barRow, barW, barX, logRows
 function bootsteps.splashGeometry(screenW, screenH, headerBottom)
 screenW = (type(screenW) == "number" and screenW > 0) and math.floor(screenW) or 50
 screenH = (type(screenH) == "number" and screenH > 0) and math.floor(screenH) or 16
 headerBottom = (type(headerBottom) == "number") and math.floor(headerBottom) or 1
 local barW = math.max(10, math.min(40, screenW - 6))
 local barX = math.max(1, math.floor((screenW - (barW + 2)) / 2) + 1)
-local barRow = math.min(screenH - 4, headerBottom + 1)
-if barRow < 1 then barRow = 1 end
-return barRow, barW, barX
+local barRow = headerBottom + 1
+if screenH - barRow < 3 then barRow = headerBottom end
+barRow = math.max(1, math.min(screenH - 1, barRow))
+return barRow, barW, barX, math.max(0, math.min(3, screenH - barRow))
 end
 function bootsteps.splashFits(screenW, screenH, headerBottom)
 local barRow, barW, barX = bootsteps.splashGeometry(screenW, screenH, headerBottom)

@@ -1223,7 +1223,7 @@ monitorPIDs[ctrlTIdx] = nil
 if not (switched and proc.get and proc.get(switched)) then
 if shellPid and proc.get and proc.get(shellPid) then
 proc.setForeground(shellPid, ctrlTIdx, { kernel = true })
-(proc.signalKernel or proc.signal)(shellPid, "tos_focus")
+;(proc.signalKernel or proc.signal)(shellPid, "tos_focus")
 end
 end
 end, {
@@ -1561,6 +1561,7 @@ for _, s in ipairs(services) do
 rows[#rows + 1] = {
 kind = "svc", name = s.name, running = s.running or false,
 enabled = s.enabled ~= false, canAct = seatTier >= 2,
+status = mon.svcStatus(s),
 }
 end
 end
@@ -1591,12 +1592,8 @@ if ok and type(svcs) == "table" then
 for _, s in ipairs(svcs) do if s.name == id then svc = s; break end end
 end
 if not svc then return false, "no such service" end
-local act = svc.running and rcMod.stop or rcMod.start
-local ok2, err = pcall(act, svc.name)
-log.info("kernel", (svc.running and "Stopped " or "Started ")
-.. tostring(svc.name) .. " from monitor by " .. tostring(seatUser or "kernel")
-.. ((ok2 ~= false) and "" or (" (" .. tostring(err) .. ")")))
-if ok2 == false then return false, tostring(err) end
+local done, err = mon.svcToggle(rcMod, svc, seatUser)
+if not done then return false, err end
 return true
 end
 local p = proc.get(tonumber(id) or -1)
@@ -1618,7 +1615,7 @@ log.info("kernel", "Switched to PID " .. p.pid .. " (" .. tostring(p.name)
 .. ") from monitor tab")
 return true
 elseif action == "kill" then
-if p.pid == caller.pid then return false, "that is this shell" end
+if p.pid == caller.pid then return false, "Refused: PID " .. p.pid .. " is the shell this Monitor runs in" end
 if not mon.canAct(seatTier, seatUser, displayIdx, pEntry) then
 return false, "not permitted"
 end
@@ -1627,7 +1624,7 @@ log.warn("kernel", "Killed PID " .. p.pid .. " (" .. tostring(p.name)
 .. ") from monitor by " .. tostring(seatUser or "kernel"))
 return true
 elseif action == "tsr" then
-if p.pid == caller.pid then return false, "that is this shell" end
+if p.pid == caller.pid then return false, "Refused: PID " .. p.pid .. " is the shell this Monitor runs in" end
 if not mon.canAct(seatTier, seatUser, displayIdx, pEntry) then
 return false, "not permitted"
 end
@@ -1683,11 +1680,12 @@ end
 local dx, dy = 1, 1
 local dw, dh = W, H
 local nameW = math.max(20, dw - 2 - 30)
-local svcW = math.max(27, dw - 2 - 22)
+local svcW = math.max(12, math.min(28, dw - 2 - 4 - 34))
 local listTop = dy + 4
 local listH = math.max(1, dh - 6)
 local fgPID = opts.fgPID or proc.getForeground(displayIdx)
 local switchedPid = nil
+local note = nil
 local rows = {}
 local sel = 1
 local scroll = 0
@@ -1764,9 +1762,8 @@ dsp.set(dx + 1, y, dsp.fit(line, dw - 2), color, T.panel_bg)
 end
 else
 local s = r.s
-local status = s.running and "running"
-or (s.enabled == false and "disabled" or "stopped")
-local line = string.format("   %-" .. svcW .. "s %s", (s.name or "?"):sub(1, svcW), status)
+local line = string.format("   %-" .. svcW .. "s %s", (s.name or "?"):sub(1, svcW),
+mon.svcStatus(s))
 if selected then
 dsp.set(dx + 1, y, dsp.fit(line, dw - 2), T.sel_fg, T.sel_bg)
 else
@@ -1784,13 +1781,19 @@ help = " [Enter/S] start-stop   up/down move   [^Q] close"
 else
 help = " [Enter] switch  [K]ill  [T]SR   up/down move   [^Q] close"
 end
+if note then
+dsp.fill(dx + 1, dy + dh - 2, dw - 2, 1, " ", T.fg, T.panel_bg)
+dsp.set(dx + 1, dy + dh - 2, dsp.fit(" " .. note, dw - 2), T.error or T.fg, T.panel_bg)
+else
 dsp.set(dx + 1, dy + dh - 2, dsp.fit(help, dw - 2), T.dim, T.panel_bg)
+end
 end
 drawFrame()
 drawContent()
 while true do
 local sig, _, ch, co = pull()
 if sig == "key_down" then
+note = nil
 if ch == 17 or ch == 113 then
 break
 elseif co == 200 then
@@ -1807,7 +1810,7 @@ if r and r.kind == "proc" then
 local p = r.p
 if co == 28 then
 proc.setForeground(p.pid, displayIdx, { kernel = true })
-(proc.signalKernel or proc.signal)(p.pid, "tos_focus")
+;(proc.signalKernel or proc.signal)(p.pid, "tos_focus")
 log.info("kernel", "Switched to PID " .. p.pid .. " (" .. tostring(p.name) .. ")")
 switchedPid = p.pid
 break
@@ -1832,12 +1835,8 @@ end
 elseif r and r.kind == "svc" then
 if co == 28 or ch == 115 or ch == 83 then
 if seatTier >= 2 and okRC and rcMod then
-local s = r.s
-local act = s.running and rcMod.stop or rcMod.start
-local ok2, err = pcall(act, s.name)
-log.info("kernel", ((s.running and "Stopped ") or "Started ")
-.. tostring(s.name) .. " from monitor by " .. tostring(seatUser or "kernel")
-.. ((ok2 ~= false) and "" or (" (" .. tostring(err) .. ")")))
+local done, err = mon.svcToggle(rcMod, r.s, seatUser)
+note = (not done) and err or nil
 rebuild(); drawContent()
 end
 end

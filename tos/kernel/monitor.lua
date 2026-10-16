@@ -57,6 +57,30 @@ if rows[i] and rows[i].kind ~= "header" then return i end
 end
 return sel
 end
+function monitor.svcStatus(s)
+s = s or {}
+if s.running then return "running" end
+if s.unavailable then return "not loaded: " .. tostring(s.unavailable) end
+if s.enabled == false then return "disabled" end
+return "stopped"
+end
+function monitor.svcToggle(rcMod, s, who)
+local verb = s.running and "stop" or "start"
+local fn = rcMod and rcMod[verb]
+local okCall, okAct, why
+if fn then okCall, okAct, why = pcall(fn, s.name) end
+local done = okCall == true and okAct ~= false and okAct ~= nil
+local err = (not fn and "rc unavailable") or (not okCall and tostring(okAct))
+or tostring(why or "refused")
+local okL, log = pcall(require, "kernel.log")
+if okL and log and log.info then
+log.info("kernel", (done and ((s.running and "Stopped ") or "Started ")
+or ("Could not " .. verb .. " ")) .. tostring(s.name) .. " from monitor by "
+.. tostring(who or "kernel") .. (done and "" or (": " .. err)))
+end
+if done then return true end
+return false, err
+end
 function monitor.textRows(procs, services)
 local out = {}
 local function add(t, tone) out[#out + 1] = { text = t, tone = tone } end
@@ -69,9 +93,7 @@ elseif r.kind == "header" then
 add("-- " .. (r.text or "") .. " --", "header")
 elseif r.kind == "svc" then
 local s = r.s or {}
-local status = s.running and "running" or "stopped"
-if s.enabled == false then status = status .. ", disabled" end
-add(string.format("  %-22s [%s]", tostring(s.name or "?"), status), "svc")
+add(string.format("  %-22s [%s]", tostring(s.name or "?"), monitor.svcStatus(s)), "svc")
 end
 end
 if #out == 0 then add("(no visible processes)", "dim") end
