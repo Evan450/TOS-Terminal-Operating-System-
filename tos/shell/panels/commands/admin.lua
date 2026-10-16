@@ -1,36 +1,32 @@
-local computer   = require("computer")
-local component  = require("component")
-local helpers    = require("shell.panels.helpers")
-
+local computer = require("computer")
+local component = require("component")
+local helpers = require("shell.panels.helpers")
 return function(C, S, deps)
-
 local K, E, P, F, D, U = S.K, S.E, S.P, S.F, S.D, S.U
-local SC, NM, st        = S.SC, S.NM, S.st
-local T                 = S.T
-local tier              = S.tier
-local W, H              = S.W, S.H
-local rp                = deps.rp
-local openViewTab       = deps.openViewTab
-local openEditTab       = deps.openEditTab
-local refreshBrowser    = deps.refreshBrowser
-local canRead           = deps.canRead
-local canWrite          = deps.canWrite
-local canAccess         = deps.canAccess
-local rootOnly          = deps.rootOnly
-local adminOnly         = deps.adminOnly
-local makeProgramEnv    = deps.makeProgramEnv
-local fmtSz             = helpers.fmtSz
-local expandBuf         = function(buf) return helpers.expandBuf(S, buf) end
-local promptInput       = deps.promptInput
+local SC, NM, st = S.SC, S.NM, S.st
+local T = S.T
+local tier = S.tier
+local W, H = S.W, S.H
+local rp = deps.rp
+local openViewTab = deps.openViewTab
+local openEditTab = deps.openEditTab
+local refreshBrowser = deps.refreshBrowser
+local canRead = deps.canRead
+local canWrite = deps.canWrite
+local canAccess = deps.canAccess
+local rootOnly = deps.rootOnly
+local adminOnly = deps.adminOnly
+local makeProgramEnv = deps.makeProgramEnv
+local fmtSz = helpers.fmtSz
+local expandBuf = function(buf) return helpers.expandBuf(S, buf) end
+local promptInput = deps.promptInput
 --! The framed yes/no box. Text mode falls back to a [y/N] prompt,
 --! and BOTH default to no on an interrupted read.
-local confirmBox        = deps.confirm
+local confirmBox = deps.confirm
 --! Same framed box, but yes means typing an exact word. For the two
 --! gates whose failure mode is a machine that no longer boots.
-local confirmTyped      = deps.confirmTyped
-
+local confirmTyped = deps.confirmTyped
 C.kill = function(args, o)
-
 if not adminOnly(o) then return end
 if not args[1] then o("Usage: kill <pid>", T.dim); return end
 local pid = tonumber(args[1])
@@ -39,9 +35,7 @@ local ok2, err = P.kill(pid)
 if ok2 then o("Killed PID " .. pid, T.highlight) else o(tostring(err), T.error) end
 else o("Invalid PID", T.error) end
 end
-
 C.fg = function(args, o)
-
 if not adminOnly(o) then return end
 if not args[1] then o("Usage: fg <pid>", T.dim); return end
 local pid = tonumber(args[1])
@@ -50,10 +44,8 @@ local ok, err = P.setForeground(pid, S.displayIdx)
 if not ok then o(tostring(err or "Cannot foreground that process"), T.error); return end
 o("Foreground: PID " .. pid, T.highlight)
 end
-
 C.verify = function(args, o)
 if not adminOnly(o) then return end
-
 local sub = args and args[1] and tostring(args[1]):lower()
 if sub == "anchor" then
 local clear = false
@@ -73,7 +65,6 @@ end
 if not K.anchorManifestHash then
 o("This TOS build has no manifest anchoring.", T.error); return
 end
-
 o("Anchoring records THIS system's manifest hash in the EEPROM.", T.dim)
 o("Only do it on a system you trust (fresh install, or verified).", T.dim)
 local okA, digest = K.anchorManifestHash()
@@ -85,11 +76,9 @@ o("Anchor failed: " .. tostring(digest), T.error)
 end
 return
 end
-
 o("=== File integrity (every system file vs the manifest) ===", T.title)
 o("Checking presence, syntax, and declared hashes...", T.dim)
 o("")
-
 local ok, err = pcall(K.verifySystem, function(t, c) o(t, c) end)
 if not ok then
 o("verify: " .. tostring(err), T.error)
@@ -99,15 +88,12 @@ o("This checks FILES. For runtime health (memory/power/services), run 'doctor'."
 o("It compares against the MANIFEST. To catch a file that changed since you", T.dim)
 o("knew the system was good — and to put it back — use 'srm scan' / 'srm repair'.", T.dim)
 end
-
 local PKG_MIN_KB = 1280
-
 local DISCOVERED_SAYS = {
-tofu    = "trusted keys, or a new key you approve; never unsigned.",
+tofu = "trusted keys, or a new key you approve; never unsigned.",
 trusted = "trusted keys only.",
-off     = "nothing; configured repos only.",
+off = "nothing; configured repos only.",
 }
-
 local function memoryHint(why, o, what)
 local s = tostring(why)
 if not (s:find("not enough memory", 1, true) or s:find("not enough free memory", 1, true)
@@ -130,7 +116,6 @@ memoryHint(line, o, "The package manager")
 return
 end
 local sub = args[1]
-
 --! A `--` word a verb does not know is refused, and nothing happens.
 --! They used to be dropped without a word, which is how
 --! --allow-unsigned -- named in the signature gate's own refusal --
@@ -157,7 +142,6 @@ i = i + 1
 end
 return false
 end
-
 if not sub or sub == "list" then
 local list = pkgMod.list()
 if #list == 0 then o("No packages installed.", T.dim); return end
@@ -168,7 +152,6 @@ m.name:sub(1, 24),
 (m.version or "?"):sub(1, 10),
 m.kind or "?"), T.fg)
 end
-
 elseif sub == "search" or sub == "available" then
 --! Search the CONFIGURED REPOS too, not just local disks. Without
 --! this, a machine with a working repo and an internet card
@@ -183,14 +166,12 @@ if #repos == 0 then
 o("No remote repos are configured — add one with:", T.dim)
 o("  pkg repo add <name> <https://host/path>", T.dim)
 else
-
 o(#repos .. " remote repo(s) configured but none answered.", T.dim)
 o("That usually means no internet card, or the host is", T.dim)
 o("unreachable. `pkg repo list` shows what is configured.", T.dim)
 end
 return
 end
-
 table.sort(list, function(a, b)
 if (a.category or "misc") ~= (b.category or "misc") then
 return (a.category or "misc") < (b.category or "misc")
@@ -212,7 +193,6 @@ o(string.format(" %-20s %-10s %s",
 (e.version or "?"):sub(1, 10),
 src), T.fg)
 end
-
 elseif sub == "trust" then
 local act = (args[2] or "list"):lower()
 if act == "list" then
@@ -237,7 +217,6 @@ pkgMod.trustRequired() and "REFUSED" or "allowed (admin gate only)"),
 pkgMod.trustRequired() and T.highlight or T.dim)
 o("From repos nobody configured: " .. DISCOVERED_SAYS[pkgMod.discoveredPolicy()]
 .. "  (pkg trust discovered)", T.dim)
-
 elseif act == "discovered" then
 local val = (args[3] or ""):lower()
 if val == "" then
@@ -255,7 +234,6 @@ end
 local ok2, err = pkgMod.trustDiscovered(val, { session = helpers.sessionOf(S) })
 if not ok2 then o("Refused: " .. tostring(err), T.error); return end
 o("From repos nobody configured: " .. DISCOVERED_SAYS[val], T.highlight)
-
 elseif act == "add" then
 if not (args[3] and args[4]) then
 o("Usage: pkg trust add <name> <64-hex-public-key>", T.dim)
@@ -275,14 +253,12 @@ if not ok2 then o("Refused: " .. tostring(err), T.error); return end
 o("Trusted '" .. args[3] .. "'.", T.highlight)
 o("Packages signed by this key will now install without a fresh", T.dim)
 o("judgement call. That is the point, and the cost.", T.dim)
-
 elseif act == "remove" or act == "rm" then
 if not args[3] then o("Usage: pkg trust remove <name>", T.dim); return end
 local ok2, err = pkgMod.trustRemove(args[3], { session = helpers.sessionOf(S) })
 if not ok2 then o("Refused: " .. tostring(err), T.error); return end
 o("Removed '" .. args[3] .. "'. Already-installed packages are", T.highlight)
 o("unaffected — this changes what will be accepted from now on.", T.dim)
-
 elseif act == "require" then
 local val = (args[3] or ""):lower()
 if val ~= "on" and val ~= "off" then
@@ -294,9 +270,7 @@ end
 local ok2, err = pkgMod.trustRequire(val == "on", { session = helpers.sessionOf(S) })
 if not ok2 then o("Refused: " .. tostring(err), T.error); return end
 o("Unsigned packages are now " .. (val == "on" and "REFUSED." or "allowed."), T.highlight)
-
 elseif act == "key" then
-
 if not args[3] then
 o("Usage: pkg trust key <publisher-label>", T.dim)
 o("Prints the public key you sign as under that label, and asks", T.dim)
@@ -306,7 +280,6 @@ o("passphrase under a different label is a different identity.", T.dim)
 return
 end
 if args[4] then
-
 o("Too many arguments. Only the publisher label goes here — the", T.error)
 o("passphrase is asked for separately, and must never be typed", T.dim)
 o("on the command line where it is echoed and recalled.", T.dim)
@@ -326,11 +299,9 @@ if okS and ps then
 o("fingerprint " .. ps.fingerprint(key), T.dim)
 o("signing as '" .. tostring(ps.normalizeLabel(args[3])) .. "'", T.dim)
 end
-
 else
 o("Usage: pkg trust [list|add|remove|require|key] ...", T.dim)
 end
-
 elseif sub == "verify-sig" or sub == "checksig" then
 if not args[2] then
 o("Usage: pkg verify-sig <directory>", T.dim)
@@ -347,7 +318,6 @@ o(line, verdict.state == "trusted" and T.highlight
 or (verdict.state == "invalid" and T.error or T.warning))
 end
 end
-
 elseif sub == "sign" then
 if not args[2] then
 o("Usage: pkg sign <directory> --as <publisher-name>", T.dim)
@@ -361,7 +331,6 @@ local signerName
 for i = 3, #args do
 if args[i] == "--as" then signerName = args[i + 1] end
 end
-
 if not signerName or signerName == "" then
 o("Usage: pkg sign <directory> --as <publisher-name>", T.error)
 o("--as is required: the label salts your signing key, so the same", T.dim)
@@ -369,7 +338,6 @@ o("passphrase under a different label is a different identity.", T.dim)
 o("Use the same label every time — it is part of who you are.", T.dim)
 return
 end
-
 if not promptInput then
 o("Signing needs an interactive prompt for the passphrase.", T.error)
 return
@@ -390,7 +358,6 @@ o("Signed. Wrote " .. tostring(sigPathOrErr), T.highlight)
 o("public key " .. key, T.fg)
 local okS2, ps2 = pcall(require, "kernel.pkgsign")
 if okS2 and ps2 then o("fingerprint " .. ps2.fingerprint(key), T.dim) end
-
 elseif sub == "repo" or sub == "repos" then
 local act = (args[2] or "list"):lower()
 if act == "list" then
@@ -408,7 +375,6 @@ end
 o("", T.dim)
 o("This list is the allowlist: what these serve installs like a disk.", T.dim)
 end
-
 local known = pkgMod.knownRepos()
 if #known > 0 then
 o("", T.dim)
@@ -446,9 +412,7 @@ else o(tostring(n), T.error) end
 else
 o("Usage: pkg repo [list|add <name> <url>|remove <name>|forget <n|url|all>]", T.dim)
 end
-
 elseif sub == "remote" then
-
 local inetOk = _G._TOS and _G._TOS.internet
 if inetOk and not inetOk.available() then
 o(inetOk.status().reason or "internet is not available", T.warning)
@@ -469,11 +433,9 @@ if e.description then o("   " .. tostring(e.description):sub(1, 60), T.dim) end
 end
 o("", T.dim)
 o("Install one with:  pkg fetch <name>", T.dim)
-
 elseif sub == "fetch" then
 if unknownOption({ ["--allow-unverified"] = true, ["--allow-unsigned"] = true },
 "--allow-unverified --allow-unsigned") then return end
-
 local name, allow, allowUnsigned = nil, false, false
 for i = 2, #args do
 local a = tostring(args[i])
@@ -487,7 +449,6 @@ o("Downloads from a configured repo, then installs it.", T.dim)
 return
 end
 o("Fetching '" .. name .. "'...", T.dim)
-
 --! #SEC The fingerprint goes IN the confirmation box: the panels shell
 --! draws a command's output only when it ends, so an o() line above the
 --! question was not on screen when the admin answered it.
@@ -530,7 +491,6 @@ o("  ...and what it requires: " .. table.concat(deps, ", "), T.highlight)
 end
 else
 o(tostring(res), T.error)
-
 if tostring(res):find("hash", 1, true)
 or tostring(res):find("unverified", 1, true) then
 o("", T.dim)
@@ -538,7 +498,6 @@ o("That repo ships no file hashes, so TOS cannot check what it", T.dim)
 o("sent. Re-run with --allow-unverified if you trust it.", T.dim)
 end
 end
-
 elseif sub == "outdated" or sub == "updates" then
 local list = pkgMod.outdated()
 if #list == 0 then
@@ -554,7 +513,6 @@ tostring(u.root or "?")), T.fg)
 end
 o("", T.dim)
 o("pkg upgrade <name>   or   pkg upgrade --all --yes", T.dim)
-
 elseif sub == "upgrade" then
 if unknownOption({ ["--all"] = true, ["--yes"] = true, ["--force"] = true,
 ["--dry-run"] = true, ["--dryrun"] = true,
@@ -563,7 +521,6 @@ if unknownOption({ ["--all"] = true, ["--yes"] = true, ["--force"] = true,
 return
 end
 local wantAll, assumeYes, force, dryRun = false, false, false, false
-
 local allowUnverified, allowUnsigned = false, false
 local names = {}
 for i = 2, #args do
@@ -576,12 +533,10 @@ elseif a == "--allow-unverified" then allowUnverified = true
 elseif a == "--allow-unsigned" then allowUnsigned = true
 elseif a:sub(1, 2) ~= "--" then names[#names + 1] = a end
 end
-
 local todo = {}
 if wantAll then
 for _, u in ipairs(pkgMod.outdated()) do todo[#todo + 1] = u end
 elseif #names > 0 then
-
 local avail = {}
 for _, u in ipairs(pkgMod.outdated()) do avail[u.name] = u end
 for _, n in ipairs(names) do
@@ -593,7 +548,6 @@ o("                   [--allow-unverified] [--allow-unsigned]", T.dim)
 o("       pkg outdated   shows what has a newer version available", T.dim)
 return
 end
-
 if #todo == 0 then
 o("Nothing to upgrade.", T.highlight); return
 end
@@ -605,7 +559,6 @@ end
 o("(--dry-run: nothing was changed)", T.dim)
 return
 end
-
 if wantAll and not assumeYes then
 o(string.format("--all would upgrade %d package(s):", #todo), T.warning)
 for _, u in ipairs(todo) do
@@ -614,7 +567,6 @@ end
 o("Add --yes to proceed.", T.dim)
 return
 end
-
 local okN, failN = 0, 0
 for _, u in ipairs(todo) do
 local ok2, res = pkgMod.upgrade(u.name,
@@ -641,7 +593,6 @@ if okN > 0 then
 o("Services keep their enabled/disabled state; restart them to run the", T.dim)
 o("new code ('service stop <svc>' then 'service start <svc>').", T.dim)
 end
-
 elseif sub == "info" then
 if not args[2] then o("Usage: pkg info <name>", T.dim); return end
 local m = pkgMod.info(args[2])
@@ -681,7 +632,6 @@ end
 if m.conflicts and #m.conflicts > 0 then
 o(" conflicts:   " .. table.concat(m.conflicts, ", "), T.warning)
 end
-
 if m.origin == "openos" then
 o(" origin:      OpenOS/OPPM package (runs on the compat layer)", T.warning)
 if m.capsFromCompat then
@@ -689,7 +639,6 @@ o("              declared no capabilities — granted: "
 .. table.concat(m.capabilities or {}, ", "), T.warning)
 end
 end
-
 do
 local st = m._sigState or "unsigned"
 if st == "trusted" then
@@ -709,16 +658,13 @@ and "NOT verified (installed with --allow-unverified)"
 or "all files matched their declared hashes"),
 m._unverified and T.warning or T.dim)
 end
-
 elseif sub == "install" or sub == "install-dir" or sub == "from-floppy" or sub == "fromfloppy" then
-
 --! --allow-unsigned is the other gate's override: with `pkg trust
 --! require on`, an unsigned (or untrusted-key) package is refused and
 --! the refusal says to use it. It used to be dropped here like any
 --! unknown `--` word, so following that advice got the same refusal
 --! again. Every mode below passes BOTH flags on, the picker and the
 --! media scan included. (test_pkg_flags.lua)
-
 if unknownOption({ ["--allow-unverified"] = true, ["--allow-unsigned"] = true,
 ["--force"] = true, ["--all"] = true, ["--yes"] = true,
 ["--dry-run"] = true, ["--dryrun"] = true, ["--key"] = "value",
@@ -728,7 +674,6 @@ if unknownOption({ ["--allow-unverified"] = true, ["--allow-unsigned"] = true,
 return
 end
 local allowUnverified, wantAll, assumeYes, dryRun = false, false, false, false
-
 local allowUnsigned, force = false, false
 local names = {}
 for i = 2, #args do
@@ -755,7 +700,6 @@ elseif not target then mode = "floppy"
 elseif looksLikePath(target) then mode = "dir"
 elseif #names > 1 then mode = "many"
 else mode = "name" end
-
 local function installList(list)
 if #list == 0 then o("Nothing to install.", T.dim); return end
 if dryRun then
@@ -822,7 +766,6 @@ end
 o(string.format("%d installed, %d failed.", okN, failN),
 failN > 0 and T.warning or T.highlight)
 end
-
 --! --dry-run was only ever read by installList, i.e. by --all and by
 --! several names. One name, a path, and the no-argument scan never
 --! looked at it, so `pkg install tetris --dry-run` installed tetris
@@ -844,9 +787,7 @@ for _, n in ipairs(list) do o("  " .. n, T.fg) end
 o("(--dry-run: nothing was changed)", T.dim)
 return
 end
-
 if mode == "all" then
-
 if not (assumeYes or dryRun) then
 o("--all installs EVERY package on every inserted disk and repo.", T.warning)
 o("Add --yes to confirm, or --dry-run to see the list first.", T.dim)
@@ -863,9 +804,7 @@ elseif mode == "many" then
 installList(names)
 return
 end
-
 if mode == "name" then
-
 local licenseKey
 for i = 3, #args do
 if args[i] == "--key" and args[i + 1] then licenseKey = args[i + 1] end
@@ -885,7 +824,6 @@ else
 o("Install failed: " .. tostring(summary), T.error)
 memoryHint(summary, o, "Installing packages")
 end
-
 elseif mode == "dir" then
 if not target then o("Usage: pkg install <dir>", T.dim); return end
 local ok2, info = pkgMod.install(target,
@@ -896,9 +834,7 @@ else
 o("Install failed: " .. tostring(info), T.error)
 memoryHint(info, o, "Installing packages")
 end
-
 else
-
 local forcePrompts = false
 for i = 2, #args do
 if args[i] == "--prompts" or args[i] == "--classic" then forcePrompts = true end
@@ -910,17 +846,14 @@ allowUnverified = allowUnverified, allowUnsigned = allowUnsigned,
 force = force })
 if okR then
 ranPicker = true
-
 if S.D and S.D.invalidate then pcall(S.D.invalidate) end
 if deps.drawAll then pcall(deps.drawAll) end
 elseif why then
-
 o("Menu installer unavailable (" .. tostring(why)
 .. ") — using prompts.", T.dim)
 end
 end
 if ranPicker then return end
-
 local ok2, summary = pkgMod.installFromFloppy({
 session = helpers.sessionOf(S),
 allowUnverified = allowUnverified,
@@ -981,24 +914,19 @@ else
 o("Media scan failed: " .. tostring(summary), T.error)
 end
 end
-
 elseif sub == "license-hash" then
-
 if not args[2] or not args[3] then
 o("Usage: pkg license-hash <package-name> <license-key>", T.dim); return
 end
 local h, lhErr = pkgMod.computeLicenseHash(args[2], args[3])
 if h then o(h, T.fg)
 else o("Error: " .. tostring(lhErr), T.error) end
-
 elseif sub == "uninstall" or sub == "remove" then
 if not args[2] then o("Usage: pkg uninstall <name>", T.dim); return end
 local ok2, info = pkgMod.uninstall(args[2], { session = helpers.sessionOf(S) })
 if ok2 then o("Uninstalled: " .. args[2], T.highlight)
 else o("Uninstall failed: " .. tostring(info), T.error) end
-
 elseif sub == "make-disk" or sub == "export-disk" then
-
 if not args[2] then
 o("Usage: pkg make-disk <mount> [name ...]", T.dim)
 o("  Builds an Optional Utilities disk from your INSTALLED add-ons so", T.dim)
@@ -1022,22 +950,17 @@ if #summary.problems > 0 then
 o("  Warnings:", T.warning)
 for _, p in ipairs(summary.problems) do o("   ! " .. p, T.warning) end
 end
-
 o("On the target machine, insert the disk and run 'pkg install'.", T.dim)
 else
 o("make-disk failed: " .. tostring(summary), T.error)
 end
-
 elseif sub == "enable" or sub == "disable" then
-
 if not args[2] then o("Usage: pkg " .. sub .. " <name>", T.dim); return end
 local on = (sub == "enable")
 local ok2, err = pkgMod.setEnabled(args[2], on, { session = helpers.sessionOf(S) })
 if ok2 then o((on and "Enabled: " or "Disabled: ") .. args[2], T.highlight)
 else o("Failed: " .. tostring(err), T.error) end
-
 elseif sub == "commands" then
-
 local cmds = pkgMod.commands()
 local names = {}
 for n in pairs(cmds) do names[#names + 1] = n end
@@ -1045,7 +968,6 @@ if #names == 0 then o("No commands provided by installed packages.", T.dim); ret
 table.sort(names)
 o("Commands provided by packages:", T.title)
 for _, n in ipairs(names) do o("  " .. n, T.fg) end
-
 else
 o("Usage: pkg [list | search | info <name> | install [name|dir] | uninstall <name>", T.dim)
 o("           | enable <name> | disable <name> | commands | make-disk <mnt>]", T.dim)
@@ -1054,7 +976,6 @@ o("           scans mounted media. Shortcuts: 'install <name>', 'uninstall <name
 o("  signing: trust [list|add|remove|require|key] · verify-sig <dir> · sign <dir>", T.dim)
 end
 end
-
 C.install = function(args, o)
 local a = { "install" }
 for i = 1, #(args or {}) do a[#a + 1] = args[i] end
@@ -1065,14 +986,12 @@ local a = { "uninstall" }
 for i = 1, #(args or {}) do a[#a + 1] = args[i] end
 return C.pkg(a, o)
 end
-
 C.backup = function(args, o)
 if not adminOnly(o) then return end
 local bmod = _G._TOS and _G._TOS.backup
 if not bmod then o("backup module unavailable", T.error); return end
 local sub = args[1]
 local sess = helpers.sessionOf(S)
-
 if sub == "snapshot" or sub == "create" then
 if not args[2] or not args[3] then
 o("Usage: backup snapshot <src> <dest.bak>", T.dim); return
@@ -1085,7 +1004,6 @@ o("  metaHash: " .. summary.hash:sub(1, 16) .. "...", T.dim)
 else
 o("Snapshot failed: " .. tostring(summary), T.error)
 end
-
 elseif sub == "inspect" then
 if not args[2] then o("Usage: backup inspect <file.bak>", T.dim); return end
 local info, err = bmod.inspect(args[2], { session = sess })
@@ -1096,7 +1014,6 @@ o(string.format(" entries:  %d", info.entries), T.fg)
 o(string.format(" root:     %s", info.root), T.fg)
 o(string.format(" metaHash: %s...", info.metaHash:sub(1, 24)), T.fg)
 o(string.format(" size:     %d bytes", info.size), T.fg)
-
 elseif sub == "restore" then
 if not args[2] then
 o("Usage: backup restore <file.bak> [destRoot] [--force]", T.dim); return
@@ -1115,7 +1032,6 @@ refreshBrowser()
 else
 o("Restore failed: " .. tostring(summary), T.error)
 end
-
 else
 o("Usage: backup [snapshot|inspect|restore] ...", T.dim)
 o("  backup snapshot <src> <dest.bak>", T.dim)
@@ -1123,31 +1039,26 @@ o("  backup inspect  <file.bak>", T.dim)
 o("  backup restore  <file.bak> [destRoot] [--force]", T.dim)
 end
 end
-
 C.kiosk = function(args, o)
 if not adminOnly(o) then return end
 local okK, kioskMod = helpers.requireRoomy(S, "shell.kiosk", "admin")
 if not okK or not kioskMod then o(helpers.loadFailure("kiosk", kioskMod), T.error); return end
 o("Kiosk = the LOCKED, guest-facing menu (allow-list + read-only).", T.title)
-
 o("To test: log out, log in as the 'kiosk' user.", T.dim)
 o("Config: /etc/kiosk.cfg", T.dim)
 o("", T.fg)
-
 o("Looking for the OPERATOR menu? Run 'desktop': the same kind of", T.highlight)
 o("clickable menu, but it runs real commands at YOUR tier (no allow-list).", T.dim)
 end
-
 C.doctor = function(args, o)
 local okD, diagMod = helpers.requireRoomy(S, "kernel.diag", "admin")
 if not okD or not diagMod then o(helpers.loadFailure("doctor", diagMod), T.error); return end
 local severityColor = {
-ok   = T.highlight or T.fg,
-info = T.dim       or T.fg,
-warn = T.warning   or T.fg,
-err  = T.error     or T.fg,
+ok = T.highlight or T.fg,
+info = T.dim or T.fg,
+warn = T.warning or T.fg,
+err = T.error or T.fg,
 }
-
 local only = args[1]
 o("=== TOS doctor \226\128\148 runtime health ===", T.title)
 local counts = diagMod.run(function(line, sev)
@@ -1165,15 +1076,14 @@ o("This checks RUNTIME health. For a full file-integrity check, run 'verify'.", 
 o("'srm' runs both, plus the known-good baseline check.", T.dim)
 end
 C.diag = C.doctor
-
 C.srm = function(args, o)
 local okS, srmMod = helpers.requireRoomy(S, "kernel.srm", "admin")
 if not okS or not srmMod then o(helpers.loadFailure("srm", srmMod), T.error); return end
 local SEV = {
-ok   = T.highlight or T.fg,
-info = T.dim       or T.fg,
-warn = T.warning   or T.fg,
-err  = T.error     or T.fg,
+ok = T.highlight or T.fg,
+info = T.dim or T.fg,
+warn = T.warning or T.fg,
+err = T.error or T.fg,
 }
 local function show(rep)
 for _, f in ipairs(rep.findings) do o(f.text, SEV[f.sev] or T.fg) end
@@ -1187,34 +1097,26 @@ c.ok, c.info, c.warn, c.err,
 (rep.fixed or 0) > 0 and ("  |  " .. rep.fixed .. " fixed") or ""),
 SEV[srmMod.worst(rep)] or T.fg)
 end
-
 local sub, flags, rest = srmMod.parseArgs(args)
 if flags.source == true then
 o("--source needs a mount point, e.g. --source /mnt/floppy", T.error); return
 end
-
 if sub == "status" then
 o("=== SRM \226\128\148 System Repair & Maintenance ===", T.title)
 totals(show(srmMod.status()))
 o("", T.dim)
 o("scan = compare files to the baseline   health = runtime   verify = manifest", T.dim)
 o("repair = fix what is safe             baseline = record a known-good system", T.dim)
-
 elseif sub == "health" then
-
 return C.doctor(rest, o)
-
 elseif sub == "verify" then
 return C.verify(rest, o)
-
 elseif sub == "scan" then
 o("=== SRM scan \226\128\148 files vs the known-good baseline ===", T.title)
 o("Hashing every baselined file; this takes a moment.", T.dim)
 totals(show(srmMod.scan()))
-
 elseif sub == "baseline" then
 if not adminOnly(o) then return end
-
 o("Recording what THIS system looks like right now as the known-good", T.title)
 o("baseline. Only do that on a system you trust — a fresh install, or", T.dim)
 o("one that just passed 'srm verify'. Anything already wrong becomes", T.dim)
@@ -1245,7 +1147,6 @@ end
 for _, p in ipairs(sum.missing) do
 o("  MISSING at capture time: " .. p, T.warning)
 end
-
 elseif sub == "restore" then
 if not adminOnly(o) then return end
 o("=== SRM restore ===", T.title)
@@ -1254,9 +1155,7 @@ source = type(flags.source) == "string" and flags.source or nil,
 unverified = flags.unverified and true or false,
 paths = #rest > 0 and rest or nil,
 })))
-
 elseif sub == "repair" and flags.online then
-
 if not adminOnly(o) then return end
 if flags.apply and not rootOnly(o) then return end
 if flags.ref == true then
@@ -1274,7 +1173,6 @@ o("", T.dim)
 o(string.format("%d repaired, %d rejected.", rep.fixed, rep.rejected),
 rep.ok and SEV.ok or SEV.warn)
 end
-
 elseif sub == "repair" then
 if not adminOnly(o) then return end
 o("=== SRM repair ===", T.title)
@@ -1292,19 +1190,16 @@ unverified = flags.unverified and true or false,
 o("", T.dim)
 o("Some fixes only apply at boot: 'bootsettings repair on' runs this", T.dim)
 o("pass before anything reads the files it repairs.", T.dim)
-
 elseif sub == "full" then
-
 o("=== SRM full report ===", T.title)
 o("", T.dim)
-o("-- status --", T.title);  show(srmMod.status())
+o("-- status --", T.title); show(srmMod.status())
 o("", T.dim)
-o("-- health --", T.title);  C.doctor({}, o)
+o("-- health --", T.title); C.doctor({}, o)
 o("", T.dim)
 o("-- integrity --", T.title); C.verify({}, o)
 o("", T.dim)
 o("-- baseline --", T.title); totals(show(srmMod.scan()))
-
 else
 o("Usage: srm [status|scan|health|verify|repair|baseline|restore|full]", T.title)
 o("  srm                      what SRM knows right now (instant)", T.dim)
@@ -1323,7 +1218,6 @@ o("faults that stop a boot; this one catches everything the EEPROM has", T.dim)
 o("no room for. 'srm status' reports what the EEPROM half saw.", T.dim)
 end
 end
-
 C.bootsettings = function(args, o)
 if not adminOnly(o) then return end
 local okC, bootcfg = pcall(require, "kernel.bootcfg")
@@ -1332,7 +1226,6 @@ local fsMod = _G._TOS and _G._TOS.fs
 if not fsMod then o("fs unavailable", T.error); return end
 local cfg = bootcfg.load(fsMod)
 local sub = (args[1] or ""):lower()
-
 if sub == "" or sub == "show" then
 o("=== Boot Settings (/etc/boot.cfg) ===", T.title)
 o("  profile    : " .. cfg.profile
@@ -1370,7 +1263,6 @@ end
 end
 return
 end
-
 local val = (args[2] or ""):lower()
 local changed = false
 if sub == "profile" then
@@ -1431,13 +1323,11 @@ if ok then o("Saved. Applies on next boot (reboot to apply now).", T.highlight)
 else o("Save failed: " .. tostring(err), T.error) end
 end
 end
-
 local function bootcfgIO()
 local okC, bootcfg = pcall(require, "kernel.bootcfg")
 local fsMod = _G._TOS and _G._TOS.fs
 if okC and bootcfg and fsMod then return bootcfg, fsMod end
 end
-
 --! `swap` IS A COMMAND AGAIN.
 --!
 --! v1.4.0 folded it into `optimize swap` to shrink the command list.
@@ -1451,9 +1341,7 @@ end
 --! ONE implementation, called from both names. Two copies of a
 --! toggle that writes boot.cfg is how the two names drift apart.
 local function doSwap(val, o)
-
 local sw = K.getSwap and K.getSwap()
-
 if val == "now" then
 local okT, tabsMod = pcall(require, "shell.panels.tabs")
 if not okT or not tabsMod.sweepCold then
@@ -1471,7 +1359,6 @@ if val == "" or val == "status" or val == "keys" or val == "clear" then
 if not sw then o("Swap not available", T.error); return end
 if val == "clear" then
 if not adminOnly(o) then return end
-
 local okT, tabsMod = pcall(require, "shell.panels.tabs")
 if okT and tabsMod.isPaged then
 for _, tb in ipairs(S.tabs or {}) do
@@ -1493,7 +1380,6 @@ local keys = sw.keys()
 if #keys == 0 then o("(no keys)", T.dim)
 else for _, k in ipairs(keys) do o("  " .. k, T.dim) end end
 end
-
 do
 local okT, tabsMod = pcall(require, "shell.panels.tabs")
 if okT and tabsMod.pagedStats then
@@ -1517,7 +1403,6 @@ o("'swap now' pages cold tabs immediately (ignores pressure).", T.dim)
 o("Paging spends disk writes to save RAM — see 'optimize power'.", T.dim)
 return
 end
-
 if not adminOnly(o) then return end
 local bootcfg, fsMod = bootcfgIO()
 if not bootcfg then o("bootcfg/fs unavailable", T.error); return end
@@ -1531,7 +1416,6 @@ local ok, err = bootcfg.save(fsMod, cfg)
 if ok then o("Disk swap set " .. val .. ". Applies on next boot.", T.highlight)
 else o("Save failed: " .. tostring(err), T.error) end
 end
-
 --! POWER CONSERVATION — a real umbrella, or none at all.
 --!
 --! The operator asked for `optimize` to mean more than swap, and named
@@ -1563,17 +1447,14 @@ return
 end
 local okSc2, screenMod2 = pcall(require, "kernel.screen")
 local cfg = K.getConfig and K.getConfig()
-
 if val == "" or val == "show" or val == "status" then
 local prof = powerMod.profile()
 o("=== Power ===", T.title)
-
 local okE, e, emax = pcall(powerMod.energy)
 if okE and type(e) == "number" and type(emax) == "number" and emax > 0 then
 local pct = math.floor(e * 100 / emax + 0.5)
 o(string.format("  Stored     %d / %d  (%d%%)", math.floor(e), math.floor(emax), pct),
 pct < 25 and T.warning or T.fg)
-
 local last = S._pwrSample
 local dt = last and last.t and (K.uptime() - last.t) or 0
 if dt >= 1 then
@@ -1587,7 +1468,6 @@ end
 elseif rate < -0.05 then
 o(string.format("  Draw       charging (+%.1f/s)", -rate), T.highlight)
 else
-
 o(string.format("  Draw       level over the last %ds — supply is keeping up",
 math.floor(dt)), T.fg)
 end
@@ -1615,7 +1495,6 @@ o("optimize power blank <secs|off>      screen blank timeout", T.dim)
 o("optimize power idle <secs>           idle repaint cadence", T.dim)
 return
 end
-
 if val == "blank" or val == "idle" then
 if not adminOnly(o) then return end
 local n = (arg3 == "off" or arg3 == "never") and 0 or tonumber(arg3)
@@ -1627,11 +1506,9 @@ or "Screen blanking off.", T.highlight)
 else
 o("Idle repaint every " .. set .. "s.", T.highlight)
 end
-
 o("Profile is now custom (a named profile resets both knobs).", T.dim)
 return
 end
-
 if not adminOnly(o) then return end
 local key, err = powerMod.applyProfile(val)
 if not key then
@@ -1640,7 +1517,6 @@ o("Profiles: " .. table.concat(powerMod.PROFILE_ORDER, ", "), T.dim)
 return
 end
 local p = powerMod.PROFILES[key]
-
 if okSc2 and screenMod2.setBuffer then pcall(screenMod2.setBuffer, p.buffer) end
 if cfg and cfg.set then
 cfg.set("powerProfile", key)
@@ -1652,17 +1528,13 @@ o(string.format("  idle repaint %ds · screen blank %s · display buffer %s",
 p.idleSec, p.blankSec > 0 and (p.blankSec .. "s") or "never", p.buffer), T.dim)
 o("Applies now, on every seat, and persists across reboots.", T.dim)
 end
-
 C.swap = function(args, o) return doSwap((args[1] or ""):lower(), o) end
-
 C.optimize = function(args, o)
 local sub = (args[1] or ""):lower()
 local val = (args[2] or ""):lower()
 local okSc, screenMod = pcall(require, "kernel.screen")
-
 if sub == "" or sub == "show" or sub == "status" then
 o("=== Optimizations ===", T.title)
-
 local swapFlag = "auto (profile)"
 local bootcfg, fsMod = bootcfgIO()
 if bootcfg and fsMod then
@@ -1680,11 +1552,9 @@ end
 o(string.format("  Disk swap      %-14s [%s]", swapFlag, swapLive),
 sw and T.fg or T.dim)
 o("    extends usable memory onto /var/swap (boot feature)", T.dim)
-
 local mode = (okSc and screenMod.bufferMode and screenMod.bufferMode()) or "?"
 o(string.format("  Display buffer %-14s", mode), T.fg)
 o("    skips GPU writes for unchanged cells (auto = memory-gated)", T.dim)
-
 if okSc and screenMod.bufferStats then
 local st = screenMod.bufferStats()
 if st.total > 0 then
@@ -1695,7 +1565,6 @@ else
 o("    (no draws measured yet)", T.dim)
 end
 end
-
 do
 local okPw, pw = pcall(require, "kernel.power")
 if okPw and type(pw) == "table" and pw.profile then
@@ -1714,16 +1583,12 @@ o("optimize power  <off|balanced|save>       conservation profile", T.dim)
 o("optimize buffer <on|off|auto>             display; applies immediately", T.dim)
 return
 end
-
 if sub == "swap" then
-
 return doSwap(val, o)
 end
-
 if sub == "power" then
 return doPower(val, (args[3] or ""):lower(), o)
 end
-
 if sub == "buffer" or sub == "display" then
 if not adminOnly(o) then return end
 if not (okSc and screenMod.setBuffer) then
@@ -1734,12 +1599,10 @@ if ok then o("Display buffer set " .. val .. " (applied now).", T.highlight)
 else o(tostring(err) or "invalid", T.error) end
 return
 end
-
 o("Usage: optimize [show | power <off|balanced|save> | buffer <on|off|auto>"
 .. " | swap <on|off|auto>]", T.dim)
 o("       `swap` on its own is the same as `optimize swap`.", T.dim)
 end
-
 C.programs = function(args, o)
 local dirs = { "/bin", "/usr/bin", "/home/" .. S.who }
 o("Executables:", T.title)
@@ -1766,18 +1629,13 @@ C.log = function(args, o)
 if not adminOnly(o) then return end
 local logMod = K.getLog()
 if not logMod then o("Logger unavailable", T.error); return end
-
 local wantsFile = (args[1] == nil) or (args[1] == "file") or (args[1] == "f")
 or (args[1] == "all") or (tonumber(args[1]) ~= nil)
 if wantsFile then
 local logPath = "/var/log/kernel.log"
-
 local n = tonumber(args[1]) or tonumber(args[2])
-
 pcall(logMod.flush)
-
 if not F.exists(logPath) then
-
 o("No /var/log/kernel.log yet — showing in-memory ring.", T.dim)
 local entries = logMod.recent(n or 20)
 if #entries == 0 then o("(log is empty)", T.dim); return end
@@ -1792,7 +1650,6 @@ end
 openViewTab(buf, "log (ring)")
 return
 end
-
 local content = F.readFile(logPath)
 if not content then o("Cannot read " .. logPath, T.error); return end
 local lines = {}
@@ -1801,13 +1658,11 @@ if line ~= "" then lines[#lines + 1] = line end
 end
 local first = (n and n > 0 and #lines - n + 1) or 1
 if first < 1 then first = 1 end
-
 local buf = {}
 buf[#buf + 1] = { " /var/log/kernel.log  (" .. #lines .. " lines)", T.title }
 for i = first, #lines do
 local line = lines[i]
 local color = T.fg
-
 if line:find("%[FTL%]") or line:find("%[ERR%]") then color = T.error
 elseif line:find("%[WRN%]") then color = T.warning
 elseif line:find("%[DBG%]") then color = T.dim end
@@ -1816,9 +1671,7 @@ end
 openViewTab(buf, "kernel.log")
 return
 end
-
 if args[1] == "filter" then
-
 local src, lvl = args[2], args[3]
 if not src then
 local names = { [0] = "DEBUG", "INFO", "WARN", "ERROR" }
@@ -1843,16 +1696,12 @@ o("Usage: log filter <source> <debug|info|warn|error|off>", T.dim)
 end
 return
 end
-
 if args[1] == "clear" then
-
 pcall(logMod.flush)
-
 logMod.info("log", "--- ring cleared on operator request ---")
 o("Ring marker recorded; old entries still on disk.", T.dim)
 return
 end
-
 if args[1] == "ring" or args[1] == "r" or args[1] == "tail" then
 local count = tonumber(args[2]) or 20
 local entries = logMod.recent(count)
@@ -1867,13 +1716,11 @@ end
 o(#entries .. " ring entries (use 'log' for full on-disk history)", T.dim)
 return
 end
-
 o("Usage: log [N] | log ring [N] | log clear | log filter ...", T.dim)
 o("  log        Open the full on-disk log (last N lines if given)", T.dim)
 o("  log ring   Quick peek at the in-memory ring", T.dim)
 end
 C.bg = function(args, o)
-
 if not adminOnly(o) then return end
 if not args[1] then
 o("Usage: bg <script.lua> [args...]", T.dim)
@@ -1888,21 +1735,18 @@ if not fn2 then o("Compile error: " .. tostring(err2), T.error); return end
 local runArgs = {}
 for i = 2, #args do runArgs[#runArgs+1] = args[i] end
 local name = args[1]:match("[^/]+$") or args[1]
-
 local bgTab = deps.createTab("output", "bg:" .. name, {
 content = { "Background task: " .. name, "PID: (starting...)", "" },
 offset = 0,
 pid = nil,
 })
 local tabIdx = #deps.tabs
-
 local BG_MAX_LINES = 500
 local function bgPrint(...)
 local parts = {}
 for i2 = 1, select("#", ...) do parts[#parts+1] = tostring(select(i2, ...)) end
 local line = table.concat(parts, "\t")
 bgTab.content[#bgTab.content + 1] = line
-
 if #bgTab.content > BG_MAX_LINES then
 local trim = #bgTab.content - BG_MAX_LINES
 for i2 = 1, BG_MAX_LINES do
@@ -1913,17 +1757,14 @@ bgTab.content[i2] = nil
 end
 bgTab.offset = math.max(0, bgTab.offset - trim)
 end
-
 local viewH2 = H - 3
 if bgTab.offset >= #bgTab.content - viewH2 - 2 then
 bgTab.offset = math.max(0, #bgTab.content - viewH2)
 end
 end
 local pid = P.spawn("bg:" .. name, function()
-
 local taskEnv = makeProgramEnv{ name = args[1], stdout = bgPrint }
 local taskFn = load(data, "=" .. args[1], "t", taskEnv)
-
 data = nil
 if taskFn then
 local tok, terr = pcall(taskFn, table.unpack(runArgs))
@@ -1932,8 +1773,8 @@ end
 bgPrint("", "--- Task finished ---")
 end, {
 priority = 8,
-source   = "user",
-tsr      = true,
+source = "user",
+tsr = true,
 })
 bgTab.pid = pid
 bgTab.content[2] = "PID: " .. pid
@@ -1942,9 +1783,7 @@ local okH, home = pcall(require, "shell.panels.home")
 local cyc = (okH and home) and home.cycleKeyLabel(S) or "F2"
 o("Switch to its tab with " .. cyc .. ", or use 'kill " .. pid .. "' to stop.", T.dim)
 end
-
 C.run = function(args, o)
-
 if not adminOnly(o) then return end
 if not args[1] then o("Usage: run <file.lua>", T.dim); return end
 local path = rp(args[1])
@@ -1958,11 +1797,8 @@ for i = 2, #args do runArgs[#runArgs+1] = args[i] end
 local ok2, result = pcall(fn2, table.unpack(runArgs))
 helpers.reportProgramEnd(S, o, ok2, result, "Runtime error: ", runEnv)
 end
-
 C.lua = function(args, o)
-
 if not rootOnly(o) then return end
-
 pcall(function()
 local logMod = require("kernel.log")
 if logMod and logMod.info then
@@ -1975,8 +1811,8 @@ D.fill(1, 1, W, 1, " ", T.bar_fg, T.bar_bg)
 D.set(1, 1, " Lua REPL  type 'exit' to quit", T.bar_fg, T.bar_bg)
 D.set(1, 1, " Lua REPL  'exit' to quit | blank line runs/cancels a block",
 T.bar_fg, T.bar_bg)
-local row   = 2
-local hist  = {}
+local row = 2
+local hist = {}
 local function reout(text, color)
 if row > H - 1 then
 local gpu2 = D.getGpu()
@@ -1987,7 +1823,6 @@ end
 D.set(1, row, tostring(text):sub(1,W), color or T.fg, T.bg)
 row = row + 1
 end
-
 local function isIncomplete(err)
 return type(err) == "string" and err:find("<eof>", 1, true) ~= nil
 end
@@ -2002,7 +1837,7 @@ local cont = #chunkLines > 0
 local prompt = cont and ">> " or "> "
 D.fill(1, row, W, 1, " ", T.fg, T.bg)
 D.set(1, row, prompt, T.highlight, T.bg)
-local buf  = ""
+local buf = ""
 local hidx2 = #hist + 1
 local px = #prompt + 1
 while true do
@@ -2018,39 +1853,29 @@ if hidx2 < #hist then hidx2 = hidx2 + 1 buf = hist[hidx2] or ""
 else hidx2 = #hist + 1 buf = "" end
 elseif ch2 and ch2 >= 32 and ch2 < 127 then buf = buf .. string.char(ch2) end
 elseif sig == "clipboard" and type(ch2) == "string" then
-
 buf = buf .. ch2:gsub("\r", "")
 local nl = buf:find("\n", 1, true)
 if nl then
-
 buf = buf:gsub("\n", " ")
 end
 end
 end
 row = row + 1
-
 if (buf == "exit" or buf == "quit") and not cont then break end
-
 if buf == "" and not cont then
-
 elseif buf == "" and cont then
-
 chunkLines = {}
 reout("(cancelled)", T.dim)
 else
 chunkLines[#chunkLines + 1] = buf
 local src = table.concat(chunkLines, "\n")
-
 local fnTry, errExpr = load("return " .. src, "=repl", "t")
 if not fnTry then fnTry, errExpr = load(src, "=repl", "t") end
 if not fnTry and isIncomplete(errExpr) then
-
 goto repl_continue
 end
-
 chunkLines = {}
 hist[#hist+1] = src
-
 pcall(function()
 local logMod = require("kernel.log")
 if logMod and logMod.info then
@@ -2063,14 +1888,12 @@ name = "repl",
 caps = {
 ["fs.read"]=true, ["fs.write"]=true, ["compat.io"]=true,
 ["component"]=true, ["load"]=true, ["net"]=true,
-
 ["peripheral.modem"]=true, ["peripheral.redstone"]=true,
 ["peripheral.robot"]=true, ["peripheral.inventory"]=true,
 ["peripheral.tape"]=true,
 },
 stdout = function(line) reout(line, T.fg) end,
 }
-
 local fn3, err3 = load("return " .. src, "=repl", "t", replEnv)
 if not fn3 then fn3, err3 = load(src, "=repl", "t", replEnv) end
 if fn3 then
@@ -2082,7 +1905,6 @@ else reout("Error: " .. tostring(err3), T.error) end
 end
 ::repl_continue::
 end
-
 pcall(function()
 local logMod = require("kernel.log")
 if logMod and logMod.info then
@@ -2091,15 +1913,12 @@ tostring(S.who or "?"), computer.uptime() - replOpenedAt, #hist))
 end
 end)
 end
-
 C.edit = function(args, o)
-
 if not adminOnly(o) then return end
 if not args[1] then o("Usage: edit <file>", T.dim); return end
 local path = rp(args[1])
 openEditTab(path)
 end
-
 --! The protected-path set is defence-in-depth against a TAMPERED admin
 --! session. It was also an absolute wall for the machine's owner:
 --! creating a file in /etc, clearing OpenOS's man pages out of
@@ -2131,7 +1950,6 @@ return
 end
 local state = sfs.operatorOverride and sfs.operatorOverride(sess)
 local verb = (args[1] or ""):lower()
-
 if verb == "" or verb == "status" then
 o("Protected-path guards are " ..
 (state and "STOOD DOWN for this session." or "active."),
@@ -2147,7 +1965,6 @@ o("  protect off    stand the guards down for this session", T.dim)
 o("  protect on     put them back", T.dim)
 return
 end
-
 if verb == "off" then
 if state then o("Already stood down for this session.", T.dim); return end
 local ok2, err = sfs.setOperatorOverride(sess, true)
@@ -2166,7 +1983,6 @@ else
 o("Usage: protect [status|off|on]", T.dim)
 end
 end
-
 --! Installing TOS over OpenOS leaves OpenOS behind: /bin, /boot and
 --! /lib are untouched by the TOS installer (measured — TOS installs
 --! 152 files and NONE of them land there), and after the compat-shim
@@ -2181,15 +1997,12 @@ end
 --! machine where OpenOS is still the operating system.
 C.reclaim = function(args, o)
 if not rootOnly(o) then return end
-
 local apply = false
 for _, a in ipairs(args or {}) do
 if a == "--apply" then apply = true end
 end
-
 local okF, kfs = pcall(require, "kernel.fs")
 if not okF or not kfs then o("Filesystem unavailable.", T.error); return end
-
 --! The safety interlock. If /init.lua is not TOS's, this machine
 --! boots OpenOS and its files are not leftovers -- they are the
 --! operating system. Checked by content, not by asking politely.
@@ -2205,7 +2018,6 @@ o("Those files are the operating system here, not leftovers.", T.dim)
 o("Refusing.", T.dim)
 return
 end
-
 --! Identical to install.lua's OPENOS_ONLY_TREES on purpose --
 --! test_reclaim.lua fails if they diverge. Nothing under /home is
 --! touched: .shrc is OpenOS's, but it sits in user data and a
@@ -2226,7 +2038,6 @@ if kfs.exists(PRE_TOS) then EXTRA[#EXTRA + 1] = PRE_TOS end
 break
 end
 end
-
 local function walk(path, acc)
 if not kfs.exists(path) then return end
 if kfs.isDirectory(path) then
@@ -2239,7 +2050,6 @@ acc.files[#acc.files + 1] = path
 acc.bytes = acc.bytes + (kfs.size(path) or 0)
 end
 end
-
 local acc = { files = {}, dirs = {}, bytes = 0 }
 for _, t in ipairs(TREES) do walk(t, acc) end
 for _, f in ipairs(EXTRA) do
@@ -2248,12 +2058,10 @@ acc.files[#acc.files + 1] = f
 acc.bytes = acc.bytes + (kfs.size(f) or 0)
 end
 end
-
 if #acc.files == 0 and #acc.dirs == 0 then
 o("Nothing to reclaim — no OpenOS leftovers found.", T.highlight)
 return
 end
-
 local kb = math.floor(acc.bytes / 1024 + 0.5)
 o(string.format("OpenOS leftovers: %d file(s) in %d director(ies), ~%d KB",
 #acc.files, #acc.dirs, kb), T.title)
@@ -2274,14 +2082,12 @@ end
 o("", T.dim)
 o("Removing /bin also changes what an unknown command does: today", T.dim)
 o("it may run OpenOS's version, afterwards you get 'not a command'.", T.dim)
-
 if not apply then
 o("", T.dim)
 o("Dry run. Nothing was removed.", T.highlight)
 o("Run it for real with:  reclaim --apply", T.dim)
 return
 end
-
 --! --apply is a FLAG, and a flag is not consent -- it is something
 --! copied out of the help text. Ask, in a box, with the safe answer
 --! first and focused, so the reflex press cancels.
@@ -2295,7 +2101,6 @@ string.format("Permanently delete %d OpenOS file(s), ~%d KB?\n\n" ..
 yes = "Delete", no = "Cancel" })
 if not okGo then o("Cancelled. Nothing was removed.", T.highlight); return end
 end
-
 o("", T.dim)
 o("Removing...", T.warning)
 local removed, failedN, freed = 0, 0, 0
@@ -2304,9 +2109,7 @@ local sz = kfs.size(f) or 0
 if kfs.remove(f) then removed = removed + 1; freed = freed + sz
 else failedN = failedN + 1 end
 end
-
 for _, d in ipairs(acc.dirs) do pcall(kfs.remove, d) end
-
 o(string.format("Removed %d file(s), ~%d KB reclaimed.",
 removed, math.floor(freed / 1024 + 0.5)), T.highlight)
 if failedN > 0 then
@@ -2314,10 +2117,8 @@ o(failedN .. " file(s) could not be removed.", T.warning)
 end
 o("Reboot when convenient; nothing running depends on them.", T.dim)
 end
-
 C.flash = function(args, o)
 if not rootOnly(o) then return end
-
 local file, wantData = nil, false
 for _, a in ipairs(args) do
 if a == "--data" then wantData = true
@@ -2335,7 +2136,6 @@ local eepromAddr = nil
 for addr in component.list("eeprom") do eepromAddr = addr; break end
 if not eepromAddr then
 o("No EEPROM detected. Insert EEPROM, or press Ctrl+C to abort...", T.warning)
-
 local deadline = computer.uptime() + 60
 while not eepromAddr and computer.uptime() < deadline do
 local sig, addr, compType = deps.pullSignal(1)
@@ -2352,7 +2152,6 @@ o("EEPROM detected.", T.highlight)
 end
 local eeprom = component.proxy(eepromAddr)
 local maxSize = eeprom.getSize()
-
 local sz = F.size and F.size(path)
 if type(sz) == "number" and sz > maxSize then
 o(string.format("File too large: %d bytes (EEPROM max: %d)", sz, maxSize), T.error)
@@ -2364,7 +2163,6 @@ if #data > maxSize then
 o(string.format("File too large: %d bytes (EEPROM max: %d)", #data, maxSize), T.error)
 return
 end
-
 local chk, cerr = load(data, "=flash-verify", "t", {})
 if not chk then
 o("Refusing to flash: file does not parse as Lua text.", T.error)
@@ -2376,7 +2174,6 @@ data:find("getBootAddress", 1, true) or
 data:find("setBootAddress", 1, true) or
 (data:find("component.list", 1, true) and data:find("init.lua", 1, true))
 if not looksLikeBios then
-
 local forced
 if confirmTyped then
 forced = confirmTyped(
@@ -2390,7 +2187,6 @@ forced = confirmTyped(
 { title = "Not a BIOS", severity = "danger",
 yes = "Flash anyway", no = "Cancel" })
 else
-
 forced = (promptInput and
 promptInput("Doesn't look like a BIOS — type 'force' to flash anyway: ", 16)) == "force"
 end
@@ -2399,7 +2195,6 @@ o("Aborted (safety check).", T.dim)
 return
 end
 end
-
 local newData = nil
 if wantData then
 if looksLikeBios then
@@ -2423,15 +2218,12 @@ return
 end
 newData = first
 end
-
 local elabel = eeprom.getLabel and eeprom.getLabel() or "(no label)"
-
 local curBoot = "(unknown)"
 do
 local okB, b = pcall(computer.getBootAddress)
 if okB and b then curBoot = b:sub(1, 8) .. "..." end
 end
-
 local fingerprint = nil
 do
 local okC, cryptoMod = pcall(require, "kernel.crypto")
@@ -2451,7 +2243,6 @@ o(string.format("  Boot   : %s", curBoot), T.dim)
 if newData then
 o(string.format("  Data   : %d bytes, as typed (not shown)", #newData), T.dim)
 end
-
 local confirmed
 if confirmTyped then
 confirmed = confirmTyped(
@@ -2462,11 +2253,9 @@ confirmed = confirmTyped(
 { title = "Flash EEPROM", severity = "danger",
 yes = "Flash", no = "Cancel" })
 else
-
 confirmed = (promptInput and promptInput('Type "flash" to confirm: ', 16)) == "flash"
 end
 if confirmed then
-
 local setOk, setErr = pcall(eeprom.set, data)
 if not setOk then
 o("Flash failed: " .. tostring(setErr), T.error)
@@ -2506,13 +2295,11 @@ ustat),
 u.locked and T.error or T.dim)
 end
 end
-
 local function currentActor()
 if not U then return "root" end
 local s = U.getSession(st)
 return (s and s.user) or "root"
 end
-
 C.useradd = function(args, o)
 if not rootOnly(o) then return end
 if not U then o("No user system", T.error); return end
@@ -2524,9 +2311,8 @@ local pass2 = promptInput("Confirm password: ", 64, true)
 if pass2 ~= pass then o("Passwords do not match.", T.error); return end
 local ok2, err2 = U.create(currentActor(), name, pass, 1)
 if ok2 then S.lastOut = { "User '" .. name .. "' created.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 end
-
 C.userdel = function(args, o)
 if not rootOnly(o) then return end
 if not U then o("No user system", T.error); return end
@@ -2550,9 +2336,8 @@ end
 if not okDel then o("Aborted.", T.dim); return end
 local ok2, err2 = U.delete(currentActor(), name)
 if ok2 then S.lastOut = { "User '" .. name .. "' deleted.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 end
-
 C.usermod = function(args, o)
 if not rootOnly(o) then return end
 if not U then o("No user system", T.error); return end
@@ -2566,23 +2351,21 @@ if action == "lock" then
 if U.setLocked then ok2, err2 = U.setLocked(actor, name, true)
 else ok2, err2 = false, "setLocked unavailable" end
 if ok2 then S.lastOut = { "'" .. name .. "' locked.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 elseif action == "unlock" then
 if U.setLocked then ok2, err2 = U.setLocked(actor, name, false)
 else ok2, err2 = false, "setLocked unavailable" end
 if ok2 then S.lastOut = { "'" .. name .. "' unlocked.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 elseif action == "admin" then
-
 if name:lower() == "computer" then
 o("Failure. Did you mean 'usermod computer root'?", T.error); return
 end
 if U.setTier then ok2, err2 = U.setTier(actor, name, 2)
 else ok2, err2 = false, "setTier unavailable" end
 if ok2 then S.lastOut = { "'" .. name .. "' promoted to admin.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 elseif action == "root" then
-
 if name:lower() == "computer" and S.D
 and not (_G._TOS and _G._TOS._takeoverFired) then
 _G._TOS = _G._TOS or {}
@@ -2600,16 +2383,15 @@ S.lastOut = { "Access control updated.", T.dim }
 return
 end
 end
-
 if U.setTier then ok2, err2 = U.setTier(actor, name, 3)
 else ok2, err2 = false, "setTier unavailable" end
 if ok2 then S.lastOut = { "'" .. name .. "' promoted to root.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 elseif action == "user" then
 if U.setTier then ok2, err2 = U.setTier(actor, name, 1)
 else ok2, err2 = false, "setTier unavailable" end
 if ok2 then S.lastOut = { "'" .. name .. "' set to user.", T.highlight }
-else      S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 else
 o("Unknown action: " .. action, T.error)
 o("Valid: lock, unlock, admin, user", T.dim)
@@ -2625,7 +2407,7 @@ if ctype == "filesystem" then
 local ok2, px = pcall(component.proxy, addr)
 if ok2 and px then
 local lbl = px.getLabel and px.getLabel() or ""
-local kb  = px.spaceTotal and math.floor(px.spaceTotal()/1024) or 0
+local kb = px.spaceTotal and math.floor(px.spaceTotal()/1024) or 0
 cinfo = (lbl ~= "" and '"'..lbl..'" ' or "") .. kb .. "K"
 end
 elseif ctype == "modem" then
@@ -2634,17 +2416,14 @@ if ok2 and px and px.isWireless then
 cinfo = px.isWireless() and "wireless" or "wired"
 end
 elseif ctype == "drive" then
-
 local ok2, px = pcall(component.proxy, addr)
 if ok2 and px and px.getCapacity then
 cinfo = "raw " .. math.floor((px.getCapacity() or 0) / 1024) .. "K"
 end
 elseif ctype == "openprinter" then
-
 local ok2, px = pcall(component.proxy, addr)
 if ok2 and px then
 local function lvl(fn)
-
 if fn == nil then return "?" end
 local okL, v = pcall(fn)
 return (okL and tonumber(v)) and tostring(math.floor(v)) or "?"
@@ -2660,13 +2439,11 @@ end
 if count == 0 then o("  (no peripherals detected)", T.dim) end
 end
 C.devices = C.lsdev
-
 C.mount = function(args, o)
 if args[1] and args[2] then
 if not adminOnly(o) then return end
 local target, mntArg = args[1], args[2]
-
-local candidates  = {}
+local candidates = {}
 local addrMatches = {}
 for addr in component.list("filesystem") do
 if addr:sub(1, #target) == target then
@@ -2678,7 +2455,6 @@ candidates[#candidates + 1] = addr
 end
 end
 end
-
 local found = nil
 if #addrMatches == 1 then
 found = addrMatches[1]
@@ -2701,7 +2477,6 @@ local mnt = mntArg:sub(1,1) == "/" and mntArg or ("/" .. mntArg)
 local ok2, px2 = pcall(component.proxy, found)
 if not ok2 then o("Cannot proxy device", T.error); return end
 if not F.exists(mnt) then pcall(F.makeDirectory, mnt) end
-
 local sess = helpers.sessionOf(S)
 local mok, merr = F.mount(mnt, px2, sess)
 if mok == false then
@@ -2737,7 +2512,6 @@ o("  drive mount <addr>   then mount it here", T.dim)
 end
 end
 end
-
 C.umount = function(args, o)
 if not args[1] then o("Usage: umount <mountpoint>", T.dim); return end
 if not adminOnly(o) then return end
@@ -2745,9 +2519,8 @@ local mnt = args[1]:sub(1,1) == "/" and args[1] or ("/" .. args[1])
 local sess = helpers.sessionOf(S)
 local ok2, err2 = F.unmount(mnt, sess)
 if ok2 then S.lastOut = { "Unmounted " .. mnt, T.highlight }
-else      S.lastOut = { tostring(err2 or "Failed to unmount"), T.error } end
+else S.lastOut = { tostring(err2 or "Failed to unmount"), T.error } end
 end
-
 C.jbod = function(args, o)
 local jb = K.getJBOD and K.getJBOD()
 if not jb then
@@ -2756,7 +2529,6 @@ o("It pools several disks into one mount. See 'man jbod'.", T.dim)
 return
 end
 local sub = (args[1] or "list"):lower()
-
 local function resolveFs(ref)
 local addrMatches, labelMatches = {}, {}
 for addr in component.list("filesystem") do
@@ -2776,7 +2548,6 @@ if #addrMatches > 1 then return nil, "ambiguous address prefix: " .. ref end
 if #labelMatches > 1 then return nil, "ambiguous label: " .. ref end
 return nil, "no filesystem matches: " .. ref
 end
-
 if sub == "list" or sub == "status" then
 local cfg = jb.loadConfig(F) or { pools = {} }
 local pools = cfg.pools or {}
@@ -2792,7 +2563,6 @@ o(string.format(" %-16s %d member(s), %d present",
 p.mount, #(p.members or {}), present), T.fg)
 end
 o("Free space: df  ·  individual disks: disk  ·  manage: jbod create|destroy", T.dim)
-
 elseif sub == "create" then
 if not adminOnly(o) then return end
 local mount = args[2]
@@ -2803,18 +2573,15 @@ return
 end
 if mount:sub(1, 1) ~= "/" then mount = "/" .. mount end
 mount = (F.normalize and F.normalize(mount)) or mount
-
 if not (mount:sub(1, 6) == "/mnt/" and #mount > 6) then
 o("JBOD mount point must be under /mnt/  (e.g. jbod create /mnt/pool ...)", T.error)
 return
 end
-
 local bootAddr = _G._TOS and _G._TOS.bootAddr
 local members, addrs = {}, {}
 for i = 3, #args do
 local addr, rerr = resolveFs(args[i])
 if not addr then o(tostring(rerr), T.error); return end
-
 if bootAddr and addr == bootAddr then
 o("Refusing to pool the BOOT disk (" .. addr:sub(1, 8) .. "...).", T.error)
 o("It would expose the system files inside the pool. Use data disks.", T.dim)
@@ -2825,24 +2592,20 @@ if not ok2 or not px then o("Cannot open disk: " .. args[i], T.error); return en
 members[#members + 1] = px
 addrs[#addrs + 1] = addr
 end
-
 pcall(F.makeDirectory, "/mnt")
 pcall(F.makeDirectory, mount)
 local proxy = jb.makePool(members)
 local sess = helpers.sessionOf(S)
 local mok, merr = F.mount(mount, proxy, sess)
 if not mok then o(tostring(merr or "Mount failed"), T.error); return end
-
 local cfg = jb.loadConfig(F) or { pools = {} }
 cfg.pools = cfg.pools or {}
-
 for i = #cfg.pools, 1, -1 do
 if cfg.pools[i].mount == mount then table.remove(cfg.pools, i) end
 end
 cfg.pools[#cfg.pools + 1] = { mount = mount, members = addrs }
 jb.saveConfig(F, cfg)
 S.lastOut = { string.format("JBOD pool at %s (%d disks)", mount, #addrs), T.highlight }
-
 elseif sub == "destroy" or sub == "remove" then
 if not adminOnly(o) then return end
 local mount = args[2]
@@ -2858,12 +2621,10 @@ end
 if removed then jb.saveConfig(F, cfg) end
 S.lastOut = { removed and ("Destroyed JBOD pool " .. mount)
 or ("No JBOD pool at " .. mount), removed and T.highlight or T.warning }
-
 else
 o("Usage: jbod [list | create <mount> <disk...> | destroy <mount>]", T.dim)
 end
 end
-
 C.netfs = function(args, o)
 local okNF, nf = helpers.requireRoomy(S, "kernel.netfs", "admin")
 if not okNF or not nf then
@@ -2871,7 +2632,6 @@ o(helpers.loadFailure("netfs", nf), T.error)
 return
 end
 local sub = (args[1] or "status"):lower()
-
 local function netfsMounts()
 local out = {}
 for _, m in ipairs(F.mounts() or {}) do
@@ -2882,12 +2642,9 @@ end
 table.sort(out, function(a, b) return a.mountPoint < b.mountPoint end)
 return out
 end
-
 if sub == "status" or sub == "list" then
-
 local serving = nf.isEnabled and nf.isEnabled()
 local exports = nf.getExports and nf.getExports() or {}
-
 local armed = NM and NM.getServiceArm and NM.getServiceArm("netfsd")
 o("Serving: " .. (serving and "yes"
 or armed and "no (export file rejected; see: netfs exports)"
@@ -2901,7 +2658,6 @@ o(string.format("  %-12s %-24s %s  %d peer rule(s)",
 e.name, e.path, e.mode, #(e.allow or {})), T.fg)
 end
 end
-
 local mounted = netfsMounts()
 o("", T.fg)
 if #mounted == 0 then
@@ -2909,7 +2665,6 @@ o("Mounted: none", T.dim)
 else
 o("Mounted:", T.fg)
 for _, m in ipairs(mounted) do
-
 local live = (m.total or 0) > 0
 o(string.format("  %-16s %-22s %s", m.mountPoint, m.label,
 live and fmtSz(m.total - (m.used or 0)) .. " free" or "unreachable"),
@@ -2917,9 +2672,7 @@ live and T.fg or T.warning)
 end
 end
 o("Manage: netfs mount <host> <share> <mountpoint> · netfs umount <mountpoint>", T.dim)
-
 elseif sub == "exports" then
-
 local ok2, err2 = nf.loadExports(F)
 if not ok2 then
 o("Export file rejected: " .. tostring(err2), T.error)
@@ -2942,7 +2695,6 @@ o("    allow (none) — this export is unreachable", T.warning)
 end
 end
 o("Changes take effect on: service restart netfsd", T.dim)
-
 elseif sub == "mount" then
 if not adminOnly(o) then return end
 local host, share, mount = args[2], args[3], args[4]
@@ -2953,11 +2705,9 @@ o("  <share> = export name on that machine (ask its operator)", T.dim)
 return
 end
 if not NM then o("Networking is not available.", T.error); return end
-
 local addr = host
 local peer = NM.findPeer and NM.findPeer(host)
 if peer and peer.addr then addr = peer.addr end
-
 if NM.getTrust or NM.getProtocol then
 local okT, trustMod = pcall(require, "kernel.net.trust")
 if okT and trustMod and trustMod.getLevel and trustMod.LEVEL then
@@ -2968,21 +2718,17 @@ return
 end
 end
 end
-
 if not (mount:sub(1, 5) == "/mnt/" and #mount > 5) then
 o("Mount point must be under /mnt/  (e.g. netfs mount box pub /mnt/box)", T.error)
 return
 end
-
 local proxy = nf.attach(addr, share)
-
 local probe = proxy.spaceTotal and proxy.spaceTotal() or 0
 if not proxy.exists("/") and probe == 0 then
 o("Cannot reach share '" .. share .. "' on " .. tostring(addr):sub(1, 8) .. ".", T.error)
 o("Check the export name, and that netfsd runs there and allows this machine.", T.dim)
 return
 end
-
 pcall(F.makeDirectory, "/mnt")
 pcall(F.makeDirectory, mount)
 local sess = helpers.sessionOf(S)
@@ -2991,7 +2737,6 @@ if not mok then o(tostring(merr or "Mount failed"), T.error); return end
 o("Mounted " .. share .. " from " .. tostring(addr):sub(1, 8) .. " at " .. mount,
 T.highlight)
 o("This mount is only usable while that machine is online.", T.dim)
-
 elseif sub == "umount" then
 if not adminOnly(o) then return end
 local mount = args[2]
@@ -3009,50 +2754,39 @@ local sess = helpers.sessionOf(S)
 local ok2, err2 = F.unmount(mount, sess)
 if ok2 then o("Unmounted " .. mount, T.highlight)
 else o(tostring(err2 or "Failed to unmount"), T.error) end
-
 else
 o("Usage: netfs [status | exports | mount <host> <share> <mount> | umount <mount>]",
 T.dim)
 end
 end
-
 C.theme = function(args, o)
-
 local themeMod = _G._TOS and _G._TOS.theme
 if not themeMod then
 o("Theme manager unavailable (T1 / monochrome or low-RAM boot)", T.warning)
 return
 end
-
 do
 local sub0 = (args[1] or "show"):lower()
 local READONLY = { list = true, ls = true, show = true, current = true, keys = true, [""] = true }
-local CUSTOM   = { color = true, colour = true }
+local CUSTOM = { color = true, colour = true }
 if CUSTOM[sub0] then
 if not adminOnly(o) then return end
 elseif not READONLY[sub0] then
-
 if helpers.liveTier(S) < 1 then
 o("Log in as a user to set a personal theme.", T.error); return
 end
 end
 end
-
 local function parseColor(s)
 if not s then return nil end
-
 if type(s) ~= "string" or #s > 16 then return nil end
 local hex = s:match("^0[xX](%x+)$") or s:match("^#(%x+)$") or s:match("^(%x+)$")
 if hex and #hex <= 6 then return tonumber(hex, 16) end
 return tonumber(s)
 end
-
 local function fmtHex(n) return string.format("0x%06X", n) end
-
 local sub = args[1] and args[1]:lower() or "show"
-
 local sess = helpers.sessionOf(S)
-
 if sub == "list" or sub == "ls" then
 o("Available themes:", T.title)
 for _, name in ipairs(themeMod.list()) do
@@ -3061,7 +2795,6 @@ o(string.format(" %s %-10s %s", marker, name, themeMod.describe(name) or ""), T.
 end
 o("", T.fg)
 o("'*' = currently active.  Use 'theme set <name>' to switch.", T.dim)
-
 elseif sub == "show" or sub == "current" then
 local cur = themeMod.current()
 o("Active theme: " .. cur.preset, T.title)
@@ -3078,7 +2811,6 @@ end
 end
 o("", T.fg)
 o("Try: theme set <name>  |  theme color <key> <0xRRGGBB>  |  theme reset", T.dim)
-
 elseif sub == "set" or sub == "use" then
 local name = args[2]
 if not name then o("Usage: theme set <name>  (theme list to see names)", T.warning); return end
@@ -3090,7 +2822,6 @@ local sOk, sErr = themeMod.saveForUser(sess)
 if not sOk then o("(not saved: " .. tostring(sErr) .. ")", T.dim) end
 end
 deps.drawAll()
-
 elseif sub == "preview" or sub == "try" then
 local name = args[2]
 if not name then o("Usage: theme preview <name>", T.warning); return end
@@ -3098,7 +2829,6 @@ local ok, err = themeMod.apply(name)
 if not ok then o(err or "apply failed", T.error); return end
 o("Previewing '" .. name .. "' (not saved). Use 'theme set' to keep it.", T.highlight)
 deps.drawAll()
-
 elseif sub == "color" or sub == "colour" then
 local key, val = args[2], args[3]
 if not key or not val then
@@ -3118,25 +2848,21 @@ if not ok then o(err or "color set failed", T.error); return end
 o(string.format("%s = %s", key, fmtHex(n)), T.highlight)
 if sess then themeMod.saveForUser(sess) end
 deps.drawAll()
-
 elseif sub == "reset" then
 local ok, err = themeMod.resetOverrides()
 if not ok then o(err or "reset failed", T.error); return end
 o("Cleared color overrides; preset '" .. themeMod.current().preset .. "' restored.", T.highlight)
 if sess then themeMod.saveForUser(sess) end
 deps.drawAll()
-
 elseif sub == "clear" or sub == "default" then
 if not sess then o("Not logged in.", T.error); return end
 local ok, err = themeMod.clearForUser(sess)
 if not ok then o(err or "clear failed", T.error); return end
 o("Theme reset to default; saved preference cleared.", T.highlight)
 deps.drawAll()
-
 elseif sub == "keys" then
 o("Overridable color keys:", T.title)
 for _, k in ipairs(themeMod.overridableKeys()) do o("  " .. k, T.fg) end
-
 else
 o("Usage: theme <list|show|set|preview|color|reset|clear|keys>", T.warning)
 o("  list                  Show available themes", T.dim)
@@ -3160,7 +2886,6 @@ if #svcs == 0 then o("No services registered", T.dim); return end
 o(string.format(" %-16s %s", "Service", "Status"), T.title)
 o(string.rep("-", 28), T.dim)
 for _, s in ipairs(svcs) do
-
 local st2 = s.running and "running"
 or (s.unavailable and ("not loaded: " .. s.unavailable))
 or (s.enabled == false and "disabled") or "stopped"
@@ -3171,7 +2896,6 @@ elseif args[1] == "start" and args[2] then
 local ok3, err = rcMod.start(args[2])
 o(ok3 and "Started: " .. args[2] or tostring(err), ok3 and T.highlight or T.error)
 if ok3 then
-
 local okP, pkgMod = pcall(require, "kernel.pkg")
 if okP and type(pkgMod) == "table" and pkgMod.noteServiceStarted then
 local owner = pkgMod.noteServiceStarted(args[2], { session = helpers.sessionOf(S) })
@@ -3185,7 +2909,6 @@ else
 o("Usage: service [start|stop <name>]", T.dim)
 end
 end
-
 C.cron = function(args, o)
 if not adminOnly(o) then return end
 local ok2, cronMod = helpers.requireRoomy(S, "kernel.cron", "admin")
@@ -3217,5 +2940,4 @@ else
 o("Usage: cron [list|add <name> <seconds> <script>|rm <id>]", T.dim)
 end
 end
-
 end

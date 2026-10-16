@@ -1,12 +1,10 @@
 local M = {}
-
 function M.run(opts)
 opts = opts or {}
 local hasIO = io and io.read and io.write
 local function out(s) if hasIO then io.write((s or "") .. "\n") else print(s or "") end end
 local function raw(s) if hasIO then io.write(s or "") end end
 local function die(msg) out("ERROR: " .. msg); return end
-
 local okP, pkg = pcall(require, "kernel.pkg")
 if not okP or not pkg or not pkg.installByName then
 return die("kernel.pkg unavailable — run this on a TOS machine.")
@@ -15,7 +13,6 @@ local okU, users = pcall(require, "kernel.users")
 if not okU or not users then
 return die("kernel.users unavailable — run this on a TOS machine.")
 end
-
 local session = select(1, users.currentSession and users.currentSession() or nil)
 local ADMIN = (users.TIER and users.TIER.ADMIN) or 2
 if not session then
@@ -24,10 +21,8 @@ end
 if (session.tier or 0) < ADMIN then
 return die("installing packages requires admin/root.")
 end
-
 local okFS, ufs = pcall(require, "kernel.fs")
 local okSer, userialize = pcall(require, "kernel.serialize")
-
 --! #FIX (real Minecraft, 2026-08-11) — THIS FUNCTION USED TO
 --! ENUMERATE MOUNTS BY LISTING THE MOUNT DIRECTORY, and that is why a
 --! two-floppy set behaved as though the second floppy did not exist.
@@ -51,7 +46,6 @@ local p = r .. "/optutil-set.lua"
 if ufs.exists(p) then
 local raw = ufs.readFile(p)
 if type(raw) == "string" then
-
 local okD, t = pcall(userialize.decode, raw:gsub("^%s*%-%-[^\n]*\n", ""),
 { maxBytes = 64 * 1024 })
 if okD and type(t) == "table" and type(t.packages) == "table" then
@@ -61,14 +55,10 @@ end
 end
 end
 end
-
 local SET = readSet()
-
 local avail = (pkg.listAllAvailable and pkg.listAllAvailable({ includeRemote = true })) or {}
-
 local here = {}
 for _, e in ipairs(avail) do e.reachable = true; here[e.name] = true end
-
 if SET then
 for name, meta in pairs(SET.packages) do
 if not here[name] then
@@ -86,14 +76,11 @@ end
 end
 end
 end
-
 if #avail == 0 then
 out("No installable packages found.")
 out("Insert the Optional Utilities disk (it auto-mounts under /mnt) and re-run.")
-
 return false, "no installable packages found"
 end
-
 local CAT_ORDER = { games = 1, productivity = 2, network = 3, storage = 4,
 security = 5, drivers = 6, control = 7, misc = 99 }
 local function catRank(c) return CAT_ORDER[c or "misc"] or 50 end
@@ -105,7 +92,6 @@ return (a.category or "") < (b.category or "")
 end
 return (a.name or "") < (b.name or "")
 end)
-
 local CAT_LABEL = {
 games = "Games", productivity = "Productivity", network = "Network",
 storage = "Storage", security = "Security", drivers = "Drivers",
@@ -114,17 +100,14 @@ control = "Control", misc = "Other",
 local function catLabel(c)
 return CAT_LABEL[c or "misc"] or ((c or "misc"):gsub("^%l", string.upper))
 end
-
 local ROWS = {}
 local filter = ""
-
 local function matches(e, f)
 if f == "" then return true end
 f = f:lower()
 local function has(s) return s and tostring(s):lower():find(f, 1, true) ~= nil end
 return has(e.name) or has(e.description) or has(e.category)
 end
-
 local function buildRows()
 ROWS = {}
 local lastCat = nil
@@ -139,19 +122,15 @@ end
 end
 end
 buildRows()
-
 local selected = {}
-local autoSel  = {}
+local autoSel = {}
 local function isInstalled(name) return pkg.info and pkg.info(name) ~= nil end
-
 local function depName(r)
 if type(r) == "table" then return r.name end
 if type(r) == "string" then return (r:match("^(%S+)")) end
 end
-
 local byName = {}
 for i, e in ipairs(avail) do byName[e.name] = i end
-
 local recBy = {}
 for _, e in ipairs(avail) do
 for _, r in ipairs(e.recommends or {}) do
@@ -160,7 +139,6 @@ recBy[r][#recBy[r] + 1] = e.name
 end
 end
 for _, list in pairs(recBy) do table.sort(list) end
-
 local function depsOf(ai, acc, seen)
 acc, seen = acc or {}, seen or {}
 local e = avail[ai]
@@ -176,7 +154,6 @@ end
 end
 return acc
 end
-
 local function recomputeAuto()
 autoSel = {}
 for ai in pairs(selected) do
@@ -185,7 +162,6 @@ if not selected[di] then autoSel[di] = true end
 end
 end
 end
-
 local function missingDeps(e)
 local out = {}
 for _, r in ipairs(e.requires or {}) do
@@ -194,7 +170,6 @@ if n and not byName[n] and not isInstalled(n) then out[#out + 1] = n end
 end
 return out
 end
-
 local function serviceNamesFor(name)
 local svcs = {}
 local info = pkg.info and pkg.info(name)
@@ -207,12 +182,10 @@ if #svcs == 0 then svcs[1] = name end
 end
 return svcs
 end
-
 local function tuiRun()
 local okC, component = pcall(require, "component")
 local okCm, computer = pcall(require, "computer")
 if not (okC and okCm and component and computer) then return nil end
-
 local gpuAddr
 do
 local okS, scr = pcall(require, "kernel.screen")
@@ -227,7 +200,6 @@ local okG, gpu = pcall(component.proxy, gpuAddr)
 if not okG or not gpu or not gpu.getResolution then return nil end
 local W, H = gpu.getResolution()
 if not W or not H or W < 40 or H < 12 then return nil end
-
 local depth = 8
 pcall(function() depth = gpu.getDepth() end)
 local mono = (depth or 8) <= 1
@@ -252,7 +224,6 @@ T = { bg = 0x000000, fg = 0xFFFFFF, dim = 0xFFFFFF, title = 0xFFFFFF,
 sel_fg = 0x000000, sel_bg = 0xFFFFFF, ok = 0xFFFFFF,
 warn = 0xFFFFFF, err = 0xFFFFFF, panel = 0x000000 }
 end
-
 local function set(x, y, s, fg, bg)
 if fg then pcall(gpu.setForeground, fg) end
 if bg then pcall(gpu.setBackground, bg) end
@@ -263,10 +234,8 @@ if fg then pcall(gpu.setForeground, fg) end
 if bg then pcall(gpu.setBackground, bg) end
 pcall(gpu.fill, x, y, w, h, ch or " ")
 end
-
 local uni = nil
 do local okU2, u = pcall(require, "unicode"); if okU2 then uni = u end end
-
 local function bytesLen(s)
 local n = 0
 for i = 1, #s do
@@ -276,7 +245,6 @@ end
 return n
 end
 local function bytesSub(s, a, b)
-
 local starts, n = {}, 0
 for i = 1, #s do
 local by = s:byte(i)
@@ -296,18 +264,15 @@ if ulen(s) <= n then return s end
 if n <= 1 then return usub(s, 1, n) end
 return usub(s, 1, n - 1) .. (mono and ">" or "…")
 end
-
 local LIST_TOP = 4
-local BAR      = H
-
-local twoPane  = W >= 60
-local LISTW    = twoPane and math.max(26, math.floor(W * 0.42)) or W
-local PANEX    = LISTW + 2
-local PANEW    = W - PANEX
-local FOOT     = twoPane and (H - 1) or (H - 2)
-local listH    = math.max(1, FOOT - LIST_TOP)
+local BAR = H
+local twoPane = W >= 60
+local LISTW = twoPane and math.max(26, math.floor(W * 0.42)) or W
+local PANEX = LISTW + 2
+local PANEW = W - PANEX
+local FOOT = twoPane and (H - 1) or (H - 2)
+local listH = math.max(1, FOOT - LIST_TOP)
 local scroll = 0
-
 local function firstPkgRow()
 for i, r in ipairs(ROWS) do if r.ai then return i end end
 return 1
@@ -326,20 +291,17 @@ local function curPkg()
 local r = ROWS[sel]
 return r and r.ai and avail[r.ai] or nil, r and r.ai or nil
 end
-
 local function countSelected()
 local n = 0
 for _ in pairs(selected) do n = n + 1 end
 for _ in pairs(autoSel) do n = n + 1 end
 return n
 end
-
 local function visibleIndices()
 local out = {}
 for _, r in ipairs(ROWS) do if r.ai then out[#out + 1] = r.ai end end
 return out
 end
-
 local function groupIndices(cat)
 local out = {}
 for _, r in ipairs(ROWS) do
@@ -347,7 +309,6 @@ if r.ai and r.cat == cat then out[#out + 1] = r.ai end
 end
 return out
 end
-
 local function toggleGroup(cat)
 local idx = groupIndices(cat)
 local anyOff = false
@@ -362,20 +323,16 @@ end
 recomputeAuto()
 return anyOff, #idx
 end
-
 local function curCategory()
 local r = ROWS[sel]
 return r and r.cat
 end
-
 local function drawFrame()
 fill(1, 1, W, H, " ", T.fg, T.bg)
-
 local title = " TOS Optional Utilities "
 local line = (mono and "=" or "═")
 set(1, 1, string.rep(line, W), T.title, T.bg)
 set(math.max(1, math.floor((W - #title) / 2)), 1, title, T.title, T.bg)
-
 local shown = 0
 for _, r in ipairs(ROWS) do if r.ai then shown = shown + 1 end end
 local left
@@ -391,14 +348,11 @@ local railLeft = dash .. lt .. " " .. left .. " " .. rt
 local railRight = lt .. " " .. right .. " " .. rt .. dash
 local mid = W - ulen(railLeft) - ulen(railRight)
 set(1, 2, railLeft .. string.rep(dash, math.max(0, mid)) .. railRight, T.dim, T.bg)
-
 set(4, 2, left, T.fg, T.bg)
 set(W - ulen(railRight) + 3, 2, right, T.fg, T.bg)
-
 set(2, 3, fitTo("[*] installed  [x] selected  [+] needed by one  [ ] available",
 W - 3), T.dim, T.bg)
 end
-
 local function drawList()
 if sel < scroll + 1 then scroll = sel - 1 end
 if sel > scroll + listH then scroll = sel - listH end
@@ -409,12 +363,10 @@ local y = LIST_TOP + r
 local row = ROWS[ridx]
 fill(1, y, LISTW, 1, " ", T.fg, T.bg)
 if row and row.header then
-
 local dash = (mono and "-" or "─")
 local label = " " .. row.header .. " "
 set(1, y, dash .. dash .. label
 .. string.rep(dash, math.max(0, LISTW - 3 - ulen(label))), T.dim, T.bg)
-
 set(4, y, row.header, T.title, T.bg)
 elseif row and row.ai then
 local ai = row.ai
@@ -423,7 +375,6 @@ local installed = isInstalled(e.name)
 local mark = installed and "[*]"
 or (selected[ai] and "[x]" or (autoSel[ai] and "[+]" or "[ ]"))
 local isSel = (ridx == sel)
-
 local fg = isSel and T.sel_fg
 or ((installed or e.reachable == false) and T.dim or T.fg)
 local bg = isSel and T.sel_bg or T.bg
@@ -431,9 +382,7 @@ if isSel then fill(1, y, LISTW, 1, " ", fg, bg) end
 local markColor = isSel and fg
 or (installed and T.ok
 or (selected[ai] and T.warn or (autoSel[ai] and T.title or T.dim)))
-
 set(3, y, mark, markColor, bg)
-
 local nameW = twoPane and (LISTW - 16) or 17
 set(7, y, fitTo(e.name or "?", math.max(4, nameW)), fg, bg)
 local ver = e.version and ("v" .. tostring(e.version)) or ""
@@ -446,7 +395,6 @@ isSel and fg or T.dim, bg)
 end
 end
 end
-
 if #ROWS > listH then
 local pos = math.floor((scroll / math.max(1, #ROWS - listH)) * (listH - 1) + 0.5)
 for r = 0, listH - 1 do
@@ -454,28 +402,24 @@ set(LISTW, LIST_TOP + r,
 (r == pos) and (mono and "#" or "█") or (mono and "|" or "│"), T.dim, T.bg)
 end
 end
-
 if #ROWS == 0 then
 set(2, LIST_TOP, fitTo("Nothing matches '" .. filter .. "'.", LISTW - 3),
 T.warn, T.bg)
 set(2, LIST_TOP + 1, fitTo("Esc clears the filter, / edits it.", LISTW - 3),
 T.dim, T.bg)
 end
-
 if twoPane then
 for r = 0, listH - 1 do
 set(LISTW + 1, LIST_TOP + r, mono and "|" or "│", T.dim, T.bg)
 end
 end
 end
-
 local function drawPanel()
 if not twoPane then return end
 local e = curPkg()
 for r = 0, listH - 1 do fill(PANEX, LIST_TOP + r, PANEW, 1, " ", T.fg, T.bg) end
 if not e then return end
 local y = LIST_TOP
-
 local function line(text, color, indent)
 if y >= LIST_TOP + listH then return end
 set(PANEX + (indent or 0), y, fitTo(text or "", PANEW - (indent or 0)),
@@ -493,7 +437,6 @@ end
 --! sat at column 10 of a 40-column panel and read "...will as…" at
 --! 80x25 (headless machine, 2026-10-09). (test_picker_panel_wrap.lua)
 local function wrap(text, color, indent)
-
 local w = PANEW - (indent or 0)
 local cur = ""
 for word in tostring(text or ""):gmatch("%S+") do
@@ -503,12 +446,10 @@ else line(cur, color, indent); cur = word end
 end
 if cur ~= "" then line(cur, color, indent) end
 end
-
 line(e.name or "?", T.title)
 line(string.rep(mono and "-" or "─", math.min(PANEW, 40)), T.dim)
 wrap(e.description or "(no description)", T.fg)
 line("", nil)
-
 local installed = isInstalled(e.name)
 local ai = select(2, curPkg())
 local state = installed and "already installed"
@@ -520,17 +461,14 @@ field("Version", e.version)
 field("Category", catLabel(e.category))
 field("Kind", e.kind)
 field("Author", e.author)
-
 if e.remote then
 field("From", "repo " .. tostring(e.repo or "?") .. "  (downloads on install)")
 elseif e.reachable then
 field("From", e.root or (e.disk and ("disk " .. e.disk)))
 else
-
 field("On disk", tostring(e.disk or "?") .. "  (not inserted)", T.warn)
 wrap("selectable — the installer will ask for it", T.dim, 10)
 end
-
 local reqs = {}
 for _, r in ipairs(e.requires or {}) do
 local n = depName(r)
@@ -548,11 +486,9 @@ field("Suggests", table.concat(e.recommends, ", "), T.dim)
 end
 local wanted = recBy[e.name]
 if wanted and #wanted > 0 then
-
 field("Wanted by", table.concat(wanted, ", "), T.dim)
 end
 end
-
 local function barBase()
 fill(1, BAR, W, 1, mono and " " or "░", T.dim, T.bg)
 if not mono then
@@ -560,9 +496,7 @@ set(1, BAR, "▓▒░", T.dim, T.bg)
 if W > 6 then set(W - 2, BAR, "░▒▓", T.dim, T.bg) end
 end
 end
-
 local function drawFoot()
-
 if not twoPane then
 local e = curPkg()
 fill(1, FOOT, W, 1, " ", T.fg, T.bg)
@@ -584,9 +518,7 @@ barBase()
 local keys = " Space · G Group · / Filter · A All · N None · R +Suggested · Enter Install · Q Quit "
 set(5, BAR, fitTo(keys, W - 9), T.fg, T.bg)
 end
-
 local function redraw() drawFrame(); drawList(); drawPanel(); drawFoot() end
-
 local function promptFilter()
 local before = filter
 local buf = filter
@@ -612,7 +544,6 @@ buildRows()
 sel = firstPkgRow(); scroll = 0
 redraw()
 end
-
 redraw()
 while true do
 local ev, _, ch, code = computer.pullSignal()
@@ -631,17 +562,14 @@ elseif ch == 32 then
 local e, ai = curPkg()
 if e and ai and not isInstalled(e.name) then
 selected[ai] = not selected[ai] or nil
-
 recomputeAuto()
 end
 redraw()
 elseif ch == 103 or ch == 71 then
-
 local cat = curCategory()
 if cat then
 local turnedOn, n = toggleGroup(cat)
 redraw()
-
 barBase()
 set(5, BAR, fitTo(string.format(" %s %d in %s ",
 turnedOn and "Selected" or "Cleared", n, catLabel(cat)), W - 9),
@@ -650,14 +578,12 @@ end
 elseif ch == 47 or ch == 63 then
 promptFilter()
 elseif ch == 97 or ch == 65 then
-
 for _, i in ipairs(visibleIndices()) do
 if not isInstalled(avail[i].name) then selected[i] = true end
 end
 recomputeAuto()
 redraw()
 elseif ch == 110 or ch == 78 then
-
 if filter == "" then selected = {}
 else
 for _, i in ipairs(visibleIndices()) do selected[i] = nil end
@@ -665,7 +591,6 @@ end
 recomputeAuto()
 redraw()
 elseif ch == 114 or ch == 82 then
-
 local add = {}
 for ai in pairs(selected) do
 for _, r in ipairs(avail[ai].recommends or {}) do
@@ -677,7 +602,6 @@ for ri in pairs(add) do selected[ri] = true end
 recomputeAuto()
 redraw()
 elseif (code == 1 or ch == 17) and filter ~= "" then
-
 filter = ""
 buildRows(); sel = firstPkgRow(); scroll = 0
 redraw()
@@ -693,7 +617,6 @@ local total = 0
 --! (test_picker_swap_repaint.lua)
 local shown, lastDone = {}, 0
 return "install", function(name, status, detail)
-
 local function bar(done)
 lastDone = done
 local BARY = H - 1
@@ -715,13 +638,12 @@ end
 bar(lastDone)
 end
 if status == "swap" then
-
 local okDlg, dialogs = pcall(require, "shell.panels.dialogs")
 if okDlg and dialogs and dialogs.dialog then
 local fakeS = { W = W, H = H, T = T, D = { set = set, fill = fill } }
 local pick = dialogs.dialog(fakeS, {
-style   = "install",
-title   = "Next disk",
+style = "install",
+title = "Next disk",
 message = tostring(name)
 .. "\n\nSwap the floppy, then choose Continue."
 .. "\nStopping here keeps everything already installed.",
@@ -731,7 +653,6 @@ default = 1, escIndex = 2,
 repaint()
 return (pick == 3 and "undo") or (pick == 2 and "abort") or "retry"
 end
-
 local y0 = math.max(2, H - 6)
 fill(1, y0, W, 4, " ", T.fg, T.bg)
 set(2, y0, fitTo(tostring(name), W - 4), T.warn, T.bg)
@@ -789,7 +710,6 @@ end
 end
 end
 end
-
 local function lineRun()
 if not hasIO then
 out("No GPU for the menu and no interactive input here.")
@@ -802,7 +722,6 @@ local function render()
 out("")
 out("=== TOS Optional Utilities ===")
 out("  [*] already installed   [x] selected   [ ] available")
-
 local lastCat = nil
 for i, e in ipairs(avail) do
 if e.category ~= lastCat then
@@ -811,9 +730,9 @@ out("  -- " .. catLabel(e.category) .. " --")
 end
 local mark
 if isInstalled(e.name) then mark = "[*]"
-elseif selected[i]     then mark = "[x]"
-elseif autoSel[i]      then mark = "[+]"
-else                        mark = "[ ]" end
+elseif selected[i] then mark = "[x]"
+elseif autoSel[i] then mark = "[+]"
+else mark = "[ ]" end
 out(string.format("   %2d %s %-16s %s", i, mark,
 e.name or "?", (e.description or ""):sub(1, 42)))
 end
@@ -847,19 +766,16 @@ else out("  ? unrecognised — enter a number, or a/n/i/q") end
 end
 end
 end
-
 local function releaseScreen()
 local okD, disp = pcall(require, "kernel.display")
 if okD and disp and disp.invalidateColors then pcall(disp.invalidateColors) end
 local okS, scr = pcall(require, "kernel.screen")
 if okS and scr and scr.invalidateAll then pcall(scr.invalidateAll) end
 end
-
 local action, progress = tuiRun()
 releaseScreen()
 if action == nil then action = lineRun() end
 if action ~= "install" then return end
-
 local chosen = {}
 for i, e in ipairs(avail) do
 if selected[i] or autoSel[i] then chosen[#chosen + 1] = e end
@@ -868,26 +784,21 @@ if #chosen == 0 then
 if progress then progress("Nothing selected.", "done") else out("Nothing selected.") end
 return
 end
-
 if progress then progress(nil, "begin", #chosen) else
 out(""); out("Installing " .. #chosen .. " package(s)...")
 end
-
 local okCount, failCount, services = 0, 0, {}
 local installedThisRun = {}
 local row = 0
-
 local function reachableNow(name)
 for _, e in ipairs((pkg.listAllAvailable and pkg.listAllAvailable({ includeRemote = true })) or {}) do
 if e.name == name then return true end
 end
 return false
 end
-
 local function installOne(e)
 row = row + 1
 if progress then progress(e.name, "row", row) else raw(string.format("  %-16s ", e.name)) end
-
 --! A REMOTE entry is not on any disk, so installByName -- which
 --! searches local roots -- would report it missing. installRemote
 --! downloads it, verifies the signature and hashes, and then runs the
@@ -918,7 +829,6 @@ failCount = failCount + 1
 if progress then progress(tostring(res), "fail", row) else out("FAILED: " .. tostring(res)) end
 end
 end
-
 local function undoAll()
 local undone, failed2 = 0, {}
 for i = #installedThisRun, 1, -1 do
@@ -928,20 +838,16 @@ if ok then undone = undone + 1 else failed2[#failed2 + 1] = n end
 end
 return undone, failed2
 end
-
 local pending = {}
 for _, e in ipairs(chosen) do pending[#pending + 1] = e end
 local aborted, undone = false, nil
-
 while #pending > 0 do
-
 local stillPending = {}
 for _, e in ipairs(pending) do
 if reachableNow(e.name) then installOne(e) else stillPending[#stillPending + 1] = e end
 end
 pending = stillPending
 if #pending == 0 then break end
-
 local wantDisk, names = nil, {}
 for _, e in ipairs(pending) do
 wantDisk = wantDisk or e.disk
@@ -949,7 +855,6 @@ names[#names + 1] = e.name
 end
 local askText = string.format("Insert disk %s for: %s",
 tostring(wantDisk or "?"), table.concat(names, ", "))
-
 local choice
 if progress then choice = progress(askText, "swap")
 else
@@ -964,7 +869,6 @@ line = line:gsub("%s+", ""):lower()
 choice = (line == "u" and "undo") or (line == "a" and "abort") or "retry"
 end
 end
-
 if choice == "undo" then
 local n, failedNames = undoAll()
 undone = n
@@ -977,9 +881,7 @@ elseif choice == "abort" then
 aborted = true
 break
 end
-
 end
-
 local summary
 if undone then
 summary = string.format("Undone: %d package(s) removed, nothing kept.", undone)
@@ -1004,5 +906,4 @@ for _, s in ipairs(services) do out("  service start " .. s) end
 end
 end
 end
-
 return M

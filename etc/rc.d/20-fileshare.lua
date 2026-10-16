@@ -1,21 +1,16 @@
 local running = false
 local listenerID = nil
-
 local function start()
 local net = _G._TOS and _G._TOS.net
 if not net then return end
-
 if net.setServiceArm then
 net.setServiceArm("fileshare", true)
 else
-
 local ok, transferMod = pcall(require, "kernel.net.transfer")
 if not ok then return end
 if transferMod.setEnabled then transferMod.setEnabled(true) end
 end
-
 running = true
-
 local protocol = net.getProtocol()
 listenerID = net.on(protocol.TYPE.FILE_REQ, function(packet, remoteAddr)
 if _G._TOS and _G._TOS.log then
@@ -24,10 +19,8 @@ _G._TOS.log("fileshare", "File request from " .. remoteAddr:sub(1, 8) .. ": " ..
 end
 end)
 end
-
 local function stop()
 running = false
-
 local net0 = _G._TOS and _G._TOS.net
 if net0 and net0.setServiceArm then
 net0.setServiceArm("fileshare", false)
@@ -44,13 +37,12 @@ end
 listenerID = nil
 end
 end
-
 return {
-start   = start,
-stop    = stop,
-deps    = {},
+start = start,
+stop = stop,
+deps = {},
 restart = true,
-caps    = { ["fs.read"] = true, net = true },
-needs   = "net",
-user    = "_kernel_",
+caps = { ["fs.read"] = true, net = true },
+needs = "net",
+user = "_kernel_",
 }

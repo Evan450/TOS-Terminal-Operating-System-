@@ -1,8 +1,6 @@
 local bootFS = ...
-
 local component = component
 local computer = computer
-
 if not load("return 1<<1") then
 local g
 for a in component.list("gpu") do
@@ -28,13 +26,10 @@ local ev = computer.pullSignal(math.huge)
 if ev == "key_down" then computer.shutdown() end
 end
 end
-
 if not bootFS and _G._TOS_UNMANAGED_ROOT then
 bootFS = _G._TOS_UNMANAGED_ROOT
 end
-
 if not bootFS then
-
 local getBA = computer.getBootAddress
 if getBA then
 local addr = getBA()
@@ -44,7 +39,6 @@ if ok and px then bootFS = px end
 end
 end
 end
-
 local function safeExists(px, path)
 local ok, r = pcall(px.exists, path)
 return ok and r
@@ -78,11 +72,9 @@ end
 end
 if not bootFS then bootFS = scanFor("/tos/kernel/init.lua") end
 if not bootFS then bootFS = scanFor("/init.lua") end
-
 if not bootFS then
 error("FATAL: Cannot find boot filesystem!")
 end
-
 --! Said HERE, at boot, rather than discovered later by whichever write
 --! happened to come first. A machine that cannot write its own user
 --! database cannot be set up, and the operator needs to know that before
@@ -113,7 +105,6 @@ pcall(computer.pullSignal, 5)
 end
 end
 end
-
 do
 local bootTotal = bootFS.spaceTotal()
 local FLOPPY_THRESHOLD = 524288
@@ -125,12 +116,10 @@ local FLOPPY_THRESHOLD = 524288
 --! size test, and booted into a root that cannot keep a password
 --! (Stage 0a). test_init_readonly_install pins this.
 local bootReadOnly = _G._TOS_ROOT_READONLY
-
 if _G._BIOS_ONETIME then
 bootTotal = nil
 end
 if bootTotal and (bootTotal <= FLOPPY_THRESHOLD or bootReadOnly) then
-
 local largerDisk = nil
 local largerTotal = 0
 for addr in component.list("filesystem") do
@@ -149,7 +138,6 @@ end
 end
 end
 if largerDisk then
-
 local g2
 for addr in component.list("gpu") do g2 = component.proxy(addr) break end
 local s2
@@ -166,35 +154,27 @@ g2.set(2, y, tostring(text))
 end
 local bKB = math.floor(bootTotal / 1024)
 local dKB = math.floor(largerTotal / 1024)
-
 gp(2, (bootReadOnly and "TOS is running from a read-only disk ("
 or "TOS is running from a floppy disk (") .. bKB .. "KB)", 0xFFFF00)
 gp(3, "A larger drive was detected (" .. dKB .. "KB)", 0xFFFF00)
 gp(4, "  source:  " .. (bootFS.address or "?"):sub(1, 12) .. "...", 0xAAAAAA)
 gp(5, "  target:  " .. (largerDisk.address or "?"):sub(1, 12) .. "...", 0xAAAAAA)
-
 gp(7, "1. Install TOS to the hard drive (recommended)", 0x00FF00)
 gp(8, bootReadOnly and "2. Continue read-only (nothing is saved)"
 or "2. Continue booting from floppy (limited space)", 0xAAAAAA)
 gp(10, "Press 1 or 2:", 0xFFFFFF)
-
 while true do
 local sig, _, char = computer.pullSignal(60)
 if sig == "key_down" then
 if char == 49 then
-
 if bootFS.exists("/install.lua") then
-
 g2.fill(1, 1, sw, sh, " ")
 gp(2, "Starting installer...", 0x00AAFF)
-
 g2.fill(1, 1, sw, sh, " ")
 gp(2, "Copying TOS to hard drive...", 0x00AAFF)
 local y2 = 4
 local copied2 = 0
-
 local copyFailed = nil
-
 local function treeSize(srcFS, dir)
 local total = 0
 local iter = srcFS.list(dir)
@@ -229,7 +209,6 @@ if not wh then
 srcFS.close(fh)
 copyFailed = "open-dst " .. srcPath; return
 end
-
 while true do
 local chunk = srcFS.read(fh, 4096)
 if not chunk then break end
@@ -246,7 +225,6 @@ copied2 = copied2 + 1
 end
 end
 end
-
 local needed = treeSize(bootFS, "/") + 8192
 local dstFree = (largerDisk.spaceTotal() or 0)
 - (largerDisk.spaceUsed() or 0)
@@ -259,7 +237,6 @@ while true do local ev = computer.pullSignal(1e9)
 if ev == "key_down" then computer.shutdown(true) end
 end
 end
-
 local coreDirs = {
 "/tos/", "/tos/kernel/", "/tos/kernel/net/", "/tos/shell/",
 "/tos/compat/", "/tos/peripheral/",
@@ -281,7 +258,6 @@ end
 end
 gp(y2, "Copied " .. copied2 .. " files", 0x00FF00)
 y2 = y2 + 1
-
 local ok1 = largerDisk.exists("/init.lua")
 local ok2 = largerDisk.exists("/tos/kernel/init.lua")
 local sz1 = ok1 and largerDisk.size("/init.lua") or 0
@@ -294,7 +270,6 @@ while true do local ev = computer.pullSignal(1e9)
 if ev == "key_down" then computer.shutdown(true) end
 end
 end
-
 gp(y2, "Files copied. Update EEPROM to boot from hard drive?", 0xFFAA00)
 y2 = y2 + 1
 gp(y2, "  [Y] update EEPROM   [N] leave EEPROM alone", 0xAAAAAA)
@@ -342,26 +317,20 @@ end
 end
 end
 end
-
 _G._TOS = {
-version    = "1.5.0",
-codename   = "Aletheia",
-
-build = "e960eec",
+version = "1.5.0",
+codename = "Aletheia",
+build = "ab0cf8d",
 variant = "minified",
-bootFS     = bootFS,
-
-bootAddr   = bootFS and bootFS.address or nil,
-bootTime   = computer.uptime(),
-startMem   = computer.freeMemory(),
-totalMem   = computer.totalMemory(),
+bootFS = bootFS,
+bootAddr = bootFS and bootFS.address or nil,
+bootTime = computer.uptime(),
+startMem = computer.freeMemory(),
+totalMem = computer.totalMemory(),
 }
-
 local loaded = {}
 local loading = {}
-
 local loadedFrom = {}
-
 --! #SEC (pentest, Sep 2026) — /usr/bin is NOT a library root. It held
 --! package COMMAND files, which pkg runs by path inside the package's
 --! sandbox; on this list the same file was also a module this require
@@ -384,14 +353,11 @@ local searchPaths = {
 "/usr/modules/?.lua",
 "/usr/modules/?/init.lua",
 }
-
 _G.package = { loaded = nil }
-
 local function readFile(path)
 if not bootFS.exists(path) then return nil end
 local h = bootFS.open(path, "r")
 if not h then return nil end
-
 local parts = {}
 while true do
 local chunk = bootFS.read(h, 4096)
@@ -401,7 +367,6 @@ end
 bootFS.close(h)
 return table.concat(parts)
 end
-
 local function loadModuleFile(path)
 if not bootFS.exists(path) then return false end
 local h = bootFS.open(path, "r")
@@ -411,13 +376,11 @@ local readOk, readErr = pcall(function()
 while true do
 local chunk = bootFS.read(h, 4096)
 if chunk == nil then break end
-
 if #chunk > 0 then n = n + 1; chunks[n] = chunk end
 end
 end)
 bootFS.close(h)
 if not readOk then return true, nil, readErr, "read" end
-
 local i = 0
 local okL, fn, err = pcall(load, function()
 i = i + 1
@@ -428,19 +391,16 @@ end, "=" .. path, "t")
 if not okL then return true, nil, fn, "compile" end
 return true, fn, err, "compile"
 end
-
 local function loadErrorText(name, path, err, mode)
 local why = tostring(err)
 if mode == "read" then
 return "Read error in '" .. name .. "' (" .. path .. "): " .. why
 end
 if why:find("not enough memory", 1, true) then
-
 return "Out of memory loading '" .. name .. "' (" .. path .. "): " .. why
 end
 return "Syntax error in '" .. name .. "' (" .. path .. "): " .. why
 end
-
 --! MUST list every name compat.init registers, or that name's first
 --! require falls past this hook into the search path.
 --!
@@ -461,13 +421,10 @@ serialization = true, buffer = true, term = true, filesystem = true,
 event = true, shell = true, io = true, internet = true,
 robot = true, process = true, note = true,
 }
-
 local function tosRequireBody(name)
-
 if OPENOS_SHIMS[name] and not loaded[name] then
 local T = _G._TOS
 if not (T and T.compatDisabled) then
-
 local okC, compatMod = pcall(_G.require, "compat")
 if okC and compatMod and compatMod.init then
 pcall(compatMod.init, { procSleep = T and T.proc and T.proc.sleep })
@@ -475,7 +432,6 @@ end
 if loaded[name] then return loaded[name] end
 end
 end
-
 local modName = name:gsub("%.", "/")
 local tried = {}
 for _, pattern in ipairs(searchPaths) do
@@ -498,92 +454,75 @@ tried[#tried + 1] = path
 end
 error("Module not found: " .. name .. "\nSearched:\n  " .. table.concat(tried, "\n  "), 2)
 end
-
 local function tosRequire(name)
 if loaded[name] then return loaded[name] end
 if loading[name] then
 error("Circular dependency: " .. name, 2)
 end
 loading[name] = true
-
 local ok, result = pcall(tosRequireBody, name)
 loading[name] = nil
 if not ok then error(result, 0) end
 return result
 end
-
 _G.require = tosRequire
-
 loaded["component"] = component
 loaded["computer"] = computer
 if unicode then loaded["unicode"] = unicode end
-
 _G.package.loaded = loaded
 _G.package.loadedFrom = loadedFrom
-
 local bootcfgMod, bootCfg, verbosity
 do
 local okB, m = pcall(require, "kernel.bootcfg")
 if okB and m then
 bootcfgMod = m
 local ok2, cfg = pcall(m.load, {
-exists   = function(p) return bootFS.exists(p) end,
+exists = function(p) return bootFS.exists(p) end,
 readFile = function(p) return readFile(p) end,
 })
 bootCfg = ok2 and cfg or nil
 end
 verbosity = (bootcfgMod and bootCfg) and bootcfgMod.verbosity(bootCfg) or "text"
-_G._TOS.bootcfg    = bootCfg
+_G._TOS.bootcfg = bootCfg
 _G._TOS.bootcfgMod = bootcfgMod
 end
-
 local earlyMinLevel
 if bootcfgMod and bootcfgMod.echoMinLevel then
 earlyMinLevel = bootcfgMod.echoMinLevel(verbosity)
 else
 earlyMinLevel = ({ silent = 4, splash = 2, text = 1, verbose = 0 })[verbosity] or 1
 end
-
 local gpuAddr
 for addr in component.list("gpu") do gpuAddr = addr break end
 local screenAddr
 for addr in component.list("screen") do screenAddr = addr break end
 local gpu
-
 if gpuAddr and screenAddr then
 gpu = component.proxy(gpuAddr)
-
 if not _G._BIOS_CY then
 gpu.bind(screenAddr)
 end
 _G._TOS.gpu = gpu
 end
-
 local screenW, screenH = 50, 16
 if gpu then
 screenW, screenH = gpu.getResolution()
 end
-
 local gpuDepth = _G._BIOS_DEPTH or 1
 if gpu then
 local ok, d = pcall(gpu.getDepth)
 if ok and d then gpuDepth = d end
 end
 local isMonochrome = gpuDepth <= 1
-
 local function tc(color)
 if isMonochrome then return 0xFFFFFF end
 return color
 end
-
 local cursorY = 1
-
 local bootT0 = (_G._TOS and _G._TOS.bootTime) or computer.uptime()
-
 local function earlyPrint(text, color)
 if not gpu then return end
 text = tostring(text)
-
 if verbosity == "verbose" then
 local ms = math.floor((computer.uptime() - bootT0) * 1000)
 text = string.format("[%6dms] %s", ms, text)
@@ -593,12 +532,10 @@ if cursorY > screenH then
 gpu.copy(1, 2, screenW, screenH - 1, 0, -1)
 cursorY = screenH
 end
-
 gpu.fill(1, cursorY, screenW, 1, " ")
 gpu.set(1, cursorY, text)
 cursorY = cursorY + 1
 end
-
 local function earlyClear()
 if not gpu then return end
 gpu.setBackground(0x000000)
@@ -606,12 +543,10 @@ gpu.setForeground(tc(0x00FF00))
 gpu.fill(1, 1, screenW, screenH, " ")
 cursorY = 1
 end
-
 local function splashPad(s)
 if verbosity ~= "splash" then return "  " .. s end
 return string.rep(" ", math.max(0, math.floor((screenW - #s) / 2))) .. s
 end
-
 if _G._BIOS_CY then
 cursorY = _G._BIOS_CY
 if gpu then
@@ -621,13 +556,10 @@ end
 else
 earlyClear()
 end
-
 local totalKB = math.floor(_G._TOS.totalMem / 1024)
-local freeKB  = math.floor(computer.freeMemory() / 1024)
-
+local freeKB = math.floor(computer.freeMemory() / 1024)
 local function drawBootHeader()
 if verbosity ~= "silent" then
-
 local okLogo, logo = pcall(require, "kernel.logo")
 if okLogo and logo and logo.banner then
 local bopts = { ascii = isMonochrome, compact = screenW < 34 }
@@ -645,11 +577,9 @@ end
 earlyPrint(splashPad("TOS v" .. _G._TOS.version .. " [" .. _G._TOS.codename .. "]"), tc(0x00AAFF))
 earlyPrint(splashPad("Memory: " .. freeKB .. "K free / " .. totalKB .. "K total"), tc(0xAAAAAA))
 end
-
 if _G._BIOS_ONETIME then
 earlyPrint("  ONE-TIME BOOT: EEPROM unchanged, boot config preserved", tc(0xFFAA00))
 end
-
 if bootCfg and bootCfg.profile == "safe" then
 earlyPrint("  SAFE MODE: services, cron, packages, net, themes are OFF", tc(0xFFAA00))
 earlyPrint("  (Boot Settings -> Profile to leave Safe Mode)", tc(0xAAAAAA))
@@ -660,13 +590,10 @@ elseif totalKB < 256 then
 earlyPrint("  NOTE: Limited memory - some features may be skipped", tc(0xFFFF00))
 end
 end
-
 drawBootHeader()
-
 if ((bootCfg and bootCfg.showConfig) or verbosity == "verbose") and gpu then
 pcall(function()
 local sysinfo = require("kernel.sysinfo")
-
 local function postColor(role)
 local map = {
 bg = 0x000000, border = tc(0x00AAFF), title = tc(0x00FFFF),
@@ -680,12 +607,10 @@ if bgc then gpu.setBackground(bgc) end
 gpu.setForeground(fgc or 0xFFFFFF)
 gpu.set(x, y, text)
 end
-
 local inv = sysinfo.gather(nil,
 { cpuTier = bootCfg.cpuTier, dataTier = bootCfg.dataTier },
 function(msg) earlyPrint("  Standby - " .. msg .. "...", tc(0xAAAAAA)) end)
 earlyClear()
-
 local cfgTitle = "TOS System Configuration"
 if screenW >= 60 then
 local okLogo, logo = pcall(require, "kernel.logo")
@@ -697,7 +622,6 @@ local after = sysinfo.render(inv, { W = screenW, H = screenH, color = postColor,
 set = gset, title = cfgTitle })
 gset(2, math.min(screenH, (after or screenH) + 1),
 "Press DEL for Boot Settings, S for Safe Mode (once)...", tc(0xFFAA00))
-
 local enterSetup = false
 local safeOnce = false
 local deadline = computer.uptime() + 3
@@ -710,7 +634,6 @@ break
 end
 end
 earlyClear()
-
 drawBootHeader()
 if safeOnce and bootCfg then
 bootCfg.profile = "safe"
@@ -718,7 +641,6 @@ earlyPrint("  SAFE MODE (one-time): services, cron, packages, net, themes OFF",
 tc(0xFFAA00))
 earlyPrint("  Boot config untouched - the next boot is normal.", tc(0xAAAAAA))
 end
-
 if enterSetup then
 local okBS, bootsettings = pcall(require, "kernel.bootsettings")
 if okBS and bootsettings then
@@ -735,7 +657,7 @@ end,
 local action, newCfg = bootsettings.run(bootCfg, ctx)
 if action == "save" or action == "reboot" then
 local cfgFS = {
-exists   = function(p) return bootFS.exists(p) end,
+exists = function(p) return bootFS.exists(p) end,
 readFile = readFile,
 writeFile = function(p, d)
 if not bootFS.exists("/etc") then pcall(bootFS.makeDirectory, "/etc") end
@@ -760,7 +682,6 @@ end
 end
 end)
 end
-
 local function bootRead(path)
 if not bootFS.exists(path) then return nil end
 local h = bootFS.open(path, "r")
@@ -773,7 +694,6 @@ until not chunk
 bootFS.close(h)
 return table.concat(parts)
 end
-
 local function loadTableFile(path, chunkName)
 local source = bootRead(path)
 if not source then return nil end
@@ -783,10 +703,8 @@ local ok, result = pcall(fn)
 if not ok or type(result) ~= "table" then return nil end
 return result
 end
-
 local criticalFiles = {}
 local criticalSource = "(none)"
-
 do
 local mf = loadTableFile("/var/pkg/installed/tos-core/package.lua", "tos-core/package")
 if mf and type(mf.critical) == "table" then
@@ -796,7 +714,6 @@ end
 if #criticalFiles > 0 then criticalSource = "tos-core/package.lua" end
 end
 end
-
 if #criticalFiles == 0 then
 local mf = loadTableFile("/etc/critical.bak", "critical.bak")
 if mf then
@@ -806,7 +723,6 @@ end
 if #criticalFiles > 0 then criticalSource = "critical.bak" end
 end
 end
-
 if #criticalFiles == 0 then
 local mf = loadTableFile("/tos/system_manifest.lua", "system_manifest")
 if mf then
@@ -818,7 +734,6 @@ end
 if #criticalFiles > 0 then criticalSource = "system_manifest.lua" end
 end
 end
-
 if #criticalFiles == 0 then
 criticalFiles = {
 "/tos/kernel/init.lua",
@@ -839,7 +754,6 @@ if not bootFS.exists(path) then
 missingFiles[#missingFiles + 1] = path
 end
 end
-
 --! THE WAY OUT OF A BOOT LOOP. The EEPROM boots its saved disk without
 --! asking, so a disk whose install is broken was booted, refused below,
 --! rebooted and booted again -- recoverable only by moving the disk to
@@ -852,7 +766,6 @@ end
 --! split-BIOS item, not this. Returns the address chosen, or nil.
 --! (test_boot_elsewhere.lua)
 local function bootElsewhere(comp, skip, say, pull, setBoot)
-
 local function key()
 while true do
 local ev, _, ch = pull()
@@ -864,7 +777,6 @@ say("Press any key to reboot...")
 key()
 return nil
 end
-
 local function scan()
 local out = {}
 local function add(addr, px)
@@ -915,7 +827,6 @@ end
 end
 return nil
 end
-
 if #missingFiles > 0 then
 earlyPrint("MISSING " .. #missingFiles .. " FILES:", tc(0xFF0000))
 for _, path in ipairs(missingFiles) do
@@ -932,16 +843,13 @@ function() return computer.pullSignal(math.huge) end,
 computer.setBootAddress)
 computer.shutdown(true)
 end
-
 if verbosity ~= "silent" then
 earlyPrint(splashPad("Verifying: " .. (#criticalFiles - #missingFiles) .. "/" .. #criticalFiles
 .. " system files OK [" .. criticalSource .. "]"), tc(0x00FF00))
 earlyPrint(splashPad("Loading kernel..."), tc(0x00FF00))
 end
-
 local bootProgress = nil
 if verbosity == "splash" and gpu then
-
 --! RECOMPUTED, never measured once. gpu.bind() above leaves the screen at
 --! its MAXIMUM, and the kernel applies the resolution policy (kernel/
 --! screen.lua, density-based, floored at 80x25) part-way through
@@ -953,7 +861,6 @@ if verbosity == "splash" and gpu then
 --! (max 80x25) and a single Tier 3 block (max 50x16) never move, which is
 --! why it only ever showed on a resized Tier 3 screen.
 --! (test_splash_resize.lua)
-
 local okSteps, bootsteps = pcall(require, "kernel.bootsteps")
 local headerBottom = cursorY
 local barRow, barW, barX
@@ -961,15 +868,15 @@ local function geom()
 if okSteps and bootsteps and bootsteps.splashGeometry then
 barRow, barW, barX = bootsteps.splashGeometry(screenW, screenH, headerBottom)
 else
-barW   = math.max(10, math.min(40, screenW - 6))
-barX   = math.max(1, math.floor((screenW - (barW + 2)) / 2) + 1)
+barW = math.max(10, math.min(40, screenW - 6))
+barX = math.max(1, math.floor((screenW - (barW + 2)) / 2) + 1)
 barRow = math.max(1, math.min(screenH - 4, headerBottom + 1))
 end
 end
 local LOG_ROWS = 3
 local stagesShown = 0
-local stageTotal  = 16
-local fillCh   = isMonochrome and "#" or "█"
+local stageTotal = 16
+local fillCh = isMonochrome and "#" or "█"
 local logLines = {}
 local lastStage = nil
 if okSteps and bootsteps and bootsteps.STAGE_COUNT then stageTotal = bootsteps.STAGE_COUNT end
@@ -977,7 +884,6 @@ local function stageFor(msg)
 if okSteps and bootsteps then return bootsteps.stageFor(msg) end
 return nil
 end
-
 --! Has the glass changed size under us? Re-read it, and if it moved,
 --! rebuild the whole splash rather than just moving the bar: the wordmark
 --! and status lines above were centred for the old width too, and
@@ -997,7 +903,6 @@ geom()
 cursorY = math.min(screenH, barRow + LOG_ROWS + 1)
 return true
 end
-
 local function redraw()
 resync()
 gpu.setBackground(0x000000)
@@ -1016,16 +921,12 @@ local function pushLine(text, color)
 logLines[#logLines + 1] = { text, color }
 while #logLines > LOG_ROWS do table.remove(logLines, 1) end
 end
-
 geom()
 redraw()
 cursorY = math.min(screenH, barRow + LOG_ROWS + 1)
-
 bootProgress = function(msg, level)
 msg = tostring(msg or "")
-
 if level and level >= 2 then
-
 local mark = (level == 2) and "! " or "!! "
 pushLine((mark .. msg):sub(1, barW + 2),
 (level == 2) and tc(0xFFAA00) or tc(0xFF4040))
@@ -1037,12 +938,10 @@ stagesShown = stagesShown + 1
 pushLine(stage, tc(0xAAAAAA))
 end
 end
-
 if msg:find("Boot complete", 1, true) then stagesShown = stageTotal end
 redraw()
 end
 end
-
 --! A kernel panic draws a full-screen STOP page: solid blue, white text, the
 --! error's code in all three spellings (kernel/errors.lua), the failure
 --! itself, and the way out. An homage to the blue screen in TOS's own words:
@@ -1058,7 +957,6 @@ end
 --! This file must stay Lua 5.2-parseable (the architecture guard at the top
 --! has to run on a 5.2 CPU to say so), so nothing here uses 5.3 syntax.
 --! test_stop_screen.lua lifts both functions out of this file and runs them.
-
 local function stopScreenLines(info, W, H)
 local lines = {}
 local function put(text, role, prio, indent)
@@ -1101,7 +999,6 @@ table.remove(lines, at)
 end
 return lines
 end
-
 local function drawStopScreen(g, lines, W, H, depth)
 local bg, fg, dim = 0x0000AA, 0xFFFFFF, 0xAAAAAA
 if depth <= 1 then bg, fg, dim = 0xFFFFFF, 0x000000, 0x000000
@@ -1114,31 +1011,27 @@ pcall(g.setForeground, (lines[i][2] == "dim") and dim or fg)
 pcall(g.set, 1, i, lines[i][1])
 end
 end
-
 local ok, err = xpcall(function()
 local kernel = require("kernel")
 kernel.boot({
-gpu          = gpu,
-gpuDepth     = gpuDepth,
-screenW      = screenW,
-screenH      = screenH,
-earlyPrint   = earlyPrint,
-bootFS       = bootFS,
-
-bootcfg      = bootCfg,
-bootcfgMod   = bootcfgMod,
+gpu = gpu,
+gpuDepth = gpuDepth,
+screenW = screenW,
+screenH = screenH,
+earlyPrint = earlyPrint,
+bootFS = bootFS,
+bootcfg = bootCfg,
+bootcfgMod = bootcfgMod,
 earlyMinLevel = earlyMinLevel,
 bootProgress = bootProgress,
 })
 end, function(e)
 return tostring(e) .. "\n" .. debug.traceback("", 2)
 end)
-
 if not ok then
 local errStr = tostring(err) or "Unknown error"
-
 local STOP_FALLBACK = {
-ERR_KERNEL_PANIC  = { "E-201", "0x00020001" },
+ERR_KERNEL_PANIC = { "E-201", "0x00020001" },
 ERR_OUT_OF_MEMORY = { "E-202", "0x00020002" },
 }
 local sym = errStr:find("not enough memory", 1, true) and "ERR_OUT_OF_MEMORY"
@@ -1148,12 +1041,10 @@ local okE, errors = pcall(require, "kernel.errors")
 local reg = okE and type(errors) == "table" and errors.find(sym)
 if reg then code, hex = errors.code(reg), errors.hex(reg) end
 local reason = "KERNEL PANIC [" .. code .. " " .. sym .. "]"
-
 local report
 pcall(function()
 local K = _G._TOS and _G._TOS.kernel
 if K and K.crashDump then
-
 local okK, r = pcall(K.crashDump, reason, errStr)
 if okK and r then report = r; return end
 end
@@ -1170,7 +1061,6 @@ local hm = bootFS.open("/var/crash/NEW", "w")
 if hm then bootFS.write(hm, reason); bootFS.close(hm) end
 end
 end)
-
 local W, H = screenW, screenH
 if gpu then
 pcall(gpu.setActiveBuffer, 0)
@@ -1184,13 +1074,11 @@ math.floor(computer.uptime()), math.floor(computer.freeMemory() / 1024),
 tostring(T.version or "?")),
 }, W, H), W, H, gpuDepth)
 end
-
 computer.beep(400, 0.15)
 computer.pullSignal(0.05)
 computer.beep(400, 0.15)
 computer.pullSignal(0.05)
 computer.beep(400, 0.15)
-
 while true do
 local ev = computer.pullSignal(math.huge)
 if ev == "key_down" then break end

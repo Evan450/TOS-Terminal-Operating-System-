@@ -1,28 +1,17 @@
 local component = require("component")
-
 local fs = {}
-
 local mounts = {}
-
 local bootFS = nil
-
 function fs.init(bfs)
 bootFS = bfs
-
 mounts["/"] = bootFS
 end
-
 function fs.normalize(path)
-
 if path == nil or path == "" then return "/" end
-
 if type(path) ~= "string" then return nil end
 if path:find("\0", 1, true) then return nil end
-
 path = path:gsub("\\", "/")
-
 if path:sub(1, 1) ~= "/" then path = "/" .. path end
-
 local parts = {}
 for segment in path:gmatch("[^/]+") do
 if segment == ".." then
@@ -34,7 +23,6 @@ end
 local result = "/" .. table.concat(parts, "/")
 return result
 end
-
 function fs.split(path)
 path = fs.normalize(path)
 if not path then return nil, nil end
@@ -42,12 +30,10 @@ local dir, name = path:match("^(.-)([^/]+)$")
 if not dir or dir == "" then dir = "/" end
 return dir, name or ""
 end
-
 function fs.join(...)
 local parts = {...}
 return fs.normalize(table.concat(parts, "/"))
 end
-
 function fs.mount(path, proxy)
 path = fs.normalize(path)
 if not path then return false, "invalid mount path" end
@@ -67,29 +53,24 @@ end
 mounts[path] = proxy
 return true
 end
-
 function fs.unmount(path)
 path = fs.normalize(path)
 if not path then return false, "invalid path" end
 if path == "/" then return false, "Cannot unmount root" end
 local proxy = mounts[path]
 mounts[path] = nil
-
 if type(proxy) == "table" and type(proxy.unmount) == "function" then
 pcall(proxy.unmount)
 end
 return true
 end
-
 local function resolve(path)
 path = fs.normalize(path)
 if not path then return nil end
-
 local bestMount = "/"
 local bestLen = 1
 for mp in pairs(mounts) do
 if #mp > bestLen then
-
 if mp == "/" or (path:sub(1, #mp) == mp and (#path == #mp or path:sub(#mp + 1, #mp + 1) == "/")) then
 bestMount = mp
 bestLen = #mp
@@ -101,7 +82,6 @@ if relPath == "" then relPath = "/" end
 if relPath:sub(1, 1) ~= "/" then relPath = "/" .. relPath end
 return mounts[bestMount], relPath
 end
-
 --! A mount point's PARENTS exist whether or not the disk below has them.
 --! TOS mounts a disk at /mnt/<label> without creating /mnt on the boot
 --! disk, so /mnt was a directory nobody could see: `ls /mnt` said "no such
@@ -110,7 +90,6 @@ end
 --! paths as directories; so does this, by answering for every proper
 --! ancestor of a mount point and listing the mount names among what the
 --! disk below really holds. (test_fs_mount_parents.lua)
-
 local function mountChildren(path)
 local norm = fs.normalize(path)
 if not norm then return nil end
@@ -127,7 +106,6 @@ end
 end
 return out
 end
-
 function fs.exists(path)
 local proxy, rel = resolve(path)
 if not proxy then return false end
@@ -135,7 +113,6 @@ local ok, result = pcall(proxy.exists, rel)
 if ok and result then return result end
 return mountChildren(path) ~= nil
 end
-
 function fs.isDirectory(path)
 local proxy, rel = resolve(path)
 if not proxy then return false end
@@ -143,7 +120,6 @@ local ok, result = pcall(proxy.isDirectory, rel)
 if ok and result then return result end
 return mountChildren(path) ~= nil
 end
-
 function fs.list(path)
 local proxy, rel = resolve(path)
 if not proxy then return {} end
@@ -151,7 +127,6 @@ local ok, result = pcall(proxy.list, rel)
 if not ok or type(result) ~= "table" then result = {} end
 local extra = mountChildren(path)
 if extra then
-
 local merged, seen = {}, {}
 for _, name in ipairs(result) do
 merged[#merged + 1] = name
@@ -167,7 +142,6 @@ return merged
 end
 return result
 end
-
 --! CREATES PARENTS. The layer below does not, on any backend TOS runs on.
 --!
 --! OpenComputers' managed filesystem component is single-level: the
@@ -196,12 +170,10 @@ function fs.makeDirectory(path)
 local norm = fs.normalize(path)
 if not norm then return false, "invalid path" end
 if norm == "/" then return false, "already exists" end
-
 local acc, created = "", false
 for seg in norm:gmatch("[^/]+") do
 acc = acc .. "/" .. seg
 if fs.exists(acc) then
-
 if not fs.isDirectory(acc) then
 return false, "not a directory: " .. acc
 end
@@ -212,7 +184,6 @@ if not proxy then return false, "No filesystem" end
 local ok, result = pcall(proxy.makeDirectory, rel)
 if not ok then return false, tostring(result) end
 if result == false then
-
 return false, "could not create " .. acc
 end
 created = true
@@ -221,11 +192,9 @@ end
 if not created then return false, "already exists" end
 return true
 end
-
 function fs.remove(path)
 path = fs.normalize(path)
 if not path then return false, "invalid path" end
-
 if mounts[path] then
 return false, "Cannot delete a mount point (use umount)"
 end
@@ -235,12 +204,10 @@ local ok, result = pcall(proxy.remove, rel)
 if not ok then return false, tostring(result) end
 return result
 end
-
 function fs.rename(from, to)
 from = fs.normalize(from)
 to = fs.normalize(to)
 if not from or not to then return false, "invalid path" end
-
 if mounts[from] then
 return false, "Cannot rename a mount point"
 end
@@ -254,21 +221,18 @@ local ok, result = pcall(proxyFrom.rename, relFrom, relTo)
 if not ok then return false, tostring(result) end
 return result
 end
-
 function fs.size(path)
 local proxy, rel = resolve(path)
 if not proxy then return 0 end
 local ok, result = pcall(proxy.size, rel)
 return ok and result or 0
 end
-
 function fs.lastModified(path)
 local proxy, rel = resolve(path)
 if not proxy then return 0 end
 local ok, result = pcall(proxy.lastModified, rel)
 return ok and result or 0
 end
-
 local coopProc = nil
 local function coopYield()
 if coopProc == nil then
@@ -277,7 +241,6 @@ coopProc = (okP and m and m.yieldCooperative) and m or false
 end
 if coopProc then coopProc.yieldCooperative() end
 end
-
 function fs.readFile(path)
 local proxy, rel = resolve(path)
 if not proxy then return nil, "No filesystem" end
@@ -286,7 +249,6 @@ if not ok0 or not exists then return nil, "File not found: " .. path end
 local h, err = proxy.open(rel, "r")
 if not h then return nil, err end
 local chunks = {}
-
 local readOk, result = pcall(function()
 repeat
 local chunk = proxy.read(h, 4096)
@@ -299,7 +261,6 @@ chunks = nil
 if not readOk then return nil, tostring(result) end
 return result
 end
-
 --! A FAILED WRITE HAS TWO SHAPES, AND pcall ONLY SEES ONE. OC hands soft
 --! errors back as VALUES, not raises: OpenOS reports a full disk as
 --! `write() -> nil, "not enough space"` (lib/buffer.lua), and some proxies
@@ -317,17 +278,14 @@ end
 local function writeAll(proxy, h, content)
 local ok, res, werr = pcall(proxy.write, h, content)
 if not ok then return false, tostring(res) end
-
 if res == false or (res == nil and werr ~= nil) then
 return false, tostring(werr or "write refused")
 end
 return true
 end
-
 function fs.writeFile(path, content)
 local proxy, rel = resolve(path)
 if not proxy then return false, "No filesystem" end
-
 local dir = rel:match("^(.+)/[^/]+$")
 if dir and dir ~= "" then
 local ok0, isDir = pcall(proxy.isDirectory, dir)
@@ -340,7 +298,6 @@ proxy.close(h)
 if not ok then return false, "Write failed: " .. tostring(werr) end
 return true
 end
-
 function fs.appendFile(path, content)
 local proxy, rel = resolve(path)
 if not proxy then return false, "No filesystem" end
@@ -351,9 +308,7 @@ proxy.close(h)
 if not ok then return false, "Write failed: " .. tostring(werr) end
 return true
 end
-
 local ATOMIC_SUFFIX = ".tos-tmp"
-
 function fs.writeFileAtomic(path, content)
 path = fs.normalize(path)
 if not path then return false, "invalid path" end
@@ -363,7 +318,6 @@ if not ok then
 pcall(fs.remove, tmp)
 return false, err or "temp write failed"
 end
-
 --! Judged by whether the file is GONE, not by pcall: fs.remove reports a
 --! refusal as `false, err` and never raises, so `pcall(fs.remove, path)`
 --! was always true and this branch could not run. A target that would
@@ -381,7 +335,6 @@ local mok, merr = fs.rename(tmp, path)
 if not mok then return false, "rename failed: " .. tostring(merr) end
 return true
 end
-
 function fs.recoverAtomic(paths)
 local recovered, cleaned = 0, 0
 for _, base in ipairs(paths or {}) do
@@ -400,7 +353,6 @@ end
 end
 return recovered, cleaned
 end
-
 --! #MEM (pentest, Sep 2026) — copy a FILE a block at a time. fs.copy read
 --! the whole source into one string (holding every chunk AND the joined
 --! copy while readFile concatenated) and wrote it back out, so copying a
@@ -447,52 +399,41 @@ pcall(dProxy.close, hout)
 if not ok then return false, tostring(err) end
 return true
 end
-
 function fs.copy(src, dst)
 src = fs.normalize(src)
 dst = fs.normalize(dst)
 if not src or not dst then return false, "invalid path" end
-
 if fs.isDirectory(src) then
 return fs.copyRecursive(src, dst)
 end
 return fs.copyFile(src, dst)
 end
-
 function fs.copyRecursive(src, dst)
 src = fs.normalize(src)
 dst = fs.normalize(dst)
 if not src or not dst then return false, "invalid path" end
-
 if not fs.exists(src) then
 return false, "Source not found: " .. src
 end
 if not fs.isDirectory(src) then
-
 return fs.copy(src, dst)
 end
-
 if src == "/" or dst == src or dst:sub(1, #src + 1) == src .. "/" then
 return false, "Cannot copy a directory into itself"
 end
-
 if not fs.exists(dst) then
 local ok, err = fs.makeDirectory(dst)
 if not ok then return false, "Cannot create directory: " .. tostring(err) end
 end
-
 local items = fs.list(src)
 if not items then return false, "Cannot list source directory" end
-
 local copied, failed = 0, 0
 for _, name in ipairs(items) do
 coopYield()
-
 local cleanName = name:match("^(.-)/?$") or name
 if cleanName ~= "" then
 local srcPath = fs.join(src, cleanName)
 local dstPath = fs.join(dst, cleanName)
-
 if fs.isDirectory(srcPath) then
 local ok, err = fs.copyRecursive(srcPath, dstPath)
 if ok then copied = copied + 1 else failed = failed + 1 end
@@ -501,22 +442,19 @@ if fs.copyFile(srcPath, dstPath) then copied = copied + 1 else failed = failed +
 end
 end
 end
-
 if failed > 0 then
 return false, string.format("Copied %d items, %d failed", copied, failed)
 end
 return true
 end
-
 function fs.open(path, mode)
 local proxy, rel = resolve(path)
 if not proxy then return nil, "No filesystem" end
 local h, err = proxy.open(rel, mode or "r")
 if not h then return nil, err end
-
 return {
 handle = h,
-proxy  = proxy,
+proxy = proxy,
 read = function(self, n)
 return proxy.read(h, n or 4096)
 end,
@@ -531,25 +469,21 @@ return proxy.seek(h, whence, offset)
 end,
 }
 end
-
 function fs.spaceTotal(path)
 local proxy = resolve(path or "/")
 if not proxy then return 0 end
 local ok, result = pcall(proxy.spaceTotal)
 return ok and result or 0
 end
-
 function fs.spaceUsed(path)
 local proxy = resolve(path or "/")
 if not proxy then return 0 end
 local ok, result = pcall(proxy.spaceUsed)
 return ok and result or 0
 end
-
 function fs.spaceFree(path)
 return fs.spaceTotal(path) - fs.spaceUsed(path)
 end
-
 function fs.mounts()
 local result = {}
 for mp, proxy in pairs(mounts) do
@@ -558,7 +492,6 @@ pcall(function() label = proxy.getLabel() or "Unnamed" end)
 local total, used = 0, 0
 pcall(function() total = proxy.spaceTotal() end)
 pcall(function() used = proxy.spaceUsed() end)
-
 local openFiles = nil
 if type(proxy) == "table" and type(proxy.openHandles) == "function" then
 local okH, n = pcall(proxy.openHandles)
@@ -566,14 +499,13 @@ if okH and type(n) == "number" then openFiles = n end
 end
 result[#result + 1] = {
 mountPoint = mp,
-label      = label,
-address    = proxy.address,
-total      = total,
-used       = used,
-openFiles  = openFiles,
+label = label,
+address = proxy.address,
+total = total,
+used = used,
+openFiles = openFiles,
 }
 end
 return result
 end
-
 return fs

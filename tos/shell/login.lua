@@ -1,17 +1,14 @@
 local computer = require("computer")
-
 local function pull(timeout)
 if coroutine.isyieldable and coroutine.isyieldable() then
 return coroutine.yield()
 end
 return computer.pullSignal(timeout or 0.5)
 end
-
 local function sleep(sec)
 local dl = computer.uptime() + sec
 while computer.uptime() < dl do pull(dl - computer.uptime()) end
 end
-
 --! ONE INSTANCE PER SEAT. Everything from here to the end of newLogin
 --! reads the seat's display, W and H (and the modules) as upvalues that
 --! login.run sets. As one shared module, a 2-seat boot ran login.run twice
@@ -23,10 +20,8 @@ end
 --! of the code inside stays readable. (test_login_per_seat.lua)
 local function newLogin()
 local login = {}
-
 local display, event, usermod, proc, log
 local W, H
-
 local i18nMod, ustrMod
 do
 local ok, m = pcall(require, "kernel.i18n"); if ok then i18nMod = m end
@@ -48,7 +43,6 @@ local function ufit(s, cols)
 if ustrMod then return ustrMod.fit(s, cols) end
 return tostring(s or ""):sub(1, cols)
 end
-
 local function fieldGeom(boxX, boxW)
 local uLbl = t("login.username", "Username:")
 local pLbl = t("login.password", "Password:")
@@ -59,7 +53,6 @@ local inputX = boxX + 2 + lblW + 1
 local inputW = boxW - (2 + lblW + 1) - 2
 return uLbl, pLbl, lblW, inputX, inputW
 end
-
 local function drawLoginScreen(message, isError)
 local theme = display.getTheme()
 local bgColor = theme.bg
@@ -67,9 +60,7 @@ local fgColor = theme.fg
 local borderColor = theme.border
 local titleColor = theme.title
 local dimColor = theme.dim
-
 display.clear(bgColor)
-
 local bannerY = 2
 local ver = display.fit((_G._TOS and _G._TOS.version) or "?", 9)
 local okLogo, logo = pcall(require, "kernel.logo")
@@ -83,38 +74,33 @@ local tag = logo.TAGLINE .. "  v" .. ver
 display.set(math.floor((W - #tag) / 2) + 1, bannerY, tag, dimColor, bgColor)
 bannerY = bannerY + 2
 elseif H >= 20 then
-display.set(math.floor(W / 2) - 12, bannerY,     "========================", borderColor, bgColor)
-display.set(math.floor(W / 2) - 12, bannerY + 1,  "    T O S  Login        ", titleColor, bgColor)
-display.set(math.floor(W / 2) - 12, bannerY + 2,  "  Terminal OS v" .. ver, dimColor, bgColor)
-display.set(math.floor(W / 2) - 12, bannerY + 3,  "========================", borderColor, bgColor)
+display.set(math.floor(W / 2) - 12, bannerY, "========================", borderColor, bgColor)
+display.set(math.floor(W / 2) - 12, bannerY + 1, "    T O S  Login        ", titleColor, bgColor)
+display.set(math.floor(W / 2) - 12, bannerY + 2, "  Terminal OS v" .. ver, dimColor, bgColor)
+display.set(math.floor(W / 2) - 12, bannerY + 3, "========================", borderColor, bgColor)
 bannerY = bannerY + 5
 else
 display.set(math.floor(W / 2) - 8, bannerY, "=== TOS Login ===", borderColor, bgColor)
 bannerY = bannerY + 2
 end
-
 local boxW = math.min(40, W - 4)
 local boxH = 8
 local boxX = math.floor((W - boxW) / 2) + 1
 local boxY = bannerY + 1
-
 local boxBg = theme.panel_bg
 display.dbox(boxX, boxY, boxW, boxH, t("login.title", "Authentication"), {
 bg = boxBg,
 border = borderColor,
 title = titleColor,
 })
-
 local uLbl, pLbl, lblW = fieldGeom(boxX, boxW)
 display.set(boxX + 2, boxY + 2, ufit(uLbl, lblW), dimColor, boxBg)
 display.set(boxX + 2, boxY + 4, ufit(pLbl, lblW), dimColor, boxBg)
-
 if message then
 local msgColor = isError and theme.error or theme.highlight
 local msgX = math.floor((W - uw(message)) / 2)
 display.set(math.max(1, msgX), boxY + boxH + 1, ufit(message, W - 2), msgColor, bgColor)
 end
-
 if _G._TOS and _G._TOS.unsafeShutdown then
 local warn = ufit(t("login.unsafe",
 "! Last shutdown was unsafe (power loss) - data verified"), W - 2)
@@ -122,46 +108,34 @@ local wColor = theme.warning or theme.error
 local wX = math.floor((W - uw(warn)) / 2)
 display.set(math.max(1, wX), boxY + boxH + 2, warn, wColor, bgColor)
 end
-
 local hint = t("login.hint", "Enter credentials (Ctrl+Q to cancel)")
 display.set(math.max(1, math.floor((W - uw(hint)) / 2)), H - 1, hint, dimColor, bgColor)
-
 return boxX, boxY, boxW
 end
-
 local function drawInput(boxX, boxY, boxW, field, value, active)
 local theme = display.getTheme()
 local fieldY = (field == "username") and (boxY + 2) or (boxY + 4)
-
 local _, _, _, inputX, inputW = fieldGeom(boxX, boxW)
-
 local bg = active and theme.input_bg or theme.panel_bg
 local fg = active and theme.input_fg or theme.dim
-
 display.fill(inputX, fieldY, inputW, 1, " ", fg, bg)
-
 local shown = value
 if field == "password" then
 shown = string.rep("*", #value)
 end
 shown = display.fit(shown, inputW - 1)
 display.set(inputX, fieldY, shown, fg, bg)
-
 if active then
 local cursorPos = inputX + math.min(#value, inputW - 1)
 display.set(cursorPos, fieldY, "_", theme.highlight, bg)
 end
 end
-
 local function readInput(boxX, boxY, boxW, field, maxLen)
 maxLen = maxLen or 20
 local value = ""
-
 while true do
 drawInput(boxX, boxY, boxW, field, value, true)
-
 local sig, _, char, code = pull(0.5)
-
 if sig == "key_down" then
 if code == 28 then
 return value
@@ -175,7 +149,6 @@ elseif char and char >= 32 and char < 127 and #value < maxLen then
 value = value .. string.char(char)
 end
 elseif sig == "clipboard" then
-
 local pastedText = char
 if type(pastedText) == "string" then
 value = value .. pastedText:sub(1, maxLen - #value)
@@ -183,37 +156,29 @@ end
 end
 end
 end
-
 local function firstBootSetup(username, oldPassword)
-
 username = (type(username) == "string" and username ~= "") and username or "root"
 oldPassword = type(oldPassword) == "string" and oldPassword or ""
 local theme = display.getTheme()
 local bgColor = theme.bg
 local boxBg = theme.panel_bg
 display.clear(bgColor)
-
 local boxW = math.min(50, W - 4)
 local boxH = 12
 local boxX = math.floor((W - boxW) / 2) + 1
 local boxY = math.floor((H - boxH) / 2) + 1
-
 display.dbox(boxX, boxY, boxW, boxH, "First Boot Setup", {
 bg = boxBg,
 border = theme.title,
 title = theme.title,
 })
-
 display.set(boxX + 2, boxY + 2, "Welcome to TOS!", theme.highlight, boxBg)
 display.set(boxX + 2, boxY + 3, "Please set a new password for " .. username .. ".", theme.dim, boxBg)
 display.set(boxX + 2, boxY + 5, "New password:", theme.dim, boxBg)
 display.set(boxX + 2, boxY + 7, "Confirm:", theme.dim, boxBg)
-
 local inputX = boxX + 16
 local inputW = boxW - 18
-
 local pass1, pass2
-
 --! Every seat opens this box on a fresh install, and the first to answer
 --! sets the password. That answer stands: the other seats leave for the
 --! ordinary login. They used to stay and retry a change whose "current
@@ -237,18 +202,14 @@ theme.highlight, boxBg)
 sleep(2)
 return false
 end
-
 while true do
-
 display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, theme.input_bg)
 display.set(inputX, boxY + 5, "_", theme.highlight, theme.input_bg)
-
 pass1 = ""
 while true do
 display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, theme.input_bg)
 display.set(inputX, boxY + 5, string.rep("*", #pass1), theme.input_fg, theme.input_bg)
 display.set(inputX + #pass1, boxY + 5, "_", theme.highlight, theme.input_bg)
-
 local sig, _, char, code = pull(0.5)
 if setElsewhere() then return leave() end
 if sig == "key_down" then
@@ -260,13 +221,11 @@ pass1 = pass1 .. string.char(char)
 end
 end
 end
-
 pass2 = ""
 while true do
 display.fill(inputX, boxY + 7, inputW, 1, " ", theme.input_fg, theme.input_bg)
 display.set(inputX, boxY + 7, string.rep("*", #pass2), theme.input_fg, theme.input_bg)
 display.set(inputX + #pass2, boxY + 7, "_", theme.highlight, theme.input_bg)
-
 local sig, _, char, code = pull(0.5)
 if setElsewhere() then return leave() end
 if sig == "key_down" then
@@ -278,7 +237,6 @@ pass2 = pass2 .. string.char(char)
 end
 end
 end
-
 local msgW = boxW - 4
 local function say(text, color)
 local rows, line = {}, ""
@@ -287,7 +245,6 @@ local cand = (line == "") and word or (line .. " " .. word)
 if #cand <= msgW then line = cand
 else
 if line ~= "" then rows[#rows + 1] = line end
-
 line = (#word <= msgW) and word or word:sub(1, msgW)
 end
 end
@@ -299,7 +256,6 @@ display.set(boxX + 2, boxY + 9 + i, rows[i + 1], color, boxBg)
 end
 end
 end
-
 if #pass1 < 6 then
 say("Password must be 6+ characters!", theme.error)
 elseif pass1 ~= pass2 then
@@ -307,7 +263,6 @@ say("Passwords don't match! Try again.", theme.error)
 elseif setElsewhere(true) then
 return leave()
 else
-
 local ok, err = usermod.changePassword(username, username, oldPassword, pass1)
 if ok then
 say("Password set! Starting TOS...", theme.highlight)
@@ -315,7 +270,6 @@ sleep(1.5)
 return true
 else
 local msg = tostring(err)
-
 if msg:lower():find("read%-only") or _G._TOS_ROOT_READONLY then
 say("Disk is READ-ONLY — install to a writable drive (install.lua).",
 theme.error)
@@ -325,88 +279,72 @@ say("Error: " .. msg, theme.error)
 end
 end
 end
-
 display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, boxBg)
 display.fill(inputX, boxY + 7, inputW, 1, " ", theme.input_fg, boxBg)
 sleep(1.5)
 end
 end
-
 local function showGuestOption(boxX, boxY, boxW)
 local theme = display.getTheme()
 local hint = t("login.guest", "F2: Guest access")
 local hx = boxX + math.floor((boxW - uw(hint)) / 2)
 display.set(math.max(1, hx), boxY + 9, hint, theme.dim, theme.bg)
 end
-
 local function tryTutorial(token)
-
 local fs = (_G._TOS and _G._TOS.securefs) or nil
 if not fs then
 pcall(function() fs = require("kernel.fs") end)
 end
 if not fs then return end
-
 local session = nil
 if usermod and usermod.getSession and token then
 session = usermod.getSession(token)
 end
-
 local ok2, tut = pcall(require, "shell.tutorial")
 if ok2 and tut.shouldShow(fs, session) then
 tut.run({
-D  = display,
-F  = fs,
-U  = usermod,
+D = display,
+F = fs,
+U = usermod,
 st = token,
-W  = W,
-H  = H,
+W = W,
+H = H,
 })
 end
 end
-
 function login.run(modules)
 display = modules.display
-event   = modules.event
+event = modules.event
 usermod = modules.users
-proc    = modules.proc
-log     = modules.log
-
+proc = modules.proc
+log = modules.log
 W, H = display.getSize()
-
 local rootUser = usermod.getUser("root")
 if rootUser and rootUser.firstBoot then
 local token = usermod.login("root", "root", { setCurrent = false })
 if token then
 local ok = firstBootSetup("root", "root")
 if ok then
-
 if usermod.promoteAfterFirstBoot then
 local okP, errP = usermod.promoteAfterFirstBoot(token)
 if not okP and log then
 log.warn("auth", "First-boot promotion refused: " .. tostring(errP))
 end
 else
-
 local s = usermod.getSession(token)
 if s then s.firstBoot = nil end
 end
-
 tryTutorial(token)
 return token
 end
-
 if usermod.logout then pcall(usermod.logout, token) end
 end
 end
-
 local guestOk = usermod.guestEnabled and usermod.guestEnabled() or false
-
 local BACKOFF_SCHEDULE = { 2, 5, 15, 60 }
-local BACKOFF_PATH     = "/var/lib/login_backoff.dat"
+local BACKOFF_PATH = "/var/lib/login_backoff.dat"
 local failsByUser = {}
-local lastFailTs  = {}
-
+local lastFailTs = {}
 do
 local okF, fs = pcall(require, "kernel.fs")
 local okS, ser = pcall(require, "kernel.serialize")
@@ -429,35 +367,26 @@ end
 end
 end
 end
-
 local function persistBackoff()
-
 local okF, fs = pcall(require, "kernel.fs")
 local okS, ser = pcall(require, "kernel.serialize")
 if not (okF and okS) then return end
-
 if not fs.exists("/var/lib") then pcall(fs.makeDirectory, "/var/lib") end
 pcall(fs.writeFile, BACKOFF_PATH,
 ser.encode({ fails = failsByUser, lastFailTs = lastFailTs }))
 end
-
 local function backoffSeconds(user)
 local n = failsByUser[user] or 0
 return BACKOFF_SCHEDULE[math.min(n, #BACKOFF_SCHEDULE)] or BACKOFF_SCHEDULE[#BACKOFF_SCHEDULE]
 end
-
 while true do
 local boxX, boxY, boxW = drawLoginScreen()
-
 if guestOk then showGuestOption(boxX, boxY, boxW) end
-
 drawInput(boxX, boxY, boxW, "password", "", false)
-
 local username = nil
 local guestRequested = false
 local cancelRequested = false
 local value = ""
-
 while true do
 drawInput(boxX, boxY, boxW, "username", value, true)
 local sig, _, char, code = pull(0.5)
@@ -482,7 +411,6 @@ value = value .. char:sub(1, 20 - #value)
 end
 end
 end
-
 if guestRequested then
 drawLoginScreen(t("login.guest_auth", "Logging in as Guest..."), false)
 local token, err = usermod.guestLogin()
@@ -499,7 +427,6 @@ if _G._TOS and _G._TOS.audio then _G._TOS.audio.error() end
 sleep(2)
 end
 elseif cancelRequested then
-
 drawLoginScreen(t("login.retry", "Enter to retry, F10 to shut down"), false)
 while true do
 local sig2, _, _, code2 = pull(1)
@@ -509,7 +436,6 @@ elseif code2 == 68 then return nil, "shutdown" end
 end
 end
 elseif username == "" then
-
 drawInput(boxX, boxY, boxW, "username", username, false)
 local password = readInput(boxX, boxY, boxW, "password", 30)
 local okC, colophon = pcall(require, "shell.colophon")
@@ -524,21 +450,15 @@ uptime = computer.uptime,
 width = uw,
 })
 end
-
 elseif username and username ~= "" then
-
 drawInput(boxX, boxY, boxW, "username", username, false)
 local password = readInput(boxX, boxY, boxW, "password", 30)
-
 if password then
-
 drawLoginScreen(t("login.authenticating", "Authenticating..."), false)
-
 local token, err = usermod.login(username, password, { setCurrent = false })
 if token then
-
 failsByUser[username] = 0
-lastFailTs[username]  = nil
+lastFailTs[username] = nil
 persistBackoff()
 local session = usermod.getSession(token)
 if not session then
@@ -549,18 +469,15 @@ local msg = t("login.welcome", "Welcome, %s!", session.displayName or username)
 drawLoginScreen(msg, false)
 if _G._TOS and _G._TOS.audio then _G._TOS.audio.confirm() end
 sleep(1)
-
 if session.firstBoot then
 firstBootSetup(username, password)
 end
-
 tryTutorial(token)
 return token
 end
 else
-
 failsByUser[username] = (failsByUser[username] or 0) + 1
-lastFailTs[username]  = computer.uptime()
+lastFailTs[username] = computer.uptime()
 persistBackoff()
 local wait = backoffSeconds(username)
 local msg = (err or t("login.failed", "Login failed")) ..
@@ -578,10 +495,8 @@ end
 end
 end
 end
-
 return login
 end
-
 local default = newLogin()
 default.new = newLogin
 return default

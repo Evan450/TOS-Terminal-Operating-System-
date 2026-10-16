@@ -1,8 +1,6 @@
 local computer = require("computer")
 local M = {}
-
 local syntaxMod = nil
-
 function M.getSyntax(S)
 if syntaxMod == nil then
 if S.tier >= 2 then
@@ -14,7 +12,6 @@ end
 end
 return syntaxMod
 end
-
 function M.makeWidgetDefs(S)
 local F = S.F
 local K = S.K
@@ -54,7 +51,6 @@ return pm.level() .. "%"
 end
 return nil
 end,
-
 view = function()
 local okH, home = pcall(require, "shell.panels.home")
 if not (okH and home and home.enabled(S)) then return nil end
@@ -63,7 +59,6 @@ end,
 }
 return defs
 end
-
 function M.getWidgetList(S)
 local cfg = S.SC and S.SC.get("statusbar_widgets")
 if type(cfg) == "table" then return cfg end
@@ -73,34 +68,27 @@ return { "battery", "memory", "disk", "view" }
 end
 return { "memory", "disk", "view" }
 end
-
 local _widgetCache = setmetatable({}, { __mode = "k" })
-
 function M.loadCustomWidgets(S, widgetDefs)
 if _widgetCache[S] then return end
 _widgetCache[S] = true
-
 local F = S.F
 if not F.isDirectory("/etc/widgets") then return end
-
 local U = S.U
 local st = S.st
 local function silentCanRead(p)
 if not U or not U.canAccessAs then return true end
-
 local sess = (st and U.getSession and U.getSession(st))
 or (U.currentSession and U.currentSession())
 local ok = U.canAccessAs(sess, p, "r")
 return ok
 end
 if not silentCanRead("/etc/widgets") then return end
-
 local ok, list = pcall(F.list, "/etc/widgets")
 if not ok or not list then return end
 local items = {}
 if type(list) == "table" then items = list
 elseif type(list) == "function" then for n in list do items[#items + 1] = n end end
-
 local MAX_WIDGETS = 32
 local loaded = 0
 for _, n in ipairs(items) do
@@ -126,5 +114,4 @@ end
 end
 end
 end
-
 return M

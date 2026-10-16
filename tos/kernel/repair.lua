@@ -1,16 +1,12 @@
 local repair = {}
-
 local CRITICAL_STATE = {
 "/etc/users.dat", "/etc/trust.dat", "/etc/tos.cfg",
 "/etc/cron.db", "/etc/critical.bak",
 }
-
 local RUN_KEEP = { pwrstate = true }
-
-local LOG_DIR   = "/var/log"
-local LOG_MAX   = 32 * 1024
-local LOG_KEEP  = 16 * 1024
-
+local LOG_DIR = "/var/log"
+local LOG_MAX = 32 * 1024
+local LOG_KEEP = 16 * 1024
 function repair.run(deps)
 local fs = deps and deps.fs
 local serialize = deps and deps.serialize
@@ -22,7 +18,6 @@ if not fs then
 warn("no filesystem module — nothing repairable")
 return rep
 end
-
 pcall(function()
 if fs.recoverAtomic then
 local n = fs.recoverAtomic(CRITICAL_STATE)
@@ -33,7 +28,6 @@ line("atomic writes: clean")
 end
 end
 end)
-
 pcall(function()
 local removed = 0
 for _, dir in ipairs({ "/etc", "/var", "/var/lib", "/var/pkg", "/home" }) do
@@ -50,7 +44,6 @@ end
 if removed > 0 then fixed("removed " .. removed .. " orphaned temp file(s)")
 else line("temp files: clean") end
 end)
-
 pcall(function()
 local okB, bootcfg = pcall(require, "kernel.bootcfg")
 if not (okB and bootcfg) then return end
@@ -72,7 +65,6 @@ warn("/etc/boot.cfg is corrupt and could not be rewritten")
 end
 end
 end)
-
 pcall(function()
 if not (serialize and serialize.decode) then return end
 for _, path in ipairs(CRITICAL_STATE) do
@@ -87,7 +79,6 @@ end
 end
 line("critical state: checked")
 end)
-
 pcall(function()
 local removed = 0
 local ok, names = pcall(fs.list, "/var/run")
@@ -102,7 +93,6 @@ end
 if removed > 0 then fixed("cleared " .. removed .. " stale runtime file(s) from /var/run")
 else line("/var/run: clean") end
 end)
-
 pcall(function()
 local trimmed = 0
 local ok, names = pcall(fs.list, LOG_DIR)
@@ -115,7 +105,6 @@ if okS and type(size) == "number" and size > LOG_MAX then
 local raw = fs.readFile(path)
 if type(raw) == "string" then
 local tail = raw:sub(-LOG_KEEP)
-
 local nl = tail:find("\n", 1, true)
 if nl then tail = tail:sub(nl + 1) end
 local writer = fs.writeFileAtomic or fs.writeFile
@@ -129,7 +118,6 @@ end
 if trimmed > 0 then fixed("trimmed " .. trimmed .. " oversized log(s)")
 else line("logs: within limits") end
 end)
-
 pcall(function()
 if not (serialize and serialize.decode) then return end
 if not fs.exists("/etc/critical.bak") then
@@ -149,8 +137,6 @@ end
 end
 if missing == 0 then line("critical files: all present") end
 end)
-
 return rep
 end
-
 return repair

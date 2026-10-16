@@ -4,16 +4,13 @@ local draw = require("shell.panels.draw")
 local widgets = require("shell.panels.widgets")
 local editor = require("shell.panels.editor")
 local helpers = require("shell.panels.helpers")
-
 local M = {}
-
 local function pullSignal()
 if coroutine.isyieldable and coroutine.isyieldable() then
 return coroutine.yield()
 end
 return require("computer").pullSignal(0.05)
 end
-
 function M.execute(S, action, deps)
 local T = S.T
 local D = S.D
@@ -24,15 +21,12 @@ local SC = S.SC
 local exec = deps.exec
 local drawAll = deps.drawAll
 local widgetDefs = deps.widgetDefs
-
 S.menuOpen = nil
 S.menuFocused = false
-
 if type(action) == "string" then
 local cmd = action:match("^run:(.+)$")
 if cmd then exec(cmd); return nil end
 end
-
 if action == "newfile" then filebrowser.doNewFile(S)
 elseif action == "mkdir" then filebrowser.doMkdir(S)
 elseif action == "rename" then filebrowser.doRename(S)
@@ -56,7 +50,6 @@ helpers.logout(S); return "exit"
 elseif action == "quit" then
 drawAll()
 D.fill(1, S.OUT_ROW, W, 1, " ", T.fg, T.bg)
-
 D.set(1, S.OUT_ROW, (" [1]Reboot [2]Shut down [3]Log out [4]CLI Mode [^Q]Cancel"):sub(1, W),
 T.title, T.bg)
 while true do
@@ -90,19 +83,18 @@ if ok then K.reboot() else S.lastOut = { reason, T.error } end
 elseif action == "shutdown" then
 local ok, reason = helpers.canPowerOff(S)
 if ok then K.shutdown() else S.lastOut = { reason, T.error } end
-
 elseif action == "help" then exec("help")
 elseif action == "man" then exec("man")
 elseif action == "tutorial" then exec("tutorial")
 elseif action == "about" then exec("about")
 elseif action == "keyhelp" then
 local title = T.title or T.highlight
-local key   = T.highlight or T.title
-local body  = T.fg
+local key = T.highlight or T.title
+local body = T.fg
 local okH, home = pcall(require, "shell.panels.home")
-local merged  = okH and home and home.enabled(S)
+local merged = okH and home and home.enabled(S)
 local viewKey = merged and home.viewKeyLabel(S) or "F2"
-local cycle   = (okH and home) and home.cycleKeyLabel(S) or "F2"
+local cycle = (okH and home) and home.cycleKeyLabel(S) or "F2"
 local function ck(action)
 local okK, keys = pcall(require, "shell.keys")
 if not (okK and keys) then return "?" end
@@ -204,7 +196,6 @@ end
 D.set(1, S.OUT_ROW, table.concat(wparts, " "):sub(1, W), T.title, T.bg)
 local sig, _, ch2, co2 = pullSignal()
 if sig == "touch" and type(S._mouseLib) == "table" and co2 == S.OUT_ROW then
-
 local x = 1
 for i, wname in ipairs(available) do
 local w2 = 4 + #wname
@@ -238,7 +229,6 @@ end
 end
 return nil
 end
-
 function M.menuNextItem(S, dir)
 if not S.menuOpen then return end
 local items = (S.menuDefs or draw.menuDefs)[S.menuOpen].items
@@ -248,5 +238,4 @@ if not items[n].sep then S.menuSel = n; return end
 n = n + dir
 end
 end
-
 return M

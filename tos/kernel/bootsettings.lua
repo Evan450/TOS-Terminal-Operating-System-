@@ -1,31 +1,25 @@
 local bootsettings = {}
-
 local bootcfg = require("kernel.bootcfg")
-
 local AUTO = "auto"
-
 local function unlessDefault(v, default)
 if v == (default or AUTO) then return nil end
 return v
 end
-
 function bootsettings.ramLabel(probe)
 local okH, hal = pcall(require, "kernel.hal")
 if not okH or not hal or not hal.ramSummary then return nil end
 local ok, hw = pcall(function()
 if probe then return probe() end
-local computer  = require("computer")
+local computer = require("computer")
 local component = require("component")
 local totalKB = math.floor(((computer.totalMemory and computer.totalMemory()) or 0) / 1024)
 local modules = 0
 for _ in component.list("memory") do modules = modules + 1 end
-
 return { totalKB = totalKB, modules = modules, sticks = hal.ramSticks() }
 end)
 if not ok or type(hw) ~= "table" or (hw.totalKB or 0) <= 0 then return nil end
 return hal.ramSummary(hw.sticks, hw.totalKB, hw.modules)
 end
-
 local function buildFields(ramLabel)
 local fields = {
 { key = "profile", label = "Profile (what loads)", group = "basic",
@@ -60,7 +54,6 @@ values = { true, false },
 get = function(c) return c.showConfig and true or false end,
 set = function(c, v) c.showConfig = v end,
 show = function(v) return v and "on" or "off" end },
-
 { key = "cpuTier", label = "CPU tier (override)", group = "advanced",
 values = { AUTO, 1, 2, 3 },
 get = function(c) return c.cpuTier or AUTO end,
@@ -71,7 +64,6 @@ values = { AUTO, 1, 2, 3 },
 get = function(c) return c.dataTier or AUTO end,
 set = function(c, v) c.dataTier = unlessDefault(v) end,
 show = function(v) return (v == AUTO) and "auto (detect)" or ("Tier " .. v) end },
-
 { key = "ramGate",
 label = ramLabel and ("RAM for extras [" .. ramLabel .. "]")
 or "RAM for extras (override)",
@@ -87,7 +79,6 @@ if v == AUTO then return "auto (measure)" end
 return v and "always load" or "never load"
 end },
 }
-
 for _, feat in ipairs(bootcfg.FEATURES) do
 fields[#fields + 1] = {
 key = "adv." .. feat, label = "  + " .. feat, group = "advanced",
@@ -109,7 +100,6 @@ end,
 end
 return fields
 end
-
 function bootsettings.fields(cfg, ramLabel)
 cfg = bootcfg._normalize(cfg or {})
 local out = {}
@@ -119,7 +109,6 @@ value = f.show(f.get(cfg)) }
 end
 return out
 end
-
 function bootsettings.cycle(cfg, idx, dir)
 local fields = buildFields()
 local f = fields[idx]
@@ -132,7 +121,6 @@ i = ((i - 1 + (dir or 1)) % #ring) + 1
 f.set(cfg, ring[i])
 return bootcfg._normalize(cfg)
 end
-
 function bootsettings.cycleKey(cfg, key, dir)
 local fields = buildFields()
 for i, f in ipairs(fields) do
@@ -140,7 +128,6 @@ if f.key == key then return bootsettings.cycle(cfg, i, dir) end
 end
 return bootcfg._normalize(cfg)
 end
-
 local function visibleRows(cfg, showAdvanced, ramLabel)
 local rows = {}
 for _, f in ipairs(bootsettings.fields(cfg, ramLabel)) do
@@ -155,7 +142,6 @@ end
 end
 return rows
 end
-
 local function stepSel(rows, sel, dir)
 local n = #rows
 for _ = 1, n do
@@ -164,7 +150,6 @@ if rows[sel] and not rows[sel].header then return sel end
 end
 return sel
 end
-
 function bootsettings.run(cfg, ctx)
 cfg = bootcfg._normalize(cfg or {})
 local sel = 1
@@ -172,22 +157,17 @@ local scroll = 0
 local showHw = false
 local showAdvanced = false
 local col = ctx.color or function() return 0xFFFFFF end
-
 local hwInv, hwKey = nil, nil
-
 local ramLabel = bootsettings.ramLabel(ctx.ramProbe)
-
 while true do
 ctx.clear()
 ctx.set(2, 1, "TOS Boot Settings", col("title"))
 ctx.set(2, 2, "/etc/boot.cfg - applies on next boot", col("dim"))
-
 local rows = visibleRows(cfg, showAdvanced, ramLabel)
 if sel > #rows or (rows[sel] and rows[sel].header) then
 sel = stepSel(rows, 1, 0)
 if rows[sel] and rows[sel].header then sel = stepSel(rows, sel, 1) end
 end
-
 local hwRows = nil
 if showHw and ctx.sysinfo then
 local key = tostring(cfg.cpuTier) .. "/" .. tostring(cfg.dataTier)
@@ -197,7 +177,6 @@ hwKey = key
 end
 hwRows = ctx.sysinfo.rows(hwInv)
 end
-
 local listTop = 4
 local H2 = ctx.H or 25
 local hwWant = hwRows and math.min(#hwRows + 1, math.floor(H2 / 2)) or 0
@@ -207,7 +186,6 @@ if listH > #rows then listH = #rows end
 if sel - scroll > listH then scroll = sel - listH end
 if sel - scroll < 1 then scroll = math.max(0, sel - 1) end
 if scroll > #rows - listH then scroll = math.max(0, #rows - listH) end
-
 for i = 1, listH do
 local ri = scroll + i
 local f = rows[ri]
@@ -217,24 +195,19 @@ if f.header then
 ctx.set(2, y, "-- " .. f.label, col("title"))
 else
 local selFg = (ri == sel) and col("section") or col("dim")
-
 ctx.set(2, y, ((ri == sel and "> " or "  ") .. f.label):sub(1, 31), selFg)
 ctx.set(34, y, f.value, (ri == sel) and col("value") or col("dim"))
 end
 end
-
 if scroll > 0 then ctx.set(46, listTop, "^ more", col("title")) end
 if scroll + listH < #rows then
 ctx.set(46, listTop + listH - 1, "v more", col("title"))
 end
-
 local hy = listTop + listH + 1
 ctx.set(2, hy, "Up/Down: select   Left/Right or Space: change", col("dim"))
 ctx.set(2, hy + 1, ("[S] save   [R] save+reboot   [A] advanced %s   [H] hardware   [Q] cancel")
 :format(showAdvanced and "shown" or "hidden"), col("dim"))
-
 if hwRows then
-
 local ry = hy + 3
 for _, r in ipairs(hwRows) do
 if ry >= H2 then break end
@@ -247,7 +220,6 @@ end
 ry = ry + 1
 end
 end
-
 local _, char, code = ctx.readKey()
 if code == 200 then
 sel = stepSel(rows, sel, -1)
@@ -270,5 +242,4 @@ return "cancel", cfg
 end
 end
 end
-
 return bootsettings

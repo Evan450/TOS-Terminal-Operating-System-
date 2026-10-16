@@ -4,7 +4,6 @@ local HISTORY_SIZE = 64
 local history = {}
 local histHead = 1
 local histCount = 0
-
 local function recordMessage(from, text, timestamp)
 history[histHead] = {
 from = from,
@@ -14,28 +13,21 @@ time = timestamp,
 histHead = (histHead % HISTORY_SIZE) + 1
 if histCount < HISTORY_SIZE then histCount = histCount + 1 end
 end
-
 local function start()
 local net = _G._TOS and _G._TOS.net
 if not net then return end
-
 running = true
-
 local protocol = net.getProtocol()
 local computer = require("computer")
-
 local rate = {}
-local WINDOW_SEC     = 5
+local WINDOW_SEC = 5
 local MAX_PER_WINDOW = 20
-local MAX_TEXT_LEN   = 512
-
+local MAX_TEXT_LEN = 512
 listenerID = net.on(protocol.TYPE.MSG, function(packet, remoteAddr)
 if not running then return end
-
 local now = computer.uptime()
 local entry = rate[remoteAddr]
 if not entry then
-
 rate.__order = rate.__order or {}
 if #rate.__order >= 256 then
 local victim = table.remove(rate.__order, 1)
@@ -51,10 +43,8 @@ entry.count = 0
 end
 entry.count = entry.count + 1
 if entry.count > MAX_PER_WINDOW then
-
 return
 end
-
 local text = ""
 if packet.payload then
 text = type(packet.payload) == "string" and packet.payload
@@ -62,14 +52,10 @@ or (packet.payload.text or tostring(packet.payload))
 end
 if type(text) ~= "string" then text = tostring(text or "") end
 if #text > MAX_TEXT_LEN then text = text:sub(1, MAX_TEXT_LEN) end
-
 local hostname = "?"
-
 local peer = net.findPeer(remoteAddr)
 if peer and peer.hostname then hostname = peer.hostname end
-
 recordMessage(hostname .. " (" .. remoteAddr:sub(1, 8) .. ")", text, now)
-
 --! Say it arrived. Only an OPEN chat tab acknowledged a message, so a
 --! sender could not tell a machine that heard it from one that was
 --! switched off: a chat group counted every member it had SENT to as
@@ -79,13 +65,11 @@ recordMessage(hostname .. " (" .. remoteAddr:sub(1, 8) .. ")", text, now)
 --! seq it came with. (test_chat_app.lua)
 pcall(net.send, remoteAddr, protocol.makePacket(protocol.TYPE.MSG_ACK,
 { ref = packet.seq }, { to = remoteAddr }))
-
 if _G._TOS and _G._TOS.log then
 _G._TOS.log("chat", "[" .. hostname .. "] " .. text)
 end
 end)
 end
-
 local function stop()
 running = false
 if listenerID then
@@ -97,7 +81,6 @@ end
 listenerID = nil
 end
 end
-
 local function getHistory()
 if histCount == 0 then return {} end
 local result = {}
@@ -110,14 +93,13 @@ end
 end
 return result
 end
-
 return {
-start      = start,
-stop       = stop,
-deps       = {},
-restart    = true,
-caps       = { net = true },
-needs      = "net",
-user       = "_kernel_",
+start = start,
+stop = stop,
+deps = {},
+restart = true,
+caps = { net = true },
+needs = "net",
+user = "_kernel_",
 getHistory = getHistory,
 }

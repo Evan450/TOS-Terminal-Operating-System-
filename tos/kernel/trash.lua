@@ -1,22 +1,18 @@
 local trash = {}
-
 local securefs = nil
 local fs = nil
 local usersmod = nil
 local log = nil
 local serialize = nil
-
 local MAX_TRASH_BYTES = 4 * 1024 * 1024
 local MAX_TRASH_ITEMS = 256
-local META_SUFFIX     = ".trashmeta"
-
+local META_SUFFIX = ".trashmeta"
 function trash.init(modules)
-securefs  = modules.securefs
-fs        = modules.fs
-usersmod  = modules.users
-log       = modules.log
+securefs = modules.securefs
+fs = modules.fs
+usersmod = modules.users
+log = modules.log
 serialize = modules.serialize or require("kernel.serialize")
-
 if modules.config and modules.config.get then
 local mb = modules.config.get("trashMaxMB")
 if type(mb) == "number" and mb > 0 then
@@ -28,10 +24,8 @@ MAX_TRASH_ITEMS = math.floor(mi)
 end
 end
 end
-
 local function trashDirFor(session)
 if not session then return nil end
-
 if session.isKernel or session.isGuest or session.user == "guest" then
 return nil
 end
@@ -41,17 +35,14 @@ return nil
 end
 return home .. "/.trash"
 end
-
 local function ensureTrashDir(session)
 local dir = trashDirFor(session)
 if not dir or not securefs then return nil end
 if not securefs.exists(dir, session) then
-
 securefs.makeDirectory(dir, session)
 end
 return dir
 end
-
 local function listTrashEntries(dir, session)
 local items = securefs.list(dir, session)
 if type(items) ~= "table" then return {} end
@@ -59,7 +50,6 @@ local entries = {}
 for _, name in ipairs(items) do
 local clean = name:gsub("/$", "")
 if not clean:find(META_SUFFIX, 1, true) then
-
 local entry = { name = clean, path = dir .. "/" .. clean }
 local metaPath = entry.path .. META_SUFFIX
 if securefs.exists(metaPath, session) then
@@ -77,10 +67,8 @@ end
 end
 return entries
 end
-
 local function purgeOldest(dir, session, needBytes, needSlots)
 local entries = listTrashEntries(dir, session)
-
 table.sort(entries, function(a, b)
 local ta = a.meta and a.meta.deletedAt or 0
 local tb = b.meta and b.meta.deletedAt or 0
@@ -90,14 +78,12 @@ end)
 local totalBytes = 0
 for _, e in ipairs(entries) do totalBytes = totalBytes + e.size end
 local count = #entries
-
 for _, e in ipairs(entries) do
 if (needBytes <= 0 and needSlots <= 0)
 and totalBytes <= MAX_TRASH_BYTES
 and count <= MAX_TRASH_ITEMS then
 break
 end
-
 securefs.remove(e.path .. META_SUFFIX, session)
 securefs.remove(e.path, session)
 totalBytes = totalBytes - e.size
@@ -109,23 +95,18 @@ log.info("trash", "Auto-purged: " .. (e.meta and e.meta.origin or e.name))
 end
 end
 end
-
 function trash.put(srcPath, session)
 if not securefs then return false, "trash not initialized" end
 session = session or (usersmod and usersmod.currentSession()) or nil
 if not session then return false, "no session" end
-
 local dir = ensureTrashDir(session)
 if not dir then
-
 return false, "no trash for this session"
 end
-
 local norm = securefs.normalize(srcPath)
 if not securefs.exists(norm, session) then
 return false, "source not found: " .. norm
 end
-
 local function baseName(p) return p:match("([^/]+)/?$") or "unnamed" end
 local base = baseName(norm)
 local now = (os.time and os.time()) or 0
@@ -136,17 +117,13 @@ while securefs.exists(candidate, session) do
 candidate = dir .. "/" .. trashName .. "~" .. n
 n = n + 1
 end
-
 local srcSize = securefs.size(norm, session) or 0
 if srcSize > MAX_TRASH_BYTES then
-
 return false, "file too large for trash (" .. srcSize .. " > " .. MAX_TRASH_BYTES .. ")"
 end
 purgeOldest(dir, session, srcSize, 1)
-
 local ok, err = securefs.rename(norm, candidate, session)
 if not ok then
-
 ok, err = securefs.copy(norm, candidate, session)
 if ok then
 securefs.remove(norm, session)
@@ -154,12 +131,11 @@ else
 return false, "trash move failed: " .. tostring(err)
 end
 end
-
 local meta = {
-origin    = norm,
+origin = norm,
 deletedAt = now,
 deletedBy = session.user,
-size      = srcSize,
+size = srcSize,
 }
 local mOk, mErr = securefs.writeFile(candidate .. META_SUFFIX,
 serialize.encode(meta), session)
@@ -172,7 +148,6 @@ log.info("trash", "Trashed " .. norm .. " -> " .. candidate)
 end
 return true, candidate
 end
-
 function trash.list(session)
 if not securefs then return {}, "trash not initialized" end
 session = session or (usersmod and usersmod.currentSession()) or nil
@@ -188,17 +163,16 @@ end)
 local out = {}
 for i, e in ipairs(entries) do
 out[i] = {
-name      = e.name,
-path      = e.path,
-size      = e.size,
-origin    = e.meta and e.meta.origin    or "?",
+name = e.name,
+path = e.path,
+size = e.size,
+origin = e.meta and e.meta.origin or "?",
 deletedAt = e.meta and e.meta.deletedAt or 0,
 deletedBy = e.meta and e.meta.deletedBy or "?",
 }
 end
 return out
 end
-
 function trash.restore(name, opts)
 if not securefs then return false, "trash not initialized" end
 opts = opts or {}
@@ -206,13 +180,11 @@ local session = opts.session or (usersmod and usersmod.currentSession()) or nil
 if not session then return false, "no session" end
 local dir = trashDirFor(session)
 if not dir then return false, "no trash for this session" end
-
 local srcPath = dir .. "/" .. name
 local metaPath = srcPath .. META_SUFFIX
 if not securefs.exists(srcPath, session) then
 return false, "no such trash entry: " .. name
 end
-
 local origin = opts.dest
 if not origin then
 if not securefs.exists(metaPath, session) then
@@ -227,11 +199,9 @@ end
 origin = meta.origin
 end
 origin = securefs.normalize(origin)
-
 if securefs.exists(origin, session) and not opts.force then
 return false, "destination exists; pass force=true to overwrite: " .. origin
 end
-
 local ok, err = securefs.rename(srcPath, origin, session)
 if not ok then
 ok, err = securefs.copy(srcPath, origin, session)
@@ -245,7 +215,6 @@ securefs.remove(metaPath, session)
 if log then log.info("trash", "Restored " .. name .. " -> " .. origin) end
 return true, origin
 end
-
 function trash.empty(session)
 if not securefs then return false, "trash not initialized" end
 session = session or (usersmod and usersmod.currentSession()) or nil
@@ -261,7 +230,6 @@ end
 if log then log.info("trash", "Emptied trash (" .. removed .. " items)") end
 return true, removed
 end
-
 function trash.usage(session)
 if not securefs then return nil end
 session = session or (usersmod and usersmod.currentSession()) or nil
@@ -274,25 +242,23 @@ local entries = listTrashEntries(dir, session)
 local bytes = 0
 for _, e in ipairs(entries) do bytes = bytes + e.size end
 return {
-count     = #entries,
-bytes     = bytes,
+count = #entries,
+bytes = bytes,
 max_count = MAX_TRASH_ITEMS,
 max_bytes = MAX_TRASH_BYTES,
 }
 end
-
 do
 local T = rawget(_G, "_TOS")
 if T and T.securefs and not securefs then
 pcall(trash.init, {
-securefs  = T.securefs,
-fs        = T.fs,
-users     = T.users,
-log       = T.logObj,
+securefs = T.securefs,
+fs = T.fs,
+users = T.users,
+log = T.logObj,
 serialize = serialize,
-config    = T.config,
+config = T.config,
 })
 end
 end
-
 return trash

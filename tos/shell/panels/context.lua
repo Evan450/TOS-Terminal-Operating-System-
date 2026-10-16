@@ -1,27 +1,24 @@
 local helpers = require("shell.panels.helpers")
 local filebrowser = require("shell.panels.filebrowser")
 local editor = require("shell.panels.editor")
-
 local M = {}
-
 function M.buildItems(f, path)
 local items = {
-{ label = "View",   action = "ctx_view",  key = "F3" },
-{ label = "Edit",   action = "ctx_edit" },
+{ label = "View", action = "ctx_view", key = "F3" },
+{ label = "Edit", action = "ctx_edit" },
 }
 if path:match("%.lua$") then
 items[#items + 1] = { label = "Run", action = "ctx_run" }
 end
 items[#items + 1] = { sep = true }
-items[#items + 1] = { label = "Copy",   action = "ctx_copy",   key = "F5" }
-items[#items + 1] = { label = "Move",   action = "ctx_move",   key = "F6" }
+items[#items + 1] = { label = "Copy", action = "ctx_copy", key = "F5" }
+items[#items + 1] = { label = "Move", action = "ctx_move", key = "F6" }
 items[#items + 1] = { label = "Delete", action = "ctx_delete", key = "F8" }
 items[#items + 1] = { label = "Rename", action = "ctx_rename" }
 items[#items + 1] = { sep = true }
 items[#items + 1] = { label = "Properties", action = "ctx_props" }
 return items
 end
-
 function M.open(S)
 local path, f = helpers.selPath(S)
 if not path or not f then return end
@@ -35,7 +32,6 @@ S.ctxY = math.min(selRow, S.H - #S.ctxItems - 3)
 if S.ctxY < 2 then S.ctxY = 2 end
 S.ctxOpen = true
 end
-
 function M.nextItem(S, dir)
 local n = S.ctxSel + dir
 while n >= 1 and n <= #S.ctxItems do
@@ -43,15 +39,12 @@ if not S.ctxItems[n].sep then S.ctxSel = n; return end
 n = n + dir
 end
 end
-
 function M.execute(S, action, makeProgramEnv)
 local T = S.T
 local F = S.F
 S.ctxOpen = false
-
 if action == "ctx_view" then
 if not helpers.canRead(S, S.ctxPath) then return end
-
 local buf = { { " Viewing: " .. S.ctxFile.name, T.title } }
 local ok, shown, stopped = helpers.readLinesCapped(F, S.ctxPath, function(l) buf[#buf + 1] = { l, T.fg } end)
 if not ok then S.lastOut = { "Cannot read: " .. S.ctxFile.name, T.error }; return end
@@ -65,7 +58,6 @@ local function o(t, c) buf[#buf + 1] = { tostring(t), c or T.fg } end
 local data = F.readFile(S.ctxPath)
 if not data then o("Cannot read: " .. S.ctxFile.name, T.error)
 else
-
 local runEnv = makeProgramEnv{ name = S.ctxFile.name, stdout = function(line) o(line, T.fg) end }
 local fn2, err2 = load(data, "=" .. S.ctxFile.name, "t", runEnv)
 if not fn2 then o("Compile error: " .. tostring(err2), T.error)
@@ -90,7 +82,6 @@ filebrowser.doDelete(S, S.ctxPath, S.ctxFile)
 elseif action == "ctx_rename" then
 filebrowser.doRename(S, S.ctxPath, S.ctxFile)
 elseif action == "ctx_props" then
-
 local sizeText
 if S.ctxFile.dir then
 local F = S.F
@@ -127,5 +118,4 @@ local buf = {
 editor.openViewTab(S, buf, "Props:" .. S.ctxFile.name:sub(1, 8))
 end
 end
-
 return M

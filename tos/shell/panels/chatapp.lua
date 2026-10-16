@@ -1,17 +1,13 @@
 local computer = require("computer")
-local ui       = require("shell.panels.ui")
-local tabsMod  = require("shell.panels.tabs")
+local ui = require("shell.panels.ui")
+local tabsMod = require("shell.panels.tabs")
 local chatCore = require("shell.chat")
-
 local M = {}
-
 local MAX_MESSAGES = 128
-
 function M.label(unread)
 if (unread or 0) > 0 then return "Chat(" .. unread .. ")" end
 return "Chat"
 end
-
 function M.addMessage(tab, text, color)
 local msgs = tab.messages
 msgs[#msgs + 1] = { text = text, color = color,
@@ -22,13 +18,11 @@ for i = #msgs - MAX_MESSAGES + 1, #msgs do trimmed[#trimmed + 1] = msgs[i] end
 tab.messages = trimmed
 end
 end
-
 local function fmtTime(t)
 t = math.floor(t or 0)
 return string.format("%02d:%02d:%02d",
 math.floor(t / 3600), math.floor((t % 3600) / 60), t % 60)
 end
-
 local function trustedPeers(trustMgr)
 local out = {}
 for _, p in ipairs((trustMgr and trustMgr.listPeers and trustMgr.listPeers()) or {}) do
@@ -38,10 +32,9 @@ end
 end
 return out
 end
-
 local function groupIO()
 local okF, fsMod = pcall(require, "kernel.fs")
-local okS, ser   = pcall(require, "kernel.serialize")
+local okS, ser = pcall(require, "kernel.serialize")
 if okF and okS then return fsMod, ser end
 end
 local function loadGroups()
@@ -53,7 +46,6 @@ local fsMod, ser = groupIO()
 if not fsMod then return false, "filesystem unavailable" end
 return chatCore.saveGroups(fsMod, ser, groups)
 end
-
 function M.open(S)
 local idx = tabsMod.find(S, "chat")
 if idx then
@@ -66,12 +58,10 @@ local tab = tabsMod.create(S, "chat", "Chat",
 live = true, interval = 0.3 })
 local T = S.T
 local NM = S.NM
-
 if not NM then
 M.addMessage(tab, "Chat unavailable: no network module.", T.error)
 return tab
 end
-
 M.addMessage(tab, "Chat started. Send messages to TRUSTED peers.", T.title)
 M.addMessage(tab, "  peer:message   to one peer (addr prefix or hostname)", T.dim)
 M.addMessage(tab, "  message        broadcast to all trusted peers", T.dim)
@@ -83,7 +73,6 @@ M.addMessage(tab, "  " .. tostring(p.address):sub(1, 8) .. "  "
 .. (p.hostname or "?"), T.highlight)
 end
 if #peers == 0 then M.addMessage(tab, "  (no trusted peers)", T.warning) end
-
 local protocol = NM.getProtocol and NM.getProtocol()
 local trustMgr = NM.getTrust and NM.getTrust()
 if protocol and trustMgr and NM.on then
@@ -111,7 +100,6 @@ end)
 end
 return tab
 end
-
 function M.onClose(S, tab)
 local NM = S.NM
 if tab._listenerId and NM and NM.off and NM.getProtocol then
@@ -125,18 +113,15 @@ if protocol then pcall(NM.off, protocol.TYPE.MSG_ACK, tab._ackListenerId) end
 tab._ackListenerId = nil
 end
 end
-
 function M.draw(S, tab)
 local D, T, W, H = S.D, S.T, S.W, S.H
 D.fill(1, 2, W, H - 1, " ", T.fg, T.bg)
-
 local hostname = (S.NM and S.NM.getHostname and S.NM.getHostname()) or "local"
 local peers = #trustedPeers(S.NM and S.NM.getTrust and S.NM.getTrust())
 ui.drawRail(D, T, 2, W, {
 { label = "§ Chat — " .. hostname },
 { text = "peers:" .. peers },
 }, { labelFg = T.title or T.fg })
-
 local msgTop, msgBot = 3, H - 2
 local msgH = msgBot - msgTop + 1
 local msgs = tab.messages or {}
@@ -155,22 +140,18 @@ if #line > textW then line = line:sub(1, math.max(1, textW - 1)) .. "~" end
 D.set(#prefix + 1, y, line, m.color or T.fg, T.bg)
 end
 end
-
 D.set(1, H - 1, "> ", T.highlight, T.bg)
 local maxW = W - 3
 local shown = tab.input or ""
 if #shown > maxW then shown = shown:sub(#shown - maxW + 1) end
 D.set(3, H - 1, shown .. "_", T.fg, T.bg)
-
 ui.drawRampBar(D, T, H, W,
 "Enter Send · peer:msg Direct · /help · PgUp/Dn Scroll · ^Q Close",
 nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
-
 tab.unread = 0
 tab.label = M.label(0)
 tab._dirty = false
 end
-
 local function doSend(S, tab)
 local T, NM = S.T, S.NM
 local line = tab.input or ""
@@ -180,7 +161,6 @@ if act.kind == "empty" then return end
 if not NM then M.addMessage(tab, "No network.", T.error); return end
 local trustMgr = NM.getTrust and NM.getTrust()
 local hostname = (NM.getHostname and NM.getHostname()) or "local"
-
 if act.kind == "command" then
 local name, arg = act.name, act.arg or ""
 if name == "quit" or name == "exit" then
@@ -196,14 +176,11 @@ M.addMessage(tab, "  /who              list trusted peers", T.dim)
 M.addMessage(tab, "  /group            list groups (new/add/rm/del to edit)", T.dim)
 M.addMessage(tab, "  /mail peer text   send a store-and-forward mesh mail", T.dim)
 M.addMessage(tab, "  /clear  /help  ^Q closes the tab", T.dim)
-
 elseif name == "group" then
-
 local verb, gargs = arg:match("^(%S*)%s*(.*)$")
 verb = (verb or ""):lower()
 local gname, members = gargs:match("^(%S*)%s*(.*)$")
 local groups = loadGroups()
-
 local function memberList()
 local out = {}
 for tok in (members or ""):gmatch("%S+") do out[#out + 1] = tok end
@@ -214,7 +191,6 @@ local ok, err = saveGroups(groups)
 if ok then M.addMessage(tab, msg, T.title)
 else M.addMessage(tab, "Could not save groups: " .. tostring(err), T.error) end
 end
-
 if verb == "" or verb == "list" then
 local names = {}
 for n in pairs(groups) do names[#names + 1] = n end
@@ -229,10 +205,8 @@ M.addMessage(tab, "  @" .. n .. "  (" .. #mem .. ")  "
 end
 M.addMessage(tab, "Send to one with  @<name>: your message", T.dim)
 end
-
 elseif not chatCore.validGroupName(gname or "") then
 M.addMessage(tab, "Group names are letters, digits, _ and - (max 24).", T.error)
-
 elseif verb == "new" then
 if groups[gname:lower()] then
 M.addMessage(tab, "@" .. gname:lower() .. " already exists.", T.warning)
@@ -240,7 +214,6 @@ else
 groups[gname:lower()] = memberList()
 persist("Created @" .. gname:lower() .. ".")
 end
-
 elseif verb == "add" or verb == "rm" or verb == "remove" then
 local g = groups[gname:lower()]
 if not g then
@@ -266,7 +239,6 @@ persist(string.format("@%s: %d member(s) %s.", gname:lower(), changed,
 verb == "add" and "added" or "removed"))
 end
 end
-
 elseif verb == "del" or verb == "delete" then
 if not groups[gname:lower()] then
 M.addMessage(tab, "No such group: @" .. gname:lower(), T.error)
@@ -274,11 +246,9 @@ else
 groups[gname:lower()] = nil
 persist("Deleted @" .. gname:lower() .. ".")
 end
-
 else
 M.addMessage(tab, "Usage: /group [list|new|add|rm|del] ...", T.warning)
 end
-
 elseif name == "who" then
 local peers = trustedPeers(trustMgr)
 for _, p in ipairs(peers) do
@@ -287,7 +257,6 @@ M.addMessage(tab, "  " .. tostring(p.address):sub(1, 8) .. "  "
 end
 if #peers == 0 then M.addMessage(tab, "  (no trusted peers)", T.warning) end
 elseif name == "mail" then
-
 local mp, mtext = arg:match("^(%S+)%s+(.+)$")
 local dest = mp and trustMgr and chatCore.resolveTarget(
 trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED, NM and NM.aliases and NM.aliases.resolve)
@@ -311,9 +280,7 @@ end
 else
 M.addMessage(tab, "Unknown command: /" .. name .. "  (try /help)", T.warning)
 end
-
 elseif act.kind == "group" then
-
 local groups = loadGroups()
 local addrs, missing, nameOf = chatCore.resolveGroup(groups, act.group,
 (trustMgr and trustMgr.listPeers()) or {},
@@ -353,7 +320,6 @@ M.watchAcks(S, tab, { group = act.group, sent = sent, total = total,
 deadline = (computer.uptime and computer.uptime() or 0) + M.ACK_WAIT })
 end
 end
-
 elseif act.kind == "directed" then
 local destAddr = trustMgr and chatCore.resolveTarget(
 trustMgr.listPeers(), act.target, trustMgr.LEVEL.TRUSTED, NM and NM.aliases and NM.aliases.resolve)
@@ -364,13 +330,11 @@ else M.addMessage(tab, "Send failed: " .. tostring(err), T.error) end
 else
 M.addMessage(tab, "Unknown peer: " .. act.target, T.error)
 end
-
 else
 local peers = trustedPeers(trustMgr)
 if #peers == 0 then
 M.addMessage(tab, "No trusted peers to send to.", T.warning)
 else
-
 local sent, firstErr = 0, nil
 for _, p in ipairs(peers) do
 local ok, err = NM.sendMessage(p.address, act.text)
@@ -385,7 +349,6 @@ M.addMessage(tab, string.format("  delivered to %d of %d peer(s)",
 sent, #peers), T.warning)
 if firstErr then
 M.addMessage(tab, "  " .. tostring(firstErr), T.error)
-
 if tostring(firstErr):find("shared secret", 1, true) then
 M.addMessage(tab, "  run: net trust gen <addr>   (as admin)", T.dim)
 end
@@ -394,7 +357,6 @@ end
 end
 end
 end
-
 function M.handleKey(S, tab, ch, co, deps)
 if ch == 17 then
 tabsMod.close(S)
@@ -420,7 +382,6 @@ return 3
 end
 return 0
 end
-
 function M.handleScroll(S, tab, ev)
 local dir = (ev.dir or 0) > 0 and 1 or -1
 local newScroll = math.max(0, (tab.scroll or 0) + dir * 2)
@@ -428,15 +389,12 @@ if newScroll == tab.scroll then return 0 end
 tab.scroll = newScroll
 return 3
 end
-
 local ANN_COLOR = { critical = "error", alert = "error",
 warn = "warning", notice = "highlight", info = "dim" }
-
 local function drainAnnouncements(S, tab)
 local okI, ic = pcall(require, "intercom")
 if not (okI and type(ic) == "table" and ic.since) then return false end
 local T = S.T
-
 if tab._annSeen == nil then
 local okH, high = pcall(ic.highWater)
 tab._annSeen = (okH and high) or 0
@@ -452,9 +410,7 @@ T[ANN_COLOR[ann.severity or "info"] or "dim"] or T.fg)
 end
 return true
 end
-
 M.ACK_WAIT = 4
-
 function M.watchAcks(S, tab, w)
 tab._acks = tab._acks or {}
 tab._acks[#tab._acks + 1] = w
@@ -466,7 +422,6 @@ local ref = type(packet) == "table" and type(packet.payload) == "table"
 and packet.payload.ref or nil
 for _, pending in ipairs(tab._acks or {}) do
 for _, s in ipairs(pending.sent) do
-
 if s.addr == fromAddr and not s.got and (ref == nil or ref == s.seq) then
 s.got = true
 tab._dirty = true
@@ -475,7 +430,6 @@ end
 end
 end)
 end
-
 function M.settleAcks(tab, now)
 if not tab._acks or #tab._acks == 0 then return false end
 local T, keep, said = tab._theme or {}, {}, false
@@ -498,7 +452,6 @@ end
 tab._acks = keep
 return said
 end
-
 function M.tick(S, tab)
 local newAnn = drainAnnouncements(S, tab)
 tab._theme = S.T
@@ -506,5 +459,4 @@ local settled = M.settleAcks(tab, computer.uptime and computer.uptime() or 0)
 if tab._dirty or newAnn or settled then return 3 end
 return 0
 end
-
 return M

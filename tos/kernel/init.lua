@@ -1,26 +1,19 @@
 local computer = require("computer")
 local component = require("component")
-
 local kernel = {}
-
 local running = false
 local shuttingDown = false
-
 local log, hal, event, proc, fs, display
 local diskmount
-
 local monitorHosts = {}
-
 function kernel.boot(opts)
 opts = opts or {}
 local earlyPrint = opts.earlyPrint or function() end
-
 local _earlyMinLevel = opts.earlyMinLevel or 1
 local function bootEcho(text, color)
 if _earlyMinLevel <= 1 then earlyPrint(text, color) end
 end
-
-local bootCfg    = opts.bootcfg
+local bootCfg = opts.bootcfg
 local bootcfgMod = opts.bootcfgMod
 local function wants(feature, ramOK)
 if bootcfgMod and bootCfg and bootcfgMod.wants then
@@ -28,11 +21,8 @@ return bootcfgMod.wants(bootCfg, feature, ramOK)
 end
 return ramOK
 end
-
 local MIN_FREE_FOR_OPTIONAL = 40960
-
 local function ramOK()
-
 local free = (hal and hal.freeMemory and hal.freeMemory(MIN_FREE_FOR_OPTIONAL))
 or computer.freeMemory()
 local detected = free > MIN_FREE_FOR_OPTIONAL
@@ -41,7 +31,6 @@ return bootcfgMod.ramOK(bootCfg, detected)
 end
 return detected
 end
-
 --! PER-STAGE MEMORY PROFILE -- off unless /etc/boot.cfg says
 --! memprofile = true, so an ordinary boot pays nothing for it. The RAM
 --! floor is set by what each stage leaves resident (THE RAM FLOOR IS 1 MB,
@@ -67,31 +56,24 @@ end
 bootMem[#bootMem + 1] = { stage = stage, free = computer.freeMemory(),
 t = computer.uptime() }
 end
-
 memMark("1 core modules")
 bootEcho("  Loading kernel modules...", 0xAAAAAA)
 log = require("kernel.log")
-
 log.init({ earlyPrint = earlyPrint, earlyMinLevel = opts.earlyMinLevel,
 bootProgress = opts.bootProgress })
-
 log.info("kernel", "TOS Kernel v" .. _G._TOS.version .. " (build "
 .. tostring(_G._TOS.build or "?") .. ", " .. tostring(_G._TOS.variant or "?")
 .. ") starting")
-
-_G._TOS.log    = function(src, msg) log.info(src, msg) end
+_G._TOS.log = function(src, msg) log.info(src, msg) end
 _G._TOS.logObj = log
-
 memMark("2 hardware detection")
 log.info("kernel", "Scanning hardware...")
 hal = require("kernel.hal")
 hal.scan()
-
 local info = hal.systemInfo()
 log.info("kernel", string.format("CPU T%d | GPU T%d | RAM %s | %d components",
 info.cpuTier, info.gpuTier,
 info.memTierName or ("T" .. info.memTier), info.components))
-
 if info.canNetwork then
 local wl = hal.checkWireless()
 info.hasWireless = wl
@@ -100,12 +82,10 @@ end
 if info.hasTunnel then
 log.info("kernel", "Linked card (tunnel) detected")
 end
-
 memMark("3 filesystem")
 log.info("kernel", "Initializing filesystem...")
 fs = require("kernel.fs")
 fs.init(opts.bootFS)
-
 local bootAddr = opts.bootFS and opts.bootFS.address
 local okDM, diskmountMod = pcall(require, "kernel.diskmount")
 if okDM and type(diskmountMod) == "table" then
@@ -121,7 +101,6 @@ else
 log.warn("kernel", "Disk mounting unavailable (" .. tostring(diskmountMod)
 .. "): only the boot disk is mounted")
 end
-
 local coreDirs = {
 "/tmp", "/var", "/var/log", "/var/run", "/var/pkg", "/var/pkg/installed",
 "/var/swap", "/etc", "/usr", "/usr/bin", "/usr/modules",
@@ -131,23 +110,18 @@ if not fs.exists(dir) then
 fs.makeDirectory(dir)
 end
 end
-
 pcall(log.attachFile, fs, "/var/log/kernel.log", { rotateBytes = 16384 })
-
 local PWRSTATE = "/var/run/pwrstate"
 do
 local prev = fs.exists(PWRSTATE) and fs.readFile(PWRSTATE) or nil
 local boots = 0
 if type(prev) == "string" and #prev > 0 then
 boots = tonumber(prev:match("\n(%d+)")) or 0
-
 _G._TOS.unsafeShutdown = prev:sub(1, 1) ~= "C"
 else
-
 _G._TOS.unsafeShutdown = false
 end
 _G._TOS.bootCount = boots + 1
-
 if fs.recoverAtomic then
 local rec = fs.recoverAtomic({
 "/etc/users.dat", "/etc/trust.dat", "/etc/tos.cfg",
@@ -158,17 +132,14 @@ log.warn("kernel", "Recovered " .. rec ..
 " interrupted critical write(s) from a prior crash")
 end
 end
-
 pcall(fs.writeFile, PWRSTATE,
 "R\n" .. _G._TOS.bootCount .. "\n" .. tostring((os.time and os.time()) or 0))
-
 if _G._TOS.unsafeShutdown then
 log.warn("kernel",
 "PREVIOUS SHUTDOWN WAS UNSAFE (power loss / forced off) — state verified on boot")
 pcall(computer.beep, 880, 0.1); pcall(computer.beep, 660, 0.1)
 end
 end
-
 pcall(function()
 local addr = component.list("eeprom")()
 if not addr then return end
@@ -198,37 +169,32 @@ if not okC then log.warn("srm", "could not clear the parked code: " .. tostring(
 --! (test_srm.lua)
 if _G._TOS then _G._TOS.postFault = fault end
 end)
-
 local diskFree = math.floor(fs.spaceFree("/") / 1024)
 local diskTotal = math.floor(fs.spaceTotal("/") / 1024)
 log.info("kernel", string.format("Boot disk: %dKB free / %dKB total", diskFree, diskTotal))
 if diskFree < 32 then
 log.warn("kernel", "WARNING: Very low disk space!")
 end
-
 if bootCfg and bootCfg.repair then
 log.warn("kernel", "SELF-REPAIR requested — checking system state...")
 bootCfg.repair = false
 pcall(function()
 if bootcfgMod and bootcfgMod.save then bootcfgMod.save(fs, bootCfg) end
 end)
-
 local deps = { fs = fs, log = log,
 serialize = (function() local o, m = pcall(require, "kernel.serialize"); return o and m or nil end)() }
 local findings, fixed, warned = nil, 0, 0
-
 local okS, srmMod = pcall(require, "kernel.srm")
 if okS and type(srmMod) == "table" then
 local ok2, rep = pcall(srmMod.repair, deps)
 if ok2 and type(rep) == "table" then
 findings = rep.findings
-fixed    = rep.fixed or 0
-warned   = (rep.counts.warn or 0) + (rep.counts.err or 0)
+fixed = rep.fixed or 0
+warned = (rep.counts.warn or 0) + (rep.counts.err or 0)
 else
 log.warn("repair", "self-repair failed: " .. tostring(rep))
 end
 else
-
 log.warn("repair", "kernel.srm unavailable (" .. tostring(srmMod)
 .. ") — falling back to kernel.repair")
 local okR, repairMod = pcall(require, "kernel.repair")
@@ -248,9 +214,7 @@ else
 log.warn("repair", "kernel.repair unavailable: " .. tostring(repairMod))
 end
 end
-
 if findings then
-
 local SEV = { ok = 0x00FF00, info = 0xAAAAAA, warn = 0xFFAA00, err = 0xFF6600 }
 for _, f in ipairs(findings) do
 log.info("repair", f.text)
@@ -261,7 +225,6 @@ log.warn("repair", sum)
 bootEcho("  " .. sum, warned > 0 and 0xFFAA00 or 0x00FF00)
 end
 end
-
 memMark("4 system configuration")
 local sysconfig = nil
 do
@@ -279,11 +242,8 @@ else
 log.warn("kernel", "Config module not available: " .. tostring(mod))
 end
 end
-
 memMark("4b disk swap")
-
 if wants("swap", true) then
-
 local czMod
 do
 local okZ, mod = pcall(require, "kernel.compress")
@@ -308,9 +268,7 @@ else
 log.warn("kernel", "Swap module not available: " .. tostring(swapMod))
 end
 end
-
 memMark("4b2 internet card transport")
-
 do
 local okI, inetMod = pcall(require, "kernel.internet")
 if okI and inetMod then
@@ -318,15 +276,12 @@ pcall(inetMod.init, { log = log, config = sysconfig })
 _G._TOS.internet = inetMod
 end
 end
-
 memMark("4c jbod disk pooling")
-
 if wants("jbod", false) then
 local okJ, jbodMod = pcall(require, "kernel.jbod")
 if okJ and jbodMod then
 _G._TOS.jbod = jbodMod
 log.info("kernel", "JBOD disk pooling enabled")
-
 local cfg = jbodMod.loadConfig(fs)
 if cfg and type(cfg.pools) == "table" then
 for _, p in ipairs(cfg.pools) do
@@ -359,20 +314,16 @@ else
 log.warn("kernel", "JBOD enabled but module unavailable: " .. tostring(jbodMod))
 end
 end
-
 memMark("5 event system")
 log.info("kernel", "Starting event system...")
 event = require("kernel.event")
-
 local SEAT_COMPONENT_TYPES = { screen = true, gpu = true, keyboard = true }
-
 event.on("component_added", function(_, addr, ctype)
 hal.handleComponentAdded(addr, ctype)
 log.info("hotplug", "Added: " .. ctype .. " [" .. addr:sub(1, 8) .. "]")
 if SEAT_COMPONENT_TYPES[ctype] then
 event.push("tos_seat_changed", "added", ctype, addr)
 end
-
 if ctype == "filesystem" and diskmount then
 local okP, px = pcall(component.proxy, addr)
 if okP and px then
@@ -381,7 +332,6 @@ if mp then event.push("tos_disk_added", addr, mp, label) end
 end
 end
 end, "kernel")
-
 event.on("component_removed", function(_, addr, ctype)
 hal.handleComponentRemoved(addr, ctype)
 log.info("hotplug", "Removed: " .. ctype .. " [" .. addr:sub(1, 8) .. "]")
@@ -393,7 +343,6 @@ local mp, label = diskmount.unmount(addr)
 if mp then event.push("tos_disk_removed", addr, mp, label) end
 end
 end, "kernel")
-
 event.on("screen_resized", function(_, addr, w, h)
 local okS, screenMod = pcall(require, "kernel.screen")
 if not (okS and screenMod and screenMod.onResized) then return end
@@ -402,16 +351,13 @@ local nw, nh = screenMod.getResolution()
 log.info("screen", string.format("Screen resized externally -> %dx%d", nw or 0, nh or 0))
 end
 end, "kernel")
-
 memMark("6 process manager")
 log.info("kernel", "Starting process manager...")
 proc = require("kernel.process")
-
 memMark("7 display system")
 local isHeadless = sysconfig and sysconfig.isHeadless()
 if isHeadless then
 log.info("kernel", "Headless mode — skipping display init")
-
 display = {
 init = function() end, clear = function() end,
 fill = function() end, set = function() end,
@@ -428,7 +374,6 @@ c = function() return 0xFFFFFF end,
 else
 log.info("kernel", "Initializing display...")
 display = require("kernel.display")
-
 local targetW, targetH, resNote = opts.screenW, opts.screenH
 do
 local okSc, screenMod = pcall(require, "kernel.screen")
@@ -446,16 +391,13 @@ log.info("kernel", string.format("Display: %dx%d, GPU Tier %d (%d-bit color)",
 dW or 0, dH or 0, display.getGpuTier(), display.getGpuDepth()))
 if resNote then log.warn("screen", resNote) end
 end
-
 memMark("8 power monitor")
-
 do
 if wants("power", ramOK()) then
 local ok, powerMod = pcall(require, "kernel.power")
 if ok then
 powerMod.init({ log = log, config = sysconfig })
 _G._TOS.power = powerMod
-
 pcall(powerMod.applyProfile,
 (sysconfig and sysconfig.get("powerProfile")) or "balanced")
 if sysconfig and sysconfig.isTablet() then
@@ -466,7 +408,6 @@ end)
 powerMod.onCritical(function(level)
 if _G._TOS.audio then _G._TOS.audio.critical() else computer.beep(400, 0.5) end
 log.fatal("power", "Battery critical!")
-
 if not sysconfig or sysconfig.get("critBatShutdown") ~= false then
 log.warn("power", "Critical battery — clean shutdown to protect data")
 pcall(log.flush)
@@ -479,14 +420,12 @@ else
 log.warn("kernel", "Power module not available: " .. tostring(powerMod))
 end
 else
-
 log.warn("kernel", ramOK()
 and "Skipping power module (boot profile)"
 or ("Skipping power module (low memory: " ..
 math.floor(computer.freeMemory() / 1024) .. "KB free)"))
 end
 end
-
 local function lazySlot(slot, modname, makeDeps)
 local resolved, warned = nil, false
 _G._TOS[slot] = setmetatable({}, {
@@ -508,7 +447,6 @@ return mod[key]
 end,
 })
 end
-
 memMark("9 security subsystem")
 do
 if computer.freeMemory() > MIN_FREE_FOR_OPTIONAL then
@@ -516,7 +454,6 @@ local ok1, crypto = pcall(require, "kernel.crypto")
 if ok1 then
 crypto.init()
 log.info("kernel", "Crypto: " .. (crypto.hasHardware() and "Hardware" or "Software"))
-
 pcall(function()
 if not (crypto.addEntropy and crypto.exportEntropy and fs) then return end
 local EPATH = "/etc/entropy"
@@ -525,71 +462,61 @@ if fs.exists(EPATH) then
 local blob = fs.readFile(EPATH)
 if type(blob) == "string" and #blob > 0 then crypto.addEntropy(blob) end
 end
-
 crypto.addEntropy(tostring(computer.uptime()) .. "|" ..
 tostring(computer.freeMemory()) .. "|" .. tostring({}))
 fs.writeFile(EPATH, crypto.exportEntropy(64))
 end)
-
 local ok2, usersmod = pcall(require, "kernel.users")
 if ok2 then
 usersmod.init({ fs = fs, crypto = crypto, log = log, config = sysconfig })
 _G._TOS.users = usersmod
-
 local ok3, securefs = pcall(require, "kernel.securefs")
 if ok3 then
 securefs.init({ fs = fs, users = usersmod, log = log, process = proc })
 _G._TOS.securefs = securefs
-
 _G._TOS.bootSession = usersmod.kernelSession()
 log.info("kernel", "Security: users + securefs ready")
-
 lazySlot("trash", "kernel.trash")
-
 local okP, profileMod = pcall(require, "kernel.profile")
 if okP and profileMod and profileMod.init then
 profileMod.init({
-securefs  = securefs,
-users     = usersmod,
-log       = log,
+securefs = securefs,
+users = usersmod,
+log = log,
 serialize = require("kernel.serialize"),
 })
 _G._TOS.profile = profileMod
 log.info("kernel", "Profile module ready")
 end
-
 local okI18n, i18nMod = pcall(require, "kernel.i18n")
 if okI18n and i18nMod and i18nMod.init then
 i18nMod.init({
-fs        = fs,
-log       = log,
+fs = fs,
+log = log,
 serialize = require("kernel.serialize"),
-config    = _G._TOS.config,
+config = _G._TOS.config,
 })
 _G._TOS.i18n = i18nMod
 if i18nMod.language() ~= "en" then
 log.info("kernel", "Language: " .. i18nMod.language())
 end
 end
-
 lazySlot("backup", "kernel.backup", function()
 return {
 securefs = securefs,
-fs       = fs,
-crypto   = crypto,
-log      = log,
+fs = fs,
+crypto = crypto,
+log = log,
 }
 end)
-
 lazySlot("keychain", "kernel.keychain", function()
 return {
-securefs  = securefs,
-users     = usersmod,
-log       = log,
+securefs = securefs,
+users = usersmod,
+log = log,
 serialize = require("kernel.serialize"),
 }
 end)
-
 if event then
 event.interval(300, function() usersmod.sweepSessions() end, "kernel:session_sweep")
 end
@@ -607,17 +534,15 @@ log.warn("kernel", "Skipping security (low memory: " ..
 math.floor(computer.freeMemory() / 1024) .. "KB free)")
 end
 end
-
 memMark("9b theme manager")
-
 if display and display.isMonochrome and not display.isMonochrome()
 and wants("theme", ramOK()) then
 local okT, themeMod = pcall(require, "kernel.theme")
 if okT then
 themeMod.init({
-display  = display,
+display = display,
 securefs = _G._TOS.securefs,
-log      = log,
+log = log,
 })
 _G._TOS.theme = themeMod
 log.info("kernel", "Theme manager ready (" .. #themeMod.list() .. " presets)")
@@ -625,22 +550,20 @@ else
 log.warn("kernel", "Theme module not available: " .. tostring(themeMod))
 end
 end
-
 memMark("10 network")
 if (hal.has("modem") or hal.has("tunnel"))
 and wants("net", ramOK()) then
 local ok, netMod = pcall(require, "kernel.net")
 if ok then
 local initOk = pcall(netMod.init, {
-log    = log,
+log = log,
 config = sysconfig,
-event  = event,
-fs     = fs,
+event = event,
+fs = fs,
 })
 if initOk then
 _G._TOS.net = netMod
 log.info("kernel", "Network ready (" .. (netMod.getHostname()) .. ")")
-
 local okAl, aliasesMod = pcall(require, "kernel.net.aliases")
 if okAl and aliasesMod and aliasesMod.init then
 --! From _TOS, not `securefs`/`usersmod`: those were locals of the
@@ -650,16 +573,15 @@ if okAl and aliasesMod and aliasesMod.init then
 --! could repoint the machine's peer aliases. (test_net_aliases.lua;
 --! test_global_leaks.lua now sees names past the 256th constant.)
 aliasesMod.init({
-fs        = fs,
-securefs  = _G._TOS.securefs,
-users     = _G._TOS.users,
-log       = log,
+fs = fs,
+securefs = _G._TOS.securefs,
+users = _G._TOS.users,
+log = log,
 serialize = require("kernel.serialize"),
 })
 _G._TOS.net.aliases = aliasesMod
 log.info("kernel", "Peer aliases ready")
 end
-
 else
 log.warn("kernel", "Network init failed")
 end
@@ -670,16 +592,13 @@ else
 if not (hal.has("modem") or hal.has("tunnel")) then
 log.info("kernel", "No network hardware - skipping")
 elseif ramOK() then
-
 log.warn("kernel", "Skipping network (boot profile)")
 else
 log.warn("kernel", "Skipping network (low memory: " ..
 math.floor(computer.freeMemory() / 1024) .. "KB free)")
 end
 end
-
 memMark("11 startup services and compatibility")
-
 if wants("services", ramOK()) then
 local ok, rcMod = pcall(require, "kernel.rc")
 if ok then
@@ -687,7 +606,6 @@ rcMod.init({ fs = fs, log = log, proc = proc })
 rcMod.runAll()
 _G._TOS.rc = rcMod
 log.info("kernel", "Startup services loaded")
-
 if event then
 event.interval(30, function() rcMod.supervise() end, "kernel:rc_supervise")
 end
@@ -695,7 +613,6 @@ end
 else
 log.warn("kernel", "Startup services skipped (boot profile)")
 end
-
 if wants("cron", ramOK()) then
 if fs.exists("/etc/cron.dat") then
 local ok, cronMod = pcall(require, "kernel.cron")
@@ -705,38 +622,29 @@ _G._TOS.cron = cronMod
 log.info("kernel", "Cron scheduler initialized")
 end
 else
-
 lazySlot("cron", "kernel.cron")
 end
 else
-
 _G._TOS.cronDisabled = true
 log.warn("kernel", "Cron scheduler skipped (boot profile)")
 end
-
 do
-
 if not wants("packages", true) then
 _G._TOS.pkgDispatchDisabled = true
 log.warn("kernel", "Package command dispatch disabled (boot profile)")
 end
-
 lazySlot("pkg", "kernel.pkg")
 end
-
 if event then
 event.interval(30, function() pcall(log.flush) end, "kernel:log_flush")
 end
-
 if not wants("compat", true) then
 _G._TOS.compatDisabled = true
 log.warn("kernel", "OpenOS compat disabled (boot profile)")
 else
 log.info("kernel", "OpenOS compat: lazy (loads on first use)")
 end
-
 memMark("12 audio feedback system")
-
 if wants("audio", true) then
 local ok, audioMod = pcall(require, "kernel.audio")
 if ok then
@@ -747,28 +655,22 @@ else
 log.info("kernel", "Audio module not available")
 end
 end
-
 function kernel.gc()
 if type(collectgarbage) == "function" then return pcall(collectgarbage, "collect") end
 return false
 end
-_G._TOS.fs     = fs
+_G._TOS.fs = fs
 _G._TOS.kernel = kernel
-
-_G._TOS.proc   = proc
-_G._TOS.event  = event
-
+_G._TOS.proc = proc
+_G._TOS.event = event
 memMark("13 boot complete")
-
 if type(collectgarbage) == "function" then
 pcall(collectgarbage, "setpause", 120)
 end
-
 local freeNow = (hal and hal.freeMemory and hal.freeMemory()) or computer.freeMemory()
 local bootDuration = computer.uptime() - _G._TOS.bootTime
 if bootMem then
 _G._TOS.bootMem = bootMem
-
 for i, m in ipairs(bootMem) do
 local nxt = bootMem[i + 1]
 log.info("memprofile", nxt
@@ -780,18 +682,13 @@ end
 log.info("kernel", "Boot complete! Free memory: " ..
 math.floor(freeNow / 1024) .. "KB")
 log.info("kernel", string.format("Boot time: %.1fs", bootDuration))
-
 pcall(kernel.checkLastCrash)
-
 if freeNow < 20480 then
 log.warn("kernel", "LOW MEMORY: " .. math.floor(freeNow / 1024) .. "KB free!")
 end
-
 bootEcho(string.format("  Boot complete: %.1fs, %dK free",
 bootDuration, math.floor(freeNow / 1024)), 0x00FF00)
-
 if _G._TOS.audio then _G._TOS.audio.bootComplete() end
-
 do
 local okS, st, unarmedDisk = pcall(function()
 local fsMod = _G._TOS and _G._TOS.fs
@@ -804,7 +701,6 @@ if not (fsMod and fsMod.exists) then return nil end
 if fsMod.exists("/etc/selftest.on") then
 return require("kernel.selftest")
 end
-
 if fsMod.mounts then
 local okM, list = pcall(fsMod.mounts)
 if okM and type(list) == "table" then
@@ -838,9 +734,7 @@ bootEcho("  Self-test ERRORED (see /var/selftest.log)", 0xFF0000)
 end
 end
 end
-
 if not isHeadless then
-
 local bootPause = 0
 if sysconfig then
 bootPause = tonumber(sysconfig.get("bootPause")) or
@@ -848,20 +742,15 @@ bootPause = tonumber(sysconfig.get("bootPause")) or
 end
 if bootPause > 0 then computer.pullSignal(bootPause) end
 end
-
 log.detachEarlyPrint()
-
 memMark("14 login -> shell / headless loop")
-
 kernel.boot = nil
-
 if isHeadless then
 kernel.headlessMain()
 else
 kernel.loginAndStartShell()
 end
 end
-
 local function noUserSystem(d, pull, beep)
 local T = d.getTheme()
 d.clear(T.bg)
@@ -874,7 +763,6 @@ d.set(2, 10, "Press any key to power off.", T.dim, T.bg)
 if beep then pcall(beep) end
 repeat until pull(math.huge) == "key_down"
 end
-
 --! FIRST BOOT, LOW MEMORY. A fresh install whose boot left under 32 KB free
 --! (a T1 machine at 1,280 KB with an internet card, on the headless machine,
 --! 2026-10-09) went straight to minimalAuth, past First Boot Setup, and was
@@ -929,39 +817,30 @@ end
 pull(1.5)
 end
 end
-
 function kernel.loginAndStartShell()
 running = true
-
 local usersmod = _G._TOS.users
 local securefs = _G._TOS.securefs
 local freeMem = computer.freeMemory()
-
 local function forceGC()
 if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
 end
-
 local function minimalAuth()
 local W, H = display.getSize()
 local T = display.getTheme()
 display.clear(T.bg)
 display.set(2, 2, "TOS - Authentication Required", T.title, T.bg)
-
 if not usersmod then
-
 noUserSystem(display, computer.pullSignal, function()
 if _G._TOS.audio then _G._TOS.audio.critical() else computer.beep(400, 0.5) end
 end)
 kernel.shutdown()
 return nil
 end
-
 local fbToken = minimalFirstBoot(display, usersmod, computer.pullSignal, W, T)
 if fbToken then return fbToken end
-
 display.set(2, 3, "Low memory mode. Enter root password.", T.dim, T.bg)
 display.set(2, 5, "Password: ", T.dim, T.bg)
-
 local LOCKOUT_PATH = "/var/lockout.dat"
 local function readLockout()
 local ok, pFs = pcall(require, "kernel.fs")
@@ -980,10 +859,8 @@ fs.makeDirectory("/var")
 end
 pcall(fs.writeFile, LOCKOUT_PATH, tostring(t))
 end
-
 local now = computer.uptime()
 local lockUntil = readLockout()
-
 if lockUntil > 0 and lockUntil > now and (lockUntil - now) < 3600 then
 local wait = lockUntil - now
 display.set(2, 4, string.format("Locked: wait %ds before retrying.", math.ceil(wait)),
@@ -994,7 +871,6 @@ computer.pullSignal(math.min(1, deadline - computer.uptime()))
 end
 display.fill(2, 4, W - 3, 1, " ", T.fg, T.bg)
 end
-
 local maxAttempts = 5
 for attempt = 1, maxAttempts do
 display.fill(12, 5, W - 13, 1, " ", T.fg, T.bg)
@@ -1009,16 +885,13 @@ elseif ch and ch >= 32 and ch < 127 then buf = buf .. string.char(ch)
 end
 end
 end
-
 local token = usersmod.login("root", buf, { setCurrent = true })
 if token then
-
 writeLockout(0)
 display.set(2, 7, "Access granted.", T.success, T.bg)
 computer.pullSignal(0.5)
 return token
 end
-
 local backoff = 2 ^ attempt
 if log then
 log.warn("auth", string.format(
@@ -1038,7 +911,6 @@ end
 display.fill(2, 7, W - 3, 1, " ", T.fg, T.bg)
 end
 end
-
 writeLockout(computer.uptime() + 60)
 display.set(2, 7, "Too many attempts. Rebooting (locked 60s)...", T.error, T.bg)
 if _G._TOS.audio then _G._TOS.audio.critical() else computer.beep(400, 0.5) end
@@ -1046,10 +918,8 @@ computer.pullSignal(3)
 kernel.reboot()
 return nil
 end
-
 local loginScreen = nil
 local useMinimalAuth = false
-
 if freeMem < 32768 then
 log.warn("kernel", "Low memory - using minimal auth")
 useMinimalAuth = true
@@ -1062,10 +932,8 @@ log.warn("kernel", "Login module not available: " .. tostring(mod))
 useMinimalAuth = true
 end
 end
-
 local shellModule = nil
 do
-
 local ok, mod = pcall(require, "shell.init")
 if ok then
 shellModule = mod
@@ -1073,36 +941,30 @@ else
 log.error("kernel", "Shell module failed: " .. tostring(mod))
 end
 end
-
 local screenMod = require("kernel.screen")
 local shellCaps = {
-["fs.read"]   = true,
-["fs.write"]  = true,
+["fs.read"] = true,
+["fs.write"] = true,
 ["compat.io"] = true,
 ["component"] = true,
-["load"]      = true,
-["net"]       = true,
-
-["peripheral.redstone"]  = true,
-["peripheral.robot"]     = true,
+["load"] = true,
+["net"] = true,
+["peripheral.redstone"] = true,
+["peripheral.robot"] = true,
 ["peripheral.inventory"] = true,
-["peripheral.tape"]      = true,
-["peripheral.printer"]   = true,
-["peripheral.modem"]     = true,
-["peripheral.tractor"]   = true,
-["peripheral.piston"]    = true,
-["peripheral.hologram"]  = true,
+["peripheral.tape"] = true,
+["peripheral.printer"] = true,
+["peripheral.modem"] = true,
+["peripheral.tractor"] = true,
+["peripheral.piston"] = true,
+["peripheral.hologram"] = true,
 }
-
 local sessionTokens = {}
 local shellPIDs = {}
-
 local spawnShellForSeat
-
 local function spawnLoginProcess(dIdx)
 local dProxy = screenMod.displayProxy(dIdx)
 if not dProxy then return nil end
-
 local loginPrincipal = usersmod and usersmod.loginSession
 and usersmod.loginSession(dIdx) or nil
 local loginPid = proc.spawn("login@" .. dIdx, function()
@@ -1110,14 +972,13 @@ local token = nil
 if useMinimalAuth then
 token = minimalAuth()
 elseif loginScreen then
-
 local seatLogin = loginScreen.new and loginScreen.new() or loginScreen
 local ok, result, reason = pcall(seatLogin.run, {
 display = dProxy,
-event   = event,
-users   = usersmod,
-proc    = proc,
-log     = log,
+event = event,
+users = usersmod,
+proc = proc,
+log = log,
 })
 if ok then
 if reason == "shutdown" then
@@ -1135,23 +996,19 @@ if token then
 sessionTokens[dIdx] = token
 shellPIDs[dIdx] = spawnShellForSeat(dIdx, token)
 _G._TOS.shellPIDs = shellPIDs
-
 end
 end, {
-display   = dIdx,
-priority  = 2,
-source    = "kernel",
+display = dIdx,
+priority = 2,
+source = "kernel",
 principal = loginPrincipal,
 })
-
 if loginPid then pcall(proc.setForeground, loginPid, dIdx) end
 return loginPid
 end
-
 spawnShellForSeat = function(dIdx, token)
 local dProxy = screenMod.displayProxy(dIdx)
 if not dProxy or not shellModule then return nil end
-
 local shellSession = nil
 if token and usersmod then
 shellSession = usersmod.getSession(token)
@@ -1164,19 +1021,16 @@ end
 return nil
 end
 local userName = shellSession.user or "?"
-
 if _G._TOS.theme and _G._TOS.theme.applyForUser then
 pcall(_G._TOS.theme.applyForUser, shellSession)
 end
 if _G._TOS.profile and _G._TOS.profile.load and _G._TOS.profile.apply then
 pcall(function()
 local p = _G._TOS.profile.load(shellSession)
-
 local startup = _G._TOS.profile.apply(p, { session = shellSession })
 shellSession.startupCommands = startup
 end)
 end
-
 local kernelCopy = setmetatable(
 {
 display = dProxy,
@@ -1186,9 +1040,7 @@ getDisplayIdx = function() return dIdx end,
 },
 { __index = kernel }
 )
-
 log.info("kernel", "Seat " .. dIdx .. ": shell for " .. userName)
-
 local shellRunner = shellModule.run
 if userName == "kiosk" then
 local okK, kioskMod = pcall(require, "shell.kiosk")
@@ -1197,19 +1049,15 @@ shellRunner = kioskMod.run
 log.info("kernel", "Seat " .. dIdx .. ": KIOSK mode")
 end
 end
-
 forceGC()
 log.info("kernel", string.format("Seat %d: loading shell (%dKB free)",
 dIdx, math.floor(computer.freeMemory() / 1024)))
-
 local pid = proc.spawn("shell:" .. userName .. "@" .. dIdx, function()
 local ok2, err2 = pcall(shellRunner, kernelCopy, token)
 if not ok2 then
 local msg = tostring(err2)
-
 forceGC()
 log.error("kernel", "Shell crashed on display " .. dIdx .. ": " .. msg)
-
 pcall(function()
 if dProxy then
 local sW, sH = dProxy.getSize()
@@ -1221,19 +1069,17 @@ computer.pullSignal(2)
 end
 end)
 end
-
 event.push("tos_shell_exited", dIdx)
 end, {
-priority  = 1,
-source    = "kernel",
-tsr       = false,
+priority = 1,
+source = "kernel",
+tsr = false,
 principal = shellSession,
-token     = token,
-cwd       = shellSession and shellSession.home or "/",
-caps      = shellCaps,
-display   = dIdx,
+token = token,
+cwd = shellSession and shellSession.home or "/",
+caps = shellCaps,
+display = dIdx,
 })
-
 local fgOk, fgErr = proc.setForeground(pid, dIdx)
 if not fgOk then
 log.error("kernel", "Seat " .. dIdx .. ": foreground handoff FAILED ("
@@ -1241,14 +1087,10 @@ log.error("kernel", "Seat " .. dIdx .. ": foreground handoff FAILED ("
 end
 return pid
 end
-
 if shellModule then
-
-_G._TOS.bootSession   = nil
+_G._TOS.bootSession = nil
 _G._TOS.bootCompleted = true
-
 local displayCount = screenMod.count()
-
 for _, dIdx in ipairs(screenMod.indices()) do
 local pid = spawnLoginProcess(dIdx)
 local d = screenMod.get(dIdx)
@@ -1260,30 +1102,22 @@ tostring(d and d.screen or "?"):sub(1, 8),
 (d and d.keyboards and #d.keyboards) or 0,
 tostring(pid or "FAILED")))
 end
-
 _G._TOS.shellPIDs = shellPIDs
-
 if displayCount > 1 then
 log.info("kernel", "Multi-seat: " .. displayCount .. " displays active")
 end
-
 local lastCtrlC = {}
 local lastEntropyFeed = 0
 local monitorPIDs = {}
-
 local crashRespawns = 0
 while running do
-
 local signal = table.pack(event.pull(0.1))
-
 if signal[1] == "tos_shutdown" then
 running = false
 break
 end
-
 if signal[1] == "tos_logout" then
 local logoutIdx = signal[2]
-
 if not logoutIdx then
 local only, count = nil, 0
 for dIdx in pairs(shellPIDs) do count = count + 1; only = dIdx end
@@ -1296,7 +1130,6 @@ log.warn("kernel", "tos_logout without a seat index ignored ("
 end
 end
 if logoutIdx then
-
 if shellPIDs[logoutIdx] then
 proc.kill(shellPIDs[logoutIdx], { kernel = true })
 shellPIDs[logoutIdx] = nil
@@ -1311,11 +1144,9 @@ crashRespawns = 0
 end
 signal = table.pack(nil)
 end
-
 if signal[1] == "tos_shell_exited" then
 local dIdx = signal[2]
 if dIdx and not shellPIDs[dIdx] then
-
 elseif dIdx then
 shellPIDs[dIdx] = nil
 if usersmod and sessionTokens[dIdx] then
@@ -1325,11 +1156,9 @@ end
 log.info("kernel", "Seat " .. dIdx .. ": shell exited, respawning login")
 spawnLoginProcess(dIdx)
 end
-
 crashRespawns = 0
 signal = table.pack(nil)
 end
-
 if signal[1] == "key_down" then
 local nowE = computer.uptime()
 if nowE - lastEntropyFeed > 1 then
@@ -1341,7 +1170,6 @@ tostring(computer.freeMemory()))
 end
 end
 end
-
 if signal[1] == "key_down" and signal[3] == 3 then
 local ctrlDIdx = 1
 if screenMod.displayForKeyboard then
@@ -1361,13 +1189,11 @@ end
 end
 signal = table.pack(nil)
 end
-
 if signal[1] == "key_down" and signal[3] == 20 then
 local ctrlTIdx = 1
 if screenMod.displayForKeyboard then
 ctrlTIdx = screenMod.displayForKeyboard(signal[2]) or 1
 end
-
 local host = monitorHosts[ctrlTIdx]
 local hp = host and proc.get and proc.get(host)
 if hp and hp.state ~= proc.STATE.DEAD and shellPIDs[ctrlTIdx] == host then
@@ -1375,28 +1201,24 @@ proc.setForeground(host, ctrlTIdx, { kernel = true })
 ;(proc.signalKernel or proc.signal)(host, "tos_monitor")
 signal = table.pack(nil)
 else
-
 local existing = monitorPIDs[ctrlTIdx]
 local ep = existing and proc.get and proc.get(existing)
 if ep and ep.state ~= proc.STATE.DEAD then
 signal = table.pack(nil)
 else
-
 local seatSess = nil
 if usersmod and sessionTokens[ctrlTIdx] then
 seatSess = usersmod.getSession(sessionTokens[ctrlTIdx])
 end
 local seatToken = sessionTokens[ctrlTIdx]
-local shellPid  = shellPIDs[ctrlTIdx]
+local shellPid = shellPIDs[ctrlTIdx]
 local mp
 mp = proc.spawn("monitor@" .. ctrlTIdx, function()
-
 local switched = kernel.taskSwitcher(ctrlTIdx, seatSess, {
-pull    = function() return coroutine.yield() end,
-fgPID   = shellPid,
+pull = function() return coroutine.yield() end,
+fgPID = shellPid,
 selfPid = mp,
 })
-
 monitorPIDs[ctrlTIdx] = nil
 if not (switched and proc.get and proc.get(switched)) then
 if shellPid and proc.get and proc.get(shellPid) then
@@ -1405,20 +1227,18 @@ proc.setForeground(shellPid, ctrlTIdx, { kernel = true })
 end
 end
 end, {
-priority  = 2,
-source    = "kernel",
+priority = 2,
+source = "kernel",
 principal = seatSess,
-token     = seatToken,
-display   = ctrlTIdx,
+token = seatToken,
+display = ctrlTIdx,
 })
 monitorPIDs[ctrlTIdx] = mp
-
 proc.setForeground(mp, ctrlTIdx, { kernel = true })
 signal = table.pack(nil)
 end
 end
 end
-
 if signal[1] == "key_down" and signal[3] == 2 then
 local bgIdx = 1
 if screenMod.displayForKeyboard then
@@ -1426,7 +1246,6 @@ bgIdx = screenMod.displayForKeyboard(signal[2]) or 1
 end
 local fg = proc.getForeground(bgIdx)
 local shellPid = shellPIDs[bgIdx]
-
 if fg and shellPid and fg ~= shellPid then
 local sp = proc.get and proc.get(shellPid)
 if sp and sp.state ~= proc.STATE.DEAD then
@@ -1438,16 +1257,13 @@ end
 end
 signal = table.pack(nil)
 end
-
 if signal[1] == "tos_seat_changed" then
-
 local added, removed = screenMod.rebuild()
 for _, dIdx in ipairs(removed) do
 if shellPIDs[dIdx] then
 proc.kill(shellPIDs[dIdx], { kernel = true })
 shellPIDs[dIdx] = nil
 end
-
 if monitorPIDs[dIdx] then
 proc.kill(monitorPIDs[dIdx], { kernel = true })
 monitorPIDs[dIdx] = nil
@@ -1465,18 +1281,14 @@ log.info("hotplug", "Display " .. dIdx .. " added, spawning login")
 end
 signal = table.pack(nil)
 end
-
 proc.tick(signal.n > 0 and signal or nil)
-
 if proc.count() == 0 then
 log.warn("kernel", "All processes terminated")
 for dIdx, token in pairs(sessionTokens) do
 if usersmod then usersmod.logout(token) end
 end
-
 for k in pairs(sessionTokens) do sessionTokens[k] = nil end
 for k in pairs(shellPIDs) do shellPIDs[k] = nil end
-
 forceGC()
 local seats = (screenMod.count and screenMod.count()) or 0
 if running and seats > 0 then
@@ -1485,9 +1297,7 @@ if crashRespawns <= 3 and computer.freeMemory() >= 64 * 1024 then
 log.warn("kernel", string.format(
 "Unexpected shell exit — recovering login on %d seat(s) [try %d/3, %dKB free]",
 seats, crashRespawns, math.floor(computer.freeMemory() / 1024)))
-
 for _, dIdx in ipairs(screenMod.indices()) do spawnLoginProcess(dIdx) end
-
 else
 log.error("kernel", string.format(
 "Shell unrecoverable (%dKB free after GC) — dropping to emergency shell",
@@ -1504,14 +1314,11 @@ end
 end
 end
 else
-
 kernel.emergencyShell()
 running = false
 end
-
 kernel.shutdown()
 end
-
 --! A panic is often IN the filesystem layer -- kernel.fs, securefs, a driver
 --! below them -- and a report written through it fails exactly when it is
 --! needed. crashWriteRaw writes with raw component invokes instead, sharing
@@ -1558,11 +1365,10 @@ end
 end
 return nil
 end
-
 function kernel.crashDump(reason, detail)
 local fs = _G._TOS and _G._TOS.fs
-local up    = math.floor((computer.uptime and computer.uptime()) or 0)
-local free  = math.floor(((computer.freeMemory and computer.freeMemory()) or 0) / 1024)
+local up = math.floor((computer.uptime and computer.uptime()) or 0)
+local free = math.floor(((computer.freeMemory and computer.freeMemory()) or 0) / 1024)
 local total = math.floor(((computer.totalMemory and computer.totalMemory()) or 0) / 1024)
 local lines = {
 "=== TOS CRASH REPORT ===",
@@ -1590,7 +1396,6 @@ end
 local name = "crash-" .. up .. ".txt"
 local path = "/var/crash/" .. name
 local body = table.concat(lines, "\n") .. "\n"
-
 local marker = tostring(reason or "unknown") .. " @ uptime " .. up .. "s"
 --! pcall's second value is the ERROR when the call raises, and an error
 --! string is truthy: a write that died inside a broken kernel.fs used to
@@ -1611,7 +1416,6 @@ if not disk then return false end
 if onBoot then return path end
 return path .. " on disk " .. disk:sub(1, 8)
 end
-
 --! The boot disk's marker, then the marker on any other disk that names THIS
 --! machine: crashWriteRaw writes there when the boot disk would not take the
 --! report. Only real filesystem components are asked -- that is all it
@@ -1657,7 +1461,6 @@ end
 end
 end
 end
-
 function kernel.monitorSnapshot(displayIdx, seatSession)
 if not proc then return { rows = {} } end
 local mon = require("kernel.monitor")
@@ -1686,9 +1489,9 @@ local ok, svcs = pcall(rcMod.list)
 if ok and type(svcs) == "table" then services = svcs end
 end
 end
-local free  = (computer.freeMemory and computer.freeMemory()) or 0
+local free = (computer.freeMemory and computer.freeMemory()) or 0
 local total = (computer.totalMemory and computer.totalMemory()) or 0
-local up    = (computer.uptime and computer.uptime()) or 0
+local up = (computer.uptime and computer.uptime()) or 0
 local rows = {
 { text = string.format("Uptime %s   RAM %dK/%dK [%s]   Processes %d",
 mon.fmtUptime(up), math.floor((total - free) / 1024),
@@ -1699,7 +1502,6 @@ tone = "vitals" },
 for _, line in ipairs(mon.textRows(procs, services)) do rows[#rows + 1] = line end
 return { rows = rows }
 end
-
 function kernel.setMonitorHost(enable)
 if not proc then return false end
 local p = proc.current and proc.current()
@@ -1709,14 +1511,12 @@ if not (shells and shells[p.display] == p.pid) then return false end
 monitorHosts[p.display] = (enable ~= false) and p.pid or nil
 return true
 end
-
 function kernel.isForeground()
 if not proc then return true end
 local p = proc.current and proc.current()
 if not p then return true end
 return proc.getForeground(p.display) == p.pid
 end
-
 function kernel.monitorList(displayIdx, seatSession)
 if not proc then return { rows = {}, vitals = nil } end
 local mon = require("kernel.monitor")
@@ -1764,7 +1564,7 @@ enabled = s.enabled ~= false, canAct = seatTier >= 2,
 }
 end
 end
-local free  = (computer.freeMemory and computer.freeMemory()) or 0
+local free = (computer.freeMemory and computer.freeMemory()) or 0
 local total = (computer.totalMemory and computer.totalMemory()) or 0
 local vitals = string.format("up %s  ·  mem [%s] %dK/%dK free %dK  ·  %d proc",
 mon.fmtUptime((computer.uptime and computer.uptime()) or 0),
@@ -1772,7 +1572,6 @@ mon.memBar(total - free, total, 12), math.floor((total - free) / 1024),
 math.floor(total / 1024), math.floor(free / 1024), #procs)
 return { rows = rows, vitals = vitals }
 end
-
 function kernel.monitorAct(action, id)
 if not proc then return false, "scheduler unavailable" end
 local caller = proc.current and proc.current()
@@ -1782,7 +1581,6 @@ local sess = caller.principal
 local seatUser = sess and sess.user or nil
 local seatTier = (sess and sess.tier) or 0
 local mon = require("kernel.monitor")
-
 if action == "svc" then
 if seatTier < 2 then return false, "admin only" end
 local okRC, rcMod = pcall(require, "kernel.rc")
@@ -1801,20 +1599,17 @@ log.info("kernel", (svc.running and "Stopped " or "Started ")
 if ok2 == false then return false, tostring(err) end
 return true
 end
-
 local p = proc.get(tonumber(id) or -1)
 if not p or p.state == proc.STATE.DEAD then return false, "no such process" end
 if displayIdx and p.display and p.display ~= displayIdx then
 return false, "not on this seat"
 end
-
 local pUser = p.principal and p.principal.user or nil
 if sess and seatTier < 2
 and pUser ~= nil and pUser ~= seatUser and pUser ~= "_kernel_" then
 return false, "not permitted"
 end
 local pEntry = { pid = p.pid, user = pUser, display = p.display }
-
 if action == "switch" then
 if p.pid == caller.pid then return false, "already in front" end
 proc.setForeground(p.pid, displayIdx, { kernel = true })
@@ -1832,7 +1627,6 @@ log.warn("kernel", "Killed PID " .. p.pid .. " (" .. tostring(p.name)
 .. ") from monitor by " .. tostring(seatUser or "kernel"))
 return true
 elseif action == "tsr" then
-
 if p.pid == caller.pid then return false, "that is this shell" end
 if not mon.canAct(seatTier, seatUser, displayIdx, pEntry) then
 return false, "not permitted"
@@ -1843,33 +1637,26 @@ return true
 end
 return false, "unknown action"
 end
-
 function kernel.taskSwitcher(displayIdx, seatSession, opts)
 opts = opts or {}
-
 local procMode = opts.pull ~= nil
 local pull = opts.pull or function() return computer.pullSignal(0.5) end
 local selfPid = opts.selfPid
-
 local screenMod = require("kernel.screen")
 local dsp = displayIdx and screenMod.displayProxy(displayIdx) or display
 if not dsp or not proc then return end
-
 local usersmod = _G._TOS.users
 local seatUser = seatSession and seatSession.user or nil
 local seatTier = seatSession and seatSession.tier or 0
-
 local mon = require("kernel.monitor")
 local okRC, rcMod = pcall(require, "kernel.rc")
 local W, H = dsp.getSize()
 local T = dsp.getTheme()
-
 local function visibleProcs()
 local procs = proc.list()
 if displayIdx then
 local f = {}
 for _, p in ipairs(procs) do
-
 if p.pid ~= selfPid and (not p.display or p.display == displayIdx) then
 f[#f + 1] = p
 end
@@ -1885,31 +1672,25 @@ procs = f
 end
 return procs
 end
-
 local function visibleServices()
 if seatTier < 2 or not (okRC and rcMod and rcMod.list) then return {} end
 local ok, svcs = pcall(rcMod.list)
 return (ok and type(svcs) == "table") and svcs or {}
 end
-
 local function canAct(pEntry)
 return mon.canAct(seatTier, seatUser, displayIdx, pEntry)
 end
-
 local dx, dy = 1, 1
 local dw, dh = W, H
-
 local nameW = math.max(20, dw - 2 - 30)
-local svcW  = math.max(27, dw - 2 - 22)
+local svcW = math.max(27, dw - 2 - 22)
 local listTop = dy + 4
-local listH   = math.max(1, dh - 6)
-
-local fgPID  = opts.fgPID or proc.getForeground(displayIdx)
+local listH = math.max(1, dh - 6)
+local fgPID = opts.fgPID or proc.getForeground(displayIdx)
 local switchedPid = nil
-local rows   = {}
-local sel    = 1
+local rows = {}
+local sel = 1
 local scroll = 0
-
 local function clampScroll()
 if #rows == 0 then scroll = 0; return end
 if sel <= scroll then scroll = sel - 1 end
@@ -1918,7 +1699,6 @@ local maxScroll = math.max(0, #rows - listH)
 if scroll > maxScroll then scroll = maxScroll end
 if scroll < 0 then scroll = 0 end
 end
-
 local function rebuild()
 rows = mon.buildRows(visibleProcs(), visibleServices())
 if #rows == 0 then return false end
@@ -1929,22 +1709,18 @@ end
 clampScroll()
 return true
 end
-
 if not rebuild() then return end
 for i, r in ipairs(rows) do
 if r.kind == "proc" and r.p.pid == fgPID then sel = i; clampScroll(); break end
 end
-
 local function drawFrame()
 dsp.dbox(dx, dy, dw, dh, "System Monitor",
 { border = T.border, bg = T.panel_bg, title = T.title })
 end
-
 local function drawContent()
-
 local total = computer.totalMemory() or 0
-local free  = computer.freeMemory() or 0
-local used  = total - free
+local free = computer.freeMemory() or 0
+local used = total - free
 local pcount = 0
 for _, r in ipairs(rows) do if r.kind == "proc" then pcount = pcount + 1 end end
 local vit = string.format(" up %s  ·  mem [%s] %dK/%dK free %dK  ·  %d proc",
@@ -1955,7 +1731,6 @@ dsp.fill(dx + 1, dy + 2, dw - 2, 1, " ", T.fg, T.panel_bg)
 local hdr = string.format(" %-4s %-" .. nameW .. "s %-8s %-7s %5s",
 "PID", "Process", "Owner", "State", "CPU")
 dsp.set(dx + 1, dy + 3, dsp.fit(hdr, dw - 2), T.dim, T.panel_bg)
-
 for row = 1, listH do
 local idx = scroll + row
 local y = listTop + row - 1
@@ -1963,7 +1738,6 @@ if idx <= #rows then
 local r = rows[idx]
 local selected = (idx == sel)
 if r.kind == "header" then
-
 local width = dw - 2
 local prefixCols = 4 + #r.text + 1
 local bar
@@ -1976,10 +1750,10 @@ end
 dsp.set(dx + 1, y, bar, T.title, T.panel_bg)
 elseif r.kind == "proc" then
 local p = r.p
-local mark  = (p.pid == fgPID) and "*" or " "
+local mark = (p.pid == fgPID) and "*" or " "
 local state = p.tsr and "TSR" or (p.state or ""):sub(1, 7)
 local owner = (p.user or "kernel"):sub(1, 8)
-local line  = string.format("%s%-4d %-" .. nameW .. "s %-8s %-7s %4.1fs",
+local line = string.format("%s%-4d %-" .. nameW .. "s %-8s %-7s %4.1fs",
 mark, p.pid, mon.describe(p):sub(1, nameW), owner, state, p.cpuTime or 0)
 if selected then
 dsp.set(dx + 1, y, dsp.fit(line, dw - 2), T.sel_fg, T.sel_bg)
@@ -2003,7 +1777,6 @@ else
 dsp.fill(dx + 1, y, dw - 2, 1, " ", T.fg, T.panel_bg)
 end
 end
-
 local r = rows[sel]
 local help
 if r and r.kind == "svc" then
@@ -2013,10 +1786,8 @@ help = " [Enter] switch  [K]ill  [T]SR   up/down move   [^Q] close"
 end
 dsp.set(dx + 1, dy + dh - 2, dsp.fit(help, dw - 2), T.dim, T.panel_bg)
 end
-
 drawFrame()
 drawContent()
-
 while true do
 local sig, _, ch, co = pull()
 if sig == "key_down" then
@@ -2035,16 +1806,13 @@ local r = rows[sel]
 if r and r.kind == "proc" then
 local p = r.p
 if co == 28 then
-
 proc.setForeground(p.pid, displayIdx, { kernel = true })
-
 (proc.signalKernel or proc.signal)(p.pid, "tos_focus")
 log.info("kernel", "Switched to PID " .. p.pid .. " (" .. tostring(p.name) .. ")")
 switchedPid = p.pid
 break
 elseif ch == 107 or ch == 75 then
 if p.pid ~= fgPID and canAct(p) then
-
 proc.kill(p.pid, { kernel = true })
 log.warn("kernel", "Killed PID " .. p.pid .. " (" .. tostring(p.name)
 .. ") from monitor by " .. tostring(seatUser or "kernel"))
@@ -2076,31 +1844,23 @@ end
 end
 end
 elseif sig == nil then
-
 rebuild(); drawContent()
 end
 end
-
 if procMode then
-
 return switchedPid
 end
-
 local fg = proc.getForeground(displayIdx)
 if fg then (proc.signalKernel or proc.signal)(fg, "tos_focus") end
 return switchedPid
 end
-
 function kernel.emergencyShell()
 if not display then return end
-
 local usersmod = _G._TOS.users
 local W0, H0 = display.getSize()
 local T0 = display.getTheme()
-
 display.clear(T0.bg)
 display.set(2, 2, "TOS EMERGENCY - Auth Required", T0.error, T0.bg)
-
 if not usersmod then
 display.set(2, 3, "User system unavailable - cannot authenticate.", T0.error, T0.bg)
 display.set(2, 4, "Rebooting...", T0.dim, T0.bg)
@@ -2108,9 +1868,7 @@ computer.pullSignal(3)
 kernel.reboot()
 return
 end
-
 display.set(2, 3, "Password: ", T0.dim, T0.bg)
-
 local authed = false
 for attempt = 1, 3 do
 display.fill(12, 3, W0 - 13, 1, " ", T0.fg, T0.bg)
@@ -2124,7 +1882,6 @@ elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
 elseif ch and ch >= 32 and ch < 127 then buf = buf .. string.char(ch) end
 end
 end
-
 local token = usersmod.login("root", buf, { setCurrent = true })
 if token then authed = true break end
 if attempt < 3 then
@@ -2139,15 +1896,12 @@ computer.pullSignal(3)
 kernel.reboot()
 return
 end
-
 local W, H = display.getSize()
 local T = display.getTheme()
-
 local lines = {}
 local scrollOff = 0
 local HEADER = 3
 local viewH = H - HEADER - 1
-
 local function redraw()
 display.clear(T.bg)
 display.set(2, 1, "TOS EMERGENCY SHELL", T.error, T.bg)
@@ -2167,13 +1921,11 @@ display.fill(1, y, W, 1, " ", T.fg, T.bg)
 end
 end
 end
-
 local function ePrint(text, color)
 lines[#lines + 1] = {tostring(text), color or T.dim}
 scrollOff = 0
 redraw()
 end
-
 local function prompt()
 local promptY = H
 display.fill(1, promptY, W, 1, " ", T.fg, T.bg)
@@ -2195,16 +1947,13 @@ end
 end
 end
 end
-
 local secfs = _G._TOS and _G._TOS.securefs
 local rootSess = usersmod.kernelSession and usersmod.kernelSession() or nil
-
 while true do
 local input = prompt()
 local parts = {}
 for w in input:gmatch("%S+") do parts[#parts + 1] = w end
 local cmd = parts[1] and parts[1]:lower() or ""
-
 --! The recovery set (2026-10): df, log and srm joined the original
 --! seven. Each is built to survive the thing that may have broken:
 --! df asks the disks themselves through raw component invokes, log
@@ -2225,7 +1974,6 @@ ePrint("              - System Repair & Maintenance")
 ePrint("  reboot      - Reboot system")
 ePrint("  shutdown    - Shut down")
 elseif cmd == "df" then
-
 local boot
 pcall(function() boot = computer.getBootAddress() end)
 local any = false
@@ -2253,7 +2001,6 @@ ePrint(string.format("[%7.1f][%s] %s", tonumber(e.time) or 0,
 tostring(e.source or "?"), tostring(e.msg or "")))
 end
 else
-
 local okR, data = pcall(fs.readFile, "/var/log/kernel.log")
 if okR and type(data) == "string" and data ~= "" then
 local tail = {}
@@ -2286,7 +2033,6 @@ end
 end
 elseif cmd == "ls" then
 local path = parts[2] or "/"
-
 local list
 if secfs and secfs.list then
 list = secfs.list(path, rootSess)
@@ -2305,7 +2051,6 @@ ePrint("Cannot list: " .. path, T.error)
 end
 elseif cmd == "cat" then
 if parts[2] then
-
 local content
 if secfs and secfs.readFile then
 content = secfs.readFile(parts[2], rootSess)
@@ -2335,41 +2080,34 @@ ePrint("Unknown: " .. cmd, T.warning)
 end
 end
 end
-
 function kernel.verifySystem(printFn)
 printFn = printFn or function() end
-
-local cOK  = display and display.c("success") or 0xFFFFFF
+local cOK = display and display.c("success") or 0xFFFFFF
 local cWrn = display and display.c("warning") or 0xFFFFFF
 local cErr = display and display.c("error") or 0xFFFFFF
 local cDim = display and display.c("dim") or 0xFFFFFF
-
 local allFiles
 do
 local ok2, manifest = pcall(require, "system_manifest")
 if ok2 and type(manifest) == "table" then
 allFiles = manifest
 else
-
 allFiles = {
-{ path = "/init.lua",              critical = true },
-{ path = "/tos/kernel/init.lua",   critical = true },
-{ path = "/tos/shell/init.lua",    critical = true },
+{ path = "/init.lua", critical = true },
+{ path = "/tos/kernel/init.lua", critical = true },
+{ path = "/tos/shell/init.lua", critical = true },
 }
 printFn("  WARN: system_manifest.lua not found, using minimal verify list", cWrn)
 end
 end
-
 local ok, missing, damaged = 0, 0, 0
 --! Split out so the summary can say whether anything that matters is
 --! gone. "3 missing" reads the same whether they are man pages or the
 --! command registry, and those are not the same news.
 local missingCritical = 0
-
 local cryptoMod = nil
 do local okC, c = pcall(require, "kernel.crypto"); if okC then cryptoMod = c end end
 local hashMismatch = 0
-
 local function streamLoad(path)
 local h = fs.open(path, "r")
 if not h then return nil, nil, "unreadable" end
@@ -2393,11 +2131,9 @@ end, "=" .. path, "t")
 if not okL then return nil, fn, "raised" end
 return fn, lerr, nil
 end
-
 for _, file in ipairs(allFiles) do
 if fs.exists(file.path) then
 do
-
 if file.hash and cryptoMod and cryptoMod.hash then
 if type(file.hash) ~= "string" or #file.hash ~= 64 or file.hash:find("[^%x]") then
 printFn("  BAD " .. file.path .. " (malformed hash in manifest)", cWrn)
@@ -2423,9 +2159,7 @@ if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
 goto continue_verify
 end
 end
-
 if not file.path:match("%.lua$") then
-
 local readable = false
 local h = fs.open(file.path, "r")
 if h then
@@ -2468,13 +2202,11 @@ damaged = damaged + 1
 end
 end
 end
-
 if type(collectgarbage) == "function" then
 pcall(collectgarbage, "collect")
 end
 else
-
-local tag   = file.critical and "MISS" or "GONE"
+local tag = file.critical and "MISS" or "GONE"
 local color = file.critical and cErr or cWrn
 printFn("  " .. tag .. " " .. file.path ..
 (file.critical and " (critical, not installed)" or " (not installed)"), color)
@@ -2482,7 +2214,6 @@ missing = missing + 1
 if file.critical then missingCritical = missingCritical + 1 end
 end
 ::continue_verify::
-
 --! Let the rest of the machine breathe. This sweep hashes and
 --! compiles ~150 files; without a yield the shell is simply frozen
 --! until it finishes, with no output reaching the screen, which
@@ -2490,7 +2221,6 @@ end
 --! a single large file is already the slow unit here.
 if proc and proc.yieldCooperative then pcall(proc.yieldCooperative) end
 end
-
 printFn("", cDim)
 --! MISSING and DAMAGED are deliberately separate totals and always
 --! have been: a file that is absent has nothing to be broken. The
@@ -2513,17 +2243,13 @@ printFn("Missing files are absent, not corrupt — reinstall to restore them.", 
 else
 printFn(string.format("Result: %d OK, %s, %d damaged", ok, missText, damaged), cDim)
 end
-
 return missing == 0 and damaged == 0
 end
-
 local function readManifestSource()
-
 local path = "/tos/system_manifest.lua"
 if not fs.exists(path) then return nil, "manifest missing" end
 return fs.readFile(path)
 end
-
 function kernel.computeManifestHash()
 local source, err = readManifestSource()
 if not source then return nil, err end
@@ -2533,7 +2259,6 @@ return nil, "crypto unavailable"
 end
 return cryptoMod.hash(source)
 end
-
 function kernel.anchorManifestHash()
 local digest, err = kernel.computeManifestHash()
 if not digest then return false, err end
@@ -2542,7 +2267,6 @@ local eepromAddr = component.list("eeprom")()
 if not eepromAddr then return false, "no EEPROM" end
 local ep = component.proxy(eepromAddr)
 if not ep.setData then return false, "EEPROM has no setData" end
-
 local existing = ep.getData() or ""
 local bootAddr = existing:match("^[^\n]*") or ""
 local payload = bootAddr .. "\nTOS1:" .. digest
@@ -2550,7 +2274,6 @@ if #payload > 256 then return false, "EEPROM data field too small" end
 ep.setData(payload)
 return true, digest
 end
-
 function kernel.clearManifestAnchor()
 local component = require("component")
 local eepromAddr = component.list("eeprom", true)()
@@ -2561,7 +2284,6 @@ local existing = ep.getData() or ""
 ep.setData(existing:match("^[^\n]*") or "")
 return true
 end
-
 function kernel.verifyManifestHash()
 local component = require("component")
 local eepromAddr = component.list("eeprom")()
@@ -2569,7 +2291,6 @@ if not eepromAddr then return false, "no EEPROM" end
 local ep = component.proxy(eepromAddr)
 if not ep.getData then return false, "EEPROM has no getData" end
 local existing = ep.getData() or ""
-
 local anchored = existing:match("\nTOS1:(%x+)") or existing:match("^TOS1:(%x+)")
 if not anchored then
 return false, "no anchored hash (run `verify anchor` as admin)"
@@ -2586,26 +2307,23 @@ if cryptoMod.ctEquals(live, anchored) then return true end
 return false, "manifest hash mismatch (live=" .. live:sub(1, 12) ..
 " anchored=" .. anchored:sub(1, 12) .. ")"
 end
-
-function kernel.getLog()      return log end
-function kernel.getHAL()      return hal end
-function kernel.getEvent()    return event end
-function kernel.getProc()     return proc end
-
+function kernel.getLog() return log end
+function kernel.getHAL() return hal end
+function kernel.getEvent() return event end
+function kernel.getProc() return proc end
 function kernel.getFS()
 return _G._TOS.securefs or fs
 end
-function kernel.getDisplay()  return display end
+function kernel.getDisplay() return display end
 function kernel.getDisplayIdx() return nil end
-function kernel.getUsers()    return _G._TOS.users end
+function kernel.getUsers() return _G._TOS.users end
 function kernel.getSecureFS() return _G._TOS.securefs end
-function kernel.getConfig()   return _G._TOS.config end
-function kernel.getPower()    return _G._TOS.power end
-function kernel.getSwap()     return _G._TOS.swap end
-function kernel.getJBOD()     return _G._TOS.jbod end
-function kernel.getNet()      return _G._TOS.net end
+function kernel.getConfig() return _G._TOS.config end
+function kernel.getPower() return _G._TOS.power end
+function kernel.getSwap() return _G._TOS.swap end
+function kernel.getJBOD() return _G._TOS.jbod end
+function kernel.getNet() return _G._TOS.net end
 function kernel.getCompress()
-
 if _G._TOS.compress then return _G._TOS.compress end
 local ok, mod = pcall(require, "kernel.compress")
 if ok and mod then
@@ -2615,45 +2333,35 @@ return mod
 end
 return nil
 end
-
 function kernel.uptime()
 return computer.uptime() - _G._TOS.bootTime
 end
-
 local rebootRequested = false
-
 function kernel.shutdown(reboot)
 if reboot then rebootRequested = true end
 reboot = rebootRequested
 running = false
 shuttingDown = true
-
 if log then
 log.info("kernel", reboot and "Rebooting..." or "Shutting down...")
 end
-
 local cronMod = package and package.loaded and package.loaded["kernel.cron"]
 if type(cronMod) == "table" and cronMod.shutdown then
 pcall(cronMod.shutdown)
 end
-
 if _G._TOS.rc then
 pcall(_G._TOS.rc.stopAll)
 end
-
 if proc then
 for _, p in ipairs(proc.list()) do
 pcall(proc.kill, p.pid, { kernel = true })
 end
 end
-
 if _G._TOS.net then
 pcall(_G._TOS.net.shutdown)
 end
-
 pcall(log.flush)
 pcall(log.detachFile)
-
 if display then
 pcall(function()
 local T = display.getTheme()
@@ -2662,9 +2370,7 @@ display.set(2, 2, reboot and "Rebooting TOS..." or "TOS shut down.", T.success, 
 display.set(2, 3, "Goodbye!", T.dim, T.bg)
 end)
 end
-
 if _G._TOS.audio then pcall(_G._TOS.audio.shutdown) end
-
 pcall(function()
 local f = _G._TOS.fs
 if f and f.writeFile then
@@ -2673,60 +2379,46 @@ f.writeFile("/var/run/pwrstate",
 tostring((os.time and os.time()) or 0))
 end
 end)
-
 computer.pullSignal(0.5)
 computer.shutdown(reboot or false)
 end
-
 function kernel.reboot()
 kernel.shutdown(true)
 end
-
 function kernel.version()
 return _G._TOS.version, _G._TOS.codename
 end
-
 function kernel.headlessMain()
 running = true
-
 local usersmod = _G._TOS.users
-
 if usersmod then
 _G._TOS.bootSession = usersmod.kernelSession()
 end
-
 log.info("kernel", "Entering headless service loop")
-
 if not _G._TOS.net then
 log.warn("kernel", "WARNING: headless server has no network!")
 log.warn("kernel", "Install a modem or linked card so the server can be reached.")
 end
-
 while running do
 local signal = table.pack(event.pull(0.5))
-
 if signal[1] == "tos_shutdown" then
 running = false
 break
 end
-
 if signal[1] == "component_added" then
 local ctype = signal[3]
 if ctype == "screen" or ctype == "gpu" or ctype == "keyboard" then
 log.info("kernel", "Display hardware detected — checking for interactive switch")
-
 local component2 = require("component")
-local hasGPU    = component2.list("gpu")() ~= nil
+local hasGPU = component2.list("gpu")() ~= nil
 local hasScreen = component2.list("screen")() ~= nil
-local hasKB     = component2.list("keyboard")() ~= nil
+local hasKB = component2.list("keyboard")() ~= nil
 if hasGPU and hasScreen and hasKB then
 log.info("kernel", "Full display hardware present — switching to interactive mode")
 running = false
-
 display = require("kernel.display")
 local gpu = component2.proxy(component2.list("gpu")())
 if gpu then
-
 local w, h = gpu.maxResolution()
 local okSc, screenMod = pcall(require, "kernel.screen")
 if okSc and screenMod and screenMod.gpuTarget then
@@ -2743,11 +2435,8 @@ return
 end
 end
 end
-
 proc.tick(signal.n > 0 and signal or nil)
 end
-
 kernel.shutdown()
 end
-
 return kernel

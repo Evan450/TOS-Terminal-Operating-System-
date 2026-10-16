@@ -1,17 +1,14 @@
 local securefs = {}
-
-local fs      = nil
+local fs = nil
 local usermod = nil
-local log     = nil
+local log = nil
 local process = nil
-
 function securefs.init(modules)
-fs      = modules.fs
+fs = modules.fs
 usermod = modules.users
-log     = modules.log
+log = modules.log
 process = modules.process
 end
-
 local function sessionOf(explicit)
 if explicit then return explicit end
 if process and process.currentSession then
@@ -28,13 +25,11 @@ return tos.bootSession
 end
 return nil
 end
-
 --! #SEC (pentest, Sep 2026) — a path fs.normalize rejects (a NUL byte, a
 --! non-string) is refused here, by name. It used to reach the ACL as nil,
 --! which read it as "/" and said yes, and a write raised in the
 --! protected-path check instead of refusing.
 local INVALID_PATH = "Permission denied: invalid path  [E-401 ERR_PERM_DENIED]"
-
 local function checkRead(path, session)
 if not fs or not usermod then return false, "securefs not initialized" end
 path = fs.normalize(path)
@@ -47,13 +42,11 @@ return false, "Permission denied: " .. (reason or "access denied") .. "  [E-401 
 end
 return true, nil, path
 end
-
 local _isProtectedTarget
 --! Forward-declared for the same reason as the guard above:
 --! checkWrite needs it and it is defined further down, next to
 --! the protected-path tables it describes.
 local protectedMsg
-
 local function checkWrite(path, session)
 if not fs or not usermod then return false, "securefs not initialized" end
 path = fs.normalize(path)
@@ -63,14 +56,12 @@ if not path then return false, INVALID_PATH end
 --! argument, so `session` here is usually nil -- and an override armed
 --! by root would never have been seen.
 local sess = sessionOf(session)
-
 if _isProtectedTarget then
 local hit = _isProtectedTarget(path, sess)
 if hit then
 if log then log.warn("securefs",
 "WRITE denied (protected system path " .. hit .. "): " .. path ..
 " -- root can lift this for one session with `protect off`") end
-
 local hint = ""
 if hit == "/usr/lib" or hit == "/usr/modules" or hit == "/usr/bin"
 or hit == "/var/pkg" then
@@ -86,30 +77,25 @@ return false, "Permission denied: " .. (reason or "access denied") .. "  [E-401 
 end
 return true, nil, path
 end
-
 function securefs.exists(path, session)
 local ok, _, norm = checkRead(path, session)
 if not ok then return false end
 return fs.exists(norm)
 end
-
 function securefs.isDirectory(path, session)
 local ok, _, norm = checkRead(path, session)
 if not ok then return false end
 return fs.isDirectory(norm)
 end
-
 function securefs.list(path, session)
 local ok, err, norm = checkRead(path, session)
 if not ok then return {}, err end
 path = norm
-
 local rawList = fs.list(norm)
 local sess = sessionOf(session)
 --! #SEC (pentest, Sep 2026) — matched on the folded key: "/HOME" lists
 --! /home on a case-insensitive disk, and skipped both filters below.
 local key = usermod.pathKey and usermod.pathKey(path) or path
-
 if key == "/home" then
 if not sess or sess.tier < usermod.TIER.ADMIN then
 local filtered = {}
@@ -124,7 +110,6 @@ end
 return filtered
 end
 end
-
 if key == "/var/mail" then
 if not sess or sess.tier < usermod.TIER.ADMIN then
 local filtered = {}
@@ -138,57 +123,47 @@ end
 return filtered
 end
 end
-
 return rawList
 end
-
 function securefs.readFile(path, session)
 local ok, err, norm = checkRead(path, session)
 if not ok then return nil, err end
 return fs.readFile(norm)
 end
-
 function securefs.size(path, session)
 local ok, _, norm = checkRead(path, session)
 if not ok then return 0 end
 return fs.size(norm)
 end
-
 function securefs.lastModified(path, session)
 local ok, _, norm = checkRead(path, session)
 if not ok then return 0 end
 return fs.lastModified(norm)
 end
-
 function securefs.writeFile(path, content, session)
 local ok, err, norm = checkWrite(path, session)
 if not ok then return false, err end
 return fs.writeFile(norm, content)
 end
-
 function securefs.writeFileAtomic(path, content, session)
 local ok, err, norm = checkWrite(path, session)
 if not ok then return false, err end
 if not fs.writeFileAtomic then return fs.writeFile(norm, content) end
 return fs.writeFileAtomic(norm, content)
 end
-
 function securefs.appendFile(path, content, session)
 local ok, err, norm = checkWrite(path, session)
 if not ok then return false, err end
 return fs.appendFile(norm, content)
 end
-
 function securefs.makeDirectory(path, session)
 local ok, err, norm = checkWrite(path, session)
 if not ok then return false, err end
 return fs.makeDirectory(norm)
 end
-
 local REMOVE_PROTECTED = {
 "/tos", "/etc", "/init.lua", "/bios.lua", "/install.lua",
 "/var", "/usr",
-
 "/var/pkg", "/var/pkg/installed",
 "/usr/modules", "/usr/lib", "/usr/bin",
 --! #SEC — the two CODE roots C18 missed, both OpenOS's and both searched
@@ -206,46 +181,37 @@ local REMOVE_PROTECTED = {
 --! reads both lists from source, so a new code root must be added here.
 "/lib", "/bin",
 }
-
 local NODE_PROTECTED = {
 "/home", "/root", "/public",
 }
-
 local WRITE_PROTECTED_EXEMPT = {
-["/etc/users.dat"]    = true,
-["/etc/tos.cfg"]      = true,
-["/etc/hostname"]     = true,
-["/etc/motd"]         = true,
-["/etc/profile"]      = true,
+["/etc/users.dat"] = true,
+["/etc/tos.cfg"] = true,
+["/etc/hostname"] = true,
+["/etc/motd"] = true,
+["/etc/profile"] = true,
 ["/etc/critical.bak"] = true,
-
 ["/etc/.tutorial_done"] = true,
 ["/etc/peer_aliases.dat"] = true,
-
-["/etc/selftest.on"]      = true,
-
-["/etc/cluster-master.cfg"]  = true,
+["/etc/selftest.on"] = true,
+["/etc/cluster-master.cfg"] = true,
 ["/etc/cluster-manager.cfg"] = true,
-["/etc/kiosk.cfg"]           = true,
-["/etc/component_caps.cfg"]  = true,
-["/etc/pkg_caps.cfg"]        = true,
-
-["/etc/pkg_trust.cfg"]       = true,
-
-["/etc/menu.cfg"]            = true,
-
-["/etc/keys.cfg"]            = true,
-["/etc/chat-groups.cfg"]     = true,
-["/etc/intercom.cues"]       = true,
-["/etc/intercom.cfg"]        = true,
-["/etc/jbod.cfg"]            = true,
-["/etc/widgets"]             = true,
-["/var/log"]          = true,
-["/var/run"]          = true,
-["/var/lib"]          = true,
-["/var/cluster"]      = true,
+["/etc/kiosk.cfg"] = true,
+["/etc/component_caps.cfg"] = true,
+["/etc/pkg_caps.cfg"] = true,
+["/etc/pkg_trust.cfg"] = true,
+["/etc/menu.cfg"] = true,
+["/etc/keys.cfg"] = true,
+["/etc/chat-groups.cfg"] = true,
+["/etc/intercom.cues"] = true,
+["/etc/intercom.cfg"] = true,
+["/etc/jbod.cfg"] = true,
+["/etc/widgets"] = true,
+["/var/log"] = true,
+["/var/run"] = true,
+["/var/lib"] = true,
+["/var/cluster"] = true,
 }
-
 --! The protected set above is defence-in-depth against a TAMPERED admin
 --! session, and it is worth having. What it should not be is a wall the
 --! machine's owner cannot get past on their own hardware: creating a
@@ -269,12 +235,10 @@ local WRITE_PROTECTED_EXEMPT = {
 --! comment actually recommended, and which produced neither safety nor
 --! a log entry.
 local overrideSessions = setmetatable({}, { __mode = "k" })
-
 local function hasOverride(session)
 if not session then return false end
 return overrideSessions[session] == true
 end
-
 function securefs.setOperatorOverride(session, enabled)
 if not usermod then return false, "securefs not initialized" end
 if not session then return false, "no session" end
@@ -299,11 +263,9 @@ end
 end
 return true
 end
-
 function securefs.operatorOverride(session)
 return hasOverride(session)
 end
-
 --! One place builds the refusal text, so every path -- write, remove,
 --! rename -- says the same three things: WHAT was refused, WHY, and what
 --! to do about it.
@@ -331,22 +293,17 @@ end
 return base .. "  Only root can lift it, with `protect off`, and only " ..
 "for their own session.  [E-402 ERR_PATH_PROTECTED]"
 end
-
 local TREE_EXEMPT = {
 "/var/log/", "/var/run/", "/var/lib/", "/var/cluster/", "/etc/widgets/",
 }
-
 local function protectedHit(path)
-
 if WRITE_PROTECTED_EXEMPT[path] then return nil end
 for _, prefix in ipairs(TREE_EXEMPT) do
 if path:sub(1, #prefix) == prefix then return nil end
 end
-
 for _, p in ipairs(NODE_PROTECTED) do
 if path == p then return p end
 end
-
 for _, p in ipairs(REMOVE_PROTECTED) do
 if path == p or path:sub(1, #p + 1) == p .. "/" then
 return p
@@ -354,7 +311,6 @@ end
 end
 return nil
 end
-
 --! #SEC (pentest, Sep 2026) — checked as written AND as users.pathKey
 --! folds it, because the disk may be case-insensitive (see pathKey in
 --! kernel/users.lua): "/TOS/kernel/init.lua" was not "/tos", so an admin
@@ -377,7 +333,6 @@ if key and key ~= path then return protectedHit(key) end
 return nil
 end
 _isProtectedTarget = isProtectedTarget
-
 --! For `rm`, which used to answer `rm /tos/x` with "add -r" and `rm -r
 --! /tos/x` with this guard's refusal -- two different errors, the first
 --! recommending a flag that could not help. Same check, same words as
@@ -389,9 +344,7 @@ local hit = isProtectedTarget(path, sessionOf(session))
 if hit then return protectedMsg("removing", hit, sessionOf(session)) end
 return nil
 end
-
 function securefs.remove(path, session)
-
 path = fs.normalize(path)
 if not path then return false, INVALID_PATH end
 local hit = isProtectedTarget(path, sessionOf(session))
@@ -402,13 +355,10 @@ local ok, err = checkWrite(path, session)
 if not ok then return false, err end
 return fs.remove(path)
 end
-
 function securefs.rename(from, to, session)
-
 local nFrom = fs.normalize(from)
-local nTo   = fs.normalize(to)
+local nTo = fs.normalize(to)
 if not nFrom or not nTo then return false, INVALID_PATH end
-
 local hitFrom = isProtectedTarget(nFrom, sessionOf(session))
 if hitFrom then
 return false, protectedMsg("renaming", hitFrom, sessionOf(session))
@@ -423,7 +373,6 @@ local ok2, err2, normTo = checkWrite(nTo, session)
 if not ok2 then return false, err2 end
 return fs.rename(normFrom, normTo)
 end
-
 local coopProc = nil
 local function coopYield()
 if coopProc == nil then
@@ -432,11 +381,9 @@ coopProc = (okP and type(m) == "table" and m.yieldCooperative) and m or false
 end
 if coopProc then coopProc.yieldCooperative() end
 end
-
 local function isUnder(p, root)
 return p == root or root == "/" or p:sub(1, #root + 1) == root .. "/"
 end
-
 --! #SEC (pentest, Sep 2026) — a DIRECTORY copy is checked per entry, as
 --! the caller. It used to check the top path only and hand the tree to
 --! kernel.fs.copyRecursive, which walks the raw filesystem. "/home" and
@@ -471,7 +418,6 @@ return false, string.format("Copied %d items, %d failed", copied, failed)
 end
 return true
 end
-
 function securefs.copy(src, dst, session)
 local ok1, err1, normSrc = checkRead(src, session)
 if not ok1 then return false, err1 end
@@ -480,13 +426,11 @@ if not ok2 then return false, err2 end
 if fs.isDirectory(normSrc) then
 return copyTree(normSrc, normDst, session)
 end
-
 if fs.copyFile then return fs.copyFile(normSrc, normDst) end
 local content, err = fs.readFile(normSrc)
 if not content then return false, err end
 return fs.writeFile(normDst, content)
 end
-
 --! #SEC (pentest, Sep 2026) — the mode is matched against the closed set
 --! OpenComputers' managed filesystem accepts, not searched for "w"/"a"/"+".
 --! Anything without those letters used to count as a READ, and a backend
@@ -494,9 +438,8 @@ end
 --! mode except exactly "r" writable, so open(p, "x") passed the read check
 --! and came back with a handle that writes. On a machine booted from a raw
 --! drive, that was any user rewriting /tos/kernel.
-local READ_MODES  = { r = true, rb = true }
+local READ_MODES = { r = true, rb = true }
 local WRITE_MODES = { w = true, wb = true, a = true, ab = true }
-
 function securefs.open(path, mode, session)
 mode = mode or "r"
 if not (READ_MODES[mode] or WRITE_MODES[mode]) then
@@ -517,13 +460,12 @@ if not h then return nil, herr end
 --! fs.open("/etc/motd") handed a program the whole disk with no ACL at
 --! all: h.proxy.remove("/init.lua"). (test_securefs_session_bind.lua)
 return {
-read  = function(_, n) return h:read(n) end,
+read = function(_, n) return h:read(n) end,
 write = function(_, data) return h:write(data) end,
-seek  = function(_, whence, offset) return h:seek(whence, offset) end,
+seek = function(_, whence, offset) return h:seek(whence, offset) end,
 close = function() return h:close() end,
 }
 end
-
 function securefs.normalize(path) return fs.normalize(path) end
 function securefs.split(path) return fs.split(path) end
 function securefs.join(...) return fs.join(...) end
@@ -531,7 +473,6 @@ function securefs.spaceTotal(path) return fs.spaceTotal(path) end
 function securefs.spaceUsed(path) return fs.spaceUsed(path) end
 function securefs.spaceFree(path) return fs.spaceFree(path) end
 function securefs.mounts() return fs.mounts() end
-
 local function requireAdmin(session)
 if not usermod or not usermod.TIER then return nil, "users module unavailable" end
 local sess = sessionOf(session)
@@ -539,7 +480,6 @@ if not sess then return nil, "no session" end
 if sess.tier < usermod.TIER.ADMIN then return nil, "mount requires admin" end
 return sess
 end
-
 --! #SEC (pentest, Sep 2026) — a mount point is held to the protected-path
 --! guard, as a write is. A mount replaces what a path resolves to, and
 --! fs.mount takes an empty or absent directory anywhere, so an admin -- or
@@ -547,7 +487,6 @@ end
 --! their choosing at an empty /var/pkg/secrets or /etc/rc.d, where the guard
 --! stops even an admin writing. /mnt, homes and /tmp are unaffected, and
 --! root lifts it with `protect off` like any other. (test_mount_points.lua)
-
 function securefs.mount(path, proxy, session)
 if not fs then return false, "securefs not initialized" end
 local ok, err = requireAdmin(session)
@@ -564,7 +503,6 @@ return false, protectedMsg("mounting over", hit, ok)
 end
 return fs.mount(norm, proxy)
 end
-
 function securefs.unmount(path, session)
 if not fs then return false, "securefs not initialized" end
 local ok, err = requireAdmin(session)
@@ -574,20 +512,17 @@ return false, "Permission denied: " .. err .. "  [E-401 ERR_PERM_DENIED]"
 end
 return fs.unmount(path)
 end
-
 function securefs.home(session)
 local sess = sessionOf(session)
 if sess then return sess.home end
 return "/tmp"
 end
-
 function securefs.resolve(path, session)
 if path == "~" or path:sub(1, 2) == "~/" then
 return securefs.home(session) .. path:sub(2)
 end
 return path
 end
-
 function securefs.forSession(session)
 local proxy = {}
 --! #SEC (pentest, Sep 2026) — FIXED ARITY. Every method takes exactly
@@ -615,13 +550,12 @@ local fn = securefs[name]
 proxy[name] = function(a, b) return fn(a, b, session) end
 end
 proxy.home = function() return securefs.home(session) end
-
-proxy.normalize   = securefs.normalize
-proxy.split       = securefs.split
-proxy.join        = securefs.join
-proxy.spaceTotal  = securefs.spaceTotal
-proxy.spaceUsed   = securefs.spaceUsed
-proxy.spaceFree   = securefs.spaceFree
+proxy.normalize = securefs.normalize
+proxy.split = securefs.split
+proxy.join = securefs.join
+proxy.spaceTotal = securefs.spaceTotal
+proxy.spaceUsed = securefs.spaceUsed
+proxy.spaceFree = securefs.spaceFree
 --! #SEC H15 — this proxy is the `fs` a sandboxed program is given, and
 --! its mounts() handed back every disk's REAL component address.
 --! compat.filesystem.get() has hidden that address since H15 (it is the
@@ -646,7 +580,6 @@ return out
 end
 return proxy
 end
-
 function securefs.opaqueMountId(mountPoint, addr)
 local okC, cryptoMod = pcall(require, "kernel.crypto")
 if okC and cryptoMod and cryptoMod.hash then
@@ -654,9 +587,6 @@ return "fs:" .. cryptoMod.hash(tostring(mountPoint) .. "|" .. tostring(addr)):su
 end
 return "fs:" .. tostring(mountPoint)
 end
-
 securefs._isProtectedTarget = function(p, s) return _isProtectedTarget(p, s) end
-
 securefs._protectedMsg = function(v, h, s) return protectedMsg(v, h, s) end
-
 return securefs

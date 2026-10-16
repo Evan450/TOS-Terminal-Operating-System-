@@ -1,6 +1,5 @@
 local computer = require("computer")
 local M = {}
-
 function M.resolvePath(S, p)
 if not p or p == "" then return S.cwd end
 if p:sub(1, 1) == "/" then return p end
@@ -10,7 +9,6 @@ return home .. p:sub(2)
 end
 return S.F.join(S.cwd, p)
 end
-
 function M.loadFiles(S, b)
 b.files = {}
 if b.path ~= "/" then
@@ -31,15 +29,14 @@ return a < b2
 end)
 for _, n in ipairs(raw) do
 local isDir = n:sub(-1) == "/"
-local name  = isDir and n:sub(1, -2) or n
-local sz    = 0
+local name = isDir and n:sub(1, -2) or n
+local sz = 0
 if not isDir then
 pcall(function() sz = S.F.size(S.F.join(b.path, name)) end)
 end
 b.files[#b.files + 1] = { name = name, dir = isDir, sz = sz }
 end
 if b.sel > #b.files then b.sel = math.max(1, #b.files) end
-
 b.freeStr = nil
 pcall(function()
 local best, bestLen = nil, -1
@@ -54,11 +51,9 @@ b.freeStr = M.fmtSz(math.max(0, (best.total or 0) - (best.used or 0)))
 end
 end)
 end
-
 function M.refreshBrowser(S)
 M.loadFiles(S, S.browser)
 end
-
 function M.fileColor(S, f)
 local T = S.T
 if f.dir then return T.dir or T.dir_color or T.highlight end
@@ -67,7 +62,6 @@ if f.name:match("%.cfg$") or f.name:match("%.conf$") then return T.file_cfg or T
 if f.name:match("%.log$") then return T.file_log or T.dim end
 return T.fg
 end
-
 function M.mayHavePackages()
 if package.loaded["kernel.pkg"] ~= nil then return true end
 local kfs = _G._TOS and _G._TOS.fs
@@ -87,7 +81,6 @@ if tostring(n):gsub("/$", "") ~= "" then return true end
 end
 return false
 end
-
 function M.loadFailure(what, err)
 local why = tostring(err or "unknown error")
 if why:find("Out of memory", 1, true) or why:find("not enough memory", 1, true) then
@@ -95,7 +88,6 @@ return what .. " cannot load: not enough free memory on this machine."
 end
 return what .. " module unavailable: " .. why
 end
-
 function M.requireRoomy(S, name, keep)
 local ok, mod = pcall(require, name)
 if not ok and S and type(S.releaseCommands) == "function" then
@@ -107,7 +99,6 @@ end
 end
 return ok, mod
 end
-
 function M.reportProgramEnd(S, o, ok, result, errPrefix, env)
 local T = S.T
 local text, isError
@@ -125,7 +116,6 @@ if isError then o((errPrefix or "Error: ") .. text, T.error)
 elseif ok then o(text, T.fg)
 else o(text, T.dim) end
 end
-
 function M.diskName(m)
 local label = type(m) == "table" and m.label or nil
 if type(label) == "string" and label ~= "" and label ~= "Unnamed" then return label end
@@ -133,7 +123,6 @@ local mp = type(m) == "table" and m.mountPoint or nil
 local leaf = type(mp) == "string" and mp:match("([^/]+)/*$") or nil
 return leaf or "disk"
 end
-
 --! The disk is newer news than whatever result is up. A multi-line output
 --! block (S.outLines) wins over lastOut when the shell draws, so after
 --! `pkg make-disk` -- three lines of output -- ejecting and re-inserting
@@ -153,20 +142,17 @@ S.lastOut = { 'Disk removed: "' .. M.diskName({ label = label, mountPoint = mntP
 end
 return true
 end
-
 function M.fmtSz(sz)
 if sz >= 1048576 then return string.format("%.1fM", sz / 1048576) end
-if sz >= 1024    then return string.format("%dK", math.floor(sz / 1024)) end
+if sz >= 1024 then return string.format("%dK", math.floor(sz / 1024)) end
 return sz .. "B"
 end
-
 function M.selPath(S)
 if S.browser.sel < 1 or S.browser.sel > #S.browser.files then return nil, nil end
 local f = S.browser.files[S.browser.sel]
 if f.name == ".." then return nil, nil end
 return S.F.join(S.browser.path, f.name), f
 end
-
 function M.classifyDisk(F, mnt)
 if not F or not mnt or mnt == "" then return { kind = "data", desc = "disk" } end
 local function exists(p)
@@ -183,7 +169,6 @@ elseif type(list) == "function" then for n in list do names[#names + 1] = n end 
 end
 return names
 end
-
 local function hasPackageDir(dir)
 for _, n in ipairs(listNames(dir)) do
 local clean = n:gsub("/$", "")
@@ -195,28 +180,23 @@ end
 end
 return false
 end
-
 if has("tos/kernel/init.lua") then
 return { kind = "tos-install", desc = "TOS install disk",
 hint = "(install image — run its install.lua on the target machine)" }
 end
-
 if hasPackageDir(mnt) then
-
 if has("optutil-set.lua") then
 return { kind = "optional-utilities", desc = "Optional Utilities disk",
 hint = "pkg install" }
 end
 return { kind = "package-repo", desc = "package repo disk", hint = "pkg install" }
 end
-
 for _, n in ipairs(listNames(mnt)) do
 local clean = n:gsub("/$", "")
 if clean ~= "" and clean ~= "." and clean ~= ".." and not clean:find("[/\\]") then
 local sub = F.join(mnt, clean)
 if hasPackageDir(sub) then
 if exists(F.join(sub, "optutil-set.lua")) then
-
 return { kind = "optional-utilities", desc = "Optional Utilities disk",
 hint = "pkg install" }
 end
@@ -224,19 +204,16 @@ return { kind = "package-repo", desc = "package repo disk", hint = "pkg install"
 end
 end
 end
-
 if has("package.lua") then
 return { kind = "package", desc = "single-package disk",
 hint = "disk install " .. mnt }
 end
-
 if has("module.cfg") then
 return { kind = "module", desc = "module disk (legacy)",
 hint = "disk install " .. mnt }
 end
 return { kind = "data", desc = "data / blank disk" }
 end
-
 function M.scanMountedMedia(F)
 if not F or not F.mounts then return nil end
 local ok, mnts = pcall(F.mounts)
@@ -253,7 +230,6 @@ end
 end
 return nil
 end
-
 function M.routeOutput(n, maxInline)
 n = tonumber(n) or 0
 if n <= 0 then return "none" end
@@ -261,7 +237,6 @@ if n == 1 then return "status" end
 if n <= (maxInline or 8) then return "inline" end
 return "tab"
 end
-
 function M.completeToken(prefix, candidates)
 prefix = prefix or ""
 local matches = {}
@@ -278,7 +253,6 @@ cp = cp:sub(1, n)
 end
 return cp, matches
 end
-
 function M.completeCmdline(cmdline, cmds, listDir)
 local before, token = (cmdline or ""):match("^(.-)(%S*)$")
 if not before:find("%S") then
@@ -300,7 +274,6 @@ end
 end
 return before .. dirPart .. comp, matches
 end
-
 function M.cmdScroll(len, cursor, avail)
 if avail < 1 then avail = 1 end
 local cur0 = (cursor or (len + 1)) - 1
@@ -310,7 +283,6 @@ if cur0 > avail - 1 then hs = cur0 - (avail - 1) end
 if hs < 0 then hs = 0 end
 return hs
 end
-
 function M.wrapLine(text, width)
 if #text <= width then return { text } end
 local lines = {}
@@ -326,10 +298,8 @@ end
 if #text > 0 then lines[#lines + 1] = text end
 return lines
 end
-
 function M.expandBuf(S, rawBuf)
 local out = {}
-
 local reserve = (S.tier and S.tier >= 2) and 6 or 0
 local wrapW = math.max(8, S.W - reserve)
 --! #MEM (pentest, Sep 2026) — a line that already fits is passed through
@@ -356,7 +326,6 @@ end
 end
 return out
 end
-
 --! #MEM (pentest, Sep 2026) — every "show me this file" (cat, more, the
 --! browser's View, the context menu's View) read the whole file into one
 --! string and then split it into a { line, colour } per line, so a file was
@@ -367,11 +336,9 @@ end
 --! read it. (test_view_memory.lua)
 local VIEW_FLOOR = 32 * 1024
 M.VIEW_STOPPED = "-- stopped after %d lines: memory is low. Read the rest with head, tail or grep."
-
 function M.readLinesCapped(F, path, add)
 local shown, stopped = 0, false
 local okR, err = M.eachLine(F, path, function(line)
-
 if shown % 64 == 0 then
 local free = computer.freeMemory and computer.freeMemory() or math.huge
 if free < VIEW_FLOOR + shown * 16 then stopped = true; return false end
@@ -382,9 +349,7 @@ end)
 if not okR then return false, err end
 return true, shown, stopped
 end
-
 local lineNumFmtCache = {}
-
 function M.formatLineNum(n, gutterW)
 local fmt = lineNumFmtCache[gutterW]
 if not fmt then
@@ -393,22 +358,18 @@ lineNumFmtCache[gutterW] = fmt
 end
 return string.format(fmt, n)
 end
-
 function M.padR(s, w)
 s = tostring(s)
 if #s >= w then return s:sub(1, w) end
 return s .. string.rep(" ", w - #s)
 end
-
 function M.padL(s, w)
 s = tostring(s)
 if #s >= w then return s:sub(1, w) end
 return string.rep(" ", w - #s) .. s
 end
-
 function M.liveTier(S)
 if S and S.U and S.st then
-
 if S.U.getSession then
 local s = S.U.getSession(S.st)
 if s and type(s.tier) == "number" then return s.tier end
@@ -417,7 +378,6 @@ return 0
 end
 return (S and S.userTier) or 0
 end
-
 --! #SEC — the registry tier of the command `name`, enforced. Returns
 --! (message, need, have) when this seat may not run it, nil when it may.
 --! The executor makes this check at dispatch (Sep 2026 pentest); anything
@@ -438,17 +398,14 @@ return "Permission denied: '" .. tostring(name) .. "' needs "
 .. (M.tierName and M.tierName(need) or ("tier " .. need))
 .. "  [E-403 ERR_TIER_REQUIRED]", need, have
 end
-
 function M.rootOnly(S, o)
 if M.liveTier(S) < 3 then
-
 local r = M.fail(S, "Permission denied: root only  [E-403 ERR_TIER_REQUIRED]", o)
 S.lastDenial = { cmd = S.curCmd, need = 3, have = M.liveTier(S) }
 return r
 end
 return true
 end
-
 function M.adminOnly(S, o)
 if M.liveTier(S) < 2 then
 local r = M.fail(S, "Permission denied: admin access required  [E-403 ERR_TIER_REQUIRED]", o)
@@ -457,13 +414,11 @@ return r
 end
 return true
 end
-
 function M.tierName(n)
 n = tonumber(n) or 0
 return ({ [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" })[n]
 or ("tier " .. n)
 end
-
 function M.whyExplain(cmd, need, have, known)
 local out = {}
 local function add(t, tone) out[#out + 1] = { text = t, tone = tone } end
@@ -493,7 +448,6 @@ add("your account admin rights.", "fix")
 end
 return out
 end
-
 --! `why` had exactly ONE thing it could explain: the last tier gate that
 --! fired (rootOnly/adminOnly, which record S.lastDenial). Every other
 --! failure fell through to the else-branch and printed the command's own
@@ -509,20 +463,17 @@ end
 --! So the shell now remembers the last thing it printed in the error
 --! colour (noteFailure, called from the executor's output sink, which
 --! every command's output funnels through) and `why` explains THAT.
-
 function M.noteFailure(S, cmd, text)
 if not S or S.lastFailure then return end
 text = tostring(text or "")
 if text == "" then return end
 S.lastFailure = { cmd = cmd, text = text }
 end
-
 function M.clearFailure(S)
 if not S then return end
 S.lastFailure = nil
 S.lastDenial = nil
 end
-
 function M.fail(S, msg, o, cmd)
 msg = tostring(msg or "failed")
 if S then S.lastFailure = nil end
@@ -531,7 +482,6 @@ if o then o(msg, S.T.error)
 elseif S then S.lastOut = { msg, S.T.error } end
 return false
 end
-
 local FAILURES = {
 { key = "is a protected system path", sym = "ERR_PATH_PROTECTED", lines = {
 { "That is a guard, not a permission problem.", "err" },
@@ -576,13 +526,11 @@ local FAILURES = {
 { "Fix: `help` lists what there is, Tab completes names, and", "fix" },
 { "`pkg list` shows what an add-on would provide.", "fix" },
 } },
-
 { key = "out of space", sym = "ERR_NO_SPACE", lines = {
 { "The disk is full.", "err" },
 { "Fix: `df` shows which disk; `trash empty` and removing files free", "fix" },
 { "it. The write that failed changed nothing, so retry after.", "fix" },
 } },
-
 { sym = "ERR_TIER_REQUIRED", lines = {
 { "Your account's tier is too low for that command.", "err" },
 { "Fix: `why <command>` shows the tier it needs; an admin can run it,", "fix" },
@@ -696,12 +644,10 @@ local FAILURES = {
 { "access, or run it for you.", "fix" },
 } },
 }
-
 local function errorsMod()
 local ok, errors = pcall(require, "kernel.errors")
 return (ok and type(errors) == "table") and errors or nil
 end
-
 local function linesFor(sym)
 for _, f in ipairs(FAILURES) do
 if f.sym == sym then
@@ -711,7 +657,6 @@ return out
 end
 end
 end
-
 --! A TAGGED message ("... [E-402 ERR_PATH_PROTECTED]") is identified by its
 --! code alone, which is the point of having codes: its wording can change
 --! without breaking `why`. Prose matching is the fallback, for messages that
@@ -736,7 +681,6 @@ end
 if not lines then return nil end
 return lines, entry, entry and errors.label(entry) or nil
 end
-
 function M.explainCode(q)
 local errors = errorsMod()
 local e = errors and errors.find(q)
@@ -749,7 +693,6 @@ out[#out + 1] = { text = string.format("The EEPROM reports this one as %s: a lon
 end
 return out, e
 end
-
 --! The ONE way to log a seat out.
 --!
 --! There were five: the `logout` command, the System menu, the F10 power
@@ -777,10 +720,8 @@ function M.logout(S)
 if S and S._sudo and S.sudoDrop then pcall(S.sudoDrop) end
 if S and S.E and S.E.push then S.E.push("tos_logout", S.displayIdx) end
 end
-
 function M.canPowerOff(S)
 if M.liveTier(S) >= 2 then return true end
-
 local n = 0
 local pids = _G._TOS and _G._TOS.shellPIDs
 if type(pids) == "table" then
@@ -790,7 +731,6 @@ if n <= 1 then return true end
 return false, n .. " operators are logged in. Ask an admin to power off, "
 .. "or wait for the others to log out."
 end
-
 --! #MEM (pentest, Sep 2026) — read a file a LINE at a time through a
 --! handle. grep, wc, head and tail each read the whole file into one string
 --! first (and readFile held it twice while joining its chunks), so `grep`
@@ -831,7 +771,6 @@ pcall(h.close, h)
 if not ok then return false, tostring(perr) end
 return true, bytes
 end
-
 function M.sessionOf(S)
 if S and S.U then
 if S.st and S.U.getSession then
@@ -845,10 +784,8 @@ end
 end
 return nil
 end
-
 function M.canAccess(S, path, mode, o)
 if S.U then
-
 local session = M.sessionOf(S)
 local ok, reason
 if session and S.U.canAccessAs then
@@ -856,7 +793,6 @@ ok, reason = S.U.canAccessAs(session, path, mode)
 elseif S.U.canAccess then
 ok, reason = S.U.canAccess(path, mode)
 else
-
 ok, reason = false, "access check unavailable"
 end
 if not ok then
@@ -875,19 +811,15 @@ end
 end
 return true
 end
-
 function M.canWrite(S, path, o) return M.canAccess(S, path, "w", o) end
-function M.canRead(S, path, o)  return M.canAccess(S, path, "r", o) end
-
+function M.canRead(S, path, o) return M.canAccess(S, path, "r", o) end
 --! #SEC H9 — an unqualified command name resolves only against a fixed set
 --! of system bin directories. PATH is honoured only where its entries are
 --! also on the safe list: anything under /mnt, /tmp, /public, /home or
 --! /root is REJECTED, so an attacker setting PATH=/mnt/floppy:/bin and
 --! running `ls` cannot silently shadow the system binary.
-
-M.SYSTEM_BIN_DIRS  = { "/bin", "/usr/bin", "/tos/shell" }
-M.UNSAFE_PREFIXES  = { "/mnt/", "/tmp/", "/public/", "/home/", "/root/" }
-
+M.SYSTEM_BIN_DIRS = { "/bin", "/usr/bin", "/tos/shell" }
+M.UNSAFE_PREFIXES = { "/mnt/", "/tmp/", "/public/", "/home/", "/root/" }
 --! #SEC — BUG FOUND WHEN THIS MOVED OUT OF executor.lua (2026-08-04).
 --! The prefix list is written with trailing slashes, and the old check
 --! compared the PATH entry against them raw. A PATH entry of exactly
@@ -923,7 +855,6 @@ if d:sub(1, #p) == p then return false end
 end
 return true
 end
-
 --! An alias carries NO privilege. It is expanded before dispatch, so the
 --! expansion meets exactly the same tier gates as if it had been typed —
 --! aliasing a name to an admin command does not make it runnable. The
@@ -944,9 +875,7 @@ end
 S._aliases = out
 return out
 end
-
 function M.invalidateAliases(S) S._aliases = nil end
-
 local ALIAS_MAX_DEPTH = 8
 function M.expandAlias(S, parts)
 if type(parts) ~= "table" or #parts == 0 then return parts end
@@ -967,13 +896,11 @@ parts = repl
 end
 return parts
 end
-
 function M.tokenizeSimple(s)
 local t = {}
 for word in tostring(s):gmatch("%S+") do t[#t + 1] = word end
 return t
 end
-
 --! A disk's label is chosen by whoever formatted the disk, so it is never a
 --! path: only letters, digits, _, - and spaces survive, and "." / ".." or
 --! nothing at all become disk_<addr>. The hot-plug auto-mount always did
@@ -981,7 +908,6 @@ end
 --! 2026), so a TBFS volume labelled "../../var/pkg/secrets" went wherever
 --! its author said when an admin mounted it. (test_mount_points.lua)
 function M.safeMountName(raw, addr)
-
 local okD, dm = pcall(require, "kernel.diskmount")
 if okD and type(dm) == "table" and dm.sanitizeLabel then return dm.sanitizeLabel(raw, addr) end
 local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
@@ -992,7 +918,6 @@ if cleaned == "" or cleaned == "." or cleaned == ".." then return fallback end
 if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
 return cleaned
 end
-
 function M.resolveProgram(F, name)
 if type(name) ~= "string" or name == "" then return nil end
 local function probe(dir)
@@ -1018,5 +943,4 @@ end
 end
 return nil
 end
-
 return M

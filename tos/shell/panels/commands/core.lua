@@ -1,7 +1,6 @@
-local computer   = require("computer")
-local component  = require("component")
-local helpers    = require("shell.panels.helpers")
-
+local computer = require("computer")
+local component = require("component")
+local helpers = require("shell.panels.helpers")
 local coopYield = function() end
 do
 local okP, procMod = pcall(require, "kernel.process")
@@ -9,7 +8,6 @@ if okP and procMod and procMod.yieldCooperative then
 coopYield = procMod.yieldCooperative
 end
 end
-
 local function homeMod()
 local ok, m = pcall(require, "shell.panels.home")
 return (ok and m) or nil
@@ -25,7 +23,6 @@ return h.viewKeyLabel(S) .. "  Tiles / files "
 end
 return "F2  Next tab      "
 end
-
 local function clipHelpLine(S)
 local h = homeMod()
 local okK, keys = pcall(require, "shell.keys")
@@ -35,33 +32,29 @@ return "Copy " .. keys.label("copy", who)
 .. "  Cut " .. keys.label("cut", who)
 .. "  Paste " .. keys.label("paste", who)
 end
-
 local function cycleKeyHelp(S)
 local k = cycleKeyLabel(S)
 return k .. string.rep(" ", math.max(1, 12 - #k)) .. "Next tab   "
 end
-
 return function(C, S, deps)
-
 local K, E, P, F, D, U = S.K, S.E, S.P, S.F, S.D, S.U
-local SC, NM, st        = S.SC, S.NM, S.st
-local T                 = S.T
-local tier              = S.tier
-local W, H              = S.W, S.H
-local rp                = deps.rp
-local openViewTab       = deps.openViewTab
-local openEditTab       = deps.openEditTab
-local refreshBrowser    = deps.refreshBrowser
-local canRead           = deps.canRead
-local canWrite          = deps.canWrite
-local canAccess         = deps.canAccess
-local rootOnly          = deps.rootOnly
-local adminOnly         = deps.adminOnly
-local makeProgramEnv    = deps.makeProgramEnv
-local fmtSz             = helpers.fmtSz
-local expandBuf         = function(buf) return helpers.expandBuf(S, buf) end
-local promptInput       = deps.promptInput
-
+local SC, NM, st = S.SC, S.NM, S.st
+local T = S.T
+local tier = S.tier
+local W, H = S.W, S.H
+local rp = deps.rp
+local openViewTab = deps.openViewTab
+local openEditTab = deps.openEditTab
+local refreshBrowser = deps.refreshBrowser
+local canRead = deps.canRead
+local canWrite = deps.canWrite
+local canAccess = deps.canAccess
+local rootOnly = deps.rootOnly
+local adminOnly = deps.adminOnly
+local makeProgramEnv = deps.makeProgramEnv
+local fmtSz = helpers.fmtSz
+local expandBuf = function(buf) return helpers.expandBuf(S, buf) end
+local promptInput = deps.promptInput
 C.help = function(args, o)
 local topic = args and args[1] and args[1]:lower()
 if topic == "cp" or topic == "copy" then
@@ -102,7 +95,6 @@ o("edit <file>", T.title)
 o("  Open file in editor tab. Creates the file if it doesn't exist.", T.fg)
 o("  Keys:  Ctrl+S = save   Ctrl+Q = close tab   Ctrl+F = find", T.dim)
 o("  Ctrl+H = find/replace  Ctrl+Z = undo", T.dim)
-
 o("  Select: Shift+arrows.  " .. clipHelpLine(S), T.dim)
 o("  With nothing selected, copy/cut take the whole line.", T.dim)
 o("  Use " .. cycleKeyLabel(S) .. " to switch tabs, F4 to close.", T.dim)
@@ -245,7 +237,6 @@ o("    2-tone chime        Chat message received", T.dim)
 o("    2 descending        Shutdown / logout", T.dim)
 o("    3 ascending         Boot complete", T.dim)
 elseif topic and topic ~= "" then
-
 local Cmds = require("shell.panels.commands")
 local entry = Cmds.entry and Cmds.entry(topic)
 if entry then
@@ -255,7 +246,6 @@ o("  " .. (entry.help or "(no description)"), T.fg)
 o("", T.fg)
 o(string.format("  Minimum tier: %s    Group: %s",
 TIERS[entry.tier or 0] or tostring(entry.tier), entry.category or "?"), T.dim)
-
 local tip = "  Tip: run '" .. topic .. "' with no args for usage"
 if F.exists("/usr/man/" .. topic .. ".man") then
 tip = tip .. "; 'man " .. topic .. "' for the manual."
@@ -267,7 +257,6 @@ else
 o("No such command: '" .. topic .. "'.  Type 'help' for the full list.", T.warning)
 end
 else
-
 local Cmds = require("shell.panels.commands")
 local function avail(token) return Cmds.needMet and Cmds.needMet(token) end
 o("=== TOS Command Reference ===  (help <cmd> for detail)", T.title)
@@ -292,7 +281,6 @@ o("  echo [text]           Print text to output", T.fg)
 o("", T.fg)
 o(" UI & Shortcuts", T.highlight)
 o("  F1  Help      " .. viewKeyHelp(S) .. "  F3  View file", T.fg)
-
 o("  F4  Close tab F5  Copy file      F6  Move file", T.fg)
 o("  " .. cycleKeyHelp(S) .. " F9  Menu bar", T.fg)
 o("  F7  Mkdir     F8  Delete", T.fg)
@@ -319,7 +307,6 @@ o("  ver    TOS version info", T.fg)
 o("  about  Changelog and credits", T.fg)
 o("  uptime Show system uptime", T.fg)
 if S.userTier >= 1 then
-
 o("  srm    System Repair & Maintenance  (status/scan/repair/baseline)", T.fg)
 o("  doctor Runtime health: memory, disk, services, power, security", T.fg)
 end
@@ -373,16 +360,15 @@ o("  env [KEY=VAL]   Show/set environment variables", T.fg)
 o("  service [start|stop <n>]  Manage startup services", T.fg)
 o("  cron [list|add|rm]        Scheduled tasks", T.fg)
 end
-
 local hasRs, hasRobot = avail("component:redstone"), avail("component:robot")
 local hasInv, hasTape = avail("inventory"), avail("module:tape")
 if hasRs or hasRobot or hasInv or hasTape or S.userTier >= 2 then
 o("", T.fg)
 o(" Peripherals", T.highlight)
-if hasRs    then o("  redstone [set|pulse] Control redstone I/O  (rs = alias)", T.fg) end
+if hasRs then o("  redstone [set|pulse] Control redstone I/O  (rs = alias)", T.fg) end
 if hasRobot then o("  robot <cmd>          Robot/drone movement & interaction", T.fg) end
-if hasInv   then o("  inventory [side]     Inspect inventories  (inv = alias)", T.fg) end
-if hasTape  then o("  tape [subcmd]        Tape drive data storage (module)", T.fg) end
+if hasInv then o("  inventory [side]     Inspect inventories  (inv = alias)", T.fg) end
+if hasTape then o("  tape [subcmd]        Tape drive data storage (module)", T.fg) end
 if S.userTier >= 2 then
 o("  component <type> [method] [args]  Call any component", T.fg)
 end
@@ -432,7 +418,6 @@ o("", T.fg)
 o("Showing only what's installed here. 'man <topic>' for detail; MANUAL.md for the book.", T.dim)
 end
 end
-
 C.man = function(args, o)
 local MANDIR = "/usr/man"
 local topic = args and args[1]
@@ -451,7 +436,6 @@ end
 o("Depth: help (quick) < man (detailed) < MANUAL.md (the full book)", T.dim)
 return
 end
-
 topic = tostring(topic):gsub("[^%w_%-]", "")
 if topic == "" then o("man: invalid topic", T.error); return end
 local path = F.join(MANDIR, topic .. ".man")
@@ -476,20 +460,17 @@ else
 for l in (content .. "\n"):gmatch("([^\n]*)\n") do o(l, T.fg) end
 end
 end
-
 C.about = function(args, o)
-
 local tos = _G._TOS or {}
 local vendor, motto, tagline = "Strata Systems LLC", nil, "Terminal Operating System"
 local okL, logo = pcall(require, "kernel.logo")
 if okL and logo then
-vendor  = logo.VENDOR  or vendor
-motto   = logo.MOTTO
+vendor = logo.VENDOR or vendor
+motto = logo.MOTTO
 tagline = logo.TAGLINE or tagline
 end
 o("TOS - " .. tagline, T.title)
 o("Version " .. (tos.version or "?") .. "  [" .. (tos.codename or "?") .. "]", T.highlight)
-
 o("Build " .. tostring(tos.build or "?") .. " (" .. tostring(tos.variant or "?") .. ")", T.dim)
 o("GPU T" .. tier .. " | " ..
 math.floor(computer.totalMemory() / 1024) .. "K RAM", T.dim)
@@ -505,17 +486,13 @@ o("  - Boot Settings (DEL at POST), swap, backups, OpenOS compat", T.fg)
 o("", T.fg)
 o("'help' lists commands · 'tutorial' walks you through it.", T.dim)
 end
-
 C.ver = C.about
-
 C.echo = function(args, o)
 o(table.concat(args, " "), T.fg)
 end
-
 C.notify = function(args, o)
 local okN, nf = pcall(require, "kernel.notify")
 if not okN or not nf then o("notify unavailable", T.error); return end
-
 local style, title, rest = "info", nil, {}
 local skip
 for i = 1, #(args or {}) do
@@ -532,7 +509,6 @@ end
 else rest[#rest + 1] = a end
 end
 local message = table.concat(rest, " ")
-
 if message == "" then
 o("Usage: notify <message> [--style info|warn|danger|error] [--title T]", T.title)
 o("Puts a modal dialog box in front of every seat — the intrusive", T.dim)
@@ -542,25 +518,20 @@ o(string.format("Pending now: %d   (limits: %ds between boxes, %ds per source)",
 nf.depth(), nf.MIN_GAP, nf.MIN_SOURCE_GAP), T.dim)
 return
 end
-
 local id, why = nf.post({
 message = message, style = style, title = title,
-
 from = "notify/" .. tostring(S.who or "?"),
 })
 if id then
 o("Raised on every seat (dialog #" .. id .. ").", T.highlight)
 else
-
 o("Not raised: " .. tostring(why), T.warning)
 o("The message is in the log either way ('log' to see it).", T.dim)
 end
 end
-
 C.tutorial = function(args, o)
 local ok2, tut = helpers.requireRoomy(S, "shell.tutorial", "core")
 if not ok2 then o(helpers.loadFailure("tutorial", tut), T.error); return end
-
 if args[1] == "--reset" then
 local sess = (U and st and U.getSession) and U.getSession(st) or nil
 local mark = tut.markerFor and tut.markerFor(sess)
@@ -576,7 +547,6 @@ end
 tut.run({ D = D, F = F, U = U, st = st, W = W, H = H })
 deps.drawAll()
 end
-
 C.cls = function(args, o)
 D.fill(1, 1, W, H, " ", T.fg, T.bg)
 deps.drawAll()
@@ -595,13 +565,11 @@ if F.isDirectory(t) then S.cwd = t
 else o("Not a directory: " .. target, T.error); return end
 end
 S.browser.path = S.cwd
-S.browser.sel  = 1
+S.browser.sel = 1
 S.browser.scroll = 0
 deps.loadFiles(S.browser)
 end
-
 C.ls = function(args, o)
-
 local long, all, target = false, false, nil
 for _, a in ipairs(args) do
 if not target and a:sub(1, 1) == "-" and #a > 1 then
@@ -612,7 +580,7 @@ else o("Usage: ls [-l|-a] [dir]", T.dim); return end
 end
 elseif not target then target = a end
 end
-local p  = rp(target or S.cwd)
+local p = rp(target or S.cwd)
 if not canRead(p, o) then return end
 if F.exists and not F.exists(p) then o("no such file: " .. (target or p), T.error); return end
 local ok2, l = pcall(F.list, p)
@@ -627,7 +595,6 @@ table.sort(e, function(a, b2)
 local ad, bd = a:sub(-1)=="/", b2:sub(-1)=="/"
 if ad ~= bd then return ad end return a < b2
 end)
-
 local function modified(name)
 if not F.lastModified then return "-" end
 local okM, ms = pcall(F.lastModified, F.join(p, name))
@@ -665,12 +632,10 @@ o(#e .. " items", T.dim)
 end
 end
 C.dir = C.ls
-
 --! cat, mkdir and touch handle EVERY path given, each on its own terms,
 --! as rm does: a refusal on one says so and moves to the next. All three
 --! took args[1] and ignored the rest -- `touch a b c` made a and said
 --! "Touched: a", and `cat a b` printed a alone. (test_multi_path_cmds.lua)
-
 local function catOne(arg, o)
 local p = rp(arg)
 if not canRead(p, o) then return true end
@@ -686,7 +651,6 @@ if not catOne(a, o) then break end
 end
 end
 C.type = C.cat
-
 C.more = function(args, o)
 if not args[1] then o("Usage: more <file>", T.dim); return end
 local path = rp(args[1])
@@ -697,12 +661,10 @@ if not ok then o("Cannot read: " .. args[1], T.error); return end
 if stopped then buf[#buf + 1] = { string.format(helpers.VIEW_STOPPED, shown), T.warning } end
 openViewTab(buf, args[1]:match("[^/]+$") or args[1])
 end
-
 local function mkdirOne(arg, parents, o)
-local p      = rp(arg)
+local p = rp(arg)
 local parent = p:match("^(.*)/[^/]+/?$") or "/"
 if not canWrite(parent, o) then return false end
-
 if F.isDirectory and F.isDirectory(p) then
 if not parents then o("Already exists: " .. arg, T.warning) end
 return false
@@ -720,7 +682,6 @@ o(tostring(errMk or "Could not create " .. arg), T.error)
 return false
 end
 C.mkdir = function(args, o)
-
 local parents, paths = false, {}
 for _, a in ipairs(args) do
 if a == "-p" or a == "--parents" then parents = true else paths[#paths + 1] = a end
@@ -730,7 +691,6 @@ local made = false
 for _, a in ipairs(paths) do made = mkdirOne(a, parents, o) or made end
 if made then refreshBrowser() end
 end
-
 local function touchOne(arg, o)
 local p = rp(arg)
 if not canWrite(p, o) then return false end
@@ -747,7 +707,6 @@ local any = false
 for _, a in ipairs(args) do any = touchOne(a, o) or any end
 if any then refreshBrowser() end
 end
-
 local function parseKeep(args)
 local keep, files = false, {}
 for _, a in ipairs(args) do
@@ -755,7 +714,6 @@ if a == "-k" or a == "--keep" then keep = true else files[#files + 1] = a end
 end
 return keep, files
 end
-
 C.compress = function(args, o)
 local keep, files = parseKeep(args)
 if not files[1] then o("Usage: compress <file> [out]   (-k keeps original)", T.dim); return end
@@ -785,7 +743,6 @@ if method == "stored" then
 o("(stored uncompressed — data didn't shrink)", T.dim)
 end
 end
-
 C.decompress = function(args, o)
 local keep, files = parseKeep(args)
 if not files[1] then o("Usage: decompress <file.tcz> [out]   (-k keeps original)", T.dim); return end
@@ -810,11 +767,9 @@ refreshBrowser()
 o(string.format("%s -> %s  (%s restored)",
 files[1], (out:gsub("^.*/", "")), fmtSz(#data)), T.highlight)
 end
-
 local function removeOne(target, recursive, hard, o)
 local p = rp(target)
 if p == "/" then o("Cannot remove root", T.error); return end
-
 --! Ask securefs FIRST. The -r guard below used to run before it, so
 --! `rm /tos/x` was told to add -r, and `rm -r /tos/x` then met
 --! securefs's protected-path refusal: a different error with a
@@ -826,7 +781,6 @@ if secfs and type(secfs.removeRefusal) == "function" then
 local why = secfs.removeRefusal(p, helpers.sessionOf(S))
 if why then o(tostring(why), T.error); return end
 end
-
 local systemGuards = {
 "^/$", "^/init%.lua$", "^/bios%.lua$",
 "^/tos$", "^/tos/", "^/etc$", "^/etc/",
@@ -840,9 +794,7 @@ o("Protection is off, so this would really delete it. Add -r to confirm.", T.dim
 return
 end
 end
-
 if not canWrite(p, o) then return end
-
 if F.isDirectory and F.isDirectory(p) then
 if not recursive then
 o("Cannot remove directory without -r: " .. p .. "  [E-302 ERR_NEEDS_RECURSIVE]", T.error)
@@ -853,7 +805,6 @@ if items and #items > 0 then
 o("Removing " .. #items .. " item(s) under " .. p .. "...", T.dim)
 end
 end
-
 --! WHY THE TRASH WAS SKIPPED IS NOT A DETAIL TO DROP.
 --!
 --! Operator report, real emulator: "the trash seems to be broken (or,
@@ -884,7 +835,6 @@ o("Trashed: " .. target .. " (use 'restore' to undo)", T.highlight)
 else
 local why = tostring(err2 or "unknown reason")
 if why:find("no trash", 1, true) then
-
 o("No trash for this session — deleting " .. target .. " outright.", T.warning)
 else
 o("Not trashed: " .. why .. "  [E-304 ERR_TRASH_REFUSED]", T.error)
@@ -895,7 +845,6 @@ end
 end
 end
 end
-
 if not trashOk then
 local okRm, errRm = F.remove(p)
 if okRm then
@@ -906,9 +855,7 @@ else
 refreshBrowser()
 end
 end
-
 C.rm = function(args, o)
-
 local recursive, hard = false, false
 local targets = {}
 for _, a in ipairs(args) do
@@ -923,7 +870,6 @@ if #targets == 0 then o("Usage: rm [-r] [--hard] <path...>", T.dim); return end
 --! "Removed: a" and left b and c where they were. (test_rm_targets.lua)
 for _, target in ipairs(targets) do removeOne(target, recursive, hard, o) end
 end
-
 C.trash = function(args, o)
 local okT, trashMod = pcall(require, "kernel.trash")
 if not okT or not trashMod then o("Trash unavailable", T.error); return end
@@ -947,7 +893,6 @@ local ok2, n = trashMod.empty(sess)
 if ok2 then o("Emptied " .. tostring(n) .. " items.", T.highlight)
 else o(tostring(n or "empty failed"), T.error) end
 elseif sub == "restore" then
-
 if not args[2] then o("Usage: trash restore <name> [dest] [--force]", T.dim); return end
 local force, dest = false, nil
 for i = 3, #args do
@@ -966,15 +911,12 @@ else
 o("Usage: trash [list|empty|restore <name> [dest] [--force]]", T.dim)
 end
 end
-
 C.vault = function(args, o)
 local okV, vmod = helpers.requireRoomy(S, "kernel.vault", "core")
 if not okV or not vmod then o(helpers.loadFailure("vault", vmod), T.error); return end
 local sub = args[1]
-
 local sess = helpers.sessionOf(S)
 local secfs = _G._TOS and _G._TOS.securefs
-
 local function readBytes(path)
 if secfs and secfs.readFile then return secfs.readFile(path, sess) end
 return nil, "securefs unavailable (refusing unchecked read)"
@@ -983,7 +925,6 @@ local function writeBytes(path, data)
 if secfs and secfs.writeFile then return secfs.writeFile(path, data, sess) end
 return false, "securefs unavailable (refusing unchecked write)"
 end
-
 --! A passphrase typed as an argument stays in this seat's command
 --! history (`history`, the up arrow) -- the finding closed for tape-auth
 --! and `pkg trust key`. Leave it off, or give "-", and it is asked for
@@ -1011,7 +952,6 @@ end
 end
 return a
 end
-
 if sub == "encrypt" or sub == "decrypt" then
 local src, dst = args[2], args[3]
 if not src or not dst then
@@ -1036,7 +976,6 @@ if not wOk then o("Write failed: " .. tostring(wErr), T.error); return end
 o(string.format("%s %d -> %d bytes (algo=%s)",
 sub == "encrypt" and "Encrypted" or "Decrypted",
 #data, #out, tostring(info.algo)), T.highlight)
-
 elseif sub == "encrypt-in-place" or sub == "decrypt-in-place" then
 local file = args[2]
 if not file then
@@ -1065,7 +1004,6 @@ if not wOk then o("Write failed: " .. tostring(wErr), T.error); return end
 o(string.format("%s in place: %d -> %d bytes",
 sub:sub(1, 7) == "encrypt" and "Encrypted" or "Decrypted",
 #data, #out), T.highlight)
-
 elseif sub == "info" then
 local file = args[2]
 if not file then o("Usage: vault info <file>", T.dim); return end
@@ -1074,7 +1012,6 @@ if not data then o("Cannot read: " .. file, T.error); return end
 if not vmod.isEncrypted(data) then
 o("Not a vault blob (no TVAULT1 magic).", T.warning); return
 end
-
 o(string.format(" file:     %s", file), T.title)
 o(string.format(" size:     %d bytes", #data), T.fg)
 local off = #vmod.MAGIC + 1
@@ -1082,23 +1019,18 @@ local algo = data:sub(off, off + 3):gsub("\0+$", "")
 o(string.format(" algo:     %s", algo), T.fg)
 o(string.format(" ctLen:    encrypted body inside this blob"), T.dim)
 o(" (decrypt with the right passphrase to access contents)", T.dim)
-
 elseif sub == "tape" then
-
 local tapeSub = args[2]
 if tapeSub ~= "encrypt" and tapeSub ~= "decrypt" then
 o("Usage: vault tape encrypt|decrypt [passphrase | -]", T.dim); return
 end
-
 local tapeCmd = C.tape
 if not tapeCmd then
 o("Tape module not installed (run `pkg install tape`).", T.warning); return
 end
-
 local passphrase = passphraseFor(args[3], tapeSub == "encrypt")
 if not passphrase then return end
 tapeCmd({ tapeSub, passphrase }, o)
-
 else
 o("Usage: vault [encrypt|decrypt|encrypt-in-place|decrypt-in-place|info|tape] ...", T.dim)
 o("  vault encrypt <src> <dst> [passphrase]", T.dim)
@@ -1111,16 +1043,13 @@ o("  Leave the passphrase off (or use -) to be asked for it, unechoed:", T.dim)
 o("  a typed one stays in this seat's command history.", T.dim)
 end
 end
-
 C.keychain = function(args, o)
 local km = _G._TOS and _G._TOS.keychain
 if not km then o("keychain module unavailable", T.error); return end
 local sess = helpers.sessionOf(S)
 local sub = args[1] or "status"
-
 if sub == "status" then
 o(km.isUnlocked(sess) and "unlocked" or "locked", T.fg)
-
 elseif sub == "unlock" then
 if not promptInput then o("interactive prompt unavailable", T.error); return end
 local master = promptInput("Master password: ", 64, "*") or ""
@@ -1128,17 +1057,14 @@ if #master == 0 then o("(empty — cancelled)", T.dim); return end
 local ok2, err = km.unlock(master, sess)
 if ok2 then o("Keychain unlocked.", T.highlight)
 else o("Unlock failed: " .. tostring(err), T.error) end
-
 elseif sub == "lock" then
 km.lock(sess)
 o("Keychain locked.", T.highlight)
-
 elseif sub == "list" then
 if not km.isUnlocked(sess) then o("Keychain is locked.", T.warning); return end
 local names = km.list(sess)
 if #names == 0 then o("(empty)", T.dim); return end
 for _, n in ipairs(names) do o("  " .. n, T.fg) end
-
 elseif sub == "set" then
 if not args[2] then o("Usage: keychain set <name>", T.dim); return end
 if not km.isUnlocked(sess) then o("Keychain is locked. Run 'keychain unlock' first.", T.warning); return end
@@ -1148,32 +1074,27 @@ if #pass == 0 then o("(empty — cancelled)", T.dim); return end
 local ok2, err = km.set(args[2], pass, sess)
 if ok2 then o("Slot '" .. args[2] .. "' saved.", T.highlight)
 else o("Save failed: " .. tostring(err), T.error) end
-
 elseif sub == "get" then
 if not args[2] then o("Usage: keychain get <name>", T.dim); return end
 if not km.isUnlocked(sess) then o("Keychain is locked.", T.warning); return end
 local pass, err = km.get(args[2], sess)
 if pass then o(pass, T.fg)
 else o(tostring(err or "no such slot"), T.error) end
-
 elseif sub == "remove" or sub == "rm" then
 if not args[2] then o("Usage: keychain remove <name>", T.dim); return end
 if not km.isUnlocked(sess) then o("Keychain is locked.", T.warning); return end
 local ok2, err = km.remove(args[2], sess)
 if ok2 then o("Removed '" .. args[2] .. "'.", T.highlight)
 else o("Remove failed: " .. tostring(err), T.error) end
-
 else
 o("Usage: keychain [status|unlock|lock|list|set|get|remove] ...", T.dim)
 end
 end
-
 C.profile = function(args, o)
 local pmod = _G._TOS and _G._TOS.profile
 if not pmod then o("profile module unavailable", T.error); return end
 local sess = helpers.sessionOf(S)
 local sub = args[1] or "show"
-
 if sub == "show" then
 local p, exists = pmod.load(sess)
 o(string.format(" name:    %s", p.name), T.title)
@@ -1184,7 +1105,6 @@ local envN = 0; for _ in pairs(p.env) do envN = envN + 1 end
 o(string.format(" env:     %d entries", envN), T.fg)
 o(string.format(" startup: %d commands", #p.startup), T.fg)
 if not exists then o(" (no profile file — showing defaults)", T.dim) end
-
 elseif sub == "set" then
 if not args[2] or not args[3] then
 o("Usage: profile set <field> <value>", T.dim)
@@ -1194,7 +1114,6 @@ end
 local field, value = args[2], args[3]
 local p = pmod.load(sess)
 if field == "name" or field == "theme" or field == "cwd" or field == "prompt" then
-
 if field == "theme" then
 local tm = _G._TOS and _G._TOS.theme
 if tm and tm.preset and not tm.preset(value) then
@@ -1212,7 +1131,6 @@ else o(tostring(err2 or "save failed"), T.error) end
 else
 o("Unknown field: " .. field, T.error)
 end
-
 elseif sub == "env" then
 if not args[2] then o("Usage: profile env <KEY> [VALUE]", T.dim); return end
 local p = pmod.load(sess)
@@ -1224,7 +1142,6 @@ p.env[args[2]] = nil
 o("env[" .. args[2] .. "] cleared", T.highlight)
 end
 pmod.save(p, sess)
-
 elseif sub == "startup" then
 local action = args[2] or "list"
 local p = pmod.load(sess)
@@ -1244,23 +1161,19 @@ o(string.format(" %d. %s", i, cmd), T.fg)
 end
 if #p.startup == 0 then o("(no startup commands)", T.dim) end
 end
-
 elseif sub == "reset" then
 local pmodSecfs = _G._TOS and _G._TOS.securefs
 if pmodSecfs and sess and sess.home and sess.home ~= "/" then
 pmodSecfs.remove(sess.home .. "/.profile.cfg", sess)
 end
 o("Profile reset to defaults.", T.highlight)
-
 else
 o("Usage: profile [show|set|env|startup|reset]", T.dim)
 end
 end
-
 C.cp = function(args, o)
 if not args[2] then o("Usage: cp <src> <dst>", T.dim); return end
 local src, dst = rp(args[1]), rp(args[2])
-
 if F.isDirectory(dst) then dst = F.join(dst, src:match("[^/]+$") or src) end
 local ok2, err2 = F.copy(src, dst)
 if ok2 then
@@ -1271,11 +1184,9 @@ end
 C.mv = function(args, o)
 if not args[2] then o("Usage: mv <src> <dst>", T.dim); return end
 local src, dst = rp(args[1]), rp(args[2])
-
 if F.isDirectory(dst) then dst = F.join(dst, src:match("[^/]+$") or src) end
 if not canWrite(src, o) then return end
 if not canWrite(dst, o) then return end
-
 if F.rename(src, dst) then
 refreshBrowser()
 o("Moved: " .. args[2], T.highlight)
@@ -1290,7 +1201,7 @@ end
 end
 end
 C.find = function(args, o)
-local root    = "/"
+local root = "/"
 local pattern = nil
 local i = 1
 while i <= #args do
@@ -1300,7 +1211,6 @@ else
 root = rp(args[i]); i = i + 1
 end
 end
-
 if pattern then
 local pok, perr = pcall(string.match, "", pattern)
 if not pok then
@@ -1309,13 +1219,10 @@ return
 end
 end
 o("Searching " .. root .. " ...", T.dim)
-
-local MAX_DEPTH   = 16
+local MAX_DEPTH = 16
 local MAX_RESULTS = 1000
 local results = {}
-
 local function silentCanRead(p)
-
 if not U or not U.canAccessAs then return false end
 local sess = helpers.sessionOf(S)
 local ok = U.canAccessAs(sess, p, "r")
@@ -1356,15 +1263,13 @@ local note = #results .. " result(s)"
 if #results >= MAX_RESULTS then note = note .. " (truncated at " .. MAX_RESULTS .. ")" end
 o(note, T.dim)
 end
-
 C.grep = function(args, o)
 if not args[2] then o("Usage: grep <pattern> <file>", T.dim); return end
 local pat = args[1]
-local path    = rp(args[2])
+local path = rp(args[2])
 if not canRead(path, o) then return end
-
 local count = 0
-local ln    = 0
+local ln = 0
 local okR = helpers.eachLine(F, path, function(line)
 ln = ln + 1
 if line:find(pat, 1, true) then
@@ -1375,12 +1280,10 @@ end)
 if not okR then o("Cannot read: " .. args[2], T.error); return end
 o(count > 0 and (count .. " match(es)") or "No matches", T.dim)
 end
-
 C.wc = function(args, o)
 if not args[1] then o("Usage: wc <file>", T.dim); return end
 local p = rp(args[1])
 if not canRead(p, o) then return end
-
 local wlines, words = 0, 0
 local okR, bytes = helpers.eachLine(F, p, function(line)
 wlines = wlines + 1
@@ -1390,11 +1293,9 @@ if not okR then o("Cannot read: " .. args[1], T.error); return end
 o(string.format(" Lines: %d  Words: %d  Bytes: %d  -- %s",
 wlines, words, bytes, args[1]), T.fg)
 end
-
 C.pwd = function(_, o)
 o(S.cwd or "/", T.fg)
 end
-
 local function linesArgs(args)
 local file, n = nil, 10
 local i = 1
@@ -1408,18 +1309,15 @@ i = i + 1
 end
 return file, n
 end
-
 local function cannotRead(file, p, err, o)
 if F.exists and not F.exists(p) then o("No such file: " .. file, T.error)
 else o("Cannot read " .. file .. (err and (": " .. tostring(err)) or ""), T.error) end
 end
-
 C.head = function(args, o)
 local file, n = linesArgs(args)
 if not file then o("Usage: head [-n N] <file>", T.dim); return end
 local p = rp(file)
 if not canRead(p, o) then return end
-
 local shown = 0
 if not n or n < 1 then return end
 local okR, err = helpers.eachLine(F, p, function(line)
@@ -1428,14 +1326,12 @@ if shown >= n then return false end
 end)
 if not okR then cannotRead(file, p, err, o) end
 end
-
 C.tail = function(args, o)
 local file, n = linesArgs(args)
 if not file then o("Usage: tail [-n N] <file>", T.dim); return end
 local p = rp(file)
 if not canRead(p, o) then return end
 if not n or n < 1 then return end
-
 if n > 1000 then n = 1000 end
 local ring, count = {}, 0
 local okR, err = helpers.eachLine(F, p, function(line)
@@ -1447,12 +1343,10 @@ for i = math.max(1, count - n + 1), count do
 o(ring[(i - 1) % n + 1], T.fg)
 end
 end
-
 C.which = function(args, o)
 if not args[1] then o("Usage: which <name>", T.dim); return end
 local name = args[1]:lower()
 local found = false
-
 local aliases = helpers.aliases(S)
 if aliases[name] then
 o(name .. ": alias for '" .. aliases[name] .. "'", T.highlight)
@@ -1460,7 +1354,6 @@ o("  (expanded before dispatch; the expansion is resolved below)", T.dim)
 name = tostring(helpers.tokenizeSimple(aliases[name])[1] or name):lower()
 found = true
 end
-
 local cmdsMod = require("shell.panels.commands")
 local meta = cmdsMod.entry and cmdsMod.entry(name) or nil
 if meta then
@@ -1473,7 +1366,6 @@ o("  You do not have the tier to run it — 'why " .. name .. "'.", T.warning)
 end
 found = true
 end
-
 local okP, pkgMod = pcall(require, "kernel.pkg")
 local owner = okP and pkgMod and pkgMod.ownerOfCommand
 and pkgMod.ownerOfCommand(name) or nil
@@ -1483,7 +1375,6 @@ meta and T.dim or T.title)
 if meta then o("  (shadowed by the built-in above)", T.dim) end
 found = true
 end
-
 local path, source = helpers.resolveProgram(F, name)
 if path then
 o(name .. ": " .. path .. (source == "path" and "  (via PATH)" or ""),
@@ -1491,19 +1382,16 @@ found and T.dim or T.title)
 if found then o("  (shadowed by the entry above)", T.dim) end
 found = true
 end
-
 if not found then
 o(name .. ": not found", T.error)
 o("  Not a built-in, an installed package's command, or a program on", T.dim)
 o("  /bin, /usr/bin or /tos/shell. 'help' lists what this box has.", T.dim)
 end
 end
-
 C.alias = function(args, o)
 local pmod = _G._TOS and _G._TOS.profile
 if not pmod then o("profile module unavailable", T.error); return end
 local sess = helpers.sessionOf(S)
-
 if not args[1] then
 local p = pmod.load(sess)
 local names = {}
@@ -1519,7 +1407,6 @@ o(string.format(" %-12s %s", k, p.aliases[k]), T.fg)
 end
 return
 end
-
 local name = args[1]:lower()
 if not name:match("^[%w_%-]+$") then
 o("Bad alias name: " .. args[1], T.error)
@@ -1528,7 +1415,6 @@ return
 end
 local p = pmod.load(sess)
 if not args[2] then
-
 if p.aliases and p.aliases[name] then
 o(string.format(" %-12s %s", name, p.aliases[name]), T.fg)
 else
@@ -1536,9 +1422,7 @@ o(name .. ": not aliased", T.dim)
 end
 return
 end
-
 local expansion = table.concat(args, " ", 2)
-
 local firstWord = tostring(helpers.tokenizeSimple(expansion)[1] or ""):lower()
 if firstWord == name then
 o("An alias cannot expand to itself.", T.error)
@@ -1552,7 +1436,6 @@ if not ok2 then o(tostring(err2 or "save failed"), T.error); return end
 helpers.invalidateAliases(S)
 o("alias " .. name .. " -> " .. expansion, T.highlight)
 end
-
 C.unalias = function(args, o)
 local pmod = _G._TOS and _G._TOS.profile
 if not pmod then o("profile module unavailable", T.error); return end
@@ -1569,7 +1452,6 @@ if not ok2 then o(tostring(err2 or "save failed"), T.error); return end
 helpers.invalidateAliases(S)
 o("Removed alias '" .. name .. "'.", T.highlight)
 end
-
 C.du = function(args, o)
 local target = rp(args[1] or (S.cwd or "/"))
 if not canRead(target, o) then return end
@@ -1598,7 +1480,6 @@ end
 end
 o(string.format(" %8s  %s (total)", fmtSz(sizeOf(target)), target), T.title)
 end
-
 C.df = function(args, o)
 local okM, mon = pcall(require, "kernel.monitor")
 o(string.format(" %-16s %8s %8s %8s  %s", "Mount", "Total", "Used", "Free", "Use%"), T.title)
@@ -1609,16 +1490,15 @@ o("(mount info unavailable)", T.dim)
 else
 for _, m in ipairs(mounts) do
 local total = m.total or 0
-local used  = m.used  or 0
-local free  = total - used
-local pct   = total > 0 and math.floor(used * 100 / total) or 0
-local bar   = (okM and mon.memBar) and mon.memBar(used, total, 8) or ""
-local bc    = pct < 80 and T.fg or (pct < 95 and T.warning or T.error)
+local used = m.used or 0
+local free = total - used
+local pct = total > 0 and math.floor(used * 100 / total) or 0
+local bar = (okM and mon.memBar) and mon.memBar(used, total, 8) or ""
+local bc = pct < 80 and T.fg or (pct < 95 and T.warning or T.error)
 o(string.format(" %-16s %8s %8s %8s  [%s] %3d%%",
 (m.mountPoint or "?"):sub(1, 16), fmtSz(total), fmtSz(used), fmtSz(free), bar, pct), bc)
 end
 end
-
 if _G._TOS_ROOT_READONLY then
 o("", T.dim)
 o("WARNING: the root filesystem is READ-ONLY.", T.error)
@@ -1627,9 +1507,7 @@ o("settings. Install to a writable drive, or unprotect this one.", T.dim)
 end
 o("A path's own size: 'du <path>'.  Removable media + pools: 'disk'.", T.dim)
 end
-
 C.mem = function(args, o)
-
 if args and args[1] == "--boot" then
 local prof = _G._TOS and _G._TOS.bootMem
 if type(prof) ~= "table" or #prof == 0 then
@@ -1638,7 +1516,6 @@ o("Add  memprofile = true  to /etc/boot.cfg and reboot.", T.dim)
 return
 end
 o("=== Memory each boot stage used ===", T.title)
-
 for i, m in ipairs(prof) do
 local nxt = prof[i + 1]
 if nxt then
@@ -1653,10 +1530,10 @@ return
 end
 local fr, tot = computer.freeMemory(), computer.totalMemory()
 local used = tot - fr
-local pct  = tot > 0 and math.floor(used * 100 / tot) or 0
+local pct = tot > 0 and math.floor(used * 100 / tot) or 0
 local okM, mon = pcall(require, "kernel.monitor")
 local barW = math.min(24, math.max(8, W - 36))
-local bar  = (okM and mon.memBar) and mon.memBar(used, tot, barW)
+local bar = (okM and mon.memBar) and mon.memBar(used, tot, barW)
 or (string.rep("#", math.floor(pct / 100 * barW)) .. string.rep("-", barW - math.floor(pct / 100 * barW)))
 o("=== Memory ===", T.title)
 o(string.format(" RAM:  %dK used / %dK total   (%d%% used, %dK free)",
@@ -1680,7 +1557,6 @@ end
 if fr < 16 * 1024 then o(" ! Low memory — near the ~16K danger zone.", T.warning) end
 o("Live usage: 'monitor'.  Hardware tiers: 'hw'.", T.dim)
 end
-
 C.hw = function(args, o)
 local info = K.getHAL().systemInfo()
 o("=== Hardware ===", T.title)
@@ -1699,15 +1575,12 @@ info.hasTunnel and "yes" or "no"), T.dim)
 o("Full component list: 'devices'.  Memory detail: 'mem'.  Live: 'monitor'.", T.dim)
 end
 C.hardware = C.hw
-
 C.ps = function(args, o)
 local fgPID = P.getForeground(S.displayIdx)
 local sess = helpers.sessionOf(S)
 local viewerTier = (sess and sess.tier) or 0
 local viewerUser = sess and sess.user or "?"
-
 local verbose = (args[1] == "-v" or args[1] == "--verbose") and viewerTier >= 2
-
 if verbose then
 o(string.format(" %-4s %-14s %-8s %-3s %-10s %-6s %s",
 "PID", "Name", "State", "DSP", "Owner", "CPU", "Caps"), T.title)
@@ -1716,17 +1589,13 @@ o(string.format(" %-4s %-16s %-8s %-3s %-10s %s",
 "PID", "Name", "State", "DSP", "Owner", "CPU"), T.title)
 end
 o(string.rep("-", verbose and 70 or 50), T.border)
-
 for _, proc in ipairs(P.list()) do
-
 local procUser = proc.user or "?"
 if procUser == "_kernel_" then procUser = "kernel" end
-
 local visible = false
 if viewerTier >= 2 then visible = true
 elseif viewerTier >= 1 and procUser == viewerUser then visible = true
 elseif viewerTier >= 1 then
-
 visible = "redacted"
 end
 if visible == true then
@@ -1765,14 +1634,12 @@ end
 o("", T.dim)
 o(" * = foreground  |  -v for caps (admin+)  |  'monitor' for the live view", T.dim)
 end
-
 C.monitor = function(args, o)
 local okM, monMod = pcall(require, "shell.panels.monitorapp")
 if not okM then o("Monitor unavailable: " .. tostring(monMod), T.error); return end
 monMod.open(S)
 end
 C.top = C.monitor
-
 C.watch = function(args, o)
 if not args[1] then
 o("Usage: watch [seconds] <command ...>", T.dim)
@@ -1785,7 +1652,6 @@ if interval < 1 then interval = 1 end
 if not args[idx] then o("Usage: watch [seconds] <command ...>", T.dim); return end
 local cmdline = table.concat(args, " ", idx)
 local name = (cmdline:match("^(%S+)") or ""):lower()
-
 local UNSAFE = {
 edit = true, lua = true, monitor = true, top = true, watch = true,
 launcher = true, launch = true, apps = true, kiosk = true, chat = true,
@@ -1812,7 +1678,6 @@ return
 end
 end
 if not deps.openLiveTab then o("Live tabs aren't available in this shell.", T.error); return end
-
 local function runOnce()
 local out = {}
 local parts = {}
@@ -1836,16 +1701,15 @@ return out
 end
 deps.openLiveTab("watch: " .. cmdline, runOnce, interval)
 end
-
 C.why = function(args, o)
 local commandsMod = require("shell.panels.commands")
 local have = helpers.liveTier(S)
 local tone = {
 title = T.title or T.highlight or T.fg,
-ok    = T.success or T.highlight or T.fg,
-err   = T.error,
-fix   = T.highlight or T.fg,
-dim   = T.dim,
+ok = T.success or T.highlight or T.fg,
+err = T.error,
+fix = T.highlight or T.fg,
+dim = T.dim,
 }
 local function emit(lines)
 for _, l in ipairs(lines) do o(l.text, tone[l.tone] or T.fg) end
@@ -1870,7 +1734,6 @@ end
 local f = S.lastFailure
 if f then
 o((f.cmd and (f.cmd .. " failed:") or "The last action failed:"), tone.title)
-
 o("  " .. f.text, T.error)
 local lines, _, label = helpers.explainFailure(f.text)
 if label then o("  " .. label, tone.dim) end
@@ -1892,13 +1755,11 @@ o("why <code>     — explain an error code: E-402, ERR_PATH_PROTECTED, K4.", T.
 o("why <command>  — explain what a command needs and whether you can run it.", T.dim)
 return
 end
-
 local codeLines = helpers.explainCode(args[1])
 if codeLines then emit(codeLines); return end
 local entry = commandsMod.entry(target)
 emit(helpers.whyExplain(target, entry and entry.tier or 0, have, entry ~= nil))
 end
-
 C.screendump = function(args, o)
 if not D or not D.dump then o("Screen capture isn't available on this seat.", T.error); return end
 local okCap, cap = pcall(D.dump)
@@ -1911,7 +1772,6 @@ local who = (helpers.sessionOf(S) or {}).user or "?"
 local hdr = string.format("TOS screendump — seat %s · user %s · %dx%d · uptime %ds · read from the %s",
 tostring(S.displayIdx or "?"), who, cap.w or 0, cap.h or 0,
 math.floor(K.uptime()), tostring(cap.source or "?"))
-
 local NL = string.char(10)
 local blob = hdr .. NL .. string.rep("-", #hdr) .. NL
 .. table.concat(cap.lines, NL) .. NL
@@ -1935,7 +1795,6 @@ blob = blob .. NL .. "theme: bg=" .. string.format("%06X", T2.bg or 0)
 .. "  menubar_bg=" .. string.format("%06X", T2.menubar_bg or T2.bar_bg or 0)
 .. NL
 end
-
 local hx = function(c) return c and string.format("%06X", c) or "nil" end
 blob = blob .. NL .. "--- cache vs glass ---" .. NL
 if cap.disagree and #cap.disagree > 0 then
@@ -1983,7 +1842,6 @@ else
 o("Could not write " .. path .. ": " .. tostring(err), T.error)
 end
 end
-
 C.crash = function(args, o)
 if not adminOnly(o) then return end
 local fs = _G._TOS and _G._TOS.fs
@@ -2013,14 +1871,12 @@ o("Crash reports in /var/crash:", T.title or T.highlight or T.fg)
 for _, n in ipairs(names) do o("  " .. n, T.fg) end
 o("Read one with:  crash <name>", T.dim)
 end
-
 C.history = function(args, o)
 for i, cmd in ipairs(S.cmdHistory) do
 o(string.format(" %3d  %s", i, cmd), T.dim)
 end
 if #S.cmdHistory == 0 then o("(no history)", T.dim) end
 end
-
 C.uptime = function(args, o)
 local up = K.uptime()
 local h2 = math.floor(up / 3600)
@@ -2028,10 +1884,8 @@ local m2 = math.floor((up % 3600) / 60)
 local s2 = math.floor(up % 60)
 o(string.format("Uptime: %dh %dm %ds (%.1fs total)", h2, m2, s2, up), T.fg)
 end
-
 C.date = function(args, o)
 local cfg = K.getConfig and K.getConfig() or nil
-
 if args[1] == "tz" or args[1] == "timezone" or args[1] == "set" then
 local cur = (cfg and cfg.get and cfg.get("timezone")) or 0
 local n = tonumber(args[2])
@@ -2062,12 +1916,10 @@ local ok, out = pcall(os.date, fmt, t)
 if ok and out then o(tostring(out), T.fg) else o(tostring(out or "date error"), T.error) end
 end
 C.time = C.date
-
 C.keys = function(args, o)
 local okK, K2 = pcall(require, "shell.keys")
 if not okK or not K2 then o("Keybind module unavailable.", T.error); return end
 local sub = (args[1] or "list"):lower()
-
 local system = false
 for i = 2, #args do
 if args[i] == "--system" then system = true; table.remove(args, i); break end
@@ -2075,7 +1927,6 @@ end
 local home = (S.who == "root") and "/root" or ("/home/" .. (S.who or ""))
 local path = system and "/etc/keys.cfg" or (home .. "/.keys.cfg")
 local okS, ser = pcall(require, "kernel.serialize")
-
 local function loadCfg()
 if not (okS and ser and S.F.exists(path)) then return {} end
 local d = S.F.readFile(path)
@@ -2089,7 +1940,6 @@ local ok2 = S.F.writeFile(path, ser.encode(t))
 if ok2 then K2.reload() end
 return ok2
 end
-
 if sub == "list" or sub == "ls" then
 o("TOS standard shortcuts:", T.title)
 for _, row in ipairs(K2.actions(S.who)) do
@@ -2104,9 +1954,7 @@ end
 o("", T.dim)
 o("Change one:  keys set quit F4       (add --system for everyone)", T.dim)
 o("Undo:        keys reset [action]", T.dim)
-
 o("Every first-party TOS program follows this table.", T.dim)
-
 elseif sub == "set" then
 local action, keyName = args[2], args[3]
 if not (action and keyName) then
@@ -2124,7 +1972,6 @@ local nm = args[i]
 if not K2.parse(nm) then
 o("Not a key name: '" .. nm .. "'  (try ^Q, F10, Ctrl+S, /)", T.error); return
 end
-
 if K2.isReserved(nm) then
 o(nm .. " is reserved by the kernel and never reaches a program.", T.error)
 o("See 'keys list' for the reserved set.", T.dim); return
@@ -2139,7 +1986,6 @@ o(action .. " is now " .. table.concat(names, " ")
 else
 o("Save failed" .. (system and " (needs admin for /etc)." or "."), T.error)
 end
-
 elseif sub == "reset" then
 local action = args[2]
 local cfg = loadCfg()
@@ -2154,7 +2000,6 @@ else
 if saveCfg({}) then o("All shortcuts back to the defaults.", T.highlight)
 else o("Save failed.", T.error) end
 end
-
 else
 o("keys — TOS's standard keyboard shortcuts", T.title)
 o("  keys list                     Show them", T.fg)
@@ -2163,10 +2008,8 @@ o("  keys reset [action]           Back to the default", T.fg)
 o("Add --system to change them for every user (/etc/keys.cfg, admin).", T.dim)
 end
 end
-
 C.menu = function(args, o)
 local sub = (args[1] or "list"):lower()
-
 local system = false
 for i = 2, #args do
 if args[i] == "--system" then system = true; table.remove(args, i); break end
@@ -2187,17 +2030,15 @@ local function rebuild()
 local okD, dm = pcall(require, "shell.panels.draw")
 if okD and dm and dm.buildMenuDefs then S.menuDefs = dm.buildMenuDefs(S) end
 end
-
 local function describe(e)
 if e.remove then return "remove " .. tostring(e.remove)
 .. (e.menu == true and " (whole menu)" or "") end
 if e.rename then return "rename " .. tostring(e.rename) .. " -> " .. tostring(e.to) end
-if e.move   then return "move " .. tostring(e.move) .. " -> " .. tostring(e.menu) end
+if e.move then return "move " .. tostring(e.move) .. " -> " .. tostring(e.menu) end
 if e.menu and not e.cmd then return "new menu " .. tostring(e.menu) end
 return string.format("[%s] %s -> %s", e.menu or "Tools",
 e.add or e.label or "?", e.cmd or "?")
 end
-
 if sub == "list" or sub == "ls" then
 local list = loadList()
 if #list == 0 then
@@ -2210,7 +2051,6 @@ o("Menu edits (" .. path .. "):", T.title)
 for i, e in ipairs(list) do
 o(string.format("  %d. %s", i, describe(e)), T.fg)
 end
-
 elseif sub == "show" then
 local okD, dm = pcall(require, "shell.panels.draw")
 if not okD or not dm or not dm.buildMenuDefs then
@@ -2227,9 +2067,7 @@ end
 end
 end
 o("Change it with: menu add|remove|rename|move  (add --system for everyone)", T.dim)
-
 elseif sub == "rename" or sub == "move" then
-
 local a, b = args[2], args[3]
 if not (a and b) then
 o("Usage: menu " .. sub .. " <name> <" .. (sub == "rename" and "new name" or "Menu") .. ">", T.dim)
@@ -2239,9 +2077,7 @@ local list = loadList()
 list[#list + 1] = (sub == "rename") and { rename = a, to = b } or { move = a, menu = b }
 if saveList(list) then rebuild(); o("Saved. " .. describe(list[#list]), T.highlight)
 else o("Save failed" .. (system and " (needs admin for /etc)." or "."), T.error) end
-
 elseif sub == "hide" then
-
 local target = args[2]
 if not target then
 o("Usage: menu hide <item or Menu name>", T.dim)
@@ -2252,13 +2088,11 @@ local list = loadList()
 list[#list + 1] = { remove = target, menu = (args[3] == "menu") or nil }
 if saveList(list) then rebuild(); o("Hidden: " .. target, T.highlight)
 else o("Save failed" .. (system and " (needs admin for /etc)." or "."), T.error) end
-
 elseif sub == "reset" then
 if saveList({}) then
 rebuild()
 o("Menu reset to the built-in bar (" .. path .. " cleared).", T.highlight)
 else o("Reset failed" .. (system and " (needs admin for /etc)." or "."), T.error) end
-
 elseif sub == "add" then
 local label = args[2]
 if not label or not args[3] then
@@ -2305,7 +2139,6 @@ o("Add --system to any of these to change the bar for EVERY user", T.dim)
 o("(/etc/menu.cfg, admin-only) instead of just yourself.", T.dim)
 end
 end
-
 C.tree = function(args, o)
 local start = rp(args[1] or S.cwd)
 local maxDepth = tonumber(args[2]) or 3
@@ -2352,9 +2185,8 @@ C.passwd = function(args, o)
 if not U then o("No user system", T.error); return end
 local old = promptInput("Current password: ", 64, true)
 if not old then return end
-local new = promptInput("New password: ",     64, true)
+local new = promptInput("New password: ", 64, true)
 if not new then return end
-
 local confirm = promptInput("Confirm new password: ", 64, true)
 if confirm ~= new then
 S.lastOut = { "Passwords do not match — unchanged.", T.error }
@@ -2367,12 +2199,10 @@ end
 local s = U.getSession(st)
 local w2 = s and s.user or "root"
 local ok2, err2 = U.changePassword(w2, w2, old, new)
-
 if ok2 and err2 then S.lastOut = { "Password changed. " .. tostring(err2), T.warning }
 elseif ok2 then S.lastOut = { "Password changed.", T.highlight }
-else        S.lastOut = { tostring(err2), T.error } end
+else S.lastOut = { tostring(err2), T.error } end
 end
-
 --! `o` is a PARAMETER, not an upvalue. Every command body receives its own
 --! `o` from the executor (C.sudo = function(args, o)), so this helper had
 --! no `o` in scope and the `o(...)` below read a nil GLOBAL — meaning the
@@ -2388,13 +2218,11 @@ local origPrincipal = p and p.principal
 if token then S.st = token end
 if p then p.principal = elevated end
 local ok, err = pcall(fn)
-
 S.st = origSt
 if p then p.principal = origPrincipal end
 if token and U.logout then pcall(U.logout, token) end
 if not ok then o("sudo: " .. tostring(err), T.error) end
 end
-
 local function sudoDrop()
 if not S._sudo then return false end
 S.st = S._sudo.origSt
@@ -2406,12 +2234,10 @@ S._sudo = nil
 return true
 end
 S.sudoDrop = sudoDrop
-
 C.sudo = function(args, o)
 if not U then o("No user system", T.error); return end
 local sess = helpers.sessionOf(S)
 local sub = args[1]
-
 if sub == "setup" then
 if not rootOnly(o) then return end
 local cap = 2
@@ -2436,25 +2262,20 @@ elseif sub == "-k" then
 o(sudoDrop() and "Elevated session dropped." or "No active elevation.", T.dim)
 return
 end
-
 if not sub then
 o("Usage: sudo <command> | sudo -s | sudo -k | sudo setup [admin|root] | sudo off", T.dim)
 return
 end
-
 if helpers.liveTier(S) < 1 then o("sudo: guests cannot elevate.", T.error); return end
 local info = U.elevationInfo and U.elevationInfo() or { configured = false }
 if not info.configured then
 o("sudo: elevation is not configured. Root: sudo setup [admin|root]", T.warning); return
 end
-
 local pw = promptInput("[sudo] elevation password: ", 64, true)
 if pw == nil then o("Aborted.", T.dim); return end
 local elevated, err = U.elevate(sess, pw)
 if not elevated then o("sudo: " .. tostring(err or "elevation failed"), T.error); return end
-
 if sub == "-s" then
-
 sudoDrop()
 local token = U.registerSession and U.registerSession(elevated) or nil
 local okP, procMod = pcall(require, "kernel.process")
@@ -2466,7 +2287,6 @@ o("Elevated to " .. helpers.tierName(elevated.tier)
 .. ". 'sudo -k' or 'logout' drops it.", T.highlight)
 return
 end
-
 local cmdline = table.concat(args, " ")
 sudoRunElevated(elevated, function()
 if not S.execOne then o("sudo: executor unavailable", T.error); return end
@@ -2479,9 +2299,7 @@ end
 end
 end, o)
 end
-
-C.logout   = function(args, o) helpers.logout(S) end
-
+C.logout = function(args, o) helpers.logout(S) end
 C.cli = function(args, o)
 if S.isCLI then
 o("You are already at the command line. Type 'tui' for the full interface.", T.dim)
@@ -2491,15 +2309,13 @@ S._exitTo = "cli"
 end
 C.tui = function(args, o)
 if S.isCLI then
-
 o("Returning to the full interface…", T.dim)
 S._exitTo = "tui"
 return
 end
 o("You are already in the full interface. Type 'cli' for the command line.", T.dim)
 end
-
-C.reboot   = function(args, o)
+C.reboot = function(args, o)
 local ok, reason = helpers.canPowerOff(S)
 if not ok then o(reason, T.error); return end
 K.reboot()
@@ -2515,13 +2331,11 @@ if not ok2 then o("Env module unavailable", T.error); return end
 local P2 = K.getProc()
 local cur = P2 and P2.current() or nil
 if args[1] then
-
 local k, v = args[1]:match("^([%w_]+)=(.*)$")
 if k then
 envMod.write(cur, k, v)
 o(k .. "=" .. v, T.highlight)
 else
-
 local val = envMod.read(cur, args[1])
 o(args[1] .. "=" .. tostring(val or ""), T.fg)
 end
@@ -2532,12 +2346,10 @@ end
 end
 C.export = C.env
 C.set = C.env
-
 C["tape-menu"] = function(args, o)
 local okL, L = pcall(require, "shell.launcher")
 if not okL or not L then o("Menu engine unavailable (low RAM?)", T.error); return end
 if not D or not D.getSize then o("tape-menu needs a screen.", T.error); return end
-
 local CTable = nil
 local function runLine(line)
 local out = {}
@@ -2567,7 +2379,6 @@ local okR, err = pcall(fn, cargs, sink)
 if not okR then out[#out + 1] = { "Error: " .. tostring(err), T.error } end
 return out
 end
-
 local addr = component.list and component.list("tape_drive")()
 if not addr then o("No tape drive found.", T.error); return end
 local drive = component.proxy(addr)
@@ -2579,13 +2390,11 @@ local pass = promptInput and promptInput("Tape menu passphrase: ", 64, true) or 
 if not pass or pass == "" then o("Cancelled.", T.dim); return end
 local okV, vault = pcall(require, "kernel.vault")
 if not okV or not vault then o("vault unavailable", T.error); return end
-
 local menu, mErr = L.readTapeMenuFromDrive(drive, pass, vault)
 if not menu then o(tostring(mErr), T.error); return end
 L.run({ display = D, profile = menu, runLine = runLine, title = "Tape toolbox" })
 if deps.drawAll then pcall(deps.drawAll) end
 end
-
 C.clip = function(args, o)
 local okCB, clip = pcall(require, "kernel.clipboard")
 if not okCB or not clip then
@@ -2593,12 +2402,10 @@ o("Clipboard unavailable: " .. tostring(clip), T.error); return
 end
 local seat = S.displayIdx
 local sub = args[1]
-
 if not sub then
 o("Clipboard: " .. clip.describe(seat), T.title)
 local lines = clip.get(seat)
 if lines and not clip.isEmpty(seat) then
-
 local shown = math.min(#lines, 10)
 for i = 1, shown do o("  " .. lines[i], T.fg) end
 if #lines > shown then
@@ -2612,13 +2419,11 @@ return (okK and keys) and keys.label("copy", S.who) or "Ctrl+Insert"
 end)(), T.dim)
 return
 end
-
 if sub == "clear" then
 clip.clear(seat)
 o("Clipboard cleared.", T.highlight)
 return
 end
-
 if sub == "set" then
 local text = table.concat(args, " ", 2)
 if text == "" then o("Usage: clip set <text>", T.warning); return end
@@ -2631,27 +2436,22 @@ o("Clipboard: " .. clip.describe(seat), T.highlight)
 end
 return
 end
-
 o("Usage: clip [set <text> | clear]", T.warning)
 end
-
 C.desktop = function(args, o)
 local okD, desktopMod = pcall(require, "shell.panels.desktop")
 if not okD then o("Desktop unavailable: " .. tostring(desktopMod), T.error); return end
 desktopMod.open(S)
 end
-
 C.settings = function(args, o)
 local okS2, settingsMod = pcall(require, "shell.panels.settingsapp")
 if not okS2 then o("Settings unavailable: " .. tostring(settingsMod), T.error); return end
 settingsMod.open(S)
 end
-
 C.lang = function(args, o)
 local okI, i18nMod = pcall(require, "kernel.i18n")
 if not okI or not i18nMod then o("i18n unavailable: " .. tostring(i18nMod), T.error); return end
 local sub = args[1]
-
 if not sub then
 o("Language: " .. i18nMod.language() .. "  (" .. i18nMod.languageName() .. ")", T.title)
 o("Installed catalogs:", T.fg)
@@ -2663,7 +2463,6 @@ o("Usage: lang <code> | lang system <code> | lang dump [path]", T.dim)
 o("Catalogs are DATA files at /usr/lang/<code>.lang — see 'man lang'.", T.dim)
 return
 end
-
 if sub == "system" then
 if not adminOnly(o) then return end
 local code = args[2]
@@ -2674,7 +2473,6 @@ if SC and SC.set then SC.set("language", code); if SC.save then SC.save() end en
 o("System language: " .. i18nMod.language(), T.highlight)
 return
 end
-
 if sub == "dump" then
 local path = rp(args[2] or "/tmp/lang-template.lang")
 local keys = i18nMod.keysSeen()
@@ -2704,7 +2502,6 @@ o("Write failed: " .. path, T.error)
 end
 return
 end
-
 local ok, err = i18nMod.setLanguage(sub)
 if not ok then
 o("Cannot set '" .. tostring(sub) .. "': " .. tostring(err), T.error)
@@ -2726,5 +2523,4 @@ else
 o("Language: " .. i18nMod.language() .. "  (this session)", T.highlight)
 end
 end
-
 end

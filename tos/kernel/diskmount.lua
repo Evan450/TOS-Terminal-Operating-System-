@@ -10,20 +10,15 @@
 --! it mounts here and then tells the shells (tos_disk_added /
 --! tos_disk_removed), which only have to announce it.
 --! (test_diskmount.lua)
-
 local diskmount = {}
-
 local fs, log = nil, nil
 local bootAddr = nil
-
 local mounted = {}
-
 function diskmount.init(deps)
 fs, log = deps.fs, deps.log
 bootAddr = deps.bootAddr
 mounted = {}
 end
-
 function diskmount.sanitizeLabel(raw, addr)
 local fallback = "disk_" .. tostring(addr or "????"):sub(1, 4)
 if type(raw) ~= "string" then return fallback end
@@ -34,7 +29,6 @@ if #cleaned > 32 then cleaned = cleaned:sub(1, 32) end
 if cleaned == "." or cleaned == ".." then return fallback end
 return cleaned
 end
-
 local function taken(path)
 for _, m in ipairs(fs.mounts and fs.mounts() or {}) do
 if m.mountPoint == path then return true end
@@ -44,7 +38,6 @@ if not fs.isDirectory(path) then return true end
 local items = fs.list(path)
 return type(items) == "table" and #items > 0
 end
-
 function diskmount.mount(addr, proxy)
 if type(addr) ~= "string" or not proxy then return nil, "no disk" end
 --! #SEC H26 -- never the boot disk under /mnt, which would shadow the
@@ -78,7 +71,6 @@ mounted[addr] = { mountPoint = mountPoint, label = label }
 if log then log.info("kernel", "Mounted " .. addr:sub(1, 8) .. " at " .. mountPoint) end
 return mountPoint, label
 end
-
 function diskmount.unmount(addr)
 local m = mounted[addr]
 if not m then return nil end
@@ -87,11 +79,9 @@ pcall(fs.unmount, m.mountPoint)
 if log then log.info("kernel", "Unmounted " .. tostring(addr):sub(1, 8) .. " from " .. m.mountPoint) end
 return m.mountPoint, m.label
 end
-
 function diskmount.mountPointOf(addr)
 local m = mounted[addr]
 if m then return m.mountPoint, m.label end
 return nil
 end
-
 return diskmount

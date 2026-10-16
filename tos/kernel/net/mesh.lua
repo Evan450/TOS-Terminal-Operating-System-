@@ -1,11 +1,9 @@
 local mesh = {}
-
-mesh.DEFAULT_TTL   = 8
-mesh.SEEN_MAX      = 512
-mesh.RETRY_EVERY   = 30
-mesh.RELAY_HOLD    = 120
-mesh.BROADCAST     = "*"
-
+mesh.DEFAULT_TTL = 8
+mesh.SEEN_MAX = 512
+mesh.RETRY_EVERY = 30
+mesh.RELAY_HOLD = 120
+mesh.BROADCAST = "*"
 --! #SEC / #MEM (pentest, Sep 2026) — what a neighbour sends is bounded
 --! before it is kept. Mesh traffic comes only from TRUSTED neighbours, but
 --! every relay forwards to its own, so one bad node anywhere reaches every
@@ -21,45 +19,41 @@ mesh.BROADCAST     = "*"
 --!     An envelope carrying a plaintext payload table is never held. The
 --!     ORIGIN's own copies are untouched -- the origin is what retries.
 --! (test_mesh_bounds.lua, test_mesh_reliability.lua)
-mesh.MAX_ID           = 96
-mesh.MAX_TTL          = 16
-mesh.RELAY_HOLD_MAX   = 8
+mesh.MAX_ID = 96
+mesh.MAX_TTL = 16
+mesh.RELAY_HOLD_MAX = 8
 mesh.RELAY_HOLD_BYTES = 4096
-mesh.MAX_RESEND       = 1000000
-
+mesh.MAX_RESEND = 1000000
 function mesh.newEnvelope(from, to, fields)
 fields = fields or {}
 return {
-id       = fields.id or (tostring(from) .. "#" .. tostring(fields.seq or 0)),
-kind     = fields.kind or "mail",
-from     = from,
-to       = to or mesh.BROADCAST,
+id = fields.id or (tostring(from) .. "#" .. tostring(fields.seq or 0)),
+kind = fields.kind or "mail",
+from = from,
+to = to or mesh.BROADCAST,
 fromUser = fields.fromUser,
-user     = fields.user,
-subject  = fields.subject or "",
-body     = fields.body or "",
-ttl      = fields.ttl or mesh.DEFAULT_TTL,
-path     = fields.path or {},
-ts       = fields.ts,
-ackId    = fields.ackId,
+user = fields.user,
+subject = fields.subject or "",
+body = fields.body or "",
+ttl = fields.ttl or mesh.DEFAULT_TTL,
+path = fields.path or {},
+ts = fields.ts,
+ackId = fields.ackId,
 }
 end
-
 function mesh.newAck(env, selfAddr, fields)
 fields = fields or {}
 return mesh.newEnvelope(selfAddr, env.from, {
-id    = fields.id or ("ack:" .. tostring(env.id)),
-kind  = "ack",
+id = fields.id or ("ack:" .. tostring(env.id)),
+kind = "ack",
 ackId = env.id,
-ttl   = fields.ttl or mesh.DEFAULT_TTL,
-ts    = fields.ts,
+ttl = fields.ttl or mesh.DEFAULT_TTL,
+ts = fields.ts,
 })
 end
-
 function mesh.newSeen(max)
 return { set = {}, order = {}, max = max or mesh.SEEN_MAX }
 end
-
 function mesh.sawBefore(seen, id)
 if id == nil then return false end
 if seen.set[id] then return true end
@@ -71,23 +65,19 @@ if old ~= nil then seen.set[old] = nil end
 end
 return false
 end
-
 function mesh.seenKey(env)
 if env.rs == nil then return env.id end
 return env.id .. "#" .. tostring(math.floor(env.rs))
 end
-
 function mesh.inPath(env, addr)
 for _, a in ipairs(env.path or {}) do if a == addr then return true end end
 return false
 end
-
 local function hopsOf(env)
 local t = tonumber(env.ttl) or 0
 if t > mesh.MAX_TTL then t = mesh.MAX_TTL end
 return t
 end
-
 local function wellFormed(env)
 if type(env) ~= "table" then return false end
 if type(env.id) ~= "string" or #env.id > mesh.MAX_ID then return false end
@@ -97,7 +87,6 @@ local rs = env.rs
 if rs ~= nil and (type(rs) ~= "number" or rs < 0 or rs > mesh.MAX_RESEND) then return false end
 return true
 end
-
 local function copyForward(env, selfAddr)
 local out = {}
 for k, v in pairs(env) do out[k] = v end
@@ -108,7 +97,6 @@ out.path = path
 out.ttl = hopsOf(env) - 1
 return out
 end
-
 function mesh.route(env, selfAddr, isForMe, seen)
 if not wellFormed(env) then
 return { dup = false, deliver = false, forward = false }
@@ -116,26 +104,21 @@ end
 if mesh.sawBefore(seen, mesh.seenKey(env)) then
 return { dup = true, deliver = false, forward = false }
 end
-
 local broadcast = (env.to == mesh.BROADCAST or env.to == nil)
 local mine = broadcast or (isForMe and isForMe(env)) or false
 local res = { dup = false, deliver = mine, forward = false }
-
 if mine and not broadcast then
 return res
 end
-
 if hopsOf(env) > 0 and not mesh.inPath(env, selfAddr) then
 res.forward = true
 res.out = copyForward(env, selfAddr)
 end
 return res
 end
-
 function mesh.newOutbox()
 return { items = {}, seq = 0 }
 end
-
 local function envBytes(env)
 local n = 0
 for k, v in pairs(env) do
@@ -148,7 +131,6 @@ end
 return n
 end
 mesh._envBytes = envBytes
-
 function mesh.enqueue(ob, env, opts, now)
 opts = opts or {}
 if ob.items[env.id] then return false end
@@ -179,20 +161,17 @@ deadline = deadline, relay = opts.relay or false, order = ob.seq,
 }
 return true
 end
-
 function mesh.ack(ob, id)
 if id == nil then return false end
 local had = ob.items[id] ~= nil
 ob.items[id] = nil
 return had
 end
-
 function mesh.ackRelay(ob, id)
 local it = id ~= nil and ob.items[id]
 if it and it.relay then ob.items[id] = nil; return true end
 return false
 end
-
 function mesh.shedRelays(ob, keep)
 keep = keep or 0
 local relays = {}
@@ -204,7 +183,6 @@ local n = 0
 for i = 1, #relays - keep do ob.items[relays[i][1]] = nil; n = n + 1 end
 return n
 end
-
 function mesh.dueItems(ob, now)
 now = now or 0
 local out, dropped = {}, 0
@@ -220,18 +198,15 @@ end
 end
 return out, dropped
 end
-
 function mesh.due(ob, now)
 local items = mesh.dueItems(ob, now)
 local out = {}
 for i, it in ipairs(items) do out[i] = it.env end
 return out
 end
-
 function mesh.pending(ob)
 local n = 0
 for _ in pairs(ob.items) do n = n + 1 end
 return n
 end
-
 return mesh

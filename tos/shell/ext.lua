@@ -1,6 +1,5 @@
 local computer=require("computer")
 local X={}
-
 local function getActor(ctx)
 local U = ctx.U
 if U and ctx.st then
@@ -9,7 +8,6 @@ if s then return s.user, s.tier end
 end
 return "unknown", 0
 end
-
 --! #SEC — SETTING is admin. The consolidation gave the whole command
 --! `device`'s tier 0, so a guest could rename the machine: the name is
 --! written to /etc/tos.cfg (which `config` guards at admin) and is what
@@ -30,37 +28,30 @@ ctx.o("Hostname must be 1-32 printable characters.",0xFF0000)
 return
 end
 SC.set("hostname",name) SC.save()
-
 local NM = ctx.K.getNet and ctx.K.getNet()
 if NM and NM.setHostname then NM.setHostname(name) end
 end
 ctx.o("Device: "..SC.deviceType().." | Host: "..(SC.get("hostname") or "?"))
 end
-
 function X.config(a,ctx)
 local SC=ctx.K.getConfig() if not SC then ctx.o("No config",0xFF0000) return end
 for k,v in pairs(SC.getAll()) do ctx.o(" "..k.." = "..tostring(v),0xC0C0C0) end
 end
-
 function X.battery(a,ctx)
 local pm=ctx.K.getPower()
 if not pm then ctx.o("N/A") return end
 local s=pm.statusString()
 if s then ctx.o(s) else ctx.o("AC power (no battery on this device)") end
 end
-
 local _lastScan = nil
-
 local function fmtAddr(addr)
 local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
 if A and A.format then return A.format(addr) end
 if type(addr) ~= "string" then return "?" end
 return addr:sub(1, 8) .. "..."
 end
-
 local function resolvePeer(s)
 if type(s) ~= "string" or s == "" then return s end
-
 local n = tonumber(s)
 if n and _lastScan and _lastScan[n] then return _lastScan[n].addr end
 local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
@@ -70,7 +61,6 @@ if addr then return addr end
 end
 return s
 end
-
 function X.net(a,ctx)
 local NM=ctx.K.getNet() if not NM then ctx.o("No network",0xFF0000) return end
 if not a[1] then
@@ -100,7 +90,6 @@ return
 end
 local s=a[1]
 if s=="servers" then
-
 local peers=NM.peers and NM.peers() or {}
 if #peers==0 then
 ctx.o("No peers discovered yet.",0xAAAAAA)
@@ -142,7 +131,6 @@ elseif s=="discover" or s=="scan" then
 ctx.o("Scanning...", 0xFFFF00)
 if NM.scan then
 local found = NM.scan(3)
-
 table.sort(found, function(a2, b2)
 return tostring(a2.addr or "") < tostring(b2.addr or "")
 end)
@@ -169,10 +157,8 @@ NM.discover()
 ctx.o("Discovery broadcast sent.", 0x00FF00)
 end
 elseif s=="peers" or s=="list" then
-
 local peers = NM.peers and NM.peers() or {}
 if #peers > 0 then
-
 _lastScan = peers
 ctx.o(string.format(" %-3s %-20s %-4s %-8s %s",
 "#", "Peer", "Trst", "Device", "Host"), 0xAAAAAA)
@@ -188,7 +174,6 @@ i, fmtAddr(p.addr), lbl, p.device or "?", p.hostname or ""),
 color)
 end
 else
-
 local tm = NM.getTrust()
 for _, p in ipairs(tm.listPeers()) do
 ctx.o(string.format(" %-20s T%d %s",
@@ -200,7 +185,6 @@ elseif s=="trust" then
 local tm=NM.getTrust()
 local actor, tier = getActor(ctx)
 local sub2 = a[2]
-
 if sub2 == "gen" or sub2 == "generate" then
 local addr = resolvePeer(a[3])
 if not addr then ctx.o("Usage: net trust gen <peer>",0xFFFF00) return end
@@ -210,7 +194,6 @@ ctx.o("Generated shared secret for " .. fmtAddr(addr) .. " ("..#secret.." bytes)
 ctx.o("Easier: run 'net pair start' on the peer and 'net pair " ..
 fmtAddr(addr) .. " <code>' here.",0xAAAAAA)
 ctx.o("Or copy: run `net trust setSecret <our-addr> <hex>` on the peer.",0xAAAAAA)
-
 local hex = {}
 for i = 1, #secret do hex[i] = string.format("%02x", secret:byte(i)) end
 ctx.o("Secret (hex): " .. table.concat(hex), 0xFFFF55)
@@ -219,7 +202,7 @@ ctx.o("Failed: " .. tostring(gerr or "unknown"),0xFF0000)
 end
 elseif sub2 == "setSecret" or sub2 == "secret" then
 local addr = resolvePeer(a[3])
-local hex  = a[4]
+local hex = a[4]
 if not addr then
 ctx.o("Usage: net trust setSecret <peer> <hex-string|->",0xFFFF00)
 ctx.o("       Use - or empty to clear the secret.",0xAAAAAA)
@@ -229,7 +212,6 @@ local secret
 if not hex or hex == "" or hex == "-" then
 secret = nil
 else
-
 if #hex % 2 ~= 0 or hex:match("[^%x]") then
 ctx.o("Bad hex string (need pairs of 0-9 a-f).",0xFF0000); return
 end
@@ -246,7 +228,6 @@ else
 ctx.o("Failed: " .. tostring(err2 or "unknown"),0xFF0000)
 end
 elseif sub2 == "showSecret" then
-
 local addr = resolvePeer(a[3])
 if not addr then ctx.o("Usage: net trust showSecret <peer>",0xFFFF00) return end
 local secret, gerr = tm.getSecret(actor, addr, tier)
@@ -257,7 +238,6 @@ local hex = {}
 for i = 1, #secret do hex[i] = string.format("%02x", secret:byte(i)) end
 ctx.o(table.concat(hex),0xFFFF55)
 elseif sub2 then
-
 local addr = resolvePeer(sub2)
 local ok2, err2
 if a[3]=="full" then ok2, err2 = tm.trustFull(actor, addr, tier)
@@ -314,7 +294,6 @@ local addr = resolvePeer(a[2])
 local ok2, err2 = NM.sendMessage(addr, table.concat(a, " ", 3))
 if ok2 then ctx.o("Sent.",0x00FF00)
 else ctx.o("Send failed: "..tostring(err2 or "unknown"),0xFF0000) end
-
 elseif s == "alias" then
 local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
 if not A then ctx.o("aliases module unavailable",0xFF0000) return end
@@ -353,7 +332,6 @@ else ctx.o("No alias for " .. addr:sub(1, 12) .. "...", 0xAAAAAA) end
 else
 ctx.o("Usage: net alias <add|rm|list|show>",0xFFFF00)
 end
-
 elseif s == "pair" then
 local CP = NM.getChatPair and NM.getChatPair() or nil
 if not CP then ctx.o("chat-pair unavailable",0xFF0000) return end
@@ -405,7 +383,6 @@ ctx.o("Usage: net pair start | net pair <peer> <code> | net pair status",0xFFFF0
 end
 else ctx.o("Unknown: net "..s,0xFF0000) end
 end
-
 --! `ping <peer>` sent {type="PING"}: no protocol magic, and the wire type is
 --! lower-case "ping", so every receiver dropped it in protocol.validate and
 --! the command answered "Ping sent." to a packet nobody could read. It now
@@ -439,7 +416,6 @@ else
 ctx.o("No reply from "..fmtAddr(addr).." within 3s.",0xFFFF00)
 end
 end
-
 function X.audio(a,ctx)
 local A=_G._TOS and _G._TOS.audio
 if not A then ctx.o("Audio module not available.",0xFF0000) return end
@@ -497,5 +473,4 @@ ctx.o("Unknown: audio "..s,0xFF0000)
 ctx.o("Usage: audio [on|off|volume|test]",0xAAAAAA)
 end
 end
-
 return X

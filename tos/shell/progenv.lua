@@ -1,5 +1,4 @@
 local M = {}
-
 function M.builder(S)
 local sandboxMod = nil
 local function getSandbox()
@@ -9,12 +8,10 @@ sandboxMod = ok and mod or false
 end
 return sandboxMod or nil
 end
-
 return function(opts)
 opts = opts or {}
 local sb = getSandbox()
 if not sb then
-
 --! #SEC (pentest, Sep 2026) — and its OWN copies of math/string/table,
 --! with no getmetatable. This handed over the real libraries and the
 --! real getmetatable, so getmetatable("").__index was the VM-wide
@@ -35,22 +32,21 @@ env._G = env
 return env
 end
 local caps = {
-["fs.read"]   = true,
-["fs.write"]  = true,
+["fs.read"] = true,
+["fs.write"] = true,
 ["compat.io"] = true,
 }
 if opts.caps then
 for k, v in pairs(opts.caps) do caps[k] = v end
 end
 return sb.build{
-name    = opts.name or "shell:program",
+name = opts.name or "shell:program",
 pkgName = opts.pkgName,
-cwd     = S.cwd,
+cwd = S.cwd,
 session = (S.U and S.U.currentSession and S.U.currentSession()) or nil,
-caps    = caps,
-stdout  = opts.stdout,
+caps = caps,
+stdout = opts.stdout,
 }
 end
 end
-
 return M

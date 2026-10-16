@@ -25,44 +25,33 @@
 --!   4. STAGING IS DISPOSABLE. Everything lands under /var/pkg/remote,
 --!      which is package-owned space, and is cleared before each fetch so
 --!      a previous failure cannot contribute files to the next install.
-
-local fs        = require("kernel.fs")
+local fs = require("kernel.fs")
 local serialize = require("kernel.serialize")
-
 local pkgremote = {}
-
 local log = nil
-
-local REPO_CFG   = "/etc/pkg-repos.cfg"
-local KNOWN_CFG  = "/var/pkg/known-repos.cfg"
-local MAX_KNOWN  = 32
-
+local REPO_CFG = "/etc/pkg-repos.cfg"
+local KNOWN_CFG = "/var/pkg/known-repos.cfg"
+local MAX_KNOWN = 32
 local MAX_DISCOVERED = 8
 local STAGE_ROOT = "/var/pkg/remote"
-
-local MAX_INDEX_BYTES   = 128 * 1024
-local MAX_FILE_BYTES    = 128 * 1024
-local MAX_PKG_BYTES     = 512 * 1024
+local MAX_INDEX_BYTES = 128 * 1024
+local MAX_FILE_BYTES = 128 * 1024
+local MAX_PKG_BYTES = 512 * 1024
 local MAX_FILES_PER_PKG = 64
-
 local validHint = function() return false end
-
 function pkgremote.init(modules)
 modules = modules or {}
 log = modules.log
 if type(modules.validRepoHint) == "function" then validHint = modules.validRepoHint end
 end
-
 local function inet()
 local ok, m = pcall(require, "kernel.internet")
 if ok then return m end
 return nil
 end
-
 local function validRepoName(n)
 return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
 end
-
 --! #SEC — a package name becomes a staging PATH below (and the staging
 --! root is removed before every fetch), so it must be a name and nothing
 --! else: the rule pkg.lua's validName applies to manifests -- alphanumerics
@@ -76,7 +65,6 @@ if #n == 1 then return n:match("^%w$") ~= nil end
 return n:match("^%w[%w%-]*%w$") ~= nil
 end
 pkgremote.validPkgName = validPkgName
-
 function pkgremote.repos()
 local out = {}
 if not fs.exists(REPO_CFG) then return out end
@@ -91,11 +79,10 @@ local im = inet()
 for _, e in ipairs(raw) do
 if type(e) == "table" and validRepoName(e.name) and type(e.url) == "string" then
 local host = im and im.hostOf(e.url) or nil
-
 if host then
 out[#out + 1] = {
 name = e.name,
-url  = (e.url:gsub("/+$", "")),
+url = (e.url:gsub("/+$", "")),
 host = host,
 description = type(e.description) == "string" and e.description or nil,
 }
@@ -106,7 +93,6 @@ end
 end
 return out
 end
-
 local function saveRepos(list)
 local clean = {}
 for _, r in ipairs(list) do
@@ -115,7 +101,6 @@ end
 return fs.writeFileAtomic and fs.writeFileAtomic(REPO_CFG, serialize.encode(clean))
 or fs.writeFile(REPO_CFG, serialize.encode(clean))
 end
-
 function pkgremote.addRepo(name, url, description)
 if not validRepoName(name) then
 return false, "invalid repo name (letters, digits, _ and - only)"
@@ -139,7 +124,6 @@ if not okW then return false, "could not write " .. REPO_CFG end
 if log then log.info("pkgremote", "Repo '" .. name .. "' -> " .. url) end
 return true
 end
-
 function pkgremote.removeRepo(name)
 local list, out, found = pkgremote.repos(), {}, false
 for _, r in ipairs(list) do
@@ -149,7 +133,6 @@ if not found then return false, "no such repo: " .. tostring(name) end
 if not saveRepos(out) then return false, "could not write " .. REPO_CFG end
 return true
 end
-
 --! #SEC /var/pkg/known-repos.cfg -- what installed packages said about
 --! where they come from. KNOWN is not CONFIGURED: written by installs,
 --! trusted with nothing, and kept apart from REPO_CFG so no install can
@@ -176,7 +159,6 @@ end
 while #out > MAX_KNOWN do table.remove(out, 1) end
 return out
 end
-
 local function saveKnown(list)
 local clean = {}
 for _, e in ipairs(list) do clean[#clean + 1] = { url = e.url, from = e.from } end
@@ -184,9 +166,7 @@ local body = serialize.encode(clean)
 if fs.writeFileAtomic then return fs.writeFileAtomic(KNOWN_CFG, body) end
 return fs.writeFile(KNOWN_CFG, body)
 end
-
 function pkgremote.known() return readKnown() end
-
 function pkgremote.learn(urls, from)
 if type(urls) ~= "table" then return 0 end
 local list = readKnown()
@@ -221,7 +201,6 @@ added, tostring(from)))
 end
 return added
 end
-
 function pkgremote.forget(which)
 local list = readKnown()
 if which == "all" then
@@ -240,7 +219,6 @@ table.remove(list, idx)
 if not saveKnown(list) then return false, "could not write " .. KNOWN_CFG end
 return true, 1
 end
-
 local function discoveredRepo(url)
 if not validHint(url) then return nil end
 url = (url:gsub("/+$", ""))
@@ -254,7 +232,6 @@ local h = tostring(crypto.hash(url) or "")
 if not host or not h:match("^%x+$") or #h < 12 then return nil end
 return { name = "k" .. h:sub(1, 12), url = url, host = host, discovered = true }
 end
-
 local function discoveredCandidates(repos, hints)
 local configured, seen, out = {}, {}, {}
 for _, r in ipairs(repos) do configured[r.url] = true end
@@ -270,7 +247,6 @@ for _, u in ipairs(type(hints) == "table" and hints or {}) do consider(u) end
 for _, k in ipairs(readKnown()) do consider(k.url) end
 return out
 end
-
 --! A source path out of a remote index is used for two things: appended to
 --! the repo URL, and appended to the staging directory. Both are injection
 --! sites. Refused: absolute paths, any "." or ".." segment, backslashes,
@@ -289,13 +265,10 @@ if p:find("@", 1, true) then return nil end
 for seg in p:gmatch("[^/]+") do
 if seg == "." or seg == ".." then return nil end
 end
-
 return (p:gsub("/+", "/"))
 end
-
 local indexCache = {}
 local sigCache = {}
-
 --! #SEC / #MEM (pentest, Sep 2026) — the byte bound was the only one. A
 --! 128 KB index of "{{},{},...}" built 805 KB of tables before the decoder's
 --! per-table entry cap stopped it, and "{{{}},...}" 1.5 MB: whoever runs a
@@ -304,7 +277,6 @@ local sigCache = {}
 --! index (Optional Utilities', 8.6 KB) is charged 26 KB of it.
 --! (test_untrusted_index_budget.lua)
 local MAX_INDEX_COST = 64 * 1024
-
 function pkgremote.index(repo, opts)
 opts = opts or {}
 local im = inet()
@@ -329,12 +301,9 @@ end
 indexCache[repo.name] = { index = raw }
 return raw
 end
-
 function pkgremote.clearCache() indexCache = {}; sigCache = {} end
-
 --! pkgsign's own bound on a .sig: a real one is about 300 bytes.
 local MAX_SIG_BYTES = 4096
-
 --! Absent and broken are different verdicts (pkgsign: a signature that
 --! will not parse is evidence, and is refused), so what counts as "the
 --! repo has no signature" is decided here, narrowly:
@@ -369,7 +338,6 @@ end
 sigCache[repo.name] = answer
 return answer
 end
-
 function pkgremote.search(opts)
 local out = {}
 for _, repo in ipairs(pkgremote.repos()) do
@@ -378,10 +346,10 @@ if idx then
 for name, entry in pairs(idx) do
 if type(name) == "string" and type(entry) == "table" and not entry.hidden then
 out[#out + 1] = {
-name        = name,
-repo        = repo.name,
+name = name,
+repo = repo.name,
 description = entry.description or entry.note,
-version     = entry.version,
+version = entry.version,
 }
 end
 end
@@ -392,7 +360,6 @@ end
 table.sort(out, function(a, b) return (a.name or "") < (b.name or "") end)
 return out
 end
-
 function pkgremote.fetch(name, opts)
 opts = opts or {}
 if not validPkgName(name) then
@@ -413,7 +380,6 @@ local others = discovery and discoveredCandidates(repos, opts.hints) or {}
 if #repos == 0 and #others == 0 then
 return nil, "no remote repositories configured (see 'pkg repo add')"
 end
-
 local repo, entry
 local unusable = {}
 for _, r in ipairs(repos) do
@@ -425,7 +391,6 @@ elseif not idx then
 unusable[#unusable + 1] = tostring(iErr)
 end
 end
-
 if not entry then
 for _, r in ipairs(others) do
 local idx, iErr = pkgremote.index(r, opts)
@@ -495,12 +460,11 @@ return nil, "package '" .. name .. "' in repo '" .. repo.name
 .. type(src) .. " -> " .. type(dest) .. ")"
 end
 end
-
 --! One root PER PACKAGE, not per repo: `pkg fetch` stages a package's
 --! dependencies while the package itself is still staged, and a
 --! per-repo root was wiped by the next fetch from the same repo. "." is
 --! legal in neither a repo name nor a package name, so no two collide.
-local root   = fs.join(STAGE_ROOT, repo.name .. "." .. name)
+local root = fs.join(STAGE_ROOT, repo.name .. "." .. name)
 local pkgDir = fs.join(root, name)
 pcall(fs.remove, root)
 if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then
@@ -513,7 +477,6 @@ local function fail(msg)
 pcall(fs.remove, root)
 return nil, msg
 end
-
 local okIdx
 if signedIndex then
 okIdx = fs.writeFile(fs.join(root, "programs.cfg"), signedIndex)
@@ -523,7 +486,6 @@ okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
 serialize.encode({ [name] = entry }))
 end
 if not okIdx then return fail("could not stage the package index") end
-
 local count, total = 0, 0
 for src in pairs(entry.files) do
 local rel = safeRepoPath(src:gsub("^:", ""))
@@ -533,7 +495,6 @@ return fail("package '" .. name ..
 "); TOS installs a declared file list")
 end
 if not rel then
-
 if log then
 log.warn("pkgremote", "Refused unsafe source path from repo '"
 .. repo.name .. "': " .. tostring(src))
@@ -545,12 +506,10 @@ if count > MAX_FILES_PER_PKG then
 return fail("package '" .. name .. "' exceeds the " .. MAX_FILES_PER_PKG
 .. "-file limit")
 end
-
-local url  = repo.url .. "/" .. rel
+local url = repo.url .. "/" .. rel
 local dest = fs.join(root, rel)
 local parent = dest:match("^(.*)/[^/]+$")
 if parent and parent ~= "" then fs.makeDirectory(parent) end
-
 local okD, dErr, meta = im.download(url, dest, { maxBytes = MAX_FILE_BYTES })
 if not okD then
 return fail("downloading " .. rel .. ": " .. tostring(dErr))
@@ -561,7 +520,6 @@ return fail("package '" .. name .. "' exceeds the "
 .. math.floor(MAX_PKG_BYTES / 1024) .. " KB total limit")
 end
 end
-
 if count == 0 then
 return fail("package '" .. name .. "' listed no installable files")
 end
@@ -572,18 +530,14 @@ end
 return pkgDir, nil, { repo = repo.name, url = repo.url, files = count, bytes = total,
 discovered = repo.discovered and repo.url or nil }
 end
-
 function pkgremote.cleanup(pkgDir)
 if type(pkgDir) ~= "string" then return end
 local root = pkgDir:match("^(" .. STAGE_ROOT:gsub("%-", "%%-") .. "/[^/]+)")
 if root then pcall(fs.remove, root) end
 end
-
 pkgremote.STAGE_ROOT = STAGE_ROOT
-pkgremote.REPO_CFG   = REPO_CFG
-pkgremote.KNOWN_CFG  = KNOWN_CFG
-pkgremote.MAX_KNOWN  = MAX_KNOWN
-
+pkgremote.REPO_CFG = REPO_CFG
+pkgremote.KNOWN_CFG = KNOWN_CFG
+pkgremote.MAX_KNOWN = MAX_KNOWN
 pkgremote._safeRepoPath = safeRepoPath
-
 return pkgremote

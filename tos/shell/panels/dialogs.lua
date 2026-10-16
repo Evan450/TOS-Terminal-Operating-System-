@@ -1,5 +1,4 @@
 local M = {}
-
 --! computer.pullSignal(t) returns THE MOMENT a signal arrives; `t` is
 --! only the longest it will wait when nothing happens. So this number
 --! does not affect how fast a keypress registers -- it only decides how
@@ -16,7 +15,6 @@ local M = {}
 --! cache was wrong ... Something moved the glass without declaring it".
 --! A dialog that blocked forever would stay corrupted forever.
 local DIALOG_IDLE_WAIT = 5
-
 local function pullSignal()
 --! The good path: inside a coroutine this is a true event wait, and it
 --! hands control back to the scheduler so background services keep
@@ -27,13 +25,11 @@ return coroutine.yield()
 end
 return require("computer").pullSignal(DIALOG_IDLE_WAIT)
 end
-
 function M.scrollTail(text, width)
 width = math.max(0, math.floor(width or 0))
 if #text <= width then return text end
 return text:sub(#text - width + 1)
 end
-
 function M.fitPrompt(msg, width)
 msg = tostring(msg or "")
 local budget = math.max(12, math.floor(width or 80) - 10)
@@ -42,7 +38,6 @@ local tail = math.min(16, budget - 8)
 local head = budget - tail - 3
 return msg:sub(1, head) .. "..." .. msg:sub(#msg - tail + 1)
 end
-
 function M.promptInput(S, msg, maxLen, isPassword)
 local D, T, W = S.D, S.T, S.W
 local OUT_ROW = S.OUT_ROW
@@ -51,7 +46,6 @@ local buf = ""
 while true do
 D.fill(1, OUT_ROW, W, 1, " ", T.fg, T.bg)
 local disp = isPassword and string.rep("*", #buf) or buf
-
 local shown = M.scrollTail(disp, W - #msg - 1)
 D.set(1, OUT_ROW, (msg .. shown .. "_"):sub(1, W), T.title, T.bg)
 local sig, _, ch2, co2 = pullSignal()
@@ -67,7 +61,6 @@ buf = (buf .. ch2:gsub("\n", "")):sub(1, maxLen or 64)
 end
 end
 end
-
 function M.wrapText(text, width)
 width = math.max(1, math.floor(width or 40))
 local lines = {}
@@ -92,7 +85,6 @@ end
 if #lines == 0 then lines[1] = "" end
 return lines
 end
-
 function M.layoutButtons(labels)
 local parts, spans, col = {}, {}, 1
 for i, lbl in ipairs(labels) do
@@ -104,7 +96,6 @@ col = col + #cell
 end
 return table.concat(parts), spans, (col - 1)
 end
-
 function M.boxRect(W, H, contentW, contentH)
 local w = math.min(W, math.max(1, contentW) + 4)
 local h = math.min(H, math.max(1, contentH) + 2)
@@ -112,42 +103,35 @@ local x = math.max(1, math.floor((W - w) / 2) + 1)
 local y = math.max(1, math.floor((H - h) / 2) + 1)
 return { x = x, y = y, w = w, h = h }
 end
-
 local STYLES = {
-info    = { frame = "title",   title = "title"   },
-install = { frame = "title",   title = "title"   },
-warn    = { frame = "warning", title = "warning" },
-danger  = { frame = "error",   title = "error"   },
-error   = { frame = "error",   title = "error"   },
-general = { frame = "border",  title = "fg"      },
-plain   = { frame = "border",  title = "fg"      },
+info = { frame = "title", title = "title" },
+install = { frame = "title", title = "title" },
+warn = { frame = "warning", title = "warning" },
+danger = { frame = "error", title = "error" },
+error = { frame = "error", title = "error" },
+general = { frame = "border", title = "fg" },
+plain = { frame = "border", title = "fg" },
 }
-
 local STYLE_TITLE = {
 info = "Information", install = "Install", warn = "Warning",
-danger = "Warning",  error = "Error",     general = "Message",
+danger = "Warning", error = "Error", general = "Message",
 plain = "Message",
 }
-
 local function drawDialog(S, style, title, lines, labels, focus, shadow)
 local D, T, W, H = S.D, S.T, S.W, S.H
 local meta = STYLES[style] or STYLES.general
 local frameColor = T[meta.frame] or T.border or T.fg
 local titleColor = T[meta.title] or T.fg
 title = title or ""
-
 local titleTab = (title ~= "") and ("╡ " .. title .. " ╞") or nil
 local titleCols = titleTab and (#title + 4) or 0
-
 local btnRow, spans, btnW = M.layoutButtons(labels)
 local contentW = math.max(titleCols - 2, btnW)
 for _, l in ipairs(lines) do contentW = math.max(contentW, #l) end
 local contentH = #lines + 2
-
 local r = M.boxRect(W, H, contentW, contentH)
 local interior = r.w - 2
 local bg = T.panel_bg or T.bg
-
 if shadow ~= false then
 local sh = 0x1A1A1A
 D.set(r.x + 1, r.y + r.h, string.rep(" ", r.w), sh, sh)
@@ -155,22 +139,18 @@ for row = 1, r.h do
 D.set(r.x + r.w, r.y + row, " ", sh, sh)
 end
 end
-
 D.set(r.x, r.y, "╔" .. string.rep("═", interior) .. "╗", frameColor, bg)
 for row = 1, r.h - 2 do
 D.set(r.x, r.y + row, "║" .. string.rep(" ", interior) .. "║", frameColor, bg)
 end
 D.set(r.x, r.y + r.h - 1, "╚" .. string.rep("═", interior) .. "╝", frameColor, bg)
-
 if titleTab then
 local off = math.max(0, math.floor((interior - titleCols) / 2))
 D.set(r.x + 1 + off, r.y, titleTab, titleColor, bg)
 end
-
 for i, l in ipairs(lines) do
 D.set(r.x + 2, r.y + i, l:sub(1, interior - 2), T.fg, bg)
 end
-
 local rowY = r.y + #lines + 2
 local off = math.max(0, math.floor((interior - btnW) / 2))
 local baseX = r.x + 1 + off
@@ -186,7 +166,6 @@ rects[i] = { x1 = baseX + s.s - 1, x2 = baseX + s.e - 1, y = rowY, label = lbl }
 end
 return rects
 end
-
 --! REPAINT ON CHANGE, NOT ON EVERY SIGNAL.
 --!
 --! These loops used to call drawDialog at the top of each iteration, so
@@ -214,9 +193,7 @@ D.endFrame()
 if not ok then error(res, 0) end
 return res
 end
-
 local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shadow, closeIf)
-
 local hot = {}
 for i, l in ipairs(labels) do
 local c = l:sub(1, 1):lower()
@@ -226,11 +203,9 @@ local rects = framedDraw(S, style, title, lines, labels, focus, shadow)
 while true do
 local lastFocus = focus
 local sig, _, b, c = pullSignal()
-
 if closeIf and closeIf() then return nil end
 if sig == "key_down" then
 if c == 28 then return focus
-
 elseif c == 1 or b == 17 then return escIndex
 elseif c == 203 then focus = (focus > 1) and (focus - 1) or #labels
 elseif c == 205 or c == 15 then
@@ -244,13 +219,11 @@ for i, rt in ipairs(rects) do
 if c == rt.y and b >= rt.x1 and b <= rt.x2 then return i end
 end
 end
-
 if focus ~= lastFocus then
 rects = framedDraw(S, style, title, lines, labels, focus, shadow)
 end
 end
 end
-
 --! Same frame, same title tab, same shadow, same button styling as every
 --! other dialog -- it calls drawDialog like dialogLoop does, and adds
 --! nothing to the visual grammar. The only difference is what it takes
@@ -267,14 +240,13 @@ end
 --! belongs to the text field, or the word could never be typed.
 function M.confirmTyped(S, message, word, opts)
 opts = opts or {}
-local style  = opts.style or opts.severity or "danger"
-local title  = opts.title or STYLE_TITLE[style] or "Confirm"
+local style = opts.style or opts.severity or "danger"
+local title = opts.title or STYLE_TITLE[style] or "Confirm"
 local labels = { opts.no or "Cancel", opts.yes or "Confirm" }
-local body   = M.wrapText(opts.message or message or "",
+local body = M.wrapText(opts.message or message or "",
 math.max(16, (S.W or 50) - 8))
 local buf, focus = "", 1
 local maxLen = math.max(#word + 8, 16)
-
 local function render()
 --! Constant line COUNT in every state. Adding or removing a line as
 --! the text matched would resize the box mid-typing, and a dialog
@@ -291,13 +263,11 @@ lines[#lines + 1] = (buf == word) and ("  the word matches - choose " .. labels[
 or ("  (" .. labels[2] .. " stays inert until it matches)")
 return framedDraw(S, style, title, lines, labels, focus, opts.shadow)
 end
-
 local rects = render()
 while true do
 local lastFocus, lastBuf = focus, buf
 local matched = (buf == word)
 local sig, _, b, c = pullSignal()
-
 if sig == "key_down" then
 if c == 1 or b == 17 then
 if opts.redraw then opts.redraw() end
@@ -310,7 +280,6 @@ elseif matched then
 if opts.redraw then opts.redraw() end
 return true
 end
-
 elseif c == 203 then focus = (focus > 1) and (focus - 1) or #labels
 elseif c == 205 or c == 15 then
 focus = (focus < #labels) and (focus + 1) or 1
@@ -319,7 +288,6 @@ if #buf > 0 then buf = buf:sub(1, -2) end
 elseif b and b >= 32 and b < 127 and #buf < maxLen then
 buf = buf .. string.char(b)
 end
-
 elseif sig == "touch" and type(b) == "number" and type(c) == "number" then
 for i, rt in ipairs(rects) do
 if c == rt.y and b >= rt.x1 and b <= rt.x2 then
@@ -337,14 +305,12 @@ focus = 2
 end
 end
 end
-
 elseif sig == "clipboard" and type(b) == "string" then
 buf = (buf .. b:gsub("\n", "")):sub(1, maxLen)
 end
 if focus ~= lastFocus or buf ~= lastBuf then rects = render() end
 end
 end
-
 --! Exists because a run of yes/no questions with no visible end is the
 --! thing operators start clicking through. Telling them there are three
 --! left costs two lines and buys an answer they actually meant.
@@ -370,13 +336,12 @@ string.format("%d of %d   [%s%s]", index, total,
 string.rep("#", filled), string.rep("-", width - filled)),
 }
 end
-
 function M.dialog(S, opts)
 opts = opts or {}
-local style  = opts.style or opts.severity or "general"
-local title  = opts.title or STYLE_TITLE[style] or "Message"
+local style = opts.style or opts.severity or "general"
+local title = opts.title or STYLE_TITLE[style] or "Message"
 local labels = opts.buttons or { "OK" }
-local lines  = M.wrapText(opts.message or opts.body or "", math.max(16, (S.W or 50) - 8))
+local lines = M.wrapText(opts.message or opts.body or "", math.max(16, (S.W or 50) - 8))
 --! Appended to the body rather than drawn separately, so it lands
 --! inside the same frame with no change to drawDialog.
 if opts.progress then
@@ -385,7 +350,7 @@ for _, l in ipairs(M.progressLines(opts.progress.index, opts.progress.total,
 lines[#lines + 1] = l
 end
 end
-local focus  = opts.default or 1
+local focus = opts.default or 1
 local escIdx = opts.escIndex or #labels
 local pick = dialogLoop(S, style, title, lines, labels, focus, escIdx, opts.shadow,
 opts.closeIf)
@@ -396,20 +361,18 @@ opts.closeIf)
 if opts.redraw and opts.redraw ~= false then opts.redraw() end
 return pick
 end
-
 function M.alert(S, message, opts)
 opts = opts or {}
 M.dialog(S, {
-style   = opts.style or opts.severity or "info",
-title   = opts.title,
+style = opts.style or opts.severity or "info",
+title = opts.title,
 message = opts.message or message,
 buttons = { opts.ok or "OK" },
 default = 1, escIndex = 1,
-shadow  = opts.shadow, redraw = opts.redraw,
+shadow = opts.shadow, redraw = opts.redraw,
 })
 return true
 end
-
 --! NO COMES FIRST. Keyboard focus already started on the safe choice, but
 --! the button ORDER was { Yes, No } -- so the leftmost button, the one a
 --! click-through or a stray mouse press lands on, was the destructive
@@ -423,18 +386,17 @@ end
 function M.confirm(S, message, opts)
 opts = opts or {}
 local pick = M.dialog(S, {
-style    = opts.style or opts.severity or "danger",
-title    = opts.title,
-message  = opts.message or message,
-buttons  = { opts.no or "No", opts.yes or "Yes" },
-default  = (opts.default == "yes") and 2 or 1,
+style = opts.style or opts.severity or "danger",
+title = opts.title,
+message = opts.message or message,
+buttons = { opts.no or "No", opts.yes or "Yes" },
+default = (opts.default == "yes") and 2 or 1,
 escIndex = 1,
 progress = opts.progress,
-shadow   = opts.shadow, redraw = opts.redraw,
+shadow = opts.shadow, redraw = opts.redraw,
 })
 return pick == 2
 end
-
 function M.promptSearch(S, currentTerm)
 local D, T, W, H = S.D, S.T, S.W, S.H
 local buf = currentTerm or ""
@@ -452,5 +414,4 @@ end
 end
 end
 end
-
 return M

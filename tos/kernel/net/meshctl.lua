@@ -1,11 +1,8 @@
 local mesh = require("kernel.net.mesh")
-
 local meshctl = {}
 meshctl.__index = meshctl
-
 meshctl.RELAY_BUDGET = 32
-meshctl.MAX_PAYLOAD  = 8192
-
+meshctl.MAX_PAYLOAD = 8192
 --! Reliability (Sep 2026: the operator's design, after the relay-flood fix).
 --!   * A relay keeps up to mesh.RELAY_HOLD_MAX passed-through copies while it
 --!     has the memory for them, and sheds them, oldest first, as soon as free
@@ -30,23 +27,20 @@ meshctl.MAX_PAYLOAD  = 8192
 --!   * Keeping its OWN side is enough for a node to hold a whole
 --!     conversation: the other side is what it received.
 --! (test_mesh_reliability.lua)
-meshctl.RELAY_FLOOR   = 48 * 1024
-meshctl.FULL_EVERY    = 4
-meshctl.ORIGIN_MAX    = 16
+meshctl.RELAY_FLOOR = 48 * 1024
+meshctl.FULL_EVERY = 4
+meshctl.ORIGIN_MAX = 16
 meshctl.DELIVERED_MAX = 64
-meshctl.ORIGIN_TTL    = 3600
-
+meshctl.ORIGIN_TTL = 3600
 local crypto, serialize, log
 local clock = function() return 0 end
-
 function meshctl.init(modules)
-modules   = modules or {}
-crypto    = modules.crypto
+modules = modules or {}
+crypto = modules.crypto
 serialize = modules.serialize or require("kernel.serialize")
-log       = modules.log
+log = modules.log
 if modules.clock then clock = modules.clock end
 end
-
 function meshctl.sealEnv(env, secret)
 if not (crypto and secret and secret ~= "") then
 env.sealed = nil
@@ -58,14 +52,12 @@ local nonce = crypto.salt and crypto.salt(16) or ""
 env.sealed = ct
 env.encMethod = method
 env.nonce = nonce
-
 env.mac = crypto.hmac(secret, table.concat({
 tostring(env.id), tostring(env.from), tostring(env.to),
 tostring(env.svc), method or "", nonce, ct }, "\0"))
 env.payload = nil
 return env
 end
-
 function meshctl.openEnv(env, secret)
 if not env.sealed then
 return env.payload or {}, "plaintext"
@@ -86,14 +78,12 @@ local ok, parsed = pcall(serialize.decode, plain, { maxBytes = meshctl.MAX_PAYLO
 if not ok or type(parsed) ~= "table" then return nil, "corrupt sealed payload" end
 return parsed, "sealed"
 end
-
 local function replyMac(secret, kind, msgId, from, to)
 if not (crypto and crypto.hmac and secret and secret ~= "") then return nil end
 return crypto.hmac(secret, table.concat({
 tostring(kind), tostring(msgId), tostring(from), tostring(to) }, "\0"))
 end
 meshctl._replyMac = replyMac
-
 function meshctl.compose(opts)
 opts = opts or {}
 local env = mesh.newEnvelope(opts.from, opts.to, {
@@ -106,19 +96,16 @@ env.svc = opts.svc
 env.payload = opts.payload or {}
 return meshctl.sealEnv(env, opts.secret)
 end
-
 function meshctl.ingest(env, selfAddr, isForMe, seen, secretFor)
 local r = mesh.route(env, selfAddr, isForMe, seen)
 local act = { dup = r.dup, forward = r.forward, out = r.out, deliver = false }
 if r.dup or not r.deliver then return act end
-
 if env.kind == "ack" or env.kind == "probe" or env.kind == "want" then
 act.deliver = true
 act.kind = env.kind
 act.ackId = env.ackId
 return act
 end
-
 local secret = secretFor and secretFor(env.from) or nil
 local content, how = meshctl.openEnv(env, secret)
 act.deliver = true
@@ -135,13 +122,11 @@ if not content and log then
 log.warn("mesh", "Delivered sealed '" .. tostring(env.svc) .. "' from "
 .. tostring(env.from):sub(1, 8) .. " could not be opened: " .. tostring(how))
 end
-
 if env.to ~= mesh.BROADCAST and env.to ~= nil then
 act.ackTo = env.from
 end
 return act
 end
-
 local function bootEpoch()
 local raw = crypto and crypto.salt and crypto.salt(4)
 if type(raw) == "string" and #raw >= 4 then
@@ -149,49 +134,43 @@ return (raw:sub(1, 4):gsub(".", function(c) return string.format("%02x", c:byte(
 end
 return string.format("%08x", math.floor((os.time and os.time() or 0) + clock() * 1000) % 0x100000000)
 end
-
 function meshctl.new(deps)
 deps = deps or {}
 local self = setmetatable({}, meshctl)
-self.myAddr     = deps.myAddr
-self.broadcast  = deps.broadcast or function() end
-self.secretFor  = deps.secretFor or function() return nil end
-self.clock      = deps.clock or function() return 0 end
-self.log        = deps.log
-self.isForMe    = deps.isForMe or function(env)
+self.myAddr = deps.myAddr
+self.broadcast = deps.broadcast or function() end
+self.secretFor = deps.secretFor or function() return nil end
+self.clock = deps.clock or function() return 0 end
+self.log = deps.log
+self.isForMe = deps.isForMe or function(env)
 return env.to == self.myAddr
 end
 self.freeMemory = deps.freeMemory
-self.store      = deps.store
-self.seen       = mesh.newSeen()
-self.outbox     = mesh.newOutbox()
-self.delivered  = { set = {}, order = {} }
-self._handlers  = {}
-self._seq       = 0
-self._epoch     = bootEpoch()
+self.store = deps.store
+self.seen = mesh.newSeen()
+self.outbox = mesh.newOutbox()
+self.delivered = { set = {}, order = {} }
+self._handlers = {}
+self._seq = 0
+self._epoch = bootEpoch()
 self._relayWindow, self._relayCount = -1, 0
 self:_load()
 return self
 end
-
 function meshctl:on(svc, fn)
 self._handlers[svc] = fn
 end
-
 function meshctl:off(svc)
 self._handlers[svc] = nil
 end
-
 function meshctl:hasHandler(svc)
 return self._handlers[svc] ~= nil
 end
-
 function meshctl:_nextId(prefix)
 self._seq = self._seq + 1
 return (prefix or "x") .. ":" .. tostring(self.myAddr) .. ":" .. self._epoch
 .. ":" .. tostring(self._seq)
 end
-
 function meshctl:_mayRelay()
 local sec = math.floor(self.clock())
 if sec ~= self._relayWindow then
@@ -201,25 +180,21 @@ if self._relayCount >= meshctl.RELAY_BUDGET then return false end
 self._relayCount = self._relayCount + 1
 return true
 end
-
 local function freeOf(self)
 if not self.freeMemory then return nil end
 local ok, free = pcall(self.freeMemory)
 if ok and type(free) == "number" then return free end
 return nil
 end
-
 function meshctl:_canHold(bytes)
 local free = freeOf(self)
 if free == nil then return bytes <= mesh.RELAY_HOLD_BYTES end
 return free - bytes >= meshctl.RELAY_FLOOR
 end
-
 function meshctl:_memoryLow()
 local free = freeOf(self)
 return free ~= nil and free < meshctl.RELAY_FLOOR
 end
-
 function meshctl:_noteDelivered(id)
 local d = self.delivered
 if d.set[id] then return end
@@ -229,7 +204,6 @@ while #d.order > meshctl.DELIVERED_MAX do
 d.set[table.remove(d.order, 1)] = nil
 end
 end
-
 function meshctl:_save()
 local st = self.store
 if not (st and st.save) then return end
@@ -246,7 +220,6 @@ if not okS and self.log then
 self.log.warn("mesh", "could not save mesh state: " .. tostring(err))
 end
 end
-
 function meshctl:_load()
 local st = self.store
 if not (st and st.load) then return end
@@ -267,7 +240,6 @@ for _, id in ipairs(type(state.delivered) == "table" and state.delivered or {}) 
 if type(id) == "string" then self:_noteDelivered(id) end
 end
 end
-
 function meshctl:_reply(kind, msgId, to)
 local env = mesh.newEnvelope(self.myAddr, to, {
 id = self:_nextId(kind:sub(1, 1)), kind = kind, ts = self.clock() })
@@ -277,7 +249,6 @@ mesh.sawBefore(self.seen, env.id)
 self.broadcast(env)
 return env
 end
-
 function meshctl:_verifyReply(kind, it, env)
 if env.from ~= it.env.to then return false end
 if not it.env.sealed then return true end
@@ -285,7 +256,6 @@ local expect = replyMac(self.secretFor(it.env.to), kind, it.env.id, env.from, en
 local eq = (crypto and crypto.ctEquals) or function(a, b) return a == b end
 return expect ~= nil and type(env.mac) == "string" and eq(expect, env.mac)
 end
-
 function meshctl:_resend(it)
 it.rs = (it.rs or 0) + 1
 it.probes = 0
@@ -297,7 +267,6 @@ out.path = {}
 mesh.sawBefore(self.seen, mesh.seenKey(out))
 self.broadcast(out)
 end
-
 function meshctl:_probe(it)
 local env = mesh.newEnvelope(self.myAddr, it.env.to, {
 id = self:_nextId("p"), kind = "probe", ts = self.clock() })
@@ -305,7 +274,6 @@ env.probeId = it.env.id
 mesh.sawBefore(self.seen, env.id)
 self.broadcast(env)
 end
-
 function meshctl:_onAck(env)
 local it = type(env.ackId) == "string" and self.outbox.items[env.ackId]
 if not it or it.relay then return end
@@ -318,7 +286,6 @@ end
 mesh.ack(self.outbox, env.ackId)
 self:_save()
 end
-
 function meshctl:_onProbe(env)
 local id = env.probeId
 if type(id) ~= "string" or #id > mesh.MAX_ID then return end
@@ -328,7 +295,6 @@ elseif not self.seen.set[id] then
 self:_reply("want", id, env.from)
 end
 end
-
 function meshctl:_onWant(env)
 local it = type(env.wantId) == "string" and self.outbox.items[env.wantId]
 if not it or it.relay then return end
@@ -336,7 +302,6 @@ if not self:_verifyReply("want", it, env) then return end
 if it.lastSent and self.clock() - it.lastSent < mesh.RETRY_EVERY / 2 then return end
 self:_resend(it)
 end
-
 function meshctl:send(opts)
 opts = opts or {}
 if type(opts.svc) ~= "string" or opts.svc == "" then
@@ -351,7 +316,6 @@ return nil, "no shared secret with " .. tostring(opts.to):sub(1, 8)
 end
 return nil, "broadcasts can't be sealed — allow plaintext explicitly"
 end
-
 if unicast then
 local waiting = self:pending()
 if waiting >= meshctl.ORIGIN_MAX then
@@ -365,7 +329,6 @@ fromUser = opts.fromUser, user = opts.user,
 payload = opts.payload,
 secret = secret, id = id, ttl = opts.ttl, ts = self.clock(),
 })
-
 if unicast then
 local now = self.clock()
 mesh.enqueue(self.outbox, env, { interval = mesh.RETRY_EVERY,
@@ -374,20 +337,16 @@ local it = self.outbox.items[id]
 if it then it.nextAt = now + mesh.RETRY_EVERY; it.lastSent = now end
 self:_save()
 end
-
 mesh.sawBefore(self.seen, id)
 self.broadcast(env)
 return id, (secret ~= nil)
 end
-
 function meshctl:onPacket(env)
 local unicast = type(env) == "table" and env.to ~= mesh.BROADCAST and env.to ~= nil
 local act = meshctl.ingest(env, self.myAddr, self.isForMe, self.seen, self.secretFor)
-
 if type(env) == "table" and env.kind == "ack" and type(env.ackId) == "string" then
 mesh.ackRelay(self.outbox, env.ackId)
 end
-
 if act.forward and act.out then
 if self:_mayRelay() then
 self.broadcast(act.out)
@@ -399,12 +358,10 @@ elseif self.log then
 self.log.warn("mesh", "relay budget exceeded; dropping a forward")
 end
 end
-
 if act.dup and unicast and env.kind == "msg" and self.delivered.set[env.id]
 and self.isForMe(env) then
 self:_reply("ack", env.id, env.from)
 end
-
 if act.deliver then
 if act.kind == "ack" then
 self:_onAck(env)
@@ -434,7 +391,6 @@ self:_noteDelivered(env.id)
 self:_save()
 end
 end
-
 if act.ackTo and handled then
 self:_reply("ack", env.id, act.ackTo)
 end
@@ -443,10 +399,8 @@ end
 end
 return act
 end
-
 function meshctl:tick(now)
 now = now or self.clock()
-
 if self:_memoryLow() then mesh.shedRelays(self.outbox, 0) end
 local items, dropped = mesh.dueItems(self.outbox, now)
 for _, it in ipairs(items) do
@@ -463,7 +417,6 @@ end
 end
 if dropped > 0 then self:_save() end
 end
-
 function meshctl:pending()
 local n = 0
 for _, it in pairs(self.outbox.items) do
@@ -471,5 +424,4 @@ if not it.relay then n = n + 1 end
 end
 return n
 end
-
 return meshctl

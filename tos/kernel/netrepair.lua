@@ -1,18 +1,14 @@
 local netrepair = {}
-
 netrepair.OWNER = "Evan450"
-netrepair.REPO  = "TOS-Terminal-Operating-System-"
+netrepair.REPO = "TOS-Terminal-Operating-System-"
 netrepair.STAGE = "/var/repair"
-
-netrepair.MAX_FILE_BYTES  = 128 * 1024
-netrepair.MAX_FILES       = 64
-netrepair.SPACE_MARGIN    = 16 * 1024
-
+netrepair.MAX_FILE_BYTES = 128 * 1024
+netrepair.MAX_FILES = 64
+netrepair.SPACE_MARGIN = 16 * 1024
 local function coopYield()
 local P = package.loaded["kernel.process"]
 if P and P.yieldCooperative then pcall(P.yieldCooperative) end
 end
-
 function netrepair.deps(d)
 d = d or {}
 local T = rawget(_G, "_TOS") or {}
@@ -37,7 +33,6 @@ if d.build == nil then d.build = T.build end
 d.log = d.log or T.log or package.loaded["kernel.log"]
 return d
 end
-
 function netrepair.sourceRef(build, override)
 if type(override) == "string" and override ~= "" then
 return override, "the ref you asked for (" .. override .. ")"
@@ -48,16 +43,13 @@ end
 return "main", "the latest release -- this machine's build (" .. tostring(build)
 .. ") has no tag of its own, so only files that still match it can be repaired"
 end
-
 function netrepair.urlFor(ref, path)
 return string.format("https://raw.githubusercontent.com/%s/%s/%s%s",
 netrepair.OWNER, netrepair.REPO, ref, path)
 end
-
 function netrepair.isOperatorState(path)
 return path:sub(1, 5) == "/etc/"
 end
-
 function netrepair.damaged(deps)
 deps = netrepair.deps(deps)
 local fs, crypto = deps.fs, deps.crypto
@@ -90,7 +82,6 @@ end
 end
 return damaged, skipped
 end
-
 function netrepair.trustManifest(deps, opts)
 opts = opts or {}
 if type(deps.manifest) ~= "table" or #deps.manifest == 0 then
@@ -112,12 +103,10 @@ end
 return false, "the manifest failed its EEPROM anchor (" .. why .. "). It is the thing that "
 .. "says what correct looks like, and it is in doubt: online repair will not trust it."
 end
-
 local function newReport()
 return { lines = {}, fixed = 0, staged = 0, rejected = 0, ok = false }
 end
 local function say(rep, text, sev) rep.lines[#rep.lines + 1] = { text = text, sev = sev or "info" } end
-
 function netrepair.plan(deps, opts)
 deps = netrepair.deps(deps)
 opts = opts or {}
@@ -141,7 +130,6 @@ for _, s in ipairs(skipped) do say(rep, "  not touched: " .. s.path .. " (" .. s
 rep.ok = okT
 return rep
 end
-
 local function freeSpace(fs, path)
 if fs.spaceFree then
 local ok, n = pcall(fs.spaceFree, path or "/")
@@ -149,11 +137,9 @@ if ok and type(n) == "number" then return n end
 end
 return nil
 end
-
 local function cleanStage(fs)
 pcall(fs.remove, netrepair.STAGE)
 end
-
 function netrepair.run(deps, opts)
 deps = netrepair.deps(deps)
 opts = opts or {}
@@ -179,7 +165,6 @@ say(rep, "No usable internet card: " .. tostring(st.reason or "the internet modu
 .. "unavailable") .. ". Nothing was changed.", "err")
 return rep
 end
-
 local fs = deps.fs
 cleanStage(fs)
 local staged = {}
@@ -215,11 +200,9 @@ pcall(fs.remove, dest)
 end
 data = nil
 end
-
 for _, s in ipairs(staged) do
 coopYield()
 local data = fs.readFile(s.path)
-
 if type(data) == "string" and deps.crypto.hash(data):lower() == s.item.hash then
 local write = fs.writeFileAtomic or fs.writeFile
 local okW, errW = write(s.item.path, data)
@@ -246,5 +229,4 @@ say(rep, "If you keep an SRM baseline, take it again ('srm baseline') so it "
 end
 return rep
 end
-
 return netrepair

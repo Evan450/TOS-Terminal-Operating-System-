@@ -3,9 +3,7 @@ local PKG_ROOT, adminGate, findProvider = C.PKG_ROOT, C.adminGate, C.findProvide
 local serviceInstallGate, targetKey = C.serviceInstallGate, C.targetKey
 local validRepoHint, validateManifest = C.validRepoHint, C.validateManifest
 local fs, log, serialize, installed = C.fs, C.log, C.serialize, C.installed
-
 local remoteMod
-
 local function translateDeps(dependencies)
 local out = {}
 if type(dependencies) ~= "table" then return out end
@@ -20,41 +18,35 @@ end
 end
 return out
 end
-
 --! OPPM's actual index format, which loadAnyManifest's own header has
 --! described since FEAT-7 without anything ever reading it: a repo-root
 --! `programs.cfg` holding EVERY package, keyed by name. A genuine OPPM
 --! repo checkout therefore read as "no manifest here" and the operator was
 --! told the disk was empty.
-
 local OPPM_PREFIX = "/usr"
-
 local function oppmDestDir(value)
 if type(value) ~= "string" or value == "" then return nil end
 if value:sub(1, 2) == "//" then return "/" .. value:gsub("^/+", "") end
 return OPPM_PREFIX .. "/" .. value:gsub("^/+", "")
 end
-
 local function basenameOf(p)
 return (tostring(p):gsub("/+$", ""):match("([^/]+)$"))
 end
-
 local function translateProgramsEntry(name, inner, srcBase)
 if type(inner) ~= "table" then return nil, "programs.cfg entry is not a table" end
 local m = {
-name        = name,
-version     = inner.version or "0.0.0",
-kind        = inner.kind or "command",
-files       = {},
-fileMap     = {},
-requires    = translateDeps(inner.dependencies),
-commands    = inner.commands,
+name = name,
+version = inner.version or "0.0.0",
+kind = inner.kind or "command",
+files = {},
+fileMap = {},
+requires = translateDeps(inner.dependencies),
+commands = inner.commands,
 capabilities = inner.capabilities,
-
 description = inner.description or inner.note,
-author      = inner.author or inner.authors,
-hashes      = inner.hashes,
-_srcBase    = srcBase,
+author = inner.author or inner.authors,
+hashes = inner.hashes,
+_srcBase = srcBase,
 }
 if type(inner.files) ~= "table" then
 return nil, "programs.cfg entry '" .. tostring(name) .. "' has no files table"
@@ -91,7 +83,6 @@ return nil, "programs.cfg entry '" .. tostring(name) .. "' lists no installable 
 end
 return m
 end
-
 --! #SEC (pentest, Sep 2026) — a manifest is READ ONCE. The signature
 --! layer verifies raw bytes and used to re-read the file for them, after
 --! this reader had parsed its own copy. On storage that answers each read
@@ -109,7 +100,7 @@ end
 --! real manifest (Optional Utilities' programs.cfg, 8.6 KB) is charged 26
 --! KB of the budget below. (test_untrusted_index_budget.lua)
 local MANIFEST_MAX_BYTES = 64 * 1024
-local MANIFEST_MAX_COST  = 64 * 1024
+local MANIFEST_MAX_COST = 64 * 1024
 local function readManifestFile(path)
 local sz = fs.size and fs.size(path)
 if type(sz) == "number" and sz > MANIFEST_MAX_BYTES then
@@ -121,7 +112,6 @@ local m, dErr = serialize.decode(bytes, { maxBytes = MANIFEST_MAX_BYTES,
 maxCost = MANIFEST_MAX_COST, maxKeys = 1024 })
 return m, dErr, bytes
 end
-
 local function loadFromProgramsCfg(srcDir)
 local base = basenameOf(srcDir)
 if not base then return nil end
@@ -131,7 +121,6 @@ if parent and parent ~= "" then
 candidates[#candidates + 1] = { path = fs.join(parent, "programs.cfg"), root = parent }
 end
 candidates[#candidates + 1] = { path = fs.join(srcDir, "programs.cfg"), root = srcDir }
-
 for _, cand in ipairs(candidates) do
 if fs.exists(cand.path) then
 local raw, err, bytes = readManifestFile(cand.path)
@@ -140,7 +129,6 @@ return nil, "programs.cfg parse error: " .. tostring(err)
 end
 local entry = raw[base]
 if type(entry) ~= "table" then
-
 local only, count = nil, 0
 for k, v in pairs(raw) do
 if type(k) == "string" and type(v) == "table" then only, count = k, count + 1 end
@@ -150,7 +138,6 @@ base, entry = only, raw[only]
 end
 end
 if type(entry) == "table" then
-
 local tm, tErr = translateProgramsEntry(base, entry, cand.root)
 if not tm then return nil, tErr end
 return tm, nil, cand.path, bytes
@@ -159,7 +146,6 @@ end
 end
 return nil
 end
-
 --! Returns (manifest, kind, manifestPath). The THIRD value is what the
 --! signature layer needs: a signature covers the raw bytes of the file
 --! the manifest was read from, and there are four possible files, so the
@@ -183,7 +169,6 @@ m._sigState, m._sigKey, m._sigLabel = nil, nil, nil
 end
 return m, kind, path, bytes
 end
-
 local nativePath = fs.join(srcDir, "package.lua")
 if fs.exists(nativePath) then
 local m, err, bytes = readManifestFile(nativePath)
@@ -194,26 +179,23 @@ local oppmPath = fs.join(srcDir, "package.oppm.lua")
 if fs.exists(oppmPath) then
 local raw, err, oppmBytes = readManifestFile(oppmPath)
 if not raw then return nil, "package.oppm.lua parse error: " .. tostring(err) end
-
 local outerName, inner = next(raw)
 if not inner or type(inner) ~= "table" then
 return nil, "OPPM manifest has no top-level package entry"
 end
-
 local translated = {
-name        = outerName,
-version     = inner.version or "0.0.0",
-kind        = inner.kind or "command",
-files       = {},
-requires    = {},
-commands    = inner.commands,
+name = outerName,
+version = inner.version or "0.0.0",
+kind = inner.kind or "command",
+files = {},
+requires = {},
+commands = inner.commands,
 capabilities = inner.capabilities,
 description = inner.description,
-author      = inner.author,
-critical    = inner.critical,
-hashes      = inner.hashes,
+author = inner.author,
+critical = inner.critical,
+hashes = inner.hashes,
 }
-
 if type(inner.files) == "table" then
 for k, v in pairs(inner.files) do
 if type(k) == "number" and type(v) == "string" then
@@ -223,18 +205,15 @@ translated.files[#translated.files + 1] = v
 end
 end
 end
-
 translated.requires = translateDeps(inner.dependencies)
 return fromDisk(translated, "oppm", oppmPath, oppmBytes)
 end
-
 local base = srcDir:match("([^/]+)/?$")
 if base then
 local cfgPath = fs.join(srcDir, base .. ".cfg")
 if fs.exists(cfgPath) then
 local raw, err, cfgBytes = readManifestFile(cfgPath)
 if not raw then return nil, base .. ".cfg parse error: " .. tostring(err) end
-
 local inner, outerName = raw, base
 if raw[base] and type(raw[base]) == "table" then
 inner = raw[base]
@@ -244,16 +223,16 @@ if type(v) == "table" then outerName, inner = n, v end
 end
 if type(inner) ~= "table" then return nil, base .. ".cfg has no package table" end
 local translated = {
-name        = inner.name or outerName,
-version     = inner.version or "0.0.0",
-kind        = inner.kind or "command",
-files       = {},
-requires    = {},
-commands    = inner.commands,
+name = inner.name or outerName,
+version = inner.version or "0.0.0",
+kind = inner.kind or "command",
+files = {},
+requires = {},
+commands = inner.commands,
 capabilities = inner.capabilities,
 description = inner.description,
-author      = inner.author,
-hashes      = inner.hashes,
+author = inner.author,
+hashes = inner.hashes,
 }
 if type(inner.files) == "table" then
 for k, v in pairs(inner.files) do
@@ -265,15 +244,12 @@ translated.requires = translateDeps(inner.dependencies)
 return fromDisk(translated, "oppm", cfgPath, cfgBytes)
 end
 end
-
 local m, cfgErr, cfgPath2, idxBytes = loadFromProgramsCfg(srcDir)
 if m then return m, "oppm", cfgPath2, idxBytes end
 if cfgErr then return nil, cfgErr end
-
 return nil, "no package.lua, package.oppm.lua, <name>.cfg or programs.cfg entry for "
 .. srcDir
 end
-
 --! A package written for OpenOS is not written for TOS's sandbox. Its code
 --! reaches for `io`, `term`, `filesystem`, `component` — the OpenOS
 --! userland — which TOS provides through its compat layer, but ONLY to a
@@ -293,13 +269,11 @@ end
 --! ever request) and not the peripheral caps. A package needing a modem or
 --! a robot still has to say so.
 local FOREIGN_DEFAULT_CAPS = { "compat.io", "fs.read", "fs.write", "component" }
-
 function pkg.foreignDefaultCaps()
 local out = {}
 for i, c in ipairs(FOREIGN_DEFAULT_CAPS) do out[i] = c end
 return out
 end
-
 --! Two kinds, and the second is the one that actually bites.
 --!
 --! DECLARED — a manifest's `conflicts = { "other" }`. Checked both ways:
@@ -316,11 +290,9 @@ end
 --!
 --! `ignoreName` lets an UPGRADE skip its own previous version's files,
 --! which are exactly the ones it is entitled to replace.
-
 function pkg.findConflicts(m, ignoreName)
 local out = {}
 if type(m) ~= "table" then return out end
-
 for _, c in ipairs(m.conflicts or {}) do
 if c ~= ignoreName and installed[c] then
 out[#out + 1] = { kind = "declared", other = c,
@@ -337,7 +309,6 @@ end
 end
 end
 end
-
 local owner = {}
 for otherName, other in pairs(installed) do
 if otherName ~= m.name and otherName ~= ignoreName then
@@ -352,7 +323,6 @@ end
 end
 return out
 end
-
 --! #SEC (pentest, Sep 2026) — findConflicts protects one PACKAGE's files
 --! from another. Nothing protected the SYSTEM's: no package owns
 --! /usr/bin/ssh.lua or /etc/rc.d/20-netfsd.lua, so writing over them was
@@ -384,7 +354,6 @@ cluster = { ["cluster-manager"] = true, ["cluster-master"] = true,
 ["rbmk-cmd"] = { ["rbmk-control"] = true },
 }
 local KERNEL_LIB_ROOTS = { "/usr/lib/", "/usr/modules/" }
-
 local function protectedTargetRefusal(m, prior)
 if type(m) ~= "table" or type(m.files) ~= "table" then return nil end
 local sys = {}
@@ -429,17 +398,14 @@ end
 return nil
 end
 pkg._protectedTargetRefusal = protectedTargetRefusal
-
 --! A package is its name PLUS the key that signs it
 --! (docs/FEDERATED-REPOS.md). These are the one place a key is compared
 --! and the one place it is described to an operator.
-
 local function verifiedKey(verdict)
 if type(verdict) ~= "table" or type(verdict.key) ~= "string" then return nil end
 if verdict.state ~= "trusted" and verdict.state ~= "unknown" then return nil end
 return verdict.key:lower()
 end
-
 local function describeKey(key, label)
 if type(key) ~= "string" then return "no signature" end
 local okS, ps = pcall(require, "kernel.pkgsign")
@@ -447,7 +413,6 @@ local fp = (okS and ps and ps.fingerprint) and ps.fingerprint(key) or key:sub(1,
 if okS and ps and ps.labelForKey and not label then label = ps.labelForKey(key) end
 return (label and ("'" .. label .. "'") or "an untrusted key") .. " (" .. fp .. ")"
 end
-
 local function parseRequire(req)
 if type(req) == "table" then
 local key = (type(req.key) == "string" and #req.key == 64 and not req.key:find("[^%x]"))
@@ -460,7 +425,6 @@ return req, nil, false, nil
 end
 return nil
 end
-
 local function claimedKey(manifestPath)
 if type(manifestPath) ~= "string" then return nil end
 local okS, ps = pcall(require, "kernel.pkgsign")
@@ -470,17 +434,14 @@ local sigPath = ps.sigPathFor(manifestPath)
 local rec = sigPath and ps.readSig(sigPath) or nil
 return rec and rec.key or nil
 end
-
 local function installedKey(m)
 return type(m) == "table" and type(m._sigKey) == "string" and m._sigKey:lower() or nil
 end
-
 --! The four kinds are in docs/FEDERATED-REPOS.md; slice 1 finds the ones
 --! local sources can have. Each is { kind=, name=, text=, id= }: `text` is
 --! for the operator and names who needs what, `id` is stable across
 --! versions so an upgrade can tell a contradiction it INTRODUCES from one
 --! that was already there.
-
 local function requirementContradictions(pname, req, provider, providerKey, where)
 local out = {}
 local dep, constraint, _, pin = parseRequire(req)
@@ -500,11 +461,9 @@ providerKey and describeKey(providerKey) or "no signature") }
 end
 return out
 end
-
 local function brokenDependents(m, key)
 local out, names = {}, {}
 local answers = { [m.name] = true }
-
 for _, p in ipairs(type(m.provides) == "table" and m.provides or {}) do
 if not installed[p] then answers[p] = true end
 end
@@ -527,7 +486,6 @@ end
 end
 return out
 end
-
 --! There was no update path at all: `pkg.install` refused over an existing
 --! package ("uninstall first"), and nothing ever compared what is installed
 --! against what a disk is offering. The version machinery
@@ -544,7 +502,6 @@ end
 --!   5. put the enable state and boot marker back
 --! Step 3 is why this cannot be a flag on install: the set of files to
 --! delete is the difference between two manifests.
-
 function pkg.outdated(opts)
 opts = opts or {}
 local out = {}
@@ -560,21 +517,18 @@ end
 table.sort(out, function(a, b) return a.name < b.name end)
 return out
 end
-
 function pkg.upgrade(name, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
 local cur = installed[name]
 if not cur then return false, "not installed: " .. tostring(name) end
-
 local pkgDir, root = pkg.findInRepos(name, opts.extraRoots)
 if not pkgDir then
 return false, "no source for " .. name .. " on any repo or inserted disk"
 end
 local m, source, manifestPath, manifestBytes = loadAnyManifest(pkgDir)
 if not m then return false, "unreadable manifest for " .. name end
-
 local cmp = pkg.compareVersion(m.version or "0.0.0", cur.version or "0.0.0")
 if cmp == 0 and not opts.force then
 return false, string.format("%s is already at %s", name, tostring(cur.version))
@@ -584,7 +538,6 @@ return false, string.format(
 "%s on the disk is OLDER (%s < %s) — pass force to downgrade",
 name, tostring(m.version), tostring(cur.version))
 end
-
 local vOk, vErr = pkg._verificationGate(m, opts.allowUnverified)
 if not vOk then return false, vErr end
 local licOk, licErr = pkg.verifyLicenseKey(m, opts.licenseKey)
@@ -599,7 +552,6 @@ end
 --! operator the working version it was meant to replace.
 local vmOk, vmErr = validateManifest(m)
 if not vmOk then return false, "invalid manifest: " .. tostring(vmErr) end
-
 local svcOk, svcErr = serviceInstallGate(m, opts)
 if not svcOk then return false, "refusing to upgrade '" .. name .. "': " .. svcErr end
 local prot = protectedTargetRefusal(m)
@@ -611,7 +563,6 @@ if prot then return false, "refusing to upgrade '" .. name .. "': " .. prot .. "
 --! repos slice 1, finding 3; test_pkg_upgrade_identity.lua)
 local sigVerdict, sigRefusal = pkg._signGate(manifestPath, opts, manifestBytes)
 if sigRefusal then return false, "refusing to upgrade '" .. name .. "': " .. sigRefusal end
-
 --! An upgrade does not change who publishes a package. The candidate
 --! was chosen by NAME (findInRepos is first-match), so a trusted
 --! package upgraded silently to one signed by a stranger, or to an
@@ -644,7 +595,6 @@ else
 expectKey = curKey
 end
 end
-
 --! What this upgrade would contradict, found before anything is removed:
 --! the candidate's requirements against what is installed, and installed
 --! packages whose requirements the candidate would stop meeting (a
@@ -687,7 +637,6 @@ if not opts.force then return false, "refusing to upgrade '" .. name .. "': " ..
 if log then log.warn("pkg", "Upgrading '" .. name .. "' past contradictions (--force): " .. why) end
 end
 end
-
 local wasEnabled = pkg.isEnabled(name)
 local markers = {}
 for _, f in ipairs(cur.files or {}) do
@@ -696,18 +645,15 @@ if stem then
 markers[stem] = fs.exists("/etc/rc.d/" .. stem .. ".disabled")
 end
 end
-
 local keep = {}
 for _, f in ipairs(m.files or {}) do keep[f] = true end
 local orphaned = {}
 for _, f in ipairs(cur.files or {}) do
 if not keep[f] then orphaned[#orphaned + 1] = f end
 end
-
 local upOk, upErr = pkg.uninstall(name, { session = opts.session,
 _internalUpgrade = true })
 if not upOk then return false, "could not remove the old version: " .. tostring(upErr) end
-
 local inOk, inErr = pkg.install(pkgDir, {
 session = opts.session, upgrading = true, force = opts.force,
 allowUnverified = opts.allowUnverified, licenseKey = opts.licenseKey,
@@ -719,14 +665,12 @@ if not inOk then
 return false, "upgrade FAILED after removing " .. name .. ": " .. tostring(inErr)
 .. " — reinstall it from the disk"
 end
-
 pcall(pkg.setEnabled, name, wasEnabled, { session = opts.session })
 for stem, wasDisabled in pairs(markers) do
 local marker = "/etc/rc.d/" .. stem .. ".disabled"
 if wasDisabled and not fs.exists(marker) then pcall(fs.writeFile, marker, "1")
 elseif not wasDisabled and fs.exists(marker) then pcall(fs.remove, marker) end
 end
-
 if log then
 log.info("pkg", string.format("Upgraded %s %s -> %s (%d file(s) dropped)",
 name, tostring(cur.version), tostring(m.version), #orphaned))
@@ -734,7 +678,6 @@ end
 return true, { name = name, from = cur.version, to = m.version,
 dropped = orphaned, origin = source, enabled = wasEnabled }
 end
-
 function pkg.forgetModules(paths)
 local from = package and package.loadedFrom
 if type(from) ~= "table" or type(paths) ~= "table" then return 0 end
@@ -750,7 +693,6 @@ end
 end
 return n
 end
-
 function pkg.describeConflicts(list)
 local parts = {}
 for _, c in ipairs(list or {}) do
@@ -763,7 +705,6 @@ end
 end
 return table.concat(parts, "; ")
 end
-
 function pkg.verifyLicenseKey(manifest, userKey)
 if type(manifest) ~= "table" or type(manifest.license) ~= "table" then
 return true
@@ -786,7 +727,6 @@ if cryptoMod.ctEquals(actual, expected) then return true end
 end
 return false, "license key rejected (no matching hash)"
 end
-
 --! The hash gate below and this one answer DIFFERENT questions, and
 --! collapsing them was the whole bug. `hashes` prove the bytes on the
 --! disk are the bytes the manifest describes — i.e. the disk is not
@@ -811,16 +751,13 @@ if not okS or not ps then
 return { state = "unsigned", reason = "signature support unavailable" }, nil
 end
 ps.init({ fs = fs, serialize = serialize, log = log })
-
 local verdict = ps.verifyManifest(manifestPath, manifestBytes)
-
 if verdict.state == "invalid" then
 return verdict, "refusing to install '" .. tostring(manifestPath)
 .. "': its signature does not verify (" .. tostring(verdict.reason)
 .. "). This is tampering or corruption, not a missing signature, and there is no override."
 .. "  [E-609 ERR_PKG_SIGNATURE_INVALID]"
 end
-
 --! `pkg trust require on` has to mean signed BY SOMEONE THIS MACHINE
 --! TRUSTS, not merely "carries a signature".
 --!
@@ -849,12 +786,9 @@ return verdict, "refusing to install '" .. tostring(manifestPath)
 .. "or use --allow-unsigned for one install." .. "  [E-610 ERR_PKG_SIGNATURE_REQUIRED]"
 end
 end
-
 return verdict, nil
 end
-
 pkg._signGate = signGate
-
 function pkg._verificationGate(m, allowUnverified)
 local files = (m and m.files) or {}
 local haveHashes = type(m and m.hashes) == "table"
@@ -871,7 +805,6 @@ or "manifest declares no file hashes"
 return false, "refusing to install unverified package '" .. tostring(m and m.name)
 .. "' (" .. why .. "). Re-run with --allow-unverified to override." .. "  [E-607 ERR_PKG_UNVERIFIED]", false
 end
-
 function pkg.install(srcDir, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
@@ -880,11 +813,9 @@ if type(srcDir) ~= "string" or srcDir == "" then
 return false, "invalid source directory"
 end
 srcDir = fs.normalize(srcDir)
-
 local m, source, manifestPath, manifestBytes = loadAnyManifest(srcDir)
 if not m then return false, "no manifest in " .. srcDir .. ": " .. tostring(source) end
 if source == "oppm" then
-
 m.origin = "openos"
 if type(m.capabilities) ~= "table" or #m.capabilities == 0 then
 m.capabilities = pkg.foreignDefaultCaps()
@@ -899,23 +830,19 @@ if log then
 log.info("pkg", "Loaded OPPM-compat manifest for " .. tostring(m.name))
 end
 end
-
 local licOk, licErr = pkg.verifyLicenseKey(m, opts.licenseKey)
 if not licOk then
 return false, "license check failed: " .. tostring(licErr)
 end
 local ok, vErr = validateManifest(m)
 if not ok then return false, "invalid manifest: " .. vErr end
-
 local svcOk, svcErr = serviceInstallGate(m, opts)
 if not svcOk then return false, svcErr end
-
 do
 local rt = pkg.runtimeRefusal(m)
 if rt and not opts.force then return false, rt end
 if rt and log then log.warn("pkg", "Installing past a runtime requirement (force): " .. rt) end
 end
-
 if installed[m.name] and not opts.upgrading then
 local cur = installed[m.name].version
 local cmp = pkg.compareVersion(m.version or "0.0.0", cur or "0.0.0")
@@ -926,12 +853,10 @@ m.name, tostring(cur), tostring(m.version), m.name)
 end
 return false, "already installed (uninstall first): " .. m.name
 end
-
 do
 local why = protectedTargetRefusal(m, opts._priorFiles)
 if why then return false, "refusing to install '" .. tostring(m.name) .. "': " .. why .. "  [E-612 ERR_PKG_PROTECTED_TARGET]" end
 end
-
 local conflicts = pkg.findConflicts(m, opts.upgrading and m.name or nil)
 if #conflicts > 0 and not opts.force then
 return false, "conflicts: " .. pkg.describeConflicts(conflicts) .. "  [E-613 ERR_PKG_CONFLICT]"
@@ -940,7 +865,6 @@ if #conflicts > 0 and log then
 log.warn("pkg", "Installing " .. tostring(m.name) .. " over conflicts (--force): "
 .. pkg.describeConflicts(conflicts))
 end
-
 do
 local ok2, reason, complete = pkg._verificationGate(m, opts.allowUnverified)
 if not ok2 then return false, reason end
@@ -949,7 +873,6 @@ log.warn("pkg", "Installing UNVERIFIED package '" .. tostring(m.name)
 .. "' (no/partial hashes) — operator override")
 end
 end
-
 local sigVerdict
 do
 local verdict, refusal = signGate(manifestPath, opts, manifestBytes)
@@ -971,7 +894,6 @@ if verdict.state == "trusted" then
 log.info("pkg", "'" .. tostring(m.name) .. "' signed by trusted publisher '"
 .. tostring(verdict.label) .. "' (" .. tostring(verdict.fingerprint) .. ")")
 elseif verdict.state == "unknown" then
-
 log.warn("pkg", "'" .. tostring(m.name) .. "' is signed by an UNTRUSTED key "
 .. tostring(verdict.fingerprint) .. " — 'pkg trust add <name> " .. tostring(verdict.key) .. "'")
 else
@@ -980,7 +902,6 @@ log.warn("pkg", "'" .. tostring(m.name)
 end
 end
 end
-
 local cryptoMod = nil
 if type(m.hashes) == "table" then
 local okC, c = pcall(require, "kernel.crypto")
@@ -989,15 +910,12 @@ return false, "crypto unavailable; cannot verify install hashes"
 end
 cryptoMod = c
 end
-
 local copied = {}
 for _, target in ipairs(m.files) do
-
 do
 local okP, procMod = pcall(require, "kernel.process")
 if okP and procMod and procMod.yieldCooperative then procMod.yieldCooperative() end
 end
-
 local mapped = m.fileMap and m.fileMap[target]
 local src
 if mapped then
@@ -1018,21 +936,17 @@ if fs.exists(alt) then src = alt end
 end
 end
 else
-
 src = fs.normalize(srcDir .. target)
 end
 local data, readErr = fs.readFile(src)
 if not data then
-
 for _, p in ipairs(copied) do pcall(fs.remove, p) end
-
 if fs.exists(src) then
 return false, "cannot read source file " .. src .. ": " .. tostring(readErr or "read failed")
 .. "  [E-605 ERR_PKG_FILE_UNREADABLE]"
 end
 return false, "missing source file: " .. src .. "  [E-604 ERR_PKG_FILE_MISSING]"
 end
-
 if cryptoMod then
 local expected = m.hashes[target]
 if expected then
@@ -1049,10 +963,8 @@ return false, "write failed for " .. target .. ": " .. tostring(writeErr)
 end
 copied[#copied + 1] = target
 end
-
 local destDir = fs.join(PKG_ROOT, m.name)
 if not fs.exists(destDir) then fs.makeDirectory(destDir) end
-
 m._unverified = (type(m.hashes) ~= "table") and true or nil
 do
 local files = m.files or {}
@@ -1063,22 +975,17 @@ end
 end
 end
 m._installedFrom = tostring(srcDir)
-
 m._sigState = sigVerdict and sigVerdict.state or "unsigned"
-m._sigKey   = sigVerdict and sigVerdict.key or nil
+m._sigKey = sigVerdict and sigVerdict.key or nil
 m._sigLabel = sigVerdict and sigVerdict.label or nil
-
 local saveOk, saveErr = serialize.saveFile(fs, fs.join(destDir, "package.lua"), m)
 if not saveOk then
-
 for _, p in ipairs(copied) do pcall(fs.remove, p) end
 return false, "manifest write failed: " .. tostring(saveErr)
 end
-
 local defaultEnabled = "e"
 if type(m.service) == "table" and m.service.defaultState == "disabled" then
 defaultEnabled = "d"
-
 for _, target in ipairs(m.files) do
 local stem = tostring(target):match("^/etc/rc%.d/(.+)%.lua$")
 if stem then
@@ -1087,22 +994,17 @@ end
 end
 end
 fs.writeFile(fs.join(destDir, "state"), defaultEnabled)
-
 installed[m.name] = m
-
 local hints = pkg.repoHints(m)
 if #hints > 0 then
 local rm = remoteMod()
 if rm and rm.learn then pcall(rm.learn, hints, m.name) end
 end
-
 pkg.syncCriticalBackup()
-
 if log then
 log.info("pkg", string.format("Installed %s v%s (%d files)",
 m.name, m.version, #copied))
 end
-
 local reqOk, missing = pkg.checkRequires(m.name)
 if not reqOk and log then
 log.warn("pkg", string.format("%s installed with unmet requires: %s",
@@ -1114,7 +1016,6 @@ return true, #copied .. " files (unmet requires: "
 end
 return true, #copied .. " files"
 end
-
 --! An install used to be worked out one question at a time -- which
 --! packages, in what order -- and everything else was found out while
 --! files were being written, or after (checkRequires only WARNS, once the
@@ -1123,7 +1024,6 @@ end
 --! each pinned package must be signed by, and every contradiction found
 --! on the way. installWithDeps refuses a plan with contradictions unless
 --! forced, so a refusal costs nothing. (docs/FEDERATED-REPOS.md)
-
 --! A package written for a newer Lua than the CPU runs used to fail at
 --! LOAD, as a syntax error naming a line of someone else's code. The
 --! manifest can say what it needs (`lua = "5.4"`, `tos = ">=1.5.0"`), and
@@ -1149,13 +1049,11 @@ end
 end
 return nil
 end
-
 function pkg.describeContradictions(list)
 local out = {}
 for _, c in ipairs(list or {}) do out[#out + 1] = tostring(c.text) end
 return table.concat(out, "; ")
 end
-
 function pkg.plan(repoDir, targetName, opts)
 opts = opts or {}
 if type(repoDir) ~= "string" or repoDir == "" then
@@ -1168,7 +1066,6 @@ repoDir = fs.normalize(repoDir)
 if not fs.exists(repoDir) or not fs.isDirectory(repoDir) then
 return nil, "repo dir not found: " .. repoDir
 end
-
 local roots, seenRoot = {}, {}
 local function addRoot(r)
 if type(r) ~= "string" or r == "" then return end
@@ -1179,26 +1076,21 @@ addRoot(repoDir)
 if type(opts.extraRoots) == "table" then
 for _, r in ipairs(opts.extraRoots) do addRoot(r) end
 end
-
 local okR, known = pcall(pkg.repoRoots)
 if okR and type(known) == "table" then
 for _, r in ipairs(known) do addRoot(r) end
 end
-
 local manifestCache, chosenDir, chosenPath, pinMiss = {}, {}, {}, {}
 local function lookup(name, req, requirer)
 if installed[name] then return installed[name] end
 if manifestCache[name] then return manifestCache[name] end
 local _, constraint, _, want = parseRequire(req)
-
 local fallback
 for _, root in ipairs(roots) do
 local pkgSrc = fs.join(root, name)
 if fs.exists(pkgSrc) then
 local m, _, mPath = loadAnyManifest(pkgSrc)
-
 if m and m.name == name then
-
 local have = want and claimedKey(mPath) or nil
 if want and have ~= want then
 pinMiss[name] = pinMiss[name] or { dir = pkgSrc, have = have, want = want, by = requirer }
@@ -1224,7 +1116,6 @@ return fallback.m
 end
 return nil
 end
-
 local order, resolveErr = pkg.resolveInstallOrder(targetName, lookup)
 if not order then
 local missing = tostring(resolveErr):match("^unknown package: (.+)$")
@@ -1236,7 +1127,6 @@ describeKey(miss.want), miss.dir, miss.have and describeKey(miss.have) or "no si
 end
 return nil, "resolve failed: " .. tostring(resolveErr)
 end
-
 for _, pname in ipairs(order) do
 local pm = manifestCache[pname]
 if pm then
@@ -1244,13 +1134,11 @@ local okV, vErr = validateManifest(pm)
 if not okV then return nil, "invalid manifest for '" .. pname .. "': " .. tostring(vErr) end
 end
 end
-
 local plan = { order = order, dirs = chosenDir, expectKey = {}, contradictions = {} }
 local function contradiction(kind, name, text)
 plan.contradictions[#plan.contradictions + 1] =
 { kind = kind, name = name, text = text, id = kind .. "|" .. tostring(name) }
 end
-
 local pinned = {}
 for _, pname in ipairs(order) do
 local pm = manifestCache[pname]
@@ -1293,18 +1181,15 @@ end
 end
 return plan
 end
-
 --! Dependencies used to be looked for in `repoDir` ONLY. A package on one
 --! floppy that needed a library on another could not be installed, even
 --! with both disks in and `pkg.findInRepos` finding the library, and
 --! installByName's own comment claimed the opposite. (federated repos
 --! slice 1, finding 1; test_pkg_cross_source.lua)
-
 function pkg.installWithDeps(repoDir, targetName, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
-
 local plan, planErr = pkg.plan(repoDir, targetName, opts)
 if not plan then return false, planErr end
 if #plan.contradictions > 0 then
@@ -1314,26 +1199,22 @@ return false, "refusing to install '" .. targetName .. "': " .. why
 end
 if log then log.warn("pkg", "Installing '" .. targetName .. "' past contradictions (force): " .. why) end
 end
-
 local installedList, skippedList = {}, {}
 for _, name in ipairs(plan.order) do
 if installed[name] then
 skippedList[#skippedList + 1] = name
 else
 local pkgSrc = plan.dirs[name] or fs.join(fs.normalize(repoDir), name)
-
 local perPkgKey = opts.licenseKey
 if opts.licenseKeys and opts.licenseKeys[name] then
 perPkgKey = opts.licenseKeys[name]
 elseif name ~= targetName then
 perPkgKey = nil
 end
-
 local ok, err = pkg.install(pkgSrc, { licenseKey = perPkgKey, session = opts.session,
 allowUnverified = opts.allowUnverified, allowUnsigned = opts.allowUnsigned,
 force = opts.force, expectKey = plan.expectKey[name] })
 if not ok then
-
 for _, prev in ipairs(installedList) do
 pcall(pkg.uninstall, prev, { session = opts.session })
 end
@@ -1342,10 +1223,8 @@ end
 installedList[#installedList + 1] = name
 end
 end
-
 return true, { installed = installedList, skipped = skippedList }
 end
-
 function pkg.uninstall(name, opts)
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
@@ -1354,7 +1233,6 @@ return false, "refusing to uninstall tos-core"
 end
 local m = installed[name]
 if not m then return false, "not installed: " .. name end
-
 if not opts or not opts._internalUpgrade then
 for otherName, other in pairs(installed) do
 if otherName ~= name and type(other.requires) == "table" then
@@ -1366,16 +1244,13 @@ end
 end
 end
 end
-
 for _, target in ipairs(m.files or {}) do
 local rmOk, rmErr = pcall(fs.remove, target)
 if not rmOk and log then
 log.warn("pkg", "Could not remove " .. target .. ": " .. tostring(rmErr))
 end
 end
-
 pkg.forgetModules(m.files)
-
 local destDir = fs.join(PKG_ROOT, name)
 local function rmrf(path)
 if fs.isDirectory(path) then
@@ -1388,22 +1263,16 @@ end
 pcall(fs.remove, path)
 end
 rmrf(destDir)
-
 installed[name] = nil
-
 pkg.syncCriticalBackup()
-
 if log then log.info("pkg", "Uninstalled " .. name) end
 return true
 end
-
 local DEFAULT_REPO_ROOTS = {
 "/usr/repo",
 "/var/repo",
 }
-
 local function mountedRepoRoots()
-
 local mountPts, seenM = {}, {}
 local function addMount(p)
 if p and p ~= "" and p ~= "/" and not seenM[p] then
@@ -1422,7 +1291,6 @@ local clean = label:gsub("/$", "")
 if clean ~= "" then addMount("/mnt/" .. clean) end
 end
 end
-
 local roots, seen = {}, {}
 local function add(p) if p and not seen[p] then seen[p] = true; roots[#roots + 1] = p end end
 for _, m in ipairs(mountPts) do
@@ -1438,14 +1306,12 @@ end
 end
 return roots
 end
-
 function pkg.repoRoots()
 local roots = {}
 for _, r in ipairs(DEFAULT_REPO_ROOTS) do roots[#roots + 1] = r end
 for _, r in ipairs(mountedRepoRoots()) do roots[#roots + 1] = r end
 return roots
 end
-
 function pkg.listRepo(repoDir)
 if type(repoDir) ~= "string" or repoDir == "" then return {} end
 repoDir = fs.normalize(repoDir)
@@ -1460,19 +1326,17 @@ if fs.isDirectory(pkgDir) then
 local m, source = loadAnyManifest(pkgDir)
 if m then
 out[#out + 1] = {
-name        = m.name,
-version     = m.version,
+name = m.name,
+version = m.version,
 description = m.description,
-
-category    = (type(m.category) == "string" and m.category ~= "")
+category = (type(m.category) == "string" and m.category ~= "")
 and m.category or "misc",
-author      = m.author,
-kind        = m.kind,
-source      = source,
-dir         = pkgDir,
-
-requires    = m.requires,
-recommends  = m.recommends,
+author = m.author,
+kind = m.kind,
+source = source,
+dir = pkgDir,
+requires = m.requires,
+recommends = m.recommends,
 }
 end
 end
@@ -1481,20 +1345,17 @@ end
 table.sort(out, function(a, b) return (a.name or "") < (b.name or "") end)
 return out
 end
-
 function pkg.findInRepos(targetName, extraRoots)
 local roots = {}
 for _, r in ipairs(DEFAULT_REPO_ROOTS) do roots[#roots + 1] = r end
 if type(extraRoots) == "table" then
 for _, r in ipairs(extraRoots) do roots[#roots + 1] = r end
 end
-
 for _, root in ipairs(mountedRepoRoots()) do roots[#roots + 1] = root end
 for _, root in ipairs(roots) do
 local pkgDir = fs.join(root, targetName)
 if fs.exists(pkgDir) and fs.isDirectory(pkgDir) then
 local m = loadAnyManifest(pkgDir)
-
 if m and m.name == targetName then return pkgDir, root end
 if m and log then
 log.warn("pkg", "Ignoring '" .. tostring(targetName) .. "' in " .. root ..
@@ -1504,7 +1365,6 @@ end
 end
 return nil
 end
-
 local function resolveTarget(targetName, extraRoots)
 if type(targetName) == "string" and targetName:find("/") then
 local cand = fs.normalize(targetName:gsub("/$", ""))
@@ -1525,7 +1385,6 @@ return nil, "package not found in any repo: " .. tostring(targetName)
 end
 return root, targetName
 end
-
 --! `pkg install --dry-run` used to answer with the names it was given and
 --! nothing else, so a version or publisher contradiction -- the thing a
 --! dry run is for -- was found by the real install, as a refusal. Same
@@ -1540,7 +1399,6 @@ if not plan then return nil, err end
 plan.target = name
 return plan
 end
-
 function pkg.installByName(targetName, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
@@ -1548,18 +1406,16 @@ if not g then return false, gErr end
 local root, name = resolveTarget(targetName, opts.extraRoots)
 if not root then return false, name end
 targetName = name
-
 return pkg.installWithDeps(root, targetName, {
-licenseKey      = opts.licenseKey,
-licenseKeys     = opts.licenseKeys,
-session         = opts.session,
+licenseKey = opts.licenseKey,
+licenseKeys = opts.licenseKeys,
+session = opts.session,
 allowUnverified = opts.allowUnverified,
-allowUnsigned   = opts.allowUnsigned,
-extraRoots      = opts.extraRoots,
-force           = opts.force,
+allowUnsigned = opts.allowUnsigned,
+extraRoots = opts.extraRoots,
+force = opts.force,
 })
 end
-
 function pkg.computeLicenseHash(packageName, userKey)
 if type(packageName) ~= "string" or type(userKey) ~= "string" then
 return nil, "package name and key must be strings"
@@ -1570,10 +1426,8 @@ return nil, "crypto unavailable"
 end
 return cryptoMod.hash(packageName .. "|" .. userKey)
 end
-
 --! (remoteMod is forward-declared above validRepoHint: pkg.install
 --! calls it too, and that is earlier still.)
-
 --! `opts.includeRemote` also lists what the CONFIGURED REPOS advertise,
 --! not just what is on a disk right now.
 --!
@@ -1611,7 +1465,6 @@ end
 end
 for _, r in ipairs(DEFAULT_REPO_ROOTS) do addFrom(r) end
 for _, root in ipairs(mountedRepoRoots()) do addFrom(root) end
-
 if opts.includeRemote then
 for _, e in ipairs(pkg.listRemoteAvailable(opts)) do
 if not seen[e.name] then
@@ -1622,7 +1475,6 @@ end
 end
 return out
 end
-
 function pkg.listRemoteAvailable(opts)
 local m = remoteMod()
 if not m or type(m.search) ~= "function" then return {} end
@@ -1632,28 +1484,25 @@ local out = {}
 for _, e in ipairs(list) do
 if type(e) == "table" and type(e.name) == "string" then
 out[#out + 1] = {
-name        = e.name,
-version     = e.version,
+name = e.name,
+version = e.version,
 description = e.description,
-category    = e.category or "remote",
-repo        = e.repo,
-remote      = true,
+category = e.category or "remote",
+repo = e.repo,
+remote = true,
 }
 end
 end
 return out
 end
-
 function pkg.installFromFloppy(opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
-
 local confirm = (type(opts.confirm) == "function") and opts.confirm
 or function() return false end
 local installed_pkgs = {}
 local skipped_pkgs = {}
-
 --! ENUMERATE FIRST, then ask. The loop used to prompt as it walked, so
 --! the callback could not know how many questions were coming -- and a
 --! UI cannot show progress it has not been told about. An operator
@@ -1663,7 +1512,6 @@ local skipped_pkgs = {}
 --!
 --! Two passes over listRepo would be wasteful, so the candidates are
 --! collected once and reused.
-
 local candidates = {}
 for _, mountPath in ipairs(mountedRepoRoots()) do
 for _, entry in ipairs(pkg.listRepo(mountPath)) do
@@ -1671,14 +1519,12 @@ candidates[#candidates + 1] =
 { name = entry.name, dir = entry.dir, mount = mountPath }
 end
 end
-
 --! The callback signature GREW rather than changed: (name, dir) still
 --! mean what they did, and index/total are extra trailing arguments an
 --! older callback simply ignores.
 local total = #candidates
 for i, c in ipairs(candidates) do
 if confirm(c.name, c.dir, i, total) then
-
 local ok, err = pkg.installByName(c.name,
 { extraRoots = { c.mount }, session = opts.session,
 allowUnverified = opts.allowUnverified, allowUnsigned = opts.allowUnsigned,
@@ -1691,25 +1537,18 @@ end
 end
 return true, { installed = installed_pkgs, skipped = skipped_pkgs }
 end
-
 function pkg.runInstaller(opts)
-
 pcall(require, "io")
-
 local okM, picker = pcall(require, "shell.pkgpicker")
 if not okM or type(picker) ~= "table" or not picker.run then
 return false, "picker unavailable: " .. tostring(picker)
 end
-
 local ok, res, why = pcall(picker.run, opts)
 if not ok then return false, "installer error: " .. tostring(res) end
-
 if res == false then return false, why or "no installable packages found" end
 return true
 end
-
 local SELF_PKG = { ["tos-core"] = true }
-
 function pkg.exportDisk(targetDir, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
@@ -1719,7 +1558,6 @@ return false, "invalid target directory"
 end
 targetDir = fs.normalize(targetDir)
 if not targetDir then return false, "invalid target path" end
-
 local FORBIDDEN = { "/", "/tos", "/etc", "/var", "/usr", "/home",
 "/root", "/public", "/init.lua", "/bios.lua" }
 for _, p in ipairs(FORBIDDEN) do
@@ -1730,19 +1568,15 @@ end
 if not fs.exists(targetDir) or not fs.isDirectory(targetDir) then
 return false, "target does not exist or is not a directory: " .. targetDir
 end
-
 local only = nil
 if type(opts.only) == "table" and #opts.only > 0 then
 only = {}
 for _, n in ipairs(opts.only) do only[n] = true end
 end
-
 local exported, fileCount, problems = {}, 0, {}
-
 local names = {}
 for name in pairs(installed) do names[#names + 1] = name end
 table.sort(names)
-
 for _, name in ipairs(names) do
 local m = installed[name]
 if not SELF_PKG[name] and (not only or only[name]) then
@@ -1755,13 +1589,11 @@ local clean = true
 for _, target in ipairs(m.files or {}) do
 local data, readErr = fs.readFile(target)
 if not data then
-
 problems[#problems + 1] = name .. (fs.exists(target)
 and (": cannot read installed file " .. target .. ": " .. tostring(readErr or "read failed"))
 or (": missing installed file " .. target))
 clean = false
 else
-
 local wOk, wErr = fs.writeFile(fs.join(pkgDir, target), data)
 if not wOk then
 problems[#problems + 1] = name .. ": write " .. target .. " (" .. tostring(wErr) .. ")"
@@ -1775,7 +1607,6 @@ if clean then exported[#exported + 1] = name end
 end
 end
 end
-
 if only then
 for n in pairs(only) do
 if not installed[n] then
@@ -1785,7 +1616,6 @@ problems[#problems + 1] = n .. ": is the OS core, not an add-on (skipped)"
 end
 end
 end
-
 do
 local lines = {
 "-- Optional Utilities set manifest — generated by `pkg make-disk`.",
@@ -1841,7 +1671,6 @@ local readme = table.concat({
 local rOk, rErr = fs.writeFile(fs.join(targetDir, "README.txt"), readme)
 if not rOk then problems[#problems + 1] = "README.txt: " .. tostring(rErr) end
 end
-
 if log then
 log.info("pkg", string.format("Exported %d package(s), %d file(s) to %s",
 #exported, fileCount, targetDir))
@@ -1849,24 +1678,19 @@ end
 return true, { packages = exported, files = fileCount,
 problems = problems, target = targetDir }
 end
-
 pkg.DEFAULT_REPO_ROOTS = DEFAULT_REPO_ROOTS
-pkg._loadAnyManifest     = loadAnyManifest
-
+pkg._loadAnyManifest = loadAnyManifest
 function remoteMod()
 local ok, m = pcall(require, "kernel.pkgremote")
 if not ok or type(m) ~= "table" then return nil, "remote package support unavailable" end
-
 if m.init then pcall(m.init, { log = log, validRepoHint = validRepoHint }) end
 return m
 end
-
 function pkg.knownRepos()
 local m = remoteMod()
 if not m or not m.known then return {} end
 return m.known()
 end
-
 function pkg.forgetRepo(which, opts)
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
@@ -1874,59 +1698,49 @@ local m, mErr = remoteMod()
 if not m then return false, mErr end
 return m.forget(which)
 end
-
 --! The gate lives HERE and the storage lives in kernel.pkgsign, so there
 --! is exactly one implementation of "may this caller change what this
 --! machine trusts". Adding a publisher key is a standing decision about
 --! where code comes from — the same class of decision as `pkg repo add`,
 --! and gated the same way.
-
 local function withSign()
 local okS, ps = pcall(require, "kernel.pkgsign")
 if not okS or not ps then return nil, "signature support unavailable" end
 ps.init({ fs = fs, serialize = serialize, log = log })
 return ps
 end
-
 function pkg.trustList()
 local ps = withSign(); if not ps then return {} end
 return ps.listKeys()
 end
-
 function pkg.trustAdd(label, pubHex, opts)
 local g, gErr = adminGate(opts); if not g then return false, gErr end
 local ps, e = withSign(); if not ps then return false, e end
 return ps.addKey(label, pubHex)
 end
-
 function pkg.trustRemove(label, opts)
 local g, gErr = adminGate(opts); if not g then return false, gErr end
 local ps, e = withSign(); if not ps then return false, e end
 return ps.removeKey(label)
 end
-
 function pkg.trustRequire(on, opts)
 local g, gErr = adminGate(opts); if not g then return false, gErr end
 local ps, e = withSign(); if not ps then return false, e end
 return ps.setRequireSignature(on)
 end
-
 function pkg.trustRequired()
 local ps = withSign(); if not ps then return false end
 return ps.requiresSignature()
 end
-
 function pkg.discoveredPolicy()
 local ps = withSign(); if not ps or not ps.discoveredPolicy then return "off" end
 return ps.discoveredPolicy()
 end
-
 function pkg.trustDiscovered(v, opts)
 local g, gErr = adminGate(opts); if not g then return false, gErr end
 local ps, e = withSign(); if not ps then return false, e end
 return ps.setDiscoveredPolicy(v)
 end
-
 function pkg.checkSignature(srcDir)
 if type(srcDir) ~= "string" or srcDir == "" then return nil, "invalid directory" end
 local ps, e = withSign(); if not ps then return nil, e end
@@ -1934,12 +1748,10 @@ local m, source, manifestPath, bytes = loadAnyManifest(fs.normalize(srcDir))
 if not m then return nil, "no manifest in " .. srcDir .. ": " .. tostring(source) end
 return ps.verifyManifest(manifestPath, bytes), m
 end
-
 --! `opts.signer` is REQUIRED: it is the KDF salt, not decoration. Signing
 --! without it would derive a different key than signing with it, so the
 --! same passphrase would produce two identities depending on whether a
 --! flag was typed.
-
 function pkg.signPackage(srcDir, passphrase, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts); if not g then return nil, gErr end
@@ -1953,7 +1765,6 @@ if not seed then return nil, sErr end
 --! publisher is matches the string that actually salted the key.
 return ps.signManifest(manifestPath, seed, { signer = ps.normalizeLabel(opts.signer) })
 end
-
 function pkg.signingKey(passphrase, label)
 local ps, e = withSign(); if not ps then return nil, e end
 local seed, sErr = ps.seedFromPassphrase(passphrase, label)
@@ -1964,13 +1775,11 @@ local pub = ed.publickey(seed)
 if not pub then return nil, "cannot derive the key" end
 return ps.binToHex(pub)
 end
-
 function pkg.repos()
 local m = remoteMod()
 if not m then return {} end
 return m.repos()
 end
-
 function pkg.addRepo(name, url, description, opts)
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
@@ -1978,7 +1787,6 @@ local m, mErr = remoteMod()
 if not m then return false, mErr end
 return m.addRepo(name, url, description)
 end
-
 function pkg.removeRepo(name, opts)
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
@@ -1986,13 +1794,11 @@ local m, mErr = remoteMod()
 if not m then return false, mErr end
 return m.removeRepo(name)
 end
-
 function pkg.searchRemote(opts)
 local m = remoteMod()
 if not m then return {} end
 return m.search(opts)
 end
-
 --! `pkg fetch` installs what a package REQUIRES, too (the first part of
 --! slice 2 in docs/FEDERATED-REPOS.md; it used to install the package with
 --! its requirements unmet). Dependencies come only from the CONFIGURED
@@ -2008,11 +1814,9 @@ end
 --! are not fetched. Bounded in depth and count; a cycle is not followed
 --! twice. (test_pkgremote_deps.lua)
 local MAX_FETCH_DEPTH, MAX_FETCH_PACKAGES = 8, 16
-
 local function depRefusal(msg)
 return (tostring(msg):gsub("%s*%[E%-%d%d%d ERR_[%w_]+%]", "")) .. "  [E-603 ERR_PKG_DEPENDENCY]"
 end
-
 local function requirementParts(req)
 if type(req) == "table" then return req.name, req.version, req.optional == true end
 if type(req) == "string" then
@@ -2021,14 +1825,12 @@ if n then return n, c, false end
 return req, nil, false
 end
 end
-
 function pkg.installRemote(name, opts)
 opts = opts or {}
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
 local m, mErr = remoteMod()
 if not m then return false, mErr end
-
 local function with(extra)
 local o = {}
 for k, v in pairs(opts) do o[k] = v end
@@ -2036,7 +1838,6 @@ for k, v in pairs(extra) do o[k] = v end
 return o
 end
 local policy = pkg.discoveredPolicy()
-
 --! #SEC THE FLOOR, for a package found only in a repo nobody configured,
 --! checked on the staged bytes before anything installs: a key trusted
 --! here installs; an unknown key only under `tofu`, when the admin names
@@ -2085,12 +1886,10 @@ log.info("pkg", "Trusted key " .. tostring(v.fingerprint) .. " as '" .. label
 end
 return true
 end
-
 local staged, order, seen = {}, {}, {}
 local function cleanupAll()
 for _, s in ipairs(staged) do m.cleanup(s.dir) end
 end
-
 local function stage(n, depth, wanted, by, hints, pin)
 if seen[n] then return true end
 local who = by and ("dependency '" .. tostring(n) .. "' of '" .. by .. "': ") or ""
@@ -2141,10 +1940,8 @@ end
 order[#order + 1] = entry
 return true
 end
-
 local okS, sErr = stage(name, 0)
 if not okS then cleanupAll(); return false, sErr end
-
 --! Each package -- the dependencies first -- reaches install through the
 --! SAME door as a floppy. In particular the hash gate is unchanged: an
 --! index that ships no hashes is unverified code, and installing it still

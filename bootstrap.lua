@@ -1,30 +1,23 @@
 local component = require("component")
 local computer = require("computer")
 local term = require("term")
-
 local fs = nil
 pcall(function() fs = require("filesystem") end)
-
 local gpu = component.gpu
-
 local function color(fg)
 if gpu and gpu.setForeground then
 pcall(gpu.setForeground, fg)
 end
 end
-
 local function ok(msg)
 color(0x00FF00); print("  + " .. msg); color(0xFFFFFF)
 end
-
 local function warn(msg)
 color(0xFFFF00); print("  ! " .. msg); color(0xFFFFFF)
 end
-
 local function fail(msg)
 color(0xFF0000); print("  X " .. msg); color(0xFFFFFF)
 end
-
 local function ask(question, options, default)
 color(0xFFFF00)
 io.write(question)
@@ -51,19 +44,14 @@ end
 if not answer or answer == "" then return default end
 return answer
 end
-
 local function confirm(question)
 local answer = ask(question, {"y", "n"}, "y")
 return answer and (answer:lower() == "y" or answer:lower() == "yes")
 end
-
 local function pause(seconds)
-
 if os.sleep then pcall(os.sleep, seconds) end
 end
-
 local BOOTSTRAP_VERSION = "1.0.0"
-
 local LOGO_MARK = {
 "████████  ████████  ████████",
 "   ██     ██    ██  ██      ",
@@ -71,7 +59,6 @@ local LOGO_MARK = {
 "   ██     ██    ██        ██",
 "   ██     ████████  ████████",
 }
-
 local function header()
 color(0x00AAFF)
 for _, ln in ipairs(LOGO_MARK) do print("   " .. ln) end
@@ -82,14 +69,10 @@ print("   Terminal Operating System — Network Bootstrap v" .. BOOTSTRAP_VERSIO
 color(0xFFFFFF)
 print()
 end
-
 local DEFAULT_OWNER = "Evan450"
-local DEFAULT_REPO  = "TOS-Terminal-Operating-System-"
-
+local DEFAULT_REPO = "TOS-Terminal-Operating-System-"
 local BRANCH_CANDIDATES = { "main", "master" }
-
 local SUBDIR_CANDIDATES = { "", "TOS-Release" }
-
 --! A CLI-supplied owner/repo/branch/subdir becomes part of an HTTPS URL
 --! below. Restricting the charset here isn't a security boundary against
 --! a hostile operator (they could just as easily hand-edit the URL), but
@@ -100,7 +83,6 @@ local function safeToken(s)
 return type(s) == "string" and s ~= "" and not s:find("[%c]")
 and s:match("^[%w%.%-_/]+$") ~= nil
 end
-
 local function internetCard()
 local addr = component.list("internet")()
 if not addr then return nil end
@@ -108,7 +90,6 @@ local okP, p = pcall(component.proxy, addr)
 if not okP then return nil end
 return p
 end
-
 --! IT WAS 96 KB, AND THE RELEASE GREW PAST IT. core.lua reached 99,048
 --! bytes -- 744 over -- so every network install silently skipped the
 --! file holding most of the shell's commands. The machine booted, and
@@ -120,11 +101,10 @@ end
 --! limit, unless something checks. test_install_bootstrap.lua now
 --! measures the real release against this number and fails when the
 --! headroom runs out.
-local MAX_FILE_BYTES    = 256 * 1024
-local REQUEST_TIMEOUT   = 20
-local DOWNLOAD_RETRIES  = 3
-local PROBE_RETRIES     = 2
-
+local MAX_FILE_BYTES = 256 * 1024
+local REQUEST_TIMEOUT = 20
+local DOWNLOAD_RETRIES = 3
+local PROBE_RETRIES = 2
 --! `onWait` is called while the request is in flight so a caller can
 --! show that something is still happening. A probe that prints
 --! "probing main ... " and then goes silent for ten seconds is
@@ -183,13 +163,11 @@ end
 end
 return nil, "request failed after " .. retries .. " attempt(s)"
 end
-
 local function rawUrl(owner, repo, branch, subdir, path)
 local prefix = (subdir ~= "" and ("/" .. subdir) or "")
 return string.format("https://raw.githubusercontent.com/%s/%s/%s%s%s",
 owner, repo, branch, prefix, path)
 end
-
 local function parseManifest(source)
 if #source > 256 * 1024 then
 return nil, "manifest exceeds 256 KB sanity cap"
@@ -201,16 +179,13 @@ if not ok2 then return nil, "manifest run error: " .. tostring(result) end
 if type(result) ~= "table" then return nil, "manifest did not return a table" end
 return result
 end
-
 term.clear()
 header()
-
 if not fs then
 fail("OpenOS filesystem library unavailable — cannot stage a download.")
 warn("Run this from OpenOS, not a bare Lua interpreter.")
 return
 end
-
 local card = internetCard()
 if not card then
 fail("No Internet Card found on this computer.")
@@ -220,7 +195,6 @@ return
 end
 ok("Internet Card found")
 print()
-
 local cliArgs = {...}
 local owner, repoName = DEFAULT_OWNER, DEFAULT_REPO
 if cliArgs[1] then
@@ -241,16 +215,13 @@ if cliArgs[3] ~= nil then
 if cliArgs[3] == "" or safeToken(cliArgs[3]) then subdirs = { cliArgs[3] }
 else warn("Ignoring malformed subdir argument: " .. tostring(cliArgs[3])) end
 end
-
 ok("Repository: " .. owner .. "/" .. repoName)
 print()
-
 if not confirm("Download TOS from the internet and install it here?") then
 print("Cancelled.")
 return
 end
 print()
-
 color(0x00AAFF); print("--- Locating release files ---"); color(0xFFFFFF)
 local baseBranch, baseSubdir, manifestSrc
 for _, branch in ipairs(branches) do
@@ -289,7 +260,6 @@ end
 if manifestSrc then break end
 end
 print()
-
 if not manifestSrc then
 --! A repo can be reachable, current, and still unusable: if its files
 --! were uploaded WITHOUT their directory structure (everything dumped
@@ -319,7 +289,6 @@ warn("If this is a fork or the layout changed, point at it directly:")
 warn("  bootstrap.lua " .. owner .. "/" .. repoName .. " <branch> <subdir>")
 return
 end
-
 local manifest, mErr = parseManifest(manifestSrc)
 if not manifest then
 fail("Cannot parse the downloaded manifest: " .. tostring(mErr))
@@ -329,7 +298,6 @@ ok("Using " .. owner .. "/" .. repoName .. "@" .. baseBranch ..
 (baseSubdir ~= "" and ("/" .. baseSubdir) or "") ..
 " (" .. #manifest .. " files declared)")
 print()
-
 --! WHAT THIS DOES AND DOES NOT PROVE. The release manifest carries a
 --! SHA-256 for every file it lists, so once the manifest is in hand every
 --! subsequent download can be checked against it. That turns a truncated
@@ -356,7 +324,6 @@ and type(entry.hash) == "string" and #entry.hash == 64 then
 hashes[entry.path] = entry.hash:lower()
 end
 end
-
 --! The sandbox the downloaded hasher runs in. Deliberately small: enough
 --! for pure computation over strings, and nothing that reaches the
 --! machine. No load/loadstring (it must not fetch more code), no
@@ -371,7 +338,6 @@ tonumber = tonumber, tostring = tostring, type = type,
 select = select, ipairs = ipairs, pairs = pairs,
 error = error, assert = assert, setmetatable = setmetatable,
 }
-
 local sha256, verifyOn = nil, false
 do
 local declared = 0
@@ -384,7 +350,6 @@ print()
 else
 io.write("  fetching the hasher ")
 local SHA_PATH = "/tos/kernel/sha256.lua"
-
 local hDots, hLast = 0, computer.uptime()
 local body = httpGet(card, rawUrl(owner, repoName, baseBranch, baseSubdir, SHA_PATH),
 nil, function()
@@ -412,7 +377,6 @@ else
 local chunk = load(body, "=sha256", "t", HASHER_ENV)
 local okS, mod = false, nil
 if chunk then okS, mod = pcall(chunk) end
-
 --! KNOWN-ANSWER TEST before trusting it, because "loads and returns
 --! a table" turned out not to mean "works". FIPS 180-4's own
 --! one-block vector: SHA-256("abc"). A hasher that cannot reproduce
@@ -426,9 +390,7 @@ okS = false
 mod = nil
 end
 end
-
 if okS and type(mod) == "table" and mod.hex then
-
 if hashes[SHA_PATH] and mod.hex(body) ~= hashes[SHA_PATH] then
 color(0xFF0000); print("CORRUPT"); color(0xFFFFFF)
 fail("sha256.lua does not match its own manifest entry.")
@@ -448,7 +410,6 @@ end
 end
 end
 end
-
 --! /tmp used to be picked unconditionally. On a real machine that is a
 --! tmpfs of a few hundred KB, and the release is ~1.2 MB across 152
 --! files -- so it filled, and every remaining write failed with "cannot
@@ -463,7 +424,7 @@ local function freeSpace(path)
 local okP, proxy = pcall(fs.get, path)
 if not okP or not proxy then return nil end
 local okT, total = pcall(proxy.spaceTotal)
-local okU, used  = pcall(proxy.spaceUsed)
+local okU, used = pcall(proxy.spaceUsed)
 if not (okT and okU) or type(total) ~= "number" or type(used) ~= "number" then
 return nil
 end
@@ -472,9 +433,7 @@ end
 if total <= 0 then return nil end
 return total - used
 end
-
 local function kb(n) return string.format("%.0f KB", n / 1024) end
-
 --! REMOVE A TREE, LEAVES FIRST. OpenComputers' filesystem component does
 --! not recurse: the disk-backed one compiles down to Java's File.delete(),
 --! which refuses a non-empty directory, and OpenOS's filesystem.remove
@@ -492,7 +451,6 @@ local function removeTree(path)
 if not fs.exists(path) then return true end
 if fs.isDirectory(path) then
 local names = {}
-
 local okL, it = pcall(fs.list, path)
 if okL and it then
 if type(it) == "function" then
@@ -509,31 +467,26 @@ end
 local okR = pcall(fs.remove, path)
 return okR and not fs.exists(path)
 end
-
 --! Roughly what the payload needs. Not read from the manifest, which
 --! declares no sizes -- it is a floor for WARNING only, never a refusal,
 --! so an unusual layout that knows better is not blocked by our guess.
 local NEED_BYTES = 1400 * 1024
-
 local stagingDir, stagingFree
 do
 local candidates = {}
-if fs.isDirectory("/tmp")  then candidates[#candidates + 1] = { "/tmp/tos-netinstall",  "/tmp"  } end
+if fs.isDirectory("/tmp") then candidates[#candidates + 1] = { "/tmp/tos-netinstall", "/tmp" } end
 if fs.isDirectory("/home") then candidates[#candidates + 1] = { "/home/tos-netinstall", "/home" } end
 candidates[#candidates + 1] = { "/tos-netinstall-tmp", "/" }
-
 local best, bestFree
 for _, c in ipairs(candidates) do
 local free = freeSpace(c[2])
 if free and (not bestFree or free > bestFree) then best, bestFree = c[1], free end
 end
-
 --! Every candidate refused to report. Fall back to the old behaviour
 --! rather than refusing to install: not knowing the free space is not
 --! the same as knowing there is none.
-stagingDir  = best or ((fs.isDirectory("/tmp") and "/tmp/tos-netinstall") or "/tos-netinstall-tmp")
+stagingDir = best or ((fs.isDirectory("/tmp") and "/tmp/tos-netinstall") or "/tos-netinstall-tmp")
 stagingFree = bestFree
-
 if stagingFree then
 ok("Staging in " .. stagingDir .. " (" .. kb(stagingFree) .. " free)")
 if stagingFree < NEED_BYTES then
@@ -551,7 +504,6 @@ if not fs.makeDirectory(stagingDir) then
 fail("Cannot create staging directory: " .. stagingDir)
 return
 end
-
 local fileList, seen = {}, {}
 for _, entry in ipairs(manifest) do
 if type(entry) == "table" and type(entry.path) == "string" and not seen[entry.path] then
@@ -561,7 +513,6 @@ end
 end
 if not seen["/install.lua"] then fileList[#fileList + 1] = "/install.lua" end
 if not seen["/bios.lua"] then fileList[#fileList + 1] = "/bios.lua" end
-
 color(0x00AAFF)
 print("--- Downloading " .. #fileList .. " files ---")
 color(0xFFFFFF)
@@ -611,11 +562,8 @@ end
 failedPaths[#failedPaths + 1] = path .. ": cannot open staging file for write"
 end
 elseif err == nil then
-
 else
-
 if path == "/bios.lua" then
-
 else
 failed = failed + 1
 failedPaths[#failedPaths + 1] = path .. ": " .. tostring(err)
@@ -627,7 +575,6 @@ end
 end
 print()
 print()
-
 --! Out of space is a different failure from "some downloads went wrong",
 --! and the remedy is different too, so it gets its own exit rather than
 --! being buried in a list of paths.
@@ -647,7 +594,6 @@ warn("    free space is enough -- it does not have to be the target.")
 removeTree(stagingDir)
 return
 end
-
 if failed == 0 then
 ok("Downloaded " .. copied .. " files")
 else
@@ -656,7 +602,6 @@ for i = 1, math.min(5, #failedPaths) do warn("  " .. failedPaths[i]) end
 if #failedPaths > 5 then warn("  (+" .. (#failedPaths - 5) .. " more)") end
 end
 print()
-
 --! ANY missing file refuses the install, not just a mismatched digest.
 --!
 --! This used to reason that "install.lua's own copy+verify pass will
@@ -694,7 +639,6 @@ removeTree(stagingDir)
 return
 end
 end
-
 --! A digest mismatch is a different claim from a missing file: the
 --! repository served bytes it does not agree with. Reported separately
 --! because the remedy differs -- a retry fixes a dropped download, and
@@ -728,7 +672,6 @@ warn("does a release that is not what it claims. Install from a disk.")
 return
 end
 end
-
 local installPath = stagingDir .. "/install.lua"
 local installStaged = fs.exists(installPath) and (fs.size(installPath) or 0) > 0
 if not installStaged then
@@ -738,18 +681,15 @@ warn("  bootstrap.lua " .. owner .. "/" .. repoName .. " " .. baseBranch ..
 (baseSubdir ~= "" and (" " .. baseSubdir) or " \"\""))
 return
 end
-
 color(0x00AAFF); print("--- Handing off to install.lua ---"); color(0xFFFFFF)
 ok("Staged at " .. stagingDir)
 print()
-
 local chunk, lerr = loadfile(installPath)
 if not chunk then
 fail("Downloaded install.lua does not parse: " .. tostring(lerr))
 warn("The file may have been corrupted in transit — try again.")
 return
 end
-
 local hok, herr = pcall(chunk, stagingDir)
 if not hok then
 fail("install.lua exited with an error: " .. tostring(herr))
@@ -758,7 +698,6 @@ warn("  " .. installPath .. " " .. stagingDir)
 warn("Leaving the staging tree in place so a retry needs no re-download.")
 return
 end
-
 --! Reclaim the staging tree once it has served its purpose.
 --!
 --! It is a second full copy of the release -- ~1.2 MB, and on a machine
@@ -782,7 +721,6 @@ warn("It is a full second copy of the release; delete it to reclaim")
 warn("the space: rm -r " .. stagingDir)
 end
 end
-
 --! ...AND THE SCRIPT ITSELF, which is the other half of "it doesn't clean
 --! up after itself". This is downloaded to the filesystem ROOT (the
 --! documented one-liner saves it to /bootstrap.lua, and it has to be an
@@ -802,7 +740,6 @@ end
 --! out from under a package manager leaves it certain it installed something
 --! that is no longer there, and `oppm uninstall` then fails on a machine
 --! whose install actually succeeded. A managed copy is not ours to remove.
-
 local function selfPathToReclaim(a0)
 if type(a0) ~= "string" or a0 == "" then return nil end
 local p = a0
@@ -810,7 +747,6 @@ if p:sub(1, 1) ~= "/" then p = "/" .. p end
 if p:find("/", 2, true) then return nil end
 return p
 end
-
 do
 local self = selfPathToReclaim((arg and arg[0]) or nil)
 if self and fs.exists(self) and not fs.isDirectory(self) then

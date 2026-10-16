@@ -1,30 +1,23 @@
 local component = require("component")
 local computer = require("computer")
 local term = require("term")
-
 local fs = nil
 pcall(function() fs = require("filesystem") end)
-
 local gpu = component.gpu
-
 local function color(fg)
 if gpu and gpu.setForeground then
 pcall(gpu.setForeground, fg)
 end
 end
-
 local function ok(msg)
 color(0x00FF00); print("  + " .. msg); color(0xFFFFFF)
 end
-
 local function warn(msg)
 color(0xFFFF00); print("  ! " .. msg); color(0xFFFFFF)
 end
-
 local function fail(msg)
 color(0xFF0000); print("  X " .. msg); color(0xFFFFFF)
 end
-
 local function ask(question, options, default)
 color(0xFFFF00)
 io.write(question)
@@ -38,7 +31,6 @@ io.write(" (default: " .. default .. ")")
 end
 color(0xFFFFFF)
 io.write(": ")
-
 local answer
 if term and term.read then
 local ok2, result = pcall(term.read)
@@ -52,14 +44,11 @@ end
 if not answer or answer == "" then return default end
 return answer
 end
-
 local function confirm(question)
 local answer = ask(question, {"y", "n"}, "y")
 return answer and (answer:lower() == "y" or answer:lower() == "yes")
 end
-
 local INSTALLER_VERSION = "1.5.0"
-
 local RUNTIME_DIRS = {
 "/tos", "/tos/kernel", "/tos/kernel/net", "/tos/shell",
 "/tos/compat", "/tos/peripheral", "/tos/shell/panels",
@@ -69,7 +58,6 @@ local RUNTIME_DIRS = {
 "/var", "/var/log", "/var/run", "/var/pkg", "/var/pkg/installed",
 "/tmp",
 }
-
 local LOGO_MARK = {
 "████████  ████████  ████████",
 "   ██     ██    ██  ██      ",
@@ -77,7 +65,6 @@ local LOGO_MARK = {
 "   ██     ██    ██        ██",
 "   ██     ████████  ████████",
 }
-
 local function header()
 color(0x00AAFF)
 for _, ln in ipairs(LOGO_MARK) do print("   " .. ln) end
@@ -88,15 +75,12 @@ print("   Terminal Operating System — Setup v" .. INSTALLER_VERSION)
 color(0xFFFFFF)
 print()
 end
-
 local function findInstallDisk(explicitSrc)
 if not fs then return nil end
-
 if type(explicitSrc) == "string" and explicitSrc ~= "" then
 local p = explicitSrc:sub(-1) == "/" and explicitSrc:sub(1, -2) or explicitSrc
 if fs.exists(p .. "/tos/kernel/init.lua") then return p end
 end
-
 local scriptPath = os.getenv and os.getenv("_") or nil
 if scriptPath then
 local dir = scriptPath:match("^(.*)/[^/]+$")
@@ -104,7 +88,6 @@ if dir and dir ~= "" and fs.exists(dir .. "/tos/kernel/init.lua") then
 return dir
 end
 end
-
 local bootAddr = computer.getBootAddress()
 for addr in component.list("filesystem") do
 if addr ~= bootAddr then
@@ -113,7 +96,6 @@ if not okP then px = nil end
 local okE1, hasKernel = pcall(function() return px and px.exists("/tos/kernel/init.lua") end)
 local okE2, hasInstall = pcall(function() return px and px.exists("/install.lua") end)
 if okE1 and okE2 and hasKernel and hasInstall then
-
 if fs.mounts then
 local okM, mounts = pcall(fs.mounts)
 if okM and mounts then
@@ -127,16 +109,13 @@ end
 end
 end
 end
-
 return nil
 end
-
 local function surveyHardware()
 local hw = {}
 hw.totalMem = computer.totalMemory()
 hw.freeMem = computer.freeMemory()
 hw.memKB = math.floor(hw.totalMem / 1024)
-
 if gpu then
 local w, h = gpu.maxResolution()
 hw.maxW, hw.maxH = w, h
@@ -144,7 +123,6 @@ if w >= 160 then hw.gpuTier = 3
 elseif w >= 80 then hw.gpuTier = 2
 else hw.gpuTier = 1 end
 end
-
 local bootAddr = computer.getBootAddress()
 local ok, bootFS = pcall(component.proxy, bootAddr)
 if not ok or not bootFS then bootFS = { spaceTotal = function() return 0 end, spaceUsed = function() return 0 end } end
@@ -152,7 +130,6 @@ hw.diskTotal = bootFS.spaceTotal()
 hw.diskFree = math.max(0, hw.diskTotal - bootFS.spaceUsed())
 hw.diskKB = math.floor(hw.diskTotal / 1024)
 hw.diskFreeKB = math.floor(hw.diskFree / 1024)
-
 hw.hasModem, hw.hasWireless, hw.hasTunnel, hw.hasDataCard = false, false, false, false
 hw.hasGPU, hw.hasScreen, hw.hasKeyboard = false, false, false
 for addr, ctype in component.list() do
@@ -168,7 +145,6 @@ end
 end
 return hw
 end
-
 local function printHardwareReport(hw)
 color(0x00AAFF)
 print("--- Hardware Detected ---")
@@ -181,7 +157,6 @@ if hw.hasTunnel then print("  Tunnel:   Linked card detected") end
 print(string.format("  Crypto:   %s", hw.hasDataCard and "Hardware (data card)" or "Software"))
 color(0xFFFFFF)
 print()
-
 local networked = hw.hasModem or hw.hasTunnel
 if hw.memKB < 1024 or (networked and hw.memKB < 1280) then
 if networked then
@@ -195,7 +170,6 @@ warn("TOS will start at the command line: the full interface needs 1.5 MB.")
 end
 print()
 end
-
 local function loadManifest(srcDisk)
 local path = srcDisk .. "/tos/system_manifest.lua"
 if not fs.exists(path) then return nil, "no manifest at " .. path end
@@ -204,7 +178,6 @@ if not h then return nil, "cannot open manifest" end
 local source = h:read("*a")
 h:close()
 if not source then return nil, "empty manifest" end
-
 if #source > 256 * 1024 then
 return nil, "manifest exceeds 256 KB sanity cap"
 end
@@ -214,12 +187,10 @@ local data, derr = ser.decode(source, { maxBytes = 256 * 1024 })
 if data and type(data) == "table" then
 return data
 elseif data == nil then
-
 warn("manifest serialize.decode failed (" .. tostring(derr) ..
 "); falling back to constrained load()")
 end
 end
-
 local fn, err = load(source, "=manifest", "t", { })
 if not fn then return nil, "manifest parse error: " .. tostring(err) end
 local ok2, result = pcall(fn)
@@ -227,7 +198,6 @@ if not ok2 then return nil, "manifest run error: " .. tostring(result) end
 if type(result) ~= "table" then return nil, "manifest did not return a table" end
 return result
 end
-
 local function preInstallSafetyCheck(forceWipe)
 if forceWipe then return true end
 if fs.exists("/etc/users.dat") then
@@ -249,7 +219,6 @@ end
 end
 return true
 end
-
 local function copyFileChunked(src, dst)
 local ih = io.open(src, "r")
 if not ih then return false, "open source" end
@@ -264,7 +233,6 @@ end
 ih:close(); oh:close()
 return true
 end
-
 local function verifyCopy(srcDisk, manifest)
 local missing, sized = {}, {}
 for _, entry in ipairs(manifest) do
@@ -281,7 +249,6 @@ end
 end
 return missing, sized
 end
-
 local FILE_COST = 512
 local function spaceNeeded(srcDisk, manifest, size, exists)
 local need, dirs = 0, {}
@@ -301,7 +268,6 @@ end
 end
 return need
 end
-
 local function freeOnTarget()
 local okG, proxy = pcall(fs.get, "/")
 if not okG or not proxy then return nil end
@@ -310,16 +276,13 @@ local okU, used = pcall(proxy.spaceUsed)
 if not (okT and okU) or type(total) ~= "number" or total <= 0 then return nil end
 return total - used
 end
-
 local function copyFromDisk(srcDisk)
-
 local manifest, mErr = loadManifest(srcDisk)
 if not manifest then
 fail("Cannot load install manifest: " .. tostring(mErr))
 return false
 end
 ok("Manifest loaded: " .. #manifest .. " files declared")
-
 local need = spaceNeeded(srcDisk, manifest, fs.size, fs.exists)
 local free = freeOnTarget()
 if free and need > free then
@@ -336,7 +299,6 @@ ok(string.format("Space: TOS needs %d KB, and %d KB is free", math.ceil(need / 1
 math.floor(free / 1024)))
 end
 print()
-
 color(0x00AAFF); print("--- Creating directories ---"); color(0xFFFFFF)
 local dirSeen = {}
 for _, entry in ipairs(manifest) do
@@ -347,13 +309,11 @@ if not fs.isDirectory(dir) then fs.makeDirectory(dir) end
 dir = dir:match("^(.+)/[^/]+$")
 end
 end
-
 for _, d in ipairs(RUNTIME_DIRS) do
 if not fs.isDirectory(d) then fs.makeDirectory(d) end
 end
 ok("Directory structure created")
 print()
-
 color(0x00AAFF); print("--- Copying system files ---"); color(0xFFFFFF)
 local copied, failed = 0, 0
 local errs = {}
@@ -369,7 +329,6 @@ if cok then copied = copied + 1
 else failed = failed + 1; errs[#errs + 1] = entry.path .. ": " .. tostring(cerr) end
 end
 end
-
 print()
 if failed == 0 then
 ok("Copied " .. copied .. " files")
@@ -379,7 +338,6 @@ for i = 1, math.min(5, #errs) do warn("  " .. errs[i]) end
 if #errs > 5 then warn("  (+" .. (#errs - 5) .. " more)") end
 end
 print()
-
 if failed == 0 then
 color(0x00AAFF); print("--- Verifying copy ---"); color(0xFFFFFF)
 local missing, sized = verifyCopy(srcDisk, manifest)
@@ -399,10 +357,8 @@ end
 end
 print()
 end
-
 return failed == 0
 end
-
 --! Must stay identical to the TREES list in the `reclaim` command
 --! (tos/shell/panels/commands/admin.lua). Two lists, two files, same
 --! job: this one runs at install time, reclaim runs later for a machine
@@ -416,7 +372,6 @@ end
 --! Verified safe against the manifest rather than assumed: TOS installs
 --! 152 files and none of them land in any of these trees.
 local OPENOS_ONLY_TREES = { "/bin", "/boot", "/lib" }
-
 --! INSTALLING TOS REPLACES /init.lua, and nothing used to put the old one
 --! back: a shared disk that had another OS on it did not become bootable
 --! again by deleting /tos. The displaced loader is kept as
@@ -437,7 +392,6 @@ if not w then return false end
 w:write(body); w:close()
 return fs.exists(PRE_TOS)
 end
-
 local function hasOpenOsLeftovers()
 if not fs then return false end
 for _, d in ipairs(OPENOS_ONLY_TREES) do
@@ -450,28 +404,23 @@ local removed = {}
 if not fs then return removed end
 for _, d in ipairs(OPENOS_ONLY_TREES) do
 if fs.exists(d) then
-
 local okR = pcall(fs.remove, d)
 if okR and not fs.exists(d) then removed[#removed + 1] = d end
 end
 end
-
 if #removed > 0 and fs.exists(PRE_TOS) then
 pcall(fs.remove, PRE_TOS)
 if not fs.exists(PRE_TOS) then removed[#removed + 1] = PRE_TOS end
 end
 return removed
 end
-
 local function offerBiosFlash(srcDisk)
 local biosPath = srcDisk .. "/bios.lua"
 if not fs.exists(biosPath) then return end
-
 local h = io.open(biosPath, "r")
 if not h then warn("Could not read bios.lua"); print(); return end
 local biosCode = h:read("*a"); h:close()
 if not biosCode or #biosCode == 0 then warn("Empty bios.lua"); print(); return end
-
 local fingerprint = "(unavailable)"
 do
 local okC, cryptoMod = pcall(require, "kernel.crypto")
@@ -480,7 +429,6 @@ local digest = cryptoMod.hash(biosCode)
 if digest then fingerprint = digest:sub(1, 16) .. "..." end
 end
 end
-
 color(0xFFFF00)
 print("A TOS BIOS was found on the install disk.")
 print("Flashing it replaces your current EEPROM code.")
@@ -490,7 +438,6 @@ color(0xFFFFFF)
 color(0xFFFF00); io.write('Type "flash" to confirm BIOS reflash: '); color(0xFFFFFF)
 local typed = io.read() or ""
 if typed ~= "flash" then ok("Skipped BIOS flash"); print(); return end
-
 local eeprom = component.list("eeprom")()
 if eeprom then
 local ep = component.proxy(eeprom)
@@ -500,10 +447,8 @@ ok("BIOS flashed! Label set to 'TOS BIOS'")
 else warn("No EEPROM found") end
 print()
 end
-
 local function runQuestionnaire(hw)
 local cfg = {}
-
 color(0x00AAFF)
 print("--- Device Setup ---")
 color(0xFFFFFF)
@@ -525,7 +470,6 @@ cfg.device = "server"
 cfg.headless = true
 cfg.autoServices = true
 ok("Server mode (headless boot, services auto-start)")
-
 print()
 color(0xFFFF00)
 print("  Server rack checklist:")
@@ -550,12 +494,10 @@ cfg.powerSave = false
 ok("Computer mode")
 end
 print()
-
 math.randomseed(math.floor(computer.uptime() * 1000) + computer.freeMemory())
 cfg.hostname = ask("Hostname", nil, "tos-" .. string.format("%04x", math.random(0, 0xFFFF)))
 ok("Hostname: " .. cfg.hostname)
 print()
-
 color(0x00AAFF)
 print("--- Security ---")
 color(0xFFFFFF)
@@ -578,7 +520,6 @@ cfg.guestAccess = false; cfg.autoLockout = true; cfg.maxAttempts = 5
 ok("Security: Standard")
 end
 print()
-
 if hw.hasModem or hw.hasTunnel then
 color(0x00AAFF)
 print("--- Network ---")
@@ -594,7 +535,6 @@ else
 cfg.encryptComms = true
 cfg.listenPort = 42
 end
-
 if cfg.device == "tablet" then
 color(0x00AAFF)
 print("--- Tablet Options ---")
@@ -605,13 +545,10 @@ cfg.critBatWarn = tonumber(ask("Critical battery warning %", nil, "5")) or 5
 ok("Battery warnings: " .. cfg.lowBatWarn .. "% / " .. cfg.critBatWarn .. "%")
 print()
 end
-
 cfg.verbose = confirm("Verbose boot? (shows debug messages)")
 print()
-
 return cfg
 end
-
 local function writeConfig(cfg)
 local lines = { "return {" }
 local keys = {}
@@ -630,21 +567,15 @@ local f = io.open("/etc/tos.cfg", "w")
 if f then f:write(table.concat(lines, "\n")); f:close(); return true end
 return false
 end
-
 term.clear()
 header()
-
 local hw = surveyHardware()
 printHardwareReport(hw)
-
 local args = {...}
 local srcDisk = findInstallDisk(args[1])
 local diskMode = srcDisk ~= nil
-
 local copyOk = false
-
 local cleanInstall = false
-
 if diskMode then
 ok("Install disk found at: " .. srcDisk)
 print()
@@ -656,11 +587,8 @@ color(0xFFFFFF)
 print()
 if not confirm("Continue?") then print("Cancelled."); return end
 print()
-
 if not preInstallSafetyCheck(_G._FORCE_WIPE or false) then return end
-
 if preserveForeignInit() then ok("Kept the previous /init.lua as " .. PRE_TOS) end
-
 local copyWhy
 copyOk, copyWhy = copyFromDisk(srcDisk)
 if copyWhy == "space" then print(); return end
@@ -671,7 +599,6 @@ warn("You can retry installation; the partial files won't conflict.")
 if not confirm("Continue to questionnaire anyway?") then print("Cancelled."); return end
 print()
 end
-
 if copyOk and hasOpenOsLeftovers() then
 color(0x00AAFF); print("--- Clean install ---"); color(0xFFFFFF)
 color(0xAAAAAA)
@@ -687,7 +614,6 @@ or "Leaving OpenOS files in place")
 print()
 end
 else
-
 color(0xFFFF00)
 print("No install disk detected - running in configuration mode.")
 print("TOS system files must already be present on the boot drive.")
@@ -696,9 +622,7 @@ print()
 if not confirm("Continue?") then print("Cancelled."); return end
 print()
 end
-
 local cfg = runQuestionnaire(hw)
-
 color(0x00AAFF)
 print("--- Summary ---")
 color(0xAAAAAA)
@@ -720,14 +644,12 @@ color(0xFFFFFF)
 print()
 if not confirm("Apply these settings?") then print("Cancelled."); return end
 print()
-
 color(0x00AAFF); print("--- Applying configuration ---"); color(0xFFFFFF)
 if fs then
 for _, d in ipairs(RUNTIME_DIRS) do
 if not fs.isDirectory(d) then fs.makeDirectory(d) end
 end
 end
-
 if writeConfig(cfg) then
 ok("Configuration saved to /etc/tos.cfg")
 else
@@ -735,7 +657,6 @@ warn("Could not save config (defaults will be used)")
 end
 ok("Device profile: " .. cfg.device)
 print()
-
 if diskMode then
 if copyOk then
 offerBiosFlash(srcDisk)
@@ -745,7 +666,6 @@ warn("Re-run install.lua to retry before flashing.")
 print()
 end
 end
-
 if diskMode and copyOk and cleanInstall then
 color(0x00AAFF); print("--- Cleaning OpenOS leftovers ---"); color(0xFFFFFF)
 local removed = cleanOpenOsLeftovers()
@@ -757,7 +677,6 @@ warn("Nothing to remove (already clean).")
 end
 print()
 end
-
 color(0x00AAFF); print("--- Installation Complete ---"); color(0xFFFFFF)
 print()
 color(0x00FF00)

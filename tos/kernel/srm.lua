@@ -1,14 +1,10 @@
 local srm = {}
-
 srm.VERSION = 1
-
-srm.DIR        = "/var/srm"
-srm.INDEX      = "/var/srm/index.dat"
-srm.STORE      = "/var/srm/store"
-srm.LAST       = "/var/srm/last.dat"
-
+srm.DIR = "/var/srm"
+srm.INDEX = "/var/srm/index.dat"
+srm.STORE = "/var/srm/store"
+srm.LAST = "/var/srm/last.dat"
 srm.MAX_STORE_BYTES = 128 * 1024
-
 --! Keep in sync with the F() call sites in bios.lua. The digit is also the
 --! number of short beeps SRM Basic emits, so a screenless box is diagnosable
 --! by ear; test_bios.lua pins both halves of that contract.
@@ -23,25 +19,22 @@ local okE, errors = pcall(require, "kernel.errors")
 srm.errors = (okE and type(errors) == "table") and errors or nil
 srm.BASIC_CODES = srm.errors and srm.errors.biosTable() or {}
 end
-
 local function tryRequire(name)
 local ok, mod = pcall(require, name)
 if ok then return mod end
 end
-
 function srm.deps(d)
 d = d or {}
 local TOS = _G._TOS or {}
 local out = {
-fs        = d.fs        or TOS.fs,
+fs = d.fs or TOS.fs,
 serialize = d.serialize or tryRequire("kernel.serialize"),
-crypto    = d.crypto    or TOS.crypto or tryRequire("kernel.crypto"),
-log       = d.log       or TOS.logObj,
-eeprom    = d.eeprom,
+crypto = d.crypto or TOS.crypto or tryRequire("kernel.crypto"),
+log = d.log or TOS.logObj,
+eeprom = d.eeprom,
 component = d.component,
 }
 if not out.eeprom then
-
 local component = out.component or tryRequire("component")
 if component and component.list then
 local ok, addr = pcall(function() return component.list("eeprom")() end)
@@ -53,13 +46,11 @@ end
 end
 return out
 end
-
 local function gc()
 local K = _G._TOS and _G._TOS.kernel
 if K and K.gc then pcall(K.gc); return end
 if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
 end
-
 --! Cooperative slice between FILES.
 --!
 --! SRM reads and hashes every file in the manifest. That is the longest
@@ -89,17 +80,15 @@ coopProc = (okP and m and m.yieldCooperative) and m or false
 end
 if coopProc then coopProc.yieldCooperative() end
 end
-
 local function newReport(title)
 return {
-title    = title,
+title = title,
 findings = {},
-counts   = { ok = 0, info = 0, warn = 0, err = 0 },
-fixed    = 0,
+counts = { ok = 0, info = 0, warn = 0, err = 0 },
+fixed = 0,
 }
 end
 srm.newReport = newReport
-
 local function add(rep, text, sev)
 sev = sev or "info"
 rep.findings[#rep.findings + 1] = { text = text, sev = sev }
@@ -107,28 +96,23 @@ rep.counts[sev] = (rep.counts[sev] or 0) + 1
 return rep
 end
 srm.add = add
-
 function srm.worst(rep)
 local c = rep and rep.counts or {}
 if (c.err or 0) > 0 then return "err" end
 if (c.warn or 0) > 0 then return "warn" end
 return "ok"
 end
-
 function srm.parseFault(data)
 if type(data) ~= "string" then return nil end
-
 local code = data:match("^SRM:(%S+)") or data:match("\nSRM:(%S+)")
 if not code or code == "" then return nil end
 return code
 end
-
 function srm.stripFault(data)
 if type(data) ~= "string" then return "" end
 local out = data:gsub("\nSRM:%S*", ""):gsub("^SRM:%S*\n?", "")
 return out
 end
-
 function srm.readFault(deps)
 deps = srm.deps(deps)
 local ep = deps.eeprom
@@ -140,11 +124,10 @@ if not code then return nil end
 local e = srm.errors and srm.errors.find(code)
 return {
 code = code,
-why  = srm.BASIC_CODES[code] or "unrecognised SRM Basic code (newer BIOS?)",
-err  = e and srm.errors.label(e) or nil,
+why = srm.BASIC_CODES[code] or "unrecognised SRM Basic code (newer BIOS?)",
+err = e and srm.errors.label(e) or nil,
 }
 end
-
 function srm.clearFault(deps)
 deps = srm.deps(deps)
 local ep = deps.eeprom
@@ -156,7 +139,6 @@ local okW = pcall(ep.setData, srm.stripFault(data))
 if not okW then return false, "EEPROM write failed" end
 return true
 end
-
 local FALLBACK_CRITICAL = {
 "/init.lua",
 "/tos/kernel/init.lua",
@@ -169,11 +151,9 @@ local FALLBACK_CRITICAL = {
 "/tos/kernel/display.lua",
 "/tos/shell/init.lua",
 }
-
 function srm.criticalPaths(deps)
 deps = srm.deps(deps)
 local fs, ser = deps.fs, deps.serialize
-
 local function fromTableFile(path, pick)
 if not (fs and ser and fs.exists and fs.exists(path)) then return nil end
 local raw = fs.readFile(path)
@@ -183,7 +163,6 @@ if type(tbl) ~= "table" then return nil end
 local out = pick(tbl)
 if type(out) == "table" and #out > 0 then return out end
 end
-
 local list = fromTableFile("/var/pkg/installed/tos-core/package.lua", function(t)
 local o = {}
 if type(t.critical) == "table" then
@@ -192,14 +171,12 @@ end
 return o
 end)
 if list then return list, "tos-core/package.lua" end
-
 list = fromTableFile("/etc/critical.bak", function(t)
 local o = {}
 for _, p in ipairs(t) do if type(p) == "string" then o[#o + 1] = p end end
 return o
 end)
 if list then return list, "critical.bak" end
-
 local manifest = tryRequire("system_manifest")
 if type(manifest) == "table" then
 local o = {}
@@ -210,14 +187,11 @@ end
 end
 if #o > 0 then return o, "system_manifest.lua" end
 end
-
 return FALLBACK_CRITICAL, "built-in fallback"
 end
-
 function srm.storePathFor(path)
 return srm.STORE .. path
 end
-
 local function readHashed(deps, path, keep)
 local fs, crypto = deps.fs, deps.crypto
 if not (fs and crypto and crypto.hash) then return nil, "crypto unavailable" end
@@ -229,17 +203,14 @@ if not keep then content = nil; gc() end
 if not ok or type(hash) ~= "string" then return nil, "hash failed: " .. tostring(hash) end
 return hash, size, content
 end
-
 local function hashFile(deps, path)
 return readHashed(deps, path)
 end
 srm.hashFile = hashFile
-
 local function writeSafely(fs, path, content)
 if fs.writeFileAtomic then return fs.writeFileAtomic(path, content) end
 return fs.writeFile(path, content)
 end
-
 function srm.loadIndex(deps)
 deps = srm.deps(deps)
 local fs, ser = deps.fs, deps.serialize
@@ -250,7 +221,6 @@ local idx = ser.decode(raw, { maxBytes = 256 * 1024 })
 if type(idx) ~= "table" or type(idx.files) ~= "table" then return nil end
 return idx
 end
-
 local function saveIndex(deps, idx)
 local fs, ser = deps.fs, deps.serialize
 if not (fs and ser) then return false, "fs/serialize unavailable" end
@@ -259,37 +229,30 @@ pcall(fs.makeDirectory, srm.DIR)
 end
 return ser.saveFile(fs, srm.INDEX, idx)
 end
-
 function srm.baseline(deps, opts)
 deps = srm.deps(deps)
 opts = opts or {}
 local fs = deps.fs
 if not fs then return false, "no filesystem" end
 if not (deps.crypto and deps.crypto.hash) then return false, "crypto unavailable" end
-
 local paths, source = opts.paths, "caller"
 if not paths then paths, source = srm.criticalPaths(deps) end
-
 local idx = {
 version = srm.VERSION,
 created = (os.time and os.time()) or 0,
-boot    = (_G._TOS and _G._TOS.bootCount) or 0,
+boot = (_G._TOS and _G._TOS.bootCount) or 0,
 content = opts.content and true or false,
-source  = source,
-files   = {},
+source = source,
+files = {},
 }
-
 local summary = { hashed = 0, stored = 0, skipped = 0, bytes = 0, missing = {},
 pruned = 0, source = source }
-
 local prev = srm.loadIndex(deps)
-
 for _, path in ipairs(paths) do
 coopYield()
 if not (fs.exists and fs.exists(path)) then
 summary.missing[#summary.missing + 1] = path
 else
-
 local hash, size, content = readHashed(deps, path, opts.content and true or false)
 if not hash then
 summary.skipped = summary.skipped + 1
@@ -298,7 +261,6 @@ local rec = { hash = hash, size = size, stored = false }
 summary.hashed = summary.hashed + 1
 if opts.content then
 if size > srm.MAX_STORE_BYTES then
-
 summary.skipped = summary.skipped + 1
 elseif content and writeSafely(fs, srm.storePathFor(path), content) then
 rec.stored = true
@@ -314,7 +276,6 @@ idx.files[path] = rec
 end
 end
 end
-
 if prev and type(prev.files) == "table" and fs.remove then
 for path, rec in pairs(prev.files) do
 if rec.stored and not (idx.files[path] and idx.files[path].stored) then
@@ -325,7 +286,6 @@ end
 end
 end
 end
-
 local ok, err = saveIndex(deps, idx)
 if not ok then return false, "could not write the index: " .. tostring(err) end
 if deps.log and deps.log.info then
@@ -335,30 +295,24 @@ summary.hashed, summary.stored, summary.bytes, summary.pruned, source))
 end
 return true, summary
 end
-
 function srm.scan(deps, opts)
 deps = srm.deps(deps)
 opts = opts or {}
 local rep = newReport("baseline scan")
 rep.drift, rep.missing, rep.unbaselined = {}, {}, {}
-
 local fs = deps.fs
 if not fs then add(rep, "no filesystem — nothing to scan", "err"); return rep end
-
 local idx = srm.loadIndex(deps)
 if not idx then
 add(rep, "no baseline captured yet — run 'srm baseline' on a system you trust", "warn")
 return rep
 end
-
 local paths = {}
 for p in pairs(idx.files) do paths[#paths + 1] = p end
 table.sort(paths)
-
 add(rep, string.format("baseline: %d file(s), captured from %s%s",
 #paths, tostring(idx.source or "?"),
 idx.content and ", with stored copies" or ", hashes only"), "info")
-
 for _, path in ipairs(paths) do
 coopYield()
 local rec = idx.files[path]
@@ -381,7 +335,6 @@ tostring(rec.hash):sub(1, 12) .. ", now " .. hash:sub(1, 12) .. ")", "err")
 end
 end
 end
-
 if idx.content and opts.checkStore ~= false then
 local rotted = 0
 for _, path in ipairs(paths) do
@@ -403,7 +356,6 @@ end
 end
 if rotted == 0 then add(rep, "store: every copy verifies", "ok") end
 end
-
 local crit = srm.criticalPaths(deps)
 for _, path in ipairs(crit) do
 coopYield()
@@ -412,11 +364,9 @@ rep.unbaselined[#rep.unbaselined + 1] = path
 add(rep, "not in baseline: " .. path .. " (re-run 'srm baseline')", "warn")
 end
 end
-
 if #rep.missing == 0 and #rep.drift == 0 then
 add(rep, "all baselined files match", "ok")
 else
-
 add(rep, "", "info")
 add(rep, "Changed files mean one of two things: damage, or an upgrade you", "info")
 add(rep, "meant to install. After a deliberate upgrade, re-run", "info")
@@ -425,14 +375,12 @@ add(rep, "--restore' puts them back.", "info")
 end
 return rep
 end
-
 function srm.restore(deps, opts)
 deps = srm.deps(deps)
 opts = opts or {}
 local rep = newReport("restore")
 local fs = deps.fs
 if not fs then add(rep, "no filesystem", "err"); return rep end
-
 local idx = srm.loadIndex(deps)
 local targets = opts.paths
 if not targets then
@@ -441,31 +389,26 @@ targets = {}
 for _, p in ipairs(scan.missing) do targets[#targets + 1] = p end
 for _, p in ipairs(scan.drift) do targets[#targets + 1] = p end
 end
-
 if #targets == 0 then
 add(rep, "nothing to restore — no missing or changed files", "ok")
 return rep
 end
-
 if not idx and not opts.unverified then
 add(rep, "no baseline to verify a restore against.", "err")
 add(rep, "  capture one first ('srm baseline'), or accept an unchecked", "info")
 add(rep, "  copy explicitly with --unverified.", "info")
 return rep
 end
-
 for _, path in ipairs(targets) do
 coopYield()
 local want = idx and idx.files[path] and idx.files[path].hash or nil
 local candidates = {}
-
 if idx and idx.files[path] and idx.files[path].stored then
 candidates[#candidates + 1] = { src = srm.storePathFor(path), what = "store" }
 end
 if opts.source then
 candidates[#candidates + 1] = { src = opts.source .. path, what = opts.source }
 end
-
 if #candidates == 0 then
 add(rep, "no source for " .. path ..
 (idx and " (baseline is hashes-only — pass --source <mount>)" or ""), "err")
@@ -473,7 +416,6 @@ else
 local done = false
 for _, c in ipairs(candidates) do
 if not done and fs.exists and fs.exists(c.src) then
-
 local hash, _, content = readHashed(deps, c.src, true)
 if want and hash ~= want then
 add(rep, "rejected " .. c.what .. " copy of " .. path ..
@@ -504,13 +446,11 @@ add(rep, "no usable source for " .. path, "err")
 end
 end
 end
-
 if deps.log and deps.log.warn and rep.fixed > 0 then
 deps.log.warn("srm", "Restored " .. rep.fixed .. " system file(s) from a verified source")
 end
 return rep
 end
-
 function srm.storeUsage(deps)
 deps = srm.deps(deps)
 local idx = srm.loadIndex(deps)
@@ -530,12 +470,10 @@ end
 end
 return out
 end
-
 function srm.repair(deps, opts)
 deps = srm.deps(deps)
 opts = opts or {}
 local rep = newReport("repair")
-
 local repairMod = tryRequire("kernel.repair")
 if repairMod and repairMod.run then
 local ok, sub = pcall(repairMod.run, {
@@ -543,7 +481,6 @@ fs = deps.fs, serialize = deps.serialize, log = deps.log,
 })
 if ok and type(sub) == "table" then
 for _, line in ipairs(sub.lines or {}) do
-
 add(rep, line, line:sub(1, 5) == "WARN:" and "warn" or "info")
 end
 rep.fixed = rep.fixed + (sub.fixed or 0)
@@ -553,16 +490,13 @@ end
 else
 add(rep, "kernel.repair unavailable — skipping the fixer pass", "warn")
 end
-
 if opts.restore then
 local sub = srm.restore(deps, { source = opts.source, unverified = opts.unverified })
 for _, f in ipairs(sub.findings) do add(rep, f.text, f.sev) end
 rep.fixed = rep.fixed + (sub.fixed or 0)
 end
-
 return rep
 end
-
 function srm.parseArgs(args)
 local verb, flags, paths = nil, {}, {}
 local consumed = nil
@@ -590,12 +524,10 @@ else paths[#paths + 1] = a end
 end
 return verb or "status", flags, paths
 end
-
 function srm.status(deps, opts)
 deps = srm.deps(deps)
 opts = opts or {}
 local rep = newReport("status")
-
 local TOS = _G._TOS or {}
 local fault = srm.readFault(deps)
 --! The boot that succeeds after a failed POST reports the parked code and
@@ -622,11 +554,9 @@ add(rep, "  this boot reported it and cleared it from the EEPROM", "info")
 else
 add(rep, "POST: no parked fault from SRM Basic", "ok")
 end
-
 if TOS.unsafeShutdown then
 add(rep, "last shutdown was UNSAFE (power loss / forced off)", "warn")
 end
-
 local idx = srm.loadIndex(deps)
 if not idx then
 add(rep, "no baseline — 'srm baseline' records what a good system looks like", "warn")
@@ -643,8 +573,6 @@ else
 add(rep, "store: hashes only — repair needs --source <mount>", "info")
 end
 end
-
 return rep
 end
-
 return srm

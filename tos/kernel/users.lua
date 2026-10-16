@@ -1,33 +1,25 @@
 local computer = require("computer")
 local serialize = require("kernel.serialize")
-
 local users = {}
-
 local TIER = {
-GUEST  = 0,
-USER   = 1,
-ADMIN  = 2,
-ROOT   = 3,
+GUEST = 0,
+USER = 1,
+ADMIN = 2,
+ROOT = 3,
 }
-
 local userDB = {}
 local DB_PATH = "/etc/users.dat"
 local SESSION_PATH = "/var/run/session"
-
 local ELEVATE_PATH = "/etc/elevate.dat"
-
 local sessions = {}
 local currentSession = nil
-
 local fs = nil
 local crypto = nil
 local log = nil
 local config = nil
-
 local MAX_FAILED_ATTEMPTS = 5
 local LOCKOUT_AUTO = true
 local SESSION_TIMEOUT = 3600
-
 local MIN_PASSWORD_LEN = 6
 local function validatePassword(pw)
 if type(pw) ~= "string" or #pw < MIN_PASSWORD_LEN then
@@ -35,7 +27,6 @@ return false, "Password must be at least " .. MIN_PASSWORD_LEN .. " characters"
 end
 return true
 end
-
 --! #SEC (pentest, Sep 2026) — a tier is one of four numbers. create() and
 --! setTier() stored whatever they were handed: a 99 made an account that
 --! every `tier >= ROOT` test treats as root, and a string raised on the
@@ -43,7 +34,6 @@ end
 local VALID_TIER = {
 [TIER.GUEST] = true, [TIER.USER] = true, [TIER.ADMIN] = true, [TIER.ROOT] = true,
 }
-
 --! #SEC (pentest, Sep 2026) — nobody changes an account that outranks
 --! them. setTier already refused to GRANT root to a non-root caller, yet an
 --! admin could reset root's password ("admins can change anyone's"), lock
@@ -54,7 +44,6 @@ local function outranks(targetRec, actorTier)
 return type(targetRec) == "table" and type(targetRec.tier) == "number"
 and type(actorTier) == "number" and targetRec.tier > actorTier
 end
-
 --! #SEC (sudo) — the tier an account-management call is authorised at.
 --! A real session carries it (sudo elevation may have raised it: password-
 --! verified, capped); kernel and login pseudo-sessions name their actor, so
@@ -68,7 +57,6 @@ return tonumber(sess.tier) or 0
 end
 return type(actorRec) == "table" and tonumber(actorRec.tier) or 0
 end
-
 --! #SEC (pentest, Sep 2026) — the login screen's principal manages no
 --! accounts. The carve-outs below that honour a caller-named `actor` for
 --! synthetic sessions exist for kernel code and for the first-boot password
@@ -80,10 +68,9 @@ end
 local function isLoginPrincipal(sess)
 return type(sess) == "table" and sess.isLogin == true
 end
-
 local THROTTLE_AFTER = 3
-local THROTTLE_BASE  = 5
-local THROTTLE_CAP   = 300
+local THROTTLE_BASE = 5
+local THROTTLE_CAP = 300
 local function loginCooldown(fails)
 fails = tonumber(fails) or 0
 if fails < THROTTLE_AFTER then return 0 end
@@ -91,11 +78,9 @@ local c = THROTTLE_BASE * (2 ^ (fails - THROTTLE_AFTER))
 if c > THROTTLE_CAP then c = THROTTLE_CAP end
 return c
 end
-
 local function wallClock()
 return (os.time and os.time()) or computer.uptime()
 end
-
 --! #SEC — the guessing brakes (login's H-5 backoff and sudo's) run on
 --! REAL seconds, never on wallClock(). On OpenComputers os.time() is the
 --! IN-GAME clock: a game day is 86,400 of its seconds and lasts 20 real
@@ -125,28 +110,23 @@ if at and at <= now then return now - at end
 end
 return now
 end
-
 local function saveDB()
 if not fs then
 if log then log.error("users", "saveDB: fs not initialized") end
 return false, "FS not initialized"
 end
-
 local ok, data = pcall(serialize.encode, userDB)
 if not ok then
 if log then log.error("users", "saveDB: serialize failed: " .. tostring(data)) end
 return false, "serialize failed: " .. tostring(data)
 end
-
 local okW, err = (fs.writeFileAtomic or fs.writeFile)(DB_PATH, data)
 if not okW then
-
 if log then log.error("users", "saveDB: write failed: " .. tostring(err)) end
 return false, tostring(err or "write failed")
 end
 return true
 end
-
 local function loadDB()
 if not fs then return false, "FS not initialized" end
 if not fs.exists(DB_PATH) then
@@ -160,7 +140,6 @@ if not db then return false, derr end
 userDB = db
 return true
 end
-
 local function loadElevation()
 if not fs or not fs.exists(ELEVATE_PATH) then return nil end
 local data = fs.readFile(ELEVATE_PATH)
@@ -168,11 +147,9 @@ if type(data) ~= "string" or data == "" then return nil end
 local rec = serialize.decode(data)
 if type(rec) ~= "table" or type(rec.hash) ~= "string"
 or type(rec.salt) ~= "string" then return nil end
-
 if rec.cap ~= TIER.ADMIN and rec.cap ~= TIER.ROOT then rec.cap = TIER.ADMIN end
 return rec
 end
-
 function users.setElevation(session, password, cap)
 local s = session or (currentSession and sessions[currentSession])
 if not s or (s.tier or 0) < TIER.ROOT then
@@ -194,7 +171,6 @@ if log then log.warn("auth", "Elevation password " ..
 .. tostring(s.user)) end
 return true
 end
-
 function users.clearElevation(session)
 local s = session or (currentSession and sessions[currentSession])
 if not s or (s.tier or 0) < TIER.ROOT then
@@ -204,13 +180,11 @@ if fs and fs.exists(ELEVATE_PATH) then pcall(fs.remove, ELEVATE_PATH) end
 if log then log.warn("auth", "Elevation disabled by " .. tostring(s.user)) end
 return true
 end
-
 function users.elevationInfo()
 local rec = loadElevation()
 if not rec then return { configured = false } end
 return { configured = true, cap = rec.cap }
 end
-
 function users.elevate(session, password)
 local s = session or (currentSession and sessions[currentSession])
 local rec = loadElevation()
@@ -237,7 +211,6 @@ return nil, string.format("Too many failed attempts; try again in %ds",
 math.ceil(cd - math.max(elapsed, 0)))
 end
 end
-
 local DUMMY_SALT = "elevate-timing-dummy"
 local probeSalt = (rec and rec.salt) or DUMMY_SALT
 local probeHash = (rec and rec.hash)
@@ -262,32 +235,29 @@ if acct and (acct.elevFailed or acct.elevFailedAt) then
 acct.elevFailed, acct.elevFailedAt = nil, nil
 saveDB()
 end
-
 local newTier = math.max(s.tier or 0, rec.cap)
 local elevated = {
-user         = s.user,
-tier         = newTier,
-realTier     = s.realTier or s.tier,
-home         = s.home,
-displayName  = s.displayName or s.user,
-loginTime    = s.loginTime,
+user = s.user,
+tier = newTier,
+realTier = s.realTier or s.tier,
+home = s.home,
+displayName = s.displayName or s.user,
+loginTime = s.loginTime,
 lastActivity = computer.uptime(),
-elevated     = true,
+elevated = true,
 elevatedFrom = s.tier or 0,
-elevatedCap  = rec.cap,
+elevatedCap = rec.cap,
 }
 if log then log.warn("auth", "User '" .. tostring(s.user)
 .. "' elevated to tier " .. newTier) end
 return elevated
 end
-
 function users.registerSession(sess)
 if type(sess) ~= "table" or not sess.user then return nil end
 local token = crypto.token()
 sessions[token] = sess
 return token
 end
-
 --! #SEC — a session is a SNAPSHOT of the account taken at login: its tier
 --! was copied in, and nothing wrote it again. The shell's tier gate
 --! (helpers.liveTier) reads the session, and so does securefs, because a
@@ -297,15 +267,12 @@ end
 --! session carried on as if nothing had happened -- while M-7's comment
 --! in helpers.lua described the demotion as taking effect at once.
 --! (test_session_follows_account.lua)
-
 local function syncSessionTier(username, newTier)
 for _, s in pairs(sessions) do
 if type(s) == "table" and s.user == username and not s.isGuest then
 s.realTier = newTier
 if s.passwordChangeOnly then
-
 elseif s.elevated then
-
 if newTier < TIER.USER then s.tier = TIER.GUEST
 else s.tier = math.max(newTier, tonumber(s.elevatedCap) or newTier) end
 else
@@ -314,7 +281,6 @@ end
 end
 end
 end
-
 local function revokeSessionsOf(username)
 local doomed = {}
 for token, s in pairs(sessions) do
@@ -328,13 +294,11 @@ s.tier, s.revoked = TIER.GUEST, true
 end
 return #doomed
 end
-
 function users.init(modules)
-fs     = modules.fs
+fs = modules.fs
 crypto = modules.crypto
-log    = modules.log
+log = modules.log
 config = modules.config
-
 if config then
 local ma = config.get and config.get("maxAttempts")
 if type(ma) == "number" and ma > 0 then MAX_FAILED_ATTEMPTS = ma end
@@ -344,131 +308,107 @@ local st = config.get and config.get("sessionTimeout")
 if type(st) == "number" and st > 0 then SESSION_TIMEOUT = st
 elseif st == 0 then SESSION_TIMEOUT = math.huge end
 end
-
 if crypto then crypto.init() end
-
 local ok, err = loadDB()
 if not ok then
 if log then log.warn("users", "Could not load user DB: " .. tostring(err)) end
 userDB = {}
 end
-
 if not userDB["root"] then
 users.createFirstBoot()
 end
-
 if config and config.get and config.get("guestAccess") and not userDB["guest"] then
 users.createGuestAccount()
 end
-
 if not fs.exists("/public") then
 fs.makeDirectory("/public")
 end
 if not fs.exists("/home") then
 fs.makeDirectory("/home")
 end
-
 if log then
 local count = 0
 for _ in pairs(userDB) do count = count + 1 end
 log.info("users", "User system initialized (" .. count .. " accounts)")
 log.info("users", "Crypto: " .. (crypto.hasHardware() and "Hardware (data card)" or "Software"))
 end
-
 return true
 end
-
 function users.createFirstBoot()
 local salt = crypto.salt(16)
 local hash = crypto.hashPassword("root", salt)
-
 userDB["root"] = {
-tier           = TIER.ROOT,
-salt           = salt,
-hash           = hash,
-created        = wallClock(),
-lastLogin      = 0,
-locked         = false,
+tier = TIER.ROOT,
+salt = salt,
+hash = hash,
+created = wallClock(),
+lastLogin = 0,
+locked = false,
 failedAttempts = 0,
-home           = "/root",
-displayName    = "System Administrator",
-firstBoot      = true,
+home = "/root",
+displayName = "System Administrator",
+firstBoot = true,
 }
-
 if fs and not fs.exists("/root") then
 fs.makeDirectory("/root")
 end
-
 saveDB()
-
 if log then
 log.warn("users", "First boot: root account created with default password")
 log.warn("users", "CHANGE THE ROOT PASSWORD IMMEDIATELY!")
 end
 end
-
 function users.createGuestAccount()
 userDB["guest"] = {
-tier           = TIER.GUEST,
-salt           = "",
-hash           = "",
-created        = wallClock(),
-lastLogin      = 0,
-locked         = false,
+tier = TIER.GUEST,
+salt = "",
+hash = "",
+created = wallClock(),
+lastLogin = 0,
+locked = false,
 failedAttempts = 0,
-home           = "/public",
-displayName    = "Guest",
-isGuest        = true,
+home = "/public",
+displayName = "Guest",
+isGuest = true,
 }
 saveDB()
 if log then log.info("users", "Guest account created") end
 end
-
 function users.guestEnabled()
 return config and config.get and config.get("guestAccess") == true
 end
-
 function users.guestLogin()
 if not users.guestEnabled() then
 return nil, "Guest access is disabled"
 end
-
 if not userDB["guest"] then
 users.createGuestAccount()
 end
-
 local user = userDB["guest"]
 if user.locked then
 return nil, "Guest account is locked"
 end
-
 user.lastLogin = wallClock()
 saveDB()
-
 local token = crypto.token()
 sessions[token] = {
-user         = "guest",
-tier         = TIER.GUEST,
-home         = user.home,
-displayName  = "Guest",
-loginTime    = computer.uptime(),
+user = "guest",
+tier = TIER.GUEST,
+home = user.home,
+displayName = "Guest",
+loginTime = computer.uptime(),
 lastActivity = computer.uptime(),
-firstBoot    = false,
-isGuest      = true,
+firstBoot = false,
+isGuest = true,
 }
-
 currentSession = token
-
 if log then log.info("auth", "Guest login") end
 return token
 end
-
 function users.create(creator, username, password, tier)
-
 local sess = users.currentSession()
 if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
 if sess and not sess.isKernel and not sess.isLogin then
-
 creator = sess.user
 if sess.tier < TIER.ADMIN then
 return false, "Insufficient privileges"
@@ -479,11 +419,9 @@ return false, "Creator username is required"
 end
 local creatorUser = userDB[creator]
 if not creatorUser then return false, "Creator not found" end
-
 local effTier = (sess and not sess.isKernel and not sess.isLogin)
 and (sess.tier or 0) or creatorUser.tier
 if effTier < TIER.ADMIN then return false, "Insufficient privileges" end
-
 if not username or #username < 2 or #username > 20 then
 return false, "Username must be 2-20 characters"
 end
@@ -503,54 +441,42 @@ if type(existing) == "string" and existing:lower() == folded then
 return false, "Username already exists"
 end
 end
-
 local okPw, pwErr = validatePassword(password)
 if not okPw then return false, pwErr end
-
 tier = tier or TIER.USER
 if not VALID_TIER[tier] then return false, "Invalid tier" end
-
 if tier >= TIER.ROOT and (not creator or creator ~= "root") then
 return false, "Only root can create root-level accounts"
 end
-
 local salt = crypto.salt(16)
 local hash = crypto.hashPassword(password, salt)
-
 local homePath = "/home/" .. username
 userDB[username] = {
-tier           = tier,
-salt           = salt,
-hash           = hash,
-created        = wallClock(),
-lastLogin      = 0,
-locked         = false,
+tier = tier,
+salt = salt,
+hash = hash,
+created = wallClock(),
+lastLogin = 0,
+locked = false,
 failedAttempts = 0,
-home           = homePath,
-displayName    = username,
+home = homePath,
+displayName = username,
 }
-
 if not fs.exists(homePath) then
 fs.makeDirectory(homePath)
 end
-
 local okS, sErr = saveDB()
 if not okS then
-
 userDB[username] = nil
 return false, "Persist failed: " .. tostring(sErr)
 end
-
 if log then
 log.info("users", string.format("User '%s' created (tier %d) by %s",
 username, tier, creator or "system"))
 end
-
 return true
 end
-
 function users.delete(actor, username)
-
 local sess = users.currentSession()
 if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
 if sess and not sess.isKernel and not sess.isLogin then
@@ -573,24 +499,19 @@ end
 if outranks(userDB[username], effTier) then
 return false, "Cannot delete an account that outranks you"
 end
-
 revokeSessionsOf(username)
-
 local deletedRecord = userDB[username]
 userDB[username] = nil
 local okS, sErr = saveDB()
 if not okS then
-
 userDB[username] = deletedRecord
 return false, "Persist failed: " .. tostring(sErr)
 end
-
 if log then
 log.info("users", string.format("User '%s' deleted by %s", username, actor))
 end
 return true
 end
-
 --! #SEC (AUDIT 5) — the keychain's master IS the login password, and
 --! keychain.lua said changePassword re-keyed it while nothing called
 --! keychain.rekey at all: the vault stayed locked to the old password, the
@@ -624,20 +545,16 @@ if log then log.warn("users", "Keychain re-key failed for '" .. tostring(usernam
 return "Your keychain could not be re-keyed (" .. tostring(err)
 .. "); it still opens with your OLD password."
 end
-
 function users.changePassword(actor, username, oldPassword, newPassword)
 local user = userDB[username]
 if not user then return false, "User not found" end
-
 local sess = users.currentSession()
 if sess and not sess.isKernel and not sess.isLogin then
 actor = sess.user
 end
-
 if isLoginPrincipal(sess) and actor ~= username then
 return false, "Insufficient privileges"
 end
-
 local actorUser = userDB[actor]
 if actor ~= username then
 local effTier = effectiveTier(sess, actorUser)
@@ -648,35 +565,28 @@ if outranks(user, effTier) then
 return false, "Cannot change the password of an account that outranks you"
 end
 else
-
 local ok = crypto.verifyPassword(oldPassword, user.salt, user.hash)
 if not ok then
 return false, "Current password is incorrect"
 end
 end
-
 local okPw, pwErr = validatePassword(newPassword)
 if not okPw then return false, pwErr end
-
 local oldSalt, oldHash, oldFB = user.salt, user.hash, user.firstBoot
 local newSalt = crypto.salt(16)
 user.salt = newSalt
 user.hash = crypto.hashPassword(newPassword, newSalt)
 user.firstBoot = nil
-
 local okS, sErr = saveDB()
 if not okS then
-
 user.salt, user.hash, user.firstBoot = oldSalt, oldHash, oldFB
 return false, "Persist failed: " .. tostring(sErr)
 end
-
 if log then
 log.info("users", string.format("Password changed for '%s' by %s", username, actor))
 end
 return true, rekeyKeychain(username, user.home, actor == username, oldPassword, newPassword)
 end
-
 local function otherUsablePrivileged(excludeName)
 local n = 0
 for name, u in pairs(userDB) do
@@ -687,9 +597,7 @@ end
 end
 return n
 end
-
 function users.setTier(actor, username, newTier)
-
 local sess = users.currentSession()
 if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
 if sess and not sess.isKernel and not sess.isLogin then
@@ -698,7 +606,6 @@ if sess.tier < TIER.ADMIN then return false, "Insufficient privileges" end
 end
 local actorUser = userDB[actor]
 if not actorUser then return false, "Insufficient privileges" end
-
 local effTier = (sess and not sess.isKernel and not sess.isLogin)
 and (sess.tier or 0) or actorUser.tier
 if effTier < TIER.ADMIN then return false, "Insufficient privileges" end
@@ -711,16 +618,13 @@ if not user then return false, "User not found" end
 if outranks(user, effTier) then
 return false, "Cannot change the tier of an account that outranks you"
 end
-
 if newTier >= TIER.ROOT and effTier < TIER.ROOT then
 return false, "Only root can grant root access"
 end
-
 if user.tier >= TIER.ADMIN and newTier < TIER.ADMIN
 and otherUsablePrivileged(username) == 0 then
 return false, "Refusing to demote the last administrator"
 end
-
 local oldTier = user.tier
 user.tier = newTier
 local okS, sErr = saveDB()
@@ -728,18 +632,14 @@ if not okS then
 user.tier = oldTier
 return false, "Persist failed: " .. tostring(sErr)
 end
-
 syncSessionTier(username, newTier)
-
 if log then
 log.info("users", string.format("User '%s' tier set to %d by %s",
 username, newTier, actor))
 end
 return true
 end
-
 function users.setLocked(actor, username, locked)
-
 local sess = users.currentSession()
 if isLoginPrincipal(sess) then return false, "Insufficient privileges" end
 if sess and not sess.isKernel and not sess.isLogin then
@@ -756,14 +656,12 @@ if not user then return false, "User not found" end
 if outranks(user, effTier) then
 return false, "Cannot lock or unlock an account that outranks you"
 end
-
 if locked and type(user.tier) == "number" and user.tier >= TIER.ADMIN
 and not user.locked and otherUsablePrivileged(username) == 0 then
 return false, "Refusing to lock the last usable administrator"
 end
 local oldLocked, oldFA, oldLF = user.locked, user.failedAttempts, user.lastFailedAt
 user.locked = locked
-
 user.failedAttempts = 0
 user.lastFailedAt = nil
 local okS, sErr = saveDB()
@@ -771,7 +669,6 @@ if not okS then
 user.locked, user.failedAttempts, user.lastFailedAt = oldLocked, oldFA, oldLF
 return false, "Persist failed: " .. tostring(sErr)
 end
-
 if locked then
 local n = revokeSessionsOf(username)
 if n > 0 and log then
@@ -780,7 +677,6 @@ end
 end
 return true
 end
-
 local _DUMMY_SALT = "0123456789abcdef"
 local _dummyHashCache = nil
 local function ensureDummyHash()
@@ -790,15 +686,12 @@ _dummyHashCache = crypto.hashPassword("dummy-password-for-timing-only", _DUMMY_S
 end
 return _dummyHashCache
 end
-
 function users.login(username, password, opts)
-
 opts = opts or {}
 local opts_setCurrent = opts.setCurrent
 if opts_setCurrent == nil then opts_setCurrent = true end
 local user = userDB[username]
 if not user then
-
 local dummy = ensureDummyHash()
 if dummy and crypto and crypto.verifyPassword then
 crypto.verifyPassword(password or "", _DUMMY_SALT, dummy)
@@ -806,10 +699,8 @@ end
 if log then log.warn("auth", "Login attempt for unknown user: " .. tostring(username)) end
 return nil, "Invalid username or password"
 end
-
 local cd = loginCooldown(user.failedAttempts)
 if cd > 0 then
-
 local elapsed = sinceFail(user.lastFailedAt)
 if elapsed < cd then
 local dummy = ensureDummyHash()
@@ -822,70 +713,57 @@ end
 return nil, "Invalid username or password"
 end
 end
-
 local verified, needsRehash = crypto.verifyPassword(password, user.salt, user.hash)
 if not verified then
 user.failedAttempts = (user.failedAttempts or 0) + 1
-
 user.lastFailedAt = failStamp()
 if log then
 log.warn("auth", string.format("Failed login for '%s' (attempt %d)",
 username, user.failedAttempts))
 end
-
 if LOCKOUT_AUTO and user.failedAttempts >= MAX_FAILED_ATTEMPTS
 and username ~= "root" then
 user.locked = true
 saveDB()
 if log then log.error("auth", "Account '" .. username .. "' auto-locked!") end
-
 return nil, "Invalid username or password"
 end
-
 saveDB()
 return nil, "Invalid username or password"
 end
-
 if user.locked then
 if log then log.warn("auth", "Login on locked account (correct password): " .. username) end
 return nil, "Account is locked. Contact an administrator."
 end
-
 user.failedAttempts = 0
 user.lastFailedAt = nil
 user.lastLogin = wallClock()
-
 if needsRehash then
 local newSalt = crypto.salt(16)
 user.salt = newSalt
 user.hash = crypto.hashPassword(password, newSalt)
 if log then log.info("auth", "Rehashed legacy credentials for '" .. username .. "'") end
 end
-
 saveDB()
-
 local effectiveTier = user.tier
 if user.firstBoot then
 effectiveTier = TIER.GUEST
 end
-
 local token = crypto.token()
 sessions[token] = {
-user            = username,
-tier            = effectiveTier,
-realTier        = user.tier,
-home            = user.home,
-displayName     = user.displayName or username,
-loginTime       = computer.uptime(),
-lastActivity    = computer.uptime(),
-firstBoot       = user.firstBoot or false,
+user = username,
+tier = effectiveTier,
+realTier = user.tier,
+home = user.home,
+displayName = user.displayName or username,
+loginTime = computer.uptime(),
+lastActivity = computer.uptime(),
+firstBoot = user.firstBoot or false,
 passwordChangeOnly = user.firstBoot or false,
 }
-
 if opts_setCurrent ~= false then
 currentSession = token
 end
-
 if log then
 if user.firstBoot then
 log.info("auth", "User '" .. username .. "' authenticated (firstBoot — restricted token)")
@@ -893,10 +771,8 @@ else
 log.info("auth", "User '" .. username .. "' logged in (tier " .. user.tier .. ")")
 end
 end
-
 return token
 end
-
 function users.promoteAfterFirstBoot(token)
 local s = sessions[token]
 if not s then return false, "Unknown token" end
@@ -904,7 +780,6 @@ if not s.passwordChangeOnly then return false, "Session is not first-boot" end
 local rec = userDB[s.user]
 if not rec then return false, "User not found" end
 if rec.firstBoot then
-
 return false, "First-boot password still required"
 end
 s.tier = s.realTier or rec.tier
@@ -912,7 +787,6 @@ s.passwordChangeOnly = nil
 s.firstBoot = nil
 return true
 end
-
 function users.logout(token)
 token = token or currentSession
 if token and sessions[token] then
@@ -926,27 +800,21 @@ return true
 end
 return false
 end
-
 function users.currentSession()
-
 local okProc, procMod = pcall(require, "kernel.process")
 if okProc and procMod and procMod.currentSession then
 local s = procMod.currentSession()
 if s then
-
 if s.lastActivity and s.lastActivity ~= math.huge then
 s.lastActivity = computer.uptime()
 end
-
 local tok = procMod.currentToken and procMod.currentToken() or nil
 return s, tok
 end
 end
-
 if _G._TOS and _G._TOS.bootSession then
 return _G._TOS.bootSession, nil
 end
-
 if currentSession and sessions[currentSession] then
 local s = sessions[currentSession]
 local now = computer.uptime()
@@ -961,7 +829,6 @@ return s, currentSession
 end
 return nil
 end
-
 function users.getSession(token)
 local s = sessions[token]
 if s then
@@ -975,10 +842,8 @@ end
 end
 return s
 end
-
 function users.sweepSessions()
 local now = computer.uptime()
-
 local expired = {}
 for token, s in pairs(sessions) do
 if (now - (s.lastActivity or 0)) > SESSION_TIMEOUT then
@@ -991,85 +856,75 @@ sessions[e.token] = nil
 if e.token == currentSession then currentSession = nil end
 end
 end
-
 local KERNEL_SESSION = {
-user         = "_kernel_",
-tier         = TIER.ROOT,
-home         = "/",
-displayName  = "Kernel",
-isKernel     = true,
-loginTime    = 0,
+user = "_kernel_",
+tier = TIER.ROOT,
+home = "/",
+displayName = "Kernel",
+isKernel = true,
+loginTime = 0,
 lastActivity = math.huge,
 }
-
 function users.kernelSession()
 return KERNEL_SESSION
 end
-
 function users.loginSession(dIdx)
 return {
-user         = "_login_",
-tier         = TIER.GUEST,
-home         = "/",
-displayName  = "Login (seat " .. tostring(dIdx or "?") .. ")",
-isLogin      = true,
-display      = dIdx,
-loginTime    = 0,
+user = "_login_",
+tier = TIER.GUEST,
+home = "/",
+displayName = "Login (seat " .. tostring(dIdx or "?") .. ")",
+isLogin = true,
+display = dIdx,
+loginTime = 0,
 lastActivity = math.huge,
 }
 end
-
 function users.sessionFor(username)
 if type(username) ~= "string" then return nil end
 local u = userDB[username]
 if not u then return nil end
 return {
-user         = username,
-tier         = u.tier,
-home         = u.home,
-displayName  = u.displayName or username,
-loginTime    = computer.uptime(),
+user = username,
+tier = u.tier,
+home = u.home,
+displayName = u.displayName or username,
+loginTime = computer.uptime(),
 lastActivity = math.huge,
-isService    = true,
+isService = true,
 }
 end
-
 function users.createSession(userOrName)
 local username
 if type(userOrName) == "string" then
 username = userOrName
 elseif type(userOrName) == "table" then
-
 username = type(userOrName.name) == "string" and userOrName.name or nil
 end
 if not username then return nil end
-
 local canonical = userDB[username]
 if not canonical then return nil end
 return {
-user         = username,
-tier         = canonical.tier,
-home         = canonical.home,
-displayName  = canonical.displayName or username,
-loginTime    = computer.uptime(),
+user = username,
+tier = canonical.tier,
+home = canonical.home,
+displayName = canonical.displayName or username,
+loginTime = computer.uptime(),
 lastActivity = math.huge,
-isService    = true,
+isService = true,
 }
 end
-
 local WORLD_READABLE = {
-["/etc/motd"]     = true,
+["/etc/motd"] = true,
 ["/etc/hostname"] = true,
-["/etc/profile"]  = true,
-["/etc/tos.cfg"]  = true,
+["/etc/profile"] = true,
+["/etc/tos.cfg"] = true,
 }
-
 local SHADOW_PATHS = {
 ["/etc/users.dat"] = true,
-["/etc/shadow"]    = true,
-["/var/shadow"]    = true,
+["/etc/shadow"] = true,
+["/var/shadow"] = true,
 }
-
 --! #SEC — ROOT writes these, as it writes the shadow file: each hands kernel
 --! authority to whatever it points at, so an ADMIN who could write one could
 --! walk around every ROOT-only line (the same reasoning that made installing
@@ -1079,7 +934,6 @@ local SHADOW_PATHS = {
 local ROOT_WRITE_PATHS = {
 ["/etc/selftest.on"] = true,
 }
-
 --! #SEC (pentest, Sep 2026) — secrets at rest that the generic rule below
 --! ("/etc and /var: read OK for any session") handed to every logged-in
 --! account, guest included. READ needs ADMIN; writes keep their normal
@@ -1091,9 +945,9 @@ local ROOT_WRITE_PATHS = {
 --!                     predicts the salts/tokens/nonces a card-less box mints
 --!   /etc/cluster-manager.cfg  worker_bridge_secret
 local ADMIN_READ_PATHS = {
-["/etc/elevate.dat"]         = true,
-["/etc/trust.dat"]           = true,
-["/etc/entropy"]             = true,
+["/etc/elevate.dat"] = true,
+["/etc/trust.dat"] = true,
+["/etc/entropy"] = true,
 ["/etc/cluster-manager.cfg"] = true,
 }
 --! Whole trees, same rule:
@@ -1110,7 +964,6 @@ local ADMIN_READ_TREES = { "/var/log", "/var/crash", "/var/swap", "/var/pkg/secr
 --! holds the same bytes, so it takes the same rule: it sits there for the
 --! whole write, and after a crash until the next boot repairs it.
 local ATOMIC_TMP_SUFFIX = "%.tos%-tmp$"
-
 --! #SEC (pentest, Sep 2026) — the rules below match exact strings, and the
 --! disk under them does not always. OpenComputers' default (buffered)
 --! filesystem goes case-INSENSITIVE on a Windows or macOS host: it probes
@@ -1137,21 +990,15 @@ if #k > 1 then k = k:sub(1, -2) end
 return k
 end
 users.pathKey = pathKey
-
 local function pathUnder(p, prefix)
 return p == prefix or p:sub(1, #prefix + 1) == prefix .. "/"
 end
-
 local SYSTEM_PATHS = { "/tos", "/etc", "/var", "/usr" }
-
 local function decide(session, path, mode, user)
-
 if mode == "r" and WORLD_READABLE[path] then
 return true
 end
-
 local basePath = (path:gsub(ATOMIC_TMP_SUFFIX, ""))
-
 if SHADOW_PATHS[basePath] then
 if mode == "r" then
 return session.tier >= TIER.ADMIN, "Shadow file (admin required)"
@@ -1161,7 +1008,6 @@ end
 if mode == "w" and ROOT_WRITE_PATHS[basePath] then
 return session.tier >= TIER.ROOT, "Grants kernel authority (root required)"
 end
-
 if mode == "r" then
 if ADMIN_READ_PATHS[basePath] then
 return session.tier >= TIER.ADMIN, "Secret-bearing file (admin required)"
@@ -1172,7 +1018,6 @@ return session.tier >= TIER.ADMIN, "Admin-only area (admin required)"
 end
 end
 end
-
 local mailUser = path:match("^/var/mail/([^/]+)")
 if mailUser then
 if user ~= mailUser and session.tier < TIER.ADMIN then
@@ -1183,7 +1028,6 @@ return session.tier >= TIER.ADMIN, "System path (admin required)"
 end
 return true
 end
-
 for _, sp in ipairs(SYSTEM_PATHS) do
 if pathUnder(path, sp) then
 if mode == "w" then
@@ -1192,18 +1036,15 @@ end
 return true
 end
 end
-
 if pathUnder(path, "/public") then
 if mode == "w" then
 return session.tier >= TIER.USER, "Write requires user account"
 end
 return true
 end
-
 if pathUnder(path, "/tmp") then
 return true
 end
-
 local homeMatch = path:match("^/home/([^/]+)")
 if homeMatch then
 if homeMatch == user then
@@ -1214,23 +1055,18 @@ return true
 end
 return false, "Access denied: not your home directory"
 end
-
 if pathUnder(path, "/root") then
 return session.tier >= TIER.ROOT, "Root access required"
 end
-
 if mode == "w" then
 return session.tier >= TIER.ADMIN, "Admin privileges required"
 end
 return session.tier >= TIER.USER, "User account required"
 end
-
 local function checkAccess(session, path, mode)
-
 if not session then
 return false, "Not logged in"
 end
-
 --! #SEC (pentest, Sep 2026) — and fail closed on anything that is not
 --! a usable path, which this comment promised and the code did not do:
 --! a non-string became "/", which any USER may read, so canAccessAs(s,
@@ -1246,7 +1082,6 @@ path = fs.normalize(path)
 elseif path:find("\0", 1, true) then
 path = nil
 else
-
 path = path:gsub("\\", "/")
 if path:sub(1, 1) ~= "/" then path = "/" .. path end
 local parts = {}
@@ -1257,11 +1092,9 @@ end
 path = "/" .. table.concat(parts, "/")
 end
 if not path then return false, "Invalid path" end
-
 if session.tier >= TIER.ROOT then
 return true
 end
-
 local ok, why = decide(session, path, mode, session.user)
 if not ok then return false, why end
 local key = pathKey(path)
@@ -1272,36 +1105,31 @@ if not ok then return false, why end
 end
 return true
 end
-
 function users.canAccessAs(session, path, mode)
 return checkAccess(session, path, mode)
 end
-
 function users.canAccess(path, mode)
 return checkAccess(users.currentSession(), path, mode)
 end
-
 function users.list(forTier)
 local sess = users.currentSession()
 local sessTier = (sess and sess.tier) or TIER.GUEST
 local cap = forTier or sessTier
-
 if cap > sessTier then cap = sessTier end
 forTier = cap
 local result = {}
 for username, user in pairs(userDB) do
 local entry = {
-username    = username,
-tier        = user.tier,
+username = username,
+tier = user.tier,
 displayName = user.displayName or username,
-locked      = user.locked or false,
+locked = user.locked or false,
 }
-
 if forTier >= TIER.ADMIN then
-entry.created        = user.created
-entry.lastLogin      = user.lastLogin
+entry.created = user.created
+entry.lastLogin = user.lastLogin
 entry.failedAttempts = user.failedAttempts
-entry.home           = user.home
+entry.home = user.home
 end
 result[#result + 1] = entry
 end
@@ -1311,24 +1139,18 @@ return a.username < b.username
 end)
 return result
 end
-
 function users.getUser(username)
 local u = userDB[username]
 if not u then return nil end
 local copy = {}
 for k, v in pairs(u) do copy[k] = v end
-
 copy.name = username
-
 copy.salt = nil
 copy.hash = nil
 return copy
 end
-
 function users.exists(username)
 return userDB[username] ~= nil
 end
-
 users.TIER = TIER
-
 return users

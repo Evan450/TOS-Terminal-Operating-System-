@@ -1,5 +1,4 @@
 local keys = {}
-
 --! Deliberately SMALL. These are the bindings that mean the same thing
 --! in every program; anything a single program invented stays in that
 --! program. A "standard" that tries to cover every key ends up
@@ -10,12 +9,12 @@ local keys = {}
 --! that an emulator, or some future OC build that does deliver it,
 --! behaves the same. See the convention block in panels/keymap.lua.
 local DEFAULTS = {
-quit    = { "^Q", "F10", "Esc" },
-help    = { "F1" },
-save    = { "^S" },
-find    = { "/" },
+quit = { "^Q", "F10", "Esc" },
+help = { "F1" },
+save = { "^S" },
+find = { "/" },
 refresh = { "^R" },
-view    = { "F2" },
+view = { "F2" },
 --! COPY IS Ctrl+Insert, NOT ^C, AND THAT IS NOT A STYLE CHOICE.
 --! kernel/init.lua consumes char 3 to interrupt the foreground process
 --! and then blanks the signal, so ^C never reaches a program at all —
@@ -24,28 +23,26 @@ view    = { "F2" },
 --! reason a decade before ^C/^X/^V existed, and TOS looks like Norton
 --! Commander on purpose. ^X and ^V are free, so they are kept as the
 --! second binding for the two that can have one.
-copy    = { "Ctrl+Insert" },
-cut     = { "Shift+Delete", "^X" },
-paste   = { "Shift+Insert", "^V" },
+copy = { "Ctrl+Insert" },
+cut = { "Shift+Delete", "^X" },
+paste = { "Shift+Insert", "^V" },
 }
-
 local DESCRIPTIONS = {
-quit    = "Close the current program, prompt or dialog",
-help    = "Show the program's help",
-save    = "Save",
-find    = "Filter / search within a list",
+quit = "Close the current program, prompt or dialog",
+help = "Show the program's help",
+save = "Save",
+find = "Filter / search within a list",
 refresh = "Re-read and redraw",
 --! THE SIXTH ACTION, added with the merged Home surface. It is here
 --! rather than as a bespoke panels scancode for the reason the whole
 --! file exists: "flip to the other view" is a thing an operator will
 --! want to rebind, and every surface that draws an F2 legend reads
 --! keys.label("view") so the label can never disagree with the bind.
-view    = "Switch the view (Home: tiles or files)",
-copy    = "Copy the selection (^C is the kernel's interrupt)",
-cut     = "Cut the selection",
-paste   = "Paste the clipboard",
+view = "Switch the view (Home: tiles or files)",
+copy = "Copy the selection (^C is the kernel's interrupt)",
+cut = "Cut the selection",
+paste = "Paste the clipboard",
 }
-
 --! NOT REBINDABLE, and listed so `keys` can say so rather than leaving
 --! an operator to discover it by trying. These are consumed by the
 --! KERNEL before a program ever sees them — rebinding them here would
@@ -55,31 +52,27 @@ local RESERVED = {
 ["^T"] = "switch tasks / open the Monitor (kernel)",
 ["^C"] = "interrupt the foreground program (kernel)",
 }
-
 local NAMED = {
-esc = { code = 1 },      enter = { code = 28 },  tab = { code = 15 },
-space = { code = 57 },   backspace = { code = 14 },
+esc = { code = 1 }, enter = { code = 28 }, tab = { code = 15 },
+space = { code = 57 }, backspace = { code = 14 },
 delete = { code = 211 }, insert = { code = 210 },
-home = { code = 199 },   ["end"] = { code = 207 },
+home = { code = 199 }, ["end"] = { code = 207 },
 pageup = { code = 201 }, pagedown = { code = 209 },
-up = { code = 200 },     down = { code = 208 },
-left = { code = 203 },   right = { code = 205 },
+up = { code = 200 }, down = { code = 208 },
+left = { code = 203 }, right = { code = 205 },
 }
 for i = 1, 10 do NAMED["f" .. i] = { code = 58 + i } end
 NAMED.f11, NAMED.f12 = { code = 87 }, { code = 88 }
-
 function keys.parse(name)
 if type(name) ~= "string" then return nil end
 local s = name:match("^%s*(.-)%s*$")
 if s == "" then return nil end
-
 local c = s:match("^%^(.)$") or s:match("^[Cc][Tt][Rr][Ll][%+%-](.)$")
 if c then
 local b = c:upper():byte()
 if b and b >= 64 and b <= 95 then return { ch = b - 64, ctrl = c:upper() } end
 return nil
 end
-
 --! Modifier + NAMED key. A letter chord encodes its modifier in the
 --! character OC delivers (^Q arrives as 17), but a named key does not:
 --! Shift+Delete and Delete are the same scancode with no character at
@@ -97,21 +90,18 @@ elseif low == "alt" then mods.alt = true
 else break end
 rest = tail
 end
-
 local named = NAMED[rest:lower()]
 if named then
 local m = { code = named.code }
 m.needCtrl, m.needShift, m.needAlt = mods.ctrl, mods.shift, mods.alt
 return m
 end
-
 if rest == s and #s == 1 then
 local b = s:byte()
 if b >= 32 and b < 127 then return { ch = b } end
 end
 return nil
 end
-
 function keys.name(m)
 if type(m) ~= "table" then return "?" end
 if m.ctrl then return "^" .. m.ctrl end
@@ -120,15 +110,14 @@ if m.ch < 32 then return "^" .. string.char(m.ch + 64) end
 return string.char(m.ch)
 end
 local prefix = ""
-if m.needCtrl  then prefix = prefix .. "Ctrl+" end
+if m.needCtrl then prefix = prefix .. "Ctrl+" end
 if m.needShift then prefix = prefix .. "Shift+" end
-if m.needAlt   then prefix = prefix .. "Alt+" end
+if m.needAlt then prefix = prefix .. "Alt+" end
 for n, v in pairs(NAMED) do
 if v.code == m.code then return prefix .. (n:gsub("^%l", string.upper)) end
 end
 return prefix .. "code " .. tostring(m.code)
 end
-
 --! OC delivers key_down/key_up for the modifier keys themselves, and
 --! that is the ONLY way to know whether Shift is held: Shift+Left and
 --! Left are byte-identical in a key_down signal (no character, same
@@ -146,26 +135,22 @@ end
 --! need a re-login to clear.
 local MOD_CODES = {
 [42] = "shift", [54] = "shift",
-[29] = "ctrl",  [157] = "ctrl",
-[56] = "alt",   [184] = "alt",
+[29] = "ctrl", [157] = "ctrl",
+[56] = "alt", [184] = "alt",
 }
 local STALE_AFTER = 15
-
 function keys.newMods()
 return { shift = false, ctrl = false, alt = false, at = 0 }
 end
-
 function keys.trackMods(mods, sig, ch, co, now)
 if type(mods) ~= "table" then return false end
 now = now or 0
-
 if mods.at > 0 and (now - mods.at) > STALE_AFTER then
 mods.shift, mods.ctrl, mods.alt = false, false, false
 end
 local which = MOD_CODES[co]
 if sig == "key_down" then
 if which then mods[which] = true; mods.at = now; return true end
-
 if ch and ch >= 32 then mods.ctrl, mods.alt = false, false end
 mods.at = now
 elseif sig == "key_up" then
@@ -174,18 +159,14 @@ mods.at = now
 end
 return false
 end
-
 function keys.modDown(mods, which, now)
 if type(mods) ~= "table" then return false end
 if mods.at > 0 and ((now or 0) - mods.at) > STALE_AFTER then return false end
 return mods[which] == true
 end
-
 keys.MOD_CODES = MOD_CODES
 keys.STALE_AFTER = STALE_AFTER
-
 local _cache = {}
-
 local function decodeFile(path)
 local okF, fs = pcall(require, "kernel.fs")
 local okS, ser = pcall(require, "kernel.serialize")
@@ -196,7 +177,6 @@ local ok, t = pcall(ser.decode, raw, { maxBytes = 8192 })
 if ok and type(t) == "table" then return t end
 return nil
 end
-
 --! Apply one config over `out`. An action names a LIST of keys, and a
 --! config REPLACES that action's list rather than adding to it — "quit
 --! is F4" has to be able to mean only F4, or an operator can never take
@@ -217,12 +197,10 @@ if #parsed > 0 then out[action] = parsed end
 end
 end
 end
-
 local function homeOf(who)
 if not who or who == "" then return nil end
 return (who == "root") and "/root" or ("/home/" .. who)
 end
-
 function keys.load(who)
 if not who then
 local okU, users = pcall(require, "kernel.users")
@@ -233,7 +211,6 @@ end
 end
 local ck = who or "*"
 if _cache[ck] then return _cache[ck] end
-
 local out = {}
 for action, names in pairs(DEFAULTS) do
 local list = {}
@@ -246,16 +223,13 @@ end
 applyConfig(out, decodeFile("/etc/keys.cfg"))
 local home = homeOf(who)
 if home then applyConfig(out, decodeFile(home .. "/.keys.cfg")) end
-
 _cache[ck] = out
 return out
 end
-
 function keys.reload()
 _cache = {}
 return true
 end
-
 --! `mods` IS OPTIONAL AND THAT IS LOAD-BEARING. Every call site that
 --! predates modifier-aware bindings passes four arguments and must keep
 --! behaving identically, so a matcher's modifier requirements are only
@@ -270,9 +244,9 @@ for _, m in ipairs(bind) do
 if m.ch and ch and m.ch == ch then return true end
 if m.code and code and m.code == code then
 if not mods then return true end
-local wantCtrl  = m.needCtrl  == true
+local wantCtrl = m.needCtrl == true
 local wantShift = m.needShift == true
-local wantAlt   = m.needAlt   == true
+local wantAlt = m.needAlt == true
 if (mods.ctrl == true) == wantCtrl
 and (mods.shift == true) == wantShift
 and (mods.alt == true) == wantAlt then
@@ -282,18 +256,15 @@ end
 end
 return false
 end
-
 function keys.label(action, who)
 local bind = keys.load(who)[action]
 if not bind or #bind == 0 then return "" end
 local parts = {}
 for _, m in ipairs(bind) do
-
 if m.code ~= 1 then parts[#parts + 1] = keys.name(m) end
 end
 return table.concat(parts, " / ")
 end
-
 function keys.actions(who)
 local bound = keys.load(who)
 local out = {}
@@ -305,27 +276,23 @@ local names = {}
 for _, m in ipairs(bound[action] or {}) do names[#names + 1] = keys.name(m) end
 rows[#rows + 1] = {
 action = action,
-keys   = table.concat(names, " "),
-help   = DESCRIPTIONS[action] or "",
+keys = table.concat(names, " "),
+help = DESCRIPTIONS[action] or "",
 isDefault = table.concat(names, " ") == table.concat(DEFAULTS[action], " "),
 }
 end
 return rows
 end
-
 function keys.reserved()
 local out = {}
 for k, v in pairs(RESERVED) do out[#out + 1] = { key = k, help = v } end
 table.sort(out, function(a, b) return a.key < b.key end)
 return out
 end
-
 function keys.isReserved(name)
 local m = keys.parse(name)
 if not m or not m.ctrl then return false end
 return RESERVED["^" .. m.ctrl] ~= nil
 end
-
 keys.DEFAULTS = DEFAULTS
-
 return keys

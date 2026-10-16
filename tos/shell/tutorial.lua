@@ -1,10 +1,7 @@
 local computer = require("computer")
-
 local tutorial = {}
-
 local LEGACY_MARKER = "/etc/.tutorial_done"
-local MARKER_FILE   = ".tutorial_done"
-
+local MARKER_FILE = ".tutorial_done"
 function tutorial.markerFor(session)
 if type(session) ~= "table" then return nil end
 if session.isGuest or session.user == "guest" then return nil end
@@ -12,7 +9,6 @@ local home = session.home
 if type(home) ~= "string" or home == "" or home == "/" then return nil end
 return (home:gsub("/+$", "")) .. "/" .. MARKER_FILE
 end
-
 local pages = {
 { title = "Welcome to TOS", minTier = 0, lines = {
 "",
@@ -163,14 +159,12 @@ local pages = {
 "Remember:",
 "  Press F1 anytime for command help.",
 "",
-
 "  Run 'tutorial' to see this again -- it won't",
 "  interrupt you a second time on its own.",
 "",
 "Press Enter to begin.",
 }},
 }
-
 function tutorial.shouldShow(F, session)
 if not (F and F.exists) then return false end
 --! PASS THE SESSION. securefs resolves the acting principal as
@@ -189,23 +183,19 @@ if not (F and F.exists) then return false end
 --! just been allowed to write it.
 local path = tutorial.markerFor(session)
 if not path then
-
 return not F.exists(LEGACY_MARKER, session)
 end
 if F.exists(path, session) then return false end
-
 if session.user == "root" and F.exists(LEGACY_MARKER, session) then return false end
 return true
 end
-
 function tutorial.run(ctx)
-local D  = ctx.D
-local F  = ctx.F
-local U  = ctx.U
+local D = ctx.D
+local F = ctx.F
+local U = ctx.U
 local st = ctx.st
-local W  = ctx.W or 80
-local H  = ctx.H or 25
-
+local W = ctx.W or 80
+local H = ctx.H or 25
 local tier = 0
 local writeSess = nil
 local session = nil
@@ -217,9 +207,7 @@ writeSess = sess
 session = sess
 end
 end
-
 local marker = tutorial.markerFor(session) or LEGACY_MARKER
-
 local function markDone()
 local ok, err
 if writeSess then
@@ -237,7 +225,6 @@ end)
 end
 return ok, err
 end
-
 local vis = {}
 for i = 1, #pages do
 if tier >= pages[i].minTier then
@@ -245,18 +232,14 @@ vis[#vis + 1] = pages[i]
 end
 end
 if #vis == 0 then
-
 pcall(markDone)
 return
 end
-
 local total = #vis
 local cur = 1
-
 local function finish()
 pcall(markDone)
 end
-
 local function wrapText(text, width)
 if #text <= width then return { text } end
 local lines = {}
@@ -272,29 +255,23 @@ end
 if #text > 0 then lines[#lines + 1] = text end
 return lines
 end
-
 local function drawPage()
 local T = D.getTheme()
 local pg = vis[cur]
-
 local boxW = math.min(W - 2, 60)
 local boxH = math.min(H - 2, 20)
 local boxX = math.floor((W - boxW) / 2) + 1
 local boxY = math.floor((H - boxH) / 2) + 1
-
 D.clear(T.bg)
-
 D.dbox(boxX, boxY, boxW, boxH, pg.title, {
-bg     = T.panel_bg,
+bg = T.panel_bg,
 border = T.border,
-title  = T.title,
+title = T.title,
 })
-
 local contentX = boxX + 2
 local contentY = boxY + 2
 local contentW = boxW - 4
 local maxLines = boxH - 4
-
 local wrapped = {}
 for _, line in ipairs(pg.lines) do
 if #line == 0 then
@@ -305,11 +282,9 @@ wrapped[#wrapped + 1] = wl
 end
 end
 end
-
 for i = 1, math.min(#wrapped, maxLines) do
 D.set(contentX, contentY + (i - 1), wrapped[i], T.fg, T.panel_bg)
 end
-
 local navW = boxW - 4
 local nav
 if navW >= 44 then
@@ -323,13 +298,10 @@ if #nav > navW then nav = nav:sub(1, navW) end
 local navX = boxX + math.floor((boxW - #nav) / 2)
 D.set(math.max(boxX + 1, navX), boxY + boxH - 1, nav, T.dim, T.panel_bg)
 end
-
 drawPage()
-
 while true do
 local sig, _, ch, code = computer.pullSignal(0.5)
 if sig == "key_down" then
-
 if ch == 17 then
 local T = D.getTheme()
 local prompt = "Skip tutorial? [y/N]"
@@ -352,7 +324,6 @@ else
 drawPage()
 end
 end
-
 if code == 28 or code == 208 then
 if cur >= total then
 finish()
@@ -360,7 +331,6 @@ return
 end
 cur = cur + 1
 drawPage()
-
 elseif code == 14 or code == 200 then
 if cur > 1 then
 cur = cur - 1
@@ -370,5 +340,4 @@ end
 end
 end
 end
-
 return tutorial

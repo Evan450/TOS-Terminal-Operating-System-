@@ -1,5 +1,4 @@
 local helpers = require("shell.panels.helpers")
-
 local editorMod = nil
 local function getEditor()
 if editorMod == nil then
@@ -8,7 +7,6 @@ editorMod = ok and m or false
 end
 return editorMod or nil
 end
-
 local coopYield = function() end
 do
 local okP, procMod = pcall(require, "kernel.process")
@@ -16,23 +14,19 @@ if okP and procMod and procMod.yieldCooperative then
 coopYield = procMod.yieldCooperative
 end
 end
-
 local M = {}
-
 --! Read-only status commands where `-f` means "follow": a live tab. Only
 --! these, because -f is NOT free in general -- `trash restore` and admin's
 --! user commands read it as --force. `--live` works on any command.
 local LIVE_SHORT = { ps = true, df = true, mem = true, uptime = true, log = true,
 net = true, battery = true, lsdev = true }
 M.LIVE_SHORT = LIVE_SHORT
-
 function M.build(S, deps)
 local F = S.F
 local T = S.T
 local rp = deps.rp
 local makeProgramEnv = deps.makeProgramEnv
 local C = deps.C
-
 local function tokenize(cmdStr)
 local parts, cur = {}, nil
 local i, n = 1, #cmdStr
@@ -68,7 +62,6 @@ end
 push()
 return parts
 end
-
 local function handOff(name, fn, args, screenReq, bgPolicy)
 local okP, proc = pcall(require, "kernel.process")
 if not okP or type(proc) ~= "table" or not proc.spawn then return false end
@@ -77,7 +70,6 @@ if not seat then return false end
 local me = proc.current and proc.current()
 local shellPid = me and me.pid
 if not shellPid then return false end
-
 local okS, screenMod = pcall(require, "kernel.screen")
 screenMod = okS and screenMod or nil
 local fitted = false
@@ -90,25 +82,20 @@ local w = screenMod.fitDisplay(seat,
 fitted = w ~= nil
 end
 end
-
 local printed = {}
 local function progOut(text, color)
 printed[#printed + 1] = { tostring(text), color or T.fg }
 end
-
 local pid
 pid = proc.spawn("prog:" .. name .. "@" .. seat, function()
 local ok, err = pcall(fn, args, progOut)
 if not ok then
 printed[#printed + 1] = { "Error: " .. tostring(err), T.error }
 end
-
 if fitted and screenMod and screenMod.restore then
 pcall(screenMod.restore, seat)
 end
-
 if S._program and S._program.pid == pid then S._program = nil end
-
 local okT, tabsMod = pcall(require, "shell.panels.tabs")
 if okT and tabsMod then
 for i, t in ipairs(S.tabs or {}) do
@@ -119,7 +106,6 @@ break
 end
 end
 end
-
 if S.D and S.D.invalidate then pcall(S.D.invalidate) end
 if #printed > 0 then S.outLines = helpers.expandBuf(S, printed) end
 local sp = proc.get and proc.get(shellPid)
@@ -128,36 +114,31 @@ proc.setForeground(shellPid, seat, { kernel = true })
 ;(proc.signalKernel or proc.signal)(shellPid, "tos_focus")
 end
 end, {
-priority   = 3,
-source     = "user",
-principal  = helpers.sessionOf and helpers.sessionOf(S) or nil,
-token      = S.st,
-display    = seat,
+priority = 3,
+source = "user",
+principal = helpers.sessionOf and helpers.sessionOf(S) or nil,
+token = S.st,
+display = seat,
 background = bgPolicy,
 })
 if not pid then
 if fitted and screenMod and screenMod.restore then pcall(screenMod.restore, seat) end
 return false
 end
-
 S._program = { pid = pid, name = name, seat = seat }
-
 local okT, tabsMod = pcall(require, "shell.panels.tabs")
 if okT and tabsMod then
 pcall(tabsMod.create, S, "program", name,
 { pid = pid, seat = seat, prog = name, live = true })
 end
-
 S.suspendIdleDraw = true
 if S.D and S.D.invalidate then pcall(S.D.invalidate) end
 proc.setForeground(pid, seat, { kernel = true })
 return true
 end
-
 local function execSingle(cmdStr, inputData, allowHandOff)
 local parts = tokenize(cmdStr)
 if #parts == 0 then return "" end
-
 parts = helpers.expandAlias(S, parts)
 if #parts == 0 then return "" end
 local name = parts[1]:lower()
@@ -177,24 +158,18 @@ break
 end
 end
 end
-
 S.curCmd = name
-
 if name ~= "why" then helpers.clearFailure(S) end
 local args = {}
 for i = 2, #parts do args[#args + 1] = parts[i] end
-
 local buf = {}
 local function o(text, color)
 buf[#buf + 1] = { tostring(text), color or T.fg }
-
 if color == T.error and name ~= "why" then
 helpers.noteFailure(S, name, text)
 end
-
 coopYield()
 end
-
 if inputData and #inputData > 0 then
 if name == "grep" and #args >= 1 and not args[2] then
 local pat = args[1]
@@ -210,7 +185,6 @@ o(string.format(" %d lines  %d words  %d bytes", lc, wc2, bc), T.fg)
 return buf
 end
 end
-
 local fn = C[name]
 --! #SEC (pentest, Sep 2026) — the REGISTRY tier is enforced here, at the
 --! one dispatch point both shells share (cli.lua builds this executor
@@ -243,13 +217,11 @@ local screenReq = nil
 local foreignDraw = false
 local fullscreen, bgPolicy = false, "drowsy"
 if not fn then
-
 local okP, pkgMod = false, nil
 if helpers.mayHavePackages() then okP, pkgMod = pcall(require, "kernel.pkg") end
 if okP and pkgMod and pkgMod.getCommand then
 fn = pkgMod.getCommand(name)
 foreignDraw = fn ~= nil
-
 if fn and pkgMod.getCommandScreen then screenReq = pkgMod.getCommandScreen(name) end
 if fn and pkgMod.getCommandFullscreen then
 fullscreen = pkgMod.getCommandFullscreen(name)
@@ -259,19 +231,15 @@ end
 end
 end
 end
-
 if fn and fullscreen and allowHandOff then
 if handOff(name, fn, args, screenReq, bgPolicy) then return {} end
-
 end
-
 local function invalidateDisplay()
 if S.D and S.D.invalidate then pcall(S.D.invalidate) end
 end
 if fn then
 local fitted = false
 if screenReq then
-
 local alreadyEnough = screenReq.mode == "min"
 and (S.W or 0) >= screenReq.width and (S.H or 0) >= screenReq.height
 if not alreadyEnough then
@@ -288,19 +256,16 @@ local ok2, err2 = pcall(fn, args, o)
 if not ok2 then o("Error: " .. tostring(err2), T.error) end
 if foreignDraw then invalidateDisplay() end
 if fitted then
-
 local okS, screenMod = pcall(require, "kernel.screen")
 if okS and screenMod and screenMod.restore then pcall(screenMod.restore, S.displayIdx) end
 local okSM, SM = pcall(require, "shell.panels.state")
 if okSM and SM and SM.recomputeLayout then pcall(SM.recomputeLayout, S) end
 end
 else
-
 local resolved = helpers.resolveProgram(F, name)
 if resolved then
 local data = F.readFile(resolved)
 if data then
-
 local pkgCaps, pkgOwner = nil, nil
 local okPk, pkgMod = false, nil
 if helpers.mayHavePackages() then okPk, pkgMod = pcall(require, "kernel.pkg") end
@@ -313,14 +278,12 @@ local fn2, err2 = load(data, "=" .. resolved, "t", progEnv)
 if fn2 then
 local ok2, result = pcall(fn2, table.unpack(args))
 helpers.reportProgramEnd(S, o, ok2, result, "Error: ", progEnv)
-
 invalidateDisplay()
 else
 o("Compile error: " .. tostring(err2), T.error)
 end
 end
 else
-
 local okReg, cmdsMod = pcall(require, "shell.panels.commands")
 local known = okReg and cmdsMod.entry and cmdsMod.entry(name) or nil
 if known then
@@ -341,9 +304,7 @@ end
 end
 return buf
 end
-
 local MAX_INLINE = 8
-
 local showOutput = deps.showOutput or function(wrapped, label)
 S.lastOut = nil
 S.outLines = nil
@@ -358,18 +319,15 @@ if ed then ed.openViewTab(S, wrapped, label or "output", true)
 else S.outLines = wrapped end
 end
 end
-
 local function withReport(buf)
 local said = S.lastOut
 if type(said) == "table" and said[1] then buf[#buf + 1] = said end
 return buf
 end
-
 local function exec(input)
 S.lastOut = nil
 local hasPipe = input:find("|", 1, true)
 local hasRedirect = input:find("[>]") or input:find("<")
-
 if hasPipe or hasRedirect then
 local ok2, pipeMod = pcall(require, "kernel.pipe")
 if ok2 then
@@ -383,7 +341,6 @@ for _, e in ipairs(buf) do
 textParts[#textParts + 1] = type(e) == "table" and e[1] or tostring(e)
 end
 prevOutput = table.concat(textParts, "\n")
-
 if seg.stdout and seg.stdout.type == "file" then
 local outPath = rp(seg.stdout.path)
 if helpers.canWrite(S, outPath) then
@@ -406,14 +363,12 @@ end
 end
 return
 end
-
 if i == #segments then finalBuf = buf end
 end
 showOutput(helpers.expandBuf(S, withReport(finalBuf)), "output")
 return
 end
 end
-
 --! Skip the output only when THIS command handed the seat to a
 --! program. It tested "is any program recorded", and the record stays
 --! for the program's whole life -- so once one was backgrounded with
@@ -426,10 +381,7 @@ local buf = execSingle(input, nil, true)
 if S._program and S._program ~= before then return end
 showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
 end
-
 S.execOne = execSingle
-
 return exec
 end
-
 return M

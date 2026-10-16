@@ -1,9 +1,7 @@
 local text = {}
-
 function text.trim(s)
 return (s:match("^%s*(.-)%s*$"))
 end
-
 function text.wrap(str, width)
 width = width or 80
 local lines = {}
@@ -27,19 +25,16 @@ end
 end
 return lines
 end
-
 function text.padRight(s, n)
 local len = #s
 if len >= n then return s end
 return s .. string.rep(" ", n - len)
 end
-
 function text.padLeft(s, n)
 local len = #s
 if len >= n then return s end
 return string.rep(" ", n - len) .. s
 end
-
 function text.detab(s, tabWidth)
 tabWidth = tabWidth or 8
 local col = 0
@@ -60,26 +55,22 @@ end
 end
 return table.concat(out)
 end
-
 function text.tokenize(s)
 local tokens = {}
 local i = 1
 local len = #s
 while i <= len do
-
 local ws = s:match("^%s+", i)
 if ws then i = i + #ws end
 if i > len then break end
 local ch = s:sub(i, i)
 if ch == '"' or ch == "'" then
-
 local quote = ch
 i = i + 1
 local buf = {}
 while i <= len do
 local c = s:sub(i, i)
 if c == "\\" and i < len then
-
 i = i + 1
 buf[#buf + 1] = s:sub(i, i)
 elseif c == quote then
@@ -92,7 +83,6 @@ end
 tokens[#tokens + 1] = table.concat(buf)
 i = i + 1
 else
-
 local tok = s:match("^[^%s'\"]+", i)
 if tok then
 tokens[#tokens + 1] = tok
@@ -104,5 +94,4 @@ end
 end
 return tokens
 end
-
 return text

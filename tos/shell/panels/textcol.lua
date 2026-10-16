@@ -1,10 +1,8 @@
 local M = {}
-
 local function isAscii(s)
 return not s:find("[\128-\255]")
 end
 M.isAscii = isAscii
-
 local function unitAt(s, i)
 local b = s:byte(i)
 if not b then return 0, false end
@@ -21,7 +19,6 @@ end
 return n, true
 end
 M.unitAt = unitAt
-
 function M.units(s)
 local starts, disps = {}, {}
 local i, n = 1, #s
@@ -33,7 +30,6 @@ i = i + len
 end
 return starts, disps
 end
-
 function M.cells(s)
 if isAscii(s) then return #s end
 local count, i, n = 0, 1, #s
@@ -43,7 +39,6 @@ count = count + 1
 end
 return count
 end
-
 function M.cellOf(s, col)
 if col <= 1 then return 1 end
 if isAscii(s) then return col end
@@ -55,7 +50,6 @@ end
 if col > n + 1 then cell = cell + (col - (n + 1)) end
 return cell
 end
-
 function M.colOf(s, cell)
 if cell <= 1 then return 1 end
 if isAscii(s) then return math.min(cell, #s + 1) end
@@ -66,13 +60,11 @@ c = c + 1
 end
 return i
 end
-
 function M.nextCol(s, col)
 if col > #s then return #s + 1 end
 local len = unitAt(s, col)
 return col + math.max(1, len)
 end
-
 function M.prevCol(s, col)
 if col <= 1 then return 1 end
 if isAscii(s) then return col - 1 end
@@ -83,7 +75,6 @@ i = i + (unitAt(s, i))
 end
 return prev
 end
-
 function M.slice(s, fromCell, toCell)
 if fromCell < 1 then fromCell = 1 end
 if toCell < fromCell then return "" end
@@ -97,5 +88,4 @@ cell = cell + 1
 end
 return table.concat(out)
 end
-
 return M

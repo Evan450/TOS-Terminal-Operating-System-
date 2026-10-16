@@ -1,76 +1,58 @@
 local component = require("component")
 local computer = require("computer")
-
 local screen = {}
-
 local displays = {}
-
 local seatIndexByScreen = {}
 local activeIdx = 1
 local initialized = false
-
 local policySpec = nil
-
 local kbToDisplay = {}
-
 local screenToDisplay = {}
-
 local bufferMode = "auto"
-local bufferGen  = 0
-
+local bufferGen = 0
 local _drawSkipped, _drawEmitted = 0, 0
-
 local function liveIndices()
 local idxs = {}
 for i in pairs(displays) do idxs[#idxs + 1] = i end
 table.sort(idxs)
 return idxs
 end
-
 local function findKeyboards(scrAddr)
 local kbs = {}
-
 local okList, kbList = pcall(component.invoke, scrAddr, "getKeyboards")
 if okList and type(kbList) == "table" then
 for _, kb in ipairs(kbList) do kbs[#kbs + 1] = kb end
 return kbs
 end
-
 return kbs
 end
-
 local function isLocalComponent(addr)
 if not addr then return false end
 local okS, slot = pcall(component.slot, addr)
 if not okS then return true end
 return slot ~= nil and slot >= 0
 end
-
 local function listLocalThenRemote(ctype)
 local locals, remotes = {}, {}
 for addr in component.list(ctype) do
 if isLocalComponent(addr) then locals[#locals + 1] = addr
 else remotes[#remotes + 1] = addr end
 end
-
 table.sort(locals)
 table.sort(remotes)
 if #locals > 0 then return locals, remotes end
 return remotes, {}
 end
-
 function screen._pair(gpuScreens, screenAddrs)
 local avail = {}
 for _, a in ipairs(screenAddrs) do avail[a] = true end
 local claimed, result = {}, {}
-
 for i, cur in ipairs(gpuScreens) do
 if cur and avail[cur] and not claimed[cur] then
 claimed[cur] = true
 result[i] = cur
 end
 end
-
 local free = {}
 for _, a in ipairs(screenAddrs) do if not claimed[a] then free[#free + 1] = a end end
 local fi = 1
@@ -81,33 +63,27 @@ end
 end
 return result
 end
-
 function screen.init()
 displays = {}
 kbToDisplay = {}
 screenToDisplay = {}
-
-local gpuAddrs, gpuRemotes    = listLocalThenRemote("gpu")
+local gpuAddrs, gpuRemotes = listLocalThenRemote("gpu")
 local screenAddrs, scrRemotes = listLocalThenRemote("screen")
-
 local gpus = {}
 for _, addr in ipairs(gpuAddrs) do
 gpus[#gpus + 1] = component.proxy(addr)
 end
-
 local gpuScreens = {}
 for i, gpu in ipairs(gpus) do
 local okS, s = pcall(gpu.getScreen)
 gpuScreens[i] = (okS and type(s) == "string") and s or false
 end
 local pairing = screen._pair(gpuScreens, screenAddrs)
-
 local paired = {}
 for i = 1, #gpus do
 if pairing[i] then paired[#paired + 1] = { gpu = gpus[i], scr = pairing[i] } end
 end
 if #paired == 0 then
-
 local gpuAddr = component.list("gpu")()
 local scrAddr = component.list("screen")()
 if gpuAddr and scrAddr then
@@ -127,12 +103,9 @@ pr.idx = idx; taken[idx] = true
 end
 seatIndexByScreen[pr.scr] = pr.idx
 end
-
 for _, pr in ipairs(paired) do
 local gpu, scrAddr, idx = pr.gpu, pr.scr, pr.idx
-
 pcall(gpu.bind, scrAddr)
-
 do
 local tw, th = screen.gpuTarget(gpu, scrAddr, policySpec or { mode = "auto" })
 screen.applyResolution(gpu, tw, th)
@@ -141,21 +114,19 @@ local w, h = gpu.getResolution()
 local depth = gpu.getDepth()
 local kbs = findKeyboards(scrAddr)
 displays[idx] = {
-gpu       = gpu,
-screen    = scrAddr,
-w         = w,
-h         = h,
-depth     = depth,
-label     = pr.label or ("Screen " .. idx),
+gpu = gpu,
+screen = scrAddr,
+w = w,
+h = h,
+depth = depth,
+label = pr.label or ("Screen " .. idx),
 keyboards = kbs,
 }
-
 screenToDisplay[scrAddr] = idx
 for _, kb in ipairs(kbs) do
 kbToDisplay[kb] = idx
 end
 end
-
 local live = liveIndices()
 if #live > 0 then
 local rr = 0
@@ -163,7 +134,6 @@ local kbAddrs = listLocalThenRemote("keyboard")
 for _, addr in ipairs(kbAddrs) do
 if not kbToDisplay[addr] then
 rr = rr + 1
-
 local idx = live[((rr - 1) % #live) + 1]
 kbToDisplay[addr] = idx
 displays[idx].keyboards = displays[idx].keyboards or {}
@@ -171,7 +141,6 @@ displays[idx].keyboards[#displays[idx].keyboards + 1] = addr
 end
 end
 end
-
 do
 local okL, logMod = pcall(require, "kernel.log")
 if okL and logMod and logMod.info then
@@ -188,7 +157,6 @@ logMod.warn("screen", string.format(
 "Detected %d GPUs but only %d screens — %d GPU(s) idle.",
 #gpus, #screenAddrs, #gpus - #screenAddrs))
 end
-
 if #scrRemotes > 0 or #gpuRemotes > 0 then
 logMod.warn("screen", string.format(
 "Component network is SHARED: %d remote screen(s) and %d remote GPU(s) " ..
@@ -202,37 +170,30 @@ logMod.warn("screen",
 end
 end
 end
-
 if not displays[activeIdx] then activeIdx = live[1] or 1 end
 initialized = true
 return #live
 end
-
 local function ensureInit()
 if not initialized then screen.init() end
 end
-
 function screen.count()
 ensureInit()
 return #liveIndices()
 end
-
 function screen.indices()
 ensureInit()
 return liveIndices()
 end
-
 function screen.active()
 ensureInit()
 if not displays[activeIdx] then activeIdx = liveIndices()[1] or 1 end
 return displays[activeIdx]
 end
-
 function screen.get(idx)
 ensureInit()
 return displays[idx]
 end
-
 function screen.setActive(idx)
 ensureInit()
 if displays[idx] then
@@ -241,16 +202,12 @@ return true
 end
 return false
 end
-
 function screen.rebuild()
 local oldScreens = {}
 for i, d in pairs(displays) do oldScreens[d.screen] = i end
-
 screen.init()
-
 local newScreens = {}
 for i, d in pairs(displays) do newScreens[d.screen] = i end
-
 local added, removed = {}, {}
 for scrAddr, idx in pairs(newScreens) do
 if not oldScreens[scrAddr] then added[#added + 1] = idx end
@@ -260,7 +217,6 @@ if not newScreens[scrAddr] then removed[#removed + 1] = idx end
 end
 return added, removed
 end
-
 function screen.next()
 ensureInit()
 local live = liveIndices()
@@ -272,18 +228,15 @@ end
 activeIdx = live[(pos % #live) + 1]
 return displays[activeIdx]
 end
-
 function screen.gpu()
 local d = screen.active()
 return d and d.gpu
 end
-
 function screen.getResolution()
 local d = screen.active()
 if d then return d.w, d.h end
 return 50, 16
 end
-
 --! The screen changed size without TOS asking it to.
 --!
 --! d.w/d.h were only ever written in two places: screen.init(), and
@@ -315,7 +268,6 @@ ensureInit()
 local changed = false
 for _, d in ipairs(displays) do
 if addr == nil or d.screen == addr then
-
 local nw, nh = w, h
 if d.gpu then
 local okR, gw, gh = pcall(d.gpu.getResolution)
@@ -329,23 +281,19 @@ end
 end
 end
 if changed then
-
 screen.invalidateAll()
 local okD, disp = pcall(require, "kernel.display")
 if okD and disp and disp.refreshSize then pcall(disp.refreshSize) end
 end
 return changed
 end
-
 local RES_DEFAULTS = {
 colsPerBlock = 10, rowsPerBlock = 4,
 prefW = 80, prefH = 25,
 }
-
 local function clampN(v, lo, hi)
 if v < lo then return lo elseif v > hi then return hi else return v end
 end
-
 function screen.specFromConfig(cfg)
 local spec = {
 mode = "auto",
@@ -367,17 +315,14 @@ local cpb = tonumber(cfg.get("screenColsPerBlock")); if cpb and cpb > 0 then spe
 local rpb = tonumber(cfg.get("screenRowsPerBlock")); if rpb and rpb > 0 then spec.rowsPerBlock = rpb end
 return spec
 end
-
 function screen.chooseResolution(spec, maxW, maxH, blocksW, blocksH)
 spec = spec or { mode = "auto" }
 maxW = (type(maxW) == "number" and maxW > 0) and maxW or 50
 maxH = (type(maxH) == "number" and maxH > 0) and maxH or 16
 local mode = spec.mode or "auto"
-
 if mode == "max" then
 return maxW, maxH, nil
 end
-
 if mode == "size" then
 local rw, rh = spec.w or maxW, spec.h or maxH
 local w, h = clampN(rw, 1, maxW), clampN(rh, 1, maxH)
@@ -388,7 +333,6 @@ rw, rh, maxW, maxH, w, h)
 end
 return w, h, note
 end
-
 local floorW = math.min(spec.prefW or RES_DEFAULTS.prefW, maxW)
 local floorH = math.min(spec.prefH or RES_DEFAULTS.prefH, maxH)
 local tw, th
@@ -401,7 +345,6 @@ th = spec.prefH or RES_DEFAULTS.prefH
 end
 return clampN(tw, floorW, maxW), clampN(th, floorH, maxH), nil
 end
-
 function screen.gpuTarget(gpu, scrAddr, spec)
 if not gpu then return 50, 16, "no gpu" end
 local maxW, maxH = 50, 16
@@ -418,7 +361,6 @@ if okA and type(aw) == "number" and type(ah) == "number" then bw, bh = aw, ah en
 end
 return screen.chooseResolution(spec, maxW, maxH, bw, bh)
 end
-
 function screen.applyResolution(gpu, w, h)
 if not gpu then return false end
 local ok = (pcall(gpu.setResolution, w, h)) == true
@@ -428,42 +370,35 @@ if okD and disp and disp.refreshSize then pcall(disp.refreshSize) end
 end
 return ok
 end
-
 function screen.setPolicy(spec) policySpec = spec end
 function screen.getPolicy() return policySpec end
-
 function screen.setBuffer(mode)
 if mode ~= "auto" and mode ~= "on" and mode ~= "off" then
 return false, "mode must be auto, on, or off"
 end
 bufferMode = mode
-bufferGen  = bufferGen + 1
+bufferGen = bufferGen + 1
 return true
 end
-
 function screen.invalidateAll()
 bufferGen = bufferGen + 1
 end
-
 function screen.bufferMode() return bufferMode end
-
 function screen.bufferStats()
 local total = _drawSkipped + _drawEmitted
 return {
 skipped = _drawSkipped,
 emitted = _drawEmitted,
-total   = total,
-ratio   = total > 0 and (_drawSkipped / total) or 0,
+total = total,
+ratio = total > 0 and (_drawSkipped / total) or 0,
 }
 end
 function screen.resetBufferStats() _drawSkipped, _drawEmitted = 0, 0 end
-
 function screen._shadowWanted(mode, freeMem, baseNeed, reserve)
 if mode == "off" then return false end
 if mode == "on" then return (freeMem or 0) > (baseNeed or 0) end
 return (freeMem or 0) > (baseNeed or 0) + (reserve or 0)
 end
-
 function screen.fitDisplay(idx, spec)
 ensureInit()
 local d = displays[idx] or screen.active()
@@ -475,33 +410,29 @@ d.w, d.h = w, h
 end
 return w, h, note
 end
-
 function screen.fit(spec)
 return screen.fitDisplay(activeIdx, spec)
 end
-
 function screen.restore(idx)
 return screen.fitDisplay(idx or activeIdx, policySpec or { mode = "auto" })
 end
-
 function screen.list()
 ensureInit()
 local result = {}
 for _, i in ipairs(liveIndices()) do
 local d = displays[i]
 result[#result + 1] = {
-index  = i,
-label  = d.label,
-w      = d.w,
-h      = d.h,
-depth  = d.depth,
+index = i,
+label = d.label,
+w = d.w,
+h = d.h,
+depth = d.depth,
 screen = d.screen,
 active = (i == activeIdx),
 }
 end
 return result
 end
-
 function screen.setLabel(idx, label)
 if displays[idx] then
 displays[idx].label = label
@@ -509,17 +440,14 @@ return true
 end
 return false
 end
-
 function screen.displayForKeyboard(kbAddr)
 ensureInit()
 return kbToDisplay[kbAddr]
 end
-
 function screen.displayForScreen(scrAddr)
 ensureInit()
 return screenToDisplay[scrAddr]
 end
-
 function screen.seatDevices(idx)
 ensureInit()
 local d = displays[idx]
@@ -531,7 +459,6 @@ if ok and type(a) == "string" then gpuAddr = a end
 end
 return { gpu = gpuAddr, screen = d.screen, keyboards = d.keyboards or {} }
 end
-
 function screen.callerSeat()
 local okP, proc = pcall(require, "kernel.process")
 if not okP or type(proc) ~= "table" or not proc.current then return nil end
@@ -539,13 +466,11 @@ local okC, p = pcall(proc.current)
 if not okC or type(p) ~= "table" then return nil end
 return p.display
 end
-
 function screen.callerDevices()
 local idx = screen.callerSeat()
 if not idx then return nil end
 return screen.seatDevices(idx)
 end
-
 function screen._spanMatches(shC, shF, shB, base, x, chars, fg, bg, W)
 for i = 1, #chars do
 local cx = x + i - 1
@@ -555,7 +480,6 @@ if shC[k] ~= chars[i] or shF[k] ~= fg or shB[k] ~= bg then return false end
 end
 return true
 end
-
 function screen._diffWindow(shC, shF, shB, base, x, chars, fg, bg, W)
 local n = #chars
 local first, last
@@ -570,7 +494,6 @@ end
 end
 return first, last
 end
-
 function screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, fg, bg, W)
 local fx1, fy1, fx2, fy2
 for yy = y1, y2 do
@@ -589,14 +512,11 @@ end
 end
 return fx1, fy1, fx2, fy2
 end
-
 function screen.displayProxy(idx)
 ensureInit()
 local d = displays[idx]
 if not d then return nil end
-
 local proxy = {}
-
 --! ...the same GPU, but NOT the same buffer, and that was the seventh
 --! black status bar. In OpenComputers every video-RAM page is its own
 --! TextBuffer with its own current foreground and background:
@@ -619,46 +539,37 @@ local proxy = {}
 local lastFg, lastBg = nil, nil
 local glassFg, glassBg = nil, nil
 local pageFg, pageBg = nil, nil
-
 local W2, H2 = d.w, d.h
 local shC, shF, shB = {}, {}, {}
 local UTF8 = "[\0-\127\194-\255][\128-\191]*"
-
 local function invalidateShadow()
 shC, shF, shB = {}, {}, {}
 lastFg, lastBg = nil, nil
-
 glassFg, glassBg = nil, nil
 pageFg, pageBg = nil, nil
 end
-
 d._writerGen = d._writerGen or 0
 local myWriterGen = d._writerGen
-
 local frameDepth = 0
-local pageStale  = true
+local pageStale = true
 local function claimGlass()
-
 if frameDepth == 0 then pageStale = true end
 if d._lastWriter ~= proxy then
 d._lastWriter = proxy
-d._writerGen  = d._writerGen + 1
+d._writerGen = d._writerGen + 1
 end
 if myWriterGen ~= d._writerGen then
 myWriterGen = d._writerGen
 invalidateShadow()
 end
 end
-
 local function disownGlass()
 d._lastWriter = nil
-d._writerGen  = d._writerGen + 1
-myWriterGen   = d._writerGen
+d._writerGen = d._writerGen + 1
+myWriterGen = d._writerGen
 invalidateShadow()
-
 pageStale = true
 end
-
 local releaseBackbuffer = function() end
 local function syncSize()
 if d.w ~= W2 or d.h ~= H2 then
@@ -667,10 +578,8 @@ invalidateShadow()
 releaseBackbuffer()
 end
 end
-
 local SHADOW_RESERVE = 384 * 1024
 local baseNeed = d.w * d.h * 128
-
 local freeMem
 do
 local okH, hal = pcall(require, "kernel.hal")
@@ -680,16 +589,13 @@ else
 freeMem = (computer.freeMemory and computer.freeMemory()) or 0
 end
 end
-
 local myBufferGen = bufferGen
 local function shadowEnabled()
 if bufferGen ~= myBufferGen then myBufferGen = bufferGen; invalidateShadow() end
 return screen._shadowWanted(bufferMode, freeMem, baseNeed, SHADOW_RESERVE)
 end
-
-local backIdx     = nil
-local backBroken  = false
-
+local backIdx = nil
+local backBroken = false
 --!
 --! The shadow describes THE SCREEN. Inside a frame, draws land on the
 --! PAGE. Those are the same surface only for as long as nothing has been
@@ -724,12 +630,10 @@ pcall(d.gpu.freeBuffer, backIdx)
 backIdx = nil
 end
 frameDepth = 0
-pageStale  = true
-
+pageStale = true
 lastFg, lastBg = nil, nil
 pageFg, pageBg = nil, nil
 end
-
 local function setFgCached(fg)
 if fg ~= lastFg then
 local ok = pcall(d.gpu.setForeground, fg)
@@ -742,7 +646,6 @@ local ok = pcall(d.gpu.setBackground, bg)
 if ok then lastBg = bg else lastFg, lastBg = nil, nil end
 end
 end
-
 --! Every mechanism protecting the shadow -- the writer generation, the
 --! disownGlass declarations, pageStale -- works only when the thing that
 --! moved the glass ANNOUNCES ITSELF. That covers the writers TOS knows
@@ -803,10 +706,10 @@ end
 --! first time a colour is emitted and remember what the hardware made
 --! of it: one gpu.get per distinct colour per seat, and the audit then
 --! compares like with like on any GPU, emulator included.
-local lastAudit  = 0
-local auditHits  = 0
-local AUDIT_GAP  = 1
-local quant      = {}
+local lastAudit = 0
+local auditHits = 0
+local AUDIT_GAP = 1
+local quant = {}
 local function learnColours(x, y, efg, ebg)
 if frameDepth > 0 then return end
 local needF = efg ~= nil and quant[efg] == nil
@@ -824,7 +727,6 @@ if frameDepth > 0 then return false end
 if not (d.gpu and d.gpu.get) then return false end
 if type(x) ~= "number" or type(y) ~= "number" then return false end
 if x < 1 or x > W2 or y < 1 or y > H2 then return false end
-
 local k = (y - 1) * W2 + x
 local ch, bg = shC[k], shB[k]
 if ch == nil or bg == nil then return false end
@@ -834,10 +736,8 @@ lastAudit = now
 local okG, gch, _, gbg = pcall(d.gpu.get, x, y)
 if not okG then return false end
 if gch == ch and gbg == (quant[bg] or bg) then return false end
-
 invalidateShadow()
 auditHits = auditHits + 1
-
 if auditHits == 1 then
 local okL, logMod = pcall(require, "kernel.log")
 if okL and logMod and logMod.warn then
@@ -851,9 +751,7 @@ end
 end
 return true
 end
-
 function proxy.auditHits() return auditHits end
-
 local dumpProc = nil
 local function coopYieldScreen()
 if dumpProc == nil then
@@ -862,11 +760,9 @@ dumpProc = (okP and m and m.yieldCooperative) and m or false
 end
 if dumpProc then dumpProc.yieldCooperative() end
 end
-
 function proxy.set(x, y, text, fg, bg)
 if type(x) ~= "number" or type(y) ~= "number" or type(text) ~= "string" then return end
 syncSize(); claimGlass()
-
 if not shadowEnabled() or y < 1 or y > H2 then
 if fg then setFgCached(fg) end
 if bg then setBgCached(bg) end
@@ -881,7 +777,6 @@ for ch in text:gmatch(UTF8) do chars[#chars + 1] = ch end
 local n = #chars
 local base = (y - 1) * W2
 local first, last = screen._diffWindow(shC, shF, shB, base, x, chars, efg, ebg, W2)
-
 if first ~= 1 or last ~= n then
 local ax = (first ~= 1) and x or (x + n - 1)
 if auditCell(ax, y) then
@@ -894,7 +789,6 @@ return
 end
 if fg then setFgCached(fg) end
 if bg then setBgCached(bg) end
-
 local sub = (first == 1 and last == n) and text
 or table.concat(chars, "", first, last)
 local ok = pcall(d.gpu.set, x + first - 1, y, sub)
@@ -926,7 +820,6 @@ local efg, ebg = fg or lastFg, bg or lastBg
 local x1, y1 = math.max(1, x), math.max(1, y)
 local x2, y2 = math.min(W2, x + w - 1), math.min(H2, y + h - 1)
 if x1 > x2 or y1 > y2 then
-
 if fg then setFgCached(fg) end
 if bg then setBgCached(bg) end
 local okOff = pcall(d.gpu.fill, x, y, w, h, ch)
@@ -934,10 +827,8 @@ if not okOff then lastFg, lastBg = nil, nil end
 _drawEmitted = _drawEmitted + 1
 return
 end
-
 local fx1, fy1, fx2, fy2 =
 screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, efg, ebg, W2)
-
 if not fx1 or fx1 > x1 or fy1 > y1 or fx2 < x2 or fy2 < y2 then
 local ax, ay = x2, y2
 if not fx1 or fx1 > x1 or fy1 > y1 then ax, ay = x1, y1 end
@@ -954,7 +845,6 @@ if bg then setBgCached(bg) end
 local ok = pcall(d.gpu.fill, fx1, fy1, fx2 - fx1 + 1, fy2 - fy1 + 1, ch)
 if not ok then lastFg, lastBg = nil, nil; invalidateShadow(); return end
 _drawEmitted = _drawEmitted + 1
-
 for yy = fy1, fy2 do
 local b = (yy - 1) * W2
 for xx = fx1, fx2 do
@@ -975,7 +865,6 @@ for k = 1, W2 * H2 do shC[k] = " "; shF[k] = efg; shB[k] = ebg end
 end
 end
 function proxy.getSize() return d.w, d.h end
-
 function proxy.beginFrame()
 if not backbufferSupported() then return false end
 syncSize()
@@ -984,7 +873,6 @@ if frameDepth > 1 then return true end
 if not backIdx then
 local okA, idx = pcall(d.gpu.allocateBuffer, W2, H2)
 if not okA or type(idx) ~= "number" or idx <= 0 then
-
 backBroken = true; frameDepth = 0; return false
 end
 backIdx = idx
@@ -993,10 +881,8 @@ local okS = pcall(d.gpu.setActiveBuffer, backIdx)
 if not okS then
 releaseBackbuffer(); backBroken = true; return false
 end
-
 glassFg, glassBg = lastFg, lastBg
 lastFg, lastBg = pageFg, pageBg
-
 if pageStale then
 if pcall(d.gpu.bitblt, backIdx, 1, 1, W2, H2, 0, 1, 1) then
 pageStale = false
@@ -1006,7 +892,6 @@ end
 end
 return true
 end
-
 function proxy.endFrame()
 if frameDepth == 0 then return false end
 frameDepth = frameDepth - 1
@@ -1015,28 +900,21 @@ local blitted = false
 if backIdx then
 blitted = pcall(d.gpu.bitblt, 0, 1, 1, W2, H2, backIdx, 1, 1)
 end
-
 local okR = pcall(d.gpu.setActiveBuffer, 0)
-
 pageFg, pageBg = lastFg, lastBg
 lastFg, lastBg = glassFg, glassBg
 if not okR then releaseBackbuffer(); backBroken = true end
 if not blitted then
-
 lastFg, lastBg = nil, nil
 invalidateShadow()
 pageStale = true
 return false
 end
-
 pageStale = false
 return true
 end
-
 function proxy.hasBackbuffer() return backIdx ~= nil end
-
 function proxy.getGpu() disownGlass(); releaseBackbuffer(); return d.gpu end
-
 function proxy.invalidate() invalidateShadow() end
 function proxy.getGpuTier()
 local dp = d.depth or 1
@@ -1045,7 +923,6 @@ elseif dp >= 4 then return 2
 else return 1 end
 end
 function proxy.getGpuDepth() return d.depth or 1 end
-
 --! A capture of what is ON THE GLASS, for bug reports.
 --!
 --! It used to read the SHADOW whenever the shadow was enabled, which is to
@@ -1070,31 +947,27 @@ function proxy.getGpuDepth() return d.depth or 1 end
 --! (test_screendump_truth.lua)
 function proxy.dump()
 syncSize()
-
 local sC, sF, sB = shC, shF, shB
 local st = {
-lastFg     = lastFg,     lastBg     = lastBg,
-frameDepth = frameDepth, pageStale  = pageStale,
-backbuffer = backIdx ~= nil,         backBroken = backBroken and true or false,
-writerGen  = d._writerGen,           myWriterGen = myWriterGen,
+lastFg = lastFg, lastBg = lastBg,
+frameDepth = frameDepth, pageStale = pageStale,
+backbuffer = backIdx ~= nil, backBroken = backBroken and true or false,
+writerGen = d._writerGen, myWriterGen = myWriterGen,
 lastWriterIsMe = (d._lastWriter == proxy),
 w = W2, h = H2,
 }
 st.shadow = shadowEnabled()
-
 local canGet = false
 if d.gpu and d.gpu.get then
 local okProbe = pcall(d.gpu.get, 1, 1)
 canGet = okProbe and true or false
 end
 local useShadow = (not canGet) and st.shadow
-
 local function pushRun(runs, x, c)
 local last = runs[#runs]
 if last and last.c == c then last.to = x
 else runs[#runs + 1] = { from = x, to = x, c = c } end
 end
-
 local lines, bgRuns, fgRuns = {}, {}, {}
 for y = 1, H2 do
 coopYieldScreen()
@@ -1109,14 +982,12 @@ elseif useShadow then
 chr, fg, bg = sC[base + x], sF[base + x], sB[base + x]
 end
 row[x] = (chr == nil or chr == "") and " " or chr
-
 pushRun(brun, x, bg)
 pushRun(frun, x, fg)
 end
 lines[y] = (table.concat(row):gsub("%s+$", ""))
 bgRuns[y], fgRuns[y] = brun, frun
 end
-
 local shadowBg = nil
 if st.shadow and next(sB) ~= nil then
 shadowBg = {}
@@ -1126,7 +997,6 @@ for x = 1, W2 do pushRun(runs, x, sB[base + x]) end
 shadowBg[y] = runs
 end
 end
-
 local function firstMismatch(gRuns, sRuns)
 if not (gRuns and sRuns) then return nil end
 local gi, si = 1, 1
@@ -1149,7 +1019,6 @@ disagree[#disagree + 1] = { row = y, col = x, glass = gc, shadow = sc }
 end
 end
 end
-
 local pageBg = nil
 if disagree and backIdx and canGet then
 if pcall(d.gpu.setActiveBuffer, backIdx) then
@@ -1163,20 +1032,17 @@ pushRun(runs, x, okG and b or nil)
 end
 pageBg[y] = runs
 end
-
 if not pcall(d.gpu.setActiveBuffer, 0) then
 releaseBackbuffer(); backBroken = true
 end
 end
 end
-
 return { lines = lines, w = W2, h = H2,
 source = canGet and "glass" or (useShadow and "shadow" or "empty"),
 bg = bgRuns, fg = fgRuns,
 shadowBg = shadowBg, disagree = disagree, pageBg = pageBg,
 state = st }
 end
-
 proxy.getTheme = function()
 local ok, disp = pcall(require, "kernel.display")
 if ok and disp and disp.getTheme then return disp.getTheme() end
@@ -1186,7 +1052,6 @@ proxy.c = function(name)
 local theme = proxy.getTheme()
 return theme[name] or 0xFFFFFF
 end
-
 local ok, disp = pcall(require, "kernel.display")
 if ok and disp and disp.withContext then
 local FORWARDED = {
@@ -1221,7 +1086,6 @@ local res = table.pack(pcall(disp.withContext, d.gpu, d.w, d.h,
 function()
 return disp[name](table.unpack(args, 1, args.n))
 end))
-
 lastFg, lastBg = nil, nil
 disownGlass()
 if not res[1] then error(res[2], 0) end
@@ -1233,8 +1097,6 @@ proxy.contextMenu = proxy.dropdown
 proxy.BOX = disp.BOX
 proxy.THEME = disp.THEME
 end
-
 return proxy
 end
-
 return screen

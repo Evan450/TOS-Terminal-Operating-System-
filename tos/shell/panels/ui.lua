@@ -1,5 +1,4 @@
 local ui = {}
-
 local _ustr = nil
 local function ustrLib()
 if _ustr == nil then
@@ -18,7 +17,6 @@ local u = ustrLib()
 if u then return u.width(s) end
 return #tostring(s or "")
 end
-
 function ui.tileGrid(region, opts)
 opts = opts or {}
 local tw = math.max(6, opts.tileW or 14)
@@ -33,7 +31,6 @@ return { cols = cols, rows = rows, perPage = cols * rows,
 tileW = tw, tileH = th, gapX = gx, gapY = gy,
 ox = ox, oy = region.y }
 end
-
 function ui.tileRect(g, slot)
 if type(slot) ~= "number" or slot < 1 or slot > g.perPage then return nil end
 local i = slot - 1
@@ -43,7 +40,6 @@ return { x = g.ox + c * (g.tileW + g.gapX),
 y = g.oy + r * (g.tileH + g.gapY),
 w = g.tileW, h = g.tileH }
 end
-
 function ui.tileHit(g, x, y)
 for slot = 1, g.perPage do
 local r = ui.tileRect(g, slot)
@@ -54,7 +50,6 @@ end
 end
 return nil
 end
-
 function ui.cycle(values, current, dir)
 if type(values) ~= "table" or #values == 0 then return current end
 local idx = 0
@@ -66,7 +61,6 @@ idx = idx + (dir or 1)
 if idx > #values then idx = 1 elseif idx < 1 then idx = #values end
 return values[idx]
 end
-
 local EXT_GLYPHS = {
 lua = "♦",
 txt = "≡", md = "≡", log = "≡",
@@ -74,7 +68,6 @@ man = "¶",
 cfg = "§", conf = "§", json = "§",
 dat = "▓", tcz = "▓", bak = "▓", bin = "▓",
 }
-
 function ui.fileGlyph(name, isDir)
 if isDir then
 return (name == "..") and "«" or "■"
@@ -82,11 +75,10 @@ end
 local ext = type(name) == "string" and name:match("%.(%w+)$") or nil
 return (ext and EXT_GLYPHS[ext:lower()]) or "·"
 end
-
 function ui.drawTile(D, th, r, opts)
 opts = opts or {}
-local bg    = opts.selected and (th.sel_bg or th.highlight) or (th.panel_bg or th.bg)
-local fg    = opts.selected and (th.sel_fg or th.bg) or (opts.dim and (th.dim or th.fg) or th.fg)
+local bg = opts.selected and (th.sel_bg or th.highlight) or (th.panel_bg or th.bg)
+local fg = opts.selected and (th.sel_fg or th.bg) or (opts.dim and (th.dim or th.fg) or th.fg)
 local frame = opts.selected and (th.highlight or th.title) or (th.border or th.dim or th.fg)
 local interior = r.w - 2
 D.set(r.x, r.y, "┌" .. string.rep("─", interior) .. "┐", frame, bg)
@@ -94,7 +86,6 @@ for row = 1, r.h - 2 do
 D.set(r.x, r.y + row, "│" .. string.rep(" ", interior) .. "│", frame, bg)
 end
 D.set(r.x, r.y + r.h - 1, "└" .. string.rep("─", interior) .. "┘", frame, bg)
-
 local gy = r.y + r.h - 3
 local ly = r.y + r.h - 2
 if gy > r.y then
@@ -105,7 +96,6 @@ local label = ufit(tostring(opts.label or ""), interior)
 local off = math.max(0, math.floor((interior - uwidth(label)) / 2))
 D.set(r.x + 1 + off, ly, label, fg, bg)
 end
-
 function ui.railText(W, parts)
 local segs, spans = {}, {}
 local col = 1
@@ -138,7 +128,6 @@ end
 fill(W - col + 1)
 return table.concat(segs), spans
 end
-
 function ui.drawRail(D, th, y, W, parts, opts)
 opts = opts or {}
 local line, spans = ui.railText(W, parts)
@@ -150,15 +139,12 @@ D.set(sp.s, y, sp.label, lfg, bg)
 end
 return spans
 end
-
 function ui.drawRampBar(D, th, y, W, left, right, fg, bg)
 fg = fg or th.statusbar_fg or th.bar_fg or th.fg
 bg = bg or th.statusbar_bg or th.bar_bg or th.bg
 local cap = th.dim or fg
-
 D.set(1, y, "▓▒░", cap, bg)
 if W > 6 then D.set(W - 2, y, "░▒▓", cap, bg) end
-
 local lt = ufit(tostring(left or ""), math.max(0, W - 9))
 local lw = uwidth(lt)
 local labelEnd = 3
@@ -167,24 +153,20 @@ D.set(5, y, " " .. lt .. " ", fg, bg)
 labelEnd = 5 + lw + 1
 D.set(4, y, "░", cap, bg)
 end
-
 local rightStart = (W > 6) and (W - 2) or (W + 1)
 if right and #right > 0 then
 local rt = " " .. right .. " "
 local rx = W - 3 - #rt
 if rx > 5 + lw + 2 then
 D.set(rx, y, rt, fg, bg)
-
 local fx = rx + #rt
 if fx <= W - 3 then D.fill(fx, y, W - 2 - fx, 1, "░", cap, bg) end
 rightStart = rx
 end
 end
-
 local fx = labelEnd + 1
 if fx <= rightStart - 1 then D.fill(fx, y, rightStart - fx, 1, "░", cap, bg) end
 end
-
 function ui.tabChips(tabs, activeIdx, labelW)
 labelW = labelW or 10
 local chips = {}
@@ -199,7 +181,6 @@ chips[#chips + 1] = { text = text, state = state, idx = i }
 end
 return chips
 end
-
 function ui.chipSpans(chips, rightEnd, leftMin)
 leftMin = leftMin or 1
 local keep = {}
@@ -227,7 +208,6 @@ x = x + w
 end
 return spans, total - #keep
 end
-
 function ui.fitChips(tabs, activeIdx, rightEnd, leftMin)
 local spans, hidden
 for _, lw in ipairs({ 10, 8, 6, 5 }) do
@@ -235,7 +215,6 @@ local chips = ui.tabChips(tabs, activeIdx, lw)
 spans, hidden = ui.chipSpans(chips, rightEnd, leftMin)
 if hidden == 0 then return spans end
 if lw == 5 then
-
 local moreText = "«" .. hidden
 spans, hidden = ui.chipSpans(chips, rightEnd, leftMin + #moreText + 3)
 moreText = "«" .. hidden
@@ -249,7 +228,6 @@ end
 end
 return spans or {}
 end
-
 function ui.menuSpans(menuDefs)
 local spans, x = {}, 2
 for i, m in ipairs(menuDefs or {}) do
@@ -259,18 +237,15 @@ x = x + #cell + 1
 end
 return spans
 end
-
 function ui.drawBar(D, th, y, W, left, right, fg, bg)
 fg = fg or th.bar_fg or th.fg
 bg = bg or th.bar_bg or th.bg
 D.fill(1, y, W, 1, " ", fg, bg)
-
 if left and #left > 0 then D.set(1, y, ufit(left, W), fg, bg) end
 if right and #right > 0 and #right < W then
 D.set(W - #right, y, right, fg, bg)
 end
 end
-
 function ui.drawSettingRow(D, th, y, x, w, row, selected)
 local bg = selected and (th.sel_bg or th.highlight) or th.bg
 local fg = selected and (th.sel_fg or th.bg) or th.fg
@@ -284,7 +259,6 @@ local mark = row.value and "[x] " or "[ ] "
 D.set(x + 1, y, (mark .. tostring(row.label or "")):sub(1, w - 1), fg, bg)
 elseif row.kind == "choice" then
 D.set(x + 1, y, tostring(row.label or ""):sub(1, w - 1), fg, bg)
-
 local val = "« " .. tostring(row.value or "") .. " »"
 local vx = x + w - #val - 1
 if vx > x + 1 then
@@ -294,12 +268,10 @@ elseif row.kind == "button" then
 D.set(x + 1, y, ("[ " .. tostring(row.label or "") .. " ]"):sub(1, w - 1), fg, bg)
 end
 end
-
 function ui.rowSelectable(row)
 return row and (row.kind == "toggle" or row.kind == "choice"
 or row.kind == "button")
 end
-
 function ui.nextSelectable(rows, sel, dir)
 local n = sel
 repeat
@@ -308,12 +280,10 @@ if n < 1 or n > #rows then return sel end
 until ui.rowSelectable(rows[n])
 return n
 end
-
 function ui.firstSelectable(rows)
 for i, r in ipairs(rows) do
 if ui.rowSelectable(r) then return i end
 end
 return nil
 end
-
 return ui

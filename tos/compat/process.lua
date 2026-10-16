@@ -25,9 +25,7 @@
 --! coroutines outside the scheduler's budgets and outside the cap system.
 --! A program that calls process.load() on TOS gets a clear nil-call error
 --! at the call site, which is the honest answer. (test_compat_process.lua)
-
 local process = {}
-
 local function currentProc()
 local okP, procMod = pcall(require, "kernel.process")
 if not okP or type(procMod) ~= "table" or not procMod.current then return nil end
@@ -35,7 +33,6 @@ local ok, cur = pcall(procMod.current)
 if not ok then return nil end
 return cur
 end
-
 function process.info(levelOrThread)
 local t = type(levelOrThread)
 if t ~= "nil" and t ~= "number" and t ~= "thread" then
@@ -52,19 +49,17 @@ end
 local cur = currentProc()
 if not cur then return nil end
 return {
-path    = cur.progPath,
+path = cur.progPath,
 command = cur.name,
-env     = nil,
-data    = { vars = {} },
+env = nil,
+data = { vars = {} },
 }
 end
-
 function process.running(level)
 local info = process.info(level)
 if info then return info.path, info.env, info.command end
 return nil
 end
-
 --! Kernel-only builder. sandbox.lua calls this with the program name it
 --! was constructed with and overrides .info/.running on that sandbox's
 --! module view, so a program asks about ITSELF and gets its own launch
@@ -91,7 +86,7 @@ function bound.info(levelOrThread)
 local info = process.info(levelOrThread)
 if not info then return nil end
 info.path = path or info.path
-info.env  = env
+info.env = env
 if path then info.command = path end
 return info
 end
@@ -102,5 +97,4 @@ return nil
 end
 return bound
 end
-
 return process

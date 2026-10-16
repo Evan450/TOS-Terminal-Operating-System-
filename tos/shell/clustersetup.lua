@@ -1,32 +1,29 @@
 local M = {}
-
-M.MASTER_PKG  = "cluster-master"
+M.MASTER_PKG = "cluster-master"
 M.MANAGER_PKG = "cluster-manager"
-M.MASTER_SVC  = "clusterd"
+M.MASTER_SVC = "clusterd"
 M.MANAGER_SVC = "cluster-manager"
-M.MASTER_CFG  = "/etc/cluster-master.cfg"
+M.MASTER_CFG = "/etc/cluster-master.cfg"
 M.MANAGER_CFG = "/etc/cluster-manager.cfg"
-
 function M.topology()
 return {
 { role = "Master",
-pkg  = M.MASTER_PKG,
-svc  = M.MASTER_SVC,
-one  = true,
+pkg = M.MASTER_PKG,
+svc = M.MASTER_SVC,
+one = true,
 what = "The control machine. Keeps the cluster's state, decides which "
 .. "Manager runs what, and hands out work. Exactly ONE per cluster "
 .. "— a second Master would accept registrations of its own and the "
 .. "cluster would split in half without telling you." },
 { role = "Manager",
-pkg  = M.MANAGER_PKG,
-svc  = M.MANAGER_SVC,
-one  = false,
+pkg = M.MANAGER_PKG,
+svc = M.MANAGER_SVC,
+one = false,
 what = "A compute machine. Registers with the Master and runs the work "
 .. "it is given. Install this on as many machines as you want to "
 .. "put to work." },
 }
 end
-
 function M.explain()
 local out = {
 "A cluster is one Master and any number of Managers.",
@@ -35,7 +32,6 @@ local out = {
 for _, t in ipairs(M.topology()) do
 out[#out + 1] = t.role .. "  ->  pkg install " .. t.pkg
 for line in (t.what):gmatch("[^\n]+") do
-
 out[#out + 1] = "    " .. line
 end
 out[#out + 1] = ""
@@ -50,7 +46,6 @@ out[#out + 1] = "You never copy files by hand: pick one below, with that disk"
 out[#out + 1] = "in, and this wizard installs it, configures it and pairs it."
 return out
 end
-
 function M.checkMasterAddress(s)
 if type(s) ~= "string" then return false, "no address given" end
 s = s:gsub("%s+", "")
@@ -68,7 +63,6 @@ return false, "an address is only hex digits and dashes"
 end
 return true, s
 end
-
 function M.checkPairingCode(s)
 if type(s) ~= "string" or s:gsub("%s+", "") == "" then
 return false, "no pairing code given"
@@ -80,7 +74,6 @@ return false, "pairing codes are longer than that — run 'cluster pair start'"
 end
 return true, s
 end
-
 --! cluster.api.startPairing returns the window as a TABLE, { code,
 --! expires_in }, so that the second slot of its value, err answer is only
 --! ever an error. The wizard still took it as (code, secs): it got the
@@ -96,38 +89,34 @@ return w.code, tonumber(w.expires_in) or 0
 end
 return w, err
 end
-
 local function clampNumber(v, lo, hi, dflt)
 v = tonumber(v)
 if not v then return dflt end
 return math.max(lo, math.min(hi, math.floor(v)))
 end
-
 function M.masterConfig(a)
 a = a or {}
 return {
-host_thread_budget       = clampNumber(a.threads, 1, 64, 4),
-heartbeat_interval       = clampNumber(a.heartbeat, 1, 60, 5),
+host_thread_budget = clampNumber(a.threads, 1, 64, 4),
+heartbeat_interval = clampNumber(a.heartbeat, 1, 60, 5),
 heartbeat_degraded_after = clampNumber(a.degraded, 2, 300, 15),
-heartbeat_offline_after  = clampNumber(a.offline, 3, 600, 30),
+heartbeat_offline_after = clampNumber(a.offline, 3, 600, 30),
 }
 end
-
 function M.managerConfig(a)
 a = a or {}
 local profile = a.profile
 if profile ~= "compute_bound" and profile ~= "io_bound" then profile = "mixed" end
 return {
-master_address         = a.master,
-hostname               = a.hostname,
-compute_profile        = profile,
-worker_count           = clampNumber(a.workers, 1, 16, 4),
-min_heartbeat_seconds  = 2,
-max_heartbeat_seconds  = 30,
+master_address = a.master,
+hostname = a.hostname,
+compute_profile = profile,
+worker_count = clampNumber(a.workers, 1, 16, 4),
+min_heartbeat_seconds = 2,
+max_heartbeat_seconds = 30,
 register_retry_seconds = 10,
 }
 end
-
 function M.encodeConfig(tbl)
 local keys = {}
 for k in pairs(tbl) do keys[#keys + 1] = k end
@@ -144,12 +133,10 @@ end
 out[#out + 1] = "}\n"
 return table.concat(out)
 end
-
 local function report(ctx, ok, what, err)
 if ok then ctx.say(what, "ok") else ctx.say(what .. ": " .. tostring(err), "err") end
 return ok
 end
-
 function M.checkHardware(ctx)
 local total, wireless = ctx.modemCount()
 if (total or 0) == 0 then
@@ -163,26 +150,21 @@ ctx.say("Only a wired modem found. That works, but every node must be"
 end
 return true
 end
-
 function M.run(ctx)
 ctx.say("Cluster setup", "title")
-
 local topo = M.topology()
-local haveMaster  = ctx.installed(M.MASTER_PKG)
+local haveMaster = ctx.installed(M.MASTER_PKG)
 local haveManager = ctx.installed(M.MANAGER_PKG)
-
 if haveMaster and haveManager then
 ctx.say("Both cluster packages are installed on this machine.", "warn")
 ctx.say("A machine is either the Master or a Manager, not both. Uninstall"
 .. " the one this box shouldn't be ('pkg uninstall <name>').", nil)
 return false
 end
-
 local role
 if haveMaster then role = "master"
 elseif haveManager then role = "manager"
 else
-
 local lines = M.explain()
 local pick = ctx.choose("What is this machine?", lines,
 { "Master (control)", "Manager (compute)", "Cancel" })
@@ -190,12 +172,9 @@ if pick == 1 then role = "master"
 elseif pick == 2 then role = "manager"
 else ctx.say("Nothing changed.", nil); return false end
 end
-
 if not M.checkHardware(ctx) then return false end
-
 local pkg = (role == "master") and M.MASTER_PKG or M.MANAGER_PKG
 local svc = (role == "master") and M.MASTER_SVC or M.MANAGER_SVC
-
 if not ctx.installed(pkg) then
 ctx.say("Installing " .. pkg .. " ...", nil)
 local okI, err = ctx.install(pkg)
@@ -207,18 +186,16 @@ end
 else
 ctx.say(pkg .. " is already installed.", "ok")
 end
-
 local cfg, cfgPath
 if role == "master" then
 cfg = M.masterConfig({
-threads   = ctx.ask("Jobs this Master may run at once", "4"),
+threads = ctx.ask("Jobs this Master may run at once", "4"),
 heartbeat = ctx.ask("Heartbeat interval (seconds)", "5"),
-degraded  = ctx.ask("Call a Manager degraded after (seconds)", "15"),
-offline   = ctx.ask("Call a Manager offline after (seconds)", "30"),
+degraded = ctx.ask("Call a Manager degraded after (seconds)", "15"),
+offline = ctx.ask("Call a Manager offline after (seconds)", "30"),
 })
 cfgPath = M.MASTER_CFG
 else
-
 local addr
 while true do
 local raw = ctx.ask("The Master's FULL modem address", nil)
@@ -228,26 +205,22 @@ if okA then addr = res; break end
 ctx.say(res, "err")
 end
 cfg = M.managerConfig({
-master   = addr,
+master = addr,
 hostname = ctx.hostname(),
-profile  = ctx.ask("Compute profile (compute_bound/io_bound/mixed)", "mixed"),
-workers  = ctx.ask("How many workers", "4"),
+profile = ctx.ask("Compute profile (compute_bound/io_bound/mixed)", "mixed"),
+workers = ctx.ask("How many workers", "4"),
 })
 cfgPath = M.MANAGER_CFG
 end
-
 local okW, werr = ctx.writeFile(cfgPath, M.encodeConfig(cfg))
 if not report(ctx, okW, "Wrote " .. cfgPath, werr) then return false end
-
 local atBoot = ctx.choose("Start " .. svc .. " automatically at boot?", {
 "Answer now — starting the service also decides this.",
 }, { "Yes, start at boot", "No, I'll start it by hand" }) == 1
-
 local okS, serr = ctx.startService(svc)
 report(ctx, okS, "Started " .. svc, serr)
 local okB, berr = ctx.setBootStart(svc, atBoot)
 report(ctx, okB, atBoot and "Enabled at boot" or "Left disabled at boot", berr)
-
 if role == "master" then
 ctx.say("Pairing", "title")
 local code, secs = ctx.startPairing()
@@ -259,7 +232,6 @@ local addr = ctx.myModemAddress()
 ctx.say("Pairing window open for " .. math.floor(secs or 0) .. "s.", "ok")
 ctx.say("On EACH Manager, run cluster-setup and give it:", nil)
 ctx.say("", nil)
-
 ctx.say("  Master address:  " .. tostring(addr or "(no modem address?)"), "title")
 ctx.say("  Pairing code:    " .. code, "title")
 ctx.say("", nil)
@@ -288,7 +260,6 @@ ctx.say("The local trust entry was still written. If the Manager shows"
 end
 end
 end
-
 ctx.say("Done", "title")
 if role == "master" then
 ctx.say("cluster status      overview", nil)
@@ -300,5 +271,4 @@ ctx.say("Ask the Master operator to run 'cluster managers' to confirm.", nil)
 end
 return true
 end
-
 return M

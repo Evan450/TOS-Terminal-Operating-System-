@@ -1,19 +1,14 @@
 local pkg = {}
-
 local attachOps, opsAttached, OPS_NAMES, opsOwn
-
-local PKG_ROOT        = "/var/pkg/installed"
+local PKG_ROOT = "/var/pkg/installed"
 local CRITICAL_BACKUP = "/etc/critical.bak"
-
-local fs        = nil
-local log       = nil
+local fs = nil
+local log = nil
 local serialize = nil
-local users     = nil
-
+local users = nil
 local installed = {}
-
 local ADMIN_TIER = 2
-local ROOT_TIER  = 3
+local ROOT_TIER = 3
 local function adminGate(opts)
 if not users then return true end
 local session = (type(opts) == "table" and opts.session) or nil
@@ -23,7 +18,6 @@ if session.isKernel or session.isLogin then return true end
 if type(session.tier) == "number" and session.tier >= ADMIN_TIER then return true end
 return false, "Insufficient privileges: admin required"
 end
-
 --! #SEC (pentest, Sep 2026) — a service package is trusted with the whole
 --! machine, and installing one is a ROOT act, not merely ADMIN. rc.d runs a
 --! service as the principal it declares and as ROOT when it declares none,
@@ -50,7 +44,6 @@ local SELFTEST_ROOT = "/usr/lib/selftest/"
 local function installsSelftestCheck(m)
 if type(m) ~= "table" or type(m.files) ~= "table" then return false end
 for _, t in ipairs(m.files) do
-
 if type(t) == "string" and t:lower():sub(1, #SELFTEST_ROOT) == SELFTEST_ROOT then
 return true
 end
@@ -73,28 +66,23 @@ return false, "installing a service package runs its code as root at boot; "
 .. "only root may install a service (this one runs outside the package sandbox)"
 end
 pkg._serviceInstallGate = serviceInstallGate
-
 local VALID_KINDS = {
-app     = true,
+app = true,
 command = true,
-
 program = true,
-lib     = true,
+lib = true,
 service = true,
 runtime = true,
-driver  = true,
-theme   = true,
+driver = true,
+theme = true,
 }
-
 local function validName(s)
 if type(s) ~= "string" then return false end
 if s == "" or #s > 64 then return false end
 if s == "." or s == ".." then return false end
 if #s == 1 then return s:match("^[%w]$") ~= nil end
-
 return s:match("^[%w][%w%-]*[%w]$") ~= nil
 end
-
 local function pathHasTraversal(p)
 if type(p) ~= "string" then return true end
 if p:find("\0", 1, true) then return true end
@@ -104,7 +92,6 @@ if seg == "." or seg == ".." then return true end
 end
 return false
 end
-
 --! #SEC (pentest, Sep 2026) — an install TARGET is compared as a STRING
 --! (against system files, other packages' files, reserved names), but the
 --! HOST decides which file it names. OpenComputers keeps each disk as a
@@ -121,7 +108,6 @@ end
 return true
 end
 local function targetKey(p) return (tostring(p):lower()) end
-
 local PKG_WRITE_ROOTS = { "/usr/", "/var/pkg/" }
 --! #SEC (pentest, Sep 2026) — /var/pkg/ is package space, but three trees in
 --! it belong to the package MANAGER, and files[] could name any of them:
@@ -147,19 +133,16 @@ local function isUnderPkgWriteRoot(p)
 if type(p) ~= "string" or p == "" then return false end
 if isReservedTarget(p) then return false end
 for _, root in ipairs(PKG_WRITE_ROOTS) do
-
 if p:sub(1, #root) == root and #p > #root then return true end
 end
 return false
 end
-
 --! #SEC (pentest, Sep 2026) — this comment used to say the rc.d service a
 --! package installs "runs in the user-tier sandbox". It does not: rc.lua runs
 --! a service as the principal it DECLARES and as root when it declares none,
 --! and a service's libraries load through the kernel loader (allowUserLibs).
 --! A service package is trusted with the machine; only command packages are
 --! confined to their capabilities. MANUAL section 15 says so to operators.
-
 --! #SEC (pentest, Sep 2026) — the exception was enforced as a SHAPE, and
 --! the shape matched the system's own files. Two of them made a service
 --! package the kernel:
@@ -178,7 +161,7 @@ end
 --! reads rc.lua's list and fails on any stem this one does not refuse.
 local KERNEL_TIER_RC = {
 ["10-discoveryd"] = true, ["20-chatrelay"] = true,
-["20-fileshare"]  = true, ["20-rshd"]      = true,
+["20-fileshare"] = true, ["20-rshd"] = true,
 }
 local SYSTEM_ETC_CFG = {
 ["tos"] = true, ["boot"] = true, ["pkg_trust"] = true, ["pkg_caps"] = true,
@@ -194,14 +177,12 @@ local cfg = p:match("^/etc/([%w_%-]+)%.cfg$")
 if cfg then return not SYSTEM_ETC_CFG[cfg:lower()] end
 return false
 end
-
 local function validVersion(s)
 return type(s) == "string"
 and s ~= ""
 and #s <= 32
 and s:match("^[%w%.%-]+$") ~= nil
 end
-
 --! #SEC A REPO HINT is a URL from a stranger's manifest that this machine
 --! may later REQUEST: http(s), a plain host and port, a path of plain
 --! characters -- no user@, query, fragment, dot segment, backslash, space or
@@ -226,7 +207,6 @@ if seg == "." or seg == ".." then return false end
 end
 return true
 end
-
 function pkg.repoHints(m)
 local out, seen = {}, {}
 local function add(list)
@@ -243,14 +223,12 @@ if type(req) == "table" then add(req.repos) end
 end
 return out
 end
-
 local function validateManifest(m)
 if type(m) ~= "table" then return false, "manifest is not a table" end
 if not validName(m.name) then return false, "invalid name: " .. tostring(m.name) end
 if not validVersion(m.version) then return false, "invalid version: " .. tostring(m.version) end
 if not VALID_KINDS[m.kind] then return false, "invalid kind: " .. tostring(m.kind) end
 if type(m.files) ~= "table" then return false, "missing files array" end
-
 for i, p in ipairs(m.files) do
 if type(p) ~= "string" or p:sub(1, 1) ~= "/" then
 return false, "files[" .. i .. "] is not an absolute path"
@@ -266,7 +244,6 @@ if isReservedTarget(p) then
 return false, "files[" .. i .. "] is the package manager's own space (" .. p
 .. "): installed manifests, package secrets and remote staging are not a package's to write"
 end
-
 if not isUnderPkgWriteRoot(p)
 and not (m.kind == "service" and isServiceEtcTarget(p)) then
 return false, "files[" .. i .. "] must be under " ..
@@ -275,7 +252,6 @@ table.concat(PKG_WRITE_ROOTS, " or ") ..
 .. p .. ")"
 end
 end
-
 --! Every entry must name a target the manifest actually declares — a
 --! source for an undeclared target would be copied by nothing, but it
 --! must not be possible to smuggle extra paths past the files[] loop
@@ -304,14 +280,12 @@ return false, "fileMap source contains an unsafe path segment: " .. src
 end
 end
 end
-
 if m.lua ~= nil and (type(m.lua) ~= "string" or not m.lua:match("^%d+%.%d+$")) then
 return false, 'lua must be a Lua version like "5.3" if present'
 end
 if m.tos ~= nil and (type(m.tos) ~= "string" or not m.tos:match("^%s*[<>=~%^]*%s*%d")) then
 return false, 'tos must be a version constraint like ">=1.5.0" if present'
 end
-
 if m.hashes ~= nil then
 if type(m.hashes) ~= "table" then
 return false, "hashes must be a table if present"
@@ -326,7 +300,6 @@ if m.critical ~= nil then
 if type(m.critical) ~= "table" then
 return false, "critical must be an array if present"
 end
-
 for i, p in ipairs(m.critical) do
 if type(p) ~= "string" or p:sub(1, 1) ~= "/" or pathHasTraversal(p) then
 return false, "critical[" .. i .. "] is not a safe absolute path"
@@ -339,7 +312,6 @@ end
 if m.requires ~= nil and type(m.requires) ~= "table" then
 return false, "requires must be an array if present"
 end
-
 if type(m.requires) == "table" then
 for i, req in ipairs(m.requires) do
 if type(req) == "table" and req.key ~= nil then
@@ -352,7 +324,6 @@ end
 end
 end
 end
-
 local function checkRepos(list, where)
 if list == nil then return true end
 if type(list) ~= "table" then return false, where .. " must be an array of repo URLs" end
@@ -381,7 +352,6 @@ if not okQ then return false, qErr end
 end
 end
 end
-
 if m.recommends ~= nil then
 if type(m.recommends) ~= "table" then
 return false, "recommends must be an array of package names if present"
@@ -392,7 +362,6 @@ return false, "recommends[" .. i .. "] is not a package name"
 end
 end
 end
-
 if m.conflicts ~= nil then
 if type(m.conflicts) ~= "table" then
 return false, "conflicts must be an array of package names if present"
@@ -409,7 +378,6 @@ end
 if m.capabilities ~= nil and type(m.capabilities) ~= "table" then
 return false, "capabilities must be an array if present"
 end
-
 if m.screen ~= nil then
 if type(m.screen) ~= "table" then
 return false, "screen must be a table { width=, height= } if present"
@@ -423,7 +391,6 @@ if m.screen.mode ~= nil and m.screen.mode ~= "exact" and m.screen.mode ~= "min" 
 return false, "screen.mode must be 'exact' or 'min'"
 end
 end
-
 if m.provides ~= nil then
 if type(m.provides) ~= "table" then
 return false, "provides must be an array if present"
@@ -434,7 +401,6 @@ return false, "provides[" .. i .. "] is not a valid name"
 end
 end
 end
-
 if m.license ~= nil then
 if type(m.license) ~= "table" then
 return false, "license must be a table if present"
@@ -455,19 +421,15 @@ end
 end
 return true
 end
-
 function pkg.parseCap(s)
 if type(s) ~= "string" then return nil, "not a string" end
 s = s:match("^%s*(.-)%s*$")
 if s == "" then return nil, "empty" end
-
 local colon = s:find(":", 1, true)
 if not colon then
-
 if s:match("^[%w%.]+$") then return { facet = s } end
 return nil, "invalid facet: " .. s
 end
-
 local facet = s:sub(1, colon - 1)
 local scope = s:sub(colon + 1)
 if facet == "" then return nil, "empty facet before ':'" end
@@ -475,20 +437,16 @@ if not facet:match("^[%w%.]+$") then return nil, "invalid facet: " .. facet end
 if scope == "" then return nil, "empty scope after ':'" end
 return { facet = facet, scope = scope }
 end
-
 function pkg.init(deps)
-fs        = deps.fs
-log       = deps.log
-users     = deps.users
+fs = deps.fs
+log = deps.log
+users = deps.users
 serialize = require("kernel.serialize")
-
 if opsAttached then
 opsAttached = false
 for k, v in pairs(opsOwn) do if rawget(pkg, k) == v then rawset(pkg, k, nil) end end
 end
-
 if not fs then return false, "fs module required" end
-
 --! It says so because it DOES it: this comment used to claim the OC
 --! proxy recursed, which is false on every backend (see the note on
 --! fs.makeDirectory). On a fresh managed disk this call failed at
@@ -500,9 +458,7 @@ if not ok and log then
 log.warn("pkg", "Could not create " .. PKG_ROOT .. ": " .. tostring(err))
 end
 end
-
 pkg.scan()
-
 if log then
 local n = 0
 for _ in pairs(installed) do n = n + 1 end
@@ -510,15 +466,12 @@ log.info("pkg", "Package manager initialized (" .. n .. " installed)")
 end
 return true
 end
-
 function pkg.scan()
-
 for k in pairs(installed) do installed[k] = nil end
 if not fs.exists(PKG_ROOT) then return 0 end
 local entries = fs.list(PKG_ROOT) or {}
 local count = 0
 for _, name in ipairs(entries) do
-
 local clean = name:gsub("/$", "")
 if clean ~= "" and validName(clean) then
 --! Read with serialize.loadFile and NOT loadAnyManifest, which
@@ -534,7 +487,6 @@ local m, err = serialize.loadFile(fs, manifestPath)
 if type(m) == "table" then
 local ok, vErr = validateManifest(m)
 if ok then
-
 if m.name == clean then
 installed[m.name] = m
 count = count + 1
@@ -551,26 +503,23 @@ end
 end
 return count
 end
-
 function pkg.list()
 local result = {}
 for name, m in pairs(installed) do
 result[#result + 1] = {
-name        = m.name,
-version     = m.version,
-kind        = m.kind,
+name = m.name,
+version = m.version,
+kind = m.kind,
 description = m.description,
-enabled     = pkg.isEnabled(name),
+enabled = pkg.isEnabled(name),
 }
 end
 table.sort(result, function(a, b) return a.name < b.name end)
 return result
 end
-
 function pkg.info(name)
 return installed[name]
 end
-
 function pkg.isEnabled(name)
 if not installed[name] then return false end
 local p = fs.join(PKG_ROOT, name, "state")
@@ -579,7 +528,6 @@ local data = fs.readFile(p)
 if not data then return true end
 return data:sub(1, 1) ~= "d"
 end
-
 function pkg.setEnabled(name, on, opts)
 local g, gErr = adminGate(opts)
 if not g then return false, gErr end
@@ -587,7 +535,6 @@ if not installed[name] then return false, "not installed: " .. name end
 local p = fs.join(PKG_ROOT, name, "state")
 return fs.writeFile(p, on and "e" or "d")
 end
-
 function pkg.commands()
 local result = {}
 for name, m in pairs(installed) do
@@ -601,7 +548,6 @@ end
 end
 return result
 end
-
 function pkg.ownerOfCommand(name)
 if type(name) ~= "string" then return nil end
 for pkgName, m in pairs(installed) do
@@ -612,7 +558,6 @@ end
 end
 return nil
 end
-
 local pkgActive = {}
 --! #MEM (pentest, Sep 2026) — the cache is BOUNDED. A package command's
 --! entry and sandbox stayed resident for good once it had run, and one
@@ -625,7 +570,7 @@ local pkgActive = {}
 --! closures, and the next call recompiles the entry from disk.
 --! (test_pkg_cache_bound.lua)
 local PKG_CACHE_MAX = 2
-local PKG_LOW_MEM   = 48 * 1024
+local PKG_LOW_MEM = 48 * 1024
 local pkgUse, pkgUseTick = {}, 0
 local function lowMemory()
 local okC, comp = pcall(require, "computer")
@@ -639,30 +584,23 @@ if #names <= limit then return end
 table.sort(names, function(a, b) return (pkgUse[a] or 0) > (pkgUse[b] or 0) end)
 for i = limit + 1, #names do pkgActive[names[i]] = nil; pkgUse[names[i]] = nil end
 end
-
 local PKG_RUN_CAPS = {
 ["fs.read"] = true, ["fs.write"] = true, component = true,
 ["compat.io"] = true, load = true, net = true, swap = true,
-
 internet = true,
 vault = true,
 crypto = true,
 notify = true,
-
 ["peripheral.modem"] = true, ["peripheral.redstone"] = true,
 ["peripheral.robot"] = true, ["peripheral.inventory"] = true,
 ["peripheral.tape"] = true, ["peripheral.tractor"] = true,
 ["peripheral.piston"] = true, ["peripheral.hologram"] = true,
-
 ["peripheral.printer"] = true,
-
 }
-
 local PKG_CAPS_CFG = "/etc/pkg_caps.cfg"
-local _capAllow  = {}
-local _capDeny   = {}
+local _capAllow = {}
+local _capDeny = {}
 local _capLoaded = false
-
 local function loadCapConfig()
 if _capLoaded then return end
 _capLoaded = true
@@ -678,13 +616,11 @@ if not ok or type(cfg) ~= "table" then
 if log then log.warn("pkg", "pkg_caps.cfg did not decode — overrides NOT in force") end
 return
 end
-
 local function validFacet(f)
 return type(f) == "string" and #f <= 64 and f:match("^[%w%.]+$") ~= nil
 end
 if type(cfg.allow) == "table" then
 for _, f in ipairs(cfg.allow) do
-
 if validFacet(f) and f ~= "legacy" then _capAllow[f] = true end
 end
 end
@@ -700,19 +636,16 @@ end
 end
 end
 end
-
 function pkg.runCaps()
 local out = {}
 for facet in pairs(PKG_RUN_CAPS) do out[facet] = true end
 return out
 end
-
 function pkg.reloadCapConfig()
 _capAllow, _capDeny, _capLoaded = {}, {}, false
 loadCapConfig()
 return _capAllow, _capDeny
 end
-
 function pkg.capAllowed(pkgName, facet)
 if type(facet) ~= "string" then return false, "invalid facet" end
 loadCapConfig()
@@ -723,7 +656,6 @@ if PKG_RUN_CAPS[facet] then return true end
 if _capAllow[facet] then return true end
 return false, "not a package-grantable capability"
 end
-
 local function grantedCaps(pkgName, m)
 local caps = {}
 if type(m.capabilities) == "table" then
@@ -734,7 +666,6 @@ local allowed, why = pkg.capAllowed(pkgName, parsed.facet)
 if allowed then
 caps[parsed.facet] = true
 elseif log then
-
 log.warn("pkg", "capability '" .. parsed.facet .. "' refused for " ..
 pkgName .. ": " .. tostring(why))
 end
@@ -743,7 +674,6 @@ end
 end
 return caps
 end
-
 --! An OPPM package has no `commands` table: its programs land in /usr/bin
 --! and the shell runs them as PATH programs, with the shell's fixed set
 --! (fs.read, fs.write, compat.io). So the capabilities granted at install --
@@ -752,7 +682,6 @@ end
 --! and the data loot disk's base64 died requiring the data card. The shell
 --! asks this for a resolved PATH program and adds what comes back; a file no
 --! package owns runs exactly as before. (test_pkg_program_caps.lua)
-
 function pkg.capsForFile(path)
 local owner = pkg.ownerOfFile(path)
 if owner and pkg.isEnabled(owner) then
@@ -760,7 +689,6 @@ return grantedCaps(owner, installed[owner]), owner
 end
 return nil
 end
-
 function pkg.ownerOfFile(path)
 if type(path) ~= "string" or path == "" then return nil end
 local key = targetKey(fs.normalize and fs.normalize(path) or path)
@@ -773,7 +701,6 @@ end
 end
 return nil
 end
-
 --! A service package that declares defaultState = "disabled" (mail,
 --! intercom, cluster-master, cluster-manager) installs with BOTH its rc.d
 --! boot marker and its package byte off. `service start` cleared only the
@@ -782,7 +709,6 @@ end
 --! it (headless machine, 2026-10-08), and its programs never got the
 --! package's caps. Starting the service is the operator's decision to
 --! enable the package, so the byte follows. (test_pkg_service_enable.lua)
-
 function pkg.noteServiceStarted(svcName, opts)
 local g = adminGate(opts)
 if not g then return nil end
@@ -792,22 +718,18 @@ if not owner or pkg.isEnabled(owner) then return nil end
 if pkg.setEnabled(owner, true, opts) then return owner end
 return nil
 end
-
 local function loadPkgEntry(pkgName, m, entryPath)
 if pkgActive[pkgName] then
 pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
 return pkgActive[pkgName]
 end
-
 trimCache(lowMemory() and 0 or (PKG_CACHE_MAX - 1))
 if not fs.exists(entryPath) then return nil end
 local source = fs.readFile(entryPath)
 if not source then return nil end
 local caps = grantedCaps(pkgName, m)
-
 local okSB, sandbox = pcall(require, "kernel.sandbox")
 if not okSB or not sandbox or not sandbox.build then return nil end
-
 local env = sandbox.build({ caps = caps, pkgName = pkgName })
 local fn, lerr = load(source, "=pkg:" .. pkgName, "t", env)
 if not fn then
@@ -819,7 +741,6 @@ if not ok or type(result) ~= "table" then
 if log then log.warn("pkg", "entry failed in " .. pkgName .. ": " .. tostring(result)) end
 return nil
 end
-
 local scoped = {}
 for cmdName, fn2 in pairs(result.commands or {}) do
 if type(fn2) == "function" then
@@ -837,18 +758,15 @@ end
 end
 end
 result.commands = scoped
-
 pkgActive[pkgName] = result
 pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
 return result
 end
-
 local dispatchEnabled = true
 function pkg.setDispatchEnabled(on)
 dispatchEnabled = on and true or false
 end
 function pkg.dispatchEnabled() return dispatchEnabled end
-
 function pkg.getCommand(name)
 if not dispatchEnabled then return nil end
 if type(name) ~= "string" then return nil end
@@ -866,7 +784,6 @@ end
 end
 return nil
 end
-
 function pkg.getCommandScreen(name)
 if type(name) ~= "string" then return nil end
 for pkgName, m in pairs(installed) do
@@ -878,7 +795,6 @@ end
 end
 return nil
 end
-
 function pkg.getCommandFullscreen(name)
 if type(name) ~= "string" then return false end
 for pkgName, m in pairs(installed) do
@@ -889,7 +805,6 @@ end
 end
 return false
 end
-
 local BG_POLICIES = { drowsy = true, always = true, freeze = true }
 function pkg.getCommandBackground(name)
 if type(name) ~= "string" then return "drowsy" end
@@ -903,12 +818,10 @@ end
 end
 return "drowsy"
 end
-
 function pkg.flushCommandCache(pkgName)
 if pkgName then pkgActive[pkgName] = nil; pkgUse[pkgName] = nil
 else pkgActive = {}; pkgUse = {} end
 end
-
 function pkg.capabilities(name)
 local m = installed[name]
 if not m or type(m.capabilities) ~= "table" then return {} end
@@ -924,7 +837,6 @@ end
 end
 return result
 end
-
 local function splitVersion(v)
 if type(v) ~= "string" then return nil end
 local base, suffix = v:match("^([%d%.]+)%-?(.*)$")
@@ -935,7 +847,6 @@ parts[#parts + 1] = tonumber(seg) or 0
 end
 return parts, suffix
 end
-
 function pkg.compareVersion(a, b)
 local pa, sa = splitVersion(a)
 local pb, sb = splitVersion(b)
@@ -946,15 +857,13 @@ local va, vb = pa[i] or 0, pb[i] or 0
 if va < vb then return -1 end
 if va > vb then return 1 end
 end
-
 if sa == "" and sb == "" then return 0 end
-if sa == "" then return 1   end
-if sb == "" then return -1  end
+if sa == "" then return 1 end
+if sb == "" then return -1 end
 if sa < sb then return -1 end
-if sa > sb then return 1  end
+if sa > sb then return 1 end
 return 0
 end
-
 function pkg.satisfiesConstraint(version, constraint)
 if not constraint or constraint == "" then return true end
 constraint = constraint:match("^%s*(.-)%s*$")
@@ -964,25 +873,22 @@ if not op then op, target = constraint:match("^(==?)(.+)$") end
 if not op then op, target = constraint:match("^(%^)(.+)$") end
 if not op then op, target = constraint:match("^(~)(.+)$") end
 if not op then
-
 op = "=="; target = constraint
 end
 target = target:match("^%s*(.-)%s*$")
 local cmp = pkg.compareVersion(version, target)
-if op == ">"  then return cmp >  0 end
+if op == ">" then return cmp > 0 end
 if op == ">=" then return cmp >= 0 end
-if op == "<"  then return cmp <  0 end
+if op == "<" then return cmp < 0 end
 if op == "<=" then return cmp <= 0 end
-if op == "="  or op == "==" then return cmp == 0 end
+if op == "=" or op == "==" then return cmp == 0 end
 if op == "^" then
-
 if cmp < 0 then return false end
 local va = splitVersion(version); local vt = splitVersion(target)
 if not va or not vt then return false end
 return (va[1] or 0) == (vt[1] or 0)
 end
 if op == "~" then
-
 if cmp < 0 then return false end
 local va = splitVersion(version); local vt = splitVersion(target)
 if not va or not vt then return false end
@@ -990,7 +896,6 @@ return (va[1] or 0) == (vt[1] or 0) and (va[2] or 0) == (vt[2] or 0)
 end
 return false
 end
-
 local function findProvider(name)
 if installed[name] then return installed[name] end
 for _, pkgRec in pairs(installed) do
@@ -1002,19 +907,17 @@ end
 end
 return nil
 end
-
 function pkg.checkRequires(name)
 local m = installed[name]
 if not m then return false, { name } end
 if type(m.requires) ~= "table" then return true, {} end
 local missing = {}
 for _, req in ipairs(m.requires) do
-
 local reqName, reqConstraint, optional
 if type(req) == "table" then
-reqName       = req.name
+reqName = req.name
 reqConstraint = req.version
-optional      = req.optional
+optional = req.optional
 elseif type(req) == "string" then
 local n, c = req:match("^(%S+)%s+(.+)$")
 if n then reqName, reqConstraint = n, c
@@ -1022,7 +925,6 @@ else reqName, reqConstraint = req, nil end
 optional = false
 end
 if reqName then
-
 local dep = findProvider(reqName)
 if not dep then
 if not optional then
@@ -1030,7 +932,6 @@ missing[#missing + 1] = reqName ..
 (reqConstraint and (" (" .. reqConstraint .. ")") or "")
 end
 elseif reqConstraint then
-
 if not pkg.satisfiesConstraint(dep.version or "0.0.0", reqConstraint) then
 missing[#missing + 1] = reqName .. " " .. reqConstraint ..
 " (have " .. (dep.version or "?") .. " via " ..
@@ -1041,12 +942,10 @@ end
 end
 return #missing == 0, missing
 end
-
 function pkg.resolveInstallOrder(targetName, lookup)
 local order = {}
 local visiting = {}
-local visited  = {}
-
+local visited = {}
 local function visit(name, req, requirer)
 if visited[name] then return true end
 if visiting[name] then
@@ -1063,7 +962,6 @@ local depName, optional
 if type(req) == "table" then depName, optional = req.name, req.optional
 elseif type(req) == "string" then depName = req:match("^(%S+)") end
 if depName then
-
 --! An OPTIONAL requirement that no source can answer is left
 --! out, not an error. It used to be visited like any other, so
 --! a package that could run without a library could not be
@@ -1079,21 +977,17 @@ end
 end
 visiting[name] = nil
 visited[name] = true
-
 local canonical = (m.name and m.name ~= "") and m.name or name
-
 if not visited[canonical] or canonical == name then
 visited[canonical] = true
 order[#order + 1] = canonical
 end
 return true
 end
-
 local ok, err = visit(targetName)
 if not ok then return nil, err end
 return order
 end
-
 function pkg.criticalFiles()
 local seen = {}
 local result = {}
@@ -1110,14 +1004,11 @@ end
 table.sort(result)
 return result
 end
-
 function pkg.syncCriticalBackup()
 local list = pkg.criticalFiles()
 if #list == 0 then
-
 return false, "no critical files declared by any package"
 end
-
 local current = serialize.loadFile(fs, CRITICAL_BACKUP)
 if type(current) == "table" and #current == #list then
 local same = true
@@ -1126,7 +1017,6 @@ if current[i] ~= list[i] then same = false; break end
 end
 if same then return true, "already in sync" end
 end
-
 local ok, err = serialize.saveFile(fs, CRITICAL_BACKUP, list)
 if ok and log then
 log.info("pkg", "Critical-files backup updated: " .. #list .. " entries")
@@ -1135,16 +1025,13 @@ log.warn("pkg", "Failed to update critical backup: " .. tostring(err))
 end
 return ok, err
 end
-
-pkg.PKG_ROOT          = PKG_ROOT
-pkg.CRITICAL_BACKUP   = CRITICAL_BACKUP
-pkg.VALID_KINDS       = VALID_KINDS
-
-pkg._validateManifest    = validateManifest
+pkg.PKG_ROOT = PKG_ROOT
+pkg.CRITICAL_BACKUP = CRITICAL_BACKUP
+pkg.VALID_KINDS = VALID_KINDS
+pkg._validateManifest = validateManifest
 pkg._isUnderPkgWriteRoot = isUnderPkgWriteRoot
-pkg._isServiceEtcTarget  = isServiceEtcTarget
-pkg.PKG_WRITE_ROOTS      = PKG_WRITE_ROOTS
-
+pkg._isServiceEtcTarget = isServiceEtcTarget
+pkg.PKG_WRITE_ROOTS = PKG_WRITE_ROOTS
 OPS_NAMES = {}
 for n in ([[
 DEFAULT_REPO_ROOTS _loadAnyManifest _protectedTargetRefusal _signGate
@@ -1159,13 +1046,10 @@ trustRemove trustRequire trustRequired uninstall upgrade
 verifyLicenseKey
 ]]):gmatch("%S+") do OPS_NAMES[n] = true end
 pkg._OPS_NAMES = OPS_NAMES
-
 local SELF_DIR = (debug and debug.getinfo and (debug.getinfo(1, "S").source or "")
 :match("^@(.*[/\\])")) or nil
-
 function attachOps()
 local okR, factory = pcall(require, "kernel.pkgops")
-
 if not okR and SELF_DIR and tostring(factory):find("not found", 1, true) then
 local chunk = loadfile(SELF_DIR .. "pkgops.lua")
 if chunk then okR, factory = pcall(chunk) end
@@ -1173,7 +1057,6 @@ end
 if not okR or type(factory) ~= "function" then
 error(tostring(factory or "kernel.pkgops did not load"), 0)
 end
-
 local kept = {}
 for k in pairs(OPS_NAMES) do kept[k] = rawget(pkg, k) end
 factory(pkg, {
@@ -1188,7 +1071,6 @@ if kept[k] ~= nil then rawset(pkg, k, kept[k]) else opsOwn[k] = rawget(pkg, k) e
 end
 opsAttached = true
 end
-
 setmetatable(pkg, { __index = function(t, k)
 if not OPS_NAMES[k] or opsAttached then return nil end
 local ok, err = pcall(attachOps)
@@ -1198,11 +1080,9 @@ return function()
 return false, "the package manager's operations could not load: " .. tostring(err)
 end
 end })
-
 do
 local T = rawget(_G, "_TOS")
 if T and T.fs and not fs then
-
 if T.pkgDispatchDisabled then
 pkg.setDispatchEnabled(false)
 end
@@ -1213,5 +1093,4 @@ pcall(pkg.syncCriticalBackup)
 end
 end
 end
-
 return pkg

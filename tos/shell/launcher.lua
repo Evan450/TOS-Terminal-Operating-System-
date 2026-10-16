@@ -1,11 +1,9 @@
 local launcher = {}
-
 local MAX_LABEL = 60
-local MAX_CMD   = 200
-local MAX_INFO  = 400
+local MAX_CMD = 200
+local MAX_INFO = 400
 local MAX_ITEMS = 64
 local MAX_DEPTH = 5
-
 function launcher.normalizeMenu(raw, depth)
 depth = depth or 1
 local out = { title = "Menu", items = {} }
@@ -33,32 +31,29 @@ if #out.items >= MAX_ITEMS then break end
 end
 return out
 end
-
 function launcher.resolveSelection(menu, idx)
 if type(idx) ~= "number" or not menu or type(menu.items) ~= "table" then
 return { type = "none" }
 end
 local item = menu.items[idx]
 if not item then return { type = "none" } end
-if item.run  then return { type = "run", cmd = item.run, label = item.label } end
+if item.run then return { type = "run", cmd = item.run, label = item.label } end
 if item.menu then return { type = "submenu", menu = item.menu } end
 if item.info then return { type = "info", text = item.info, label = item.label } end
 return { type = "none" }
 end
-
 function launcher.clusterProfile()
 return launcher.normalizeMenu({
 title = "Cluster helper",
 items = {
-{ label = "Manager status",          run = "cluster-manager status" },
-{ label = "List bridge workers",     run = "cluster-manager workers" },
-{ label = "Drain (stop new work)",   run = "cluster-manager drain" },
-{ label = "Undrain (resume work)",   run = "cluster-manager undrain" },
-{ label = "Command help",            run = "cluster-manager help" },
+{ label = "Manager status", run = "cluster-manager status" },
+{ label = "List bridge workers", run = "cluster-manager workers" },
+{ label = "Drain (stop new work)", run = "cluster-manager drain" },
+{ label = "Undrain (resume work)", run = "cluster-manager undrain" },
+{ label = "Command help", run = "cluster-manager help" },
 },
 })
 end
-
 function launcher.readTapeMenu(raw, passphrase, vault)
 if type(raw) ~= "string" or #raw < 7 + 4 + 2 + 64 then return nil, "no keycard tape data" end
 if raw:sub(1, 7) ~= "TAUTH2\0" then return nil, "not a tape-authenticator keycard" end
@@ -80,13 +75,11 @@ if off + menuLen - 1 > #raw then return nil, "menu region truncated" end
 local blob = raw:sub(off, off + menuLen - 1)
 return launcher.decodeTapeMenuBlob(blob, passphrase, vault)
 end
-
 function launcher.decodeTapeMenuBlob(blob, passphrase, vault)
 if not (vault and vault.decrypt and vault.isEncrypted) then return nil, "vault unavailable" end
 if not vault.isEncrypted(blob) then return nil, "menu region corrupt (not a vault blob)" end
 local plain, derr = vault.decrypt(blob, passphrase)
 if not plain then return nil, "cannot decrypt menu (wrong passphrase?): " .. tostring(derr) end
-
 local items = {}
 for line in plain:gmatch("[^\n]+") do
 local label, cmd = line:match("^(.-)|(.+)$")
@@ -97,9 +90,7 @@ end
 if #items == 0 then return nil, "this card's menu is empty" end
 return launcher.normalizeMenu({ title = "Tape toolbox", items = items })
 end
-
 local MAX_MENU_BYTES = 64 * 1024
-
 function launcher.readTapeMenuFromDrive(drive, passphrase, vault)
 if not (drive and drive.read and drive.seek and drive.getSize) then
 return nil, "no tape drive"
@@ -121,7 +112,6 @@ local function u16(s, o) return s:byte(o) | (s:byte(o + 1) << 8) end
 local function u32(s, o)
 return s:byte(o) | (s:byte(o + 1) << 8) | (s:byte(o + 2) << 16) | (s:byte(o + 3) << 24)
 end
-
 local head = readN(13)
 if #head < 13 then return nil, "no keycard tape data" end
 if head:sub(1, 7) ~= "TAUTH2\0" then return nil, "not a tape-authenticator keycard" end
@@ -142,12 +132,10 @@ local blob = readN(menuLen)
 if #blob < menuLen then return nil, "menu region truncated" end
 return launcher.decodeTapeMenuBlob(blob, passphrase, vault)
 end
-
 local function pull()
 local computer = require("computer")
 return computer.pullSignal(1)
 end
-
 function launcher.run(opts)
 opts = opts or {}
 local display = opts.display
@@ -155,12 +143,9 @@ if not display or not display.getSize then return end
 local runLine = opts.runLine
 local root = launcher.normalizeMenu(opts.profile)
 if opts.title then root.title = opts.title end
-
 local stack = { root }
 local cursor = 1
-
 local function T() return display.getTheme() end
-
 local function showLines(header, lines)
 local th = T()
 local W, H = display.getSize()
@@ -175,7 +160,6 @@ local col = type(ln) == "table" and ln[2] or th.fg
 display.set(2, row, tostring(txt):sub(1, W - 3), col, th.bg)
 row = row + 1
 end
-
 display.fill(1, H, W, 1, "░", th.dim or th.fg, th.bg)
 display.set(1, H, "▓▒░", th.dim or th.fg, th.bg)
 if W > 6 then display.set(W - 2, H, "░▒▓", th.dim or th.fg, th.bg) end
@@ -185,26 +169,23 @@ local sig = pull()
 if sig == "key_down" or sig == "touch" then return end
 end
 end
-
 local function draw()
 local th = T()
 local W, H = display.getSize()
 local menu = stack[#stack]
 display.clear(th.bg)
-
 local crumb = {}
 for _, m in ipairs(stack) do crumb[#crumb + 1] = m.title end
 local header = " " .. table.concat(crumb, " / ")
 display.fill(1, 1, W, 1, " ", th.bar_fg or th.fg, th.bar_bg or th.bg)
 display.set(1, 1, header:sub(1, W - 1), th.bar_fg or th.fg, th.bar_bg or th.bg)
-
 local top = 3
 for i, item in ipairs(menu.items) do
 local row = top + i - 1
 if row > H - 2 then break end
 local marker = (i <= 9) and ("[" .. i .. "]") or "   "
-local arrow  = item.menu and "  >" or ""
-local label  = item.label .. arrow
+local arrow = item.menu and "  >" or ""
+local label = item.label .. arrow
 local fg, bg = th.fg, th.bg
 if i == cursor then fg, bg = th.bar_fg or th.bg, th.bar_bg or th.fg end
 display.fill(2, row, W - 2, 1, " ", fg, bg)
@@ -213,18 +194,15 @@ end
 if #menu.items == 0 then
 display.set(2, top, "(this menu is empty)", th.dim or th.fg, th.bg)
 end
-
 local hint = (#stack > 1)
 and "Up/Down + Enter or click  ·  Backspace: up  ·  Q: quit"
-or  "Up/Down + Enter or click  ·  number keys  ·  Q: quit"
-
+or "Up/Down + Enter or click  ·  number keys  ·  Q: quit"
 display.fill(1, H, W, 1, "░", th.dim or th.fg, th.bg)
 display.set(1, H, "▓▒░", th.dim or th.fg, th.bg)
 if W > 6 then display.set(W - 2, H, "░▒▓", th.dim or th.fg, th.bg) end
 display.set(5, H, (" " .. hint .. " "):sub(1, math.max(0, W - 10)), th.dim or th.fg, th.bg)
 return top
 end
-
 local function activate(idx)
 local menu = stack[#stack]
 local act = launcher.resolveSelection(menu, idx)
@@ -248,12 +226,10 @@ showLines(act.label, { { act.text, T().fg } })
 end
 return true
 end
-
 local function back()
 if #stack > 1 then stack[#stack] = nil; cursor = 1; return true end
 return false
 end
-
 while true do
 local top = draw()
 local sig, _, a, b = pull()
@@ -274,7 +250,6 @@ elseif char and char >= 49 and char <= 57 then
 if not activate(char - 48) then return end
 end
 elseif sig == "touch" then
-
 local y = b
 if type(y) == "number" then
 local idx = y - top + 1
@@ -286,5 +261,4 @@ end
 end
 end
 end
-
 return launcher

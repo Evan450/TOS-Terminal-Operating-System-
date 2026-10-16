@@ -1,28 +1,22 @@
 local sandbox = {}
-
 local KERNEL_MODULE_PREFIX = "kernel."
-
 local ALLOWED_MODULE_PREFIXES = {
 "compat.",
 "peripheral.",
 }
-
 local ALLOWED_MODULE_NAMES = {
-compat        = true,
-
+compat = true,
 ["shell.keys"] = true,
 }
-
 local BLOCKED_MODULE_NAMES = {
-
-["debug"]                   = true,
-["package"]                 = true,
-["os"]                      = true,
-["io"]                      = true,
-["component"]               = true,
-["computer"]                = true,
-["filesystem"]              = true,
-["shell.init"]              = true,
+["debug"] = true,
+["package"] = true,
+["os"] = true,
+["io"] = true,
+["component"] = true,
+["computer"] = true,
+["filesystem"] = true,
+["shell.init"] = true,
 --! #SEC (pentest, Sep 2026) — shell.ext is not an extension API; it is
 --! the lazy-loaded body of the net/ping/hostname/config/audio commands,
 --! and the unsandboxed shell (commands/extras.lua) is its only caller.
@@ -31,83 +25,74 @@ local BLOCKED_MODULE_NAMES = {
 --! through a capability the program was granted. The alias writers do
 --! re-check the live principal's tier; nothing else about it belongs in
 --! a sandbox either.
-["shell.ext"]               = true,
-["shell.panels.init"]       = true,
-["shell.panels.commands"]   = true,
-["shell.panels.events"]     = true,
-["shell.panels.executor"]   = true,
-["shell.panels.state"]      = true,
-["shell.panels.draw"]       = true,
-["shell.panels.helpers"]    = true,
+["shell.ext"] = true,
+["shell.panels.init"] = true,
+["shell.panels.commands"] = true,
+["shell.panels.events"] = true,
+["shell.panels.executor"] = true,
+["shell.panels.state"] = true,
+["shell.panels.draw"] = true,
+["shell.panels.helpers"] = true,
 ["shell.panels.filebrowser"] = true,
-["shell.panels.editor"]     = true,
-["shell.panels.menus"]      = true,
-["shell.panels.dialogs"]    = true,
-["shell.panels.context"]    = true,
-["shell.panels.keymap"]     = true,
-["shell.panels.tabs"]       = true,
-["shell.panels.widgets"]    = true,
-["shell.panels.mouse"]      = true,
-["shell.panels.ui"]         = true,
-["shell.panels.desktop"]    = true,
+["shell.panels.editor"] = true,
+["shell.panels.menus"] = true,
+["shell.panels.dialogs"] = true,
+["shell.panels.context"] = true,
+["shell.panels.keymap"] = true,
+["shell.panels.tabs"] = true,
+["shell.panels.widgets"] = true,
+["shell.panels.mouse"] = true,
+["shell.panels.ui"] = true,
+["shell.panels.desktop"] = true,
 ["shell.panels.settingsapp"] = true,
-["shell.panels.apps"]       = true,
+["shell.panels.apps"] = true,
 ["shell.panels.monitorapp"] = true,
-["shell.panels.chatapp"]    = true,
-
-["mail"]                    = true,
-["mailui"]                  = true,
-["mailapp"]                 = true,
-
-["rbmk-cmd"]                = true,
-["rbmk-controld"]           = true,
-["rbmk.core"]               = true,
-
-["rbmk-skala"]              = true,
-["rbmk.skala"]              = true,
-["rbmk.wall"]               = true,
-["shell.panels.takeover"]   = true,
-["shell.login"]             = true,
-["shell.chat"]              = true,
-["shell.tutorial"]          = true,
-["shell.syntax"]            = true,
-["shell.panels"]            = true,
-["shell"]                   = true,
-["bios"]                    = true,
-["init"]                    = true,
-["install"]                 = true,
-["system_manifest"]         = true,
+["shell.panels.chatapp"] = true,
+["mail"] = true,
+["mailui"] = true,
+["mailapp"] = true,
+["rbmk-cmd"] = true,
+["rbmk-controld"] = true,
+["rbmk.core"] = true,
+["rbmk-skala"] = true,
+["rbmk.skala"] = true,
+["rbmk.wall"] = true,
+["shell.panels.takeover"] = true,
+["shell.login"] = true,
+["shell.chat"] = true,
+["shell.tutorial"] = true,
+["shell.syntax"] = true,
+["shell.panels"] = true,
+["shell"] = true,
+["bios"] = true,
+["init"] = true,
+["install"] = true,
+["system_manifest"] = true,
 }
-
 local function isKernelModule(name)
 return type(name) == "string" and name:sub(1, #KERNEL_MODULE_PREFIX) == KERNEL_MODULE_PREFIX
 end
-
 local function isAllowedPrefix(name)
 for _, p in ipairs(ALLOWED_MODULE_PREFIXES) do
 if name:sub(1, #p) == p then return true end
 end
 return false
 end
-
 local function isUserLibName(name)
 if name:find("[^%w_.-]") then return false end
 if name:sub(1, 1) == "." then return false end
 return true
 end
-
 local function shallowCopy(t)
 local out = {}
 for k, v in pairs(t) do out[k] = v end
 return out
 end
-
 local unicodeLib = nil
 do
 local okU, u = pcall(require, "unicode")
 if okU and type(u) == "table" then unicodeLib = u end
 end
-
 local function sandboxCheckArg(n, have, ...)
 have = type(have)
 for i = 1, select("#", ...) do
@@ -116,7 +101,6 @@ end
 error(string.format("bad argument #%d (%s expected, got %s)",
 n, table.concat({ ... }, " or "), have), 3)
 end
-
 --! os.exit for a sandboxed program. OpenOS ends a program with
 --! os.exit([code]), and a PATH program here has no process of its own to
 --! end -- it runs inline, in the shell's. So exit raises an error carrying
@@ -124,18 +108,15 @@ end
 --! calling an error a failure. A program cannot forge it (the key is not
 --! reachable); it can only re-raise its own, which is just exiting.
 local EXIT_KEY = {}
-
 local finishers = setmetatable({}, { __mode = "k" })
 local EXIT_MT = { __tostring = function(e) return "exit " .. tostring(rawget(e, "code")) end,
 __metatable = false }
-
 local function makeSafeOs()
 return {
-time     = os.time,
-date     = os.date,
-clock    = os.clock,
+time = os.time,
+date = os.date,
+clock = os.clock,
 difftime = os.difftime,
-
 --! sleep and exit are how OpenOS programs pause and end, and neither is
 --! authority: sleep yields this process (kernel.process.sleep; outside
 --! one it pulls through the event layer, as that function documents),
@@ -152,7 +133,6 @@ error(setmetatable({ [EXIT_KEY] = true, code = code }, EXIT_MT), 0)
 end,
 }
 end
-
 --! #SEC — signals a sandboxed program must never SYNTHESIZE via
 --! computer.pushSignal. The old wrapper dropped only the tos_* control set,
 --! which left every HARDWARE INPUT signal pushable:
@@ -182,14 +162,12 @@ end
 if not reservedRule then return true end
 return reservedRule(name)
 end
-
 local PULL_DROP = {
-modem_message      = true,
-tos_shutdown       = true, tos_logout        = true,
-tos_login_complete = true, tos_seat_changed  = true,
-tos_shell_exited   = true,
+modem_message = true,
+tos_shutdown = true, tos_logout = true,
+tos_login_complete = true, tos_seat_changed = true,
+tos_shell_exited = true,
 }
-
 --! "Inside a scheduler coroutine" is asked of the SCHEDULER. On
 --! OpenComputers coroutine.isyieldable() is TRUE in kernel context too, so an
 --! rc.d service's start code took the yield branch: it yielded to the HOST,
@@ -200,7 +178,6 @@ local P = package.loaded["kernel.process"]
 if P and type(P.inProcess) == "function" then return P.inProcess() end
 return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
 end
-
 local function safePullSignal(timeout)
 local computer = require("computer")
 local deadline
@@ -214,11 +191,9 @@ local name = sig[1]
 if name ~= nil and not PULL_DROP[name] then
 return table.unpack(sig, 1, sig.n)
 end
-
 if deadline and computer.uptime() >= deadline then return nil end
 end
 end
-
 local CEIL = 3
 local stop = computer.uptime()
 + ((type(timeout) == "number" and timeout >= 0 and timeout < CEIL) and timeout or CEIL)
@@ -231,53 +206,48 @@ if name == nil then return nil end
 if not PULL_DROP[name] then return table.unpack(sig, 1, sig.n) end
 end
 end
-
 local function makeSafeComputer()
 local computer = require("computer")
 return {
-uptime      = computer.uptime,
-freeMemory  = computer.freeMemory,
+uptime = computer.uptime,
+freeMemory = computer.freeMemory,
 totalMemory = computer.totalMemory,
-address     = computer.address,
-pullSignal  = safePullSignal,
-pushSignal  = function(name, ...)
-
+address = computer.address,
+pullSignal = safePullSignal,
+pushSignal = function(name, ...)
 if isReservedSignal(name) then
 return
 end
 return computer.pushSignal(name, ...)
 end,
-energy      = computer.energy,
-maxEnergy   = computer.maxEnergy,
+energy = computer.energy,
+maxEnergy = computer.maxEnergy,
 }
 end
-
 sandbox._safePullSignal = safePullSignal
-
 local BASE_COMPONENT_TYPES = {
 gpu = true, screen = true, keyboard = true,
 crafting = true, navigation = true, geolyzer = true,
 note_block = true, sign = true,
 }
-
 local GATED_COMPONENT_TYPES = {
-modem                = "peripheral.modem",
-tunnel               = "peripheral.modem",
-redstone             = "peripheral.redstone",
-robot                = "peripheral.robot",
+modem = "peripheral.modem",
+tunnel = "peripheral.modem",
+redstone = "peripheral.redstone",
+robot = "peripheral.robot",
 inventory_controller = "peripheral.inventory",
-transposer           = "peripheral.inventory",
-tank_controller      = "peripheral.inventory",
-tape_drive           = "peripheral.tape",
+transposer = "peripheral.inventory",
+tank_controller = "peripheral.inventory",
+tape_drive = "peripheral.tape",
 --! An internet card reaches OUTSIDE the Minecraft world: it is both an
 --! exfiltration channel for anything the program can read and an inbound
 --! channel of bytes a stranger wrote. Gated behind its own cap rather
 --! than folded into the generic `component` grant, so a package that
 --! wants a screen and a keyboard does not silently get the network.
-internet             = "internet",
-tractor_beam         = "peripheral.tractor",
-piston               = "peripheral.piston",
-hologram             = "peripheral.hologram",
+internet = "internet",
+tractor_beam = "peripheral.tractor",
+piston = "peripheral.piston",
+hologram = "peripheral.hologram",
 --! OpenPrinter (PC-Logix) — the ONLY non-vanilla component type named in
 --! this file, and it is here on purpose rather than left to
 --! /etc/component_caps.cfg below. FEAT-5's config exists so an operator
@@ -292,13 +262,11 @@ hologram             = "peripheral.hologram",
 --! player's paper and ink and drops physical pages into a chest. That is
 --! real-world actuation with a consumable cost, which is the same reason
 --! piston and robot are gated.
-openprinter          = "peripheral.printer",
+openprinter = "peripheral.printer",
 }
-
-local _extraBase  = {}
+local _extraBase = {}
 local _extraGated = {}
 local _extraLoaded = false
-
 local function loadComponentConfig()
 if _extraLoaded then return end
 _extraLoaded = true
@@ -311,7 +279,6 @@ local raw = fsMod.readFile(path)
 if not raw or #raw == 0 or #raw > 8192 then return end
 local ok, cfg = pcall(serMod.decode, raw, { maxBytes = 8192 })
 if not ok or type(cfg) ~= "table" then return end
-
 if type(cfg.base) == "table" then
 for _, t in ipairs(cfg.base) do
 if type(t) == "string" and #t <= 64 and t:match("^[%w_]+$") then
@@ -328,15 +295,13 @@ end
 end
 end
 end
-
 function sandbox.reloadComponentConfig()
-_extraBase  = {}
+_extraBase = {}
 _extraGated = {}
 _extraLoaded = false
 loadComponentConfig()
 return _extraBase, _extraGated
 end
-
 local function isAllowedComponentType(ctype, caps)
 if not ctype then return false end
 loadComponentConfig()
@@ -345,48 +310,39 @@ local gated = GATED_COMPONENT_TYPES[ctype] or _extraGated[ctype]
 if gated and caps and caps[gated] then return true end
 return false
 end
-
 local ALLOWED_COMPONENT_TYPES = BASE_COMPONENT_TYPES
-
 local SEAT_SCOPED_TYPES = { gpu = true, screen = true, keyboard = true }
-
 local function seatDeviceFilter()
 local okS, scr = pcall(require, "kernel.screen")
 if not okS or type(scr) ~= "table" or not scr.callerDevices then return nil end
 local okD, dev = pcall(scr.callerDevices)
 if not okD or type(dev) ~= "table" then return nil end
-
 if not dev.gpu then return nil end
 local allow = { [dev.gpu] = true }
 if dev.screen then allow[dev.screen] = true end
 for _, kb in ipairs(dev.keyboards or {}) do allow[kb] = true end
 return allow, dev
 end
-
 local function seatOwnAddress(ctype)
 local allow, dev = seatDeviceFilter()
 if not allow then return nil end
-if ctype == "gpu"      then return dev.gpu end
-if ctype == "screen"   then return dev.screen end
+if ctype == "gpu" then return dev.gpu end
+if ctype == "screen" then return dev.screen end
 if ctype == "keyboard" then return (dev.keyboards or {})[1] end
 return nil
 end
-
 local function makeSafeComponent(caps)
 caps = caps or {}
 local comp = require("component")
 local safe = {}
-
 local function seatDenies(addr, ctype)
 if not SEAT_SCOPED_TYPES[ctype] then return false end
 local allow = seatDeviceFilter()
 if not allow then return false end
 return not allow[addr]
 end
-
 function safe.list(filter, exact)
 local raw = comp.list(filter, exact)
-
 local allow = seatDeviceFilter()
 return function()
 while true do
@@ -399,7 +355,6 @@ end
 end
 end
 end
-
 function safe.proxy(addr)
 local ctype = comp.type(addr)
 if not isAllowedComponentType(ctype, caps) then
@@ -408,10 +363,8 @@ end
 if seatDenies(addr, ctype) then return nil, "not your seat" end
 return comp.proxy(addr)
 end
-
 function safe.type(addr) return comp.type(addr) end
 function safe.slot(addr) return comp.slot(addr) end
-
 function safe.get(addr, ctype)
 local result = comp.get(addr, ctype)
 if result then
@@ -420,7 +373,6 @@ if isAllowedComponentType(t, caps) then return result end
 end
 return nil, "access denied"
 end
-
 function safe.invoke(addr, method, ...)
 local ctype = comp.type(addr)
 if not isAllowedComponentType(ctype, caps) then
@@ -431,27 +383,22 @@ error("sandbox: " .. tostring(ctype) .. " belongs to another seat")
 end
 return comp.invoke(addr, method, ...)
 end
-
 function safe.isAvailable(ctype)
 if not isAllowedComponentType(ctype, caps) then return false end
 return comp.isAvailable(ctype)
 end
-
 function safe.getPrimary(ctype)
 if not isAllowedComponentType(ctype, caps) then
 return nil, "access denied"
 end
-
 if SEAT_SCOPED_TYPES[ctype] then
 local mine = seatOwnAddress(ctype)
 if mine then return comp.proxy(mine) end
 end
 return comp.getPrimary(ctype)
 end
-
 return safe
 end
-
 --! OpenOS's component library answers a TYPE NAME with that type's primary
 --! device -- component.gpu, component.data -- and that is how nearly every
 --! OpenOS program finds its hardware. A sandbox's `component` had no such
@@ -481,7 +428,6 @@ if v ~= nil then return v end
 if type(key) == "string" then return primary(key) end
 return nil
 end,
-
 __pairs = function()
 local k
 return function()
@@ -490,13 +436,11 @@ k, v = next(safe, k)
 return k, v
 end
 end,
-__newindex  = function() error("component view is read-only", 2) end,
+__newindex = function() error("component view is read-only", 2) end,
 __metatable = false,
 })
 end
-
 local USER_LIB_ROOTS = { "/usr/lib", "/usr/modules" }
-
 local function nameToCandidatePaths(name)
 local rel = name:gsub("%.", "/")
 return {
@@ -504,7 +448,6 @@ rel .. ".lua",
 rel .. "/init.lua",
 }
 end
-
 local function resolveUserLibPath(name)
 local fs = nil
 local ok, mod = pcall(require, "kernel.fs")
@@ -518,7 +461,6 @@ end
 end
 return nil
 end
-
 --! #SEC (pentest, Sep 2026) — EVERY module table a sandbox receives is its
 --! own view, not only the compat.* names H4 listed. The rest came back as
 --! the very table the kernel and the shell use: shell.keys (every seat's
@@ -547,7 +489,6 @@ end
 --! calls it directly. (test_sandbox_module_isolation.lua)
 local function isolatedModule(mod, hidden)
 if type(mod) ~= "table" then return mod end
-
 local index = mod
 if hidden then
 index = function(_, k)
@@ -557,7 +498,7 @@ end
 end
 return setmetatable({}, {
 __index = index,
-__len   = function() return #mod end,
+__len = function() return #mod end,
 __pairs = function()
 local k
 return function()
@@ -568,11 +509,10 @@ until k == nil or not (hidden and hidden[k])
 return k, v
 end
 end,
-__call  = function(_, ...) return mod(...) end,
+__call = function(_, ...) return mod(...) end,
 __metatable = false,
 })
 end
-
 --! Per-module keys a sandbox must never reach. Keyed by require() name.
 local HIDDEN_MODULE_KEYS = {
 ["compat.term"] = { _gpuForCaps = true },
@@ -584,7 +524,6 @@ local HIDDEN_MODULE_KEYS = {
 --! a compat module is how H-01 happened, so the rule stays uniform.
 ["compat.process"] = { _forProgram = true },
 }
-
 --! #SEC (pentest, Sep 2026) — what the `net` capability means for a
 --! program: send and receive, find peers, ask to be trusted. It used to be
 --! the whole kernel.net module, which also carries getTrust() (the trust
@@ -603,7 +542,6 @@ if type(p) ~= "table" then return p end
 return { addr = p.addr, lastSeen = p.lastSeen, hostname = p.hostname,
 device = p.device, trust = p.trust }
 end
-
 --! #SEC — the message types a program holding `net` may SPEAK and HEAR:
 --! discovery, the machine-wide chat channel, and the generic replies. The
 --! facade above passed net.on/off/onceFrom/send/broadcast through raw, and
@@ -626,7 +564,6 @@ end
 --! (test_sandbox_net_facade.lua)
 local NET_PROGRAM_TYPES = { "PING", "PONG", "HELLO", "HELLO_ACK", "INFO_REQ",
 "INFO_RES", "MSG", "MSG_ACK", "DENY", "ERROR" }
-
 local function snapshot(v, depth)
 if type(v) ~= "table" then return v end
 if depth > 16 then return nil end
@@ -636,13 +573,11 @@ if type(k) ~= "table" then out[k] = snapshot(x, depth + 1) end
 end
 return out
 end
-
 local function netFacade(net)
 local f = {}
 for _, k in ipairs(NET_FACADE) do
 if type(net[k]) == "function" then f[k] = net[k] end
 end
-
 local okP, P = pcall(function() return net.getProtocol and net.getProtocol() end)
 local TYPE = okP and type(P) == "table" and type(P.TYPE) == "table" and P.TYPE or {}
 local allowed = {}
@@ -652,9 +587,7 @@ end
 local function refuse(t, verb)
 return nil, "net: programs may not " .. verb .. " '" .. tostring(t) .. "' packets"
 end
-
 f.on, f.onceFrom, f.off, f.offAll, f.send, f.broadcast = nil, nil, nil, nil, nil, nil
-
 local mine = {}
 local function remember(msgType, id)
 if id ~= nil then mine[msgType] = mine[msgType] or {}; mine[msgType][id] = true end
@@ -663,7 +596,6 @@ end
 local function copying(callback)
 return function(packet, from) return callback(snapshot(packet, 0), from) end
 end
-
 if type(net.on) == "function" then
 f.on = function(msgType, callback)
 if not allowed[msgType] then return refuse(msgType, "listen for") end
@@ -733,7 +665,6 @@ end
 end
 return f
 end
-
 --! #SEC — three more compat names are the FILE capability, not libraries.
 --! compat.io, compat.filesystem and compat.shell_api read and write through
 --! securefs as the program's user: exactly what the `compat.io` cap grants
@@ -745,11 +676,10 @@ end
 --! could not see a parent's caps. Same rule as compat.component and
 --! compat.internet below: the name needs the cap. (test_sandbox_compat_caps.lua)
 local COMPAT_FILE_CAP = {
-["compat.io"]         = "compat.io",
+["compat.io"] = "compat.io",
 ["compat.filesystem"] = "compat.io",
-["compat.shell_api"]  = "compat.io",
+["compat.shell_api"] = "compat.io",
 }
-
 --! The OpenOS library names, each answered with the compat module that
 --! stands in for it. An OpenOS program says require("shell"), never
 --! require("compat.shell_api"), and the kernel's own require maps the names
@@ -771,7 +701,6 @@ shell = "compat.shell_api", filesystem = "compat.filesystem", io = "compat.io",
 internet = "compat.internet", robot = "compat.robot",
 process = "compat.process", note = "compat.note",
 }
-
 local function makeSafeRequire(opts, prebound, envRef)
 local cache = {}
 local loading = {}
@@ -784,26 +713,21 @@ if type(name) ~= "string" then
 error("bad argument #1 to 'require' (string expected)", 2)
 end
 if cache[name] ~= nil then return cache[name] end
-
 if isKernelModule(name) then
 error("sandbox: cannot require kernel module '" .. name .. "'", 2)
 end
-
 if name == "unicode" then
 local u = envRef and envRef.env and envRef.env.unicode
 if u == nil then error("sandbox: module 'unicode' is not available", 2) end
 cache[name] = u
 return u
 end
-
 local alias = OPENOS_NAMES[name]
 if alias then
-
 local T = _G._TOS
 if T and T.compatDisabled then
 error("sandbox: '" .. name .. "' is OpenOS's, and the compat layer is off in this boot profile", 2)
 end
-
 local env = envRef and envRef.env
 if (name == "io" or name == "filesystem") and env and env[name] ~= nil then
 cache[name] = env[name]
@@ -816,7 +740,6 @@ end
 cache[name] = mod
 return mod
 end
-
 --! #SEC (pentest, Sep 2026) — two compat names are CAPABILITIES, not
 --! libraries, and the "compat." prefix below admitted both for anyone:
 --!   compat.component  OpenOS-style field access built over the RAW
@@ -830,7 +753,6 @@ end
 --!     component route. It now needs the `internet` cap.
 --! (test_sandbox_compat_caps.lua)
 if name == "compat.component" then
-
 local view = prebound and prebound.component
 if not view then
 error("sandbox: 'compat.component' needs the component capability", 2)
@@ -861,19 +783,14 @@ local view = { has = cm.has, list = cm.list }
 cache[name] = view
 return view
 end
-
 if BLOCKED_MODULE_NAMES[name] then
-
 if not (opts and opts.allowUserLibs and resolveUserLibPath(name)) then
 error("sandbox: module '" .. name .. "' is not available to sandboxed code", 2)
 end
 end
-
 if ALLOWED_MODULE_NAMES[name] or isAllowedPrefix(name) then
-
 local real = require(name)
 local mod = isolatedModule(real, HIDDEN_MODULE_KEYS[name])
-
 --! #SEC (AUDIT 5, H-01) — close over the REAL module, not the view:
 --! _gpuForCaps is masked on the view (HIDDEN_MODULE_KEYS above), so
 --! the sandbox cannot call the builder with caps of its own
@@ -894,18 +811,16 @@ and type(real._forProgram) == "function" then
 local bound = real._forProgram(opts and opts.name,
 envRef and envRef.env)
 if type(bound) == "table" then
-mod.info    = bound.info
+mod.info = bound.info
 mod.running = bound.running
 end
 end
 cache[name] = mod
 return mod
 end
-
 if isUserLibName(name) then
 local resolved = resolveUserLibPath(name)
 if resolved then
-
 local usersMod = _G._TOS and _G._TOS.users
 if opts.session and usersMod and usersMod.canAccessAs then
 local okR = usersMod.canAccessAs(opts.session, resolved, "r")
@@ -913,7 +828,6 @@ if not okR then
 error("sandbox: access denied loading user lib '" .. name .. "'", 2)
 end
 end
-
 if opts.allowUserLibs then
 local mod = require(name)
 cache[name] = mod
@@ -957,17 +871,14 @@ cache[name] = result
 return result
 end
 end
-
 error("sandbox: module '" .. name .. "' is not on the allowed list", 2)
 end
 return safeRequire
 end
-
 function sandbox.build(opts)
 opts = opts or {}
 local caps = opts.caps or {}
 local session = opts.session
-
 local secfs = _G._TOS and _G._TOS.securefs
 if not secfs then
 local ok, mod = pcall(require, "kernel.securefs")
@@ -977,7 +888,6 @@ local boundFs = nil
 if secfs and (caps["fs.read"] or caps["fs.write"]) then
 boundFs = secfs.forSession(session)
 end
-
 local function readOnlyFsView(fsImpl)
 local READERS = {
 "exists", "isDirectory", "list", "readFile", "size", "lastModified",
@@ -1002,7 +912,6 @@ end
 end
 return view
 end
-
 local printSink = nil
 local function sandboxPrint(...)
 local parts = {}
@@ -1015,11 +924,9 @@ printSink(line)
 elseif opts.stdout then
 opts.stdout(line)
 elseif type(print) == "function" then
-
 print(line)
 end
 end
-
 --! On a REAL machine stringMT is nil: OpenComputers' machine.lua wraps
 --! getmetatable so that getmetatable("") answers nil ("don't allow
 --! messing with the string mt"). The comparison below then matched every
@@ -1051,7 +958,6 @@ if mt ~= nil then
 if type(mt) ~= "table" then
 error("bad argument #2 to 'setmetatable' (nil or table expected)", 2)
 end
-
 if refersToString(mt)
 or refersToString(rawget(mt, "__index"))
 or refersToString(rawget(mt, "__newindex"))
@@ -1061,62 +967,52 @@ end
 end
 return setmetatable(t, mt)
 end
-
 local sandboxedStringCopy = shallowCopy(string)
-
 local safeComp, safeCompr
 if caps["component"] then
-safeComp  = componentFieldView(makeSafeComponent(caps))
+safeComp = componentFieldView(makeSafeComponent(caps))
 safeCompr = makeSafeComputer()
 end
 local prebound = {}
-if safeComp  then prebound.component = safeComp  end
-if safeCompr then prebound.computer  = safeCompr end
-
+if safeComp then prebound.component = safeComp end
+if safeCompr then prebound.computer = safeCompr end
 local envRef = {}
-
 local env = {
-
-assert      = assert,
-error       = error,
-pcall       = pcall,
-xpcall      = xpcall,
-type        = type,
-tostring    = tostring,
-tonumber    = tonumber,
-pairs       = pairs,
-ipairs      = ipairs,
-next        = next,
-select      = select,
-unpack      = table.unpack,
-rawequal    = rawequal,
-rawlen      = rawlen,
-
+assert = assert,
+error = error,
+pcall = pcall,
+xpcall = xpcall,
+type = type,
+tostring = tostring,
+tonumber = tonumber,
+pairs = pairs,
+ipairs = ipairs,
+next = next,
+select = select,
+unpack = table.unpack,
+rawequal = rawequal,
+rawlen = rawlen,
 setmetatable = safeSetMetatable,
 getmetatable = safeGetMetatable,
-
-math        = shallowCopy(math),
-string      = sandboxedStringCopy,
-table       = shallowCopy(table),
-utf8        = utf8 and shallowCopy(utf8) or nil,
-coroutine   = shallowCopy(coroutine),
+math = shallowCopy(math),
+string = sandboxedStringCopy,
+table = shallowCopy(table),
+utf8 = utf8 and shallowCopy(utf8) or nil,
+coroutine = shallowCopy(coroutine),
 --! Two globals every OpenComputers program is born with (machine.lua
 --! defines them before any OS runs) and OpenOS code leans on: unicode
 --! for screen-width-aware strings, checkArg at the top of most library
 --! functions. Both are pure; neither was here, so OpenOS code died on
 --! its first unicode.len or checkArg.
-unicode     = unicodeLib and shallowCopy(unicodeLib) or nil,
-checkArg    = sandboxCheckArg,
-
-print       = sandboxPrint,
-require     = makeSafeRequire(opts, prebound, envRef),
+unicode = unicodeLib and shallowCopy(unicodeLib) or nil,
+checkArg = sandboxCheckArg,
+print = sandboxPrint,
+require = makeSafeRequire(opts, prebound, envRef),
 }
-
 envRef.env = env
 env._G = env
 env._ENV = env
 env._VERSION = _VERSION
-
 if boundFs then
 if caps["fs.write"] then
 env.fs = boundFs
@@ -1124,7 +1020,6 @@ else
 env.fs = readOnlyFsView(boundFs)
 end
 end
-
 if caps["compat.io"] then
 local ok, compatIo = pcall(require, "compat.io")
 if ok then env.io = isolatedModule(compatIo) end
@@ -1132,17 +1027,14 @@ env.os = makeSafeOs()
 local okFs, compatFs = pcall(require, "compat.filesystem")
 if okFs then env.filesystem = isolatedModule(compatFs) end
 end
-
 if caps["legacy"] then
 env.os = os
 env.io = io
-
 local okLog, logMod = pcall(require, "kernel.log")
 if okLog and logMod and logMod.warn then
 logMod.warn("sandbox", "Built env with legacy cap — full os/io exposed")
 end
 end
-
 --! A runner that hands the program an output function (the shell does:
 --! stdout = o(line)) is saying where the program's output goes. print
 --! always went there; io.write, io.stdout and io.stderr went to
@@ -1196,14 +1088,14 @@ env.io = setmetatable({
 stdout = out,
 stderr = errS,
 output = function(file) if file then swap("output", file, "w") end; return D.output end,
-input  = function(file) if file then swap("input", file, "r") end; return D.input end,
-write  = function(...) return D.output:write(...) end,
-read   = function(...) return D.input:read(...) end,
-lines  = function(path, ...)
+input = function(file) if file then swap("input", file, "r") end; return D.input end,
+write = function(...) return D.output:write(...) end,
+read = function(...) return D.input:read(...) end,
+lines = function(path, ...)
 if path == nil then return D.input:lines() end
 return real.lines(path, ...)
 end,
-close  = function(file)
+close = function(file)
 file = file or D.output
 if isStd(file) then return true end
 return file:close()
@@ -1219,28 +1111,23 @@ end
 end
 end
 end
-
 if caps["component"] then
 env.component = safeComp
-env.computer  = safeCompr
+env.computer = safeCompr
 end
-
 if caps["load"] then
 env.load = function(chunk, name, _mode, _e)
 return load(chunk, name, "t", env)
 end
 env.loadstring = env.load
 end
-
 if caps["notify"] then
 local okN, nf = pcall(require, "kernel.notify")
 if okN and nf and nf.post then
-
 local ownIds = {}
 env.notify = {
 post = function(spec)
 if type(spec) ~= "table" then return nil, "spec must be a table" end
-
 local copy = {}
 for k, v in pairs(spec) do copy[k] = v end
 local pkgName = opts.pkgName
@@ -1257,15 +1144,12 @@ end,
 }
 end
 end
-
 if caps["net"] then
 local ok, net = pcall(require, "kernel.net")
 if ok then
-
 env.net = opts.allowUserLibs and isolatedModule(net) or netFacade(net)
 end
 end
-
 --! Exposes the KERNEL WRAPPER (bounded reads, timeouts, http/https only),
 --! which is what well-behaved code and TOS's own callers should use. It
 --! does NOT make those bounds a containment boundary: this same cap is
@@ -1278,7 +1162,7 @@ if caps["internet"] then
 local ok, inet = pcall(require, "kernel.internet")
 if ok and inet then
 env.internet = {
-get      = function(url, o) return inet.get(url, o) end,
+get = function(url, o) return inet.get(url, o) end,
 --! #SEC — a download lands through THIS program's securefs, and only
 --! with fs.write. internet.download writes with the fs it is handed
 --! and leaves vetting the path to its caller; this wrapper was that
@@ -1302,48 +1186,44 @@ end
 req.fs = boundFs
 return inet.download(url, dest, req)
 end,
-socket   = function(addr, port) return inet.socket(addr, port) end,
-status   = function() return inet.status() end,
+socket = function(addr, port) return inet.socket(addr, port) end,
+status = function() return inet.status() end,
 available = function() return inet.available() end,
 }
 end
 end
-
 if caps["swap"] then
 local ok, sw = pcall(require, "kernel.swap")
 if ok and sw and sw.table then
 env.swap = {
-table     = function(o) return sw.table(o) end,
+table = function(o) return sw.table(o) end,
 freeTable = function(p) return sw.freeTable(p) end,
-usage     = sw.usage,
+usage = sw.usage,
 }
 end
 end
-
 if caps["vault"] then
 local ok, v = pcall(require, "kernel.vault")
 if ok and v and v.encrypt and v.decrypt then
 env.vault = {
-encrypt     = function(plaintext, passphrase, o) return v.encrypt(plaintext, passphrase, o) end,
-decrypt     = function(blob, passphrase) return v.decrypt(blob, passphrase) end,
+encrypt = function(plaintext, passphrase, o) return v.encrypt(plaintext, passphrase, o) end,
+decrypt = function(blob, passphrase) return v.decrypt(blob, passphrase) end,
 isEncrypted = function(s) return v.isEncrypted(s) end,
 }
 end
 end
-
 if caps["crypto"] then
 local okC, kcrypto = pcall(require, "kernel.crypto")
 if okC and kcrypto and kcrypto.hmac then
 env.crypto = {
-hash     = function(s) return kcrypto.hash(s) end,
-hmac     = function(key, msg) return kcrypto.hmac(key, msg) end,
+hash = function(s) return kcrypto.hash(s) end,
+hmac = function(key, msg) return kcrypto.hmac(key, msg) end,
 ctEquals = function(a, b) return kcrypto.ctEquals(a, b) end,
-random   = function(n) return kcrypto.salt(n) end,
+random = function(n) return kcrypto.salt(n) end,
 }
 local pkgName = opts.pkgName
 if type(pkgName) == "string" and pkgName:match("^[%w][%w%-]*$") then
 env.crypto.secret = function()
-
 local sess = nil
 local okP, procMod = pcall(require, "kernel.process")
 if okP and procMod and procMod.currentSession then
@@ -1366,7 +1246,7 @@ return nil, "crypto.secret requires an admin session"
 end
 local okF, kfs = pcall(require, "kernel.fs")
 if not okF or not kfs then return nil, "fs unavailable" end
-local dir  = "/var/pkg/secrets"
+local dir = "/var/pkg/secrets"
 local path = dir .. "/" .. pkgName
 if kfs.exists(path) then
 local data = kfs.readFile(path)
@@ -1382,10 +1262,8 @@ end
 end
 end
 end
-
 return env
 end
-
 function sandbox.run(src, chunkname, opts, ...)
 local env = sandbox.build(opts)
 local fn, err = load(src, chunkname, "t", env)
@@ -1394,7 +1272,6 @@ return false, "compile error: " .. tostring(err)
 end
 return pcall(fn, ...)
 end
-
 function sandbox.finish(env)
 local f = finishers[env]
 if f then
@@ -1402,7 +1279,6 @@ finishers[env] = nil
 pcall(f)
 end
 end
-
 function sandbox.exitStatus(err)
 if type(err) == "table" and rawget(err, EXIT_KEY) == true then
 local code = rawget(err, "code")
@@ -1411,7 +1287,6 @@ return code
 end
 return nil
 end
-
 function sandbox.describeEnd(ok, result)
 if ok then
 --! A returned string, number or boolean is shown (`run` on a one-line
@@ -1428,5 +1303,4 @@ if code == nil then return tostring(result), true end
 if code == true or code == 0 then return nil end
 return "exited with status " .. tostring(code), false
 end
-
 return sandbox

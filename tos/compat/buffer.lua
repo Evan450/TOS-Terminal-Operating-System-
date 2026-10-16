@@ -1,5 +1,4 @@
 local buffer = {}
-
 function buffer.new(mode, stream)
 local buf = {
 mode = mode or "r",
@@ -7,7 +6,6 @@ stream = stream,
 readBuf = "",
 closed = false,
 }
-
 function buf:read(fmt)
 if self.closed then return nil, "closed" end
 fmt = fmt or "*l"
@@ -40,12 +38,9 @@ end
 self.readBuf = self.readBuf .. chunk
 end
 elseif fmt == "*n" or fmt == "n" then
-
 while true do
-
 local stripped = self.readBuf:match("^%s*(.*)")
 if stripped and #stripped > 0 then
-
 local firstCh = stripped:sub(1, 1)
 if not firstCh:match("[%d%+%-%.eE]") then
 return nil
@@ -58,12 +53,10 @@ local _, endpos = self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")
 self.readBuf = self.readBuf:sub((endpos or 0) + 1)
 return num
 end
-
 local _, endpos = self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")
 self.readBuf = self.readBuf:sub((endpos or 0) + 1)
 return nil
 end
-
 if #stripped > 64 then
 self.readBuf = stripped
 return nil
@@ -86,7 +79,6 @@ self.readBuf = self.readBuf:sub(want + 1)
 return data
 end
 end
-
 function buf:write(...)
 if self.closed then return nil, "closed" end
 for i = 1, select("#", ...) do
@@ -95,20 +87,17 @@ self.stream:write(s)
 end
 return self
 end
-
 function buf:lines()
 return function()
 return self:read("*l")
 end
 end
-
 function buf:close()
 if self.closed then return nil, "closed" end
 self.closed = true
 if self.stream.close then self.stream:close() end
 return true
 end
-
 function buf:seek(whence, offset)
 if self.stream.seek then
 self.readBuf = ""
@@ -116,13 +105,9 @@ return self.stream:seek(whence, offset)
 end
 return nil, "not seekable"
 end
-
 function buf:flush()
-
 return self
 end
-
 return buf
 end
-
 return buffer
