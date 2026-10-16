@@ -60,8 +60,13 @@ local function P(t,f)
  end)then g=nil end
 end
 -- Wait for an actual KEY (ignore stray touch/component/network signals —
--- #118/#99/#101), then reboot.
-local function K()while p.pullSignal(1e9)~="key_down"do end p.shutdown(true)end
+-- #118/#99/#101), then reboot. With `o` (the address of the disk that just
+-- failed), d first makes the whole data field "SKP:<o>": no saved address,
+-- so the next boot scans, and the scan passes that disk over for any other
+-- bootable one, which then goes through the #SEC H1 approval below. K4,
+-- I5 and I6 used to reboot onto the same saved disk for good, and the way
+-- out was to pull the disk from the case. (test_bios.lua)
+local function K(o)local e,_,c repeat e,_,c=p.pullSignal(1e9)until e=="key_down"if o and c==100 then E("setData","SKP:"..o)end p.shutdown(true)end
 
 -- SRM Basic — the EEPROM half of System Repair & Maintenance. (Plain `--`,
 -- not `--!`: this explanation is worth 62 EEPROM bytes to nobody, and the
@@ -94,16 +99,17 @@ local function K()while p.pullSignal(1e9)~="key_down"do end p.shutdown(true)end
 -- it hit (this is why they aren't all "1"):
 --   C1 CPU architecture   D2 no boot device   B3 TBFS boot blob
 --   K4 kernel missing     I5 init unreadable  I6 init syntax
-local function F(n,t)
+local function F(n,t,o)
  -- gsub returns (string,count); the concat below forces the string alone.
  local x=(E("getData")or""):gsub("\nSRM:%S*","")
  E("setData",x.."\nSRM:"..n)
  P("SRM "..n.." - POST FAILED",R)
  if t then P(t,0xff6600)end
  P("Any key reboots. Then run 'srm'",D)
+ if o then P("d: other disk",D)end
  p.beep(400,.4)
  for _=1,n:byte(2)-48 do p.beep(900,.1)end
- K()
+ K(o)
 end
 
 -- Try to read a TBFS boot blob from a raw `drive` at address x; returns
@@ -154,6 +160,8 @@ local function ex(z)
  return k and r
 end
 local a=p.getBootAddress()
+-- The disk d was pressed for (K above), if any.
+local sk=a:match"^SKP:(.+)"
 local f,b,blob
 if a and a~=""then
  local px=X(a)
@@ -165,7 +173,10 @@ end
 if not f and not blob then
  for x in l("filesystem")do
   local z=X(x)
-  if z and ex(z)then f,b,a=z,x,x break end
+  -- The skipped disk is taken only if nothing after it boots: a machine
+  -- whose ONLY disk it is gets it back (to H1's question) rather than
+  -- stopping at D2 for good.
+  if z and ex(z)then f,b,a=z,x,x if x~=sk then break end end
  end
 end
 if not f and not blob then
@@ -241,7 +252,7 @@ end
 -- (/init.lua presence was already the selection criterion; open+load
 -- below still catch removal/unreadability/corruption.)
 local q=f.open("/init.lua","r")
-if not q then F("I5","cannot open /init.lua")end
+if not q then F("I5","cannot open /init.lua",a)end
 -- Chunk list + table.concat, NOT z=z..chunk: repeated concat churns
 -- O(n^2) garbage and can OOM a low-RAM box before any of TOS's
 -- resilience layers exist.
@@ -263,11 +274,11 @@ z=table.concat(z)
 -- is for. Testing the file we just read rather than a /tos directory
 -- also survives a half-deleted install, where leftovers would otherwise
 -- keep condemning a disk that boots fine.
-if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing")end
+if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing",a)end
 -- Text mode only: reject bytecode so a tampered /init.lua can't smuggle
 -- in pre-compiled chunks (bytecode skips Lua's validity checks).
 local fn,er=load(z,"=init.lua","t")
-if not fn then F("I6",er)end
+if not fn then F("I6",er,a)end
 -- The POST-OK beep, the way a 5150 told you the board came up. This is
 -- the branch almost every machine takes; the beep was originally added
 -- only to the TBFS branch above, so in practice nothing ever beeped.

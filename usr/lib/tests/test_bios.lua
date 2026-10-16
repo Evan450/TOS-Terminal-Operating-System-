@@ -384,6 +384,51 @@ do
     string.rep("b", 64), log.data:match("\nTOS1:(%x+)"))
 end
 
+-- ── A broken saved disk is not a loop: d boots another one ────────
+-- K4, I5 and I6 rebooted onto the same saved disk for good; the way out
+-- was to pull the disk from the case. d on the fault screen marks that
+-- disk to be passed over once; whatever else boots still needs H1's yes.
+do
+  local broken = fakeManagedFS({ ["/init.lua"] = "-- TOS init.lua\n_G._TEST_BOOTED = 'BROKEN'" })
+  local healthy = fakeManagedFS({
+    ["/init.lua"] = "-- TOS init.lua\n_G._TEST_BOOTED = 'OTHER-OK'",
+    ["/tos/kernel/init.lua"] = "-- present",
+  })
+  local both = {
+    ["aaaa-1111"] = { type = "filesystem", proxy = broken },   -- sorts first
+    ["bbbb-2222"] = { type = "filesystem", proxy = healthy },
+  }
+  local ok, err, log = runBios({
+    eepromData = "aaaa-1111\n" .. ANCHOR_LINE, components = both,
+    signals = { { "key_down", "kb", 100, 32 } },   -- d
+  })
+  test("d on K4: halted (rebooting)", not ok and tostring(err):find("SHUTDOWN%-SENTINEL") ~= nil)
+  eq("d on K4: the fault was parked first", "K4", (log.setData[1] or ""):match("\nSRM:(%S+)"))
+  eq("d on K4: then the data field marks the disk to pass over", "SKP:aaaa-1111", log.data)
+  eq("d on K4: the broken disk's init never ran", nil, _G._TEST_BOOTED)
+
+  ok, err, log = runBios({
+    eepromData = "SKP:aaaa-1111", components = both,
+    signals = { { "key_down", "kb", 121, 21 } },   -- y at H1's question
+  })
+  test("next boot: it ran", ok, err)
+  eq("next boot: the OTHER disk booted, though the broken one sorts first", "OTHER-OK", _G._TEST_BOOTED)
+  eq("next boot: H1's yes saved it as the boot disk (the mark is gone)", "bbbb-2222", log.data)
+
+  ok, err, log = runBios({
+    eepromData = "SKP:aaaa-1111",
+    components = { ["aaaa-1111"] = { type = "filesystem", proxy = broken } },
+    signals = { { "key_down", "kb", 110, 49 }, "key_down" },   -- n at H1, then the halt key
+  })
+  test("only disk: halted at H1's question", not ok and tostring(err):find("SHUTDOWN%-SENTINEL") ~= nil)
+  test("only disk: it is offered again, not lost to D2",
+    not tostring(log.data or ""):find("SRM:D2", 1, true) and #log.setData == 0)
+
+  ok, err, log = runBios({ eepromData = "", components = {}, signals = { { "key_down", "kb", 100, 32 } } })
+  test("d on D2 (no disk to pass over) marks nothing",
+    not ok and not tostring(log.data or ""):find("SKP:", 1, true))
+end
+
 -- ── Someone else's disk boots. ────────────────────────────────────
 --! Operator report, real emulator: with this EEPROM flashed, the machine
 --! would not boot OpenOS. The device scan picks a disk by /init.lua --
