@@ -300,7 +300,10 @@ function M.build(S, deps)
     if not fn then
       -- Package-provided command: module-style packages run via pkg's own
       -- sandboxed dispatch (the legacy kernel.modules path was retired).
-      local okP, pkgMod = pcall(require, "kernel.pkg")
+      -- Only where a package could be installed: a typo must not load the
+      -- package manager (helpers.mayHavePackages).
+      local okP, pkgMod = false, nil
+      if helpers.mayHavePackages() then okP, pkgMod = pcall(require, "kernel.pkg") end
       if okP and pkgMod and pkgMod.getCommand then
         fn = pkgMod.getCommand(name)
         foreignDraw = fn ~= nil
@@ -391,7 +394,8 @@ function M.build(S, deps)
           -- dialogs and what crypto.secret() is scoped to, exactly as for a
           -- package command.
           local pkgCaps, pkgOwner = nil, nil
-          local okPk, pkgMod = pcall(require, "kernel.pkg")
+          local okPk, pkgMod = false, nil
+          if helpers.mayHavePackages() then okPk, pkgMod = pcall(require, "kernel.pkg") end
           if okPk and type(pkgMod) == "table" and pkgMod.capsForFile then
             pkgCaps, pkgOwner = pkgMod.capsForFile(resolved)
           end

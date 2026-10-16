@@ -81,7 +81,12 @@ function M.available(S)
   if F and F.exists and not F.exists("/usr/lib/mouse.lua") then return nil end
   -- Honor the package manager's enabled bit when the driver came in as
   -- the "mouse" package (a hand-copied lib has no pkg record and runs).
-  local okP, pkgMod = pcall(require, "kernel.pkg")
+  -- No package installed means a hand-copied driver: nothing to ask.
+  local okH, H = pcall(require, "shell.panels.helpers")
+  local okP, pkgMod = false, nil
+  if not (okH and H.mayHavePackages) or H.mayHavePackages() then
+    okP, pkgMod = pcall(require, "kernel.pkg")
+  end
   if okP and pkgMod and pkgMod.info and pkgMod.info("mouse")
      and pkgMod.isEnabled and not pkgMod.isEnabled("mouse") then
     return nil

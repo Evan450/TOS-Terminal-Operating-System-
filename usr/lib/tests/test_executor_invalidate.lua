@@ -24,6 +24,8 @@ end
 -- Stubs for the executor's module dependencies.
 _G._TOS = _G._TOS or {}
 package.loaded["shell.panels.helpers"] = {
+  -- kernel.pkg is stubbed as loaded below, which the real helper reads as "maybe".
+  mayHavePackages = function() return true end,
   routeOutput = function(n, maxInline)
     if n == 0 then return "clear"
     elseif n == 1 then return "status"

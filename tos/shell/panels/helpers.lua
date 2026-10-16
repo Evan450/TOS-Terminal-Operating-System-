@@ -76,6 +76,38 @@ function M.fileColor(S, f)
   return T.fg
 end
 
+--- Could any package be installed? One directory listing, never
+--- kernel.pkg itself. Every unknown command (a typo), every /usr/bin
+--- program, the Home launcher and the mouse driver asked kernel.pkg, and
+--- the answer cost the whole package manager: about 116 KB that stayed
+--- resident for the session on the headless machine, and at 1 MB a typo
+--- took free memory from 63 KB to 22 KB. A machine with no packages -- every
+--- fresh install, and the machines at the memory floor -- has no package
+--- command to find. Read through the KERNEL's fs, not the seat's: a
+--- session that may not list /var must still find its packages' commands.
+--- A superset of what pkg.scan accepts, so it can say "maybe" too often,
+--- never "no" wrongly; anything it cannot read is a "maybe".
+--- (test_no_pkg_for_typos.lua)
+function M.mayHavePackages()
+  if package.loaded["kernel.pkg"] ~= nil then return true end   -- already paid for
+  local kfs = _G._TOS and _G._TOS.fs
+  if type(kfs) ~= "table" or not kfs.exists or not kfs.list then return true end
+  local okE, there = pcall(kfs.exists, "/var/pkg/installed")
+  if not okE then return true end
+  if not there then return false end
+  local okL, list = pcall(kfs.list, "/var/pkg/installed")
+  if not okL then return true end
+  if type(list) == "function" then
+    for n in list do if tostring(n):gsub("/$", "") ~= "" then return true end end
+    return false
+  end
+  if type(list) ~= "table" then return true end
+  for _, n in ipairs(list) do
+    if tostring(n):gsub("/$", "") ~= "" then return true end
+  end
+  return false
+end
+
 --- Why a module could not be loaded, as one line a person can act on.
 --- `err` is what pcall(require, ...) returned. Running out of memory is
 --- said in those words: the loader's own text names a path and a compile,

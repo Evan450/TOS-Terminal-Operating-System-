@@ -195,7 +195,12 @@ local function liveDeps(S)
     end
   end)
   d.pkgCommands = {}
-  local okP, pkgMod = pcall(require, "kernel.pkg")
+  -- Only where a package could be installed (helpers.mayHavePackages).
+  local okH, H = pcall(require, "shell.panels.helpers")
+  local okP, pkgMod = false, nil
+  if not (okH and H.mayHavePackages) or H.mayHavePackages() then
+    okP, pkgMod = pcall(require, "kernel.pkg")
+  end
   if okP and pkgMod and pkgMod.commands then
     local okL, list = pcall(pkgMod.commands)
     if okL and type(list) == "table" then d.pkgCommands = list end

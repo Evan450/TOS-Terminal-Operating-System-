@@ -27,6 +27,8 @@ local ran = {}
 -- helpers: the executor's collaborators, with liveTier/fail/tierName shaped
 -- exactly like the real ones (seat token -> session tier; nothing -> 0).
 package.loaded["shell.panels.helpers"] = {
+  -- kernel.pkg is stubbed as loaded below, which the real helper reads as "maybe".
+  mayHavePackages = function() return true end,
   routeOutput = function(n) return n == 0 and "clear" or "inline" end,
   expandBuf = function(_, buf) return buf end,
   canWrite = function() return true end,
