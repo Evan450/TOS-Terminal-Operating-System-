@@ -91,6 +91,13 @@ local ALLOWED = {
   -- read is the POINT: on 5.2 the global exists, on 5.3/5.4 it doesn't
   -- and table.unpack has already answered.
   ["tos/kernel/net/remote.lua"] = { unpack = "table.unpack or unpack, 5.2 fallback" },
+  -- A root-tier rc.d service runs in kernel.sandbox, and `net` is that
+  -- env's name for kernel.net when the service holds the net cap -- its
+  -- only route to setServiceArm. It used to read `_G._TOS.net`, which the
+  -- sandbox does not have, behind a guard that returned quietly: this
+  -- file's own bug class. start() now errors if `net` is missing.
+  -- (test_netfsd_serves.lua)
+  ["etc/rc.d/20-netfsd.lua"] = { net = "kernel.sandbox env, net cap" },
 }
 
 -- ============================================================

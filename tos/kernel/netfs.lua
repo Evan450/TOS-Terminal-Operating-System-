@@ -27,9 +27,10 @@
 -- for reasons that have not changed:
 --
 --   1. FAIL-CLOSED ARM. `enabled` defaults to false and is flipped by
---      the netfsd rc service's start/stop. transfer.lua learned this the
---      hard way: a handler registered at boot keeps answering forever,
---      so "service stop" that only drops a log listener stops nothing.
+--      the netfsd rc service's start/stop, through net.setServiceArm
+--      (see netfs.arm). transfer.lua learned this the hard way: a
+--      handler registered at boot keeps answering forever, so "service
+--      stop" that only drops a log listener stops nothing.
 --      No netfsd ⇒ no serving, even with exports configured.
 --   2. TRUSTED ONLY, checked on every request.
 --   3. CHALLENGE-RESPONSE per request via net.verifyPeer (60 s cached).
@@ -177,6 +178,25 @@ function netfs.loadExports(fsModule, serializeMod)
   if not list then return false, err end
   _exports = list
   return true
+end
+
+--- Arm or disarm serving. The netfsd service calls this through
+--- net.setServiceArm("netfsd", on): at once if this module is loaded,
+--- from the module's own self-init if it loads later. Arming re-reads the export
+--- file, so editing it and restarting netfsd is the whole update
+--- procedure; a file that does not load leaves NOTHING served, never an
+--- earlier, wider table still in memory. Disarming drops the table.
+function netfs.arm(on)
+  local ok, err = true, nil
+  if on then
+    ok, err = netfs.loadExports(fs)
+    if not ok and log and log.warn then
+      log.warn("netfs", "not serving: " .. tostring(err))
+    end
+  end
+  enabled = (on and ok) and true or false
+  if not enabled then _exports = {} end
+  return ok, err
 end
 
 function netfs._findExport(name)
@@ -642,5 +662,30 @@ netfs._internal = {
   handles     = function() return _handles end,
   resetHandles = function() _handles = {}; _nextHandle = 1 end,
 }
+
+--! Lazy self-initialization, as kernel.net.transfer and kernel.net.remote
+--! do it. Nothing in the kernel ever called netfs.init: the module shipped
+--! with only its tests wiring it, so a loaded kernel.netfs had no net to
+--! answer NETFS_REQ on (handleRequest returned at its first line) and the
+--! client half of `netfs mount` timed out with "no_network". It now wires
+--! itself from the live _TOS handles wherever it loads -- the first inbound
+--! NETFS_REQ (net's lazy dispatch), the `netfs` command, or anything else
+--! that requires it -- and applies the arm netfsd recorded in net, so a
+--! service started before this module loaded still governs it. No recorded
+--! arm ⇒ disabled. Off-box tests (no _TOS.net) keep using explicit init().
+do
+  local T = rawget(_G, "_TOS")
+  if T and T.net and not net then
+    local okI = pcall(netfs.init, {
+      net   = T.net,
+      fs    = T.fs,
+      trust = T.net.getTrust and T.net.getTrust() or nil,
+      log   = T.logObj,
+    })
+    if okI and T.net.getServiceArm and T.net.getServiceArm("netfsd") then
+      netfs.arm(true)
+    end
+  end
+end
 
 return netfs

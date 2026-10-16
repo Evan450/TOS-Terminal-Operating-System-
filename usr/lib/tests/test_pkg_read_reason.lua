@@ -125,11 +125,14 @@ test("a file that will not read fails the install", ok == false)
 test("...saying it could not be READ, with the reason",
   why:find("cannot read source file " .. SRC .. ": not enough memory", 1, true) ~= nil, why)
 test("...not that it is missing", why:find("missing", 1, true) == nil, why)
+test("...with its code, for `why` (E-605)",
+  why:find("[E-605 ERR_PKG_FILE_UNREADABLE]", 1, true) ~= nil, why)
 test("...and nothing is left installed", not fs.exists("/usr/lib/demo.lua"))
 
 ok, why = install("absent")
 test("a file that is not there is still \"missing\"",
   ok == false and why:find("missing source file: " .. SRC, 1, true) ~= nil, why)
+test("...with its own code (E-604)", why:find("[E-604 ERR_PKG_FILE_MISSING]", 1, true) ~= nil, why)
 
 local pkgSrc = readSrc("tos/kernel/pkg.lua")
 test("the installed-file mirror says the same (cannot read vs missing)",

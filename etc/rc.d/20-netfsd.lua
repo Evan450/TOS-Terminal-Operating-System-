@@ -12,66 +12,34 @@
 -- removes it, so `service stop netfsd` has to actually disarm the
 -- backend. A stop() that only dropped a log listener would leave the
 -- machine serving files while reporting the service as stopped.
-
-local running = false
-local listenerID = nil
-
-local function backend()
-  local ok, mod = pcall(require, "kernel.netfs")
-  if ok then return mod end
-  return nil
-end
+--
+-- This runs as root, so its env is a kernel.sandbox: no _TOS, and a
+-- require that refuses every "kernel." name. It used to reach for both
+-- -- `_G._TOS.net`, then `pcall(require, "kernel.netfs")` -- so start()
+-- returned on its first line and rc listed it running while nothing was
+-- ever armed. `net` here is the sandbox's handle on kernel.net (rc.d
+-- services get the whole module, setServiceArm included), and arming
+-- through it is the whole job: net records the arm, applies it to
+-- kernel.netfs if that is loaded, and kernel.netfs applies it itself
+-- when the first NETFS_REQ loads it. Arming re-reads the export file,
+-- so editing it and restarting this service is the update procedure; a
+-- file that does not load serves nothing and says why in the log.
+--
+-- No request-logging listener, unlike fileshare: the sandbox has no log
+-- to write to, and any NETFS_REQ listener registered here would stop
+-- net's dispatch from lazy-loading kernel.netfs for the first request.
 
 local function start()
-  local net = _G._TOS and _G._TOS.net
-  if not net then return end
-
-  local netfs = backend()
-  if not netfs then return end
-
-  -- Re-read exports on every start, so editing the file and restarting
-  -- the service is the whole update procedure.
-  local F = _G._TOS and _G._TOS.fs
-  local ok, err = netfs.loadExports(F)
-  if not ok then
-    if _G._TOS and _G._TOS.log then
-      _G._TOS.log("netfsd", "refusing to start: " .. tostring(err))
-    end
-    -- Fail closed: a malformed export table must not fall back to some
-    -- earlier, wider set that happens to still be in memory.
-    netfs.setExports({})
-    netfs.setEnabled(false)
-    return
+  -- Fail out loud: a quiet return here is how rc came to report a
+  -- service running that had armed nothing.
+  if not (net and net.setServiceArm) then
+    error("netfsd: no kernel.net arm API in this environment", 0)
   end
-
-  netfs.setEnabled(true)
-  running = true
-
-  local protocol = net.getProtocol()
-  listenerID = net.on(protocol.TYPE.NETFS_REQ, function(packet, remoteAddr)
-    if _G._TOS and _G._TOS.log then
-      local p = packet.payload or {}
-      _G._TOS.log("netfsd", "request from " .. tostring(remoteAddr):sub(1, 8) ..
-        ": " .. tostring(p.op) .. " " .. tostring(p.share))
-    end
-  end)
+  net.setServiceArm("netfsd", true)
 end
 
 local function stop()
-  running = false
-  local netfs = backend()
-  if netfs then
-    netfs.setEnabled(false)
-    netfs.setExports({})
-  end
-  if listenerID then
-    local net = _G._TOS and _G._TOS.net
-    if net then
-      local protocol = net.getProtocol()
-      net.off(protocol.TYPE.NETFS_REQ, listenerID)
-    end
-    listenerID = nil
-  end
+  if net and net.setServiceArm then net.setServiceArm("netfsd", false) end
 end
 
 return {
@@ -79,14 +47,15 @@ return {
   stop    = stop,
   deps    = {},
   restart = true,
-  caps    = { ["fs.read"] = true, ["fs.write"] = true, net = true },
+  caps    = { net = true },
   needs   = "net",  -- not loaded at all without a network (rc.lua NEEDS)
   -- root, NOT _kernel_. This shipped claiming kernel tier -- copied from
   -- 20-fileshare.lua, which is on rc.lua's #SEC C2 allowlist -- so every
   -- boot logged "Refusing kernel-tier service '20-netfsd.lua': not in C2
   -- allowlist; demoting to user-tier". The honest fix is to stop claiming
-  -- it rather than to widen the allowlist: netfsd reads one config file
-  -- and flips the backend's arm flag, both of which root does. Nothing in
-  -- kernel/netfs.lua takes a session, so the tier bought nothing.
+  -- it rather than to widen the allowlist: netfsd only flips the backend's
+  -- arm flag, which root does, and the export file it governs is root's to
+  -- write. Nothing in kernel/netfs.lua takes a session, so the tier bought
+  -- nothing -- and the kernel tier's gated require refuses kernel.netfs too.
   user    = "root",
 }

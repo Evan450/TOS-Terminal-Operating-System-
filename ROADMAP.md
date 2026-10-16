@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**66 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**65 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 43 | Planned or under investigation. Most contributions belong here. |
+| Planned | 42 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -220,12 +220,6 @@ Specialized per-machine launcher profiles (doors, reactors).
 Tape "personal menu" ecosystem polish.
 
 ## Packages
-
-### Slice 2: remote
-
-*Planned* · from the round *Federated package repos (2026-09-27)*
-
-SLICE 2: REMOTE. Dependencies across configured repos; the manifest and per-requires `repos` hints under the floor (trusted installs; unknown key = trust on first use, never for service or driver; unsigned = never auto-pulled from a discovered repo); the operator's strictness knob; a known-repos store kept apart from the admin allowlist.
 
 ### Slice 3: resolution
 
@@ -869,3 +863,5 @@ Error registry: the rest of the migration. The first slice (2026-09-10) gave tos
 2026-10-02, the first 5xx/6xx entries, for `pkg fetch` (touched that day): E-501 ERR\_NET\_NO\_ANSWER (a repo that did not answer whether it signs its index), E-601 ERR\_PKG\_NOT\_FOUND, E-602 ERR\_PKG\_BAD\_NAME, E-603 ERR\_PKG\_DEPENDENCY. A dependency refusal drops the inner lookup's tag so it carries one code, its own. `why` explains all four; Appendix C lists them. Still untagged: the rest of pkg (install/upgrade gates), the network layer proper, vault, the drive and deploy commands, hardware.
 
 Same day, vault and deploy (both touched that day): E-305 ERR\_VAULT\_UNLOCK, tagged at its source in kernel.vault's MAC check so every caller carries it (vault, tape-auth's log/menu, the tape toolbox), and E-306 ERR\_DRIVE\_TOO\_SMALL on deploy's pre-flight refusal. Still untagged: the rest of pkg, the network layer proper, drive format/mount failures, hardware.
+
+2026-10-10, pkg's install copy (touched that day for the floor check): E-604 ERR\_PKG\_FILE\_MISSING and E-605 ERR\_PKG\_FILE\_UNREADABLE. The second is what an install that runs out of memory reading a file now carries. `why` tells it to free memory or add a stick.

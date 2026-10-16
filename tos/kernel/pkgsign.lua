@@ -110,8 +110,23 @@ end
 -- Systems" is trusted by reading.
 local _trust, _trustLoaded = nil, false
 
+--! `discovered`: what a fetch may take from a repo the admin did NOT
+--! configure -- one a package named, or one this machine learned of from
+--! what it installed (federated repos slice 2, "the floor"). Stored here,
+--! beside requireSignature, because it is the same kind of decision, and
+--! read the same fail-closed way.
+--!   tofu     (default) signed by a trusted key: installs. Signed by an
+--!            unknown key: its fingerprint is shown and the admin may pin
+--!            it, then and there -- never for a service or driver. Unsigned:
+--!            never.
+--!   trusted  only what is signed by a key already trusted here.
+--!   off      never: only configured repos are read.
+--! A store that will not read, or a value this code does not know, reads
+--! as "off": losing the setting must never widen what is fetched.
+local DISCOVERED = { tofu = true, trusted = true, off = true }
+
 local function emptyTrust()
-  return { requireSignature = false, keys = {} }
+  return { requireSignature = false, keys = {}, discovered = "tofu" }
 end
 
 local function loadTrust()
@@ -122,12 +137,21 @@ local function loadTrust()
   local raw = fs.readFile(TRUST_FILE)
   if not raw or #raw == 0 or #raw > MAX_TRUST_BYTES then
     if log then log.warn("pkgsign", "trust store unreadable or oversized — NO publisher keys are in force") end
+    _trust.discovered = "off"
     return _trust
   end
   local ok, cfg = pcall(serialize.decode, raw, { maxBytes = MAX_TRUST_BYTES })
   if not ok or type(cfg) ~= "table" then
     if log then log.warn("pkgsign", "trust store did not decode — NO publisher keys are in force") end
+    _trust.discovered = "off"
     return _trust
+  end
+  if cfg.discovered ~= nil then
+    if DISCOVERED[cfg.discovered] then _trust.discovered = cfg.discovered
+    else
+      _trust.discovered = "off"
+      if log then log.warn("pkgsign", "unknown 'discovered' setting; reading it as off") end
+    end
   end
   -- FAIL-CLOSED, and note which direction that is. Losing the key list
   -- makes every package read as signed-by-an-UNKNOWN-key, which needs
@@ -185,7 +209,7 @@ end
 local function saveTrust(t)
   if not fs or not fs.writeFile then return false, "no filesystem" end
   local body = serialize.encode({ requireSignature = t.requireSignature == true,
-                                  keys = t.keys })
+                                  keys = t.keys, discovered = t.discovered })
   local ok, err = fs.writeFile(TRUST_FILE, body)
   if not ok then return false, tostring(err or "write failed") end
   return true
@@ -234,6 +258,18 @@ end
 function pkgsign.setRequireSignature(on)
   local t = loadTrust()
   t.requireSignature = on and true or false
+  return saveTrust(t)
+end
+
+--- "tofu", "trusted" or "off": see DISCOVERED above.
+function pkgsign.discoveredPolicy()
+  return loadTrust().discovered or "off"
+end
+
+function pkgsign.setDiscoveredPolicy(v)
+  if not DISCOVERED[v] then return false, "must be tofu, trusted or off" end
+  local t = loadTrust()
+  t.discovered = v
   return saveTrust(t)
 end
 

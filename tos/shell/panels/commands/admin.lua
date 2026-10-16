@@ -161,6 +161,12 @@ return function(C, S, deps)
   -- shell is up with ~200 KB free and compiling kernel.pkg runs out;
   -- 1024 + 256 KB lists, verifies, signs and installs.
   local PKG_MIN_KB = 1280
+  -- `pkg trust discovered`, in words (kernel.pkgsign, DISCOVERED).
+  local DISCOVERED_SAYS = {
+    tofu    = "signed by a trusted key, or a new key you approve when asked; never unsigned.",
+    trusted = "only what is signed by a key already trusted here.",
+    off     = "nothing; only configured repos are read.",
+  }
   -- Out of memory is said in those words, and with what the machine needs:
   -- loading the manager, and installing (which reads, hashes and verifies
   -- every file), both run out on a machine under PKG_MIN_KB. When the RAM
@@ -299,6 +305,26 @@ return function(C, S, deps)
         o(string.format("Unsigned packages are currently %s.",
           pkgMod.trustRequired() and "REFUSED" or "allowed (admin gate only)"),
           pkgMod.trustRequired() and T.highlight or T.dim)
+        o("From repos nobody configured: " .. DISCOVERED_SAYS[pkgMod.discoveredPolicy()]
+          .. "  (pkg trust discovered)", T.dim)
+
+      elseif act == "discovered" then
+        local val = (args[3] or ""):lower()
+        if val == "" then
+          o("From repos nobody configured: " .. DISCOVERED_SAYS[pkgMod.discoveredPolicy()], T.fg)
+          o("Usage: pkg trust discovered tofu|trusted|off", T.dim)
+          return
+        end
+        if not DISCOVERED_SAYS[val] then
+          o("Usage: pkg trust discovered tofu|trusted|off", T.dim)
+          o("  tofu     " .. DISCOVERED_SAYS.tofu, T.dim)
+          o("  trusted  " .. DISCOVERED_SAYS.trusted, T.dim)
+          o("  off      " .. DISCOVERED_SAYS.off, T.dim)
+          return
+        end
+        local ok2, err = pkgMod.trustDiscovered(val, { session = helpers.sessionOf(S) })
+        if not ok2 then o("Refused: " .. tostring(err), T.error); return end
+        o("From repos nobody configured: " .. DISCOVERED_SAYS[val], T.highlight)
 
       elseif act == "add" then
         if not (args[3] and args[4]) then
@@ -462,15 +488,30 @@ return function(C, S, deps)
           o("No remote repositories configured.", T.dim)
           o("Add one:  pkg repo add <name> <https://host/path>", T.dim)
           o("The URL is the directory holding the repo's programs.cfg.", T.dim)
-          return
+        else
+          o(string.format(" %-14s %s", "name", "url"), T.title)
+          for _, r in ipairs(list) do
+            o(string.format(" %-14s %s", r.name:sub(1, 14), r.url), T.fg)
+            if r.description then o("                " .. r.description, T.dim) end
+          end
+          o("", T.dim)
+          o("This list is the allowlist: what these serve installs like a disk.", T.dim)
         end
-        o(string.format(" %-14s %s", "name", "url"), T.title)
-        for _, r in ipairs(list) do
-          o(string.format(" %-14s %s", r.name:sub(1, 14), r.url), T.fg)
-          if r.description then o("                " .. r.description, T.dim) end
+        -- What installed packages named. Shown apart, and said plainly,
+        -- because "known" must never read as "configured".
+        local known = pkgMod.knownRepos()
+        if #known > 0 then
+          o("", T.dim)
+          o("Known (named by packages installed here; not configured and", T.title)
+          o("not trusted):", T.title)
+          for i, k in ipairs(known) do
+            o(string.format(" %2d %s", i, k.url), T.fg)
+            if #k.from > 0 then o("      from " .. table.concat(k.from, ", "), T.dim) end
+          end
+          o("`pkg fetch` looks in these only for what no configured repo", T.dim)
+          o("has, and takes from one only what `pkg trust discovered`", T.dim)
+          o("allows. Forget one:  pkg repo forget <number|url|all>", T.dim)
         end
-        o("", T.dim)
-        o("This list is the allowlist — nothing else is fetched.", T.dim)
       elseif act == "add" then
         if not args[3] or not args[4] then
           o("Usage: pkg repo add <name> <url> [description]", T.dim)
@@ -489,8 +530,13 @@ return function(C, S, deps)
         local ok2, err2 = pkgMod.removeRepo(args[3], { session = helpers.sessionOf(S) })
         if ok2 then o("Repo '" .. args[3] .. "' removed.", T.highlight)
         else o(tostring(err2), T.error) end
+      elseif act == "forget" then
+        if not args[3] then o("Usage: pkg repo forget <number|url|all>", T.dim); return end
+        local ok2, n = pkgMod.forgetRepo(args[3], { session = helpers.sessionOf(S) })
+        if ok2 then o(("Forgot %d known repo(s)."):format(n or 0), T.highlight)
+        else o(tostring(n), T.error) end
       else
-        o("Usage: pkg repo [list|add <name> <url>|remove <name>]", T.dim)
+        o("Usage: pkg repo [list|add <name> <url>|remove <name>|forget <n|url|all>]", T.dim)
       end
 
     elseif sub == "remote" then
@@ -536,14 +582,49 @@ return function(C, S, deps)
         return
       end
       o("Fetching '" .. name .. "'...", T.dim)
+      -- Trust on first use (pkg trust discovered tofu): a package found only
+      -- in a repo nobody configured, signed by a key this machine does not
+      -- know.
+      --! The details go IN the confirmation box, not through o(): the panels
+      --! shell shows a command's output only when the command ends, so on
+      --! the headless machine the question "Publisher name?" arrived with
+      --! no fingerprint on the screen to compare -- an admin asked to trust
+      --! a key blind. confirmTyped draws a framed box in the panels and
+      --! prints the message first in the CLI, and wants a typed word: this
+      --! is a standing decision about who may ship code to this machine.
+      local function confirmKey(info)
+        if not (confirmTyped and promptInput) then return nil end
+        local msg = "'" .. tostring(info.name) .. "' is only in a repo this machine was not "
+          .. "configured with:\n  " .. tostring(info.repo) .. "\n"
+          .. (info.by and (tostring(info.by) .. " requires it.\n") or "")
+          .. "\nIts signature is valid, but its key is not trusted here:\n  key "
+          .. tostring(info.fingerprint) .. "\n"
+          .. (info.signer and ('It calls its publisher "' .. tostring(info.signer)
+               .. '" -- its own word, not proof.\n') or "")
+          .. "\nCompare the fingerprint with the publisher somewhere that is NOT this repo. "
+          .. "Trusted, anything signed with this key installs from now on."
+        if not confirmTyped(msg, "trust", { title = "A new publisher key", style = "warning",
+            yes = "Trust", no = "Refuse" }) then
+          o("Refused the key " .. tostring(info.fingerprint) .. " for '" .. tostring(info.name) .. "'.", T.dim)
+          return nil
+        end
+        local label = promptInput("Name this publisher (Enter refuses): ", 48)
+        if label and label ~= "" then
+          o("Trusted the key " .. tostring(info.fingerprint) .. " as '" .. label .. "' (from "
+            .. tostring(info.repo) .. ").", T.highlight)
+        end
+        return label
+      end
       local ok2, res = pkgMod.installRemote(name, {
         session = helpers.sessionOf(S), allowUnverified = allow,
-        allowUnsigned = allowUnsigned,
+        allowUnsigned = allowUnsigned, confirmKey = confirmKey,
       })
       if ok2 then
-        o(string.format("Installed '%s' from repo '%s' (%d files, %d bytes).",
-          name, tostring(res and res.repo), (res and res.files) or 0,
-          (res and res.bytes) or 0), T.highlight)
+        local from = res and res.discovered
+          and (tostring(res.discovered) .. ", a repo nobody configured")
+          or ("repo '" .. tostring(res and res.repo) .. "'")
+        o(string.format("Installed '%s' from %s (%d files, %d bytes).",
+          name, from, (res and res.files) or 0, (res and res.bytes) or 0), T.highlight)
         local deps = res and res.dependencies
         if type(deps) == "table" and #deps > 0 then
           o("  ...and what it requires: " .. table.concat(deps, ", "), T.highlight)
@@ -3195,7 +3276,13 @@ return function(C, S, deps)
       -- confusing state, so say so rather than listing them as if live.
       local serving = nf.isEnabled and nf.isEnabled()
       local exports = nf.getExports and nf.getExports() or {}
-      o("Serving: " .. (serving and "yes" or "no (service netfsd is not running)"),
+      -- Armed but not serving: netfsd is running and netfs rejected the
+      -- export file (netfs.arm). Calling that "not running" sent the
+      -- operator to restart a service that was already up.
+      local armed = NM and NM.getServiceArm and NM.getServiceArm("netfsd")
+      o("Serving: " .. (serving and "yes"
+          or armed and "no (export file rejected; see: netfs exports)"
+          or "no (service netfsd is not running)"),
         serving and T.highlight or T.warning)
       if #exports == 0 then
         o("  No exports configured (" .. nf.EXPORTS_PATH .. ").", T.dim)

@@ -64,6 +64,9 @@ local LIST = {
   { 601, "ERR_PKG_NOT_FOUND",   "no configured repo has a package by that name" },
   { 602, "ERR_PKG_BAD_NAME",    "that is not a valid package name" },
   { 603, "ERR_PKG_DEPENDENCY",  "something the package requires could not be satisfied" },
+  { 604, "ERR_PKG_FILE_MISSING", "a file the package lists is not where it says" },
+  { 605, "ERR_PKG_FILE_UNREADABLE", "a file the package lists is there but could not be read" },
+  { 606, "ERR_PKG_UNTRUSTED_SOURCE", "a package only in a repo nobody configured, not signed by a key trusted here" },
 
   { 801, "ERR_UNKNOWN_CMD",     "no command by that name" },
   { 802, "ERR_CMD_UNLOADABLE",  "the command exists but would not fit in memory" },

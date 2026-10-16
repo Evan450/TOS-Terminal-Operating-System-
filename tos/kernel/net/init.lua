@@ -980,7 +980,7 @@ end
 -- Message dispatch
 -- ============================================================
 
--- #MEM — transfer/remote no longer load at boot; each loads on its FIRST
+-- #MEM — transfer/remote/netfs do not load at boot; each loads on its FIRST
 -- inbound packet (its self-init registers the real listener, then normal
 -- dispatch below delivers this same packet to it). Keyed by wire type via
 -- the protocol constants; built on first use because `protocol` is only
@@ -992,6 +992,7 @@ local function loadLazyInbound(msgType)
     lazyInbound = {
       [protocol.TYPE.FILE_REQ]    = "kernel.net.transfer",
       [protocol.TYPE.REMOTE_EXEC] = "kernel.net.remote",
+      [protocol.TYPE.NETFS_REQ]   = "kernel.netfs",
     }
   end
   local modname = lazyInbound[msgType]
@@ -1003,10 +1004,14 @@ local function loadLazyInbound(msgType)
   end
 end
 
+--! The load used to be tried only while NO listener existed for the type.
+--! 20-fileshare registers a FILE_REQ logger in start(), so after every boot
+--! the first FILE_REQ found the logger, transfer never loaded, and the peer
+--! timed out on an armed, running service. Who else listens says nothing
+--! about whether the backend is loaded: always ask. After the first attempt
+--! per type it is one failed table lookup. (test_fileshare_serves.lua)
 dispatchToListeners = function(msgType, packet, from)
-  if not listeners[msgType] then
-    loadLazyInbound(msgType)
-  end
+  loadLazyInbound(msgType)
   if listeners[msgType] then
     for _, entry in ipairs(listeners[msgType]) do
       local ok, err = pcall(entry.cb, packet, from)
@@ -1033,17 +1038,26 @@ end
 -- already loaded it is toggled immediately, otherwise its self-init reads
 -- the flag when the first packet (or outbound call) loads it. Fail-closed:
 -- an unset flag reads as disabled, the same default the modules ship with.
+--! netfsd arms kernel.netfs the same way, and for a second reason: it runs
+--! as root, inside kernel.sandbox, whose require refuses every "kernel."
+--! name and whose env has no _TOS. Its pcall(require, "kernel.netfs")
+--! returned nil, start() returned before arming, and rc listed it running
+--! while it served nothing. The `net` its sandbox holds is the one route
+--! in. A backend with its own arm(on) gets that instead of setEnabled:
+--! netfs re-reads its export file when armed. (test_netfsd_serves.lua)
 local armFlags = {}
 local ARM_BACKENDS = {
   fileshare = "kernel.net.transfer",
   rshd      = "kernel.net.remote",
+  netfsd    = "kernel.netfs",
 }
 function net.setServiceArm(name, on)
   armFlags[name] = on and true or false
   local modname = ARM_BACKENDS[name]
   if modname and package and package.loaded and package.loaded[modname] then
     local m = package.loaded[modname]
-    if m and m.setEnabled then m.setEnabled(on and true or false) end
+    local apply = m and (m.arm or m.setEnabled)
+    if apply then apply(on and true or false) end
   end
 end
 function net.getServiceArm(name)

@@ -1,6 +1,6 @@
 # Federated package repos — design (2026-09-27)
 
-**Status:** agreed in a design interview on 2026-09-27. **Slice 1 is built** (2026-09-27, off-box tests only — not yet seen in-world); slices 2–4 are design only. Every claim about the code below was checked by driving the real modules off-box, not by reading them — the probes are described where each finding is.
+**Status:** agreed in a design interview on 2026-09-27. **Slice 1 is built** (2026-09-27) and **slice 2 is built** (2026-10-16), both with off-box tests only and not yet seen in-world; slices 3–4 are design only. Every claim about the code below was checked by driving the real modules off-box, not by reading them — the probes are described where each finding is.
 
 ## The idea
 
@@ -144,7 +144,25 @@ Local sources only (the built-in repo roots, mounted media, `extraRoots`). No ne
 
 ### Slice 2 — remote
 
-`pkg fetch` resolves dependencies across configured repos; the manifest and per-dependency `repos` hints are used, under the floor; trust on first use; the operator's strictness knob; a known-repos store separate from the admin allowlist. (Finding 6, staging the raw index with its `programs.sig`, is already done.)
+**Built 2026-10-16**, in two commits: the hints and the known store, then the floor. Tests: `test_pkg_known_repos`, `test_pkg_discovered`. Finding 6 (staging the raw index with its `programs.sig`) was done before, on 2026-10-02.
+
+- **Hints.** A manifest's `repos` and a table-form requirement's `repos` are validated as URLs: http(s), a plain host, an optional port and a path. No `user@`, query, fragment or dot segment, at most 200 bytes, at most four per list. The rule lives in `pkg` and is handed to `pkgremote` at init, so the known store reads back through the same check.
+- **The known-repos store** is `/var/pkg/known-repos.cfg`, apart from `/etc/pkg-repos.cfg`, so no install can add to the allowlist. Installing a package records the repos it names, with the package that named each. The newest 32 are kept, and every entry is re-checked on read. `pkg repo list` shows them separately. `pkg repo forget <n|url|all>` (admin) drops them.
+- **Looking further.** `pkgremote.fetch` tries the configured repos first; a configured repo always wins. Only for what none of them has does it try the requirement's hints, then the known store, at most 8 repos per lookup. A repo nobody configured is named from a hash of its URL, for the cache and the staging directory.
+- **The floor**, in `pkg.installRemote`, on the staged bytes before anything installs:
+  - Trusted key: installs.
+  - Unknown key: `opts.confirmKey` shows the admin the fingerprint, repo, requirer and the disk's claimed signer, and a returned name is `pkg trust add`. Never for `service` or `driver`.
+  - Unsigned, or invalid: refused, whatever `--allow-*` says.
+  - A requirement's `key` pin goes to `pkg.install` as `expectKey`.
+  - Refusals carry E-606 `ERR_PKG_UNTRUSTED_SOURCE`.
+- **The knob** is `pkg trust discovered tofu|trusted|off`, stored as `discovered` in `/etc/pkg_trust.cfg`. `tofu` is the default. `trusted` takes only keys already trusted and never asks. `off` reads configured repos only. A store that does not read, or a value the code does not know, reads as `off`.
+
+**Limits, left for later slices.**
+- `pkg remote` (search) still lists only the configured repos. The floor's "visible in search" for packages from elsewhere is not built.
+- An OPPM `programs.cfg` entry has no `repos` field: only native manifests carry hints.
+- `recommends` in table form is not accepted yet.
+- A package's own `repos` are learned but not yet used to check it for updates (slice 3).
+- `pkg upgrade` and `pkg outdated` do not look at known repos.
 
 ### Slice 3 — resolution
 
