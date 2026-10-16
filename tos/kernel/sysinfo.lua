@@ -131,9 +131,8 @@ local free = (computer.freeMemory and computer.freeMemory()) or 0
 inv.memory.totalKB = math.floor(total / 1024)
 inv.memory.freeKB = math.floor(free / 1024)
 inv.memory.tier = memTier(inv.memory.totalKB)
-inv.memory.modules = 0
-for _ in component.list("memory") do inv.memory.modules = inv.memory.modules + 1 end
 local h = hal()
+inv.memory.modules = h and h.ramBanks and h.ramBanks(deviceInfo) or 0
 inv.memory.sticks = h and h.ramSticks and h.ramSticks(deviceInfo) or nil
 inv.memory.summary = sysinfo.ramSummary(inv.memory.totalKB, inv.memory.modules,
 inv.memory.sticks)
@@ -425,7 +424,7 @@ return "none"
 end
 local ramLabel, ramVal
 if (mem.modules or 0) > 0 then
-ramLabel, ramVal = "RAM Modules", tostring(mem.modules)
+ramLabel, ramVal = "RAM Modules", mem.summary or tostring(mem.modules)
 else
 ramLabel, ramVal = "Memory Tier", (mem.tier or "?") .. "  (est)"
 end

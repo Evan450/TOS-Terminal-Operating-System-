@@ -31,53 +31,52 @@ function hal.stickTier(kb)
 local e = RAM_STICK_TIERS[math.floor(tonumber(kb) or -1)]
 return e and e.name or nil
 end
-function hal.ramSticks(deviceInfo)
+local BAND_SIZES = { ["500"] = { 192, 256 }, ["1000"] = { 384, 512 },
+["1500"] = { 768, 1024 } }
+local function memoryBanks(deviceInfo)
 if deviceInfo == nil then
 local ok, di = pcall(function() return computer.getDeviceInfo() end)
 if not ok then return nil end
 deviceInfo = di
 end
 if type(deviceInfo) ~= "table" then return nil end
-local raws = {}
+local banks = {}
 for _, d in pairs(deviceInfo) do
-if type(d) == "table" and d.class == "memory" then
-local cap = tonumber(d.capacity or d.size)
-if cap and cap > 0 then raws[#raws + 1] = cap end
+if type(d) == "table" and d.class == "memory" and d.description == "Memory bank" then
+banks[#banks + 1] = d
 end
 end
-if #raws == 0 then return nil end
-local sum = 0
-for _, c in ipairs(raws) do sum = sum + c end
-local totalBytes
-do
+return banks
+end
+function hal.ramBanks(deviceInfo)
+local banks = memoryBanks(deviceInfo)
+return banks and #banks or nil
+end
+function hal.ramSticks(deviceInfo)
+local banks = memoryBanks(deviceInfo)
+if not banks or #banks == 0 then return nil end
+local pairsOf = {}
+for i, d in ipairs(banks) do
+pairsOf[i] = BAND_SIZES[tostring(d.clock)]
+if not pairsOf[i] then return nil end
+end
 local okT, t = pcall(function() return computer.totalMemory() end)
-totalBytes = okT and tonumber(t) or nil
+local totalKB = okT and tonumber(t) and tonumber(t) / 1024
+if not totalKB then return nil end
+local found, foundKey
+for mask = 0, 2 ^ #pairsOf - 1 do
+local pick, sum, m = {}, 0, mask
+for i, pr in ipairs(pairsOf) do
+pick[i] = pr[m % 2 + 1]; sum = sum + pick[i]; m = math.floor(m / 2)
 end
-local function plausible(a, b)
-if not a or not b or a <= 0 or b <= 0 then return false end
-local hi, lo = math.max(a, b), math.min(a, b)
-return (lo / hi) >= 0.75
+if math.abs(sum - totalKB) < 1 then
+table.sort(pick, function(a, b) return a > b end)
+local key = table.concat(pick, ",")
+if foundKey and foundKey ~= key then return nil end
+found, foundKey = pick, key
 end
-local divide
-if totalBytes then
-local asBytes = plausible(sum, totalBytes)
-local asKB = plausible(sum * 1024, totalBytes)
-if asBytes and not asKB then divide = true
-elseif asKB and not asBytes then divide = false
-elseif asBytes and asKB then
-divide = true
-else
-return nil
 end
-else
-divide = (sum >= 4096)
-end
-local sticks = {}
-for _, c in ipairs(raws) do
-sticks[#sticks + 1] = divide and math.floor(c / 1024) or math.floor(c)
-end
-table.sort(sticks, function(a, b) return a > b end)
-return sticks
+return found
 end
 function hal.ramSummary(sticks, totalKB, modules)
 if sticks == nil then sticks = hal.ramSticks() end
@@ -103,7 +102,7 @@ local okT, t = pcall(function() return computer.totalMemory() end)
 if okT and tonumber(t) then totalKB = math.floor(tonumber(t) / 1024) end
 end
 totalKB = math.floor(tonumber(totalKB) or 0)
-modules = tonumber(modules) or 0
+modules = tonumber(modules) or hal.ramBanks() or 0
 if totalKB <= 0 then return "?" end
 if modules == 1 then return hal.stickTier(totalKB) or (totalKB .. "K") end
 if modules > 1 then return modules .. " sticks, " .. totalKB .. "K" end

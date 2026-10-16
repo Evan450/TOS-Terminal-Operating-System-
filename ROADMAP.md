@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**64 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**65 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 41 | Planned or under investigation. Most contributions belong here. |
+| Planned | 42 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -811,6 +811,12 @@ PUT THE COMPAT NUMBER IN THE README, or decide not to. The shims above make the 
 - some community code targets PLAN9K, not OpenOS (magik6k's process.rt / process.globalSignals calls are Plan9k's API). Those files were never going to run here and are not counted as compat gaps.
 
 Honest phrasing is something like "every program on the nine OpenComputers loot disks loads; the OpenOS names we do not provide were required by none of them". Then re-run the scan when the claim is made, so the number in the README is one somebody can reproduce.
+
+### Operator decision: should /usr/lang be admin-writable
+
+*Planned* · from the round *Planned (near future)*
+
+OPERATOR DECISION: SHOULD /usr/lang BE ADMIN-WRITABLE? Language catalogs live there, and /usr is a protected system path, so adding one by hand takes root and `protect off` (found 2026-10-16: `lang dump /usr/lang/xx.lang` was refused for root; the refusal and the route are now shown, 5d62fad). Catalogs are DATA, parsed by the safe decoder and never run, and a bad %-spec falls back to English, so securefs's TREE\_EXEMPT could take "/usr/lang/" the way it takes "/etc/widgets/": admins could then write catalogs and nobody below admin could. The cost is that a tampered admin session could reword the login screen. Either add the exemption, or keep `protect off` and packages as the only routes in.
 
 ### Error registry: the rest of the migration
 

@@ -11,10 +11,8 @@ if not okH or not hal or not hal.ramSummary then return nil end
 local ok, hw = pcall(function()
 if probe then return probe() end
 local computer = require("computer")
-local component = require("component")
 local totalKB = math.floor(((computer.totalMemory and computer.totalMemory()) or 0) / 1024)
-local modules = 0
-for _ in component.list("memory") do modules = modules + 1 end
+local modules = hal.ramBanks() or 0
 return { totalKB = totalKB, modules = modules, sticks = hal.ramSticks() }
 end)
 if not ok or type(hw) ~= "table" or (hw.totalKB or 0) <= 0 then return nil end
