@@ -22,6 +22,15 @@
 #
 # After the walk, strip.lua auto-prunes /tos/system_manifest.lua so any
 # manifest entry whose target file isn't in the dist tree is dropped.
+#
+# --minify-vars (whitespace minify plus local-variable renaming, via the
+# vendored/patched stravant/LuaMinify in build/vendor/luaminify/) is the
+# default: it drops the release from 1907.2 KB to 1313.2 KB on the 2 MB
+# drive budget (measured 2026-10-17, includes build/vendor/luaminify's
+# DedupStrings pass) -- the dev/release split exists precisely so the
+# shipped image never has to stay human-readable. Drop to --minify
+# (whitespace only, no renaming) if that pass is ever suspected of a
+# regression; see build/vendor/luaminify/README.md first.
 
 set -euo pipefail
 
@@ -63,7 +72,7 @@ case "$(uname -s 2>/dev/null)" in
     ;;
 esac
 
-lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify \
+lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify-vars \
     --exclude /build/ \
     --exclude /usr/lib/tests/ \
     --exclude /TOS-Extras/ \

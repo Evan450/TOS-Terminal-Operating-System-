@@ -17,9 +17,18 @@ local M = {}
 -- legend — and byte math on those slices a UTF-8 character in half and
 -- leaves the GPU a broken cell. Declared up here because the rail draws
 -- before the output row does.
+-- Cached like every other lazy module ref in this tree (kernel.event's
+-- getProc, kernel.process's getScreen, shell.panels.ui's _ustr): draw.lua
+-- is the per-frame render path, and ufitRow/uwidthRow are called once per
+-- row, so an uncached pcall(require, ...) here paid that cost on every
+-- row of every redraw instead of once.
+local _ustr = nil
 local function ustrLib()
-  local ok, u = pcall(require, "kernel.ustr")
-  return (ok and u) or nil
+  if _ustr == nil then
+    local ok, u = pcall(require, "kernel.ustr")
+    _ustr = (ok and u) or false
+  end
+  return _ustr or nil
 end
 local function ufitRow(s, cols)
   local u = ustrLib()
@@ -30,6 +39,32 @@ local function uwidthRow(s)
   local u = ustrLib()
   if u and u.width then return u.width(s) end
   return #tostring(s or "")
+end
+
+-- shell.panels.home and shell.panels.apps aren't required at module scope
+-- the way most of this file's deps are (helpers/widgets/ui/selMod/tc,
+-- above) -- home and apps both reach back into drawing, so an eager
+-- top-level require here would risk the circular-load events.lua avoids
+-- by caching them AFTER its own top-level require succeeds (see its
+-- homeMod/appsMod). Lazy is the right call; uncached was not -- this file
+-- re-resolved "shell.panels.home" via a fresh pcall(require, ...) at five
+-- separate call sites and "shell.panels.apps" at two, every one of them
+-- reached on an ordinary redraw.
+local _home = nil
+local function getHome()
+  if _home == nil then
+    local ok, m = pcall(require, "shell.panels.home")
+    _home = (ok and m) or false
+  end
+  return _home or nil
+end
+local _apps = nil
+local function getApps()
+  if _apps == nil then
+    local ok, m = pcall(require, "shell.panels.apps")
+    _apps = (ok and m) or false
+  end
+  return _apps or nil
 end
 
 -- A row's text cut AND padded to exactly `cols` cells, counted the way
@@ -336,8 +371,8 @@ function M.topBar(S)
   -- its tab if the process is gone). Cheap: only apps defining
   -- `refresh` do anything, and today that is only the program app.
   do
-    local okA, appsMod = pcall(require, "shell.panels.apps")
-    if okA and appsMod and appsMod.refreshTabs then
+    local appsMod = getApps()
+    if appsMod and appsMod.refreshTabs then
       pcall(appsMod.refreshTabs, S)
     end
   end
@@ -387,9 +422,9 @@ function M.rail(S)
   -- zone: free columns, and the rail is already where this surface
   -- answers "where am I". Skipped in split mode, where F2 still cycles
   -- tabs and there is no other view of this tab to offer.
-  local okH, home = pcall(require, "shell.panels.home")
+  local home = getHome()
   local viewPart = nil
-  if okH and home and home.enabled(S) then
+  if home and home.enabled(S) then
     local label = home.viewKeyLabel(S) .. " \226\150\184 tiles"
     -- Columns, not bytes — the ▸ is three bytes and one cell, and this
     -- has to land clear of the Size column or the whole header shifts.
@@ -407,7 +442,7 @@ function M.rail(S)
   -- Record where the toggle legend landed so a click on it does what it
   -- says. The span comes from the same call that drew the pixels, so it
   -- can't drift from the rendering.
-  if okH and home then
+  if home then
     home.markToggle(S, S.RAIL_ROW, nil, nil)
     for i, p in ipairs(parts) do
       if p == viewPart and spans[i] then
@@ -543,9 +578,9 @@ function M.idleHint(S)
   -- the surface it reaches is no longer a visible tab chip. The label is
   -- read from the live bind, never spelled "F2" here, so rebinding
   -- `view` in /etc/keys.cfg re-labels the legend too.
-  local okH, home = pcall(require, "shell.panels.home")
+  local home = getHome()
   local flip = nil
-  if okH and home and home.enabled(S) then
+  if home and home.enabled(S) then
     flip = home.viewKeyLabel(S) .. " Tiles"
     parts = { HINT_PARTS[1], flip }
     for i = 2, #HINT_PARTS do parts[#parts + 1] = HINT_PARTS[i] end
@@ -703,8 +738,8 @@ function M.viewTab(S, tab)
   end
   local shown = math.min(viewH, math.max(0, #content - tab.offset))
   local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
-  local okH, home = pcall(require, "shell.panels.home")
-  local cyc = (okH and home) and home.cycleKeyLabel(S) or "F2"
+  local home = getHome()
+  local cyc = home and home.cycleKeyLabel(S) or "F2"
   local info = string.format("%d-%d / %d%s  [^Q]Close [^F]Find [%s]Tab",
     tab.offset + 1, tab.offset + shown, #content, searchInfo, cyc)
   ui.drawRampBar(D, T, H, W, info, nil, T.bar_fg, T.bar_bg)
@@ -868,9 +903,9 @@ end
 -- nothing below row H-3 moves, so the prompt is never somewhere else and
 -- a command's output lands where the last one did.
 function M.shell(S, widgetDefs)
-  local okH, home = pcall(require, "shell.panels.home")
+  local home = getHome()
   local tab = S.tabs[S.activeTab]
-  local tiles = okH and home and home.isTiles(S, tab)
+  local tiles = home and home.isTiles(S, tab)
 
   if tiles then
     home.drawHeader(S, tab)
@@ -888,7 +923,7 @@ function M.shell(S, widgetDefs)
   -- target has to go with it — a span left behind would make a click on
   -- someone's `df` output flip the view. outRow clears it; the two
   -- legends re-mark it after they have actually drawn.
-  if okH and home then home.markToggle(S, S.OUT_ROW, nil, nil) end
+  if home then home.markToggle(S, S.OUT_ROW, nil, nil) end
   if S.outLines and #S.outLines > 0 then M.outLines(S)
   elseif S.lastOut then M.outMessage(S, S.lastOut[1], S.lastOut[2])
   elseif tiles then
@@ -937,8 +972,8 @@ function M.outLines(S, override)
   -- that is the list; on tiles it is one row lower, because the band
   -- rail carrying the page counter has to survive a long result.
   local top = S.LIST_TOP
-  local okH, home = pcall(require, "shell.panels.home")
-  if okH and home and home.isTiles(S) then top = S.TILE_TOP end
+  local home = getHome()
+  if home and home.isTiles(S) then top = S.TILE_TOP end
   local n = math.min(#lines, S.OUT_ROW - top + 1)
   local top = S.OUT_ROW - n + 1
   for i = 1, n do
@@ -980,8 +1015,8 @@ function M._allBody(S, widgetDefs)
   elseif tab.type == "edit" then
     M.editTab(S, tab)
   else
-    local ok, apps = pcall(require, "shell.panels.apps")
-    if ok and apps then
+    local apps = getApps()
+    if apps then
       apps.ensureBuiltins()
       local app = apps.get(tab.type)
       if app and app.draw then app.draw(S, tab) end

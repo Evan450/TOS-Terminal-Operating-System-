@@ -38,52 +38,104 @@ local LIVE_SHORT = { ps = true, df = true, mem = true, uptime = true, log = true
                      net = true, battery = true, lsdev = true }
 M.LIVE_SHORT = LIVE_SHORT
 
+-- #SEC M4 — quote-aware tokenization. The old loop (`%S+`) broke
+-- filenames with spaces and didn't recognize quoted strings. Behaviour:
+-- single-quoted strings are literal; double-quoted strings preserve
+-- embedded spaces; backslash before a delimiter escapes it.
+--
+-- Hoisted out of M.build (it closed over nothing from there — only its
+-- own parameter) because it's the ONE place in the executor that ran a
+-- string concatenation PER BYTE of the command line: `cur = cur .. c`,
+-- once per character, both for the common unquoted-token case and inside
+-- both quote styles. Lua strings are immutable, so that's a fresh
+-- allocation on every character — O(n^2) in the length of a single
+-- token. Rewritten to accumulate whole SPANS (the run up to the next
+-- delimiter, quote-close or escape) via string.sub and only join them
+-- with table.concat once, per token. Same external behaviour, verified
+-- against the original byte-by-byte version across quoting/escaping/
+-- unterminated-input cases. (test_executor_tokenize.lua)
+local function tokenize(cmdStr)
+  local parts, curParts = {}, nil
+  local i, n = 1, #cmdStr
+  local function flush(from, to)
+    if to >= from then
+      curParts = curParts or {}
+      curParts[#curParts + 1] = cmdStr:sub(from, to)
+    end
+  end
+  local function push()
+    if curParts then
+      parts[#parts + 1] = table.concat(curParts)
+      curParts = nil
+    end
+  end
+  while i <= n do
+    local c = cmdStr:sub(i, i)
+    if c == " " or c == "\t" then
+      push(); i = i + 1
+    elseif c == "'" then
+      curParts = curParts or {}
+      i = i + 1
+      local closeAt = cmdStr:find("'", i, true)
+      if closeAt then
+        flush(i, closeAt - 1)
+        i = closeAt + 1  -- consume closing '
+      else
+        flush(i, n)
+        i = n + 1
+      end
+    elseif c == '"' then
+      curParts = curParts or {}
+      i = i + 1
+      local segStart = i
+      while i <= n and cmdStr:sub(i, i) ~= '"' do
+        if cmdStr:sub(i, i) == '\\' and i < n then
+          flush(segStart, i - 1)
+          flush(i + 1, i + 1)
+          i = i + 2
+          segStart = i
+        else
+          i = i + 1
+        end
+      end
+      flush(segStart, i - 1)
+      if i <= n then i = i + 1 end
+    elseif c == '\\' and i < n then
+      curParts = curParts or {}
+      flush(i + 1, i + 1)
+      i = i + 2
+    else
+      -- Ordinary run: scan ahead to the next delimiter/quote/backslash
+      -- and take the whole span at once instead of one piece per byte.
+      -- Starts the scan at i+1 (not i) so a trailing lone backslash at
+      -- end-of-string — which falls through to this branch because the
+      -- backslash-escape case above requires i < n — still consumes
+      -- itself instead of looping forever on the same position.
+      curParts = curParts or {}
+      local segStart = i
+      i = i + 1
+      while i <= n do
+        local cc = cmdStr:sub(i, i)
+        if cc == " " or cc == "\t" or cc == "'" or cc == '"' or cc == "\\" then break end
+        i = i + 1
+      end
+      flush(segStart, i - 1)
+    end
+  end
+  push()
+  return parts
+end
+
+-- Test hook only: tokenize has no dependency on M.build's closure, so it
+-- is testable directly rather than through a full shell session.
+M._tokenize = tokenize
+
 function M.build(S, deps)
   local F = S.F
   local T = S.T
   local rp = deps.rp
   local makeProgramEnv = deps.makeProgramEnv
   local C = deps.C  -- command table from commands.lua
-
-  -- #SEC M4 — quote-aware tokenization. The old loop (`%S+`) broke
-  -- filenames with spaces and didn't recognize quoted strings. New
-  -- behaviour: single-quoted strings are literal; double-quoted strings
-  -- preserve embedded spaces; backslash before a delimiter escapes it.
-  local function tokenize(cmdStr)
-    local parts, cur = {}, nil
-    local i, n = 1, #cmdStr
-    local function push() if cur then parts[#parts + 1] = cur; cur = nil end end
-    while i <= n do
-      local c = cmdStr:sub(i, i)
-      if c == " " or c == "\t" then
-        push(); i = i + 1
-      elseif c == "'" then
-        cur = cur or ""
-        i = i + 1
-        while i <= n and cmdStr:sub(i, i) ~= "'" do
-          cur = cur .. cmdStr:sub(i, i); i = i + 1
-        end
-        if i <= n then i = i + 1 end  -- consume closing '
-      elseif c == '"' then
-        cur = cur or ""
-        i = i + 1
-        while i <= n and cmdStr:sub(i, i) ~= '"' do
-          if cmdStr:sub(i, i) == '\\' and i < n then
-            cur = cur .. cmdStr:sub(i + 1, i + 1); i = i + 2
-          else
-            cur = cur .. cmdStr:sub(i, i); i = i + 1
-          end
-        end
-        if i <= n then i = i + 1 end
-      elseif c == '\\' and i < n then
-        cur = (cur or "") .. cmdStr:sub(i + 1, i + 1); i = i + 2
-      else
-        cur = (cur or "") .. c; i = i + 1
-      end
-    end
-    push()
-    return parts
-  end
 
   -- ── Full-screen hand-off ──────────────────────────────────────────
   -- Spawn `fn` as a seat-bound process that owns the display, and step

@@ -39,6 +39,14 @@ local M = {}
 --! A dialog that blocked forever would stay corrupted forever.
 local DIALOG_IDLE_WAIT = 5
 
+-- Cached rather than require()d fresh in the fallback below: that branch
+-- is already the rare one (only when the caller isn't on a coroutine),
+-- but every iteration of a non-coroutine caller's own polling loop hits
+-- it again, and there's no reason to pay a fresh require() on each one.
+-- Deliberately NOT pcall'd: the original let a missing "computer" raise
+-- here, and a cache must not quietly change that to "wait forever" --
+-- an error surfaces loudly where a nil would have looped silently.
+local computerMod
 local function pullSignal()
   --! The good path: inside a coroutine this is a true event wait, and it
   --! hands control back to the scheduler so background services keep
@@ -47,7 +55,8 @@ local function pullSignal()
   if coroutine.isyieldable and coroutine.isyieldable() then
     return coroutine.yield()
   end
-  return require("computer").pullSignal(DIALOG_IDLE_WAIT)
+  computerMod = computerMod or require("computer")
+  return computerMod.pullSignal(DIALOG_IDLE_WAIT)
 end
 
 -- Keep the END of a growing input visible: return the trailing `width`

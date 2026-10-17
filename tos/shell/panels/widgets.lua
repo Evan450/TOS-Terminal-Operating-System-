@@ -4,6 +4,7 @@
 -- ╚═════════════════════════════════════════════════════╝
 
 local computer = require("computer")
+local helpers = require("shell.panels.helpers")
 local M = {}
 
 -- Syntax highlighting (lazy-loaded)
@@ -35,7 +36,11 @@ function M.makeWidgetDefs(S)
       for _, m in ipairs(mnts) do
         if m.mountPoint == "/" then
           local free = (m.total or 0) - (m.used or 0)
-          local helpers = require("shell.panels.helpers")
+          -- helpers is required once at module scope above now; this
+          -- closure runs on every status-bar repaint (every keystroke,
+          -- not just a 1s clock tick), and was require()ing afresh every
+          -- time while every sibling widget in this table touches only
+          -- already-cached locals.
           return helpers.fmtSz(free)
         end
       end

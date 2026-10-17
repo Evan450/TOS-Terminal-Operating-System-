@@ -8,6 +8,13 @@ REM This is a DENYLIST: anything in TOS-Dev's root not named below ships.
 REM Keep it identical to build-release.sh; test_release_excludes.lua checks
 REM every top-level entry against both.
 REM Post-pass: strip.lua auto-prunes system_manifest.lua against the dist tree.
+REM
+REM --minify-vars (whitespace minify + local-variable renaming, via the
+REM vendored/patched stravant/LuaMinify in build\vendor\luaminify\) is the
+REM default: 1907.2 KB -> 1313.2 KB on the 2 MB drive budget (2026-10-17,
+REM includes build\vendor\luaminify's DedupStrings pass).
+REM Drop to --minify if that pass is ever suspected of a regression --
+REM see build\vendor\luaminify\README.md first.
 
 setlocal enableextensions
 set "SCRIPT_DIR=%~dp0"
@@ -26,7 +33,7 @@ if exist "%RELEASE_DIR%" rmdir /s /q "%RELEASE_DIR%"
 mkdir "%RELEASE_DIR%"
 
 pushd "%ROOT_DIR%"
-lua "%DEV_DIR%\build\strip.lua" "%DEV_DIR%" "%RELEASE_DIR%" --minify ^
+lua "%DEV_DIR%\build\strip.lua" "%DEV_DIR%" "%RELEASE_DIR%" --minify-vars ^
     --exclude /build/ ^
     --exclude /usr/lib/tests/ ^
     --exclude /TOS-Extras/ ^

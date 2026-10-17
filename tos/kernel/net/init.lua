@@ -953,7 +953,6 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
       if log then log.warn("net", "Bad challenge nonce from " .. remoteAddr:sub(1,8)) end
       return
     end
-    local crypto = require("kernel.crypto")
     -- #SEC H16 — mix in a server-chosen nonce so the peer can't pick
     -- every byte of the HMAC input. The proof signs (clientNonce ||
     -- serverNonce); both are returned so the peer can verify the same
@@ -1256,7 +1255,6 @@ function net.verifyPeer(addr, timeout, force)
     return false, "no shared secret with peer"
   end
 
-  local crypto = require("kernel.crypto")
   -- Fresh nonce per challenge — replay protection. salt() pulls
   -- from the entropy-mixed kernel RNG. Fall back to a less-good
   -- source only if crypto.salt is unavailable; in that case the

@@ -54,13 +54,20 @@ local function powerPolicy()
   return powerMod or nil
 end
 
+-- Up/Down/Left/Right/Home/End/PageUp/PageDown scancodes, for the edit-tab
+-- selection-anchor check below. A pure constant — it was being rebuilt as
+-- a fresh table literal on every key_down while editing (i.e. every
+-- keystroke in the editor) with no part of it ever varying between calls.
+local EDIT_NAV_KEYS = { [200]=true, [208]=true, [203]=true, [205]=true,
+                        [199]=true, [207]=true, [201]=true, [209]=true }
+
 local function pullSignal()
   if coroutine.isyieldable and coroutine.isyieldable() then
     return coroutine.yield()
   end
   -- 0.1s = 2 OC ticks. Anything shorter than one tick (50 ms) just busy-yields
   -- without delivering more events, so we avoid the wasted wake-ups.
-  return require("computer").pullSignal(0.1)
+  return computer.pullSignal(0.1)
 end
 
 --- deps = { C, exec, makeProgramEnv, widgetDefs }
@@ -931,9 +938,7 @@ function M.run(S, deps)
             -- drops it. Done ONCE here rather than in each of the eight
             -- movement branches, which is how the prompt's version of
             -- this used to grow an inconsistency per branch.
-            local NAV_KEYS = { [200]=true, [208]=true, [203]=true, [205]=true,
-                               [199]=true, [207]=true, [201]=true, [209]=true }
-            if NAV_KEYS[co] then
+            if EDIT_NAV_KEYS[co] then
               if shiftHeld() then
                 if not tab.selAnchor then
                   tab.selAnchor = { row = tab.curRow, col = tab.curCol }
@@ -1379,8 +1384,13 @@ function M.run(S, deps)
         drawStatusBar()
         -- A backgrounded program's chip changes state by itself (busy ->
         -- frozen); repaint the top bar when one did. (test_program_tab.lua)
-        local okAp, appsMod = pcall(require, "shell.panels.apps")
-        if okAp and appsMod and appsMod.chipsChanged and appsMod.chipsChanged(S) then
+        -- appsMod is the module-level require at the top of this file
+        -- (line 16, not pcall'd) — re-requiring it here shadowed that
+        -- cache with a redundant pcall(require, ...) on every status-bar
+        -- tick for a failure mode that can't happen: if shell.panels.apps
+        -- didn't load, this file's own top-level require would already
+        -- have failed before any of this code could run.
+        if appsMod.chipsChanged and appsMod.chipsChanged(S) then
           drawTopBar()
         end
         -- The tiles view's header rail carries the clock the file view

@@ -583,10 +583,23 @@ end
 --! it: both used to call C[name] directly, so `watch redstone set ...`
 --! ran for a GUEST. Package commands are not in the registry (tier 0) and
 --! run sandboxed, as they do from the prompt. (test_watch_tier.lua)
+-- Lazy, not top-level: shell.panels.commands (and admin/core/extras
+-- under it) require shell.panels.helpers back, so a top-level require
+-- here would be the circular load. Cached after first resolution like
+-- every other lazy lookup in this tree -- tierRefusal is called by name
+-- on every `watch`/tape-toolbox dispatch, not once at module load.
+local commandsModCache
+local function commandsMod()
+  if commandsModCache == nil then
+    local ok, m = pcall(require, "shell.panels.commands")
+    commandsModCache = (ok and type(m) == "table") and m or false
+  end
+  return commandsModCache or nil
+end
+
 function M.tierRefusal(S, name)
-  local okC, commandsMod = pcall(require, "shell.panels.commands")
-  local meta = okC and type(commandsMod) == "table" and commandsMod.entry
-    and commandsMod.entry(name) or nil
+  local cm = commandsMod()
+  local meta = cm and cm.entry and cm.entry(name) or nil
   local need = meta and tonumber(meta.tier) or 0
   if need <= 0 then return nil end
   local have = M.liveTier(S)

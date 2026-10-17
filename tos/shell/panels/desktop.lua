@@ -158,9 +158,20 @@ end
 -- ============================================================
 
 -- Lazy width-aware fit: real unicode math on-box, byte fallback off-box.
+-- Cached after first resolution, same idiom as shell.panels.ui's _ustr —
+-- this runs once per tile on every Desktop redraw, so re-resolving the
+-- module on each call charged a pcall(require, ...) per tile, per frame.
+local _ustrDesktop = nil
+local function ustrLibDesktop()
+  if _ustrDesktop == nil then
+    local ok, u = pcall(require, "kernel.ustr")
+    _ustrDesktop = (ok and u) or false
+  end
+  return _ustrDesktop or nil
+end
 local function ufit(s, cols)
-  local ok, u = pcall(require, "kernel.ustr")
-  if ok and u and u.fit then return u.fit(s, cols) end
+  local u = ustrLibDesktop()
+  if u and u.fit then return u.fit(s, cols) end
   return tostring(s or ""):sub(1, cols)
 end
 

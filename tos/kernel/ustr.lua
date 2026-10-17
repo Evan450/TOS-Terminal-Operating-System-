@@ -68,16 +68,20 @@ function ustr.fit(s, cols)
     local ok, r = pcall(U.wtrunc, s, cols + 1)
     if ok and r then return r end
   end
-  -- Fallback: walk characters until the budget is spent.
-  local out, used = "", 0
+  -- Fallback: walk characters until the budget is spent. Accumulated as
+  -- pieces and joined once at the end rather than `out = out .. ch` per
+  -- character — Lua strings are immutable, so the old form reallocated
+  -- the whole string-so-far on every character (O(n^2) in s's length).
+  local out, used, n = {}, 0, 0
   for i = 1, ustr.len(s) do
     local ch = ustr.sub(s, i, i)
     local w = ustr.width(ch)
     if used + w > cols then break end
-    out = out .. ch
+    n = n + 1
+    out[n] = ch
     used = used + w
   end
-  return out
+  return table.concat(out)
 end
 
 --- Pad-right / pad-left to an exact column width (fits first).

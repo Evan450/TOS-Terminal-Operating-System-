@@ -46,6 +46,27 @@ end
 --! viewLeft-1 columns left of where it was aimed -- px - gutterW is a
 --! column of the WINDOW, not of the line -- and on a line with accents
 --! a cell is not a byte. (test_editor_utf8_columns.lua)
+-- shell.panels.home / shell.panels.apps: looked up lazily for the same
+-- off-box-testability reason as textcol/computer above, and cached for
+-- the same reason -- M.handle is the entry point for every click and
+-- scroll, so each of these was re-required on every one instead of once.
+local homeMod
+local function homePanel()
+  if homeMod == nil then
+    local ok, m = pcall(require, "shell.panels.home")
+    homeMod = (ok and m) or false
+  end
+  return homeMod or nil
+end
+local appsReg
+local function apps()
+  if appsReg == nil then
+    local ok, m = pcall(require, "shell.panels.apps")
+    appsReg = (ok and m) or false
+  end
+  return appsReg or nil
+end
+
 local function editColAt(tab, line, px, gutterW)
   local cell = (px - gutterW) + (tab.viewLeft or 1) - 1
   if cell < 1 then cell = 1 end
@@ -54,9 +75,22 @@ local function editColAt(tab, line, px, gutterW)
   return math.min(#(line or "") + 1, cell)
 end
 
+-- Cached the same way textcol() just above is: M.handle (below) is the
+-- entry point for EVERY raw mouse signal, and on a box without the
+-- driver installed -- the common case, since "mouse" is an Optional
+-- Utilities add-on, not base image -- every one of those signals took
+-- this path and re-required "computer" fresh. false means "resolved,
+-- unavailable" so a box genuinely missing it never pays for a second
+-- pcall; this stays pcall'd (not a plain top-level require) rather than
+-- cached a step earlier, for the same off-box-testability reason the
+-- file-header comment gives for having no kernel requires at all.
+local computerMod
 local function uptime()
-  local ok, c = pcall(require, "computer")
-  if ok and c and c.uptime then return c.uptime() end
+  if computerMod == nil then
+    local ok, c = pcall(require, "computer")
+    computerMod = (ok and c and c.uptime) and c or false
+  end
+  if computerMod then return computerMod.uptime() end
   return os and os.clock and os.clock() or 0
 end
 
@@ -288,8 +322,8 @@ local function handleClick(S, deps, ev)
     -- legend itself. A surface that tells you which key flips it should
     -- also let you click the words — that costs nothing and is the first
     -- thing someone tries.
-    local okH, home = pcall(require, "shell.panels.home")
-    if okH and home and home.enabled(S) then
+    local home = homePanel()
+    if home and home.enabled(S) then
       if ev.button ~= 1 and home.hitToggle(S, px, py) then
         home.toggle(S, tab)
         return 3
@@ -338,8 +372,8 @@ local function handleClick(S, deps, ev)
   -- instead of a hardcoded per-type chain. get() returns nil for the core
   -- types (shell/view/edit) so they fall through to their handling below.
   if tab then
-    local ok, appsMod = pcall(require, "shell.panels.apps")
-    if ok and appsMod then
+    local appsMod = apps()
+    if appsMod then
       appsMod.ensureBuiltins()
       local app = appsMod.get(tabType)
       if app and app.onMouse then return app.onMouse(S, tab, ev, deps) or 0 end
@@ -442,8 +476,8 @@ local function handleScroll(S, deps, ev)
 
   if tabType == "shell" then
     if S.menuOpen or S.ctxOpen then return 0 end
-    local okH, home = pcall(require, "shell.panels.home")
-    if okH and home and home.isTiles(S, tab) then
+    local home = homePanel()
+    if home and home.isTiles(S, tab) then
       return home.handleScroll(S, tab, ev)
     end
     -- Wheel moves the file-list selection, exactly like Up/Down.
@@ -486,8 +520,8 @@ local function handleScroll(S, deps, ev)
 
   elseif tab then
     -- Registered app tab (Desktop/Settings/…): dispatch to its onScroll.
-    local ok, appsMod = pcall(require, "shell.panels.apps")
-    if ok and appsMod then
+    local appsMod = apps()
+    if appsMod then
       appsMod.ensureBuiltins()
       local app = appsMod.get(tabType)
       if app and app.onScroll then return app.onScroll(S, tab, ev) or 0 end

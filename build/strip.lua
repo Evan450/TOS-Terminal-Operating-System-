@@ -351,6 +351,7 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
   -- Parse args. Positional: src, dst. Optional: --minify, --exclude PAT.
   local src, dst
   local minify = false
+  local minifyVars = false
   local excludes = {}
   local stampOverride
   local i_arg = 1
@@ -358,6 +359,22 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
     local v = arg[i_arg]
     if v == "--minify" then
       minify = true
+    elseif v == "--minify-vars" then
+      --! Local-variable renaming on top of --minify, via the vendored,
+      --! patched copy of stravant/LuaMinify in build/vendor/luaminify/ --
+      --! see its README.md for exactly what was patched and why. An
+      --! ADDITIONAL 33.8% off the already-stripped-and-whitespace-
+      --! minified tree (1,673,425 -> 1,108,109 bytes on the real release,
+      --! measured 2026-10-17), because the dev source's descriptive local
+      --! names (and this project's are long and plentiful -- clarity was
+      --! never rationed in TOS-Dev) cost real bytes that a machine
+      --! reading the shipped code never benefits from. Separate flag from
+      --! --minify, not folded into it: this is a bigger, newer piece of
+      --! machinery than the whitespace pass, and keeping it optional
+      --! means a build can drop straight back to the well-worn path by
+      --! omitting one flag, no code change, if it ever needs to.
+      minify = true
+      minifyVars = true
     elseif v == "--stamp" then
       i_arg = i_arg + 1
       stampOverride = arg[i_arg]
@@ -380,8 +397,24 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
   end
 
   if not src or not dst then
-    io.stderr:write("Usage: lua strip.lua <src-dir> <dist-dir> [--minify] [--stamp S] [--exclude PAT]...\n")
+    io.stderr:write("Usage: lua strip.lua <src-dir> <dist-dir> [--minify] [--minify-vars] "
+      .. "[--stamp S] [--exclude PAT]...\n")
     os.exit(1)
+  end
+
+  local minifyVarsMod = nil
+  if minifyVars then
+    -- Loaded here, once, rather than from inside the per-file walk: a
+    -- missing/broken vendor tree should fail the WHOLE build loudly and
+    -- immediately, not silently fail-closed per file deep in the walk.
+    local HERE = arg[0]:gsub("[^/\\]*$", "")
+    local chunk, err = loadfile(HERE .. "minify_vars.lua")
+    if not chunk then
+      io.stderr:write("strip: --minify-vars requested but build/minify_vars.lua would not load: "
+        .. tostring(err) .. "\n")
+      os.exit(1)
+    end
+    minifyVarsMod = chunk()
   end
 
   -- Normalize: strip a single trailing slash so excludes match cleanly.
@@ -472,6 +505,54 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
       if content then
         local stripped = M.strip(content, { minify = minify })
         if srcPath == src .. "/init.lua" then stripped = stampInit(stripped) end
+        --! system_manifest.lua is EXCLUDED from --minify-vars: it is one
+        --! flat data table with no `local` in it anywhere, so identifier
+        --! renaming has nothing to shrink there -- but the manifest
+        --! auto-prune and digest-injection logic below this walk is
+        --! LINE-BASED ("a line-level filter rather than a Lua parser, to
+        --! keep the build tool standalone"), and the vendored formatter
+        --! does not preserve source line breaks at all: it collapsed the
+        --! whole manifest onto one line, which is indistinguishable from
+        --! the file being empty to that line-based reader -- 0 entries
+        --! hashed instead of every real one. No benefit to weigh against
+        --! that, so this file skips the pass entirely rather than teach
+        --! the manifest reader to tolerate it.
+        if minifyVarsMod and srcPath ~= src .. "/tos/system_manifest.lua" then
+          --! Runs AFTER stampInit, never before: string literals (which
+          --! is all the build/variant stamp ever touches) are never
+          --! renamed by this pass regardless of order, but running it
+          --! after keeps this in the same relative order as everything
+          --! else here -- strip, then stamp, then shrink further.
+          local out, mvErr = minifyVarsMod.minify(stripped, dstPath)
+          if not out then
+            io.stderr:write(string.format(
+              "strip: %s failed --minify-vars: %s\n", dstPath, tostring(mvErr)))
+            os.exit(1)
+          end
+          stripped = out
+        end
+        --! VALIDATE before writing. The tokenizer is byte-oriented, not a
+        --! real parser (see the module header) — on a pathological input
+        --! it could in principle emit bytes that no longer form valid Lua
+        --! while looking fine on a skim. More mundanely: a SOURCE file
+        --! that was already broken (an uncommitted syntax slip, a stray
+        --! merge-conflict marker) strips just as happily as a good one
+        --! today, because stripping never looks at syntax either — so a
+        --! broken dev file ships as a broken release file, silently.
+        --! load() is the real Lua compiler frontend — the same front end
+        --! that will load this exact file on the target machine — so this
+        --! is a stronger check than eyeballing a diff, and it costs
+        --! nothing extra beyond what load() already has to do before it
+        --! would run anything. Hard error, matching the #SEC M-13
+        --! precedent above: a release that silently shipped a file it
+        --! could not parse is worse than a build that refuses to finish.
+        --! (test_strip_validates_output.lua)
+        local chunk, syntaxErr = load(stripped, "=" .. dstPath, "t")
+        if not chunk then
+          io.stderr:write(string.format(
+            "strip: %s does not compile after stripping: %s\n", dstPath, tostring(syntaxErr)))
+          os.exit(1)
+        end
         if writeAll(dstPath, stripped) then
           processed = processed + 1
           local saved = #content - #stripped

@@ -51,9 +51,17 @@ end
 --- being unavailable (and then available again).
 function M._forgetDesktop() _desktop = nil end
 
+-- Cached the same way desktopMod() just above is — this was the one
+-- lazy-module helper in this file that wasn't, re-resolving kernel.ustr
+-- with a fresh pcall(require, ...) on every tile width/fit call instead
+-- of once.
+local _ustr = nil
 local function ustrLib()
-  local ok, u = pcall(require, "kernel.ustr")
-  return (ok and u) or nil
+  if _ustr == nil then
+    local ok, u = pcall(require, "kernel.ustr")
+    _ustr = (ok and u) or false
+  end
+  return _ustr or nil
 end
 local function ufit(s, cols)
   local u = ustrLib()
