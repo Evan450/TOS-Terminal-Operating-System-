@@ -1,1102 +1,286 @@
-local component = require("component")
-local computer = require("computer")
-local screen = {}
-local displays = {}
-local seatIndexByScreen = {}
-local activeIdx = 1
-local initialized = false
-local policySpec = nil
-local kbToDisplay = {}
-local screenToDisplay = {}
-local bufferMode = "auto"
-local bufferGen = 0
-local _drawSkipped, _drawEmitted = 0, 0
-local function liveIndices()
-local idxs = {}
-for i in pairs(displays) do idxs[#idxs + 1] = i end
-table.sort(idxs)
-return idxs
-end
-local function findKeyboards(scrAddr)
-local kbs = {}
-local okList, kbList = pcall(component.invoke, scrAddr, "getKeyboards")
-if okList and type(kbList) == "table" then
-for _, kb in ipairs(kbList) do kbs[#kbs + 1] = kb end
-return kbs
-end
-return kbs
-end
-local function isLocalComponent(addr)
-if not addr then return false end
-local okS, slot = pcall(component.slot, addr)
-if not okS then return true end
-return slot ~= nil and slot >= 0
-end
-local function listLocalThenRemote(ctype)
-local locals, remotes = {}, {}
-for addr in component.list(ctype) do
-if isLocalComponent(addr) then locals[#locals + 1] = addr
-else remotes[#remotes + 1] = addr end
-end
-table.sort(locals)
-table.sort(remotes)
-if #locals > 0 then return locals, remotes end
-return remotes, {}
-end
-function screen._pair(gpuScreens, screenAddrs)
-local avail = {}
-for _, a in ipairs(screenAddrs) do avail[a] = true end
-local claimed, result = {}, {}
-for i, cur in ipairs(gpuScreens) do
-if cur and avail[cur] and not claimed[cur] then
-claimed[cur] = true
-result[i] = cur
-end
-end
-local free = {}
-for _, a in ipairs(screenAddrs) do if not claimed[a] then free[#free + 1] = a end end
-local fi = 1
-for i = 1, #gpuScreens do
-if not result[i] and fi <= #free then
-result[i] = free[fi]; fi = fi + 1
-end
-end
-return result
-end
-function screen.init()
-displays = {}
-kbToDisplay = {}
-screenToDisplay = {}
-local gpuAddrs, gpuRemotes = listLocalThenRemote("gpu")
-local screenAddrs, scrRemotes = listLocalThenRemote("screen")
-local gpus = {}
-for _, addr in ipairs(gpuAddrs) do
-gpus[#gpus + 1] = component.proxy(addr)
-end
-local gpuScreens = {}
-for i, gpu in ipairs(gpus) do
-local okS, s = pcall(gpu.getScreen)
-gpuScreens[i] = (okS and type(s) == "string") and s or false
-end
-local pairing = screen._pair(gpuScreens, screenAddrs)
-local paired = {}
-for i = 1, #gpus do
-if pairing[i] then paired[#paired + 1] = { gpu = gpus[i], scr = pairing[i] } end
-end
-if #paired == 0 then
-local gpuAddr = component.list("gpu")()
-local scrAddr = component.list("screen")()
-if gpuAddr and scrAddr then
-paired[1] = { gpu = component.proxy(gpuAddr), scr = scrAddr, label = "Primary" }
-end
-end
-local taken = {}
-for _, pr in ipairs(paired) do
-local idx = seatIndexByScreen[pr.scr]
-if idx and not taken[idx] then pr.idx = idx; taken[idx] = true end
-end
-for _, pr in ipairs(paired) do
-if not pr.idx then
-local idx = 1
-while taken[idx] do idx = idx + 1 end
-pr.idx = idx; taken[idx] = true
-end
-seatIndexByScreen[pr.scr] = pr.idx
-end
-for _, pr in ipairs(paired) do
-local gpu, scrAddr, idx = pr.gpu, pr.scr, pr.idx
-pcall(gpu.bind, scrAddr)
-do
-local tw, th = screen.gpuTarget(gpu, scrAddr, policySpec or { mode = "auto" })
-screen.applyResolution(gpu, tw, th)
-end
-local w, h = gpu.getResolution()
-local depth = gpu.getDepth()
-local kbs = findKeyboards(scrAddr)
-displays[idx] = {
-gpu = gpu,
-screen = scrAddr,
-w = w,
-h = h,
-depth = depth,
-label = pr.label or ("Screen " .. idx),
-keyboards = kbs,
-}
-screenToDisplay[scrAddr] = idx
-for _, kb in ipairs(kbs) do
-kbToDisplay[kb] = idx
-end
-end
-local live = liveIndices()
-if #live > 0 then
-local rr = 0
-local kbAddrs = listLocalThenRemote("keyboard")
-for _, addr in ipairs(kbAddrs) do
-if not kbToDisplay[addr] then
-rr = rr + 1
-local idx = live[((rr - 1) % #live) + 1]
-kbToDisplay[addr] = idx
-displays[idx].keyboards = displays[idx].keyboards or {}
-displays[idx].keyboards[#displays[idx].keyboards + 1] = addr
-end
-end
-end
-do
-local okL, logMod = pcall(require, "kernel.log")
-if okL and logMod and logMod.info then
-logMod.info("screen", string.format(
-"Seat init: %d displays paired from %d GPUs and %d screens (local-only)",
-#live, #gpus, #screenAddrs))
-if #gpus < #screenAddrs then
-logMod.warn("screen", string.format(
-"Detected %d screens but only %d GPUs — %d screen(s) will sit unused. " ..
-"Add a GPU card per additional seat.",
-#screenAddrs, #gpus, #screenAddrs - #gpus))
-elseif #screenAddrs < #gpus then
-logMod.warn("screen", string.format(
-"Detected %d GPUs but only %d screens — %d GPU(s) idle.",
-#gpus, #screenAddrs, #gpus - #screenAddrs))
-end
-if #scrRemotes > 0 or #gpuRemotes > 0 then
-logMod.warn("screen", string.format(
-"Component network is SHARED: %d remote screen(s) and %d remote GPU(s) " ..
-"belong to another computer cabled to this one.",
-#scrRemotes, #gpuRemotes))
-logMod.warn("screen",
-"TOS uses only its own local hardware, but the other machine's OS " ..
-"may bind to THIS screen — OC has no ownership lock. Symptom: two " ..
-"systems drawing over each other. Fix: unplug the link, or give " ..
-"each machine its own screen and keyboard.")
-end
-end
-end
-if not displays[activeIdx] then activeIdx = live[1] or 1 end
-initialized = true
-return #live
-end
-local function ensureInit()
-if not initialized then screen.init() end
-end
-function screen.count()
-ensureInit()
-return #liveIndices()
-end
-function screen.indices()
-ensureInit()
-return liveIndices()
-end
-function screen.active()
-ensureInit()
-if not displays[activeIdx] then activeIdx = liveIndices()[1] or 1 end
-return displays[activeIdx]
-end
-function screen.get(idx)
-ensureInit()
-return displays[idx]
-end
-function screen.setActive(idx)
-ensureInit()
-if displays[idx] then
-activeIdx = idx
-return true
-end
-return false
-end
-function screen.rebuild()
-local oldScreens = {}
-for i, d in pairs(displays) do oldScreens[d.screen] = i end
-screen.init()
-local newScreens = {}
-for i, d in pairs(displays) do newScreens[d.screen] = i end
-local added, removed = {}, {}
-for scrAddr, idx in pairs(newScreens) do
-if not oldScreens[scrAddr] then added[#added + 1] = idx end
-end
-for scrAddr, idx in pairs(oldScreens) do
-if not newScreens[scrAddr] then removed[#removed + 1] = idx end
-end
-return added, removed
-end
-function screen.next()
-ensureInit()
-local live = liveIndices()
-if #live == 0 then return nil end
-local pos = 1
-for i, idx in ipairs(live) do
-if idx == activeIdx then pos = i; break end
-end
-activeIdx = live[(pos % #live) + 1]
-return displays[activeIdx]
-end
-function screen.gpu()
-local d = screen.active()
-return d and d.gpu
-end
-function screen.getResolution()
-local d = screen.active()
-if d then return d.w, d.h end
-return 50, 16
-end
---! The screen changed size without TOS asking it to.
---!
---! d.w/d.h were only ever written in two places: screen.init(), and
---! screen.fitDisplay when TOS itself sets a resolution. Both are cases where
---! TOS is the one doing the resizing. OpenComputers resizes the glass on its
---! own as well -- add or break a screen block in-world and the GPU resolution
---! is clamped to the new maximum -- and it announces that with a
---! `screen_resized` signal that nothing in TOS was listening for.
---!
---! Everything downstream then describes a screen that no longer exists. The
---! seat proxy's syncSize compares against d.w/d.h, so with both stale it sees
---! no change and keeps a shadow indexed for the old width, happily eliding
---! repaints of cells that are not where it thinks. The panels layout derives
---! STAT_ROW from S.H, so on a screen that SHRANK the status bar is drawn at a
---! row past the bottom, where the GPU clips it -- another way for the status
---! bar to vanish, and this one takes the prompt row with it.
---!
---! OpenOS treats this as load-bearing: lib/tty.lua listens for the signal AND
---! intercepts gpu.setResolution, with the comment "the gpu can change
---! resolution before we get a chance to call events and handle
---! screen_resized".
---!
---! Kept as a plain function rather than a listener registered here, because
---! this module deliberately requires only component and computer -- the
---! kernel wires the signal to it at boot. Pass addr = nil to re-sync every
---! seat. (test_screen_resize.lua)
-function screen.onResized(addr, w, h)
-ensureInit()
-local changed = false
-for _, d in ipairs(displays) do
-if addr == nil or d.screen == addr then
-local nw, nh = w, h
-if d.gpu then
-local okR, gw, gh = pcall(d.gpu.getResolution)
-if okR and gw and gh then nw, nh = gw, gh end
-end
-if type(nw) == "number" and type(nh) == "number"
-and nw > 0 and nh > 0 and (nw ~= d.w or nh ~= d.h) then
-d.w, d.h = nw, nh
-changed = true
-end
-end
-end
-if changed then
-screen.invalidateAll()
-local okD, disp = pcall(require, "kernel.display")
-if okD and disp and disp.refreshSize then pcall(disp.refreshSize) end
-end
-return changed
-end
-local RES_DEFAULTS = {
-colsPerBlock = 10, rowsPerBlock = 4,
-prefW = 80, prefH = 25,
-}
-local function clampN(v, lo, hi)
-if v < lo then return lo elseif v > hi then return hi else return v end
-end
-function screen.specFromConfig(cfg)
-local spec = {
-mode = "auto",
-colsPerBlock = RES_DEFAULTS.colsPerBlock, rowsPerBlock = RES_DEFAULTS.rowsPerBlock,
-prefW = RES_DEFAULTS.prefW, prefH = RES_DEFAULTS.prefH,
-}
-if not (cfg and cfg.get) then return spec end
-local r = cfg.get("screenRes")
-if type(r) == "string" then
-local rl = r:lower()
-if rl == "max" then spec.mode = "max"
-elseif rl == "auto" then spec.mode = "auto"
-else
-local w, h = rl:match("^(%d+)%s*[x×]%s*(%d+)$")
-if w then spec.mode = "size"; spec.w = tonumber(w); spec.h = tonumber(h) end
-end
-end
-local cpb = tonumber(cfg.get("screenColsPerBlock")); if cpb and cpb > 0 then spec.colsPerBlock = cpb end
-local rpb = tonumber(cfg.get("screenRowsPerBlock")); if rpb and rpb > 0 then spec.rowsPerBlock = rpb end
-return spec
-end
-function screen.chooseResolution(spec, maxW, maxH, blocksW, blocksH)
-spec = spec or { mode = "auto" }
-maxW = (type(maxW) == "number" and maxW > 0) and maxW or 50
-maxH = (type(maxH) == "number" and maxH > 0) and maxH or 16
-local mode = spec.mode or "auto"
-if mode == "max" then
-return maxW, maxH, nil
-end
-if mode == "size" then
-local rw, rh = spec.w or maxW, spec.h or maxH
-local w, h = clampN(rw, 1, maxW), clampN(rh, 1, maxH)
-local note
-if rw > maxW or rh > maxH then
-note = string.format("requested %dx%d exceeds max %dx%d (using %dx%d)",
-rw, rh, maxW, maxH, w, h)
-end
-return w, h, note
-end
-local floorW = math.min(spec.prefW or RES_DEFAULTS.prefW, maxW)
-local floorH = math.min(spec.prefH or RES_DEFAULTS.prefH, maxH)
-local tw, th
-if blocksW and blocksH and blocksW > 0 and blocksH > 0 then
-tw = math.floor(blocksW * (spec.colsPerBlock or RES_DEFAULTS.colsPerBlock) + 0.5)
-th = math.floor(blocksH * (spec.rowsPerBlock or RES_DEFAULTS.rowsPerBlock) + 0.5)
-else
-tw = spec.prefW or RES_DEFAULTS.prefW
-th = spec.prefH or RES_DEFAULTS.prefH
-end
-return clampN(tw, floorW, maxW), clampN(th, floorH, maxH), nil
-end
-function screen.gpuTarget(gpu, scrAddr, spec)
-if not gpu then return 50, 16, "no gpu" end
-local maxW, maxH = 50, 16
-local okM, mw, mh = pcall(gpu.maxResolution)
-if okM and mw and mh then maxW, maxH = mw, mh end
-if not scrAddr and gpu.getScreen then
-local okS, s = pcall(gpu.getScreen)
-if okS and type(s) == "string" then scrAddr = s end
-end
-local bw, bh
-if scrAddr then
-local okA, aw, ah = pcall(component.invoke, scrAddr, "getAspectRatio")
-if okA and type(aw) == "number" and type(ah) == "number" then bw, bh = aw, ah end
-end
-return screen.chooseResolution(spec, maxW, maxH, bw, bh)
-end
-function screen.applyResolution(gpu, w, h)
-if not gpu then return false end
-local ok = (pcall(gpu.setResolution, w, h)) == true
-if ok then
-local okD, disp = pcall(require, "kernel.display")
-if okD and disp and disp.refreshSize then pcall(disp.refreshSize) end
-end
-return ok
-end
-function screen.setPolicy(spec) policySpec = spec end
-function screen.getPolicy() return policySpec end
-function screen.setBuffer(mode)
-if mode ~= "auto" and mode ~= "on" and mode ~= "off" then
-return false, "mode must be auto, on, or off"
-end
-bufferMode = mode
-bufferGen = bufferGen + 1
-return true
-end
-function screen.invalidateAll()
-bufferGen = bufferGen + 1
-end
-function screen.bufferMode() return bufferMode end
-function screen.bufferStats()
-local total = _drawSkipped + _drawEmitted
-return {
-skipped = _drawSkipped,
-emitted = _drawEmitted,
-total = total,
-ratio = total > 0 and (_drawSkipped / total) or 0,
-}
-end
-function screen.resetBufferStats() _drawSkipped, _drawEmitted = 0, 0 end
-function screen._shadowWanted(mode, freeMem, baseNeed, reserve)
-if mode == "off" then return false end
-if mode == "on" then return (freeMem or 0) > (baseNeed or 0) end
-return (freeMem or 0) > (baseNeed or 0) + (reserve or 0)
-end
-function screen.fitDisplay(idx, spec)
-ensureInit()
-local d = displays[idx] or screen.active()
-if not d or not d.gpu then return nil, nil, "no display" end
-spec = spec or policySpec or { mode = "auto" }
-local w, h, note = screen.gpuTarget(d.gpu, d.screen, spec)
-if screen.applyResolution(d.gpu, w, h) then
-d.w, d.h = w, h
-end
-return w, h, note
-end
-function screen.fit(spec)
-return screen.fitDisplay(activeIdx, spec)
-end
-function screen.restore(idx)
-return screen.fitDisplay(idx or activeIdx, policySpec or { mode = "auto" })
-end
-function screen.list()
-ensureInit()
-local result = {}
-for _, i in ipairs(liveIndices()) do
-local d = displays[i]
-result[#result + 1] = {
-index = i,
-label = d.label,
-w = d.w,
-h = d.h,
-depth = d.depth,
-screen = d.screen,
-active = (i == activeIdx),
-}
-end
-return result
-end
-function screen.setLabel(idx, label)
-if displays[idx] then
-displays[idx].label = label
-return true
-end
-return false
-end
-function screen.displayForKeyboard(kbAddr)
-ensureInit()
-return kbToDisplay[kbAddr]
-end
-function screen.displayForScreen(scrAddr)
-ensureInit()
-return screenToDisplay[scrAddr]
-end
-function screen.seatDevices(idx)
-ensureInit()
-local d = displays[idx]
-if not d then return nil end
-local gpuAddr
-if d.gpu then
-local ok, a = pcall(function() return d.gpu.address end)
-if ok and type(a) == "string" then gpuAddr = a end
-end
-return { gpu = gpuAddr, screen = d.screen, keyboards = d.keyboards or {} }
-end
-function screen.callerSeat()
-local okP, proc = pcall(require, "kernel.process")
-if not okP or type(proc) ~= "table" or not proc.current then return nil end
-local okC, p = pcall(proc.current)
-if not okC or type(p) ~= "table" then return nil end
-return p.display
-end
-function screen.callerDevices()
-local idx = screen.callerSeat()
-if not idx then return nil end
-return screen.seatDevices(idx)
-end
-function screen._spanMatches(shC, shF, shB, base, x, chars, fg, bg, W)
-for i = 1, #chars do
-local cx = x + i - 1
-if cx < 1 or cx > W then return false end
-local k = base + cx
-if shC[k] ~= chars[i] or shF[k] ~= fg or shB[k] ~= bg then return false end
-end
-return true
-end
-function screen._diffWindow(shC, shF, shB, base, x, chars, fg, bg, W)
-local n = #chars
-local first, last
-for i = 1, n do
-local cx = x + i - 1
-if cx < 1 or cx > W then return 1, n end
-local k = base + cx
-if shC[k] ~= chars[i] or shF[k] ~= fg or shB[k] ~= bg then
-first = first or i
-last = i
-end
-end
-return first, last
-end
-function screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, fg, bg, W)
-local fx1, fy1, fx2, fy2
-for yy = y1, y2 do
-local b = (yy - 1) * W
-for xx = x1, x2 do
-local k = b + xx
-if shC[k] ~= ch or shF[k] ~= fg or shB[k] ~= bg then
-if not fx1 then fx1, fy1, fx2, fy2 = xx, yy, xx, yy
-else
-if xx < fx1 then fx1 = xx end
-if xx > fx2 then fx2 = xx end
-fy2 = yy
-end
-end
-end
-end
-return fx1, fy1, fx2, fy2
-end
-function screen.displayProxy(idx)
-ensureInit()
-local d = displays[idx]
-if not d then return nil end
-local proxy = {}
---! ...the same GPU, but NOT the same buffer, and that was the seventh
---! black status bar. In OpenComputers every video-RAM page is its own
---! TextBuffer with its own current foreground and background:
---! setBackground while a page is active sets THE PAGE's colour and
---! leaves buffer 0 exactly where it was, and bitblt copies cells, never
---! that state. One cache for both surfaces is therefore wrong every
---! time a frame closes: it says "the GPU is at statusbar_bg" because
---! the frame painted the bar last, the screen is still at the prompt
---! row's black from the last draw OUTSIDE a frame, and the 1 Hz tick
---! skips setBackground as redundant and lands the whole bar in black.
---! The shadow records statusbar_bg. That is the operator's log line,
---! screen=000000 cache=<statusbar_bg>, and the screendump that showed
---! the PAGE holding a correct bar over a black glass with an honest
---! blit. It only needs the page's last colour to equal the next outside
---! draw's, which is why it came and went with theme changes.
---!
---! So: lastFg/lastBg describe whichever buffer is ACTIVE, and the other
---! buffer's colours are stashed across the switch. Two integer swaps per
---! frame, no extra GPU calls. (test_screen_page_colors.lua)
-local lastFg, lastBg = nil, nil
-local glassFg, glassBg = nil, nil
-local pageFg, pageBg = nil, nil
-local W2, H2 = d.w, d.h
-local shC, shF, shB = {}, {}, {}
-local UTF8 = "[\0-\127\194-\255][\128-\191]*"
-local function invalidateShadow()
-shC, shF, shB = {}, {}, {}
-lastFg, lastBg = nil, nil
-glassFg, glassBg = nil, nil
-pageFg, pageBg = nil, nil
-end
-d._writerGen = d._writerGen or 0
-local myWriterGen = d._writerGen
-local frameDepth = 0
-local pageStale = true
-local function claimGlass()
-if frameDepth == 0 then pageStale = true end
-if d._lastWriter ~= proxy then
-d._lastWriter = proxy
-d._writerGen = d._writerGen + 1
-end
-if myWriterGen ~= d._writerGen then
-myWriterGen = d._writerGen
-invalidateShadow()
-end
-end
-local function disownGlass()
-d._lastWriter = nil
-d._writerGen = d._writerGen + 1
-myWriterGen = d._writerGen
-invalidateShadow()
-pageStale = true
-end
-local releaseBackbuffer = function() end
-local function syncSize()
-if d.w ~= W2 or d.h ~= H2 then
-W2, H2 = d.w, d.h
-invalidateShadow()
-releaseBackbuffer()
-end
-end
-local SHADOW_RESERVE = 384 * 1024
-local baseNeed = d.w * d.h * 128
-local freeMem
-do
-local okH, hal = pcall(require, "kernel.hal")
-if okH and hal and hal.freeMemory then
-freeMem = hal.freeMemory(baseNeed + SHADOW_RESERVE)
-else
-freeMem = (computer.freeMemory and computer.freeMemory()) or 0
-end
-end
-local myBufferGen = bufferGen
-local function shadowEnabled()
-if bufferGen ~= myBufferGen then myBufferGen = bufferGen; invalidateShadow() end
-return screen._shadowWanted(bufferMode, freeMem, baseNeed, SHADOW_RESERVE)
-end
-local backIdx = nil
-local backBroken = false
---!
---! The shadow describes THE SCREEN. Inside a frame, draws land on the
---! PAGE. Those are the same surface only for as long as nothing has been
---! drawn since the last blit — and in TOS most drawing happens OUTSIDE a
---! frame, because drawMod.all is the only thing that opens one. Every
---! applyDraw level 1 and 2, the once-a-second status-bar tick, the
---! file-list fast path and every dialog paint straight to the glass.
---!
---! When those two disagree, the elision inverts: the frame's redraw skips
---! every cell whose SCREEN content already matches, so those cells are
---! never written to the page — and then endFrame blits the page over the
---! glass and they revert to whatever the page was carrying. On a page
---! that was just allocated, "whatever it was carrying" is black.
---!
---! That is BOTH of the bugs the operator reported, from one cause: the
---! status bar (repainted on a timer, outside any frame, so it is always
---! "already correct" when the frame opens) turns background-black and
---! never heals, because the shadow goes on insisting it is painted; and
---! the command-line cursor duplicates, because the page still holds the
---! inverse-video block from where the cursor USED to be while the live
---! one is drawn where it is now.
---! (test_screen_frame.lua)
-local function backbufferSupported()
-local g = d.gpu
-return not backBroken and g and g.allocateBuffer and g.setActiveBuffer
-and g.bitblt and g.freeBuffer
-end
-releaseBackbuffer = function()
-if backIdx then
-pcall(d.gpu.setActiveBuffer, 0)
-pcall(d.gpu.freeBuffer, backIdx)
-backIdx = nil
-end
-frameDepth = 0
-pageStale = true
-lastFg, lastBg = nil, nil
-pageFg, pageBg = nil, nil
-end
-local function setFgCached(fg)
-if fg ~= lastFg then
-local ok = pcall(d.gpu.setForeground, fg)
-if ok then lastFg = fg else lastFg, lastBg = nil, nil end
-end
-end
-local function setBgCached(bg)
-if bg ~= lastBg then
-local ok = pcall(d.gpu.setBackground, bg)
-if ok then lastBg = bg else lastFg, lastBg = nil, nil end
-end
-end
---! Every mechanism protecting the shadow -- the writer generation, the
---! disownGlass declarations, pageStale -- works only when the thing that
---! moved the glass ANNOUNCES ITSELF. That covers the writers TOS knows
---! about. It cannot cover a GPU that drops a call, an emulator quirk, a
---! blit that reports success and copies nothing, or a code path nobody
---! has found yet. And when the shadow is wrong, the elision makes it
---! PERMANENT: the row it believes is painted is never repainted, so the
---! fault outlives every redraw and cannot heal.
---!
---! Measured on the operator's machine, five rounds in: the status row
---! black on the glass while the shadow -- and the off-screen page --
---! both held the correct 336699. Each round found a real declaration
---! bug, fixed it, and the bar went black again for a different reason.
---! Chasing writers one at a time is losing to a mechanism that turns any
---! single missed declaration into a permanent wrong row.
---!
---! So stop trying to enumerate the writers. Before skipping a draw --
---! at most once a second, and only when something is actually being
---! elided -- read ONE cell back and find out whether the screen really
---! holds what we are about to not draw. If it does not, the shadow is
---! lying: drop it and let the draw through. The bar repairs itself
---! within a second of going wrong, whatever caused it.
---!
---! Cost: one gpu.get per second, and only while eliding. A full redraw
---! makes 40-80 calls, so this is under a percent of what the shadow
---! saves. NEVER inside a frame -- gpu.get would read the PAGE, not the
---! glass, and the two are legitimately different there.
---! (test_shadow_audit.lua)
---! TWO caches sit over this glass and EITHER can lie. shC/shF/shB say
---! "that cell already reads like this"; lastFg/lastBg say "the GPU is
---! already set to that colour". The captured machine had both wrong at
---! once -- the shadow holding 336699 for a row the screen showed black,
---! and the colour cache holding 336699 while the hardware was on black,
---! which is what made the repaints land in the wrong colour AND get
---! filed as correct. So the check is of a CELL, against the glass, and
---! the repair drops both caches together.
---!
---! Checked on any draw rather than only on an elided one. The status bar
---! rarely elides outright -- the clock digits differ every second -- so
---! hooking the elision path would almost never look at the one row that
---! actually goes wrong.
---!
---! WHICH cell: one the draw is about to TRUST, never one it is about to
---! repaint. The first version audited the draw's origin, and for the
---! status bar that is column 1 -- the ramp cap, inside the region every
---! tick re-emits anyway -- so the once-a-second budget was spent on a
---! cell that could not be wrong for long, and the label cells that were
---! wrong were never looked at. Now a set audits the elided prefix or
---! suffix, a fill audits a corner outside its changed box, and a draw
---! that elides nothing audits nothing.
---!
---! WHAT it compares against: the colour THE GLASS REPORTS for what we
---! asked, not the number we asked for. A T3 GPU stores cells in a 6x8x5
---! cube and gpu.get hands back the cube value -- 0x103C4E reads back as
---! 0x004940 -- so a raw compare would call every correct cell a lie,
---! once a second, forever, on exactly the tier the themes are tuned
---! for. Rather than model each tier's quantiser, read one cell back the
---! first time a colour is emitted and remember what the hardware made
---! of it: one gpu.get per distinct colour per seat, and the audit then
---! compares like with like on any GPU, emulator included.
-local lastAudit = 0
-local auditHits = 0
-local AUDIT_GAP = 1
-local quant = {}
-local function learnColours(x, y, efg, ebg)
-if frameDepth > 0 then return end
-local needF = efg ~= nil and quant[efg] == nil
-local needB = ebg ~= nil and quant[ebg] == nil
-if not (needF or needB) then return end
-if not (d.gpu and d.gpu.get) then return end
-if x < 1 or x > W2 or y < 1 or y > H2 then return end
-local okG, _, gfg, gbg = pcall(d.gpu.get, x, y)
-if not okG then return end
-if needF and type(gfg) == "number" then quant[efg] = gfg end
-if needB and type(gbg) == "number" then quant[ebg] = gbg end
-end
-local function auditCell(x, y)
-if frameDepth > 0 then return false end
-if not (d.gpu and d.gpu.get) then return false end
-if type(x) ~= "number" or type(y) ~= "number" then return false end
-if x < 1 or x > W2 or y < 1 or y > H2 then return false end
-local k = (y - 1) * W2 + x
-local ch, bg = shC[k], shB[k]
-if ch == nil or bg == nil then return false end
-local now = (computer.uptime and computer.uptime()) or 0
-if now - lastAudit < AUDIT_GAP then return false end
-lastAudit = now
-local okG, gch, _, gbg = pcall(d.gpu.get, x, y)
-if not okG then return false end
-if gch == ch and gbg == (quant[bg] or bg) then return false end
-invalidateShadow()
-auditHits = auditHits + 1
-if auditHits == 1 then
-local okL, logMod = pcall(require, "kernel.log")
-if okL and logMod and logMod.warn then
-pcall(logMod.warn, "screen", string.format(
-"Display cache was wrong at col %d row %d (screen=%s, cache=%s) — "
-.. "dropped it and repainted. Something moved the glass without "
-.. "declaring it.", x, y,
-gbg and string.format("%06X", gbg) or "?",
-bg and string.format("%06X", bg) or "?"))
-end
-end
-return true
-end
-function proxy.auditHits() return auditHits end
-local dumpProc = nil
-local function coopYieldScreen()
-if dumpProc == nil then
-local okP, m = pcall(require, "kernel.process")
-dumpProc = (okP and m and m.yieldCooperative) and m or false
-end
-if dumpProc then dumpProc.yieldCooperative() end
-end
-function proxy.set(x, y, text, fg, bg)
-if type(x) ~= "number" or type(y) ~= "number" or type(text) ~= "string" then return end
-syncSize(); claimGlass()
-if not shadowEnabled() or y < 1 or y > H2 then
-if fg then setFgCached(fg) end
-if bg then setBgCached(bg) end
-local ok = pcall(d.gpu.set, x, y, text)
-if not ok then lastFg, lastBg = nil, nil end
-_drawEmitted = _drawEmitted + 1
-return
-end
-local efg, ebg = fg or lastFg, bg or lastBg
-local chars = {}
-for ch in text:gmatch(UTF8) do chars[#chars + 1] = ch end
-local n = #chars
-local base = (y - 1) * W2
-local first, last = screen._diffWindow(shC, shF, shB, base, x, chars, efg, ebg, W2)
-if first ~= 1 or last ~= n then
-local ax = (first ~= 1) and x or (x + n - 1)
-if auditCell(ax, y) then
-first, last = screen._diffWindow(shC, shF, shB, base, x, chars, efg, ebg, W2)
-end
-end
-if not first then
-_drawSkipped = _drawSkipped + 1
-return
-end
-if fg then setFgCached(fg) end
-if bg then setBgCached(bg) end
-local sub = (first == 1 and last == n) and text
-or table.concat(chars, "", first, last)
-local ok = pcall(d.gpu.set, x + first - 1, y, sub)
-if not ok then lastFg, lastBg = nil, nil; invalidateShadow(); return end
-_drawEmitted = _drawEmitted + 1
-for i = first, last do
-local cx = x + i - 1
-if cx >= 1 and cx <= W2 then
-local k = base + cx
-shC[k] = chars[i]; shF[k] = efg; shB[k] = ebg
-end
-end
-learnColours(x + first - 1, y, efg, ebg)
-end
-function proxy.fill(x, y, w, h, ch, fg, bg)
-if type(x) ~= "number" or type(y) ~= "number"
-or type(w) ~= "number" or type(h) ~= "number" then return end
-syncSize(); claimGlass()
-ch = ch or " "
-if not shadowEnabled() then
-if fg then setFgCached(fg) end
-if bg then setBgCached(bg) end
-local ok = pcall(d.gpu.fill, x, y, w, h, ch)
-if not ok then lastFg, lastBg = nil, nil end
-_drawEmitted = _drawEmitted + 1
-return
-end
-local efg, ebg = fg or lastFg, bg or lastBg
-local x1, y1 = math.max(1, x), math.max(1, y)
-local x2, y2 = math.min(W2, x + w - 1), math.min(H2, y + h - 1)
-if x1 > x2 or y1 > y2 then
-if fg then setFgCached(fg) end
-if bg then setBgCached(bg) end
-local okOff = pcall(d.gpu.fill, x, y, w, h, ch)
-if not okOff then lastFg, lastBg = nil, nil end
-_drawEmitted = _drawEmitted + 1
-return
-end
-local fx1, fy1, fx2, fy2 =
-screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, efg, ebg, W2)
-if not fx1 or fx1 > x1 or fy1 > y1 or fx2 < x2 or fy2 < y2 then
-local ax, ay = x2, y2
-if not fx1 or fx1 > x1 or fy1 > y1 then ax, ay = x1, y1 end
-if auditCell(ax, ay) then
-fx1, fy1, fx2, fy2 =
-screen._fillWindow(shC, shF, shB, x1, y1, x2, y2, ch, efg, ebg, W2)
-end
-end
-if not fx1 then
-_drawSkipped = _drawSkipped + 1; return
-end
-if fg then setFgCached(fg) end
-if bg then setBgCached(bg) end
-local ok = pcall(d.gpu.fill, fx1, fy1, fx2 - fx1 + 1, fy2 - fy1 + 1, ch)
-if not ok then lastFg, lastBg = nil, nil; invalidateShadow(); return end
-_drawEmitted = _drawEmitted + 1
-for yy = fy1, fy2 do
-local b = (yy - 1) * W2
-for xx = fx1, fx2 do
-local k = b + xx
-shC[k] = ch; shF[k] = efg; shB[k] = ebg
-end
-end
-learnColours(fx1, fy1, efg, ebg)
-end
-function proxy.clear(bg)
-syncSize(); claimGlass()
-if bg then setBgCached(bg) end
-local ok = pcall(d.gpu.fill, 1, 1, W2, H2, " ")
-if not ok then lastFg, lastBg = nil, nil; invalidateShadow(); return end
-if shadowEnabled() then
-local efg, ebg = lastFg, bg or lastBg
-for k = 1, W2 * H2 do shC[k] = " "; shF[k] = efg; shB[k] = ebg end
-end
-end
-function proxy.getSize() return d.w, d.h end
-function proxy.beginFrame()
-if not backbufferSupported() then return false end
-syncSize()
-frameDepth = frameDepth + 1
-if frameDepth > 1 then return true end
-if not backIdx then
-local okA, idx = pcall(d.gpu.allocateBuffer, W2, H2)
-if not okA or type(idx) ~= "number" or idx <= 0 then
-backBroken = true; frameDepth = 0; return false
-end
-backIdx = idx
-end
-local okS = pcall(d.gpu.setActiveBuffer, backIdx)
-if not okS then
-releaseBackbuffer(); backBroken = true; return false
-end
-glassFg, glassBg = lastFg, lastBg
-lastFg, lastBg = pageFg, pageBg
-if pageStale then
-if pcall(d.gpu.bitblt, backIdx, 1, 1, W2, H2, 0, 1, 1) then
-pageStale = false
-else
-invalidateShadow()
-end
-end
-return true
-end
-function proxy.endFrame()
-if frameDepth == 0 then return false end
-frameDepth = frameDepth - 1
-if frameDepth > 0 then return true end
-local blitted = false
-if backIdx then
-blitted = pcall(d.gpu.bitblt, 0, 1, 1, W2, H2, backIdx, 1, 1)
-end
-local okR = pcall(d.gpu.setActiveBuffer, 0)
-pageFg, pageBg = lastFg, lastBg
-lastFg, lastBg = glassFg, glassBg
-if not okR then releaseBackbuffer(); backBroken = true end
-if not blitted then
-lastFg, lastBg = nil, nil
-invalidateShadow()
-pageStale = true
-return false
-end
-pageStale = false
-return true
-end
-function proxy.hasBackbuffer() return backIdx ~= nil end
-function proxy.getGpu() disownGlass(); releaseBackbuffer(); return d.gpu end
-function proxy.invalidate() invalidateShadow() end
-function proxy.getGpuTier()
-local dp = d.depth or 1
-if dp >= 8 then return 3
-elseif dp >= 4 then return 2
-else return 1 end
-end
-function proxy.getGpuDepth() return d.depth or 1 end
---! A capture of what is ON THE GLASS, for bug reports.
---!
---! It used to read the SHADOW whenever the shadow was enabled, which is to
---! say: the tool whose entire purpose is diagnosing display bugs reported
---! the display cache's own opinion of the screen. For the one class of bug
---! TOS keeps having -- the shadow and the glass disagreeing -- that is
---! precisely the wrong witness. A stale row would dump as perfect.
---!
---! It also captured characters only, so a fault that changes COLOUR and not
---! text -- "the status bar went black" is exactly that -- left no trace in
---! the dump at all.
---!
---! So: gpu.get is the ground truth and is used whenever it exists, colours
---! come back with the text, and the shadow is a labelled fallback rather
---! than the default. The `source` field says which one answered, because a
---! capture that cannot say where it came from is the same trap again.
---!
---! COST: one component call per cell, ~2000 on an 80x25 screen, which will
---! spend the per-tick call budget and make OpenComputers sleep. That is
---! acceptable for a deliberate, rare diagnostic -- but not while holding the
---! machine, so it yields between rows the way everything else long does.
---! (test_screendump_truth.lua)
-function proxy.dump()
-syncSize()
-local sC, sF, sB = shC, shF, shB
-local st = {
-lastFg = lastFg, lastBg = lastBg,
-frameDepth = frameDepth, pageStale = pageStale,
-backbuffer = backIdx ~= nil, backBroken = backBroken and true or false,
-writerGen = d._writerGen, myWriterGen = myWriterGen,
-lastWriterIsMe = (d._lastWriter == proxy),
-w = W2, h = H2,
-}
-st.shadow = shadowEnabled()
-local canGet = false
-if d.gpu and d.gpu.get then
-local okProbe = pcall(d.gpu.get, 1, 1)
-canGet = okProbe and true or false
-end
-local useShadow = (not canGet) and st.shadow
-local function pushRun(runs, x, c)
-local last = runs[#runs]
-if last and last.c == c then last.to = x
-else runs[#runs + 1] = { from = x, to = x, c = c } end
-end
-local lines, bgRuns, fgRuns = {}, {}, {}
-for y = 1, H2 do
-coopYieldScreen()
-local row, base = {}, (y - 1) * W2
-local brun, frun = {}, {}
-for x = 1, W2 do
-local chr, fg, bg
-if canGet then
-local ok, c, f, b = pcall(d.gpu.get, x, y)
-if ok then chr, fg, bg = c, f, b end
-elseif useShadow then
-chr, fg, bg = sC[base + x], sF[base + x], sB[base + x]
-end
-row[x] = (chr == nil or chr == "") and " " or chr
-pushRun(brun, x, bg)
-pushRun(frun, x, fg)
-end
-lines[y] = (table.concat(row):gsub("%s+$", ""))
-bgRuns[y], fgRuns[y] = brun, frun
-end
-local shadowBg = nil
-if st.shadow and next(sB) ~= nil then
-shadowBg = {}
-for y = 1, H2 do
-local base, runs = (y - 1) * W2, {}
-for x = 1, W2 do pushRun(runs, x, sB[base + x]) end
-shadowBg[y] = runs
-end
-end
-local function firstMismatch(gRuns, sRuns)
-if not (gRuns and sRuns) then return nil end
-local gi, si = 1, 1
-for x = 1, W2 do
-while gRuns[gi] and gRuns[gi].to < x do gi = gi + 1 end
-while sRuns[si] and sRuns[si].to < x do si = si + 1 end
-local gc = gRuns[gi] and gRuns[gi].c
-local sc = sRuns[si] and sRuns[si].c
-if sc ~= nil and gc ~= sc then return x, gc, sc end
-end
-return nil
-end
-local disagree = nil
-if shadowBg and canGet then
-for y = 1, H2 do
-local x, gc, sc = firstMismatch(bgRuns[y], shadowBg[y])
-if x then
-disagree = disagree or {}
-disagree[#disagree + 1] = { row = y, col = x, glass = gc, shadow = sc }
-end
-end
-end
-local pageBg = nil
-if disagree and backIdx and canGet then
-if pcall(d.gpu.setActiveBuffer, backIdx) then
-pageBg = {}
-for i = 1, math.min(#disagree, 8) do
-local y = disagree[i].row
-local runs = {}
-for x = 1, W2 do
-local okG, _, _, b = pcall(d.gpu.get, x, y)
-pushRun(runs, x, okG and b or nil)
-end
-pageBg[y] = runs
-end
-if not pcall(d.gpu.setActiveBuffer, 0) then
-releaseBackbuffer(); backBroken = true
-end
-end
-end
-return { lines = lines, w = W2, h = H2,
-source = canGet and "glass" or (useShadow and "shadow" or "empty"),
-bg = bgRuns, fg = fgRuns,
-shadowBg = shadowBg, disagree = disagree, pageBg = pageBg,
-state = st }
-end
-proxy.getTheme = function()
-local ok, disp = pcall(require, "kernel.display")
-if ok and disp and disp.getTheme then return disp.getTheme() end
-return setmetatable({}, { __index = function() return 0xFFFFFF end })
-end
-proxy.c = function(name)
-local theme = proxy.getTheme()
-return theme[name] or 0xFFFFFF
-end
-local ok, disp = pcall(require, "kernel.display")
-if ok and disp and disp.withContext then
-local FORWARDED = {
-"scrollUp", "box", "dbox", "hdivider", "menuBar", "statusBar",
-"fkeyBar", "fit", "writeWrapped", "dialog", "menuBarEx", "dropdown",
-"isMonochrome", "setTheme",
-}
-for _, name in ipairs(FORWARDED) do
-if disp[name] then
-proxy[name] = function(...)
-local args = table.pack(...)
---! THE CLEANUP MUST RUN EVEN IF THE DRAW THROWS.
---!
---! This used to call withContext directly and clean up after
---! it. withContext re-raises, so a forwarded draw that threw
---! skipped both resets and left the shadow and the colour cache
---! describing a screen that had moved on -- permanently, with
---! nothing to correct it. That is the exact desync shape behind
---! the black status bar, and the round-five note said so:
---! "if a black bar or a wrong-coloured row ever survives this
---! fix, start here." It survived.
---!
---! No path was ever found that actually throws in here, and
---! that is still true -- so this is not a claimed diagnosis. It
---! closes the one hole the previous round left open, and makes
---! the invariant unconditional instead of contingent on nothing
---! ever failing.
---!
---! pcall + re-raise, not a swallow: a caller that draws a
---! dialog and gets no dialog must still hear about it.
-local res = table.pack(pcall(disp.withContext, d.gpu, d.w, d.h,
-function()
-return disp[name](table.unpack(args, 1, args.n))
-end))
-lastFg, lastBg = nil, nil
-disownGlass()
-if not res[1] then error(res[2], 0) end
-return table.unpack(res, 2, res.n)
-end
-end
-end
-proxy.contextMenu = proxy.dropdown
-proxy.BOX = disp.BOX
-proxy.THEME = disp.THEME
-end
-return proxy
-end
-return screen
+local J,P,B,T="screen","string","number","kernel.display"
+local G=require("component")local N=require("computer")local z={}local A={}local U={}local E=1;local V=false;local L=nil
+local M={}local Q={}local R="auto"local I=0;local H,C=0,0;local function K()local a={}for b in pairs(A)do a[#a+1]=b end
+table.sort(a)return a end
+local function W(a)local b={}
+local d,c=pcall(G.invoke,a,"getKeyboards")
+if d and type(c)=="table"then for f,e in ipairs(c)do b[#b+1]=e end;return b end;return b end
+local function X(a)if not a then return false end;local c,b=pcall(G.slot,a)
+if not c then return true end;return b~=nil and b>=0 end
+local function S(a)local b,c={},{}
+for d in G.list(a)do if X(d)then b[#b+1]=d else c[#c+1]=d end end;table.sort(b)table.sort(c)if#b>0 then return b,c end;return c,{}end
+function z._pair(a,b)local g={}for i,h in ipairs(b)do g[h]=true end;local f,c={},{}
+for j,h in ipairs(a)do if h and g[h]and
+not f[h]then f[h]=true;c[j]=h end end;local d={}
+for i,h in ipairs(b)do if not f[h]then d[#d+1]=h end end;local e=1
+for h=1,#a do if not c[h]and e<=#d then c[h]=d[e]e=e+1 end end;return c end
+function z.init()A={}M={}Q={}local j,f=S("gpu")local b,g=S(J)local a={}for l,k in ipairs(j)do
+a[#a+1]=G.proxy(k)end;local h={}
+for k,l in ipairs(a)do local n,m=pcall(l.getScreen)h[k]=(n and
+type(m)==P)and m or false end;local i=z._pair(h,b)local c={}for k=1,#a do
+if i[k]then c[#c+1]={gpu=a[k],scr=i[k]}end end;if#c==0 then local k=G.list("gpu")()
+local l=G.list(J)()
+if k and l then c[1]={gpu=G.proxy(k),scr=l,label="Primary"}end end;local e={}
+for l,k in
+ipairs(c)do local m=U[k.scr]if m and not e[m]then k.idx=m;e[m]=true end end;for l,k in ipairs(c)do
+if not k.idx then local m=1;while e[m]do m=m+1 end;k.idx=m;e[m]=true end;U[k.scr]=k.idx end
+for l,k in
+ipairs(c)do local m,n,o=k.gpu,k.scr,k.idx;pcall(m.bind,n)do
+local t,u=z.gpuTarget(m,n,L or{mode="auto"})z.applyResolution(m,t,u)end
+local q,r=m.getResolution()local s=m.getDepth()local p=W(n)
+A[o]={gpu=m,screen=n,w=q,h=r,depth=s,label=k.label or("Screen "..o),keyboards=p}Q[n]=o;for l,t in ipairs(p)do M[t]=o end end;local d=K()
+if#d>0 then local k=0;local l=S("keyboard")
+for n,m in ipairs(l)do
+if not M[m]then k=k+1;local o=d[
+((k-1)%#d)+1]M[m]=o
+A[o].keyboards=A[o].keyboards or{}A[o].keyboards[#A[o].keyboards+1]=m end end end
+do local l,k=pcall(require,"kernel.log")
+if l and k and k.info then
+k.info(J,string.format("Seat init: %d displays paired from %d GPUs and %d screens (local-only)",
+#d,#a,#b))
+if#a<#b then
+k.warn(J,string.format("Detected %d screens but only %d GPUs — %d screen(s) will sit unused. ".."Add a GPU card per additional seat.",
+#b,#a,#b-#a))elseif#b<#a then
+k.warn(J,string.format("Detected %d GPUs but only %d screens — %d GPU(s) idle.",#a,#b,#a-#b))end
+if#g>0 or#f>0 then
+k.warn(J,string.format("Component network is SHARED: %d remote screen(s) and %d remote GPU(s) "..
+"belong to another computer cabled to this one.",#g,#f))
+k.warn(J,"TOS uses only its own local hardware, but the other machine's OS "..
+"may bind to THIS screen — OC has no ownership lock. Symptom: two "..
+
+"systems drawing over each other. Fix: unplug the link, or give ".."each machine its own screen and keyboard.")end end end;if not A[E]then E=d[1]or 1 end;V=true;return#d end;local function D()if not V then z.init()end end
+function z.count()D()return#K()end;function z.indices()D()return K()end;function z.active()D()
+if not A[E]then E=K()[1]or 1 end;return A[E]end
+function z.get(a)D()return A[a]end
+function z.setActive(a)D()if A[a]then E=a;return true end;return false end
+function z.rebuild()local a={}for e,f in pairs(A)do a[f.screen]=e end;z.init()local b={}for e,f in
+pairs(A)do b[f.screen]=e end;local c,d={},{}for e,f in pairs(b)do
+if not a[e]then c[#c+1]=f end end
+for e,f in pairs(a)do if not b[e]then d[#d+1]=f end end;return c,d end
+function z.next()D()local a=K()if#a==0 then return nil end;local b=1
+for c,d in ipairs(a)do if d==E then b=c;break end end;E=a[(b%#a)+1]return A[E]end;function z.gpu()local a=z.active()return a and a.gpu end
+function z.getResolution()
+local a=z.active()if a then return a.w,a.h end;return 50,16 end
+function z.onResized(a,b,c)D()local d=false
+for f,e in ipairs(A)do
+if a==nil or e.screen==a then local g,h=b,c
+if e.gpu then
+local k,i,j=pcall(e.gpu.getResolution)if k and i and j then g,h=i,j end end;if
+type(g)==B and type(h)==B and g>0 and h>0 and(g~=e.w or h~=e.h)then e.w,e.h=g,h
+d=true end end end
+if d then z.invalidateAll()local f,e=pcall(require,T)if
+f and e and e.refreshSize then pcall(e.refreshSize)end end;return d end;local F={colsPerBlock=10,rowsPerBlock=4,prefW=80,prefH=25}
+local function O(a,b,c)if a<b then return b elseif a>c then return c else
+return a end end
+function z.specFromConfig(a)
+local b={mode="auto",colsPerBlock=F.colsPerBlock,rowsPerBlock=F.rowsPerBlock,prefW=F.prefW,prefH=F.prefH}if not(a and a.get)then return b end
+local e=a.get("screenRes")
+if type(e)==P then local f=e:lower()
+if f=="max"then b.mode="max"elseif f=="auto"then b.mode="auto"else
+local g,i=f:match("^(%d+)%s*[x×]%s*(%d+)$")
+if g then b.mode="size"b.w=tonumber(g)b.h=tonumber(i)end end end;local c=tonumber(a.get("screenColsPerBlock"))if
+c and c>0 then b.colsPerBlock=c end
+local d=tonumber(a.get("screenRowsPerBlock"))if d and d>0 then b.rowsPerBlock=d end;return b end
+function z.chooseResolution(a,b,c,d,e)a=a or{mode="auto"}b=
+(type(b)==B and b>0)and b or 50;c=
+(type(c)==B and c>0)and c or 16;local h=a.mode or"auto"if h=="max"then
+return b,c,nil end
+if h=="size"then local k,l=a.w or b,a.h or c
+local m,n=O(k,1,b),O(l,1,c)local o;if k>b or l>c then
+o=string.format("requested %dx%d exceeds max %dx%d (using %dx%d)",k,l,b,c,m,n)end;return m,n,o end;local i=math.min(a.prefW or F.prefW,b)
+local j=math.min(a.prefH or F.prefH,c)local f,g
+if d and e and d>0 and e>0 then
+f=math.floor(d*
+(a.colsPerBlock or F.colsPerBlock)+0.5)
+g=math.floor(e* (a.rowsPerBlock or F.rowsPerBlock)+
+0.5)else f=a.prefW or F.prefW;g=a.prefH or F.prefH end;return O(f,i,b),O(g,j,c),nil end
+function z.gpuTarget(a,b,c)if not a then return 50,16,"no gpu"end;local d,e=50,16
+local j,f,g=pcall(a.maxResolution)if j and f and g then d,e=f,g end
+if not b and a.getScreen then
+local l,k=pcall(a.getScreen)if l and type(k)==P then b=k end end;local h,i
+if b then local m,k,l=pcall(G.invoke,b,"getAspectRatio")if
+m and type(k)==B and type(l)==B then h,i=k,l end end;return z.chooseResolution(c,d,e,h,i)end
+function z.applyResolution(a,b,c)if not a then return false end;local d=(pcall(a.setResolution,b,c))==
+true
+if d then local f,e=pcall(require,T)if f and e and
+e.refreshSize then pcall(e.refreshSize)end end;return d end;function z.setPolicy(a)L=a end;function z.getPolicy()return L end
+function z.setBuffer(a)
+if
+a~="auto"and a~="on"and a~="off"then return false,"mode must be auto, on, or off"end;R=a;I=I+1;return true end;function z.invalidateAll()I=I+1 end;function z.bufferMode()return R end;function z.bufferStats()local a=H+C
+return{skipped=H,emitted=C,total=a,ratio=
+a>0 and(H/a)or 0}end
+function z.resetBufferStats()H,C=0,0 end;function z._shadowWanted(a,b,c,d)if a=="off"then return false end;if a=="on"then
+return(b or 0)> (c or 0)end
+return(b or 0)> (c or 0)+ (d or 0)end
+function z.fitDisplay(b,a)
+D()local c=A[b]or z.active()if not c or not c.gpu then
+return nil,nil,"no display"end;a=a or L or{mode="auto"}
+local d,e,f=z.gpuTarget(c.gpu,c.screen,a)if z.applyResolution(c.gpu,d,e)then c.w,c.h=d,e end;return d,e,f end;function z.fit(a)return z.fitDisplay(E,a)end
+function z.restore(a)return z.fitDisplay(a or E,L or
+{mode="auto"})end
+function z.list()D()local a={}for c,b in ipairs(K())do local e=A[b]
+a[#a+1]={index=b,label=e.label,w=e.w,h=e.h,depth=e.depth,screen=e.screen,active=(b==E)}end;return a end
+function z.setLabel(a,b)if A[a]then A[a].label=b;return true end;return false end;function z.displayForKeyboard(a)D()return M[a]end
+function z.displayForScreen(a)D()return Q[a]end
+function z.seatDevices(a)D()local b=A[a]if not b then return nil end;local c
+if b.gpu then
+local e,d=pcall(function()return b.gpu.address end)if e and type(d)==P then c=d end end;return{gpu=c,screen=b.screen,keyboards=b.keyboards or{}}end
+function z.callerSeat()local c,a=pcall(require,"kernel.process")
+if not c or
+type(a)~="table"or not a.current then return nil end;local d,b=pcall(a.current)
+if not d or type(b)~="table"then return nil end;return b.display end;function z.callerDevices()local a=z.callerSeat()if not a then return nil end
+return z.seatDevices(a)end
+function z._spanMatches(b,c,d,e,f,a,g,h,i)
+for j=1,#a do local l=f+j-1;if
+l<1 or l>i then return false end;local m=e+l;if b[m]~=a[j]or c[m]~=g or
+d[m]~=h then return false end end;return true end
+function z._diffWindow(b,c,d,e,f,a,g,h,i)local k=#a;local j,l;for m=1,k do local n=f+m-1;if n<1 or n>i then return 1,k end;local o=e+n
+if b[o]~=
+a[m]or c[o]~=g or d[o]~=h then j=j or m;l=m end end;return j,l end
+function z._fillWindow(a,b,c,d,e,f,g,h,i,j,k)local l,o,m,n
+for p=e,g do local q=(p-1)*k
+for r=d,f do local s=q+r;if
+a[s]~=h or b[s]~=i or c[s]~=j then
+if not l then l,o,m,n=r,p,r,p else if r<l then l=r end;if r>m then m=r end;n=p end end end end;return l,o,m,n end
+function z.displayProxy(a)D()local b=A[a]if not b then return nil end;local d={}local e,f=nil,nil;local _,aa=nil,nil
+local w,o=nil,nil;local c,g=b.w,b.h;local k,m,l={},{},{}local ak="[\0-\127\194-\255][\128-\191]*"local function j()k,m,l={},{},{}e,f=nil,
+nil;_,aa=nil,nil;w,o=nil,nil end;b._writerGen=
+b._writerGen or 0;local x=b._writerGen;local h=0;local n=true
+local function ab()if h==0 then n=true end
+if
+b._lastWriter~=d then b._lastWriter=d;b._writerGen=b._writerGen+1 end;if x~=b._writerGen then x=b._writerGen;j()end end
+local function ad()b._lastWriter=nil;b._writerGen=b._writerGen+1;x=b._writerGen;j()n=true end;local q=function()end;local function t()
+if b.w~=c or b.h~=g then c,g=b.w,b.h;j()q()end end;local ae=384*1024;local af=b.w*b.h*128
+local ac
+do local aq,ap=pcall(require,"kernel.hal")
+if aq and ap and ap.freeMemory then ac=ap.freeMemory(
+af+ae)else ac=
+(N.freeMemory and N.freeMemory())or 0 end end;local ag=I
+local function y()if I~=ag then ag=I;j()end;return z._shadowWanted(R,ac,af,ae)end;local i=nil;local r=false
+local function al()local ap=b.gpu;return
+
+not r and ap and ap.allocateBuffer and ap.setActiveBuffer and ap.bitblt and ap.freeBuffer end
+q=function()if i then pcall(b.gpu.setActiveBuffer,0)
+pcall(b.gpu.freeBuffer,i)i=nil end;h=0;n=true;e,f=nil,nil;w,o=nil,nil end
+local function u(ap)if ap~=e then local aq=pcall(b.gpu.setForeground,ap)
+if aq then e=ap else e,f=nil,nil end end end
+local function s(ap)if ap~=f then local aq=pcall(b.gpu.setBackground,ap)
+if aq then f=ap else e,f=nil,nil end end end;local ah=0;local Y=0;local am=1;local v={}
+local function ai(ap,aq,ar,as)if h>0 then return end
+local at=ar~=nil and v[ar]==nil;local au=as~=nil and v[as]==nil
+if not(at or au)then return end;if not(b.gpu and b.gpu.get)then return end;if
+ap<1 or ap>c or aq<1 or aq>g then return end
+local ax,ay,av,aw=pcall(b.gpu.get,ap,aq)if not ax then return end;if at and type(av)==B then v[ar]=av end;if au and
+type(aw)==B then v[as]=aw end end
+local function aj(ap,aq)if h>0 then return false end;if not(b.gpu and b.gpu.get)then
+return false end
+if type(ap)~=B or type(aq)~=B then return false end
+if ap<1 or ap>c or aq<1 or aq>g then return false end;local at=(aq-1)*c+ap;local au,ar=k[at],l[at]if au==nil or ar==nil then
+return false end
+local av=(N.uptime and N.uptime())or 0;if av-ah<am then return false end;ah=av
+local aw,ax,ay,as=pcall(b.gpu.get,ap,aq)if not aw then return false end;if ax==au and as== (v[ar]or ar)then
+return false end;j()Y=Y+1
+if Y==1 then
+local aA,az=pcall(require,"kernel.log")
+if aA and az and az.warn then
+pcall(az.warn,J,string.format("Display cache was wrong at col %d row %d (screen=%s, cache=%s) — "..
+"dropped it and repainted. Something moved the glass without ".."declaring it.",ap,aq,
+as and string.format("%06X",as)or"?",ar and
+string.format("%06X",ar)or"?"))end end;return true end;function d.auditHits()return Y end;local Z=nil
+local function an()
+if Z==nil then
+local aq,ap=pcall(require,"kernel.process")Z=(aq and ap and ap.yieldCooperative)and ap or
+false end;if Z then Z.yieldCooperative()end end
+function d.set(ap,aq,at,ar,as)if
+type(ap)~=B or type(aq)~=B or type(at)~=P then return end;t()ab()
+if not y()or aq<1 or aq>g then if ar then
+u(ar)end;if as then s(as)end;local aD=pcall(b.gpu.set,ap,aq,at)if not aD then e,f=nil,
+nil end;C=C+1;return end;local ax,ay=ar or e,as or f;local av={}
+for aD in at:gmatch(ak)do av[#av+1]=aD end;local az=#av;local aA=(aq-1)*c
+local au,aw=z._diffWindow(k,m,l,aA,ap,av,ax,ay,c)if au~=1 or aw~=az then local aD=(au~=1)and ap or(ap+az-1)
+if
+aj(aD,aq)then au,aw=z._diffWindow(k,m,l,aA,ap,av,ax,ay,c)end end;if not au then H=H+1
+return end;if ar then u(ar)end;if as then s(as)end
+local aB=
+(au==1 and aw==az)and at or table.concat(av,"",au,aw)local aC=pcall(b.gpu.set,ap+au-1,aq,aB)
+if not aC then e,f=nil,nil;j()return end;C=C+1
+for aD=au,aw do local aE=ap+aD-1;if aE>=1 and aE<=c then local aF=aA+aE;k[aF]=av[aD]m[aF]=ax
+l[aF]=ay end end;ai(ap+au-1,aq,ax,ay)end
+function d.fill(as,at,au,av,ap,aq,ar)
+if
+type(as)~=B or type(at)~=B or type(au)~=B or type(av)~=B then return end;t()ab()ap=ap or" "
+if not y()then if aq then u(aq)end;if ar then s(ar)end
+local aH=pcall(b.gpu.fill,as,at,au,av,ap)if not aH then e,f=nil,nil end;C=C+1;return end;local aC,aD=aq or e,ar or f;local ay,az=math.max(1,as),math.max(1,at)local aA,aB=math.min(c,
+as+au-1),math.min(g,at+av-1)
+if ay>aA or az>
+aB then if aq then u(aq)end;if ar then s(ar)end
+local aH=pcall(b.gpu.fill,as,at,au,av,ap)if not aH then e,f=nil,nil end;C=C+1;return end;local aw,ax,aE,aF=z._fillWindow(k,m,l,ay,az,aA,aB,ap,aC,aD,c)
+if not aw or
+aw>ay or ax>az or aE<aA or aF<aB then
+local aH,aI=aA,aB;if not aw or aw>ay or ax>az then aH,aI=ay,az end;if aj(aH,aI)then
+aw,ax,aE,aF=z._fillWindow(k,m,l,ay,az,aA,aB,ap,aC,aD,c)end end;if not aw then H=H+1;return end;if aq then u(aq)end;if ar then s(ar)end;local aG=pcall(b.gpu.fill,aw,ax,
+aE-aw+1,aF-ax+1,ap)if not aG then
+e,f=nil,nil;j()return end;C=C+1
+for aH=ax,aF do local aI=(aH-1)*c;for aJ=aw,aE do local aK=aI+aJ
+k[aK]=ap;m[aK]=aC;l[aK]=aD end end;ai(aw,ax,aC,aD)end
+function d.clear(ap)t()ab()if ap then s(ap)end
+local aq=pcall(b.gpu.fill,1,1,c,g," ")if not aq then e,f=nil,nil;j()return end;if y()then local ar,as=e,ap or f;for at=1,c*g do k[at]=" "
+m[at]=ar;l[at]=as end end end;function d.getSize()return b.w,b.h end
+function d.beginFrame()if not al()then return false end
+t()h=h+1;if h>1 then return true end;if not i then
+local aq,a=pcall(b.gpu.allocateBuffer,c,g)
+if not aq or type(a)~=B or a<=0 then r=true;h=0;return false end;i=a end
+local ap=pcall(b.gpu.setActiveBuffer,i)if not ap then q()r=true;return false end;_,aa=e,f;e,f=w,o
+if n then if
+pcall(b.gpu.bitblt,i,1,1,c,g,0,1,1)then n=false else j()end end;return true end
+function d.endFrame()if h==0 then return false end;h=h-1;if h>0 then return true end;local ap=false;if i then
+ap=pcall(b.gpu.bitblt,0,1,1,c,g,i,1,1)end
+local aq=pcall(b.gpu.setActiveBuffer,0)w,o=e,f;e,f=_,aa;if not aq then q()r=true end
+if not ap then e,f=nil,nil;j()n=true;return false end;n=false;return true end;function d.hasBackbuffer()return i~=nil end
+function d.getGpu()ad()q()return b.gpu end;function d.invalidate()j()end;function d.getGpuTier()local ap=b.depth or 1
+if ap>=8 then return 3 elseif ap>=4 then return 2 else return 1 end end;function d.getGpuDepth()return
+b.depth or 1 end
+function d.dump()t()local az,aA,au=k,m,l
+local as={lastFg=e,lastBg=f,frameDepth=h,pageStale=n,backbuffer=i~=nil,backBroken=r and true or false,writerGen=b._writerGen,myWriterGen=x,lastWriterIsMe=(
+b._lastWriter==d),w=c,h=g}as.shadow=y()local aq=false
+if b.gpu and b.gpu.get then
+local aC=pcall(b.gpu.get,1,1)aq=aC and true or false end;local aw=(not aq)and as.shadow
+local function at(aC,aD,aE)local aF=aC[#aC]if aF and aF.c==aE then
+aF.to=aD else aC[#aC+1]={from=aD,to=aD,c=aE}end end;local ax,av,ay={},{},{}
+for aC=1,g do an()local aE,aD={},(aC-1)*c;local aF,aG={},{}
+for aH=1,c do local aI,aJ,aK;if aq then
+local aL,aM,aN,aO=pcall(b.gpu.get,aH,aC)if aL then aI,aJ,aK=aM,aN,aO end elseif aw then
+aI,aJ,aK=az[aD+aH],aA[aD+aH],au[aD+aH]end
+aE[aH]=(
+aI==nil or aI=="")and" "or aI;at(aF,aH,aK)at(aG,aH,aJ)end
+ax[aC]=(table.concat(aE):gsub("%s+$",""))av[aC],ay[aC]=aF,aG end;local ar=nil;if as.shadow and next(au)~=nil then ar={}
+for aC=1,g do local aE,aD=(aC-1)*c,{}for aF=1,c do at(aD,aF,au[
+aE+aF])end;ar[aC]=aD end end
+local function aB(aC,aD)if not
+(aC and aD)then return nil end;local aE,aF=1,1
+for aG=1,c do while aC[aE]and aC[aE].to<aG do aE=
+aE+1 end
+while aD[aF]and aD[aF].to<aG do aF=aF+1 end;local aI=aC[aE]and aC[aE].c;local aH=aD[aF]and aD[aF].c;if aH~=
+nil and aI~=aH then return aG,aI,aH end end;return nil end;local ap=nil;if ar and aq then
+for aC=1,g do local aD,aE,aF=aB(av[aC],ar[aC])if aD then ap=ap or{}
+ap[#ap+1]={row=aC,col=aD,glass=aE,shadow=aF}end end end
+local o=nil
+if ap and i and aq then
+if pcall(b.gpu.setActiveBuffer,i)then o={}
+for aC=1,math.min(#ap,8)do
+local aD=ap[aC].row;local aE={}for aF=1,c do local aG,aI,aI,aH=pcall(b.gpu.get,aF,aD)
+at(aE,aF,aG and aH or nil)end;o[aD]=aE end
+if not pcall(b.gpu.setActiveBuffer,0)then q()r=true end end end;return
+{lines=ax,w=c,h=g,source=aq and"glass"or(aw and"shadow"or"empty"),bg=av,fg=ay,shadowBg=ar,disagree=ap,pageBg=o,state=as}end
+d.getTheme=function()local aq,ap=pcall(require,T)if aq and ap and ap.getTheme then
+return ap.getTheme()end;return
+setmetatable({},{__index=function()return 0xFFFFFF end})end
+d.c=function(ap)local aq=d.getTheme()return aq[ap]or 0xFFFFFF end;local ao,p=pcall(require,T)
+if ao and p and p.withContext then
+local ap={"scrollUp","box","dbox","hdivider","menuBar","statusBar","fkeyBar","fit","writeWrapped","dialog","menuBarEx","dropdown","isMonochrome","setTheme"}
+for ar,aq in ipairs(ap)do
+if p[aq]then
+d[aq]=function(...)local at=table.pack(...)
+local as=table.pack(pcall(p.withContext,b.gpu,b.w,b.h,function()return
+p[aq](table.unpack(at,1,at.n))end))e,f=nil,nil;ad()if not as[1]then error(as[2],0)end;return
+table.unpack(as,2,as.n)end end end;d.contextMenu=d.dropdown;d.BOX=p.BOX;d.THEME=p.THEME end;return d end;return z

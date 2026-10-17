@@ -1,116 +1,55 @@
-local monitor = {}
-function monitor.describe(p)
-local name = (p and p.name) or "?"
-local seat = name:match("^login@(%d+)$")
-if seat then return "Login broker — seat " .. seat end
-local shUser, shSeat = name:match("^shell:(.+)@(%d+)$")
-if shUser then return "Shell — " .. shUser .. " (seat " .. shSeat .. ")" end
-if p and (p.user == "_kernel_" or p.source == "kernel") then
-return name .. "  (kernel)"
-end
-return name
-end
-function monitor.kindTag(p)
-local name = (p and p.name) or ""
-if name:match("^shell:") then return "shell" end
-if name:match("^login@") then return "sys" end
-if p and (p.user == "_kernel_" or p.source == "kernel") then return "sys" end
-return "user"
-end
-function monitor.memBar(used, total, width)
-width = math.max(1, math.floor(width or 10))
-if not total or total <= 0 then return string.rep("?", width) end
-local frac = (used or 0) / total
-if frac < 0 then frac = 0 elseif frac > 1 then frac = 1 end
-local filled = math.floor(frac * width + 0.5)
-if filled > width then filled = width end
-return string.rep("#", filled) .. string.rep("-", width - filled)
-end
-function monitor.fmtUptime(sec)
-sec = math.floor(tonumber(sec) or 0)
-if sec < 0 then sec = 0 end
-local h = math.floor(sec / 3600)
-local m = math.floor((sec % 3600) / 60)
-local s = sec % 60
-if h > 0 then return string.format("%dh%02dm", h, m) end
-if m > 0 then return string.format("%dm%02ds", m, s) end
-return string.format("%ds", s)
-end
-function monitor.buildRows(procs, services)
-local rows = {}
-for _, p in ipairs(procs or {}) do rows[#rows + 1] = { kind = "proc", p = p } end
-if services and #services > 0 then
-rows[#rows + 1] = { kind = "header", text = "Services" }
-for _, s in ipairs(services) do rows[#rows + 1] = { kind = "svc", s = s } end
-end
-return rows
-end
-function monitor.nextSelectable(rows, sel, dir)
-local n = #rows
-if n == 0 then return sel end
-local i = sel
-for _ = 1, n do
-local j = i + dir
-if j < 1 or j > n then return i end
-i = j
-if rows[i] and rows[i].kind ~= "header" then return i end
-end
-return sel
-end
-function monitor.svcStatus(s)
-s = s or {}
-if s.running then return "running" end
-if s.unavailable then return "not loaded: " .. tostring(s.unavailable) end
-if s.enabled == false then return "disabled" end
-return "stopped"
-end
-function monitor.svcToggle(rcMod, s, who)
-local verb = s.running and "stop" or "start"
-local fn = rcMod and rcMod[verb]
-local okCall, okAct, why
-if fn then okCall, okAct, why = pcall(fn, s.name) end
-local done = okCall == true and okAct ~= false and okAct ~= nil
-local err = (not fn and "rc unavailable") or (not okCall and tostring(okAct))
-or tostring(why or "refused")
-local okL, log = pcall(require, "kernel.log")
-if okL and log and log.info then
-log.info("kernel", (done and ((s.running and "Stopped ") or "Started ")
-or ("Could not " .. verb .. " ")) .. tostring(s.name) .. " from monitor by "
-.. tostring(who or "kernel") .. (done and "" or (": " .. err)))
-end
-if done then return true end
-return false, err
-end
-function monitor.textRows(procs, services)
-local out = {}
-local function add(t, tone) out[#out + 1] = { text = t, tone = tone } end
-for _, r in ipairs(monitor.buildRows(procs, services)) do
-if r.kind == "proc" then
-local p = r.p
-add(string.format("%-5s %-5s %s",
-tostring(p.pid or "?"), monitor.kindTag(p), monitor.describe(p)), "proc")
-elseif r.kind == "header" then
-add("-- " .. (r.text or "") .. " --", "header")
-elseif r.kind == "svc" then
-local s = r.s or {}
-add(string.format("  %-22s [%s]", tostring(s.name or "?"), monitor.svcStatus(s)), "svc")
-end
-end
-if #out == 0 then add("(no visible processes)", "dim") end
-return out
-end
-function monitor.canAct(seatTier, seatUser, displayIdx, p)
-if (seatTier or 0) >= 3 then return true end
-if p.user == "_kernel_" then return false end
-if (seatTier or 0) >= 2 then
-return (not p.display) or p.display == displayIdx
-end
-return p.user ~= nil and p.user == seatUser
-end
-function monitor.firstSelectable(rows)
-for i, r in ipairs(rows) do
-if r.kind ~= "header" then return i end
-end
-return 1
-end
-return monitor
+local h,g,f="_kernel_","kernel","header"local e={}
+function e.describe(a)
+local b=(a and a.name)or"?"local c=b:match("^login@(%d+)$")if c then
+return"Login broker — seat "..c end;local d,i=b:match("^shell:(.+)@(%d+)$")
+if d then return
+"Shell — "..d.." (seat "..i..")"end;if a and(a.user==h or a.source==g)then
+return b.."  (kernel)"end;return b end
+function e.kindTag(a)local b=(a and a.name)or""
+if b:match("^shell:")then return"shell"end;if b:match("^login@")then return"sys"end;if a and
+(a.user==h or a.source==g)then return"sys"end;return"user"end
+function e.memBar(c,b,a)a=math.max(1,math.floor(a or 10))if
+not b or b<=0 then return string.rep("?",a)end
+local d=(c or 0)/b;if d<0 then d=0 elseif d>1 then d=1 end;local i=math.floor(d*a+0.5)
+if i>a then i=a end
+return string.rep("#",i)..string.rep("-",a-i)end
+function e.fmtUptime(a)a=math.floor(tonumber(a)or 0)if a<0 then a=0 end;local c=math.floor(
+a/3600)
+local b=math.floor((a%3600)/60)local d=a%60
+if c>0 then return string.format("%dh%02dm",c,b)end
+if b>0 then return string.format("%dm%02ds",b,d)end;return string.format("%ds",d)end
+function e.buildRows(b,a)local c={}
+for i,d in ipairs(b or{})do c[#c+1]={kind="proc",p=d}end
+if a and#a>0 then c[#c+1]={kind=f,text="Services"}for i,d in ipairs(a)do
+c[#c+1]={kind="svc",s=d}end end;return c end
+function e.nextSelectable(a,b,c)local i=#a;if i==0 then return b end;local d=b
+for j=1,i do local k=d+c
+if k<1 or k>i then return d end;d=k;if a[d]and a[d].kind~=f then return d end end;return b end
+function e.svcStatus(a)a=a or{}if a.running then return"running"end
+if a.unavailable then return"not loaded: "..
+tostring(a.unavailable)end;if a.enabled==false then return"disabled"end;return"stopped"end
+function e.svcToggle(b,a,c)local m=a.running and"stop"or"start"
+local i=b and b[m]local j,d,n;if i then j,d,n=pcall(i,a.name)end;local k=j==true and d~=false and
+d~=nil
+local o=(not i and"rc unavailable")or(not j and
+tostring(d))or tostring(n or"refused")local p,l=pcall(require,"kernel.log")
+if p and l and l.info then
+l.info(g,
+(
+k and((a.running and
+"Stopped ")or"Started ")or("Could not "..m.." "))..
+tostring(a.name).." from monitor by "..tostring(c or g)..
+(k and""or(": "..o)))end;if k then return true end;return false,o end
+function e.textRows(a,b)local c={}local function d(i,j)c[#c+1]={text=i,tone=j}end
+for j,i in
+ipairs(e.buildRows(a,b))do
+if i.kind=="proc"then local k=i.p
+d(string.format("%-5s %-5s %s",tostring(k.pid or"?"),e.kindTag(k),e.describe(k)),"proc")elseif i.kind==f then
+d("-- ".. (i.text or"").." --",f)elseif i.kind=="svc"then local k=i.s or{}
+d(string.format("  %-22s [%s]",tostring(k.name or"?"),e.svcStatus(k)),"svc")end end
+if#c==0 then d("(no visible processes)","dim")end;return c end
+function e.canAct(b,c,d,a)if(b or 0)>=3 then return true end
+if a.user==h then return false end;if(b or 0)>=2 then
+return(not a.display)or a.display==d end
+return a.user~=nil and a.user==c end;function e.firstSelectable(a)for b,c in ipairs(a)do if c.kind~=f then return b end end
+return 1 end;return e

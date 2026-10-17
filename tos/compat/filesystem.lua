@@ -1,131 +1,47 @@
-local function fs()
-return (_G._TOS and _G._TOS.securefs) or require("kernel.securefs")
-end
-local filesystem = {}
-function filesystem.exists(path) return fs().exists(path) end
-function filesystem.isDirectory(path) return fs().isDirectory(path) end
-function filesystem.makeDirectory(path) return fs().makeDirectory(path) end
-function filesystem.remove(path) return fs().remove(path) end
-function filesystem.rename(from, to) return fs().rename(from, to) end
-function filesystem.size(path) return fs().size(path) end
-function filesystem.lastModified(path) return fs().lastModified(path) end
-function filesystem.list(path)
-local raw, err = fs().list(path)
-if type(raw) == "table" then
-local i = 0
-return function()
-i = i + 1
-return raw[i]
-end
-elseif type(raw) == "function" then
-return raw
-end
-if raw == nil and err ~= nil then return nil, err end
-return function() return nil end
-end
-function filesystem.open(path, mode)
-mode = mode or "r"
-local handle, err = fs().open(path, mode)
-if not handle then return nil, err end
-return handle
-end
-function filesystem.copy(from, to)
-return fs().copy(from, to)
-end
-function filesystem.canonical(path)
-return fs().normalize(path)
-end
-function filesystem.segments(path)
-local parts = {}
-for seg in path:gmatch("[^/]+") do
-parts[#parts + 1] = seg
-end
-return parts
-end
-function filesystem.path(path)
-local dir = path:match("^(.+/)[^/]+/?$")
-return dir or "/"
-end
-function filesystem.name(path)
-return path:match("([^/]+)/?$") or ""
-end
-function filesystem.concat(...)
-return fs().join(...)
-end
-local function makeSafeMountProxy(addr, mountPoint)
-local component = require("component")
-local ok, raw = pcall(component.proxy, addr)
-if not ok or not raw then return nil end
-local function denied()
-return nil, "raw filesystem access is disabled; use filesystem.open/list/etc."
-end
-local exposeAddr = false
+
+local function e()return
+(_G._TOS and _G._TOS.securefs)or require("kernel.securefs")end;local d={}function d.exists(a)return e().exists(a)end;function d.isDirectory(a)return
+e().isDirectory(a)end;function d.makeDirectory(a)
+return e().makeDirectory(a)end
+function d.remove(a)return e().remove(a)end;function d.rename(a,b)return e().rename(a,b)end;function d.size(a)
+return e().size(a)end
+function d.lastModified(a)return e().lastModified(a)end
+function d.list(a)local b,c=e().list(a)
+if type(b)=="table"then local g=0;return
+function()g=g+1;return b[g]end elseif type(b)=="function"then return b end;if b==nil and c~=nil then return nil,c end
+return function()return nil end end
+function d.open(b,a)a=a or"r"local c,g=e().open(b,a)if not c then return nil,g end;return c end;function d.copy(a,b)return e().copy(a,b)end;function d.canonical(a)
+return e().normalize(a)end;function d.segments(a)local b={}
+for c in a:gmatch("[^/]+")do b[#b+1]=c end;return b end;function d.path(a)
+local b=a:match("^(.+/)[^/]+/?$")return b or"/"end;function d.name(a)return
+a:match("([^/]+)/?$")or""end
+function d.concat(...)return e().join(...)end
+local function f(a,b)local h=require("component")local j,k=pcall(h.proxy,a)if not j or not k then return
+nil end;local function l()
+return nil,"raw filesystem access is disabled; use filesystem.open/list/etc."end;local i=false
 do
-local okU, usersmod = pcall(require, "kernel.users")
-if okU and usersmod and usersmod.currentSession and usersmod.TIER then
-local s = usersmod.currentSession()
-if s and (s.tier or 0) >= (usersmod.TIER.ADMIN or 2) then
-exposeAddr = true
-end
-end
-end
-local opaqueId = addr
-if not exposeAddr then
-local f = fs()
-if f and type(f.opaqueMountId) == "function" then
-opaqueId = f.opaqueMountId(mountPoint, addr)
-else
-local okC, cryptoMod = pcall(require, "kernel.crypto")
-if okC and cryptoMod and cryptoMod.hash then
-opaqueId = "fs:" .. cryptoMod.hash(mountPoint .. "|" .. addr):sub(1, 16)
-else
-opaqueId = "fs:" .. mountPoint
-end
-end
-end
-local function freshRaw()
-local okR, p = pcall(component.proxy, addr)
-if okR and p then return p end
-return nil
-end
-local safe = {
-address = opaqueId,
-mountPoint = mountPoint,
-type = "filesystem",
-spaceTotal = function() local r = freshRaw(); return r and r.spaceTotal() or 0 end,
-spaceUsed = function() local r = freshRaw(); return r and r.spaceUsed() or 0 end,
-getLabel = function() local r = freshRaw(); return r and r.getLabel() or "" end,
-isReadOnly = function() local r = freshRaw(); return r and r.isReadOnly() or true end,
-}
-return setmetatable(safe, {
-__index = function(_, _) return denied end,
-__newindex = function(_, _, _)
-error("safe filesystem proxy is read-only", 2)
-end,
-__metatable = false,
-})
-end
-function filesystem.get(path)
-local f = fs()
-path = f.normalize(path)
-local bestMount, bestAddr, bestLen = nil, nil, 0
-for _, m in ipairs(f.mounts()) do
-local mp = m.mountPoint
-if #mp > bestLen then
-if mp == "/" or (path:sub(1, #mp) == mp and (#path == #mp or path:sub(#mp + 1, #mp + 1) == "/")) then
-bestMount = mp
-bestAddr = m.address
-bestLen = #mp
-end
-end
-end
-if bestAddr then
-local proxy = makeSafeMountProxy(bestAddr, bestMount)
-if proxy then return proxy, bestMount end
-end
-return nil
-end
-function filesystem.spaceTotal(path) return fs().spaceTotal(path or "/") end
-function filesystem.spaceUsed(path) return fs().spaceUsed(path or "/") end
-function filesystem.isLink() return false end
-return filesystem
+local o,n=pcall(require,"kernel.users")
+if o and n and n.currentSession and n.TIER then
+local p=n.currentSession()if
+p and(p.tier or 0)>= (n.TIER.ADMIN or 2)then i=true end end end;local c=a
+if not i then local n=e()
+if
+n and type(n.opaqueMountId)=="function"then c=n.opaqueMountId(b,a)else
+local p,o=pcall(require,"kernel.crypto")if p and o and o.hash then
+c="fs:"..o.hash(b.."|"..a):sub(1,16)else c="fs:"..b end end end
+local function g()local o,n=pcall(h.proxy,a)if o and n then return n end;return nil end
+local m={address=c,mountPoint=b,type="filesystem",spaceTotal=function()local n=g()return n and n.spaceTotal()or 0 end,spaceUsed=function()
+local n=g()return n and n.spaceUsed()or 0 end,getLabel=function()
+local n=g()return n and n.getLabel()or""end,isReadOnly=function()
+local n=g()return n and n.isReadOnly()or true end}
+return
+setmetatable(m,{__index=function(n,n)return l end,__newindex=function(n,n,n)
+error("safe filesystem proxy is read-only",2)end,__metatable=false})end
+function d.get(a)local g=e()a=g.normalize(a)local b,c,h=nil,nil,0
+for j,i in ipairs(g.mounts())do
+local k=i.mountPoint
+if#k>h then if
+k=="/"or(a:sub(1,#k)==k and
+(#a==#k or a:sub(#k+1,#k+1)=="/"))then b=k;c=i.address;h=#k end end end;if c then local i=f(c,b)if i then return i,b end end;return nil end
+function d.spaceTotal(a)return e().spaceTotal(a or"/")end;function d.spaceUsed(a)return e().spaceUsed(a or"/")end;function d.isLink()return
+false end;return d

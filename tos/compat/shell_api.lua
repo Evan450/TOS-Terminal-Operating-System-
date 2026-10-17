@@ -1,141 +1,44 @@
-local function fs()
-return (_G._TOS and _G._TOS.securefs) or require("kernel.securefs")
-end
-local env = require("kernel.env")
-local shell = {}
-local workingDir = "/"
-local aliases = {}
-local UNSAFE_PREFIXES = { "/mnt/", "/tmp/", "/public/", "/home/" }
-local function getPathDirs(process)
-local path = env.read(process, "PATH") or "/usr/bin:/bin"
-local dirs = {}
-for dir in path:gmatch("[^:]+") do
-dirs[#dirs + 1] = dir
-end
-return dirs
-end
-function shell.getWorkingDirectory()
-return workingDir
-end
-function shell.setWorkingDirectory(dir)
-workingDir = fs().normalize(dir)
-end
-function shell.resolve(name, ext, _depth)
-if not name then return nil end
-_depth = _depth or 0
-local f = fs()
-if name:sub(1, 1) == "/" then
-if f.exists(name) then return name end
-if ext and f.exists(name .. ext) then return name .. ext end
-return nil
-end
-if aliases[name] and _depth < 8 then
-return shell.resolve(aliases[name], ext, _depth + 1)
-end
-local cwd = f.join(workingDir, name)
-if f.exists(cwd) then return cwd end
-if ext and f.exists(cwd .. ext) then return cwd .. ext end
-for _, dir in ipairs(getPathDirs()) do
-local full = f.join(dir, name)
-if f.exists(full) then return full end
-if ext and f.exists(full .. ext) then return full .. ext end
-end
-return nil
-end
-function shell.execute(command, ...)
-local path = shell.resolve(command, ".lua")
-if not path then
-return false, "Program not found: " .. command
-end
-local resolvedViaPath = (command:sub(1, 1) ~= "/")
-if resolvedViaPath then
---! #SEC (pentest, Sep 2026) — compared as the disk resolves it. On a
---! Windows or macOS host "/TMP/x" is /tmp/x, so a PATH entry spelled
---! that way ran a planted file. users.pathKey folds case and a
---! trailing dot, the same key the ACL checks.
-local users = _G._TOS and _G._TOS.users
-local key = (users and users.pathKey) and users.pathKey(path) or path:lower()
-for _, p in ipairs(UNSAFE_PREFIXES) do
-if key:sub(1, #p) == p then
-return false, "Refusing to PATH-resolve to user-writable location: " .. path
-end
-end
-end
-local source = fs().readFile(path)
-if not source then
-return false, "Cannot read: " .. path
-end
-local session = nil
-local parentCaps = nil
-local okU, usersmod = pcall(require, "kernel.users")
-if okU and usersmod and usersmod.currentSession then
-session = usersmod.currentSession()
-end
-local okP, procMod = pcall(require, "kernel.process")
-if okP and procMod and procMod.current then
-local cur = procMod.current()
-if cur and cur.caps then parentCaps = cur.caps end
-end
-local okS, sandbox = pcall(require, "kernel.sandbox")
-if not okS or not sandbox then
-return false, "Sandbox unavailable"
-end
-local caps = parentCaps or {
-["fs.read"] = true,
-["compat.io"] = true,
-}
-local env = sandbox.build{
-session = session,
-caps = caps,
-}
-local fn, err = load(source, "=" .. path, "t", env)
-if not fn then
-return false, "Compile error: " .. tostring(err)
-end
-local res = table.pack(pcall(fn, ...))
-if not res[1] and sandbox.exitStatus then
-local code = sandbox.exitStatus(res[2])
-if code == true or code == 0 then return true end
-if code ~= nil then return false, "exited with status " .. tostring(code) end
-end
-return table.unpack(res, 1, res.n)
-end
-function shell.parse(...)
-local params = table.pack(...)
-local args = {}
-local options = {}
-for i = 1, params.n do
-local p = tostring(params[i])
-if p:sub(1, 2) == "--" then
-local key, val = p:match("^%-%-([%w_%-]+)=?(.*)")
-if key then
-options[key] = val ~= "" and val or true
-end
-elseif p:sub(1, 1) == "-" then
-for j = 2, #p do
-options[p:sub(j, j)] = true
-end
-else
-args[#args + 1] = p
-end
-end
-return args, options
-end
-function shell.getAlias(name)
-return aliases[name]
-end
-function shell.setAlias(name, value)
-aliases[name] = value
-end
-function shell.aliases()
-local result = {}
-for k, v in pairs(aliases) do result[k] = v end
-return result
-end
-function shell.getPath()
-return env.read(nil, "PATH") or "/usr/bin:/bin"
-end
-function shell.setPath(path)
-env.setDefault("PATH", path)
-end
-return shell
+
+local function k()return
+(_G._TOS and _G._TOS.securefs)or require("kernel.securefs")end;local j=require("kernel.env")local h={}local l="/"local i={}
+local m={"/mnt/","/tmp/","/public/","/home/"}
+local function n(a)local c=j.read(a,"PATH")or"/usr/bin:/bin"local b={}for d in
+c:gmatch("[^:]+")do b[#b+1]=d end;return b end;function h.getWorkingDirectory()return l end
+function h.setWorkingDirectory(a)l=k().normalize(a)end
+function h.resolve(a,b,c)if not a then return nil end;c=c or 0;local d=k()if a:sub(1,1)=="/"then if d.exists(a)then
+return a end;if b and d.exists(a..b)then return a..b end
+return nil end;if i[a]and c<8 then return h.resolve(i[a],b,
+c+1)end;local e=d.join(l,a)if
+d.exists(e)then return e end;if b and d.exists(e..b)then return e..b end
+for g,f in
+ipairs(n())do local o=d.join(f,a)if d.exists(o)then return o end;if b and d.exists(o..b)then return
+o..b end end;return nil end
+function h.execute(a,...)local b=h.resolve(a,".lua")if not b then
+return false,"Program not found: "..a end;local r=(a:sub(1,1)~="/")
+if r then local x=_G._TOS and
+_G._TOS.users;local y=
+(x and x.pathKey)and x.pathKey(b)or b:lower()
+for A,z in ipairs(m)do if
+y:sub(1,#z)==z then
+return false,"Refusing to PATH-resolve to user-writable location: "..b end end end;local g=k().readFile(b)
+if not g then return false,"Cannot read: "..b end;local o=nil;local p=nil;local s,e=pcall(require,"kernel.users")if
+s and e and e.currentSession then o=e.currentSession()end
+local t,f=pcall(require,"kernel.process")
+if t and f and f.current then local x=f.current()if x and x.caps then p=x.caps end end;local u,c=pcall(require,"kernel.sandbox")if not u or not c then return false,
+"Sandbox unavailable"end;local v=p or
+{["fs.read"]=true,["compat.io"]=true}
+local j=c.build{session=o,caps=v}local q,w=load(g,"="..b,"t",j)if not q then
+return false,"Compile error: "..tostring(w)end
+local d=table.pack(pcall(q,...))
+if not d[1]and c.exitStatus then local x=c.exitStatus(d[2])if x==true or x==0 then return
+true end;if x~=nil then
+return false,"exited with status "..tostring(x)end end;return table.unpack(d,1,d.n)end
+function h.parse(...)local c=table.pack(...)local a={}local b={}
+for d=1,c.n do local e=tostring(c[d])
+if
+e:sub(1,2)=="--"then local f,g=e:match("^%-%-([%w_%-]+)=?(.*)")if f then b[f]=
+g~=""and g or true end elseif e:sub(1,1)=="-"then for f=2,#e do
+b[e:sub(f,f)]=true end else a[#a+1]=e end end;return a,b end;function h.getAlias(a)return i[a]end;function h.setAlias(a,b)i[a]=b end;function h.aliases()local a={}for b,c in
+pairs(i)do a[b]=c end;return a end
+function h.getPath()return
+j.read(nil,"PATH")or"/usr/bin:/bin"end;function h.setPath(a)j.setDefault("PATH",a)end;return h

@@ -1,230 +1,62 @@
-local computer = require("computer")
-local log = {}
-local LOG_LEVELS = { DEBUG = 0, INFO = 1, WARN = 2, ERROR = 3, FATAL = 4 }
-local LEVEL_NAMES = { [0]="DBG", [1]="INF", [2]="WRN", [3]="ERR", [4]="FTL" }
-local LEVEL_COLORS = {
-[0] = 0x666666,
-[1] = 0xAAAAAA,
-[2] = 0xFFFF00,
-[3] = 0xFF6600,
-[4] = 0xFF0000,
-}
-local MAX_ENTRIES = 64
-local entries = {}
-local entryCount = 0
-local minLevel = LOG_LEVELS.INFO
-local lostSinceRead = 0
-local _earlyPrint = nil
-local _verbose = false
-local _earlyMinLevel = LOG_LEVELS.INFO
-local _bootProgress = nil
-function log.init(opts)
-opts = opts or {}
-_earlyPrint = opts.earlyPrint
-_bootProgress = opts.bootProgress
-_verbose = opts.verbose or false
-if type(opts.earlyMinLevel) == "number" then _earlyMinLevel = opts.earlyMinLevel end
-if _verbose or _earlyMinLevel <= LOG_LEVELS.DEBUG then
-minLevel = LOG_LEVELS.DEBUG
-else
-minLevel = LOG_LEVELS.INFO
-end
-if computer.totalMemory() < 131072 then
-MAX_ENTRIES = 16
-elseif computer.totalMemory() < 262144 then
-MAX_ENTRIES = 32
-end
-end
-function log.setLevel(level)
-if type(level) == "string" then
-level = LOG_LEVELS[level:upper()] or LOG_LEVELS.INFO
-end
-minLevel = level
-end
-local sourceMinLevel = {}
-function log.setSourceLevel(source, level)
-local okU, usersmod = pcall(require, "kernel.users")
-if okU and usersmod and usersmod.currentSession then
-local sess = usersmod.currentSession()
-if sess and not sess.isKernel
-and (sess.tier or 0) < (usersmod.TIER and usersmod.TIER.ADMIN or 2) then
-return false, "admin required to change source-level filtering"
-end
-end
-if level == nil then
-sourceMinLevel[source] = nil
-return true
-end
-if type(level) == "string" then
-level = LOG_LEVELS[level:upper()] or LOG_LEVELS.INFO
-end
-sourceMinLevel[source] = level
-return true
-end
-local ADMIN_ONLY_SOURCES = {
-auth = true, users = true, repl = true, crypto = true,
-trust = true, securefs = true,
-}
-local function canViewSource(sess, source)
-if not sess then return false end
-local tier = sess.tier or 0
-local TIER_ROOT = 3
-local TIER_ADMIN = 2
-local TIER_USER = 1
-if tier >= TIER_ROOT then return true end
-if tier >= TIER_ADMIN then return true end
-if tier < TIER_USER then return false end
-if ADMIN_ONLY_SOURCES[source] then return false end
-return true
-end
-local function sanitizeForLog(s)
-s = tostring(s)
-return (s:gsub("[%c]", function(ch)
-local b = string.byte(ch)
-if b == 9 then return ch end
-return string.format("\\x%02x", b)
-end))
-end
-local function writeEntry(level, source, msg)
-local effectiveMin = sourceMinLevel[source] or minLevel
-if level < effectiveMin then return end
-local entry = {
-time = computer.uptime(),
-level = level,
-source = sanitizeForLog(source or "kernel"),
-msg = sanitizeForLog(msg),
-}
-entryCount = entryCount + 1
-local idx = ((entryCount - 1) % MAX_ENTRIES) + 1
-if entries[idx] then lostSinceRead = lostSinceRead + 1 end
-entries[idx] = entry
-if _earlyPrint and not _bootProgress and level >= _earlyMinLevel then
-local prefix = string.format("[%s] ", LEVEL_NAMES[level] or "???")
-_earlyPrint(prefix .. entry.msg, LEVEL_COLORS[level])
-end
-if _bootProgress and level >= LOG_LEVELS.INFO then
-pcall(_bootProgress, entry.msg, level)
-end
-end
-function log.debug(source, msg) writeEntry(LOG_LEVELS.DEBUG, source, msg) end
-function log.info(source, msg) writeEntry(LOG_LEVELS.INFO, source, msg) end
-function log.warn(source, msg) writeEntry(LOG_LEVELS.WARN, source, msg) end
-function log.error(source, msg) writeEntry(LOG_LEVELS.ERROR, source, msg) end
-function log.fatal(source, msg) writeEntry(LOG_LEVELS.FATAL, source, msg) end
-function log.recent(count, session)
-count = math.min(count or 20, MAX_ENTRIES, entryCount)
-local result = {}
-if lostSinceRead > 0 then
-result[#result + 1] = {
-time = computer.uptime(),
-level = LOG_LEVELS.WARN,
-source = "log",
-msg = "[" .. lostSinceRead .. " entries lost since last read]",
-}
-lostSinceRead = 0
-end
-local start = entryCount - count + 1
-if start < 1 then start = 1 end
-for i = start, entryCount do
-local idx = ((i - 1) % MAX_ENTRIES) + 1
-if entries[idx] then
-if session and not canViewSource(session, entries[idx].source) then
-else
-result[#result + 1] = entries[idx]
-end
-end
-end
-return result
-end
-function log.getSourceLevels()
-local copy = {}
-for k, v in pairs(sourceMinLevel) do copy[k] = v end
-return copy
-end
-function log.format(entry)
-return string.format("[%7.1f][%s][%s] %s",
-entry.time, LEVEL_NAMES[entry.level] or "???",
-entry.source, entry.msg)
-end
-function log.detachEarlyPrint()
-_earlyPrint = nil
-_bootProgress = nil
-end
-local _logFs = nil
-local _logPath = nil
-local _rotateBytes = 16384
-local _flushedCount = 0
-function log.attachFile(fs, path, opts)
-_logFs = fs
-_logPath = path
-if opts and tonumber(opts.rotateBytes) then
-_rotateBytes = tonumber(opts.rotateBytes)
-end
-_flushedCount = 0
-end
-function log.detachFile()
-_logFs = nil
-_logPath = nil
-_flushedCount = 0
-end
-local function maybeRotate()
-if not _logFs or not _logPath then return end
-if not _logFs.exists or not _logFs.size or not _logFs.rename then return end
-if not _logFs.exists(_logPath) then return end
-local sz = _logFs.size(_logPath) or 0
-if sz < _rotateBytes then return end
-local rotated = _logPath .. ".1"
-if _logFs.exists(rotated) and _logFs.remove then
-pcall(_logFs.remove, rotated)
-end
-pcall(_logFs.rename, _logPath, rotated)
-end
-function log.flush()
-if not _logFs or not _logPath then return false, "no log file attached" end
-if entryCount <= _flushedCount then return true, "nothing to flush" end
-maybeRotate()
-local first = _flushedCount + 1
-local oldest = entryCount - MAX_ENTRIES + 1
-if first < oldest then first = oldest end
-local parts = {}
-for i = first, entryCount do
-local idx = ((i - 1) % MAX_ENTRIES) + 1
-if entries[idx] then
-parts[#parts + 1] = log.format(entries[idx])
-end
-end
-if #parts == 0 then
-_flushedCount = entryCount
-return true, "no entries in window"
-end
-parts[#parts + 1] = ""
-local payload = table.concat(parts, "\n")
-if _logFs.appendFile then
-local ok, err = _logFs.appendFile(_logPath, payload)
-if not ok then return false, err end
-elseif _logFs.open then
-local h, oerr = _logFs.open(_logPath, "a")
-if not h then return false, oerr or "open(append) failed" end
-local okW
-if _logFs.write then okW = _logFs.write(h, payload)
-elseif h.write then okW = h:write(payload) end
-if _logFs.close then _logFs.close(h)
-elseif h.close then h:close() end
-if okW == false then return false, "append write failed" end
-elseif _logFs.writeFile then
-local existing = _logFs.readFile and _logFs.readFile(_logPath) or ""
-local ok, err = _logFs.writeFile(_logPath, (existing or "") .. payload)
-if not ok then return false, err end
-else
-return false, "fs supports neither appendFile, open, nor writeFile"
-end
-_flushedCount = entryCount
-return true
-end
-local _origFatal = log.fatal
-function log.fatal(source, msg)
-_origFatal(source, msg)
-if _logFs and _logPath then pcall(log.flush) end
-end
-log.LEVELS = LOG_LEVELS
-return log
+local K=require("computer")local A={}
+local B={DEBUG=0,INFO=1,WARN=2,ERROR=3,FATAL=4}local P={[0]="DBG",[1]="INF",[2]="WRN",[3]="ERR",[4]="FTL"}
+local T={[0]=0x666666,[1]=0xAAAAAA,[2]=0xFFFF00,[3]=0xFF6600,[4]=0xFF0000}local E=64;local F={}local D=0;local L=B.INFO;local H=0;local M=nil;local Q=false;local O=B.INFO;local I=nil
+function A.init(a)
+a=a or{}M=a.earlyPrint;I=a.bootProgress;Q=a.verbose or false;if
+type(a.earlyMinLevel)=="number"then O=a.earlyMinLevel end;if Q or
+O<=B.DEBUG then L=B.DEBUG else L=B.INFO end;if
+K.totalMemory()<131072 then E=16 elseif K.totalMemory()<262144 then E=32 end end;function A.setLevel(a)
+if type(a)=="string"then a=B[a:upper()]or B.INFO end;L=a end;local N={}
+function A.setSourceLevel(b,a)
+local d,c=pcall(require,"kernel.users")
+if d and c and c.currentSession then local e=c.currentSession()if
+e and not e.isKernel and
+(e.tier or 0)< (c.TIER and c.TIER.ADMIN or 2)then
+return false,"admin required to change source-level filtering"end end;if a==nil then N[b]=nil;return true end;if type(a)=="string"then a=B[a:upper()]or
+B.INFO end;N[b]=a;return true end
+local U={auth=true,users=true,repl=true,crypto=true,trust=true,securefs=true}
+local function V(a,b)if not a then return false end;local c=a.tier or 0;local d=3;local e=2;local f=1
+if c>=d then return true end;if c>=e then return true end;if c<f then return false end;if U[b]then return false end;return
+true end
+local function R(a)a=tostring(a)return
+(a:gsub("[%c]",function(b)local c=string.byte(b)if c==9 then return b end;return
+string.format("\\x%02x",c)end))end
+local function J(a,b,c)local f=N[b]or L;if a<f then return end
+local d={time=K.uptime(),level=a,source=R(b or"kernel"),msg=R(c)}D=D+1;local e=((D-1)%E)+1;if F[e]then H=H+1 end;F[e]=d;if
+M and not I and a>=O then local g=string.format("[%s] ",P[a]or"???")
+M(g..d.msg,T[a])end;if I and a>=B.INFO then
+pcall(I,d.msg,a)end end;function A.debug(a,b)J(B.DEBUG,a,b)end
+function A.info(a,b)J(B.INFO,a,b)end;function A.warn(a,b)J(B.WARN,a,b)end
+function A.error(a,b)J(B.ERROR,a,b)end;function A.fatal(a,b)J(B.FATAL,a,b)end
+function A.recent(a,b)
+a=math.min(a or 20,E,D)local c={}if H>0 then
+c[#c+1]={time=K.uptime(),level=B.WARN,source="log",msg="["..H.." entries lost since last read]"}H=0 end;local d=D-a+1;if d<1 then
+d=1 end;for e=d,D do local f=((e-1)%E)+1
+if F[f]then if
+b and not V(b,F[f].source)then else c[#c+1]=F[f]end end end;return c end
+function A.getSourceLevels()local a={}for b,c in pairs(N)do a[b]=c end;return a end
+function A.format(a)return
+string.format("[%7.1f][%s][%s] %s",a.time,P[a.level]or"???",a.source,a.msg)end;function A.detachEarlyPrint()M=nil;I=nil end;local z=nil;local C=nil;local S=16384;local G=0
+function A.attachFile(b,c,a)
+z=b;C=c;if a and tonumber(a.rotateBytes)then
+S=tonumber(a.rotateBytes)end;G=0 end;function A.detachFile()z=nil;C=nil;G=0 end
+local function W()if not z or not C then return end
+if not
+z.exists or not z.size or not z.rename then return end;if not z.exists(C)then return end;local b=z.size(C)or 0
+if b<S then return end;local a=C..".1"
+if z.exists(a)and z.remove then pcall(z.remove,a)end;pcall(z.rename,C,a)end
+function A.flush()
+if not z or not C then return false,"no log file attached"end;if D<=G then return true,"nothing to flush"end;W()local c=G+1
+local d=D-E+1;if c<d then c=d end;local a={}for e=c,D do local f=((e-1)%E)+1;if F[f]then
+a[#a+1]=A.format(F[f])end end;if#a==0 then G=D;return true,
+"no entries in window"end;a[#a+1]=""
+local b=table.concat(a,"\n")
+if z.appendFile then local e,f=z.appendFile(C,b)if not e then return false,f end elseif z.open then
+local e,g=z.open(C,"a")
+if not e then return false,g or"open(append) failed"end;local f
+if z.write then f=z.write(e,b)elseif e.write then f=e:write(b)end;if z.close then z.close(e)elseif e.close then e:close()end;if f==false then return false,
+"append write failed"end elseif z.writeFile then local e=
+z.readFile and z.readFile(C)or""
+local f,g=z.writeFile(C,(e or"")..b)if not f then return false,g end else
+return false,"fs supports neither appendFile, open, nor writeFile"end;G=D;return true end;local X=A.fatal
+function A.fatal(a,b)X(a,b)if z and C then pcall(A.flush)end end;A.LEVELS=B;return A

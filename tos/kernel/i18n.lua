@@ -1,114 +1,50 @@
-local i18n = {}
-local fs, log, serialize, config
-local LANG_DIR = "/usr/lang"
-local MAX_CATALOG_BYTES = 64 * 1024
-local MAX_KEY_LEN = 64
-local MAX_VAL_LEN = 512
-local MAX_STRINGS = 2048
-local current = nil
-local strings = nil
-local meta = nil
-local seen = {}
-function i18n.validCode(code)
-return type(code) == "string" and #code >= 2 and #code <= 8
-and code:match("^%l%l[%l%d_%-]*$") ~= nil
-end
-local function catalogPath(code)
-return LANG_DIR .. "/" .. code .. ".lang"
-end
-function i18n.init(modules)
-modules = modules or {}
-fs = modules.fs
-log = modules.log
-serialize = modules.serialize or require("kernel.serialize")
-config = modules.config
-local sys = config and config.get and config.get("language")
-if type(sys) == "string" and sys ~= "" and sys ~= "en" then
-local ok, err = i18n.setLanguage(sys)
-if not ok and log then
-log.warn("i18n", "System language '" .. tostring(sys) .. "' not applied: " .. tostring(err))
-end
-end
-end
-function i18n.loadCatalog(code)
-if not i18n.validCode(code) then return nil, "invalid language code" end
-if not fs then return nil, "i18n not initialized" end
-local path = catalogPath(code)
-if not fs.exists(path) then return nil, "no catalog at " .. path end
-local raw = fs.readFile(path)
-if not raw then return nil, "cannot read " .. path end
-if #raw > MAX_CATALOG_BYTES then return nil, "catalog too large (>" .. MAX_CATALOG_BYTES .. " bytes)" end
-local ok, data = pcall(serialize.decode, raw, { maxBytes = MAX_CATALOG_BYTES })
-if not ok or type(data) ~= "table" then return nil, "corrupt catalog (parse failed)" end
-if type(data.strings) ~= "table" then return nil, "corrupt catalog (no strings table)" end
-local out, n = {}, 0
-for k, v in pairs(data.strings) do
-if type(k) == "string" and type(v) == "string"
-and #k > 0 and #k <= MAX_KEY_LEN and #v <= MAX_VAL_LEN then
-out[k] = v
-n = n + 1
-if n >= MAX_STRINGS then break end
-end
-end
-local m = (type(data.meta) == "table") and data.meta or {}
-return { meta = m, strings = out, count = n }
-end
-function i18n.setLanguage(code)
-if code == nil or code == "" or code == "en" then
-current, strings, meta = nil, nil, nil
-return true
-end
-local cat, err = i18n.loadCatalog(code)
-if not cat then return false, err end
-current, strings, meta = code, cat.strings, cat.meta
-if log then
-log.info("i18n", "Language set: " .. code .. " (" .. tostring(cat.count) .. " strings)")
-end
-return true
-end
-function i18n.language() return current or "en" end
-function i18n.languageName()
-if not current then return "English" end
-return (meta and type(meta.name) == "string" and meta.name) or current
-end
-function i18n.available()
-local out = { { code = "en", name = "English (built-in)" } }
-if not fs or not fs.exists or not fs.exists(LANG_DIR) then return out end
-local ok, list = pcall(fs.list, LANG_DIR)
-if not ok or not list then return out end
-local names = {}
-if type(list) == "table" then names = list
-elseif type(list) == "function" then for n in list do names[#names + 1] = n end end
-table.sort(names)
-for _, n in ipairs(names) do
-local code = n:match("^(.+)%.lang$")
-if code and i18n.validCode(code) then
-local name = code
-local okC, cat = pcall(i18n.loadCatalog, code)
-if okC and cat and type(cat.meta.name) == "string" then name = cat.meta.name end
-out[#out + 1] = { code = code, name = name }
-end
-end
-return out
-end
-function i18n.t(key, default, ...)
-if type(key) == "string" and type(default) == "string" then
-seen[key] = seen[key] or default
-end
-local s = (strings and type(key) == "string" and strings[key]) or default or key
-if select("#", ...) == 0 then return s end
-local ok, formatted = pcall(string.format, s, ...)
-if ok then return formatted end
-local ok2, f2 = pcall(string.format, default or tostring(key), ...)
-if ok2 then return f2 end
-return default or tostring(key)
-end
-function i18n.keysSeen()
-local keys = {}
-for k in pairs(seen) do keys[#keys + 1] = k end
-table.sort(keys)
-local out = {}
-for _, k in ipairs(keys) do out[#out + 1] = { key = k, default = seen[k] } end
-return out
-end
-return i18n
+local s="string"local q={}local r,t,B,w;local z="/usr/lang"local A=64*1024;local C=64;local D=512;local E=2048
+local u=nil;local x=nil;local v=nil;local y={}function q.validCode(a)
+return type(a)==s and#a>=2 and#a<=8 and
+a:match("^%l%l[%l%d_%-]*$")~=nil end;local function F(a)return
+z.."/"..a..".lang"end
+function q.init(a)a=a or{}r=a.fs;t=a.log;B=a.serialize or
+require("kernel.serialize")w=a.config;local b=w and w.get and
+w.get("language")
+if
+type(b)==s and b~=""and b~="en"then local c,d=q.setLanguage(b)if not c and t then
+t.warn("i18n","System language '"..tostring(b).."' not applied: "..
+tostring(d))end end end
+function q.loadCatalog(a)
+if not q.validCode(a)then return nil,"invalid language code"end;if not r then return nil,"i18n not initialized"end;local c=F(a)if not
+r.exists(c)then return nil,"no catalog at "..c end
+local e=r.readFile(c)if not e then return nil,"cannot read "..c end
+if#e>A then return nil,"catalog too large (>"..A..
+" bytes)"end;local g,b=pcall(B.decode,e,{maxBytes=A})
+if
+not g or type(b)~="table"then return nil,"corrupt catalog (parse failed)"end
+if type(b.strings)~="table"then return nil,"corrupt catalog (no strings table)"end;local f,d={},0
+for i,j in pairs(b.strings)do if
+type(i)==s and type(j)==s and#i>0 and#i<=C and#j<=D then f[i]=j;d=d+1
+if d>=E then break end end end
+local h=(type(b.meta)=="table")and b.meta or{}return{meta=h,strings=f,count=d}end
+function q.setLanguage(a)
+if a==nil or a==""or a=="en"then u,x,v=nil,nil,nil;return true end;local b,c=q.loadCatalog(a)if not b then return false,c end
+u,x,v=a,b.strings,b.meta;if t then
+t.info("i18n","Language set: "..
+a.." ("..tostring(b.count).." strings)")end;return true end;function q.language()return u or"en"end
+function q.languageName()
+if not u then return"English"end;return
+(v and type(v.name)==s and v.name)or u end
+function q.available()
+local a={{code="en",name="English (built-in)"}}
+if not r or not r.exists or not r.exists(z)then return a end;local d,b=pcall(r.list,z)if not d or not b then return a end;local c={}
+if type(b)==
+"table"then c=b elseif type(b)=="function"then for e in b do c[#c+1]=e end end;table.sort(c)
+for f,e in ipairs(c)do local g=e:match("^(.+)%.lang$")
+if g and
+q.validCode(g)then local i=g;local j,h=pcall(q.loadCatalog,g)if j and h and
+type(h.meta.name)==s then i=h.meta.name end
+a[#a+1]={code=g,name=i}end end;return a end
+function q.t(a,b,...)
+if type(a)==s and type(b)==s then y[a]=y[a]or b end
+local c=(x and type(a)==s and x[a])or b or a;if select("#",...)==0 then return c end
+local d,e=pcall(string.format,c,...)if d then return e end
+local f,g=pcall(string.format,b or tostring(a),...)if f then return g end;return b or tostring(a)end
+function q.keysSeen()local a={}for c in pairs(y)do a[#a+1]=c end;table.sort(a)local b={}for d,c in
+ipairs(a)do b[#b+1]={key=c,default=y[c]}end;return b end;return q

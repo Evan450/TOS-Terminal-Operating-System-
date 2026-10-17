@@ -1,61 +1,19 @@
-local ustr = {}
-local U = nil
-do
-local ok, mod = pcall(require, "unicode")
-if ok and type(mod) == "table" and mod.len and mod.sub then U = mod end
-end
-function ustr.len(s)
-s = tostring(s or "")
-if U then
-local ok, n = pcall(U.len, s)
-if ok and n then return n end
-end
-return #s
-end
-function ustr.width(s)
-s = tostring(s or "")
-if U and U.wlen then
-local ok, n = pcall(U.wlen, s)
-if ok and n then return n end
-end
-return ustr.len(s)
-end
-function ustr.sub(s, i, j)
-s = tostring(s or "")
-if U then
-local ok, r = pcall(U.sub, s, i, j)
-if ok and r then return r end
-end
-return s:sub(i, j)
-end
-function ustr.fit(s, cols)
-s = tostring(s or "")
-cols = math.max(0, math.floor(cols or 0))
-if ustr.width(s) <= cols then return s end
-if cols == 0 then return "" end
-if U and U.wtrunc then
-local ok, r = pcall(U.wtrunc, s, cols + 1)
-if ok and r then return r end
-end
-local out, used = "", 0
-for i = 1, ustr.len(s) do
-local ch = ustr.sub(s, i, i)
-local w = ustr.width(ch)
-if used + w > cols then break end
-out = out .. ch
-used = used + w
-end
-return out
-end
-function ustr.padR(s, cols)
-s = ustr.fit(s, cols)
-return s .. string.rep(" ", cols - ustr.width(s))
-end
-function ustr.padL(s, cols)
-s = ustr.fit(s, cols)
-return string.rep(" ", cols - ustr.width(s)) .. s
-end
-function ustr.centerOffset(s, cols)
-return math.max(0, math.floor((cols - ustr.width(s)) / 2))
-end
-return ustr
+local c={}local d=nil
+do local b,a=pcall(require,"unicode")if
+b and type(a)=="table"and a.len and a.sub then d=a end end
+function c.len(a)a=tostring(a or"")if d then local e,b=pcall(d.len,a)
+if e and b then return b end end;return#a end
+function c.width(a)a=tostring(a or"")if d and d.wlen then local e,b=pcall(d.wlen,a)if e and b then
+return b end end;return c.len(a)end
+function c.sub(a,b,e)a=tostring(a or"")if d then local g,f=pcall(d.sub,a,b,e)
+if g and f then return f end end;return a:sub(b,e)end
+function c.fit(a,b)a=tostring(a or"")
+b=math.max(0,math.floor(b or 0))if c.width(a)<=b then return a end;if b==0 then return""end
+if d and d.wtrunc then local i,h=pcall(d.wtrunc,a,
+b+1)if i and h then return h end end;local g,e,f={},0,0;for h=1,c.len(a)do local i=c.sub(a,h,h)local j=c.width(i)
+if e+j>b then break end;f=f+1;g[f]=i;e=e+j end;return
+table.concat(g)end;function c.padR(a,b)a=c.fit(a,b)
+return a..string.rep(" ",b-c.width(a))end
+function c.padL(a,b)a=c.fit(a,b)return string.rep(" ",b-
+c.width(a))..a end;function c.centerOffset(a,b)return
+math.max(0,math.floor((b-c.width(a))/2))end;return c

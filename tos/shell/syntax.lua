@@ -1,132 +1,38 @@
-local syntax = {}
-local KEYWORDS = {
-["and"] = true, ["break"] = true, ["do"] = true, ["else"] = true,
-["elseif"] = true, ["end"] = true, ["false"] = true, ["for"] = true,
-["function"] = true, ["goto"] = true, ["if"] = true, ["in"] = true,
-["local"] = true, ["nil"] = true, ["not"] = true, ["or"] = true,
-["repeat"] = true, ["return"] = true, ["then"] = true, ["true"] = true,
-["until"] = true, ["while"] = true,
-}
-function syntax.tokenize(line)
-local tokens = {}
-local MAX_TOKENIZE = 2048
-local tail = nil
-if #line > MAX_TOKENIZE then
-tail = line:sub(MAX_TOKENIZE + 1)
-line = line:sub(1, MAX_TOKENIZE)
-end
-local i = 1
-local len = #line
-while i <= len do
-local ch = line:sub(i, i)
-if ch == "-" and line:sub(i + 1, i + 1) == "-" then
-tokens[#tokens + 1] = { type = "comment", text = line:sub(i) }
-break
-elseif ch == '"' then
-local j = i + 1
-while j <= len do
-local c = line:sub(j, j)
-if c == "\\" then j = j + 2
-elseif c == '"' then j = j + 1; break
-else j = j + 1 end
-end
-tokens[#tokens + 1] = { type = "string", text = line:sub(i, j - 1) }
-i = j
-goto next
-elseif ch == "'" then
-local j = i + 1
-while j <= len do
-local c = line:sub(j, j)
-if c == "\\" then j = j + 2
-elseif c == "'" then j = j + 1; break
-else j = j + 1 end
-end
-tokens[#tokens + 1] = { type = "string", text = line:sub(i, j - 1) }
-i = j
-goto next
-elseif ch == "[" and (line:sub(i + 1, i + 1) == "[" or line:sub(i + 1, i + 1) == "=") then
-local eqs = line:match("^%[(=*)%[", i)
-if eqs then
-local close = "]" .. eqs .. "]"
-local j = line:find(close, i + 2 + #eqs, true)
-if j then
-j = j + #close
-else
-j = len + 1
-end
-tokens[#tokens + 1] = { type = "string", text = line:sub(i, j - 1) }
-i = j
-goto next
-end
-tokens[#tokens + 1] = { type = "op", text = ch }
-i = i + 1
-goto next
-elseif ch:match("%d") or (ch == "." and i + 1 <= len and line:sub(i + 1, i + 1):match("%d")) then
-local j = i
-if line:sub(j, j + 1):lower() == "0x" then
-j = j + 2
-while j <= len and line:sub(j, j):match("[%da-fA-F]") do j = j + 1 end
-else
-while j <= len and line:sub(j, j):match("[%d.]") do j = j + 1 end
-if j <= len and line:sub(j, j):match("[eE]") then
-j = j + 1
-if j <= len and line:sub(j, j):match("[%+%-]") then j = j + 1 end
-while j <= len and line:sub(j, j):match("%d") do j = j + 1 end
-end
-end
-tokens[#tokens + 1] = { type = "number", text = line:sub(i, j - 1) }
-i = j
-goto next
-elseif ch:match("[%a_]") then
-local j = i + 1
-while j <= len and line:sub(j, j):match("[%w_]") do j = j + 1 end
-local word = line:sub(i, j - 1)
-local tokType = KEYWORDS[word] and "keyword" or "ident"
-tokens[#tokens + 1] = { type = tokType, text = word }
-i = j
-goto next
-elseif ch:match("%s") then
-local j = i + 1
-while j <= len and line:sub(j, j):match("%s") do j = j + 1 end
-tokens[#tokens + 1] = { type = "space", text = line:sub(i, j - 1) }
-i = j
-goto next
---! A UTF-8 character in CODE position stays one token. Bytes >= 0x80
---! match none of the classes above, so each fell to the operator branch
---! as its own one-byte token: kernel.screen draws text by CHARACTER, so
---! the lead byte painted as a garbage cell and the continuation bytes,
---! which are no character on their own, were dropped -- `local café`
---! showed a stray glyph where é belonged (AUDIT 5). Strings and comments
---! were never split, so they were never hit. The editor's column model
---! is still bytes; that is a separate, larger change. (test_syntax_utf8.lua)
-elseif ch:byte() >= 0x80 then
-local j = i + 1
-while j <= len do
-local b = line:byte(j)
-if b < 0x80 or b > 0xBF then break end
-j = j + 1
-end
-tokens[#tokens + 1] = { type = "ident", text = line:sub(i, j - 1) }
-i = j
-goto next
-else
-tokens[#tokens + 1] = { type = "op", text = ch }
-i = i + 1
-goto next
-end
-i = i + 1
-::next::
-end
-if tail then tokens[#tokens + 1] = { type = "ident", text = tail } end
-return tokens
-end
-function syntax.tokenColor(tokType, theme)
-if tokType == "keyword" then return theme.syn_keyword or theme.title end
-if tokType == "string" then return theme.syn_string or theme.highlight end
-if tokType == "comment" then return theme.syn_comment or theme.dim end
-if tokType == "number" then return theme.syn_number or theme.warning end
-if tokType == "ident" then return theme.fg end
-if tokType == "op" then return theme.dim or theme.fg end
-return theme.fg
-end
-return syntax
+local e="string"local d={}
+local f={["and"]=true,["break"]=true,["do"]=true,["else"]=true,["elseif"]=true,["end"]=true,["false"]=true,["for"]=true,["function"]=true,["goto"]=true,["if"]=true,["in"]=true,["local"]=true,["nil"]=true,["not"]=true,["or"]=true,["repeat"]=true,["return"]=true,["then"]=true,["true"]=true,["until"]=true,["while"]=true}
+function d.tokenize(a)local c={}local h=2048;local i=nil
+if#a>h then i=a:sub(h+1)a=a:sub(1,h)end;local b=1;local g=#a
+while b<=g do local j=a:sub(b,b)
+if
+j=="-"and a:sub(b+1,b+1)=="-"then c[#c+1]={type="comment",text=a:sub(b)}break elseif j=='"'then local k=b+1
+while k<=g do
+local l=a:sub(k,k)if l=="\\"then k=k+2 elseif l=='"'then k=k+1;break else k=k+1 end end;c[#c+1]={type=e,text=a:sub(b,k-1)}b=k;goto next elseif j=="'"then local k=b+1
+while k<=g do
+local l=a:sub(k,k)if l=="\\"then k=k+2 elseif l=="'"then k=k+1;break else k=k+1 end end;c[#c+1]={type=e,text=a:sub(b,k-1)}b=k;goto next elseif j=="["and
+(
+a:sub(b+1,b+1)=="["or a:sub(b+1,b+1)=="=")then local k=a:match("^%[(=*)%[",b)
+if k then
+local m="]"..k.."]"local l=a:find(m,b+2+#k,true)if l then l=l+#m else l=g+1 end;c[#c+1]={type=e,text=a:sub(b,
+l-1)}b=l;goto next end;c[#c+1]={type="op",text=j}b=b+1;goto next elseif j:match("%d")or
+(j=="."and b+1 <=g and a:sub(
+b+1,b+1):match("%d"))then local k=b
+if
+a:sub(k,k+1):lower()=="0x"then k=k+2
+while k<=g and a:sub(k,k):match("[%da-fA-F]")do k=k+1 end else
+while k<=g and a:sub(k,k):match("[%d.]")do k=k+1 end
+if k<=g and a:sub(k,k):match("[eE]")then k=k+1;if k<=g and
+a:sub(k,k):match("[%+%-]")then k=k+1 end;while k<=g and
+a:sub(k,k):match("%d")do k=k+1 end end end;c[#c+1]={type="number",text=a:sub(b,k-1)}b=k;goto next elseif
+j:match("[%a_]")then local k=b+1
+while k<=g and a:sub(k,k):match("[%w_]")do k=k+1 end;local l=a:sub(b,k-1)local m=f[l]and"keyword"or"ident"
+c[#c+1]={type=m,text=l}b=k;goto next elseif j:match("%s")then local k=b+1;while
+k<=g and a:sub(k,k):match("%s")do k=k+1 end
+c[#c+1]={type="space",text=a:sub(b,k-1)}b=k;goto next elseif j:byte()>=0x80 then local k=b+1;while k<=g do local l=a:byte(k)
+if l<0x80 or l>0xBF then break end;k=k+1 end
+c[#c+1]={type="ident",text=a:sub(b,k-1)}b=k;goto next else c[#c+1]={type="op",text=j}b=b+1;goto next end;b=b+1;::next::end;if i then c[#c+1]={type="ident",text=i}end;return c end
+function d.tokenColor(b,a)
+if b=="keyword"then return a.syn_keyword or a.title end;if b==e then return a.syn_string or a.highlight end;if b==
+"comment"then return a.syn_comment or a.dim end;if
+b=="number"then return a.syn_number or a.warning end;if
+b=="ident"then return a.fg end;if b=="op"then return a.dim or a.fg end
+return a.fg end;return d

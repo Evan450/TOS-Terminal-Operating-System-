@@ -1,140 +1,48 @@
-local M = {}
-local registry = {}
-function M.register(spec)
-assert(type(spec) == "table" and type(spec.type) == "string",
-"app spec needs a string `type`")
-registry[spec.type] = spec
-return spec
-end
-function M.get(t) return registry[t] end
-function M.has(t) return registry[t] ~= nil end
-function M.types()
-local out = {}
-for t in pairs(registry) do out[#out + 1] = t end
-table.sort(out)
-return out
-end
-local BUILTINS = {
-desktop = "shell.panels.desktop",
-settings = "shell.panels.settingsapp",
-monitor = "shell.panels.monitorapp",
-chat = "shell.panels.chatapp",
-mail = "mailapp",
-intercom = "intercomapp",
-}
-local PROGRAM_APP
-local ensured = false
-function M.ensureBuiltins()
-if ensured then return end
-ensured = true
-if PROGRAM_APP and not registry[PROGRAM_APP.type] then M.register(PROGRAM_APP) end
-for typ, modname in pairs(BUILTINS) do
-if not registry[typ] then
-local ok, mod = pcall(require, modname)
-if ok and mod and mod.draw then
-M.register({
-type = typ, model = "inshell", draw = mod.draw,
-onKey = mod.handleKey and function(S, tab, ev)
-return mod.handleKey(S, tab, ev.ch, ev.co, { exec = ev.exec })
-end or nil,
-onMouse = mod.handleClick and function(S, tab, ev, deps)
-return mod.handleClick(S, tab, ev, deps)
-end or nil,
-onScroll = mod.handleScroll and function(S, tab, ev)
-return mod.handleScroll(S, tab, ev)
-end or nil,
-tick = mod.tick,
-onClose = mod.onClose,
-_module = mod,
-})
-end
-end
-end
-end
-local function procOf(tab)
-if not tab or not tab.pid then return nil, nil end
-local ok, proc = pcall(require, "kernel.process")
-if not ok or type(proc) ~= "table" or not proc.get then return nil, nil end
-local p = proc.get(tab.pid)
-if not p or (proc.STATE and p.state == proc.STATE.DEAD) then return proc, nil end
-return proc, p
-end
-local function alive(S, tab)
-local proc, p = procOf(tab)
-if p then return proc, p end
-local okT, tabsMod = pcall(require, "shell.panels.tabs")
-if okT and tabsMod and S and S.tabs then
-for i, t in ipairs(S.tabs) do
-if t == tab then tabsMod.close(S, i); break end
-end
-end
-return nil, nil
-end
-PROGRAM_APP = {
-type = "program",
-model = "process",
-title = function(tab) return tab.prog or tab.label or "program" end,
-draw = function(S, tab)
-local proc, p = alive(S, tab)
-if not p then return end
-local seat = tab.seat or S.displayIdx
-if not seat then return end
-S.suspendIdleDraw = true
-if S.D and S.D.invalidate then pcall(S.D.invalidate) end
-proc.setForeground(tab.pid, seat, { kernel = true })
-;(proc.signalKernel or proc.signal)(tab.pid, "tos_focus")
-end,
-refresh = function(S, tab)
-local proc, p = alive(S, tab)
-if not p then return end
-if proc.bgState then
-local ok, state = pcall(proc.bgState, tab.pid)
---! Busy unless FROZEN. Right after Ctrl+B the scheduler has not yet
---! recorded when the program went to the background, and bgState
---! answers "live" for that tick -- this read only "drowsy" as busy,
---! so the chip came up plain, as if frozen, the moment it appeared
---! (headless machine, 2026-10-10). A program tab exists only while
---! its program is behind the shell, so "live" means still running.
-tab.live = ok and state ~= "frozen" or false
-end
-end,
-onClose = function(S, tab)
-local proc, p = procOf(tab)
-if proc and p then pcall(proc.kill, tab.pid, { kernel = true }) end
-end,
-}
-M.register(PROGRAM_APP)
-function M.refreshTabs(S)
-if not S or type(S.tabs) ~= "table" then return end
-local snapshot = {}
-for i, t in ipairs(S.tabs) do snapshot[i] = t end
-for _, tab in ipairs(snapshot) do
-local app = registry[tab.type]
-if app and app.refresh then pcall(app.refresh, S, tab) end
-end
-end
---! A chip changes on its own: busy, then plain once the scheduler freezes
---! the program BG_GRACE seconds later. Chips were refreshed only when the
---! top bar happened to repaint, so on a quiet screen a frozen program kept
---! showing busy indefinitely. Costs nothing without a program tab.
-function M.chipsChanged(S)
-if not S or type(S.tabs) ~= "table" then return false end
-local any = false
-for _, t in ipairs(S.tabs) do if t.type == "program" then any = true; break end end
-if not any then
-local was = S._chipSig
-S._chipSig = nil
-return was ~= nil
-end
-M.refreshTabs(S)
-local sig = {}
-for _, t in ipairs(S.tabs) do
-if t.type == "program" then sig[#sig + 1] = tostring(t.pid) .. (t.live and "+" or "-") end
-end
-sig = table.concat(sig, ",")
-local changed = sig ~= S._chipSig
-S._chipSig = sig
-return changed
-end
-function M._reset() registry = {}; ensured = false end
-return M
+local m="program"local i={}local j={}
+function i.register(a)
+assert(type(a)=="table"and
+type(a.type)=="string","app spec needs a string `type`")j[a.type]=a;return a end;function i.get(a)return j[a]end;function i.has(a)return j[a]~=nil end
+function i.types()
+local a={}for b in pairs(j)do a[#a+1]=b end;table.sort(a)return a end
+local p={desktop="shell.panels.desktop",settings="shell.panels.settingsapp",monitor="shell.panels.monitorapp",chat="shell.panels.chatapp",mail="mailapp",intercom="intercomapp"}local k;local l=false
+function i.ensureBuiltins()if l then return end;l=true;if k and not j[k.type]then
+i.register(k)end
+for a,b in pairs(p)do
+if not j[a]then local d,c=pcall(require,b)
+if
+d and c and c.draw then
+i.register({type=a,model="inshell",draw=c.draw,onKey=c.handleKey and function(f,g,e)
+return c.handleKey(f,g,e.ch,e.co,{exec=e.exec})end or
+nil,onMouse=c.handleClick and function(e,f,g,h)
+return c.handleClick(e,f,g,h)end or nil,onScroll=
+
+c.handleScroll and function(e,f,g)return c.handleScroll(e,f,g)end or nil,tick=c.tick,onClose=c.onClose,_module=c})end end end end
+local function n(a)if not a or not a.pid then return nil,nil end
+local d,b=pcall(require,"kernel.process")
+if not d or type(b)~="table"or not b.get then return nil,nil end;local c=b.get(a.pid)if not c or
+(b.STATE and c.state==b.STATE.DEAD)then return b,nil end;return b,c end
+local function o(a,b)local e,c=n(b)if c then return e,c end
+local f,d=pcall(require,"shell.panels.tabs")
+if f and d and a and a.tabs then for g,h in ipairs(a.tabs)do
+if h==b then d.close(a,g)break end end end;return nil,nil end
+k={type=m,model="process",title=function(a)return a.prog or a.label or m end,draw=function(a,b)
+local c,e=o(a,b)if not e then return end;local d=b.seat or a.displayIdx;if not d then return end
+a.suspendIdleDraw=true
+if a.D and a.D.invalidate then pcall(a.D.invalidate)end;c.setForeground(b.pid,d,{kernel=true})
+(c.signalKernel or c.signal)(b.pid,"tos_focus")end,refresh=function(b,a)
+local c,d=o(b,a)if not d then return end
+if c.bgState then local e,f=pcall(c.bgState,a.pid)a.live=
+e and f~="frozen"or false end end,onClose=function(b,a)
+local c,d=n(a)
+if c and d then pcall(c.kill,a.pid,{kernel=true})end end}i.register(k)
+function i.refreshTabs(a)
+if not a or type(a.tabs)~="table"then return end;local b={}for c,d in ipairs(a.tabs)do b[c]=d end
+for d,c in ipairs(b)do local e=j[c.type]if e and
+e.refresh then pcall(e.refresh,a,c)end end end
+function i.chipsChanged(a)
+if not a or type(a.tabs)~="table"then return false end;local c=false
+for f,e in ipairs(a.tabs)do if e.type==m then c=true;break end end
+if not c then local e=a._chipSig;a._chipSig=nil;return e~=nil end;i.refreshTabs(a)local b={}for f,e in ipairs(a.tabs)do
+if e.type==m then b[#b+1]=tostring(e.pid).. (
+e.live and"+"or"-")end end
+b=table.concat(b,",")local d=b~=a._chipSig;a._chipSig=b;return d end;function i._reset()j={}l=false end;return i

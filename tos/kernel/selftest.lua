@@ -1,250 +1,95 @@
-local selftest = {}
-selftest.MARKER = "/etc/selftest.on"
-selftest.RESULTS = "/var/selftest.log"
-selftest.DIRS = { "/usr/lib/selftest" }
-local fs, computer, log
-function selftest.init(deps)
-deps = deps or {}
-fs = deps.fs or nil
-computer = deps.computer or nil
-log = deps.log or { info = function() end, warn = function() end,
-error = function() end }
-return true
-end
-local function mountRoots(fsMod)
-local out, seen = {}, {}
-local function add(p)
-if p and p ~= "" and p ~= "/" and not seen[p] then
-seen[p] = true; out[#out + 1] = p
-end
-end
-if fsMod and fsMod.mounts then
-local ok, list = pcall(fsMod.mounts)
-if ok and type(list) == "table" then
-for _, m in ipairs(list) do add(m.mountPoint) end
-end
-end
-if fsMod and fsMod.exists and fsMod.list and fsMod.exists("/mnt") then
-for _, label in ipairs(fsMod.list("/mnt") or {}) do
-local clean = tostring(label):gsub("/$", "")
-if clean ~= "" then add("/mnt/" .. clean) end
-end
-end
-return out
-end
-function selftest.markerPaths(fsMod)
-fsMod = fsMod or fs
-local out = { selftest.MARKER }
-for _, root in ipairs(mountRoots(fsMod)) do
-out[#out + 1] = root .. "/selftest.on"
-out[#out + 1] = root .. "/selftest/selftest.on"
-end
-return out
-end
-function selftest.diskMarkers(fsMod)
-fsMod = fsMod or fs
-local out = {}
-if not (fsMod and fsMod.exists) then return out end
-for _, p in ipairs(selftest.markerPaths(fsMod)) do
-if p ~= selftest.MARKER and fsMod.exists(p) then out[#out + 1] = p end
-end
-return out
-end
---! #SEC — THE MACHINE ARMS THE BATTERY; A DISK NEVER DOES. Every check is
---! loaded with no environment and run inside the kernel -- deliberately,
---! because checks audit the live kernel -- and every non-boot disk is
---! mounted at boot. So when a selftest.on ON A DISK armed it, a floppy
---! carrying that file plus any .lua was full kernel code execution at the
---! next boot: no login, no root, nothing typed. Inserted media is hostile
---! everywhere else in TOS (the BIOS boot prompt, sanitised mount labels,
---! pkg's hash gate); here it was trusted outright.
---!
---! /etc/selftest.on takes ROOT to create (users.lua ROOT_WRITE_PATHS: arming
---! is granting kernel authority, which an ADMIN does not hold) or, on Ocelot
---! and ocvm, the host: the machine's disk is an ordinary host directory
---! there. The disk still decides WHICH checks run and with what options.
---! (test_selftest.lua)
-function selftest.enabled(fsMod)
-fsMod = fsMod or fs
-if not (fsMod and fsMod.exists) then return false end
-return fsMod.exists(selftest.MARKER) and true or false
-end
-function selftest.activeMarker(fsMod)
-return selftest.enabled(fsMod) and selftest.MARKER or nil
-end
-function selftest.readMarker(fsMod)
-fsMod = fsMod or fs
-local cfg = { shutdown = false, only = nil, screen = false }
-if not (fsMod and fsMod.exists) then return cfg end
-local set = {}
-for _, marker in ipairs(selftest.markerPaths(fsMod)) do
-if fsMod.exists(marker) then
-local body = fsMod.readFile and fsMod.readFile(marker) or ""
-local mine = {}
-for line in tostring(body or ""):gmatch("[^\r\n]+") do
-local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-if k == "shutdown" or k == "screen" then mine[k] = (v == "true" or v == "1")
-elseif k == "only" and v ~= "" then mine[k] = v end
-end
-for k, v in pairs(mine) do
-if not set[k] then cfg[k] = v; set[k] = true end
-end
-end
-end
-return cfg
-end
-function selftest.discover(fsMod)
-fsMod = fsMod or fs
-local out = {}
-if not (fsMod and fsMod.exists and fsMod.list) then return out end
-local roots = {}
-for _, d in ipairs(selftest.DIRS) do roots[#roots + 1] = d end
-for _, m in ipairs(mountRoots(fsMod)) do
-if not fsMod.exists(m .. "/selftest/package.lua") then
-roots[#roots + 1] = m .. "/selftest"
-end
-if fsMod.exists(m .. "/selftest.on") then
-roots[#roots + 1] = m
-end
-end
-for _, root in ipairs(roots) do
-if fsMod.exists(root) then
-for _, entry in ipairs(fsMod.list(root) or {}) do
-local name = tostring(entry):gsub("/$", "")
-if name:match("%.lua$") then out[#out + 1] = root .. "/" .. name end
-end
-end
-end
-table.sort(out)
-return out
-end
-local function makeT(state)
-local t = {}
-t.cfg = state.cfg or {}
-function t.ok(name, cond)
-state.n = state.n + 1
-if cond then state.pass = state.pass + 1
-else state.fail = state.fail + 1
-state.failures[#state.failures + 1] = name end
-return cond and true or false
-end
-function t.eq(name, expected, actual)
-local same = (expected == actual)
-if not same then
-name = name .. " (expected " .. tostring(expected)
-.. ", got " .. tostring(actual) .. ")"
-end
-return t.ok(name, same)
-end
-function t.skip(name, why)
-state.n = state.n + 1
-state.skip = state.skip + 1
-state.skips[#state.skips + 1] = name .. " :: " .. tostring(why or "n/a")
-return true
-end
-function t.note(text)
-state.notes[#state.notes + 1] = tostring(text)
-return true
-end
-return t
-end
-local function withIsolatedModules(fn)
-local snapshot = {}
-for k, v in pairs(package.loaded) do snapshot[k] = v end
-local ok, err = pcall(fn)
-for k in pairs(package.loaded) do
-if snapshot[k] == nil then package.loaded[k] = nil end
-end
-for k, v in pairs(snapshot) do package.loaded[k] = v end
-return ok, err
-end
-local function appendLine(fsMod, line)
-if not fsMod then return end
-if fsMod.appendFile then pcall(fsMod.appendFile, selftest.RESULTS, line .. "\n")
-elseif fsMod.writeFile then
-local prev = (fsMod.readFile and fsMod.readFile(selftest.RESULTS)) or ""
-pcall(fsMod.writeFile, selftest.RESULTS, prev .. line .. "\n")
-end
-end
-function selftest.run(opts)
-opts = opts or {}
-local fsMod = opts.fs or fs
-local comp = opts.computer or computer
-local cfg = opts.cfg or selftest.readMarker(fsMod)
-local files = opts.files or selftest.discover(fsMod)
-local state = { n = 0, pass = 0, fail = 0, skip = 0, failures = {}, skips = {},
-notes = {}, cfg = cfg }
-local t = makeT(state)
-local started = comp and comp.uptime() or 0
-if fsMod and fsMod.writeFile then pcall(fsMod.writeFile, selftest.RESULTS, "") end
-local T0 = rawget(_G, "_TOS") or {}
-appendLine(fsMod, string.format("SELFTEST BEGIN at=%.1f files=%d version=%s build=%s variant=%s",
-started, #files, tostring(T0.version or "?"), tostring(T0.build or "?"),
-tostring(T0.variant or "?")))
-if comp and comp.freeMemory then
-appendLine(fsMod, string.format("ENV mem_free=%dK", math.floor(comp.freeMemory() / 1024)))
-end
-for _, path in ipairs(files) do
-local short = path:match("([^/]+)%.lua$") or path
-if cfg.only and short:sub(1, #cfg.only) ~= cfg.only then
-appendLine(fsMod, "SKIPFILE " .. short)
-else
-appendLine(fsMod, "RUN  " .. short)
-local before = { state.pass, state.fail, state.skip }
-local src = fsMod and fsMod.readFile and fsMod.readFile(path)
-local chunk, lerr
-if type(src) ~= "string" or src == "" then
-lerr = "unreadable or empty"
-else
-chunk, lerr = load(src, "=" .. path, "t")
-end
-if not chunk then
-state.fail = state.fail + 1
-appendLine(fsMod, "FAIL " .. short .. " :: could not load: " .. tostring(lerr))
-else
-local okRun, err = withIsolatedModules(function()
-local mod = chunk()
-if type(mod) == "function" then mod(t)
-elseif type(mod) == "table" and type(mod.run) == "function" then mod.run(t)
-else error("check file returned neither a function nor { run = f }", 0) end
-end)
-if not okRun then
-state.fail = state.fail + 1
-appendLine(fsMod, "FAIL " .. short .. " :: " .. tostring(err))
-else
-local dp = state.pass - before[1]
-local df = state.fail - before[2]
-local ds = state.skip - before[3]
-appendLine(fsMod, string.format("%s %s  pass=%d fail=%d skip=%d",
-df > 0 and "FAIL" or "PASS", short, dp, df, ds))
-end
-end
-end
-end
-for _, f in ipairs(state.failures) do appendLine(fsMod, "  - " .. f) end
-for _, s in ipairs(state.skips) do appendLine(fsMod, "  ~ " .. s) end
-for _, n in ipairs(state.notes) do appendLine(fsMod, "  i " .. n) end
-local dur = (comp and comp.uptime() or 0) - started
-appendLine(fsMod, string.format(
-"SELFTEST END pass=%d fail=%d skip=%d checks=%d secs=%.1f",
-state.pass, state.fail, state.skip, state.n, dur))
-if log and log.info then
-log.info("selftest", string.format("battery: %d passed, %d failed, %d skipped",
-state.pass, state.fail, state.skip))
-end
-if cfg.shutdown and comp and comp.shutdown then
-appendLine(fsMod, "SHUTDOWN requested by marker")
-local kernelShutdown = _G._TOS and _G._TOS.kernel and _G._TOS.kernel.shutdown
-if type(kernelShutdown) == "function" then
-pcall(kernelShutdown, false)
-else
-pcall(comp.shutdown, false)
-end
-end
-return state
-end
-selftest._internal = {
-makeT = makeT,
-withIsolatedModules = withIsolatedModules,
-}
-return selftest
+local r="function"local j={}j.MARKER="/etc/selftest.on"
+j.RESULTS="/var/selftest.log"j.DIRS={"/usr/lib/selftest"}local l,n,m
+function j.init(a)a=a or{}l=a.fs or nil;n=
+a.computer or nil
+m=a.log or{info=function()end,warn=function()end,error=function()end}return true end
+local function o(a)local b,c={},{}
+local function d(e)if e and e~=""and e~="/"and not c[e]then c[e]=true
+b[#b+1]=e end end;if a and a.mounts then local f,e=pcall(a.mounts)
+if f and type(e)=="table"then for h,g in
+ipairs(e)do d(g.mountPoint)end end end
+if
+a and a.exists and a.list and a.exists("/mnt")then for f,e in
+ipairs(a.list("/mnt")or{})do local g=tostring(e):gsub("/$","")if g~=""then
+d("/mnt/"..g)end end end;return b end
+function j.markerPaths(a)a=a or l;local b={j.MARKER}
+for d,c in ipairs(o(a))do
+b[#b+1]=c.."/selftest.on"b[#b+1]=c.."/selftest/selftest.on"end;return b end
+function j.diskMarkers(a)a=a or l;local b={}if not(a and a.exists)then return b end
+for d,c in
+ipairs(j.markerPaths(a))do if c~=j.MARKER and a.exists(c)then b[#b+1]=c end end;return b end
+function j.enabled(a)a=a or l;if not(a and a.exists)then return false end;return
+a.exists(j.MARKER)and true or false end
+function j.activeMarker(a)return j.enabled(a)and j.MARKER or nil end
+function j.readMarker(a)a=a or l;local b={shutdown=false,only=nil,screen=false}if not
+(a and a.exists)then return b end;local c={}
+for e,d in ipairs(j.markerPaths(a))do
+if
+a.exists(d)then local g=a.readFile and a.readFile(d)or""local f={}
+for h in tostring(
+g or""):gmatch("[^\r\n]+")do
+local i,s=h:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+if i=="shutdown"or i=="screen"then
+f[i]=(s=="true"or s=="1")elseif i=="only"and s~=""then f[i]=s end end
+for h,i in pairs(f)do if not c[h]then b[h]=i;c[h]=true end end end end;return b end
+function j.discover(a)a=a or l;local c={}if
+not(a and a.exists and a.list)then return c end;local b={}
+for f,e in ipairs(j.DIRS)do b[#b+1]=e end
+for e,d in ipairs(o(a))do if
+not a.exists(d.."/selftest/package.lua")then b[#b+1]=d.."/selftest"end;if a.exists(d..
+"/selftest.on")then b[#b+1]=d end end
+for e,d in ipairs(b)do if a.exists(d)then
+for e,f in ipairs(a.list(d)or{})do
+local g=tostring(f):gsub("/$","")if g:match("%.lua$")then c[#c+1]=d.."/"..g end end end end;table.sort(c)return c end
+local function p(a)local b={}b.cfg=a.cfg or{}
+function b.ok(d,c)a.n=a.n+1
+if c then a.pass=a.pass+1 else
+a.fail=a.fail+1;a.failures[#a.failures+1]=d end;return c and true or false end
+function b.eq(c,d,e)local f=(d==e)if not f then
+c=c.." (expected "..
+tostring(d)..", got "..tostring(e)..")"end;return b.ok(c,f)end
+function b.skip(c,d)a.n=a.n+1;a.skip=a.skip+1;a.skips[#a.skips+1]=c.." :: "..
+tostring(d or"n/a")return true end
+function b.note(c)a.notes[#a.notes+1]=tostring(c)return true end;return b end
+local function q(a)local b={}for e,f in pairs(package.loaded)do b[e]=f end;local c,d=pcall(a)
+for e in
+pairs(package.loaded)do if b[e]==nil then package.loaded[e]=nil end end;for e,f in pairs(b)do package.loaded[e]=f end;return c,d end
+local function k(a,b)if not a then return end
+if a.appendFile then
+pcall(a.appendFile,j.RESULTS,b.."\n")elseif a.writeFile then
+local c=(a.readFile and a.readFile(j.RESULTS))or""pcall(a.writeFile,j.RESULTS,c..b.."\n")end end
+function j.run(a)a=a or{}local c=a.fs or l;local d=a.computer or n
+local e=a.cfg or j.readMarker(c)local g=a.files or j.discover(c)
+local b={n=0,pass=0,fail=0,skip=0,failures={},skips={},notes={},cfg=e}local h=p(b)local i=d and d.uptime()or 0;if c and c.writeFile then
+pcall(c.writeFile,j.RESULTS,"")end;local f=rawget(_G,"_TOS")or{}
+k(c,string.format("SELFTEST BEGIN at=%.1f files=%d version=%s build=%s variant=%s",i,
+#g,tostring(f.version or"?"),tostring(f.build or"?"),tostring(f.variant or"?")))if d and d.freeMemory then
+k(c,string.format("ENV mem_free=%dK",math.floor(d.freeMemory()/1024)))end
+for u,t in ipairs(g)do local v=
+t:match("([^/]+)%.lua$")or t
+if
+e.only and v:sub(1,#e.only)~=e.only then k(c,"SKIPFILE "..v)else k(c,"RUN  "..v)
+local w={b.pass,b.fail,b.skip}local x=c and c.readFile and c.readFile(t)local y,z;if type(x)~=
+"string"or x==""then z="unreadable or empty"else
+y,z=load(x,"="..t,"t")end
+if not y then b.fail=b.fail+1
+k(c,"FAIL "..v..
+" :: could not load: "..tostring(z))else
+local A,B=q(function()local C=y()
+if type(C)==r then C(h)elseif
+type(C)=="table"and type(C.run)==r then C.run(h)else
+error("check file returned neither a function nor { run = f }",0)end end)
+if not A then b.fail=b.fail+1
+k(c,"FAIL "..v.." :: "..tostring(B))else local D=b.pass-w[1]local C=b.fail-w[2]local E=b.skip-w[3]
+k(c,string.format("%s %s  pass=%d fail=%d skip=%d",
+C>0 and"FAIL"or"PASS",v,D,C,E))end end end end;for u,t in ipairs(b.failures)do k(c,"  - "..t)end;for u,t in
+ipairs(b.skips)do k(c,"  ~ "..t)end;for u,t in ipairs(b.notes)do
+k(c,"  i "..t)end
+local s=(d and d.uptime()or 0)-i
+k(c,string.format("SELFTEST END pass=%d fail=%d skip=%d checks=%d secs=%.1f",b.pass,b.fail,b.skip,b.n,s))if m and m.info then
+m.info("selftest",string.format("battery: %d passed, %d failed, %d skipped",b.pass,b.fail,b.skip))end
+if e.shutdown and d and
+d.shutdown then k(c,"SHUTDOWN requested by marker")
+local t=_G._TOS and
+_G._TOS.kernel and _G._TOS.kernel.shutdown
+if type(t)==r then pcall(t,false)else pcall(d.shutdown,false)end end;return b end;j._internal={makeT=p,withIsolatedModules=q}return j

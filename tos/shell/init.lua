@@ -1,77 +1,31 @@
-local computer = require("computer")
-local S, K, E, P, F, D, U, SC, NM = {}, nil, nil, nil, nil, nil, nil, nil, nil
-local W, H, cwd, who, st = 80, 25, "/", "root", nil
-local myDisplayIdx = nil
-local function installedKB()
-local ok, total = pcall(computer.totalMemory)
-return (ok and type(total) == "number") and math.floor(total / 1024) or nil
-end
-local function uiShape()
-local okB, bcM = pcall(require, "kernel.bootcfg")
-local cfg = _G._TOS and _G._TOS.bootcfg
-if okB and bcM and bcM.ui then return bcM.ui(cfg, installedKB()) end
-return "home"
-end
-local function ctx()
-return { K = K, E = E, P = P, F = F, D = D, U = U, SC = SC, NM = NM,
-cwd = cwd, who = who, W = W, H = H, st = st,
-uiSplit = uiShape() == "split",
-displayIdx = myDisplayIdx,
-autoCLI = S._autoCLI,
-tuiFailed = S._tuiFailed }
-end
-local function runCLI()
-local okC, cliMod = pcall(require, "shell.cli")
-if not okC then
-D.clear(D.c("bg"))
-D.set(1, 2, "CLI unavailable: " .. tostring(cliMod), D.c("error"), D.c("bg"))
-D.set(1, 3, "Reboot and hold S at POST for Safe Mode.", D.c("warning"), D.c("bg"))
-computer.pullSignal(5)
-return "logout"
-end
-local c = ctx()
-S._tuiFailed = nil
-return cliMod.run(c)
-end
-local function runTUI()
-local ok, pm = pcall(require, "shell.panels")
-if not ok then
-D.clear(D.c("bg"))
-D.set(1, 2, "WARNING: TUI unavailable (" .. tostring(pm) .. ")", D.c("error"), D.c("bg"))
-D.set(1, 3, "Falling back to the command line.", D.c("warning"), D.c("bg"))
-computer.pullSignal(2)
-S._tuiFailed = tostring(pm)
-return nil
-end
-return pm.run(ctx())
-end
-function S.run(k, token)
-K = k; st = token
-E = k.getEvent(); P = k.getProc()
-F = k.getSecureFS() or k.getFS(); D = k.getDisplay()
-U = k.getUsers(); SC = k.getConfig(); NM = k.getNet()
-myDisplayIdx = k.getDisplayIdx and k.getDisplayIdx() or nil
-W, H = D.getSize()
-who = "root"
-if U and st then local s = U.getSession(st); if s then who = s.user end end
-cwd = "/home/" .. who
-if not F.exists(cwd) then cwd = "/" end
-local shape, chosen = uiShape()
-local mode = (shape == "cli") and "cli" or "tui"
-S._autoCLI = nil
-if mode == "cli" and chosen == "auto" then
-local okB, bcM = pcall(require, "kernel.bootcfg")
-S._autoCLI = { haveKB = installedKB(), needKB = okB and bcM.PANELS_MIN_KB or nil }
-end
-for _ = 1, 64 do
-local code
-if mode == "cli" then
-code = runCLI()
-if code == "tui" then mode = "tui" else return end
-else
-code = runTUI()
-if code == "cli" or code == nil then mode = "cli" else return end
-end
-end
-end
-return S
+local B=require("computer")local w,D,E,F,C,v,x,G,H={},nil,nil,nil,nil,nil,nil,nil,nil;local I,J,y,z,A=80,25,"/","root",
+nil;local K=nil
+local function L()local b,a=pcall(B.totalMemory)return
+(b and
+type(a)=="number")and math.floor(a/1024)or nil end
+local function M()local b,a=pcall(require,"kernel.bootcfg")
+local c=_G._TOS and _G._TOS.bootcfg;if b and a and a.ui then return a.ui(c,L())end;return"home"end
+local function N()return
+{K=D,E=E,P=F,F=C,D=v,U=x,SC=G,NM=H,cwd=y,who=z,W=I,H=J,st=A,uiSplit=M()=="split",displayIdx=K,autoCLI=w._autoCLI,tuiFailed=w._tuiFailed}end
+local function O()local b,a=pcall(require,"shell.cli")
+if not b then
+v.clear(v.c("bg"))
+v.set(1,2,"CLI unavailable: "..tostring(a),v.c("error"),v.c("bg"))
+v.set(1,3,"Reboot and hold S at POST for Safe Mode.",v.c("warning"),v.c("bg"))B.pullSignal(5)return"logout"end;local d=N()w._tuiFailed=nil;return a.run(d)end
+local function P()local b,a=pcall(require,"shell.panels")
+if not b then
+v.clear(v.c("bg"))
+v.set(1,2,"WARNING: TUI unavailable ("..tostring(a)..")",v.c("error"),v.c("bg"))
+v.set(1,3,"Falling back to the command line.",v.c("warning"),v.c("bg"))B.pullSignal(2)w._tuiFailed=tostring(a)return nil end;return a.run(N())end
+function w.run(a,b)D=a;A=b;E=a.getEvent()F=a.getProc()
+C=a.getSecureFS()or a.getFS()v=a.getDisplay()x=a.getUsers()G=a.getConfig()
+H=a.getNet()
+K=a.getDisplayIdx and a.getDisplayIdx()or nil;I,J=v.getSize()z="root"if x and A then local f=x.getSession(A)
+if f then z=f.user end end;y="/home/"..z
+if not C.exists(y)then y="/"end;local d,e=M()local c=(d=="cli")and"cli"or"tui"
+w._autoCLI=nil;if c=="cli"and e=="auto"then
+local f,g=pcall(require,"kernel.bootcfg")
+w._autoCLI={haveKB=L(),needKB=f and g.PANELS_MIN_KB or nil}end;for f=1,64 do local g
+if
+c=="cli"then g=O()if g=="tui"then c="tui"else return end else g=P()if g=="cli"or g==nil then c="cli"else
+return end end end end;return w

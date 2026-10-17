@@ -1,375 +1,143 @@
-local M = {}
-local tcMod
-local function textcol()
-if tcMod == nil then
-local ok, m = pcall(require, "shell.panels.textcol")
-tcMod = (ok and type(m) == "table") and m or false
-end
-return tcMod or nil
-end
---! Through the horizontal scroll (draw.lua keeps tab.viewLeft, in cells)
---! and through the line's cells. A click on a scrolled line landed
---! viewLeft-1 columns left of where it was aimed -- px - gutterW is a
---! column of the WINDOW, not of the line -- and on a line with accents
---! a cell is not a byte. (test_editor_utf8_columns.lua)
-local function editColAt(tab, line, px, gutterW)
-local cell = (px - gutterW) + (tab.viewLeft or 1) - 1
-if cell < 1 then cell = 1 end
-local tc = textcol()
-if tc then return tc.colOf(line or "", cell) end
-return math.min(#(line or "") + 1, cell)
-end
-local function uptime()
-local ok, c = pcall(require, "computer")
-if ok and c and c.uptime then return c.uptime() end
-return os and os.clock and os.clock() or 0
-end
-local REPROBE_SECS = 10
-function M.available(S)
-if type(S._mouseLib) == "table" then return S._mouseLib end
-if S._mouseLib == false
-and uptime() < (S._mouseProbeAt or 0) + REPROBE_SECS then
-return nil
-end
-S._mouseProbeAt = uptime()
-S._mouseLib = false
-local F = S.F
-if F and F.exists and not F.exists("/usr/lib/mouse.lua") then return nil end
-local okH, H = pcall(require, "shell.panels.helpers")
-local okP, pkgMod = false, nil
-if not (okH and H.mayHavePackages) or H.mayHavePackages() then
-okP, pkgMod = pcall(require, "kernel.pkg")
-end
-if okP and pkgMod and pkgMod.info and pkgMod.info("mouse")
-and pkgMod.isEnabled and not pkgMod.isEnabled("mouse") then
-return nil
-end
-local ok, lib = pcall(require, "mouse")
-if ok and type(lib) == "table" and lib.parse then
-S._mouseLib = lib
-return lib
-end
-return nil
-end
-local function spanAt(spans, px)
-for _, sp in ipairs(spans or {}) do
-if px >= sp.s and px <= sp.e then return sp end
-end
-return nil
-end
-local function menuAt(S, menuDefs, px)
-local sp = spanAt(S._menuSpans, px)
-if sp then return sp.idx end
-if S._menuSpans then return nil end
-local x = 2
-for i, item in ipairs(menuDefs) do
-local label = " " .. (item.label or "") .. " "
-if px >= x and px < x + #label then return i end
-x = x + #label + 1
-end
-return nil
-end
-local function tabAt(S, px)
-local sp = spanAt(S._tabSpans, px)
-if not sp then return nil end
-if sp.state == "more" then return nil, true end
-return sp.idx
-end
-local function activateHidden(S)
-local n = #S.tabs
-if n < 2 then return end
-S.activeTab = (S.activeTab > 1) and (S.activeTab - 1) or n
-end
-local function dropdownGeom(S, x, y, items)
-local maxLabelW, maxKeyW = 0, 0
-for _, item in ipairs(items) do
-if not item.sep then
-maxLabelW = math.max(maxLabelW, #(item.label or ""))
-maxKeyW = math.max(maxKeyW, #(item.key or ""))
-end
-end
-local gap = maxKeyW > 0 and 2 or 0
-local dw = maxLabelW + gap + maxKeyW + 4
-local dh = #items + 2
-if x + dw > S.W then x = S.W - dw end
-if x < 1 then x = 1 end
-if y + dh > S.H then y = S.H - dh end
-if y < 1 then y = 1 end
-return x, y, dw, dh
-end
-local function insideBox(px, py, x, y, w, h)
-return px >= x and px < x + w and py >= y and py < y + h
-end
-local function handleClick(S, deps, ev)
-local px, py = ev.x, ev.y
-local tab = S.tabs[S.activeTab]
-local tabType = tab and tab.type or "shell"
-local menuDefs = S.menuDefs or deps.menuDefs
-if S.menuOpen then
-local def = menuDefs[S.menuOpen]
-local dx, dy, dw, dh = dropdownGeom(S, def._x or 2, S.MENU_ROW + 1, def.items)
-if insideBox(px, py, dx, dy, dw, dh) then
-local idx = py - dy
-local item = def.items[idx]
-if item and not item.sep then
-S.menuSel = idx
-return 3, deps.menuExecute(item)
-end
-return 3
-end
-if py ~= S.MENU_ROW then
-S.menuOpen = nil; S.menuFocused = false
-return 3
-end
-end
-if S.ctxOpen then
-local dx, dy, dw, dh = dropdownGeom(S, S.ctxX, S.ctxY, S.ctxItems)
-if insideBox(px, py, dx, dy, dw, dh) then
-local idx = py - dy
-local item = S.ctxItems[idx]
-if item and not item.sep then
-S.ctxSel = idx
-deps.ctxExecute(item.action)
-end
-return 3
-end
-S.ctxOpen = false
-return 3
-end
-if py == (S.MENU_ROW or 1) then
-local mIdx = menuAt(S, menuDefs, px)
-if mIdx then
-if tabType ~= "shell" then
-for i, t2 in ipairs(S.tabs) do
-if t2.type == "shell" then S.activeTab = i; break end
-end
-end
-if S.menuOpen == mIdx then
-S.menuOpen = nil; S.menuFocused = false
-else
-S.menuOpen = mIdx; S.menuSel = 1
-S.menuFocused = true; S.menuIdx = mIdx
-end
-return 3
-end
-local idx, isMore = tabAt(S, px)
-if isMore then
-activateHidden(S)
-return 3
-end
-if not idx then
-if S.menuOpen then S.menuOpen = nil; S.menuFocused = false; return 3 end
-return 0
-end
-if ev.button == 1 then
-local t2 = S.tabs[idx]
-if t2 and t2.type ~= "shell" then
-if t2.type == "edit" and t2.modified then
-S.activeTab = idx
-S.lastOut = { "Unsaved changes — close with F4", (S.T or {}).warning }
-else
-deps.closeTab(idx)
-end
-end
-else
-S.activeTab = idx
-end
-return 3
-end
-if tabType == "shell" then
-if py == S.CMD_ROW then
-local col = deps.cmdColAt and deps.cmdColAt(px)
-if col then
-S.cmdCursor = col
-S.cmdSel = nil
-S._drag = { kind = "cmd" }
-return 1
-end
-return 0
-end
-local okH, home = pcall(require, "shell.panels.home")
-if okH and home and home.enabled(S) then
-if ev.button ~= 1 and home.hitToggle(S, px, py) then
-home.toggle(S, tab)
-return 3
-end
-if home.isTiles(S, tab) then
-return home.handleClick(S, tab, ev, deps)
-end
-end
-if py >= S.LIST_TOP and py < S.LIST_TOP + S.LIST_H then
-local fi = S.browser.scroll + (py - S.LIST_TOP) + 1
-local f = S.browser.files[fi]
-if not f then return 0 end
-local prevSel = S.browser.sel
-S.browser.sel = fi
-if ev.button == 1 then
-deps.openContextMenu()
-return 3
-end
-if prevSel == fi then
-if f.name == ".." then deps.navigateUp()
-elseif f.dir then deps.navigateInto(f.name)
-elseif deps.viewFile then deps.viewFile()
-else deps.openContextMenu() end
-return 3
-end
-if deps.drawFileListRow then
-deps.drawFileListRow(prevSel)
-deps.drawFileListRow(fi)
-return 0
-end
-return 2
-end
-return 0
-end
-if tab then
-local ok, appsMod = pcall(require, "shell.panels.apps")
-if ok and appsMod then
-appsMod.ensureBuiltins()
-local app = appsMod.get(tabType)
-if app and app.onMouse then return app.onMouse(S, tab, ev, deps) or 0 end
-end
-end
-if tabType == "edit" and tab then
-local edH = S.H - 2
-if py >= 2 and py < 2 + edH then
-local lines = tab.lines or { "" }
-local gutterW = S.tier >= 2 and (math.max(#tostring(#lines), 2) + 1) or 0
-tab.curRow = math.max(1, math.min(#lines, (tab.viewTop or 1) + (py - 2)))
-tab.curCol = editColAt(tab, lines[tab.curRow], px, gutterW)
-tab.selAnchor = nil
-S._drag = { kind = "edit", row = tab.curRow, col = tab.curCol }
-return 1
-end
-return 0
-end
-if (tabType == "view" or tabType == "output") and tab then
-local viewH = S.H - 2
-if py >= 2 and py < 2 + viewH then
-local li = (tab.offset or 0) + (py - 1)
-local content = tab.content or {}
-if li >= 1 and li <= #content then
-tab.selAnchor, tab.selCur = li, li
-S._drag = { kind = "view" }
-return 1
-end
-end
-return 0
-end
-return 0
-end
-local function handleDrag(S, deps, ev)
-local d = S._drag
-if not d then return 0 end
-local tab = S.tabs[S.activeTab]
-local px, py = ev.x, ev.y
-if d.kind == "cmd" then
-local col = deps.cmdColAt and deps.cmdColAt(px)
-if not col then return 0 end
-if col == S.cmdCursor then return 0 end
-if not S.cmdSel then S.cmdSel = S.cmdCursor end
-S.cmdCursor = col
-if S.cmdSel == S.cmdCursor then S.cmdSel = nil end
-return 1
-elseif d.kind == "edit" and tab and tab.type == "edit" then
-local lines = tab.lines or { "" }
-local edH = S.H - 2
-local gutterW = S.tier >= 2 and (math.max(#tostring(#lines), 2) + 1) or 0
-local row = math.max(1, math.min(#lines, (tab.viewTop or 1) + (py - 2)))
-local col = editColAt(tab, lines[row], px, gutterW)
-if py < 2 or py >= 2 + edH then return 0 end
-if not tab.selAnchor then
-tab.selAnchor = { row = d.row or tab.curRow, col = d.col or tab.curCol }
-end
-tab.curRow, tab.curCol = row, col
-return 1
-elseif d.kind == "view" and tab and (tab.type == "view" or tab.type == "output") then
-local content = tab.content or {}
-local viewH = S.H - 2
-local li = (tab.offset or 0) + (py - 1)
-if py < 2 then
-tab.offset = math.max(0, (tab.offset or 0) - 1); li = (tab.offset or 0) + 1
-elseif py >= 2 + viewH then
-tab.offset = math.min(math.max(0, #content - viewH), (tab.offset or 0) + 1)
-li = (tab.offset or 0) + viewH
-end
-li = math.max(1, math.min(#content, li))
-tab.selCur = li
-return 1
-end
-return 0
-end
-local function handleScroll(S, deps, ev)
-local dir = ev.dir or 0
-if dir == 0 then return 0 end
-local tab = S.tabs[S.activeTab]
-local tabType = tab and tab.type or "shell"
-if tabType == "shell" then
-if S.menuOpen or S.ctxOpen then return 0 end
-local okH, home = pcall(require, "shell.panels.home")
-if okH and home and home.isTiles(S, tab) then
-return home.handleScroll(S, tab, ev)
-end
-local delta = dir > 0 and -1 or 1
-local newSel = math.max(1, math.min(#S.browser.files, S.browser.sel + delta))
-if newSel == S.browser.sel then return 0 end
-local prevSel, prevScroll = S.browser.sel, S.browser.scroll
-S.browser.sel = newSel
-if newSel <= S.browser.scroll then S.browser.scroll = newSel - 1 end
-if newSel > S.browser.scroll + S.LIST_H then S.browser.scroll = newSel - S.LIST_H end
-if S.browser.scroll == prevScroll and deps.drawFileListRow then
-deps.drawFileListRow(prevSel)
-deps.drawFileListRow(newSel)
-return 0
-end
-return 2
-elseif (tabType == "view" or tabType == "output") and tab then
-local content = tab.content or {}
-local viewH = S.H - 2
-local step = dir > 0 and -3 or 3
-local maxOff = math.max(0, #content - viewH)
-local newOff = math.max(0, math.min(maxOff, (tab.offset or 0) + step))
-if newOff == (tab.offset or 0) then return 0 end
-tab.offset = newOff
-return 1
-elseif tabType == "edit" and tab then
-local lines = tab.lines or { "" }
-local edH = S.H - 2
-local step = dir > 0 and -3 or 3
-local tc = textcol()
-local cell = tc and tc.cellOf(lines[tab.curRow] or "", tab.curCol) or tab.curCol
-tab.curRow = math.max(1, math.min(#lines, tab.curRow + step))
-tab.curCol = tc and tc.colOf(lines[tab.curRow] or "", cell)
-or math.max(1, math.min(#(lines[tab.curRow] or "") + 1, cell))
-if tab.curRow < tab.viewTop then tab.viewTop = tab.curRow end
-if tab.curRow > tab.viewTop + edH - 1 then tab.viewTop = tab.curRow - edH + 1 end
-return 1
-elseif tab then
-local ok, appsMod = pcall(require, "shell.panels.apps")
-if ok and appsMod then
-appsMod.ensureBuiltins()
-local app = appsMod.get(tabType)
-if app and app.onScroll then return app.onScroll(S, tab, ev) or 0 end
-end
-end
-return 0
-end
-function M.handle(S, deps, sig, addr, x, y, btn, player)
-local lib = M.available(S)
-if not lib then return nil end
-local ev = lib.parse(sig, addr, x, y, btn, player)
-if not ev then return nil end
-if ev.type == "click" then
-return handleClick(S, deps, ev)
-elseif ev.type == "scroll" then
-return handleScroll(S, deps, ev)
-elseif ev.type == "drag" then
-return handleDrag(S, deps, ev)
-elseif ev.type == "drop" then
-S._drag = nil
-return 0
-end
-return 0
-end
-return M
+local I="output"local v={}local x
+local function A()if x==nil then
+local b,a=pcall(require,"shell.panels.textcol")
+x=(b and type(a)=="table")and a or false end;return x or nil end;local y
+local function B()if y==nil then local a,b=pcall(require,"shell.panels.home")
+y=(a and b)or false end;return y or nil end;local z
+local function C()if z==nil then local a,b=pcall(require,"shell.panels.apps")
+z=(a and b)or false end;return z or nil end
+local function D(b,a,c,d)local e=(c-d)+ (b.viewLeft or 1)-1
+if e<1 then e=1 end;local f=A()if f then return f.colOf(a or"",e)end;return math.min(
+# (a or"")+1,e)end;local w
+local function E()
+if w==nil then local b,a=pcall(require,"computer")w=
+(b and a and a.uptime)and a or false end;if w then return w.uptime()end;return
+os and os.clock and os.clock()or 0 end;local J=10
+function v.available(a)
+if type(a._mouseLib)=="table"then return a._mouseLib end;if a._mouseLib==false and
+E()< (a._mouseProbeAt or 0)+J then return nil end
+a._mouseProbeAt=E()a._mouseLib=false;local d=a.F;if d and d.exists and
+not d.exists("/usr/lib/mouse.lua")then return nil end
+local g,e=pcall(require,"shell.panels.helpers")local f,b=false,nil
+if not(g and e.mayHavePackages)or
+e.mayHavePackages()then f,b=pcall(require,"kernel.pkg")end;if
+f and b and b.info and b.info("mouse")and b.isEnabled and not b.isEnabled("mouse")then
+return nil end
+local h,c=pcall(require,"mouse")
+if h and type(c)=="table"and c.parse then a._mouseLib=c;return c end;return nil end;local function F(b,a)
+for d,c in ipairs(b or{})do if a>=c.s and a<=c.e then return c end end;return nil end
+local function K(b,c,a)
+local e=F(b._menuSpans,a)if e then return e.idx end;if b._menuSpans then return nil end;local d=2;for f,g in ipairs(c)do local h=" "..
+(g.label or"").." "
+if a>=d and a<d+#h then return f end;d=d+#h+1 end;return nil end
+local function L(a,b)local c=F(a._tabSpans,b)if not c then return nil end;if c.state=="more"then
+return nil,true end;return c.idx end
+local function M(a)local b=#a.tabs;if b<2 then return end;a.activeTab=(a.activeTab>1)and
+(a.activeTab-1)or b end
+local function G(c,a,b,d)local f,e=0,0;for k,j in ipairs(d)do
+if not j.sep then
+f=math.max(f,# (j.label or""))e=math.max(e,# (j.key or""))end end
+local i=e>0 and 2 or 0;local g=f+i+e+4;local h=#d+2;if a+g>c.W then a=c.W-g end;if a<1 then a=1 end;if b+h>
+c.H then b=c.H-h end;if b<1 then b=1 end;return a,b,g,h end
+local function H(a,b,c,d,e,f)return a>=c and a<c+e and b>=d and b<d+f end
+local function N(a,b,c)local f,e=c.x,c.y;local d=a.tabs[a.activeTab]
+local g=d and d.type or"shell"local h=a.menuDefs or b.menuDefs
+if a.menuOpen then local i=h[a.menuOpen]local k,j,l,m=G(a,i._x or 2,
+a.MENU_ROW+1,i.items)if H(f,e,k,j,l,m)then local o=e-j
+local n=i.items[o]
+if n and not n.sep then a.menuSel=o;return 3,b.menuExecute(n)end;return 3 end
+if e~=
+a.MENU_ROW then a.menuOpen=nil;a.menuFocused=false;return 3 end end
+if a.ctxOpen then local j,i,k,l=G(a,a.ctxX,a.ctxY,a.ctxItems)if H(f,e,j,i,k,l)then local n=e-i
+local m=a.ctxItems[n]
+if m and not m.sep then a.ctxSel=n;b.ctxExecute(m.action)end;return 3 end
+a.ctxOpen=false;return 3 end
+if e== (a.MENU_ROW or 1)then local j=K(a,h,f)
+if j then if g~="shell"then
+for l,m in ipairs(a.tabs)do if m.type==
+"shell"then a.activeTab=l;break end end end
+if a.menuOpen==j then
+a.menuOpen=nil;a.menuFocused=false else a.menuOpen=j;a.menuSel=1;a.menuFocused=true;a.menuIdx=j end;return 3 end;local i,k=L(a,f)if k then M(a)return 3 end
+if not i then if a.menuOpen then a.menuOpen=nil
+a.menuFocused=false;return 3 end;return 0 end
+if c.button==1 then local l=a.tabs[i]
+if l and l.type~="shell"then
+if
+l.type=="edit"and l.modified then a.activeTab=i
+a.lastOut={"Unsaved changes — close with F4",(a.T or{}).warning}else b.closeTab(i)end end else a.activeTab=i end;return 3 end
+if g=="shell"then if e==a.CMD_ROW then local j=b.cmdColAt and b.cmdColAt(f)if j then
+a.cmdCursor=j;a.cmdSel=nil;a._drag={kind="cmd"}return 1 end
+return 0 end
+local i=B()
+if i and i.enabled(a)then if c.button~=1 and i.hitToggle(a,f,e)then
+i.toggle(a,d)return 3 end;if i.isTiles(a,d)then
+return i.handleClick(a,d,c,b)end end
+if e>=a.LIST_TOP and e<a.LIST_TOP+a.LIST_H then local j=
+a.browser.scroll+ (e-a.LIST_TOP)+1
+local k=a.browser.files[j]if not k then return 0 end;local l=a.browser.sel;a.browser.sel=j;if c.button==1 then
+b.openContextMenu()return 3 end
+if l==j then
+if k.name==".."then b.navigateUp()elseif k.dir then
+b.navigateInto(k.name)elseif b.viewFile then b.viewFile()else b.openContextMenu()end;return 3 end
+if b.drawFileListRow then b.drawFileListRow(l)b.drawFileListRow(j)return 0 end;return 2 end;return 0 end;if d then local i=C()
+if i then i.ensureBuiltins()local j=i.get(g)if j and j.onMouse then return
+j.onMouse(a,d,c,b)or 0 end end end
+if
+g=="edit"and d then local i=a.H-2
+if e>=2 and e<2+i then local j=d.lines or{""}
+local k=a.tier>=2 and(math.max(#
+tostring(#j),2)+1)or 0
+d.curRow=math.max(1,math.min(#j,(d.viewTop or 1)+ (e-2)))d.curCol=D(d,j[d.curRow],f,k)d.selAnchor=nil
+a._drag={kind="edit",row=d.curRow,col=d.curCol}return 1 end;return 0 end
+if(g=="view"or g==I)and d then local i=a.H-2
+if e>=2 and e<2+i then local j=
+(d.offset or 0)+ (e-1)local k=d.content or{}if j>=1 and j<=#k then
+d.selAnchor,d.selCur=j,j;a._drag={kind="view"}return 1 end end;return 0 end;return 0 end
+local function O(a,b,c)local f=a._drag;if not f then return 0 end;local e=a.tabs[a.activeTab]
+local h,g=c.x,c.y
+if f.kind=="cmd"then local d=b.cmdColAt and b.cmdColAt(h)
+if not d then return 0 end;if d==a.cmdCursor then return 0 end
+if not a.cmdSel then a.cmdSel=a.cmdCursor end;a.cmdCursor=d;if a.cmdSel==a.cmdCursor then a.cmdSel=nil end;return 1 elseif
+f.kind=="edit"and e and e.type=="edit"then
+local d=e.lines or{""}local j=a.H-2;local k=a.tier>=2 and
+(math.max(#tostring(#d),2)+1)or 0
+local i=math.max(1,math.min(
+#d,(e.viewTop or 1)+ (g-2)))local l=D(e,d[i],h,k)if g<2 or g>=2+j then return 0 end;if not e.selAnchor then
+e.selAnchor={row=
+f.row or e.curRow,col=f.col or e.curCol}end;e.curRow,e.curCol=i,l;return 1 elseif
+
+f.kind=="view"and e and(e.type=="view"or e.type==I)then local j=e.content or{}local i=a.H-2
+local d=(e.offset or 0)+ (g-1)
+if g<2 then e.offset=math.max(0,(e.offset or 0)-1)d=(
+e.offset or 0)+1 elseif g>=2+i then e.offset=math.min(math.max(0,#j-i),
+(e.offset or 0)+1)d=
+(e.offset or 0)+i end;d=math.max(1,math.min(#j,d))e.selCur=d;return 1 end;return 0 end
+local function P(a,b,c)local f=c.dir or 0;if f==0 then return 0 end;local d=a.tabs[a.activeTab]local e=
+d and d.type or"shell"
+if e=="shell"then
+if a.menuOpen or a.ctxOpen then return 0 end;local h=B()
+if h and h.isTiles(a,d)then return h.handleScroll(a,d,c)end;local i=f>0 and-1 or 1
+local g=math.max(1,math.min(#a.browser.files,a.browser.sel+i))if g==a.browser.sel then return 0 end
+local j,k=a.browser.sel,a.browser.scroll;a.browser.sel=g
+if g<=a.browser.scroll then a.browser.scroll=g-1 end;if g>a.browser.scroll+a.LIST_H then
+a.browser.scroll=g-a.LIST_H end
+if
+a.browser.scroll==k and b.drawFileListRow then b.drawFileListRow(j)b.drawFileListRow(g)return 0 end;return 2 elseif(e=="view"or e==I)and d then local h=d.content or{}
+local i=a.H-2;local j=f>0 and-3 or 3;local k=math.max(0,#h-i)
+local g=math.max(0,math.min(k,(d.offset or
+0)+j))if g== (d.offset or 0)then return 0 end;d.offset=g;return 1 elseif
+e=="edit"and d then local g=d.lines or{""}local i=a.H-2;local k=f>0 and-3 or 3
+local h=A()
+local j=h and h.cellOf(g[d.curRow]or"",d.curCol)or d.curCol
+d.curRow=math.max(1,math.min(#g,d.curRow+k))
+d.curCol=h and h.colOf(g[d.curRow]or"",j)or
+math.max(1,math.min(# (
+g[d.curRow]or"")+1,j))if d.curRow<d.viewTop then d.viewTop=d.curRow end
+if d.curRow>
+d.viewTop+i-1 then d.viewTop=d.curRow-i+1 end;return 1 elseif d then local g=C()
+if g then g.ensureBuiltins()local h=g.get(e)if h and h.onScroll then return
+h.onScroll(a,d,c)or 0 end end end;return 0 end
+function v.handle(a,b,c,d,e,f,g,h)local j=v.available(a)if not j then return nil end
+local i=j.parse(c,d,e,f,g,h)if not i then return nil end
+if i.type=="click"then return N(a,b,i)elseif i.type=="scroll"then
+return P(a,b,i)elseif i.type=="drag"then return O(a,b,i)elseif i.type=="drop"then a._drag=nil;return 0 end;return 0 end;return v

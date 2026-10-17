@@ -1,342 +1,89 @@
-local computer = require("computer")
-local remote = {}
-local REMOTE_EXEC = "remote_exec"
-local REMOTE_RES = "remote_res"
-local TIMEOUT = 30
-local CMD_LIMIT = 8192
-local MIN_FREE_MEM = 32 * 1024
-local STEP_BUDGET = 1e6
-local STEP_TICK = 1e5
-local net = nil
-local fs = nil
-local trustMgr = nil
-local log = nil
-local event = nil
-local enabled = false
-function remote.setEnabled(v) enabled = v and true or false end
-function remote.isEnabled() return enabled end
---! THE STEP BUDGET BELOW DOES NOT EXIST ON OPENCOMPUTERS.
---!
---! It is installed with debug.sethook, and OC's sandbox does not hand that
---! out. Its machine.lua exports exactly four debug functions -- getinfo,
---! traceback, getlocal, getupvalue -- and deliberately withholds sethook,
---! because the machine uses its own hook to enforce the "too long without
---! yielding" deadline and guest code that could call sethook could disarm
---! it. (Read it yourself: assets/opencomputers/lua/machine.lua, the `debug =
---! {` table. OpenOS, which is real OC code, only ever calls debug.traceback.)
---!
---! So `if debug and debug.sethook then` is FALSE on every real machine, the
---! hook is never installed, and both the CPU bound AND the memory-pressure
---! abort inside it silently do not run. The code reads exactly as though
---! they do, which is why this notice is here and not in a commit message.
---!
---! WHAT STILL PROTECTS THE HOST, so the actual position is written down:
---!   * a peer must be TRUSTED *and* pass challenge-response, per request;
---!   * rshd must be running (`enabled`), and it defaults off;
---!   * CMD_LIMIT caps the source fed to load();
---!   * MIN_FREE_MEM is checked once, BEFORE entry (that check is outside
---!     the hook and does still happen);
---!   * OUTPUT_LIMIT caps what comes back;
---!   * OC's own machine deadline still kills a runaway -- but it kills the
---!     WHOLE COMPUTER, which is a far worse outcome than the clean "step
---!     budget exceeded" this module was written to return.
---!
---! Not turned into a refusal-to-run here: that would disable rsh outright on
---! the only platform TOS ships for, and whether that trade is worth making
---! is an operator's decision, not a bug fix. It is recorded in TODO.txt.
---! (test_sethook_absent.lua)
-local function sethookAvailable()
-return type(debug) == "table" and type(debug.sethook) == "function"
-end
-function remote.stepBudgetAvailable() return sethookAvailable() end
-local warnedNoBudget = false
-local function warnBudgetOnce()
-if warnedNoBudget or sethookAvailable() then return end
-warnedNoBudget = true
-if log and log.warn then
-log.warn("remote", "debug.sethook is unavailable here (OpenComputers does "
-.. "not expose it): remote commands run with NO step or memory budget. "
-.. "Trust + challenge-response and the OC watchdog are the only limits.")
-end
-end
-local protocol = nil
-function remote.init(modules)
-net = modules.net
-fs = modules.fs
-trustMgr = modules.trust
-log = modules.log
-event = modules.event
-protocol = require("kernel.net.protocol")
-if net then
-net.on(REMOTE_EXEC, function(packet, fromAddr)
-remote.handleExec(packet, fromAddr)
-end)
-end
-if log then
-log.info("remote", "Remote shell module initialized")
-end
-return true
-end
-function remote.execute(address, command)
-if not net then return nil, "Network not available" end
-if not protocol then return nil, "Protocol not loaded" end
-local level = trustMgr.getLevel(address)
-if level < trustMgr.LEVEL.TRUSTED then
-return nil, "Peer is not TRUSTED"
-end
-if net.verifyPeer then
-local vOk, vErr = net.verifyPeer(address)
-if not vOk then
-return nil, "Peer verification failed: " .. tostring(vErr)
-end
-end
-if not command or command == "" then
-return nil, "No command specified"
-end
-if type(command) ~= "string" then
-return nil, "Command must be a string"
-end
-if #command > CMD_LIMIT then
-return nil, "Command too large (max " .. CMD_LIMIT .. " bytes)"
-end
-local received = false
-local output = nil
-local exitCode = nil
-local listeners = {
-{ type = REMOTE_RES,
-id = net.onceFrom(REMOTE_RES, address, function(rpkt)
-local payload = rpkt.payload or {}
-output = type(payload.output) == "string" and payload.output or ""
-exitCode = type(payload.exitCode) == "number" and payload.exitCode or 0
-received = true
-end) },
-}
-local pkt = protocol.makePacket(REMOTE_EXEC, {
-cmd = command,
-}, { to = address })
-local ok, sendErr = net.send(address, pkt)
-if not ok then
-net.offAll(listeners)
-return nil, "Send failed: " .. tostring(sendErr)
-end
-if log then
-log.info("remote", "Sent command to " .. address:sub(1, 8) ..
-"...: " .. command:sub(1, 40))
-end
-net.waitFor(function() return received end, TIMEOUT)
-net.offAll(listeners)
-if not received then
-return nil, "Timeout waiting for response"
-end
-return output, exitCode
-end
-function remote.handleExec(packet, fromAddr)
-if not net or not protocol then return end
-if not enabled then return end
-local level = trustMgr.getLevel(fromAddr)
-if level < trustMgr.LEVEL.TRUSTED then
-if log then
-log.warn("remote", "Remote exec denied from non-trusted peer: " ..
-fromAddr:sub(1, 8) .. "...")
-end
+local C,R,K,L,M="remote","string"," bytes)","/public","/public/"
+local E=require("computer")local A={}local I="remote_exec"local F="remote_res"local S=30;local H=8192;local N=32*1024;local T=1e6
+local O=1e5;local z=nil;local B=nil;local G=nil;local y=nil;local U=nil;local J=false;function A.setEnabled(a)
+J=a and true or false end;function A.isEnabled()return J end;local function P()
 return
-end
-if net.verifyPeer then
-local vOk, vErr = net.verifyPeer(fromAddr)
-if not vOk then
-if log then
-log.warn("remote", "Refusing remote exec from " ..
-fromAddr:sub(1, 8) .. ": " .. tostring(vErr))
-end
-return
-end
-end
-local payload = packet.payload or {}
-local cmd = payload.cmd
-if type(cmd) ~= "string" or cmd == "" then
-local res = protocol.makePacket(REMOTE_RES, {
-output = "Error: no command provided",
-exitCode = 1,
-}, { to = fromAddr })
-net.send(fromAddr, res)
-return
-end
-if #cmd > CMD_LIMIT then
-if log then
-log.warn("remote", "Oversized remote cmd from " ..
-fromAddr:sub(1, 8) .. "... (" .. #cmd .. " bytes)")
-end
-local res = protocol.makePacket(REMOTE_RES, {
-output = "Error: command too large (max " .. CMD_LIMIT .. " bytes)",
-exitCode = 1,
-}, { to = fromAddr })
-net.send(fromAddr, res)
-return
-end
-if computer.freeMemory and computer.freeMemory() < MIN_FREE_MEM then
-if log then
-log.warn("remote", "Refusing remote exec: low memory")
-end
-local res = protocol.makePacket(REMOTE_RES, {
-output = "Error: host low on memory, retry later",
-exitCode = 1,
-}, { to = fromAddr })
-net.send(fromAddr, res)
-return
-end
-if log then
-log.info("remote", "Executing remote command from " ..
-fromAddr:sub(1, 8) .. "...: " .. cmd:sub(1, 60))
-end
-local outputLines = {}
-local outputSize = 0
-local OUTPUT_LIMIT = 5120
-local function copyLib(lib, deny)
-local c = {}
-for k, v in pairs(lib) do
-if not (deny and deny[k]) then c[k] = v end
-end
-return c
-end
-local sandbox = {
-print = function(...)
-if outputSize >= OUTPUT_LIMIT then return end
-local parts = {}
-for i = 1, select("#", ...) do
-parts[#parts + 1] = tostring((select(i, ...)))
-end
-local line = table.concat(parts, "\t")
-local remaining = OUTPUT_LIMIT - outputSize
-if #line > remaining then line = line:sub(1, math.max(0, remaining)) end
-outputSize = outputSize + #line + 1
-outputLines[#outputLines + 1] = line
-end,
-tostring = tostring,
-tonumber = tonumber,
-type = type,
-pairs = pairs,
-ipairs = ipairs,
-select = select,
-pcall = pcall,
-xpcall = xpcall,
-error = error,
-assert = assert,
-unpack = table.unpack or unpack,
-table = copyLib(table),
-string = copyLib(string, { dump = true }),
-math = copyLib(math),
-os = { clock = os.clock, time = os.time, date = os.date },
-computer = {
-uptime = computer.uptime,
-freeMemory = computer.freeMemory,
-totalMemory = computer.totalMemory,
-},
-}
-if fs then
-sandbox.fs = {
-exists = function(path)
-path = fs.normalize(path)
-if path == "/public" or path:sub(1, 8) == "/public/" then return fs.exists(path) end
-return false
-end,
-list = function(path)
-path = fs.normalize(path)
-if path == "/public" or path:sub(1, 8) == "/public/" then return fs.list(path) end
-return {}
-end,
-isDirectory = function(path)
-path = fs.normalize(path)
-if path == "/public" or path:sub(1, 8) == "/public/" then return fs.isDirectory(path) end
-return false
-end,
-readFile = function(path)
-path = fs.normalize(path)
-if path == "/public" or path:sub(1, 8) == "/public/" then return fs.readFile(path) end
-return nil, "Access denied: only /public/ is accessible remotely"
-end,
-}
-end
-local fn, loadErr = load(cmd, "=remote", "t", sandbox)
-local exitCode = 0
-if not fn then
-outputLines[#outputLines + 1] = "Load error: " .. tostring(loadErr)
-exitCode = 1
-else
-local priorHook, priorMask, priorCount = nil, nil, nil
-local hookInstalled = false
-local stepsRun = 0
-local tripped = false
-warnBudgetOnce()
+type(debug)=="table"and type(debug.sethook)=="function"end
+function A.stepBudgetAvailable()return P()end;local Q=false
+local function V()if Q or P()then return end;Q=true
+if y and y.warn then
+y.warn(C,
+"debug.sethook is unavailable here (OpenComputers does "..
+"not expose it): remote commands run with NO step or memory budget. ".."Trust + challenge-response and the OC watchdog are the only limits.")end end;local D=nil
+function A.init(a)z=a.net;B=a.fs;G=a.trust;y=a.log;U=a.event
+D=require("kernel.net.protocol")if z then
+z.on(I,function(b,c)A.handleExec(b,c)end)end;if y then
+y.info(C,"Remote shell module initialized")end;return true end
+function A.execute(a,b)if not z then return nil,"Network not available"end;if not D then return nil,
+"Protocol not loaded"end;local g=G.getLevel(a)if g<
+G.LEVEL.TRUSTED then return nil,"Peer is not TRUSTED"end;if z.verifyPeer then
+local k,l=z.verifyPeer(a)
+if not k then return nil,"Peer verification failed: "..tostring(l)end end;if not b or b==""then return
+nil,"No command specified"end;if type(b)~=R then return nil,
+"Command must be a string"end;if#b>H then return nil,
+"Command too large (max "..H..K end;local c=false;local d=nil;local e=nil
+local f={{type=F,id=z.onceFrom(F,a,function(k)local l=
+k.payload or{}
+d=type(l.output)==R and l.output or""
+e=type(l.exitCode)=="number"and l.exitCode or 0;c=true end)}}local h=D.makePacket(I,{cmd=b},{to=a})local i,j=z.send(a,h)
+if not i then
+z.offAll(f)return nil,"Send failed: "..tostring(j)end;if y then
+y.info(C,"Sent command to "..a:sub(1,8).."...: "..b:sub(1,40))end
+z.waitFor(function()return c end,S)z.offAll(f)
+if not c then return nil,"Timeout waiting for response"end;return d,e end
+function A.handleExec(b,a)if not z or not D then return end;if not J then return end
+local l=G.getLevel(a)
+if l<G.LEVEL.TRUSTED then if y then
+y.warn(C,"Remote exec denied from non-trusted peer: "..a:sub(1,8).."...")end;return end
+if z.verifyPeer then local r,s=z.verifyPeer(a)
+if not r then if y then
+y.warn(C,"Refusing remote exec from "..a:sub(1,8)..": "..
+tostring(s))end;return end end;local m=b.payload or{}local d=m.cmd
+if type(d)~=R or d==""then
+local r=D.makePacket(F,{output="Error: no command provided",exitCode=1},{to=a})z.send(a,r)return end
+if#d>H then if y then
+y.warn(C,"Oversized remote cmd from "..a:sub(1,8).."... ("..#d..K)end
+local r=D.makePacket(F,{output="Error: command too large (max "..H..K,exitCode=1},{to=a})z.send(a,r)return end
+if E.freeMemory and E.freeMemory()<N then if y then
+y.warn(C,"Refusing remote exec: low memory")end
+local r=D.makePacket(F,{output="Error: host low on memory, retry later",exitCode=1},{to=a})z.send(a,r)return end;if y then
+y.info(C,"Executing remote command from "..a:sub(1,8).."...: "..d:sub(1,60))end;local c={}local f=0;local g=5120;local function i(s,r)local t={}for u,w in
+pairs(s)do if not(r and r[u])then t[u]=w end end
+return t end
+local j={print=function(...)if f>=g then return end;local s={}
+for u=1,select("#",...)
+do s[#s+1]=tostring((select(u,...)))end;local r=table.concat(s,"\t")local t=g-f;if#r>t then
+r=r:sub(1,math.max(0,t))end;f=f+#r+1;c[#c+1]=r end,tostring=tostring,tonumber=tonumber,type=type,pairs=pairs,ipairs=ipairs,select=select,pcall=pcall,xpcall=xpcall,error=error,assert=assert,unpack=
+table.unpack or unpack,table=i(table),string=i(string,{dump=true}),math=i(math),os={clock=os.clock,time=os.time,date=os.date},computer={uptime=E.uptime,freeMemory=E.freeMemory,totalMemory=E.totalMemory}}
+if B then
+j.fs={exists=function(r)r=B.normalize(r)
+if r==L or r:sub(1,8)==M then return B.exists(r)end;return false end,list=function(r)
+r=B.normalize(r)if r==L or r:sub(1,8)==M then return B.list(r)end
+return{}end,isDirectory=function(r)r=B.normalize(r)if r==L or
+r:sub(1,8)==M then return B.isDirectory(r)end;return
+false end,readFile=function(r)
+r=B.normalize(r)
+if r==L or r:sub(1,8)==M then return B.readFile(r)end;return nil,"Access denied: only /public/ is accessible remotely"end}end;local k,n=load(d,"=remote","t",j)local h=0
+if not k then
+c[#c+1]="Load error: "..tostring(n)h=1 else local r,u,v=nil,nil,nil;local w=false;local s=0;local t=false;V()
 if debug and debug.sethook then
-if debug.gethook then
-local ok, h, m, c = pcall(debug.gethook)
-if ok then priorHook, priorMask, priorCount = h, m, c end
-end
-local hook
-hook = function()
-if tripped then
-error("remote exec: step budget exceeded", 0)
-end
-if computer.freeMemory and computer.freeMemory() < MIN_FREE_MEM then
-tripped = true
-pcall(debug.sethook, hook, "", 1)
-error("remote exec: aborted (host low on memory)", 0)
-end
-stepsRun = stepsRun + STEP_TICK
-if stepsRun >= STEP_BUDGET then
-tripped = true
-pcall(debug.sethook, hook, "", 1)
-error("remote exec: step budget exceeded", 0)
-end
-end
-local ok = pcall(debug.sethook, hook, "", STEP_TICK)
-if ok then hookInstalled = true end
-end
-local execOk, execErr = pcall(fn)
-if hookInstalled then
-if priorHook then
-pcall(debug.sethook, priorHook, priorMask or "", priorCount or 0)
-else
-pcall(debug.sethook)
-end
-end
-if not execOk then
-outputLines[#outputLines + 1] = "Runtime error: " .. tostring(execErr)
-exitCode = 1
-end
-end
-local output = table.concat(outputLines, "\n")
-if #output > OUTPUT_LIMIT then
-output = output:sub(1, OUTPUT_LIMIT) .. "\n... (output truncated)"
-end
-if log then
-log.info("remote", "Command finished (exit=" .. exitCode ..
-", output=" .. #output .. " bytes)")
-end
-local res = protocol.makePacket(REMOTE_RES, {
-output = output,
-exitCode = exitCode,
-}, { to = fromAddr })
-local ok, err = net.send(fromAddr, res)
-if not ok and log then
-log.warn("remote", "Failed to send result: " .. tostring(err))
-end
-end
-remote.TYPE_EXEC = REMOTE_EXEC
-remote.TYPE_RES = REMOTE_RES
-do
-local T = rawget(_G, "_TOS")
-if T and T.net and not net then
-local okI = pcall(remote.init, {
-net = T.net,
-fs = T.fs,
-trust = T.net.getTrust and T.net.getTrust() or nil,
-log = T.logObj,
-event = T.event,
-})
-if okI and T.net.getServiceArm and T.net.getServiceArm("rshd") then
-remote.setEnabled(true)
-end
-end
-end
-return remote
+if
+debug.gethook then local Z,_,aa,ab=pcall(debug.gethook)if Z then r,u,v=_,aa,ab end end;local X
+X=function()
+if t then error("remote exec: step budget exceeded",0)end;if E.freeMemory and E.freeMemory()<N then t=true
+pcall(debug.sethook,X,"",1)
+error("remote exec: aborted (host low on memory)",0)end;s=s+O;if s>=T then
+t=true;pcall(debug.sethook,X,"",1)
+error("remote exec: step budget exceeded",0)end end;local Y=pcall(debug.sethook,X,"",O)if Y then w=true end end;local x,W=pcall(k)
+if w then if r then pcall(debug.sethook,r,u or"",v or 0)else
+pcall(debug.sethook)end end
+if not x then c[#c+1]="Runtime error: "..tostring(W)h=1 end end;local e=table.concat(c,"\n")if#e>g then
+e=e:sub(1,g).."\n... (output truncated)"end;if y then
+y.info(C,"Command finished (exit="..h..", output="..#e..K)end
+local o=D.makePacket(F,{output=e,exitCode=h},{to=a})local p,q=z.send(a,o)if not p and y then
+y.warn(C,"Failed to send result: "..tostring(q))end end;A.TYPE_EXEC=I;A.TYPE_RES=F
+do local a=rawget(_G,"_TOS")
+if
+a and a.net and not z then
+local b=pcall(A.init,{net=a.net,fs=a.fs,trust=a.net.getTrust and a.net.getTrust()or nil,log=a.logObj,event=a.event})if
+b and a.net.getServiceArm and a.net.getServiceArm("rshd")then A.setEnabled(true)end end end;return A

@@ -1,203 +1,93 @@
-local helpers = require("shell.panels.helpers")
-local dialogs = require("shell.panels.dialogs")
-local M = {}
-local function pullSignal()
-if coroutine.isyieldable and coroutine.isyieldable() then
-return coroutine.yield()
-end
-return require("computer").pullSignal(0.05)
-end
-function M.navigateUp(S)
-local parent = S.browser.path:match("^(.*)/[^/]+/?$") or "/"
-if parent == "" then parent = "/" end
-S.browser.path = S.F.normalize and S.F.normalize(parent) or parent
-S.browser.sel = 1; S.browser.scroll = 0; helpers.loadFiles(S, S.browser)
-S.cwd = S.browser.path
-end
-function M.navigateInto(S, dirName)
-local target = S.F.join(S.browser.path, dirName)
-if not helpers.canRead(S, target) then return end
-S.browser.path = target
-S.browser.sel = 1; S.browser.scroll = 0; helpers.loadFiles(S, S.browser)
-S.cwd = S.browser.path
-end
-local function promptYN(S, message)
-local D, T, W = S.D, S.T, S.W
-D.fill(1, S.OUT_ROW, W, 1, " ", T.fg, T.bg)
-D.set(1, S.OUT_ROW, (message .. " (y/n)"):sub(1, W), T.warning, T.bg)
-while true do
-local sig, _, ch = pullSignal()
-if sig == "key_down" then
-if ch == 121 or ch == 89 then return true end
-return false
-end
-end
-end
-function M.doCopy(S)
-local T = S.T
-if S.clipboard then
-local dst = S.F.join(S.browser.path, S.clipboard.name)
-if S.F.exists(dst) and not promptYN(S, "Overwrite '" .. S.clipboard.name .. "'?") then
-S.lastOut = { "Cancelled", T.dim }
-S.clipboard = nil
-return
-end
-local ok2, err2 = S.F.copy(S.clipboard.path, dst)
-if ok2 then
-helpers.refreshBrowser(S)
-S.lastOut = { "Pasted: " .. S.clipboard.name .. " -> " .. S.browser.path, T.highlight }
-else
-S.lastOut = { "Paste failed: " .. tostring(err2 or "unknown"), T.error }
-end
-S.clipboard = nil
-else
-local path, f = helpers.selPath(S)
-if not path then S.lastOut = { "Select a file or folder to copy", T.warning }; return end
-if not helpers.canRead(S, path) then return end
-S.clipboard = { path = path, name = f.name }
-S.lastOut = { "Marked: " .. f.name .. "  -- navigate & F5 to paste", T.highlight }
-end
-end
-function M.doMove(S, path, f)
-local T = S.T
-if not path then
-path, f = helpers.selPath(S)
-if not path or f.dir then S.lastOut = { "Select a file to move", T.warning }; return end
-end
-if not helpers.canWrite(S, path) then return end
-local dest = dialogs.promptInput(S, "Move to: ", 60)
-if not dest or #dest == 0 then S.lastOut = { "Cancelled", T.dim }; return end
-local dst = helpers.resolvePath(S, dest)
-if S.F.isDirectory(dst) then dst = S.F.join(dst, f.name) end
-if not helpers.canWrite(S, dst) then return end
-if S.F.exists(dst) and dst ~= path then
-if not promptYN(S, "Overwrite '" .. dst .. "'?") then
-S.lastOut = { "Cancelled", T.dim }; return
-end
-end
-local renamed = S.F.rename(path, dst)
-if not renamed then
-local cok, cerr = S.F.copy(path, dst)
-if not cok then
-S.lastOut = { "Move failed: " .. tostring(cerr or "copy failed"), T.error }
-return
-end
-local rok, rerr = S.F.remove(path)
-if not rok then
-S.lastOut = { "Copied to " .. dst .. " but could not remove source: " ..
-tostring(rerr or "?"), T.warning }
-helpers.refreshBrowser(S)
-return
-end
-end
-helpers.refreshBrowser(S)
-S.lastOut = { "Moved: " .. f.name .. " -> " .. dst, T.highlight }
-end
-function M.doDelete(S, path, f)
-local T = S.T
-helpers.clearFailure(S)
-if not path then
-path, f = helpers.selPath(S)
-if not path then S.lastOut = { "Nothing selected", T.warning }; return end
-end
-if path == "/" then return helpers.fail(S, "Cannot delete root", nil, "delete") end
-if not helpers.canWrite(S, path) then return end
---! F8 GOES THROUGH THE TRASH, like `rm` does.
---!
---! It used to call fs.remove directly, so the same operation was
---! recoverable when typed and irreversible when pressed -- and the box
---! said "This cannot be undone", which was true only because of the
---! bypass. An operator who deleted from the browser and then looked in
---! the trash found nothing, which is one of the two halves of the
---! reported "the trash seems to be broken".
---!
---! The system paths that `rm` keeps out of a user's home trash are kept
---! out here too, and they are the paths this prompt still describes as
---! permanent. (test_browser_delete_trash.lua)
-local sysSkip = path:match("^/tos") or path:match("^/etc")
-or path:match("^/var") or path:match("^/usr")
-local trashMod
-if not sysSkip then
-local okT, m = pcall(require, "kernel.trash")
-if okT and m and m.put then trashMod = m end
-end
-local go = dialogs.confirm(S,
-"Delete '" .. f.name .. "'?\n" ..
-(trashMod and "It goes to the trash; 'trash restore' brings it back."
-or "This cannot be undone."),
-{ title = "Delete File", severity = "danger",
-yes = "Delete", no = "Cancel", default = "no" })
-if not go then S.lastOut = { "Cancelled", T.dim }; return end
-if trashMod then
-local ok2, err2 = trashMod.put(path, helpers.sessionOf(S))
-if ok2 then
-helpers.refreshBrowser(S)
-S.lastOut = { "Trashed: " .. f.name .. " (use 'trash restore' to undo)", T.highlight }
-return
-end
-local why = tostring(err2 or "unknown reason")
-if not why:find("no trash", 1, true) then
-helpers.fail(S, "Not trashed: " .. why
-.. " — still there; use  rm --hard  to force  [E-304 ERR_TRASH_REFUSED]", nil, "delete")
-return
-end
-end
-local ok, err = S.F.remove(path)
-helpers.refreshBrowser(S)
-if ok then
-S.lastOut = { "Deleted: " .. f.name, T.highlight }
-else
-helpers.fail(S, "Delete failed: "
-.. tostring(err or "is the directory non-empty?"), nil, "delete")
-end
-end
-function M.doMkdir(S)
-local T = S.T
-if not helpers.canWrite(S, S.browser.path) then return end
-local name = dialogs.promptInput(S, "New directory name: ", 40)
-if not name or #name == 0 then S.lastOut = { "Cancelled", T.dim }; return end
-if S.F.makeDirectory(S.F.join(S.browser.path, name)) then
-helpers.refreshBrowser(S)
-S.lastOut = { "Created: " .. name, T.highlight }
-else
-S.lastOut = { "Failed", T.error }
-end
-end
-function M.doRename(S, path, f)
-local T = S.T
-if not path then
-path, f = helpers.selPath(S)
-if not path then S.lastOut = { "Nothing selected", T.warning }; return end
-end
-if not helpers.canWrite(S, path) then return end
-local newName = dialogs.promptInput(S, "Rename to: ", 60)
-if not newName or #newName == 0 then S.lastOut = { "Cancelled", T.dim }; return end
-local dst = S.F.join(S.browser.path, newName)
-if dst == path then S.lastOut = { "Cancelled", T.dim }; return end
-if S.F.exists(dst) then
-if not promptYN(S, "Overwrite '" .. newName .. "'?") then
-S.lastOut = { "Cancelled", T.dim }; return
-end
-pcall(S.F.remove, dst)
-end
-if S.F.rename(path, dst) then
-helpers.refreshBrowser(S)
-S.lastOut = { "Renamed: " .. f.name .. " -> " .. newName, T.highlight }
-else
-S.lastOut = { "Rename failed (cross-fs? use F6 Move instead)", T.error }
-end
-end
-function M.doNewFile(S)
-local T = S.T
-if not helpers.canWrite(S, S.browser.path) then return end
-local name = dialogs.promptInput(S, "New file name: ", 40)
-if not name or #name == 0 then S.lastOut = { "Cancelled", T.dim }; return end
-local p = S.F.join(S.browser.path, name)
-if S.F.writeFile(p, "") then
-helpers.refreshBrowser(S)
-S.lastOut = { "Created: " .. name, T.highlight }
-else
-S.lastOut = { "Failed", T.error }
-end
-end
-return M
+local k,n,o="Cancelled","Overwrite '","delete"
+local i=require("shell.panels.helpers")local l=require("shell.panels.dialogs")local j={}
+local function p()
+if coroutine.isyieldable and
+coroutine.isyieldable()then return coroutine.yield()end;return require("computer").pullSignal(0.05)end
+function j.navigateUp(a)
+local b=a.browser.path:match("^(.*)/[^/]+/?$")or"/"if b==""then b="/"end
+a.browser.path=a.F.normalize and a.F.normalize(b)or b;a.browser.sel=1;a.browser.scroll=0
+i.loadFiles(a,a.browser)a.cwd=a.browser.path end
+function j.navigateInto(a,b)local c=a.F.join(a.browser.path,b)if
+not i.canRead(a,c)then return end;a.browser.path=c;a.browser.sel=1
+a.browser.scroll=0;i.loadFiles(a,a.browser)a.cwd=a.browser.path end
+local function m(a,b)local d,c,e=a.D,a.T,a.W;d.fill(1,a.OUT_ROW,e,1," ",c.fg,c.bg)
+d.set(1,a.OUT_ROW,(
+b.." (y/n)"):sub(1,e),c.warning,c.bg)
+while true do local g,h,f=p()if g=="key_down"then if f==121 or f==89 then return true end
+return false end end end
+function j.doCopy(a)local b=a.T
+if a.clipboard then
+local c=a.F.join(a.browser.path,a.clipboard.name)
+if a.F.exists(c)and
+not m(a,n..a.clipboard.name.."'?")then a.lastOut={k,b.dim}a.clipboard=nil;return end;local d,e=a.F.copy(a.clipboard.path,c)
+if d then
+i.refreshBrowser(a)
+a.lastOut={"Pasted: "..a.clipboard.name.." -> "..a.browser.path,b.highlight}else
+a.lastOut={"Paste failed: "..tostring(e or"unknown"),b.error}end;a.clipboard=nil else local c,d=i.selPath(a)if not c then
+a.lastOut={"Select a file or folder to copy",b.warning}return end
+if not i.canRead(a,c)then return end;a.clipboard={path=c,name=d.name}
+a.lastOut={"Marked: "..
+d.name.."  -- navigate & F5 to paste",b.highlight}end end
+function j.doMove(a,b,c)local e=a.T
+if not b then b,c=i.selPath(a)if not b or c.dir then
+a.lastOut={"Select a file to move",e.warning}return end end;if not i.canWrite(a,b)then return end
+local f=l.promptInput(a,"Move to: ",60)if not f or#f==0 then a.lastOut={k,e.dim}return end
+local d=i.resolvePath(a,f)if a.F.isDirectory(d)then d=a.F.join(d,c.name)end;if not
+i.canWrite(a,d)then return end
+if a.F.exists(d)and d~=b then if not
+m(a,n..d.."'?")then a.lastOut={k,e.dim}return end end;local g=a.F.rename(b,d)
+if not g then local h,q=a.F.copy(b,d)if not h then
+a.lastOut={"Move failed: "..tostring(q or
+"copy failed"),e.error}return end;local r,s=a.F.remove(b)
+if
+not r then
+a.lastOut={"Copied to "..
+d.." but could not remove source: "..tostring(s or"?"),e.warning}i.refreshBrowser(a)return end end;i.refreshBrowser(a)
+a.lastOut={"Moved: "..c.name.." -> "..d,e.highlight}end
+function j.doDelete(a,b,c)local d=a.T;i.clearFailure(a)
+if not b then b,c=i.selPath(a)if not b then
+a.lastOut={"Nothing selected",d.warning}return end end
+if b=="/"then return i.fail(a,"Cannot delete root",nil,o)end;if not i.canWrite(a,b)then return end
+local f=b:match("^/tos")or
+b:match("^/etc")or b:match("^/var")or
+b:match("^/usr")local e;if not f then local s,r=pcall(require,"kernel.trash")
+if s and r and r.put then e=r end end
+local g=l.confirm(a,"Delete '"..
+c.name.."'?\n"..
+(e and
+"It goes to the trash; 'trash restore' brings it back."or"This cannot be undone."),{title="Delete File",severity="danger",yes="Delete",no="Cancel",default="no"})if not g then a.lastOut={k,d.dim}return end
+if e then
+local s,t=e.put(b,i.sessionOf(a))if s then i.refreshBrowser(a)
+a.lastOut={"Trashed: "..
+c.name.." (use 'trash restore' to undo)",d.highlight}return end
+local r=tostring(t or"unknown reason")
+if not r:find("no trash",1,true)then
+i.fail(a,"Not trashed: "..r..
+" — still there; use  rm --hard  to force  [E-304 ERR_TRASH_REFUSED]",
+nil,o)return end end;local h,q=a.F.remove(b)i.refreshBrowser(a)if h then
+a.lastOut={"Deleted: "..c.name,d.highlight}else
+i.fail(a,"Delete failed: "..tostring(q or"is the directory non-empty?"),
+nil,o)end end
+function j.doMkdir(a)local c=a.T
+if not i.canWrite(a,a.browser.path)then return end;local b=l.promptInput(a,"New directory name: ",40)if
+not b or#b==0 then a.lastOut={k,c.dim}return end
+if
+a.F.makeDirectory(a.F.join(a.browser.path,b))then i.refreshBrowser(a)
+a.lastOut={"Created: "..b,c.highlight}else a.lastOut={"Failed",c.error}end end
+function j.doRename(a,b,c)local d=a.T
+if not b then b,c=i.selPath(a)if not b then
+a.lastOut={"Nothing selected",d.warning}return end end;if not i.canWrite(a,b)then return end
+local e=l.promptInput(a,"Rename to: ",60)if not e or#e==0 then a.lastOut={k,d.dim}return end
+local f=a.F.join(a.browser.path,e)if f==b then a.lastOut={k,d.dim}return end;if a.F.exists(f)then if not
+m(a,n..e.."'?")then a.lastOut={k,d.dim}return end
+pcall(a.F.remove,f)end
+if a.F.rename(b,f)then
+i.refreshBrowser(a)
+a.lastOut={"Renamed: "..c.name.." -> "..e,d.highlight}else
+a.lastOut={"Rename failed (cross-fs? use F6 Move instead)",d.error}end end
+function j.doNewFile(a)local c=a.T
+if not i.canWrite(a,a.browser.path)then return end;local b=l.promptInput(a,"New file name: ",40)if not b or#b==0 then
+a.lastOut={k,c.dim}return end
+local d=a.F.join(a.browser.path,b)
+if a.F.writeFile(d,"")then i.refreshBrowser(a)
+a.lastOut={"Created: "..b,c.highlight}else a.lastOut={"Failed",c.error}end end;return j

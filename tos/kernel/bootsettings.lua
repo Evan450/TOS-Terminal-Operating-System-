@@ -1,243 +1,91 @@
-local bootsettings = {}
-local bootcfg = require("kernel.bootcfg")
-local AUTO = "auto"
-local function unlessDefault(v, default)
-if v == (default or AUTO) then return nil end
-return v
-end
-function bootsettings.ramLabel(probe)
-local okH, hal = pcall(require, "kernel.hal")
-if not okH or not hal or not hal.ramSummary then return nil end
-local ok, hw = pcall(function()
-if probe then return probe() end
-local computer = require("computer")
-local totalKB = math.floor(((computer.totalMemory and computer.totalMemory()) or 0) / 1024)
-local modules = hal.ramBanks() or 0
-return { totalKB = totalKB, modules = modules, sticks = hal.ramSticks() }
-end)
-if not ok or type(hw) ~= "table" or (hw.totalKB or 0) <= 0 then return nil end
-return hal.ramSummary(hw.sticks, hw.totalKB, hw.modules)
-end
-local function buildFields(ramLabel)
-local fields = {
-{ key = "profile", label = "Profile (what loads)", group = "basic",
-values = { "minimal", "normal", "full", "diagnostic", "safe" },
-get = function(c) return c.profile end,
-set = function(c, v) c.profile = v end,
-show = function(v) return (v == "safe") and "SAFE MODE" or v end },
-{ key = "verbosity", label = "Verbosity (what it says)", group = "basic",
-values = { AUTO, "silent", "splash", "text", "verbose" },
-get = function(c) return c.verbosity or AUTO end,
-set = function(c, v) c.verbosity = unlessDefault(v) end,
-show = function(v) return v end },
-{ key = "ui", label = "Interface (all seats)", group = "basic",
-values = { AUTO, "home", "split", "cli" },
-get = function(c) return c.ui or AUTO end,
-set = function(c, v) c.ui = unlessDefault(v) end,
-show = function(v)
-if v == AUTO then
-return string.format("auto (panels from %d KB, else CLI)", bootcfg.PANELS_MIN_KB)
-end
-if v == "cli" then return "CLI shell" end
-if v == "split" then return "panels (split: Shell + Desktop)" end
-return "panels (Home: one tab, two views)"
-end },
-{ key = "repair", label = "Self-repair next boot", group = "basic",
-values = { false, true },
-get = function(c) return c.repair == true end,
-set = function(c, v) c.repair = v end,
-show = function(v) return v and "RUN ONCE" or "off" end },
-{ key = "showConfig", label = "Show this screen at boot", group = "basic",
-values = { true, false },
-get = function(c) return c.showConfig and true or false end,
-set = function(c, v) c.showConfig = v end,
-show = function(v) return v and "on" or "off" end },
-{ key = "cpuTier", label = "CPU tier (override)", group = "advanced",
-values = { AUTO, 1, 2, 3 },
-get = function(c) return c.cpuTier or AUTO end,
-set = function(c, v) c.cpuTier = unlessDefault(v) end,
-show = function(v) return (v == AUTO) and "auto (detect)" or ("Tier " .. v) end },
-{ key = "dataTier", label = "Data Card tier (override)", group = "advanced",
-values = { AUTO, 1, 2, 3 },
-get = function(c) return c.dataTier or AUTO end,
-set = function(c, v) c.dataTier = unlessDefault(v) end,
-show = function(v) return (v == AUTO) and "auto (detect)" or ("Tier " .. v) end },
-{ key = "ramGate",
-label = ramLabel and ("RAM for extras [" .. ramLabel .. "]")
-or "RAM for extras (override)",
-group = "advanced",
-values = { AUTO, true, false },
-get = function(c)
-if c.ramGate == nil then return AUTO end
-return c.ramGate
-end,
-set = function(c, v) c.ramGate = unlessDefault(v) end,
-show = function(v)
-if v == AUTO then return "auto (measure)" end
-return v and "always load" or "never load"
-end },
-}
-for _, feat in ipairs(bootcfg.FEATURES) do
-fields[#fields + 1] = {
-key = "adv." .. feat, label = "  + " .. feat, group = "advanced",
-values = { AUTO, true, false },
-get = function(c)
-local v = c.advanced and c.advanced[feat]
-if v == nil then return AUTO end
-return v
-end,
-set = function(c, v)
-c.advanced = c.advanced or {}
-c.advanced[feat] = unlessDefault(v)
-end,
-show = function(v)
-if v == AUTO then return "auto" end
-return v and "on" or "off"
-end,
-}
-end
-return fields
-end
-function bootsettings.fields(cfg, ramLabel)
-cfg = bootcfg._normalize(cfg or {})
-local out = {}
-for _, f in ipairs(buildFields(ramLabel)) do
-out[#out + 1] = { key = f.key, label = f.label, group = f.group,
-value = f.show(f.get(cfg)) }
-end
-return out
-end
-function bootsettings.cycle(cfg, idx, dir)
-local fields = buildFields()
-local f = fields[idx]
-if not f then return cfg end
-local cur = f.get(cfg)
-local ring = f.values
-local i = 1
-for k, v in ipairs(ring) do if v == cur then i = k break end end
-i = ((i - 1 + (dir or 1)) % #ring) + 1
-f.set(cfg, ring[i])
-return bootcfg._normalize(cfg)
-end
-function bootsettings.cycleKey(cfg, key, dir)
-local fields = buildFields()
-for i, f in ipairs(fields) do
-if f.key == key then return bootsettings.cycle(cfg, i, dir) end
-end
-return bootcfg._normalize(cfg)
-end
-local function visibleRows(cfg, showAdvanced, ramLabel)
-local rows = {}
-for _, f in ipairs(bootsettings.fields(cfg, ramLabel)) do
-if f.group == "basic" then rows[#rows + 1] = f end
-end
-if showAdvanced then
-rows[#rows + 1] = { header = true,
-label = "Advanced - boot overrides & manual device checks" }
-for _, f in ipairs(bootsettings.fields(cfg, ramLabel)) do
-if f.group == "advanced" then rows[#rows + 1] = f end
-end
-end
-return rows
-end
-local function stepSel(rows, sel, dir)
-local n = #rows
-for _ = 1, n do
-sel = ((sel - 1 + dir) % n) + 1
-if rows[sel] and not rows[sel].header then return sel end
-end
-return sel
-end
-function bootsettings.run(cfg, ctx)
-cfg = bootcfg._normalize(cfg or {})
-local sel = 1
-local scroll = 0
-local showHw = false
-local showAdvanced = false
-local col = ctx.color or function() return 0xFFFFFF end
-local hwInv, hwKey = nil, nil
-local ramLabel = bootsettings.ramLabel(ctx.ramProbe)
-while true do
-ctx.clear()
-ctx.set(2, 1, "TOS Boot Settings", col("title"))
-ctx.set(2, 2, "/etc/boot.cfg - applies on next boot", col("dim"))
-local rows = visibleRows(cfg, showAdvanced, ramLabel)
-if sel > #rows or (rows[sel] and rows[sel].header) then
-sel = stepSel(rows, 1, 0)
-if rows[sel] and rows[sel].header then sel = stepSel(rows, sel, 1) end
-end
-local hwRows = nil
-if showHw and ctx.sysinfo then
-local key = tostring(cfg.cpuTier) .. "/" .. tostring(cfg.dataTier)
-if not hwInv or hwKey ~= key then
-hwInv = ctx.sysinfo.gather(nil, { cpuTier = cfg.cpuTier, dataTier = cfg.dataTier })
-hwKey = key
-end
-hwRows = ctx.sysinfo.rows(hwInv)
-end
-local listTop = 4
-local H2 = ctx.H or 25
-local hwWant = hwRows and math.min(#hwRows + 1, math.floor(H2 / 2)) or 0
-local listH = (H2 - listTop + 1) - 3 - hwWant
-if listH < 4 then listH = 4 end
-if listH > #rows then listH = #rows end
-if sel - scroll > listH then scroll = sel - listH end
-if sel - scroll < 1 then scroll = math.max(0, sel - 1) end
-if scroll > #rows - listH then scroll = math.max(0, #rows - listH) end
-for i = 1, listH do
-local ri = scroll + i
-local f = rows[ri]
-if not f then break end
-local y = listTop + i - 1
-if f.header then
-ctx.set(2, y, "-- " .. f.label, col("title"))
-else
-local selFg = (ri == sel) and col("section") or col("dim")
-ctx.set(2, y, ((ri == sel and "> " or "  ") .. f.label):sub(1, 31), selFg)
-ctx.set(34, y, f.value, (ri == sel) and col("value") or col("dim"))
-end
-end
-if scroll > 0 then ctx.set(46, listTop, "^ more", col("title")) end
-if scroll + listH < #rows then
-ctx.set(46, listTop + listH - 1, "v more", col("title"))
-end
-local hy = listTop + listH + 1
-ctx.set(2, hy, "Up/Down: select   Left/Right or Space: change", col("dim"))
-ctx.set(2, hy + 1, ("[S] save   [R] save+reboot   [A] advanced %s   [H] hardware   [Q] cancel")
-:format(showAdvanced and "shown" or "hidden"), col("dim"))
-if hwRows then
-local ry = hy + 3
-for _, r in ipairs(hwRows) do
-if ry >= H2 then break end
-if r.role == "section" then
-ctx.set(2, ry, "-- " .. r.value, col("title"))
-else
-ctx.set(4, ry, (r.label ~= "" and (r.label .. ": ") or "  ") .. r.value,
-col(r.role))
-end
-ry = ry + 1
-end
-end
-local _, char, code = ctx.readKey()
-if code == 200 then
-sel = stepSel(rows, sel, -1)
-elseif code == 208 then
-sel = stepSel(rows, sel, 1)
-elseif code == 203 then
-if rows[sel] and rows[sel].key then bootsettings.cycleKey(cfg, rows[sel].key, -1) end
-elseif code == 205 or char == 32 then
-if rows[sel] and rows[sel].key then bootsettings.cycleKey(cfg, rows[sel].key, 1) end
-elseif char == 115 or char == 83 then
-return "save", cfg
-elseif char == 114 or char == 82 then
-return "reboot", cfg
-elseif char == 97 or char == 65 then
-showAdvanced = not showAdvanced
-elseif char == 104 or char == 72 then
-showHw = not showHw
-elseif char == 113 or char == 81 or code == 1 then
-return "cancel", cfg
-end
-end
-end
-return bootsettings
+local n="advanced"local j={}local k=require("kernel.bootcfg")local i="auto"local function l(a,b)if a==
+(b or i)then return nil end;return a end
+function j.ramLabel(a)
+local d,b=pcall(require,"kernel.hal")
+if not d or not b or not b.ramSummary then return nil end
+local e,c=pcall(function()if a then return a()end;local f=require("computer")
+local g=math.floor(((f.totalMemory and
+f.totalMemory())or 0)/
+1024)local h=b.ramBanks()or 0
+return{totalKB=g,modules=h,sticks=b.ramSticks()}end)if
+not e or type(c)~="table"or(c.totalKB or 0)<=0 then return nil end;return
+b.ramSummary(c.sticks,c.totalKB,c.modules)end
+local function o(a)
+local b={{key="profile",label="Profile (what loads)",group="basic",values={"minimal","normal","full","diagnostic","safe"},get=function(d)
+return d.profile end,set=function(d,e)d.profile=e end,show=function(c)return
+(c=="safe")and"SAFE MODE"or c end},{key="verbosity",label="Verbosity (what it says)",group="basic",values={i,"silent","splash","text","verbose"},get=function(d)return
+d.verbosity or i end,set=function(d,e)d.verbosity=l(e)end,show=function(c)
+return c end},{key="ui",label="Interface (all seats)",group="basic",values={i,"home","split","cli"},get=function(d)return
+d.ui or i end,set=function(d,e)d.ui=l(e)end,show=function(c)
+if c==i then return
+string.format("auto (panels from %d KB, else CLI)",k.PANELS_MIN_KB)end;if c=="cli"then return"CLI shell"end;if c=="split"then
+return"panels (split: Shell + Desktop)"end;return"panels (Home: one tab, two views)"end},{key="repair",label="Self-repair next boot",group="basic",values={false,true},get=function(d)return
+d.repair==true end,set=function(d,e)d.repair=e end,show=function(c)return c and"RUN ONCE"or
+"off"end},{key="showConfig",label="Show this screen at boot",group="basic",values={true,false},get=function(d)return
+d.showConfig and true or false end,set=function(d,e)
+d.showConfig=e end,show=function(c)return c and"on"or"off"end},{key="cpuTier",label="CPU tier (override)",group=n,values={i,1,2,3},get=function(d)return
+d.cpuTier or i end,set=function(d,e)d.cpuTier=l(e)end,show=function(c)return(c==i)and
+"auto (detect)"or("Tier "..c)end},{key="dataTier",label="Data Card tier (override)",group=n,values={i,1,2,3},get=function(d)return
+d.dataTier or i end,set=function(d,e)d.dataTier=l(e)end,show=function(c)
+return
+(c==i)and"auto (detect)"or("Tier "..c)end},{key="ramGate",label=
+a and("RAM for extras ["..a.."]")or"RAM for extras (override)",group=n,values={i,true,false},get=function(d)if
+d.ramGate==nil then return i end;return d.ramGate end,set=function(d,e)
+d.ramGate=l(e)end,show=function(c)if c==i then return"auto (measure)"end;return c and"always load"or
+"never load"end}}
+for d,c in ipairs(k.FEATURES)do
+b[#b+1]={key="adv."..c,label="  + "..c,group=n,values={i,true,false},get=function(e)
+local f=e.advanced and e.advanced[c]if f==nil then return i end;return f end,set=function(e,f)e.advanced=
+e.advanced or{}e.advanced[c]=l(f)end,show=function(e)if
+e==i then return"auto"end;return e and"on"or"off"end}end;return b end
+function j.fields(a,b)a=k._normalize(a or{})local c={}for e,d in ipairs(o(b))do
+c[#c+1]={key=d.key,label=d.label,group=d.group,value=d.show(d.get(a))}end;return c end
+function j.cycle(a,b,c)local g=o()local d=g[b]if not d then return a end;local h=d.get(a)local f=d.values;local e=1;for q,r in
+ipairs(f)do if r==h then e=q;break end end;e=
+((e-1+ (c or 1))%#f)+1;d.set(a,f[e])return k._normalize(a)end
+function j.cycleKey(a,b,c)local d=o()
+for e,g in ipairs(d)do if g.key==b then return j.cycle(a,e,c)end end;return k._normalize(a)end
+local function p(a,c,b)local d={}for f,e in ipairs(j.fields(a,b))do
+if e.group=="basic"then d[#d+1]=e end end
+if c then
+d[#d+1]={header=true,label="Advanced - boot overrides & manual device checks"}
+for f,e in ipairs(j.fields(a,b))do if e.group==n then d[#d+1]=e end end end;return d end
+local function m(b,a,c)local d=#b;for e=1,d do a=((a-1+c)%d)+1;if b[a]and not b[a].header then
+return a end end;return a end
+function j.run(b,a)b=k._normalize(b or{})local c=1;local e=0;local g=false;local f=false;local d=a.color or function()
+return 0xFFFFFF end;local h,q=nil,nil
+local r=j.ramLabel(a.ramProbe)
+while true do a.clear()
+a.set(2,1,"TOS Boot Settings",d("title"))
+a.set(2,2,"/etc/boot.cfg - applies on next boot",d("dim"))local s=p(b,f,r)
+if c>#s or(s[c]and s[c].header)then c=m(s,1,0)if
+s[c]and s[c].header then c=m(s,c,1)end end;local v=nil
+if g and a.sysinfo then
+local C=tostring(b.cpuTier).."/"..tostring(b.dataTier)if not h or q~=C then
+h=a.sysinfo.gather(nil,{cpuTier=b.cpuTier,dataTier=b.dataTier})q=C end
+v=a.sysinfo.rows(h)end;local w=4;local y=a.H or 25;local A=
+v and math.min(#v+1,math.floor(y/2))or 0;local t=(y-w+1)-3-A;if
+t<4 then t=4 end;if t>#s then t=#s end;if c-e>t then e=c-t end;if c-e<1 then
+e=math.max(0,c-1)end;if e>#s-t then e=math.max(0,#s-t)end
+for C=1,t do
+local E=e+C;local D=s[E]if not D then break end;local F=w+C-1
+if D.header then
+a.set(2,F,"-- "..D.label,d("title"))else local G=(E==c)and d("section")or d("dim")
+a.set(2,F,((
+E==c and"> "or"  ")..D.label):sub(1,31),G)
+a.set(34,F,D.value,(E==c)and d("value")or d("dim"))end end;if e>0 then a.set(46,w,"^ more",d("title"))end
+if
+e+t<#s then a.set(46,w+t-1,"v more",d("title"))end;local z=w+t+1
+a.set(2,z,"Up/Down: select   Left/Right or Space: change",d("dim"))
+a.set(2,z+1,("[S] save   [R] save+reboot   [A] advanced %s   [H] hardware   [Q] cancel"):format(
+f and"shown"or"hidden"),d("dim"))
+if v then local C=z+3
+for E,D in ipairs(v)do if C>=y then break end;if D.role=="section"then
+a.set(2,C,"-- "..D.value,d("title"))else
+a.set(4,C,
+(D.label~=""and(D.label..": ")or"  ")..D.value,d(D.role))end;C=C+1 end end;local B,u,x=a.readKey()
+if x==200 then c=m(s,c,-1)elseif x==208 then c=m(s,c,1)elseif x==203 then if
+s[c]and s[c].key then j.cycleKey(b,s[c].key,-1)end elseif
+x==205 or u==32 then
+if s[c]and s[c].key then j.cycleKey(b,s[c].key,1)end elseif u==115 or u==83 then return"save",b elseif u==114 or u==82 then return"reboot",b elseif u==97 or u==65 then
+f=not f elseif u==104 or u==72 then g=not g elseif u==113 or u==81 or x==1 then return"cancel",b end end end;return j

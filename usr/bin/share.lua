@@ -1,57 +1,21 @@
-local args = {...}
-if #args < 1 then
-print("Usage: share <host> [path]")
-print("  Request files from a trusted peer's /public/ directory.")
-return
-end
-local net = _G._TOS and _G._TOS.net
-if not net then
-print("Network not available.")
-return
-end
-local target = args[1]
-local path = args[2] or "/public/"
-local peer = net.findPeer(target)
-if not peer then
-print("Unknown host: " .. target)
-return
-end
-local protocol = net.getProtocol()
-local gotResponse = false
-local listeners = {
-{ type = protocol.TYPE.FILE_RES,
-id = net.onceFrom(protocol.TYPE.FILE_RES, peer.addr, function(respPkt)
-gotResponse = true
-if respPkt.payload then
-if respPkt.payload.listing then
-print("Files in " .. path .. ":")
-for _, name in ipairs(respPkt.payload.listing) do print("  " .. name) end
-elseif respPkt.payload.data then
-print("--- " .. path .. " ---")
-print(respPkt.payload.data)
-print("--- end ---")
-else
-print("(empty response)")
-end
-end
-end) },
-{ type = protocol.TYPE.FILE_DENY,
-id = net.onceFrom(protocol.TYPE.FILE_DENY, peer.addr, function(respPkt)
-gotResponse = true
-local reason = respPkt.payload and respPkt.payload.reason or "Access denied"
-print("Denied: " .. reason)
-end) },
-}
-local pkt = protocol.makePacket(protocol.TYPE.FILE_REQ, { path = path })
-local ok, err = net.send(peer.addr, pkt)
-if not ok then
-net.offAll(listeners)
-print("Send failed: " .. tostring(err))
-return
-end
-print("Requesting " .. path .. " from " .. (peer.hostname or peer.addr:sub(1, 8)) .. "...")
-net.waitFor(function() return gotResponse end, 10)
-net.offAll(listeners)
-if not gotResponse then
-print("Timed out — no response from " .. (peer.hostname or peer.addr:sub(1, 8)))
-end
+local q={...}if#q<1 then print("Usage: share <host> [path]")
+print("  Request files from a trusted peer's /public/ directory.")return end;local l=_G._TOS and
+_G._TOS.net;if not l then
+print("Network not available.")return end;local r=q[1]local o=q[2]or"/public/"
+local m=l.findPeer(r)
+if not m then print("Unknown host: "..r)return end;local n=l.getProtocol()local p=false
+local s={{type=n.TYPE.FILE_RES,id=l.onceFrom(n.TYPE.FILE_RES,m.addr,function(a)p=true
+if
+a.payload then
+if a.payload.listing then print("Files in "..o..":")for c,b in
+ipairs(a.payload.listing)do print("  "..b)end elseif a.payload.data then print("--- "..
+o.." ---")print(a.payload.data)
+print("--- end ---")else print("(empty response)")end end end)},{type=n.TYPE.FILE_DENY,id=l.onceFrom(n.TYPE.FILE_DENY,m.addr,function(a)
+p=true
+local b=a.payload and a.payload.reason or"Access denied"print("Denied: "..b)end)}}local t=n.makePacket(n.TYPE.FILE_REQ,{path=o})
+local u,v=l.send(m.addr,t)if not u then l.offAll(s)
+print("Send failed: "..tostring(v))return end
+print("Requesting "..o.." from "..
+(m.hostname or m.addr:sub(1,8)).."...")l.waitFor(function()return p end,10)l.offAll(s)if
+not p then
+print("Timed out — no response from ".. (m.hostname or m.addr:sub(1,8)))end

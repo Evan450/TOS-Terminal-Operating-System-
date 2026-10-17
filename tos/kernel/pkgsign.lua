@@ -1,386 +1,153 @@
-local pkgsign = {}
-local TRUST_FILE = "/etc/pkg_trust.cfg"
-local MAX_SIG_BYTES = 4096
-local MAX_TRUST_BYTES = 8192
-local MAX_SIGNED_BYTES = 64 * 1024
-local fs, serialize, log
-function pkgsign.init(deps)
-deps = deps or {}
-fs = deps.fs
-serialize = deps.serialize
-log = deps.log
-return fs ~= nil and serialize ~= nil
-end
-local function isHex(s, n)
-return type(s) == "string" and #s == n and s:match("^%x+$") ~= nil
-end
-local function hexToBin(h)
-return (h:gsub("%x%x", function(c) return string.char(tonumber(c, 16)) end))
-end
-local function binToHex(b)
-return (b:gsub(".", function(c) return string.format("%02x", c:byte()) end))
-end
-pkgsign.hexToBin = hexToBin
-pkgsign.binToHex = binToHex
-function pkgsign.fingerprint(pubHex)
-if not isHex(pubHex, 64) then return "(invalid key)" end
-local okC, crypto = pcall(require, "kernel.crypto")
-local digest
-if okC and crypto and crypto.hash then
-digest = crypto.hash(hexToBin(pubHex))
-else
-local okS, sha = pcall(require, "kernel.sha256")
-if not (okS and sha) then return pubHex:sub(1, 16) end
-digest = sha.hex(hexToBin(pubHex))
-end
-local short = tostring(digest):sub(1, 16):upper()
-return (short:gsub("(....)", "%1 "):gsub("%s+$", ""))
-end
-local _trust, _trustLoaded = nil, false
---! `discovered`: what a fetch may take from a repo nobody configured.
---! tofu (default): trusted keys; an unknown key only if the admin pins it
---! there and then, never for a service or driver; never unsigned.
---! trusted: trusted keys only. off: configured repos only. Unreadable or
---! unknown reads as "off": losing it must never widen what is fetched.
-local DISCOVERED = { tofu = true, trusted = true, off = true }
-local function emptyTrust()
-return { requireSignature = false, keys = {}, discovered = "tofu" }
-end
-local function loadTrust()
-if _trustLoaded then return _trust end
-_trustLoaded = true
-_trust = emptyTrust()
-if not fs or not fs.exists or not fs.exists(TRUST_FILE) then return _trust end
-local raw = fs.readFile(TRUST_FILE)
-if not raw or #raw == 0 or #raw > MAX_TRUST_BYTES then
-if log then log.warn("pkgsign", "trust store unreadable or oversized — NO publisher keys are in force") end
-_trust.discovered = "off"
-return _trust
-end
-local ok, cfg = pcall(serialize.decode, raw, { maxBytes = MAX_TRUST_BYTES })
-if not ok or type(cfg) ~= "table" then
-if log then log.warn("pkgsign", "trust store did not decode — NO publisher keys are in force") end
-_trust.discovered = "off"
-return _trust
-end
-if cfg.discovered ~= nil then
-if DISCOVERED[cfg.discovered] then _trust.discovered = cfg.discovered
-else
-_trust.discovered = "off"
-if log then log.warn("pkgsign", "unknown 'discovered' setting; reading it as off") end
-end
-end
-if cfg.requireSignature == true then _trust.requireSignature = true end
-if type(cfg.keys) == "table" then
-for label, key in pairs(cfg.keys) do
-if type(label) == "string" and #label <= 48 and label:match("^[%w%-_%.]+$")
-and isHex(key, 64) then
-_trust.keys[label] = key:lower()
-elseif log then
-log.warn("pkgsign", "ignoring malformed trust entry '" .. tostring(label) .. "'")
-end
-end
-end
-return _trust
-end
-function pkgsign.reloadTrust()
-_trustLoaded = false
-_trust = nil
-return loadTrust()
-end
-function pkgsign.listKeys()
-local t = loadTrust()
-local out = {}
-for label, key in pairs(t.keys) do
-out[#out + 1] = { label = label, key = key, fingerprint = pkgsign.fingerprint(key) }
-end
-table.sort(out, function(a, b) return a.label < b.label end)
-return out
-end
-function pkgsign.requiresSignature()
-return loadTrust().requireSignature == true
-end
-function pkgsign.labelForKey(pubHex)
-if not isHex(pubHex, 64) then return nil end
-pubHex = pubHex:lower()
-local t = loadTrust()
-for label, key in pairs(t.keys) do
-if key == pubHex then return label end
-end
-return nil
-end
-local function saveTrust(t)
-if not fs or not fs.writeFile then return false, "no filesystem" end
-local body = serialize.encode({ requireSignature = t.requireSignature == true,
-keys = t.keys, discovered = t.discovered })
-local ok, err = fs.writeFile(TRUST_FILE, body)
-if not ok then return false, tostring(err or "write failed") end
-return true
-end
-function pkgsign.addKey(label, pubHex)
-if type(label) ~= "string" or not label:match("^[%w%-_%.]+$") or #label > 48 then
-return false, "label must be 1-48 chars of letters, digits, - _ ."
-end
-if not isHex(pubHex, 64) then
-return false, "public key must be 64 hexadecimal characters (32 bytes)"
-end
-pubHex = pubHex:lower()
-local t = loadTrust()
-if t.keys[label] and t.keys[label] ~= pubHex then
-return false, "'" .. label .. "' already names a different key — remove it first"
-end
-local existing = pkgsign.labelForKey(pubHex)
-if existing and existing ~= label then
-return false, "that key is already trusted as '" .. existing .. "'"
-end
-t.keys[label] = pubHex
-local ok, err = saveTrust(t)
-if not ok then t.keys[label] = nil; return false, err end
-if log then log.info("pkgsign", "trusted publisher key '" .. label .. "' " .. pkgsign.fingerprint(pubHex)) end
-return true
-end
-function pkgsign.removeKey(label)
-local t = loadTrust()
-if not t.keys[label] then return false, "no trusted key named '" .. tostring(label) .. "'" end
-local old = t.keys[label]
-t.keys[label] = nil
-local ok, err = saveTrust(t)
-if not ok then t.keys[label] = old; return false, err end
-if log then log.info("pkgsign", "removed publisher key '" .. label .. "'") end
-return true
-end
-function pkgsign.setRequireSignature(on)
-local t = loadTrust()
-t.requireSignature = on and true or false
-return saveTrust(t)
-end
-function pkgsign.discoveredPolicy()
-return loadTrust().discovered or "off"
-end
-function pkgsign.setDiscoveredPolicy(v)
-if not DISCOVERED[v] then return false, "must be tofu, trusted or off" end
-local t = loadTrust()
-t.discovered = v
-return saveTrust(t)
-end
-function pkgsign.sigPathFor(manifestPath)
-if type(manifestPath) ~= "string" then return nil end
-local stem = manifestPath:match("^(.*)%.[%w]+$")
-if not stem then return manifestPath .. ".sig" end
-return stem .. ".sig"
-end
-function pkgsign.readSig(sigPath)
-if not fs or not fs.exists or not fs.exists(sigPath) then return nil, "no signature file" end
-local raw = fs.readFile(sigPath)
-if not raw or #raw == 0 then return nil, "signature file is empty" end
-if #raw > MAX_SIG_BYTES then return nil, "signature file is implausibly large" end
-local ok, rec = pcall(serialize.decode, raw, { maxBytes = MAX_SIG_BYTES })
-if not ok or type(rec) ~= "table" then return nil, "signature file did not decode" end
-if rec.alg ~= nil and rec.alg ~= "ed25519" then
-return nil, "unsupported signature algorithm '" .. tostring(rec.alg) .. "'"
-end
-if not isHex(rec.key, 64) then return nil, "signature names no valid public key" end
-if not isHex(rec.sig, 128) then return nil, "signature value is malformed" end
-return {
-alg = "ed25519",
-key = rec.key:lower(),
-sig = rec.sig:lower(),
-signer = type(rec.signer) == "string" and rec.signer:sub(1, 48) or nil,
-covers = type(rec.covers) == "string" and rec.covers:sub(1, 64) or nil,
-}
-end
-local VERIFIED_STATES = { trusted = true, unknown = true }
---! `body`, when given, is the manifest as the caller already read and
---! PARSED it, and is what gets verified. Re-reading the path here let the
---! parsed copy and the verified copy differ (#SEC, pentest Sep 2026; see
---! pkg.lua readManifestFile). Omitted, the file is read as before.
-function pkgsign.verifyManifest(manifestPath, body)
-local verdict = { state = "unsigned" }
-if not fs then verdict.reason = "no filesystem"; return verdict end
-local sigPath = pkgsign.sigPathFor(manifestPath)
-if not sigPath or not fs.exists(sigPath) then
-verdict.reason = "no signature file alongside " .. tostring(manifestPath)
-return verdict
-end
-local rec, err = pkgsign.readSig(sigPath)
-if not rec then
-return { state = "invalid", reason = err }
-end
-if type(body) ~= "string" then body = fs.readFile(manifestPath) end
-if not body then
-return { state = "invalid", reason = "cannot read the manifest the signature covers" }
-end
-if #body > MAX_SIGNED_BYTES then
-return { state = "invalid", reason = "manifest is implausibly large to be signed" }
-end
-if rec.covers then
-local base = manifestPath:match("[^/]+$")
-if base and rec.covers ~= base then
-return { state = "invalid",
-reason = "signature covers '" .. rec.covers .. "', not " .. base }
-end
-end
-local okE, ed = pcall(require, "kernel.ed25519")
-if not okE or not ed or not ed.verify then
-return { state = "invalid",
-reason = "signature present but ed25519 support is unavailable" }
-end
-local good, why = ed.verify(body, hexToBin(rec.sig), hexToBin(rec.key))
-if not good then
-return { state = "invalid", key = rec.key, signer = rec.signer,
-fingerprint = pkgsign.fingerprint(rec.key),
-reason = why or "signature does not verify" }
-end
-local label = pkgsign.labelForKey(rec.key)
-return {
-state = label and "trusted" or "unknown",
-key = rec.key,
-fingerprint = pkgsign.fingerprint(rec.key),
-label = label,
-signer = rec.signer,
-}
-end
-function pkgsign.isVerified(verdict)
-return verdict ~= nil and VERIFIED_STATES[verdict.state] == true
-end
-function pkgsign.describe(verdict)
-if not verdict then return { "Signature: not checked" } end
-local out = {}
-if verdict.state == "trusted" then
-out[#out + 1] = "Signature: VALID, from trusted publisher '" .. tostring(verdict.label) .. "'"
-out[#out + 1] = "  key " .. tostring(verdict.fingerprint)
-elseif verdict.state == "unknown" then
-out[#out + 1] = "Signature: VALID, but this key is NOT in your trust store."
-out[#out + 1] = "  key " .. tostring(verdict.fingerprint)
-if verdict.signer then
-out[#out + 1] = "  the disk calls this publisher \"" .. verdict.signer .. "\" (its own word, not proof)"
-end
-out[#out + 1] = "  Trust it with:  pkg trust add <yourname> " .. tostring(verdict.key)
-elseif verdict.state == "invalid" then
-out[#out + 1] = "Signature: DOES NOT VERIFY — " .. tostring(verdict.reason)
-out[#out + 1] = "  This is tampering or corruption, not a missing signature."
-else
-out[#out + 1] = "Signature: none. This package is unsigned."
-out[#out + 1] = "  Hashes prove the disk is intact, never who wrote it."
-out[#out + 1] = "  Your admin privilege is what is authorising this install."
-end
-return out
-end
-function pkgsign.signManifest(manifestPath, seedRaw, opts)
-opts = opts or {}
-if type(seedRaw) ~= "string" or #seedRaw ~= 32 then
-return nil, "signing key must be 32 raw bytes"
-end
-if not fs or not fs.exists(manifestPath) then
-return nil, "no manifest at " .. tostring(manifestPath)
-end
-local body = fs.readFile(manifestPath)
-if not body then return nil, "cannot read " .. manifestPath end
-if #body > MAX_SIGNED_BYTES then return nil, "manifest is too large to sign" end
-local okE, ed = pcall(require, "kernel.ed25519")
-if not okE or not ed or not ed.sign then return nil, "ed25519 support unavailable" end
-local pub = ed.publickey(seedRaw)
-if not pub then return nil, "cannot derive the public key" end
-local sig = ed.sign(body, seedRaw, pub)
-if not sig then return nil, "signing failed" end
-local rec = {
-v = 1,
-alg = "ed25519",
-key = binToHex(pub),
-sig = binToHex(sig),
-covers = manifestPath:match("[^/]+$"),
-}
-if type(opts.signer) == "string" and opts.signer ~= "" then
-rec.signer = opts.signer:sub(1, 48)
-end
-local sigPath = pkgsign.sigPathFor(manifestPath)
-local wOk, wErr = fs.writeFile(sigPath, serialize.encode(rec))
-if not wOk then return nil, "cannot write " .. sigPath .. ": " .. tostring(wErr) end
-return rec.key, sigPath
-end
---! The key is DERIVED from the passphrase, never stored, so the
---! passphrase IS the private key. Everything below follows from that.
---! v2 (was v1: no salt, 512 rounds, 12-char floor). Three changes, and it
---! is worth being honest about which one is load-bearing:
---!
---!  * SALT = the publisher label. Stops ONE precomputed passphrase->key
---!    table from yielding every publisher's key at once; each identity
---!    now has to be attacked on its own. It adds no secrecy — the label
---!    is public, it is printed in the repo README — so it does nothing
---!    against someone targeting one specific publisher.
---!
---!  * 4096 rounds, was 512. Three bits. That is the honest size of it:
---!    a KDF that could actually defend a guessable passphrase needs
---!    ~1e5-1e6 rounds, and this runs on a 192 KB machine sharing one CPU
---!    with every other seat. Defence in depth, not a defence.
---!
---!  * THE ONE THAT MATTERS: the passphrase floor below. Against a
---!    generated 32-byte passphrase the round count is irrelevant; against
---!    "correcthorsebattery" no round count reachable here saves it. So
---!    the entropy is the whole defence, and it is enforced rather than
---!    advised.
---! Changing any of these three changes every derived key, which is why
---! the domain string carries a version. A publisher whose key came from
---! v1 gets a DIFFERENT key here: that is a re-key, not a bug. Already
---! published signatures still verify — verification reads the public key
---! out of the signature record and never runs this function.
-local KDF_DOMAIN = "TOS-pkg-signing-key-v2"
-local KDF_ROUNDS = 4096
-local KDF_MIN_PASS = 20
-local KDF_MIN_UNIQUE = 10
-pkgsign.KDF_DOMAIN, pkgsign.KDF_ROUNDS = KDF_DOMAIN, KDF_ROUNDS
-pkgsign.KDF_MIN_PASS, pkgsign.KDF_MIN_UNIQUE = KDF_MIN_PASS, KDF_MIN_UNIQUE
---! Resolved lazily and tolerated absent, exactly as ed25519.lua does:
---! this module has to load under plain Lua for the off-box signer and
---! during early boot, where kernel.process does not exist yet.
-local yieldCoop
+local F,L,Z,J="string","pkgsign","ed25519","invalid"local B={}local N="/etc/pkg_trust.cfg"
+local T=4096;local U=8192;local V=64*1024;local C,H,D;function B.init(a)a=a or{}C=a.fs;H=a.serialize;D=a.log;return C~=nil and
+H~=nil end;local function I(a,b)
+return type(a)==F and#a==
+b and a:match("^%x+$")~=nil end
+local function K(a)return
+(a:gsub("%x%x",function(b)return
+string.char(tonumber(b,16))end))end
+local function O(a)return
+(a:gsub(".",function(b)return string.format("%02x",b:byte())end))end;B.hexToBin=K;B.binToHex=O
+function B.fingerprint(a)
+if not I(a,64)then return"(invalid key)"end;local d,b=pcall(require,"kernel.crypto")local c
+if d and b and b.hash then
+c=b.hash(K(a))else local g,f=pcall(require,"kernel.sha256")if not(g and f)then
+return a:sub(1,16)end;c=f.hex(K(a))end
+local e=tostring(c):sub(1,16):upper()return
+(e:gsub("(....)","%1 "):gsub("%s+$",""))end;local E,P=nil,false;local W={tofu=true,trusted=true,off=true}local function _()return
+{requireSignature=false,keys={},discovered="tofu"}end
+local function G()
+if P then return E end;P=true;E=_()if not C or not C.exists or not C.exists(N)then
+return E end;local b=C.readFile(N)
+if
+not b or#b==0 or#b>U then if D then
+D.warn(L,"trust store unreadable or oversized — NO publisher keys are in force")end;E.discovered="off"return E end;local c,a=pcall(H.decode,b,{maxBytes=U})
+if
+not c or type(a)~="table"then if D then
+D.warn(L,"trust store did not decode — NO publisher keys are in force")end;E.discovered="off"return E end
+if a.discovered~=nil then
+if W[a.discovered]then E.discovered=a.discovered else E.discovered="off"if D then
+D.warn(L,"unknown 'discovered' setting; reading it as off")end end end
+if a.requireSignature==true then E.requireSignature=true end
+if type(a.keys)=="table"then
+for d,e in pairs(a.keys)do
+if type(d)==F and#d<=48 and
+d:match("^[%w%-_%.]+$")and I(e,64)then
+E.keys[d]=e:lower()elseif D then
+D.warn(L,"ignoring malformed trust entry '"..tostring(d).."'")end end end;return E end;function B.reloadTrust()P=false;E=nil;return G()end
+function B.listKeys()local b=G()local a={}
+for d,c in
+pairs(b.keys)do a[#a+1]={label=d,key=c,fingerprint=B.fingerprint(c)}end
+table.sort(a,function(c,d)return c.label<d.label end)return a end
+function B.requiresSignature()return G().requireSignature==true end
+function B.labelForKey(a)if not I(a,64)then return nil end;a=a:lower()local b=G()for c,d in
+pairs(b.keys)do if d==a then return c end end;return nil end
+local function M(a)
+if not C or not C.writeFile then return false,"no filesystem"end
+local b=H.encode({requireSignature=a.requireSignature==true,keys=a.keys,discovered=a.discovered})local c,d=C.writeFile(N,b)if not c then
+return false,tostring(d or"write failed")end;return true end
+function B.addKey(a,b)if type(a)~=F or not a:match("^[%w%-_%.]+$")or
+#a>48 then
+return false,"label must be 1-48 chars of letters, digits, - _ ."end
+if not I(b,64)then return
+false,"public key must be 64 hexadecimal characters (32 bytes)"end;b=b:lower()local c=G()if c.keys[a]and c.keys[a]~=b then
+return false,"'"..a..
+"' already names a different key — remove it first"end
+local d=B.labelForKey(b)if d and d~=a then
+return false,"that key is already trusted as '"..d.."'"end;c.keys[a]=b;local e,f=M(c)if not e then
+c.keys[a]=nil;return false,f end;if D then
+D.info(L,"trusted publisher key '"..a..
+"' "..B.fingerprint(b))end;return true end
+function B.removeKey(a)local b=G()if not b.keys[a]then return false,
+"no trusted key named '"..tostring(a).."'"end
+local c=b.keys[a]b.keys[a]=nil;local d,e=M(b)
+if not d then b.keys[a]=c;return false,e end;if D then
+D.info(L,"removed publisher key '"..a.."'")end;return true end
+function B.setRequireSignature(a)local b=G()b.requireSignature=a and true or false;return M(b)end
+function B.discoveredPolicy()return G().discovered or"off"end
+function B.setDiscoveredPolicy(a)
+if not W[a]then return false,"must be tofu, trusted or off"end;local b=G()b.discovered=a;return M(b)end
+function B.sigPathFor(a)if type(a)~=F then return nil end
+local b=a:match("^(.*)%.[%w]+$")if not b then return a..".sig"end;return b..".sig"end
+function B.readSig(a)if not C or not C.exists or not C.exists(a)then return nil,
+"no signature file"end
+local c=C.readFile(a)
+if not c or#c==0 then return nil,"signature file is empty"end
+if#c>T then return nil,"signature file is implausibly large"end;local d,b=pcall(H.decode,c,{maxBytes=T})
+if
+not d or type(b)~="table"then return nil,"signature file did not decode"end
+if b.alg~=nil and b.alg~=Z then return nil,
+"unsupported signature algorithm '"..tostring(b.alg).."'"end
+if not I(b.key,64)then return nil,"signature names no valid public key"end
+if not I(b.sig,128)then return nil,"signature value is malformed"end
+return
+{alg=Z,key=b.key:lower(),sig=b.sig:lower(),signer=
+type(b.signer)==F and b.signer:sub(1,48)or nil,covers=
+type(b.covers)==F and b.covers:sub(1,64)or nil}end;local aa={trusted=true,unknown=true}
+function B.verifyManifest(b,a)local d={state="unsigned"}if not C then
+d.reason="no filesystem"return d end;local e=B.sigPathFor(b)if not e or
+not C.exists(e)then
+d.reason="no signature file alongside "..tostring(b)return d end;local c,h=B.readSig(e)if not
+c then return{state=J,reason=h}end;if type(a)~=F then
+a=C.readFile(b)end
+if not a then return
+{state=J,reason="cannot read the manifest the signature covers"}end;if#a>V then
+return{state=J,reason="manifest is implausibly large to be signed"}end;if c.covers then local l=b:match("[^/]+$")
+if l and
+c.covers~=l then return
+{state=J,reason="signature covers '"..c.covers.."', not "..l}end end
+local i,f=pcall(require,"kernel.ed25519")
+if not i or not f or not f.verify then return
+{state=J,reason="signature present but ed25519 support is unavailable"}end;local j,k=f.verify(a,K(c.sig),K(c.key))
+if not j then return
+{state=J,key=c.key,signer=c.signer,fingerprint=B.fingerprint(c.key),reason=
+k or"signature does not verify"}end;local g=B.labelForKey(c.key)return
+{state=g and"trusted"or"unknown",key=c.key,fingerprint=B.fingerprint(c.key),label=g,signer=c.signer}end
+function B.isVerified(a)return a~=nil and aa[a.state]==true end
+function B.describe(a)if not a then return{"Signature: not checked"}end
+local b={}
+if a.state=="trusted"then b[#b+1]="Signature: VALID, from trusted publisher '"..
+tostring(a.label).."'"b[#b+
+1]="  key "..tostring(a.fingerprint)elseif a.state==
+"unknown"then
+b[#b+1]="Signature: VALID, but this key is NOT in your trust store."b[#b+1]="  key "..tostring(a.fingerprint)if
+a.signer then
+b[#b+1]="  the disk calls this publisher \""..a.signer.."\" (its own word, not proof)"end
+b[#b+1]=
+"  Trust it with:  pkg trust add <yourname> "..tostring(a.key)elseif a.state==J then
+b[#b+1]="Signature: DOES NOT VERIFY — "..tostring(a.reason)b[#b+1]="  This is tampering or corruption, not a missing signature."else b[#b+
+1]="Signature: none. This package is unsigned."
+b[#b+1]="  Hashes prove the disk is intact, never who wrote it."b[#b+1]="  Your admin privilege is what is authorising this install."end;return b end
+function B.signManifest(a,c,b)b=b or{}if type(c)~=F or#c~=32 then
+return nil,"signing key must be 32 raw bytes"end
+if not C or not C.exists(a)then return nil,
+"no manifest at "..tostring(a)end;local e=C.readFile(a)
+if not e then return nil,"cannot read "..a end;if#e>V then return nil,"manifest is too large to sign"end
+local j,d=pcall(require,"kernel.ed25519")
+if not j or not d or not d.sign then return nil,"ed25519 support unavailable"end;local f=d.publickey(c)
+if not f then return nil,"cannot derive the public key"end;local i=d.sign(e,c,f)if not i then return nil,"signing failed"end
+local g={v=1,alg=Z,key=O(f),sig=O(i),covers=a:match("[^/]+$")}if type(b.signer)==F and b.signer~=""then
+g.signer=b.signer:sub(1,48)end;local h=B.sigPathFor(a)
+local k,l=C.writeFile(h,H.encode(g))if not k then
+return nil,"cannot write "..h..": "..tostring(l)end;return g.key,h end;local X="TOS-pkg-signing-key-v2"local Y=4096;local Q=20;local R=10
+B.KDF_DOMAIN,B.KDF_ROUNDS=X,Y;B.KDF_MIN_PASS,B.KDF_MIN_UNIQUE=Q,R;local S
 do
-local okP, procMod = pcall(require, "kernel.process")
-if okP and type(procMod) == "table" and type(procMod.yieldCooperative) == "function" then
-yieldCoop = procMod.yieldCooperative
-else
-yieldCoop = function() end
-end
-end
-function pkgsign.normalizeLabel(label)
-if type(label) ~= "string" then return nil end
-local s = label:gsub("^%s+", ""):gsub("%s+$", ""):lower()
-if s == "" then return nil end
-return s
-end
-function pkgsign.seedFromPassphrase(pass, label)
-local salt = pkgsign.normalizeLabel(label)
-if not salt then
-return nil, "a publisher label is required: it salts the key, so the same " ..
-"passphrase under a different label is a different identity"
-end
-if type(pass) ~= "string" or #pass < KDF_MIN_PASS then
-return nil, "signing passphrase must be at least " .. KDF_MIN_PASS ..
-" characters (it IS the private key; generate it, do not invent it)"
-end
---! A length floor alone passes "aaaaaaaaaaaaaaaaaaaaaa". This is a
---! crude floor, NOT an entropy measure, and is not sold as one: it
---! rejects the obviously degenerate and nothing more.
-local seen, distinct = {}, 0
-for i = 1, #pass do
-local c = pass:sub(i, i)
-if not seen[c] then seen[c] = true; distinct = distinct + 1 end
-end
-if distinct < KDF_MIN_UNIQUE then
-return nil, "signing passphrase uses only " .. distinct .. " distinct characters; " ..
-"need " .. KDF_MIN_UNIQUE .. ". Generate one rather than composing it."
-end
-local okS, sha512 = pcall(require, "kernel.sha512")
-if not okS or not sha512 then return nil, "sha512 unavailable" end
-local seed = sha512.raw(KDF_DOMAIN .. "\0" .. salt .. "\0" .. pass)
---! Yield periodically or OpenComputers' watchdog kills the process
---! partway through ("too long without yielding"), which at 4096 rounds
---! on a shared CPU is a real risk rather than a theoretical one. The
---! hash chain is unaffected by being suspended between rounds.
-for i = 1, KDF_ROUNDS do
-seed = sha512.raw(seed)
-if i % 256 == 0 then yieldCoop() end
-end
-return seed:sub(1, 32)
-end
-return pkgsign
+local b,a=pcall(require,"kernel.process")
+if b and type(a)=="table"and
+type(a.yieldCooperative)=="function"then S=a.yieldCooperative else S=function()end end end
+function B.normalizeLabel(a)if type(a)~=F then return nil end
+local b=a:gsub("^%s+",""):gsub("%s+$",""):lower()if b==""then return nil end;return b end
+function B.seedFromPassphrase(a,b)local f=B.normalizeLabel(b)
+if not f then return nil,
+
+"a publisher label is required: it salts the key, so the same ".."passphrase under a different label is a different identity"end
+if type(a)~=F or#a<Q then return nil,
+"signing passphrase must be at least "..Q..
+" characters (it IS the private key; generate it, do not invent it)"end;local g,c={},0
+for j=1,#a do local i=a:sub(j,j)if not g[i]then g[i]=true;c=c+1 end end;if c<R then
+return nil,"signing passphrase uses only "..
+c.." distinct characters; ".."need "..
+R..". Generate one rather than composing it."end
+local h,d=pcall(require,"kernel.sha512")if not h or not d then return nil,"sha512 unavailable"end;local e=d.raw(X.."\0"..f..
+"\0"..a)for j=1,Y do e=d.raw(e)if j%
+256 ==0 then S()end end;return e:sub(1,32)end;return B

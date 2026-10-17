@@ -1,952 +1,298 @@
-local component = require("component")
-local computer = require("computer")
-local net = {}
-local protocol = nil
-local trustMgr = nil
-local crypto = nil
-local SEQ_RETIRE_MAX = 8
-local SEQ_MAX_PEERS = 256
-local function seqFreshnessCheck(holder, key, epoch, seq)
-if type(epoch) ~= "string" or type(seq) ~= "number" then
-return true
-end
-local rec = holder[key]
-if not rec then
-holder.__order = holder.__order or {}
-if #holder.__order >= SEQ_MAX_PEERS then
-local victim = table.remove(holder.__order, 1)
-if victim ~= nil then holder[victim] = nil end
-end
-holder.__order[#holder.__order + 1] = key
-holder[key] = { epoch = epoch, maxSeq = seq, retired = {}, retiredOrder = {} }
-return true
-end
-if rec.epoch == epoch then
-if seq <= rec.maxSeq then return false, "stale or replayed sequence" end
-rec.maxSeq = seq
-return true
-end
-if rec.retired[epoch] then
-return false, "replayed packet from a retired epoch"
-end
-rec.retired[rec.epoch] = true
-rec.retiredOrder[#rec.retiredOrder + 1] = rec.epoch
-if #rec.retiredOrder > SEQ_RETIRE_MAX then
-local old = table.remove(rec.retiredOrder, 1)
-rec.retired[old] = nil
-end
-rec.epoch = epoch
-rec.maxSeq = seq
-return true
-end
-net._seqCheck = seqFreshnessCheck
-local modem = nil
-local tunnel = nil
-local myAddr = nil
-local modems = {}
-local listenPort = 42
-local broadcastPort = nil
---! Ports the OpenComputers ecosystem has already claimed (the registry the
---! GERT project kept, now GlobalEmpire/OC-Programs). 42, TOS's default, is
---! not one of them. listenPort is the operator's to set, and nothing used
---! to say that moving it to, say, 4096 puts TOS traffic on a Minitel
---! network: TOS refuses their frames cleanly, theirs may not refuse ours.
---! Said once, when the port is opened, naming whose port it is; `net
---! status` says it too. Not refused: a base can have a reason.
---! (test_net_reserved_ports.lua)
-local REGISTERED_PORTS = {
-[14] = "Ethernet-over-OC",
-[148] = "the GUI service",
-[4096] = "MultICE / Minitel",
-[4378] = "GERTi",
-[4379] = "GERTi",
-[4662] = "short messages",
-[9100] = "the network print service",
-[9900] = "Zorya BIOS LAN boot",
-}
-net.REGISTERED_PORTS = REGISTERED_PORTS
-function net.portOwner(port) return REGISTERED_PORTS[port] end
-local encryptComms = true
-local hostname = "tos"
-local running = false
-local listeners = {}
-local log = nil
-local config = nil
-local event = nil
-local dispatchToListeners
-local cleanClaim
-function net.init(modules)
-log = modules.log
-config = modules.config
-event = modules.event
-protocol = require("kernel.net.protocol")
-trustMgr = require("kernel.net.trust")
-crypto = require("kernel.crypto")
-trustMgr.init({
-fs = modules.fs,
-crypto = crypto,
-log = log,
-config = config,
-})
-net._trustToken = trustMgr.getBootstrapToken and trustMgr.getBootstrapToken() or nil
-if config then
-listenPort = config.get("listenPort") or 42
-local bp = config.get("broadcastPort")
-broadcastPort = (type(bp) == "number" and bp ~= listenPort) and bp or nil
-encryptComms = config.get("encryptComms") ~= false
-hostname = config.get("hostname") or "tos"
-end
-for _, p in ipairs({ listenPort, broadcastPort }) do
-local owner = p and REGISTERED_PORTS[p]
-if owner and log then
-log.warn("net", string.format("Port %d is registered to %s: TOS traffic will share "
-.. "that network. TOS's own port is 42 (listenPort in /etc/tos.cfg).", p, owner))
-end
-end
-modems = {}
-for addr in component.list("modem") do
-local ok, proxy = pcall(component.proxy, addr)
-if ok and proxy then
-pcall(proxy.open, listenPort)
-if broadcastPort then pcall(proxy.open, broadcastPort) end
-local wireless = false
-pcall(function() wireless = proxy.isWireless() end)
-modems[#modems + 1] = { addr = addr, proxy = proxy, wireless = wireless }
-if log then
-log.info("net", string.format("Modem %d: %s [%s]",
-#modems, wireless and "wireless" or "wired", addr:sub(1, 8) .. "..."))
-end
-end
-end
-if #modems > 0 then
-modem = modems[1].proxy
-myAddr = modems[1].addr
-if log and #modems > 1 then
-log.info("net", #modems .. " NICs active (multi-modem)")
-end
-if log then
-local portInfo = broadcastPort
-and ("ports " .. listenPort .. ", " .. broadcastPort)
-or ("port " .. listenPort .. " (single-port mode)")
-log.info("net", "Listening on " .. portInfo)
-end
-end
-for addr in component.list("tunnel") do
-local ok, proxy = pcall(component.proxy, addr)
-if ok and proxy then
-tunnel = proxy
-if log then log.info("net", "Linked card detected") end
-end
-break
-end
-if not modem and not tunnel then
-if log then log.warn("net", "No network hardware detected") end
-return false
-end
-if event then
-event.on("modem_message", function(_, localAddr, remoteAddr, port, dist, rawData)
-net.handleIncoming(remoteAddr, port, dist, rawData)
-net.meshTick()
-end, "net")
-end
-running = true
-local okCP, chatpairMod = pcall(require, "kernel.net.chatpair")
-if okCP and chatpairMod and chatpairMod.init then
-chatpairMod.init({
-crypto = crypto,
-protocol = protocol,
-trust = trustMgr,
-log = log,
-})
-net._chatpair = chatpairMod
-net.on(protocol.TYPE.CHAT_PAIR_INIT, function(pkt, from)
-chatpairMod.onPairInit(pkt, from)
-end)
-if log then log.info("net", "Chat-pair handler registered") end
-elseif log then
-log.warn("net", "chatpair module unavailable: "..tostring(chatpairMod))
-end
-local function meshStore(kfs)
-local DIR, PATH = "/var/lib/mesh", "/var/lib/mesh/state.dat"
-local ser = require("kernel.serialize")
-return {
-load = function()
-if not (kfs and kfs.exists and kfs.exists(PATH)) then return nil end
-return ser.loadFile(kfs, PATH)
-end,
-save = function(state)
-if not kfs then return end
-if not kfs.exists(DIR) then kfs.makeDirectory(DIR) end
-ser.saveFile(kfs, PATH, state)
-end,
-}
-end
-local okMesh, meshctlMod = pcall(require, "kernel.net.meshctl")
-if okMesh and meshctlMod then
-meshctlMod.init({ crypto = crypto, serialize = require("kernel.serialize"),
-log = log, clock = function() return computer.uptime() end })
-net._meshctl = meshctlMod.new({
-myAddr = myAddr,
-clock = function() return computer.uptime() end,
-freeMemory = computer.freeMemory,
-store = meshStore(modules and modules.fs or (_G._TOS and _G._TOS.fs)),
-broadcast = function(env)
-local t = (env.kind == "ack") and protocol.TYPE.MESH_ACK or protocol.TYPE.MESH
-net.broadcast(protocol.makePacket(t, env))
-end,
-secretFor = function(addr)
-return trustMgr._internalGetSecret
-and trustMgr._internalGetSecret(addr, net._trustToken) or nil
-end,
-log = log,
-})
-local function onMeshPkt(pkt)
-if type(pkt.payload) == "table" then net._meshctl:onPacket(pkt.payload) end
-end
-net.on(protocol.TYPE.MESH, onMeshPkt)
-net.on(protocol.TYPE.MESH_ACK, onMeshPkt)
-if log then log.info("net", "Mesh transport controller registered") end
-elseif log then
-log.warn("net", "mesh transport unavailable: " .. tostring(meshctlMod))
-end
-if log then
-log.info("net", "Network initialized (zero-trust mode)")
-log.info("net", "Encryption: " .. (encryptComms and "enabled" or "disabled"))
-end
-return true
-end
-function net.getChatPair()
-return net._chatpair
-end
-function net.meshAvailable()
-return net._meshctl ~= nil
-end
-function net.meshSend(opts)
-if not net._meshctl then return nil, "mesh not available (no network?)" end
-return net._meshctl:send(opts or {})
-end
-function net.meshOn(svc, handler)
-if not net._meshctl then return false, "mesh not available" end
-net._meshctl:on(svc, handler)
-return true
-end
-function net.meshOff(svc)
-if net._meshctl then net._meshctl:off(svc) end
-end
-function net.meshHasHandler(svc)
-return net._meshctl ~= nil and net._meshctl:hasHandler(svc)
-end
-function net.meshPending()
-return net._meshctl and net._meshctl:pending() or 0
-end
-function net.meshTick()
-if not net._meshctl then return end
-local now = computer.uptime()
-if now - (net._lastMeshTick or 0) >= 5 then
-net._lastMeshTick = now
-net._meshctl:tick(now)
-end
-end
-function net.isAvailable()
-return modem ~= nil or tunnel ~= nil
-end
-function net.getAddress()
-return myAddr
-end
-function net.getHostname()
-return hostname
-end
-function net.setHostname(name)
-if type(name) ~= "string" or name == "" or #name > 32 or name:find("%c") then
-return false, "hostname must be 1-32 printable characters"
-end
-hostname = name
-return true
-end
-function net.modemCount()
-return #modems
-end
-local PUBLIC_PACKET_TYPES = {
-ping = true, pong = true,
-hello = true, hello_ack = true,
-challenge = true, chall_res = true,
-deny = true,
-ch_pair_init = true, ch_pair_conf = true,
-cl_pair_init = true, cl_pair_conf = true,
-}
---! Types carried by net.broadcast, which never seals: a broadcast has no
---! single recipient whose secret could key it. The mesh seals its payload
---! end-to-end for the final recipient instead (net/meshctl.lua). The
---! receive path's unsealed-packet rule exempts these, as it does the public
---! set above; a new broadcast-carried type belongs here as well.
-local BROADCAST_PACKET_TYPES = {
-mesh = true, mesh_ack = true,
-}
-function net.send(address, packet, port)
-if not modem and not tunnel then return false, "No modem" end
-port = port or listenPort
-packet.from = myAddr
-packet.to = address
-local peerLevel = trustMgr.getLevel(address)
-local isPublic = PUBLIC_PACKET_TYPES[packet.type]
-if encryptComms and peerLevel >= trustMgr.LEVEL.TRUSTED and not isPublic then
-local secret = trustMgr._internalGetSecret(address, net._trustToken)
-if secret and packet.payload then
-local plaintext = protocol.serialize(packet.payload)
-local encrypted, method = crypto.encrypt(plaintext, secret)
-packet.payload = encrypted
-packet.enc = method
-net._bootEpoch = net._bootEpoch or crypto.salt(12)
-net._sendSeq = net._sendSeq or {}
-net._sendSeq[address] = (net._sendSeq[address] or 0) + 1
-packet.epoch = net._bootEpoch
-packet.seq = net._sendSeq[address]
-packet.nonce = crypto.salt(16)
-packet.mac = crypto.hmac(secret, table.concat({
-packet.type or "", packet.to or "", method or "",
-packet.epoch, tostring(packet.seq), packet.nonce, encrypted
-}, "\0"))
-elseif packet.payload and not secret then
-if log then
-log.warn("net", string.format(
-"Refusing plaintext send to TRUSTED peer %s (%s): no shared secret; " ..
-"run 'net trust gen %s' as admin to provision one",
-address:sub(1, 8), packet.type or "?", address:sub(1, 8)))
-end
-return false, "TRUSTED peer has no shared secret; refusing plaintext send"
-end
-end
-local data = protocol.serialize(packet)
-if #data > protocol.MAX_SIZE then
-return false, "Packet too large"
-end
-local ok, err2
-if modem then
-ok, err2 = pcall(modem.send, address, port, data)
-else
-ok, err2 = pcall(tunnel.send, data)
-end
-if not ok then
-return false, "Send failed: " .. tostring(err2)
-end
-return true
-end
-function net.broadcast(packet, port)
-if not modem and not tunnel then return false, "No modem" end
-port = port or broadcastPort or listenPort
-packet.from = myAddr
-local data = protocol.serialize(packet)
-local anyOk = false
-for _, m in ipairs(modems) do
-local ok2 = pcall(m.proxy.broadcast, port, data)
-anyOk = anyOk or ok2
-end
-if tunnel then
-local ok2 = pcall(tunnel.send, data)
-anyOk = anyOk or ok2
-end
-if not anyOk then return false, "Broadcast failed on all NICs" end
-return true
-end
-function net.handleIncoming(remoteAddr, port, distance, rawData)
-if not running then return end
-local packet, err = protocol.deserialize(rawData)
-if not packet then
+local X="string"local ag=require("component")
+local S=require("computer")local N={}local Q=nil;local P=nil;local R=nil;local ar=8;local an=256
+local function ao(a,d,b,c)if
+type(b)~=X or type(c)~="number"then return true end;local e=a[d]
+if not e then
+a.__order=a.__order or{}if#a.__order>=an then local f=table.remove(a.__order,1)
+if f~=nil then a[f]=nil end end
+a.__order[#a.__order+1]=d;a[d]={epoch=b,maxSeq=c,retired={},retiredOrder={}}return true end;if e.epoch==b then
+if c<=e.maxSeq then return false,"stale or replayed sequence"end;e.maxSeq=c;return true end
+if
+e.retired[b]then return false,"replayed packet from a retired epoch"end;e.retired[e.epoch]=true
+e.retiredOrder[#e.retiredOrder+1]=e.epoch;if#e.retiredOrder>ar then
+local f=table.remove(e.retiredOrder,1)e.retired[f]=nil end;e.epoch=b
+e.maxSeq=c;return true end;N._seqCheck=ao;local T=nil;local _=nil;local ab=nil;local U={}local V=42;local Y=nil
+local ah={[14]="Ethernet-over-OC",[148]="the GUI service",[4096]="MultICE / Minitel",[4378]="GERTi",[4379]="GERTi",[4662]="short messages",[9100]="the network print service",[9900]="Zorya BIOS LAN boot"}N.REGISTERED_PORTS=ah;function N.portOwner(a)return ah[a]end;local ae=true;local ac="tos"
+local ak=false;local W={}local O=nil;local aa=nil;local af=nil;local al;local ad
+function N.init(a)O=a.log;aa=a.config;af=a.event
+Q=require("kernel.net.protocol")P=require("kernel.net.trust")
+R=require("kernel.crypto")P.init({fs=a.fs,crypto=R,log=O,config=aa})
+N._trustToken=
+P.getBootstrapToken and P.getBootstrapToken()or nil
+if aa then V=aa.get("listenPort")or 42
+local g=aa.get("broadcastPort")
+Y=(type(g)=="number"and g~=V)and g or nil;ae=aa.get("encryptComms")~=false;ac=aa.get("hostname")or
+"tos"end
+for h,g in ipairs({V,Y})do local i=g and ah[g]
+if i and O then
+O.warn("net",string.format(
+"Port %d is registered to %s: TOS traffic will share ".."that network. TOS's own port is 42 (listenPort in /etc/tos.cfg).",g,i))end end;U={}
+for g in ag.list("modem")do local i,h=pcall(ag.proxy,g)
+if i and h then
+pcall(h.open,V)if Y then pcall(h.open,Y)end;local j=false
+pcall(function()j=h.isWireless()end)U[#U+1]={addr=g,proxy=h,wireless=j}if O then
+O.info("net",string.format("Modem %d: %s [%s]",#U,
+j and"wireless"or"wired",g:sub(1,8).."..."))end end end
+if#U>0 then T=U[1].proxy;ab=U[1].addr;if O and#U>1 then
+O.info("net",#U.." NICs active (multi-modem)")end
+if O then
+local g=
+Y and("ports "..V..", "..Y)or("port "..V.." (single-port mode)")O.info("net","Listening on "..g)end end
+for g in ag.list("tunnel")do local i,h=pcall(ag.proxy,g)if i and h then _=h;if O then
+O.info("net","Linked card detected")end end;break end
+if not T and not _ then if O then
+O.warn("net","No network hardware detected")end;return false end;if af then
+af.on("modem_message",function(k,l,g,h,i,j)N.handleIncoming(g,h,i,j)N.meshTick()end,"net")end;ak=true
+local d,b=pcall(require,"kernel.net.chatpair")
+if d and b and b.init then
+b.init({crypto=R,protocol=Q,trust=P,log=O})N._chatpair=b
+N.on(Q.TYPE.CHAT_PAIR_INIT,function(g,h)b.onPairInit(g,h)end)
+if O then O.info("net","Chat-pair handler registered")end elseif O then
+O.warn("net","chatpair module unavailable: "..tostring(b))end
+local function e(g)local i,h="/var/lib/mesh","/var/lib/mesh/state.dat"
+local j=require("kernel.serialize")
 return
-end
-local valid, verr = protocol.validate(packet)
-if not valid then return end
-trustMgr.seen(remoteAddr)
-packet.from = remoteAddr
-packet._distance = distance
-local peerLevel = trustMgr.getLevel(remoteAddr)
-if peerLevel == trustMgr.LEVEL.BLOCKED then
-if log then log.debug("net", "Dropped (BLOCKED): " .. remoteAddr:sub(1, 8)) end
+{load=function()if not(g and g.exists and g.exists(h))then
+return nil end;return j.loadFile(g,h)end,save=function(k)if
+not g then return end
+if not g.exists(i)then g.makeDirectory(i)end;j.saveFile(g,h,k)end}end;local f,c=pcall(require,"kernel.net.meshctl")
+if f and c then
+c.init({crypto=R,serialize=require("kernel.serialize"),log=O,clock=function()return
+S.uptime()end})
+N._meshctl=c.new({myAddr=ab,clock=function()return S.uptime()end,freeMemory=S.freeMemory,store=e(a and a.fs or
+(_G._TOS and _G._TOS.fs)),broadcast=function(h)local i=
+(h.kind=="ack")and Q.TYPE.MESH_ACK or Q.TYPE.MESH
+N.broadcast(Q.makePacket(i,h))end,secretFor=function(h)
+return P._internalGetSecret and
+P._internalGetSecret(h,N._trustToken)or nil end,log=O})
+local function g(h)if type(h.payload)=="table"then
+N._meshctl:onPacket(h.payload)end end;N.on(Q.TYPE.MESH,g)N.on(Q.TYPE.MESH_ACK,g)if O then
+O.info("net","Mesh transport controller registered")end elseif O then
+O.warn("net","mesh transport unavailable: "..tostring(c))end;if O then
+O.info("net","Network initialized (zero-trust mode)")
+O.info("net","Encryption: ".. (ae and"enabled"or"disabled"))end;return true end;function N.getChatPair()return N._chatpair end;function N.meshAvailable()
+return N._meshctl~=nil end;function N.meshSend(a)if not N._meshctl then
+return nil,"mesh not available (no network?)"end
+return N._meshctl:send(a or{})end;function N.meshOn(a,b)if
+not N._meshctl then return false,"mesh not available"end
+N._meshctl:on(a,b)return true end
+function N.meshOff(a)if
+N._meshctl then N._meshctl:off(a)end end;function N.meshHasHandler(a)
+return N._meshctl~=nil and N._meshctl:hasHandler(a)end
+function N.meshPending()return N._meshctl and
+N._meshctl:pending()or 0 end
+function N.meshTick()if not N._meshctl then return end;local a=S.uptime()if a-
+(N._lastMeshTick or 0)>=5 then N._lastMeshTick=a
+N._meshctl:tick(a)end end;function N.isAvailable()return T~=nil or _~=nil end
+function N.getAddress()return ab end;function N.getHostname()return ac end
+function N.setHostname(a)if
+type(a)~=X or a==""or#a>32 or a:find("%c")then
+return false,"hostname must be 1-32 printable characters"end;ac=a;return true end;function N.modemCount()return#U end
+local ap={ping=true,pong=true,hello=true,hello_ack=true,challenge=true,chall_res=true,deny=true,ch_pair_init=true,ch_pair_conf=true,cl_pair_init=true,cl_pair_conf=true}local as={mesh=true,mesh_ack=true}
+function N.send(b,a,c)
+if not T and not _ then return false,"No modem"end;c=c or V;a.from=ab;a.to=b;local g=P.getLevel(b)local h=ap[a.type]
+if ae and g>=
+P.LEVEL.TRUSTED and not h then
+local i=P._internalGetSecret(b,N._trustToken)
+if i and a.payload then local l=Q.serialize(a.payload)local j,k=R.encrypt(l,i)
+a.payload=j;a.enc=k;N._bootEpoch=N._bootEpoch or R.salt(12)
+N._sendSeq=N._sendSeq or{}N._sendSeq[b]=(N._sendSeq[b]or 0)+1
+a.epoch=N._bootEpoch;a.seq=N._sendSeq[b]a.nonce=R.salt(16)
+a.mac=R.hmac(i,table.concat({a.type or"",
+a.to or"",k or"",a.epoch,tostring(a.seq),a.nonce,j},"\0"))elseif a.payload and not i then
+if O then
+O.warn("net",string.format("Refusing plaintext send to TRUSTED peer %s (%s): no shared secret; "..
+"run 'net trust gen %s' as admin to provision one",b:sub(1,8),a.type or"?",b:sub(1,8)))end;return false,"TRUSTED peer has no shared secret; refusing plaintext send"end end;local d=Q.serialize(a)
+if#d>Q.MAX_SIZE then return false,"Packet too large"end;local e,f
+if T then e,f=pcall(T.send,b,c,d)else e,f=pcall(_.send,d)end
+if not e then return false,"Send failed: "..tostring(f)end;return true end
+function N.broadcast(b,a)if not T and not _ then return false,"No modem"end
+a=a or Y or V;b.from=ab;local d=Q.serialize(b)local c=false;for f,e in ipairs(U)do
+local g=pcall(e.proxy.broadcast,a,d)c=c or g end;if _ then local e=pcall(_.send,d)
+c=c or e end
+if not c then return false,"Broadcast failed on all NICs"end;return true end
+function N.handleIncoming(a,d,b,c)if not ak then return end;local e,i=Q.deserialize(c)if not e then return end
+local h,j=Q.validate(e)if not h then return end;P.seen(a)e.from=a;e._distance=b;local f=P.getLevel(a)
+if
+f==P.LEVEL.BLOCKED then if O then
+O.debug("net","Dropped (BLOCKED): "..a:sub(1,8))end;return end
+if not P.isAllowed(a,e.type)then
+if e.type==Q.TYPE.TRUST_REQ then
+local k=ad(
+type(e.payload)=="table"and e.payload.hostname or nil)P.addPendingRequest(a,k)al(Q.TYPE.TRUST_REQ,e,a)
+return end;if f>=P.LEVEL.KNOWN then
+if
+e.type~=Q.TYPE.DENY and e.type~=Q.TYPE.ERROR then local k=Q.deny("Insufficient trust level")N.send(a,k)end end;if O then
+O.debug("net",string.format("Denied %s from %s (level: %s)",e.type,a:sub(1,8),P.levelName(f)))end;return end
+if e.enc and f<P.LEVEL.TRUSTED then if O then
+O.warn("net",string.format("Stripping enc flag on packet from non-TRUSTED peer %s (%s)",a:sub(1,8),
+e.type or"?"))end;e.enc=nil;e.payload=
+nil;return end;local g=false
+if
+e.enc and e.enc~=false and f>=P.LEVEL.TRUSTED then local l=P._internalGetSecret(a,N._trustToken)local k=nil;if
+e.enc=="xor"and R.hasHardware and R.hasHardware()then
+k="refusing XOR packet on AES-capable receiver (downgrade)"end
+if not k then local m=e.nonce
+local n=e.mac
+if type(m)~=X or#m<8 or#m>64 then k="missing or malformed nonce"elseif
+type(n)~=X or#n~=64 then k="missing or malformed MAC"elseif not l then k="no shared secret"else
+local o=R.hmac(l,table.concat({
+e.type or"",e.to or"",e.enc or"",tostring(e.epoch or""),tostring(e.seq or""),m,(
+e.payload or"")},"\0"))if not R.ctEquals(o,n)then k="MAC mismatch"end end end;if not k then N._recvSeq=N._recvSeq or{}
+local m,n=ao(N._recvSeq,a,e.epoch,tonumber(e.seq))if not m then k=n end end
+if
+not k then N._seenNonces=N._seenNonces or{}local m=N._seenNonces[a]
+if not m then N._seenNonces.__order=
+N._seenNonces.__order or{}local n=N._seenNonces.__order;if
+#n>=an then local o=table.remove(n,1)
+if o~=nil then N._seenNonces[o]=nil end end;n[#n+1]=a
+m={order={},set={}}N._seenNonces[a]=m end
+if m.set[e.nonce]then k="replayed nonce"else m.set[e.nonce]=true
+m.order[#m.order+1]=e.nonce;local n=512;if#m.order>n then local o=table.remove(m.order,1)
+m.set[o]=nil end end end
+if not k then
+if type(e.payload)~=X then k="enc flag set but payload is not ciphertext"else
+local m=R.decrypt(e.payload,l,e.enc)
+if not m then k="decryption failed (tampered or wrong key)"else local n=Q.deserialize(m)
+if not
+n then k="decrypted payload failed to deserialize"else e.payload=n;e.enc=false;g=true end end end end
+if k then if O then
+O.warn("net",string.format("Dropped enc packet from %s (%s): %s",a:sub(1,8),e.type or"?",k))end;return end end
+if
+not g and ae and f>=P.LEVEL.TRUSTED and not ap[e.type]and not as[e.type]then
+local k=P._internalGetSecret(a,N._trustToken)
+if k and k~=""then
+if O then
+O.warn("net",string.format("Dropped unsealed %s from TRUSTED peer %s: we share a secret, so it "..
+"must arrive encrypted (a peer with encryptComms off, or a moved modem)",tostring(e.type),a:sub(1,8)))end;return end end
+if e.type==Q.TYPE.PING then local k=Q.pong()
+if aa and f>=P.LEVEL.KNOWN then k.payload=
+k.payload or{}k.payload.device=aa.deviceType()end;N.send(a,k)N._recordPeer(a,e.payload)return end
+if e.type==Q.TYPE.PONG then N._recordPeer(a,e.payload)end
+if e.type==Q.TYPE.HELLO and f>=P.LEVEL.KNOWN then
+local k=P.getPeer(a)if k and type(e.payload)=="table"then
+k.hostname=ad(e.payload.hostname)end
+local l=Q.helloAck(ac,_G._TOS.version)N.send(a,l)end
+if e.type==Q.TYPE.HELLO_ACK and f>=P.LEVEL.KNOWN then
+local k=P.getPeer(a)if k and type(e.payload)=="table"then
+k.hostname=ad(e.payload.hostname)end end
+if e.type==Q.TYPE.CHALLENGE then if f<P.LEVEL.TRUSTED then return end;N._challengeRate=
+N._challengeRate or{}local n=S.uptime()
+local q=N._challengeRate[a]or 0
+if n-q<1.0 then if O then
+O.warn("net","CHALLENGE throttled from "..a:sub(1,8))end;return end;N._challengeRate[a]=n
+local m=P._internalGetSecret and
+P._internalGetSecret(a,N._trustToken)or nil;if not m or m==""then return end
+local k=e.payload and e.payload.nonce
+if type(k)~=X or#k<8 or#k>64 then if O then
+O.warn("net","Bad challenge nonce from "..a:sub(1,8))end;return end;local o=R.salt(16)local r,p=pcall(R.hmac,m,k.."|"..o)if
+not r or not p then return end;local l=Q.challengeResponse(k,p)
+l.payload=l.payload or{}l.payload.serverNonce=o;N.send(a,l)return end;al(e.type,e,a)end;local ai=nil
+local function at(a)
+if ai==nil then if not Q then return end
+ai={[Q.TYPE.FILE_REQ]="kernel.net.transfer",[Q.TYPE.REMOTE_EXEC]="kernel.net.remote",[Q.TYPE.NETFS_REQ]="kernel.netfs"}end;local b=ai[a]if not b then return end;ai[a]=nil;local c,d=pcall(require,b)if not c and O then
+O.warn("net",
+"Lazy handler load failed ("..b.."): "..tostring(d))end end
+al=function(a,b,c)at(a)
+if W[a]then
+for e,d in ipairs(W[a])do local f,g=pcall(d.cb,b,c)if not f and O then
+O.warn("net","Listener error for "..
+tostring(a)..": "..tostring(g))end end end
+if W["*"]then
+for e,d in ipairs(W["*"])do local f,g=pcall(d.cb,b,c)if not f and O then
+O.warn("net","Catch-all listener error: "..
+tostring(g))end end end end;local aq={}
+local au={fileshare="kernel.net.transfer",rshd="kernel.net.remote",netfsd="kernel.netfs"}
+function N.setServiceArm(a,b)aq[a]=b and true or false;local c=au[a]
+if c and package and
+package.loaded and package.loaded[c]then
+local d=package.loaded[c]local e=d and(d.arm or d.setEnabled)if e then
+e(b and true or false)end end end;function N.getServiceArm(a)return aq[a]==true end;local am=1
+function N.on(a,b)if not W[a]then
+W[a]={}end;local c=am;am=am+1;W[a][#W[a]+1]={cb=b,id=c}return c end
+function N.off(a,b)if not W[a]then return false end;for c,d in ipairs(W[a])do if d.id==b then
+table.remove(W[a],c)return true end end;return
+false end
+function N.onceFrom(a,b,c)local d=false;return
+N.on(a,function(f,e)if d or e~=b then return end;d=true;c(f,e)end)end
+function N.offAll(a)if type(a)~="table"then return end;for c,b in ipairs(a)do
+if
+type(b)=="table"and b.type and b.id then N.off(b.type,b.id)end end end
+local function av()local a=package.loaded["kernel.process"]
+if a and type(a.inProcess)==
+"function"then return a.inProcess()end
 return
-end
-if not trustMgr.isAllowed(remoteAddr, packet.type) then
-if packet.type == protocol.TYPE.TRUST_REQ then
---! #SEC — a TRUST_REQ comes from ANY peer, UNKNOWN included, and its
---! hostname is that stranger's claim: the same rule as PING/PONG
---! (cleanClaim). Raw, a table raised inside the trust manager after
---! the record was stored, and 8 KB of escape codes reached
---! `net requests`. (test_net_peer_claims.lua)
-local peerHostname = cleanClaim(type(packet.payload) == "table"
-and packet.payload.hostname or nil)
-trustMgr.addPendingRequest(remoteAddr, peerHostname)
-dispatchToListeners(protocol.TYPE.TRUST_REQ, packet, remoteAddr)
+(coroutine.isyieldable and coroutine.isyieldable())and true or false end
+function N.waitFor(a,b)local c=S.uptime()+ (b or 10)
+while not a()do if S.uptime()>=c then
+return false end
+if av()then coroutine.yield()else
+local d=
+(af and af.pull)and af or package.loaded["kernel.event"]if type(d)=="table"and type(d.pull)=="function"then
+d.pull(0.5)else S.pullSignal(0.5)end end end;return true end;local aj={}local aw=60
+local function ax(c,d,R)
+if R and R.ctEquals then return R.ctEquals(c,d)end;if type(c)~=X or type(d)~=X then return false end
+local a,b=#c,#d;local f=a>b and a or b;local e=a~b
+for g=1,f do
+local h=g<=a and c:byte(g)or 0;local i=g<=b and d:byte(g)or 0;e=e| (h~i)end;return e==0 end
+function N.verifyPeer(a,b,c)if not Q then return false,"protocol unavailable"end;if
+not a or a==""then return false,"no address"end;if not P then
+return false,"trust manager unavailable"end;if not c then local m=aj[a]
+if m and S.uptime()<m then return true end end;if
+P.getLevel(a)<P.LEVEL.TRUSTED then return false,"peer not trusted"end
+local f=P._internalGetSecret and
+P._internalGetSecret(a,N._trustToken)or nil
+if not f or f==""then return false,"no shared secret with peer"end;local d
+if R.salt then d=R.salt(16)else local m={}for n=1,16 do
+m[n]=string.char(math.random(0,255))end;d=table.concat(m)end;local g,h,e=false,nil,nil
+local i=N.onceFrom(Q.TYPE.CHALLENGE_RES,a,function(m)
+if
+m.payload and m.payload.nonce==d then h=m.payload.proof;e=m.payload.serverNonce;g=true end end)local k,l=N.send(a,Q.challenge(d))
+if not k then
+N.off(Q.TYPE.CHALLENGE_RES,i)return false,"send failed: "..tostring(l)end;N.waitFor(function()return g end,b or 5)
+N.off(Q.TYPE.CHALLENGE_RES,i)if not g then return false,"challenge timeout"end
+if
+type(e)~=X or#e<8 or#e>64 then return false,"bad server nonce"end;local j
+do local n=d.."|"..e;local o,m=pcall(R.hmac,f,n)if not o or not m then
+return false,"hmac failed"end;j=m end
+if not ax(h,j,R)then if O then
+O.warn("net","Challenge proof mismatch from "..a:sub(1,8))end;return false,"bad proof"end;aj[a]=S.uptime()+aw;return true end
+function N.invalidateVerification(a)if a then aj[a]=nil else aj={}end end
+function N.discover()local a=Q.ping()return N.broadcast(a,Y)end
+function N.hello(a)local b=P.getLevel(a)if b<P.LEVEL.KNOWN then
+return false,"Peer must be KNOWN to exchange hellos"end
+local c=Q.hello(ac,_G._TOS.version)return N.send(a,c)end
+function N.sendMessage(a,b)local e=P.getLevel(a)if e<P.LEVEL.TRUSTED then
+return false,"Peer must be TRUSTED to send messages"end;local c=Q.message(b,ae)
+local d,f=N.send(a,c)return d,f,d and c.seq or nil end
+function N.requestTrust(a)local b=Q.trustRequest(ac)return N.send(a,b)end;function N.getTrust()return P end;local Z={}local ay=64
+function ad(a)if type(a)~=X then return nil end
+a=a:gsub("%c",""):sub(1,32)if a==""then return nil end;return a end
+function N._recordPeer(a,b)if type(a)~=X then return end;local e=S.uptime()local f=
+P and P.getLevel(a)or 0;local c=nil;local d=nil;if type(b)=="table"then
+c=ad(b.hostname)d=ad(b.device)end;if P then local g=P.getPeer(a)if g then c=c or
+ad(g.hostname)end end
+if Z[a]==
+nil then local g,h,i=0,nil,nil
+for k,j in pairs(Z)do g=g+1
+local l=(
+((j.trust or 0)>0)and 1e12 or 0)+ (j.lastSeen or 0)if not i or l<i then h,i=k,l end end;if g>=ay and h then Z[h]=nil end end;Z[a]={addr=a,lastSeen=e,hostname=c,device=d,trust=f}end
+function N.peers()local a={}for c,b in pairs(Z)do a[#a+1]=b end
+table.sort(a,function(c,d)return
+(c.hostname or"")< (d.hostname or"")end)return a end
+function N.findPeer(a)if type(a)~=X or a==""then return nil end
+if Z[a]then return Z[a]end
+for c,b in pairs(Z)do if b.hostname and b.hostname==a then return b end end
+for b,c in pairs(Z)do if b:sub(1,#a)==a then return c end end;return nil end
+function N.scan(a)a=a or 3;local c={}
+local d=N.on(Q.TYPE.PONG,function(f,e)N._recordPeer(e,f.payload)
+c[e]=Z[e]end)N.discover()
+N.waitFor(function()return false end,a)N.off(Q.TYPE.PONG,d)local b={}
+for f,e in pairs(c)do b[#b+1]=e end;return b end;function N.getProtocol()return Q end
+function N.status()local a=P.stats()
 return
-end
-if peerLevel >= trustMgr.LEVEL.KNOWN then
-if packet.type ~= protocol.TYPE.DENY and packet.type ~= protocol.TYPE.ERROR then
-local denyPkt = protocol.deny("Insufficient trust level")
-net.send(remoteAddr, denyPkt)
-end
-end
-if log then
-log.debug("net", string.format("Denied %s from %s (level: %s)",
-packet.type, remoteAddr:sub(1, 8),
-trustMgr.levelName(peerLevel)))
-end
-return
-end
-if packet.enc and peerLevel < trustMgr.LEVEL.TRUSTED then
-if log then
-log.warn("net", string.format(
-"Stripping enc flag on packet from non-TRUSTED peer %s (%s)",
-remoteAddr:sub(1, 8), packet.type or "?"))
-end
-packet.enc = nil
-packet.payload = nil
-return
-end
-local sealed = false
-if packet.enc and packet.enc ~= false and peerLevel >= trustMgr.LEVEL.TRUSTED then
-local secret = trustMgr._internalGetSecret(remoteAddr, net._trustToken)
-local dropWhy = nil
-if packet.enc == "xor" and crypto.hasHardware and crypto.hasHardware() then
-dropWhy = "refusing XOR packet on AES-capable receiver (downgrade)"
-end
-if not dropWhy then
-local nonce = packet.nonce
-local mac = packet.mac
-if type(nonce) ~= "string" or #nonce < 8 or #nonce > 64 then
-dropWhy = "missing or malformed nonce"
-elseif type(mac) ~= "string" or #mac ~= 64 then
-dropWhy = "missing or malformed MAC"
-elseif not secret then
-dropWhy = "no shared secret"
-else
-local expected = crypto.hmac(secret, table.concat({
-packet.type or "", packet.to or "", packet.enc or "",
-tostring(packet.epoch or ""), tostring(packet.seq or ""),
-nonce, (packet.payload or "")
-}, "\0"))
-if not crypto.ctEquals(expected, mac) then
-dropWhy = "MAC mismatch"
-end
-end
-end
-if not dropWhy then
-net._recvSeq = net._recvSeq or {}
-local okSeq, seqWhy = seqFreshnessCheck(
-net._recvSeq, remoteAddr, packet.epoch, tonumber(packet.seq))
-if not okSeq then dropWhy = seqWhy end
-end
-if not dropWhy then
-net._seenNonces = net._seenNonces or {}
-local peerSeen = net._seenNonces[remoteAddr]
-if not peerSeen then
-net._seenNonces.__order = net._seenNonces.__order or {}
-local ord = net._seenNonces.__order
-if #ord >= SEQ_MAX_PEERS then
-local victim = table.remove(ord, 1)
-if victim ~= nil then net._seenNonces[victim] = nil end
-end
-ord[#ord + 1] = remoteAddr
-peerSeen = { order = {}, set = {} }
-net._seenNonces[remoteAddr] = peerSeen
-end
-if peerSeen.set[packet.nonce] then
-dropWhy = "replayed nonce"
-else
-peerSeen.set[packet.nonce] = true
-peerSeen.order[#peerSeen.order + 1] = packet.nonce
-local NONCE_WINDOW = 512
-if #peerSeen.order > NONCE_WINDOW then
-local stale = table.remove(peerSeen.order, 1)
-peerSeen.set[stale] = nil
-end
-end
-end
-if not dropWhy then
-if type(packet.payload) ~= "string" then
-dropWhy = "enc flag set but payload is not ciphertext"
-else
-local decrypted = crypto.decrypt(packet.payload, secret, packet.enc)
-if not decrypted then
-dropWhy = "decryption failed (tampered or wrong key)"
-else
-local parsed = protocol.deserialize(decrypted)
-if not parsed then
-dropWhy = "decrypted payload failed to deserialize"
-else
-packet.payload = parsed
-packet.enc = false
-sealed = true
-end
-end
-end
-end
-if dropWhy then
-if log then
-log.warn("net", string.format(
-"Dropped enc packet from %s (%s): %s",
-remoteAddr:sub(1, 8), packet.type or "?", dropWhy))
-end
-return
-end
-end
---! #SEC — THE MAC WAS OPTIONAL FOR THE SENDER. Everything above runs only
---! when a packet SAYS it is encrypted, so a TRUSTED peer's packet that
---! simply left `enc` off skipped the MAC, the sequence check and the
---! nonce ring, and was dispatched as if it had passed them. The threat
---! those checks exist for is the one net.verifyPeer's comments name: a
---! trusted peer's modem moved to an attacker's machine. It keeps its
---! address -- and so its TRUSTED level -- but not the shared secret, so
---! it cannot produce a valid MAC... and did not need one. Every listener
---! that does not run its own challenge (chat MSG, TRUST_REVOKE, the
---! cluster Manager's CLUSTER_ASSIGN, which runs the Master's tasks) took
---! plaintext from it as genuine.
---!
---! Mirror of the send side, exactly: with encryptComms on, net.send seals
---! every non-public packet to a TRUSTED peer it has a secret with, and
---! refuses to send it otherwise (#47). So a plaintext non-public packet
---! from a TRUSTED peer we share a secret with is not one a correctly
---! configured peer sends. Exempt: PUBLIC_PACKET_TYPES (never sealed, by
---! design), and the mesh pair, which travels by net.broadcast (never
---! sealed at this layer) and is sealed end-to-end inside the envelope.
---! A TRUSTED peer with NO shared secret is unchanged -- nothing here could
---! verify it either way. (test_net_trusted_gate.lua)
-if not sealed and encryptComms and peerLevel >= trustMgr.LEVEL.TRUSTED
-and not PUBLIC_PACKET_TYPES[packet.type]
-and not BROADCAST_PACKET_TYPES[packet.type] then
-local secret = trustMgr._internalGetSecret(remoteAddr, net._trustToken)
-if secret and secret ~= "" then
-if log then
-log.warn("net", string.format(
-"Dropped unsealed %s from TRUSTED peer %s: we share a secret, so it "
-.. "must arrive encrypted (a peer with encryptComms off, or a moved modem)",
-tostring(packet.type), remoteAddr:sub(1, 8)))
-end
-return
-end
-end
-if packet.type == protocol.TYPE.PING then
-local pong = protocol.pong()
-if config and peerLevel >= trustMgr.LEVEL.KNOWN then
-pong.payload = pong.payload or {}
-pong.payload.device = config.deviceType()
-end
-net.send(remoteAddr, pong)
-net._recordPeer(remoteAddr, packet.payload)
-return
-end
-if packet.type == protocol.TYPE.PONG then
-net._recordPeer(remoteAddr, packet.payload)
-end
---! HELLO / HELLO_ACK hostnames are persisted into /etc/trust.dat and
---! shown by `net peers`, so they get the same cleanClaim as PING/PONG.
---! A KNOWN peer is one an admin met, not one whose bytes are trusted.
-if packet.type == protocol.TYPE.HELLO and peerLevel >= trustMgr.LEVEL.KNOWN then
-local peer = trustMgr.getPeer(remoteAddr)
-if peer and type(packet.payload) == "table" then
-peer.hostname = cleanClaim(packet.payload.hostname)
-end
-local ack = protocol.helloAck(hostname, _G._TOS.version)
-net.send(remoteAddr, ack)
-end
-if packet.type == protocol.TYPE.HELLO_ACK and peerLevel >= trustMgr.LEVEL.KNOWN then
-local peer = trustMgr.getPeer(remoteAddr)
-if peer and type(packet.payload) == "table" then
-peer.hostname = cleanClaim(packet.payload.hostname)
-end
-end
-if packet.type == protocol.TYPE.CHALLENGE then
-if peerLevel < trustMgr.LEVEL.TRUSTED then return end
-net._challengeRate = net._challengeRate or {}
-local now = computer.uptime()
-local last = net._challengeRate[remoteAddr] or 0
-if now - last < 1.0 then
-if log then log.warn("net", "CHALLENGE throttled from " .. remoteAddr:sub(1,8)) end
-return
-end
-net._challengeRate[remoteAddr] = now
-local secret = trustMgr._internalGetSecret and
-trustMgr._internalGetSecret(remoteAddr, net._trustToken) or nil
-if not secret or secret == "" then return end
-local nonce = packet.payload and packet.payload.nonce
-if type(nonce) ~= "string" or #nonce < 8 or #nonce > 64 then
-if log then log.warn("net", "Bad challenge nonce from " .. remoteAddr:sub(1,8)) end
-return
-end
-local crypto = require("kernel.crypto")
-local serverNonce = crypto.salt(16)
-local ok, proof = pcall(crypto.hmac, secret, nonce .. "|" .. serverNonce)
-if not ok or not proof then return end
-local resp = protocol.challengeResponse(nonce, proof)
-resp.payload = resp.payload or {}
-resp.payload.serverNonce = serverNonce
-net.send(remoteAddr, resp)
-return
-end
-dispatchToListeners(packet.type, packet, remoteAddr)
-end
-local lazyInbound = nil
-local function loadLazyInbound(msgType)
-if lazyInbound == nil then
-if not protocol then return end
-lazyInbound = {
-[protocol.TYPE.FILE_REQ] = "kernel.net.transfer",
-[protocol.TYPE.REMOTE_EXEC] = "kernel.net.remote",
-[protocol.TYPE.NETFS_REQ] = "kernel.netfs",
-}
-end
-local modname = lazyInbound[msgType]
-if not modname then return end
-lazyInbound[msgType] = nil
-local okM, err = pcall(require, modname)
-if not okM and log then
-log.warn("net", "Lazy handler load failed (" .. modname .. "): " .. tostring(err))
-end
-end
---! The load used to be tried only while NO listener existed for the type.
---! 20-fileshare registers a FILE_REQ logger in start(), so after every boot
---! the first FILE_REQ found the logger, transfer never loaded, and the peer
---! timed out on an armed, running service. Who else listens says nothing
---! about whether the backend is loaded: always ask. After the first attempt
---! per type it is one failed table lookup. (test_fileshare_serves.lua)
-dispatchToListeners = function(msgType, packet, from)
-loadLazyInbound(msgType)
-if listeners[msgType] then
-for _, entry in ipairs(listeners[msgType]) do
-local ok, err = pcall(entry.cb, packet, from)
-if not ok and log then
-log.warn("net", "Listener error for " .. tostring(msgType) .. ": " .. tostring(err))
-end
-end
-end
-if listeners["*"] then
-for _, entry in ipairs(listeners["*"]) do
-local ok, err = pcall(entry.cb, packet, from)
-if not ok and log then
-log.warn("net", "Catch-all listener error: " .. tostring(err))
-end
-end
-end
-end
---! netfsd arms kernel.netfs the same way, and for a second reason: it runs
---! as root, inside kernel.sandbox, whose require refuses every "kernel."
---! name and whose env has no _TOS. Its pcall(require, "kernel.netfs")
---! returned nil, start() returned before arming, and rc listed it running
---! while it served nothing. The `net` its sandbox holds is the one route
---! in. A backend with its own arm(on) gets that instead of setEnabled:
---! netfs re-reads its export file when armed. (test_netfsd_serves.lua)
-local armFlags = {}
-local ARM_BACKENDS = {
-fileshare = "kernel.net.transfer",
-rshd = "kernel.net.remote",
-netfsd = "kernel.netfs",
-}
-function net.setServiceArm(name, on)
-armFlags[name] = on and true or false
-local modname = ARM_BACKENDS[name]
-if modname and package and package.loaded and package.loaded[modname] then
-local m = package.loaded[modname]
-local apply = m and (m.arm or m.setEnabled)
-if apply then apply(on and true or false) end
-end
-end
-function net.getServiceArm(name)
-return armFlags[name] == true
-end
-local listenerNextID = 1
-function net.on(msgType, callback)
-if not listeners[msgType] then
-listeners[msgType] = {}
-end
-local id = listenerNextID
-listenerNextID = listenerNextID + 1
-listeners[msgType][#listeners[msgType] + 1] = { cb = callback, id = id }
-return id
-end
-function net.off(msgType, id)
-if not listeners[msgType] then return false end
-for i, entry in ipairs(listeners[msgType]) do
-if entry.id == id then
-table.remove(listeners[msgType], i)
-return true
-end
-end
-return false
-end
-function net.onceFrom(msgType, addr, callback)
-local fired = false
-return net.on(msgType, function(packet, fromAddr)
-if fired or fromAddr ~= addr then return end
-fired = true
-callback(packet, fromAddr)
-end)
-end
-function net.offAll(entries)
-if type(entries) ~= "table" then return end
-for _, e in ipairs(entries) do
-if type(e) == "table" and e.type and e.id then
-net.off(e.type, e.id)
-end
-end
-end
---!
---! "From a process" is asked of the SCHEDULER, not coroutine.isyieldable().
---! On real OpenComputers isyieldable() is true in kernel context too (the
---! kernel runs inside machine.lua's coroutine; measured by the boot battery
---! 2026-09-25), so the event.pull branch was unreachable on hardware. A
---! kernel-context caller -- verifyPeer inside the netfs, rshd and transfer
---! request handlers, which run as modem_message listeners -- yielded to the
---! host instead: the peer's reply came back as the yield's return value,
---! was dropped, and nothing dispatched it, so the wait could only time out,
---! eating every other signal on the machine while it did.
---! (test_inprocess_waitfor.lua, selftest 96-waitfor)
-local function inProcess()
-local P = package.loaded["kernel.process"]
-if P and type(P.inProcess) == "function" then return P.inProcess() end
-return (coroutine.isyieldable and coroutine.isyieldable()) and true or false
-end
-function net.waitFor(predicate, timeout)
-local deadline = computer.uptime() + (timeout or 10)
-while not predicate() do
-if computer.uptime() >= deadline then return false end
-if inProcess() then
-coroutine.yield()
-else
---! The event module is looked up, not only taken from net.init.
---! `event` is assigned in net.init, and a Safe Mode boot skips the
---! network stage -- but kernel.net stays require-able (the sandbox's
---! `net` cap, chatpair, the mail and cluster libs), so waitFor ran
---! with `event` nil and took the raw pull: each signal popped and
---! dispatched to nobody, the predicate never true, every other
---! listener's signals gone for the whole wait.
---! (test_waitfor_without_net_init.lua, selftest 96-waitfor)
-local E = (event and event.pull) and event or package.loaded["kernel.event"]
-if type(E) == "table" and type(E.pull) == "function" then
-E.pull(0.5)
-else
-computer.pullSignal(0.5)
-end
-end
-end
-return true
-end
-local verifyCache = {}
-local VERIFY_CACHE_TTL = 60
-local function safeEquals(a, b, crypto)
-if crypto and crypto.ctEquals then return crypto.ctEquals(a, b) end
-if type(a) ~= "string" or type(b) ~= "string" then return false end
-local la, lb = #a, #b
-local n = la > lb and la or lb
-local diff = la ~ lb
-for i = 1, n do
-local ba = i <= la and a:byte(i) or 0
-local bb = i <= lb and b:byte(i) or 0
-diff = diff | (ba ~ bb)
-end
-return diff == 0
-end
-function net.verifyPeer(addr, timeout, force)
-if not protocol then return false, "protocol unavailable" end
-if not addr or addr == "" then return false, "no address" end
-if not trustMgr then return false, "trust manager unavailable" end
-if not force then
-local exp = verifyCache[addr]
-if exp and computer.uptime() < exp then return true end
-end
-if trustMgr.getLevel(addr) < trustMgr.LEVEL.TRUSTED then
-return false, "peer not trusted"
-end
-local secret = trustMgr._internalGetSecret and
-trustMgr._internalGetSecret(addr, net._trustToken) or nil
-if not secret or secret == "" then
-return false, "no shared secret with peer"
-end
-local crypto = require("kernel.crypto")
-local nonce
-if crypto.salt then
-nonce = crypto.salt(16)
-else
-local parts = {}
-for i = 1, 16 do parts[i] = string.char(math.random(0, 255)) end
-nonce = table.concat(parts)
-end
-local got, gotProof, gotServerNonce = false, nil, nil
-local lid = net.onceFrom(protocol.TYPE.CHALLENGE_RES, addr, function(pkt)
-if pkt.payload and pkt.payload.nonce == nonce then
-gotProof = pkt.payload.proof
-gotServerNonce = pkt.payload.serverNonce
-got = true
-end
-end)
-local sent, sErr = net.send(addr, protocol.challenge(nonce))
-if not sent then
-net.off(protocol.TYPE.CHALLENGE_RES, lid)
-return false, "send failed: " .. tostring(sErr)
-end
-net.waitFor(function() return got end, timeout or 5)
-net.off(protocol.TYPE.CHALLENGE_RES, lid)
-if not got then return false, "challenge timeout" end
-if type(gotServerNonce) ~= "string"
-or #gotServerNonce < 8 or #gotServerNonce > 64 then
-return false, "bad server nonce"
-end
-local expected
-do
-local toSign = nonce .. "|" .. gotServerNonce
-local ok, p = pcall(crypto.hmac, secret, toSign)
-if not ok or not p then return false, "hmac failed" end
-expected = p
-end
-if not safeEquals(gotProof, expected, crypto) then
-if log then
-log.warn("net", "Challenge proof mismatch from " .. addr:sub(1,8))
-end
-return false, "bad proof"
-end
-verifyCache[addr] = computer.uptime() + VERIFY_CACHE_TTL
-return true
-end
-function net.invalidateVerification(addr)
-if addr then verifyCache[addr] = nil
-else verifyCache = {} end
-end
-function net.discover()
-local ping = protocol.ping()
-return net.broadcast(ping, broadcastPort)
-end
-function net.hello(address)
-local level = trustMgr.getLevel(address)
-if level < trustMgr.LEVEL.KNOWN then
-return false, "Peer must be KNOWN to exchange hellos"
-end
-local pkt = protocol.hello(hostname, _G._TOS.version)
-return net.send(address, pkt)
-end
-function net.sendMessage(address, text)
-local level = trustMgr.getLevel(address)
-if level < trustMgr.LEVEL.TRUSTED then
-return false, "Peer must be TRUSTED to send messages"
-end
-local pkt = protocol.message(text, encryptComms)
-local ok, err = net.send(address, pkt)
-return ok, err, ok and pkt.seq or nil
-end
-function net.requestTrust(address)
-local pkt = protocol.trustRequest(hostname)
-return net.send(address, pkt)
-end
-function net.getTrust()
-return trustMgr
-end
-local discoveredPeers = {}
---! #MEM (pentest, Sep 2026) — bounded. An entry was added for every
---! distinct address that answered or sent a ping and nothing ever removed
---! one, so on a busy network the table only grew until the next reboot.
---! Same ceiling the trust manager puts on UNKNOWN peers.
-local MAX_DISCOVERED = 64
---! #SEC (pentest, Sep 2026) — a PING/PONG payload is an UNKNOWN peer's
---! claim about itself: any type, any length, any bytes. A number as the
---! hostname crashed the sort in net.peers() for every later caller (`net
---! peers`, `net scan`, discovery), and control characters went straight to
---! the screen. Keep a short printable string or nothing.
---! (test_net_peer_claims.lua)
---! Also applied to TRUST_REQ and HELLO / HELLO_ACK hostnames in
---! handleIncoming, above (forward-declared there).
-function cleanClaim(v)
-if type(v) ~= "string" then return nil end
-v = v:gsub("%c", ""):sub(1, 32)
-if v == "" then return nil end
-return v
-end
-function net._recordPeer(addr, payload)
-if type(addr) ~= "string" then return end
-local now = computer.uptime()
-local trust = trustMgr and trustMgr.getLevel(addr) or 0
-local hostname2 = nil
-local device2 = nil
-if type(payload) == "table" then
-hostname2 = cleanClaim(payload.hostname)
-device2 = cleanClaim(payload.device)
-end
-if trustMgr then
-local peer = trustMgr.getPeer(addr)
-if peer then
-hostname2 = hostname2 or cleanClaim(peer.hostname)
-end
-end
-if discoveredPeers[addr] == nil then
-local count, victim, victimKey = 0, nil, nil
-for a, p in pairs(discoveredPeers) do
-count = count + 1
-local key = (((p.trust or 0) > 0) and 1e12 or 0) + (p.lastSeen or 0)
-if not victimKey or key < victimKey then victim, victimKey = a, key end
-end
-if count >= MAX_DISCOVERED and victim then discoveredPeers[victim] = nil end
-end
-discoveredPeers[addr] = {
-addr = addr,
-lastSeen = now,
-hostname = hostname2,
-device = device2,
-trust = trust,
-}
-end
-function net.peers()
-local result = {}
-for _, peer in pairs(discoveredPeers) do
-result[#result + 1] = peer
-end
-table.sort(result, function(a, b) return (a.hostname or "") < (b.hostname or "") end)
-return result
-end
-function net.findPeer(query)
-if type(query) ~= "string" or query == "" then return nil end
-if discoveredPeers[query] then return discoveredPeers[query] end
-for _, peer in pairs(discoveredPeers) do
-if peer.hostname and peer.hostname == query then return peer end
-end
-for addr, peer in pairs(discoveredPeers) do
-if addr:sub(1, #query) == query then return peer end
-end
-return nil
-end
-function net.scan(timeout)
-timeout = timeout or 3
-local results = {}
-local listenId = net.on(protocol.TYPE.PONG, function(packet, remoteAddr)
-net._recordPeer(remoteAddr, packet.payload)
-results[remoteAddr] = discoveredPeers[remoteAddr]
-end)
-net.discover()
-net.waitFor(function() return false end, timeout)
-net.off(protocol.TYPE.PONG, listenId)
-local list = {}
-for _, p in pairs(results) do list[#list + 1] = p end
-return list
-end
-function net.getProtocol()
-return protocol
-end
-function net.status()
-local stats = trustMgr.stats()
-return {
-available = net.isAvailable(),
-address = myAddr and (myAddr:sub(1, 8) .. "...") or "none",
-fullAddress = myAddr,
-hostname = hostname,
-listenPort = listenPort,
-portOwner = REGISTERED_PORTS[listenPort],
-encrypted = encryptComms,
-hasModem = modem ~= nil,
-hasTunnel = tunnel ~= nil,
-peers = stats,
-}
-end
-function net.shutdown()
-running = false
-if modem then
-pcall(function()
-modem.close(listenPort)
-if broadcastPort then modem.close(broadcastPort) end
-end)
-end
-if log then log.info("net", "Network shut down") end
-end
-return net
+{available=N.isAvailable(),address=ab and(
+ab:sub(1,8).."...")or"none",fullAddress=ab,hostname=ac,listenPort=V,portOwner=ah[V],encrypted=ae,hasModem=T~=nil,hasTunnel=_~=nil,peers=a}end
+function N.shutdown()ak=false;if T then
+pcall(function()T.close(V)if Y then T.close(Y)end end)end;if O then
+O.info("net","Network shut down")end end;return N

@@ -1,252 +1,74 @@
-local hal = require("kernel.hal")
-local sides = require("compat.sides")
-local inv = {}
-local icProxy
-local transProxy
-local mode
-local function resetCache()
-icProxy = nil
-transProxy = nil
-mode = nil
-end
+
+local F,z,G,A,H,C,I="inventory_controller","transposer","peripheral.inventory","no inventory component","no inventory on that side","requires inventory_controller","drop failed"local D=require("kernel.hal")local J=require("compat.sides")
+local u={}local s;local w;local t;local function E()s=nil;w=nil;t=nil end
 do
-local okE, eventMod = pcall(require, "kernel.event")
-if okE and eventMod and eventMod.on then
-eventMod.on("component_removed", function(_, addr, ctype)
-if ctype == "inventory_controller" or ctype == "transposer" or ctype == "tank_controller" then
-resetCache()
-end
-end, "peripheral.inventory")
-eventMod.on("component_added", function(_, addr, ctype)
-if ctype == "inventory_controller" or ctype == "transposer" then
-resetCache()
-end
-end, "peripheral.inventory")
-end
-end
-local function detect()
-local okP, procMod = pcall(require, "kernel.process")
-if okP and procMod and procMod.current then
-local cur = procMod.current()
-if cur and not (cur.caps and cur.caps["peripheral.inventory"]) then
-return nil
-end
-end
-if mode then return mode end
-icProxy = hal.proxy("inventory_controller")
-if icProxy then
-mode = "ic"
-return mode
-end
-transProxy = hal.proxy("transposer")
-if transProxy then
-mode = "transposer"
-return mode
-end
-return nil
-end
-local function resolveSide(side)
-if type(side) == "string" then
-local n = sides[side:lower()]
-if not n then return nil, "unknown side: " .. side end
-return n
-elseif type(side) == "number" and side >= 0 and side <= 5 then
-return side
-end
-return nil, "invalid side"
-end
-local function vCount(n)
-n = tonumber(n)
-if not n or n ~= n then return 64 end
-n = math.floor(n)
-if n < 0 then n = 0 end
-return n
-end
-local function vSlot(n)
-n = tonumber(n)
-if not n or n ~= n then return nil, "invalid slot" end
-n = math.floor(n)
-if n < 1 then return nil, "invalid slot (must be >= 1)" end
-return n
-end
-function inv.size(side)
-if not detect() then return nil, "no inventory component" end
-local s, err = resolveSide(side)
-if not s then return nil, err end
-local p = icProxy or transProxy
-local ok, result = pcall(p.getInventorySize, s)
-if not ok then return nil, "no inventory on that side" end
-return result
-end
-function inv.getSlot(side, slot)
-if not detect() then return nil, "no inventory component" end
-local s, err = resolveSide(side)
-if not s then return nil, err end
-local p = icProxy or transProxy
-local ok, result = pcall(p.getStackInSlot, s, slot)
-if not ok then return nil, "failed to read slot" end
-return result
-end
-function inv.getInternalSlot(slot)
-if not detect() or mode ~= "ic" then
-return nil, "requires inventory_controller"
-end
-local ok, result = pcall(icProxy.getStackInInternalSlot, slot)
-if not ok then return nil, "failed to read internal slot" end
-return result
-end
-function inv.list(side)
-if not detect() then return nil, "no inventory component" end
-local s, err = resolveSide(side)
-if not s then return nil, err end
-local p = icProxy or transProxy
-local ok, sz = pcall(p.getInventorySize, s)
-if not ok or not sz then return nil, "no inventory on that side" end
-local items = {}
-for i = 1, sz do
-local sok, stack = pcall(p.getStackInSlot, s, i)
-if sok and stack then
-items[#items + 1] = {
-slot = i,
-name = stack.label or stack.name or "?",
-count = stack.size or stack.count or 0,
-}
-end
-end
-return items
-end
-function inv.stacks(side)
-if not detect() then return nil, "no inventory component" end
-local s, err = resolveSide(side)
-if not s then return nil, err end
-local p = icProxy or transProxy
-local function normalize(slot, stack)
-if type(stack) ~= "table" then return nil end
-local count = tonumber(stack.size or stack.count) or 0
-if count <= 0 then return nil end
-local id = stack.name or stack.label or "?"
-local dmg = tonumber(stack.damage) or 0
-return {
-slot = slot,
-id = id,
-label = stack.label or stack.name or "?",
-count = count,
-max = tonumber(stack.maxSize or stack.maxDamage) or nil,
-damage = dmg,
-key = id .. "#" .. tostring(dmg),
-}
-end
-if p.getAllStacks then
-local okA, arr = pcall(p.getAllStacks, s)
-if okA and arr then
-local okG, all = pcall(function() return arr.getAll() end)
-if okG and type(all) == "table" then
-local items = {}
-for i = 0, #all do
-local st = normalize(i + 1, all[i])
-if st then items[#items + 1] = st end
-end
-return items
-end
-end
-end
-local okSz, sz = pcall(p.getInventorySize, s)
-if not okSz or not sz then return nil, "no inventory on that side" end
-local items = {}
-for i = 1, sz do
-local sok, stack = pcall(p.getStackInSlot, s, i)
-if sok then
-local st = normalize(i, stack)
-if st then items[#items + 1] = st end
-end
-end
-return items
-end
-function inv.sides()
-if not detect() then return {} end
-local p = icProxy or transProxy
-local out = {}
-local NAMES = { [0] = "bottom", "top", "north", "south", "west", "east" }
-for s = 0, 5 do
-local ok, sz = pcall(p.getInventorySize, s)
-if ok and type(sz) == "number" and sz > 0 then
-out[#out + 1] = { side = s, name = NAMES[s] or tostring(s), size = sz }
-end
-end
-return out
-end
-function inv.transfer(fromSide, toSide, count, fromSlot, toSlot)
-if not detect() then return nil, "no inventory component" end
-count = vCount(count)
-if fromSlot ~= nil then
-local v, e = vSlot(fromSlot); if not v then return nil, "fromSlot: " .. e end
-fromSlot = v
-end
-if toSlot ~= nil then
-local v, e = vSlot(toSlot); if not v then return nil, "toSlot: " .. e end
-toSlot = v
-end
-if mode == "transposer" then
-local fs, ferr = resolveSide(fromSide)
-if not fs then return nil, ferr end
-local ts, terr = resolveSide(toSide)
-if not ts then return nil, terr end
-local ok, result = pcall(transProxy.transferItem, fs, ts, count, fromSlot, toSlot)
-if not ok then return nil, "transfer failed" end
-return result
-end
-if mode == "ic" then
-local ts, terr = resolveSide(toSide)
-if not ts then return nil, terr end
-if toSlot then
-local ok, result = pcall(icProxy.dropIntoSlot, ts, toSlot, count)
-if not ok then return nil, "drop failed" end
-return result
-else
-local ok, result = pcall(icProxy.dropIntoSlot, ts, 1, count)
-if not ok then return nil, "drop failed" end
-return result
-end
-end
-return nil, "no transfer method available"
-end
-function inv.suckFromSlot(side, slot, count)
-if not detect() or mode ~= "ic" then
-return nil, "requires inventory_controller"
-end
-local s, err = resolveSide(side)
-if not s then return nil, err end
-local vs, se = vSlot(slot); if not vs then return nil, se end
-local ok, result = pcall(icProxy.suckFromSlot, s, vs, vCount(count))
-if not ok then return nil, "suck failed" end
-return result
-end
-function inv.dropIntoSlot(side, slot, count)
-if not detect() or mode ~= "ic" then
-return nil, "requires inventory_controller"
-end
-local s, err = resolveSide(side)
-if not s then return nil, err end
-local vs, se = vSlot(slot); if not vs then return nil, se end
-local ok, result = pcall(icProxy.dropIntoSlot, s, vs, vCount(count))
-if not ok then return nil, "drop failed" end
-return result
-end
-function inv.equip()
-if not detect() or mode ~= "ic" then
-return nil, "requires inventory_controller"
-end
-return icProxy.equip()
-end
-function inv.available()
-return detect() ~= nil
-end
-function inv.getMode()
-detect()
-return mode
-end
-function inv.refresh()
-icProxy, transProxy, mode = nil, nil, nil
-return detect() ~= nil
-end
-return inv
+local b,a=pcall(require,"kernel.event")
+if b and a and a.on then
+a.on("component_removed",function(d,e,c)if
+c==F or c==z or c=="tank_controller"then E()end end,G)
+a.on("component_added",function(d,e,c)if c==F or c==z then E()end end,G)end end
+local function v()local b,a=pcall(require,"kernel.process")if b and a and a.current then
+local c=a.current()
+if c and not(c.caps and c.caps[G])then return nil end end;if t then return t end
+s=D.proxy(F)if s then t="ic"return t end;w=D.proxy(z)if w then t=z;return t end;return nil end
+local function x(a)
+if type(a)=="string"then local b=J[a:lower()]if not b then
+return nil,"unknown side: "..a end;return b elseif
+type(a)=="number"and a>=0 and a<=5 then return a end;return nil,"invalid side"end
+local function B(a)a=tonumber(a)if not a or a~=a then return 64 end;a=math.floor(a)if a<
+0 then a=0 end;return a end
+local function y(a)a=tonumber(a)
+if not a or a~=a then return nil,"invalid slot"end;a=math.floor(a)
+if a<1 then return nil,"invalid slot (must be >= 1)"end;return a end
+function u.size(a)if not v()then return nil,A end;local b,c=x(a)if not b then return nil,c end
+local d=s or w;local e,f=pcall(d.getInventorySize,b)if not e then return nil,H end;return f end
+function u.getSlot(a,b)if not v()then return nil,A end;local c,d=x(a)if not c then return nil,d end
+local e=s or w;local f,g=pcall(e.getStackInSlot,c,b)
+if not f then return nil,"failed to read slot"end;return g end
+function u.getInternalSlot(a)if not v()or t~="ic"then return nil,C end
+local b,c=pcall(s.getStackInInternalSlot,a)if not b then return nil,"failed to read internal slot"end;return c end
+function u.list(a)if not v()then return nil,A end;local b,f=x(a)if not b then return nil,f end
+local d=s or w;local g,e=pcall(d.getInventorySize,b)
+if not g or not e then return nil,H end;local c={}
+for h=1,e do local j,i=pcall(d.getStackInSlot,b,h)if j and i then
+c[#c+1]={slot=h,name=
+i.label or i.name or"?",count=i.size or i.count or 0}end end;return c end
+function u.stacks(a)if not v()then return nil,A end;local b,g=x(a)if not b then return nil,g end
+local c=s or w
+local function e(j,i)if type(i)~="table"then return nil end;local k=
+tonumber(i.size or i.count)or 0;if k<=0 then return nil end;local l=
+i.name or i.label or"?"local m=tonumber(i.damage)or 0;return
+{slot=j,id=l,label=
+i.label or i.name or"?",count=k,max=tonumber(i.maxSize or i.maxDamage)or nil,damage=m,key=
+l.."#"..tostring(m)}end
+if c.getAllStacks then local j,i=pcall(c.getAllStacks,b)
+if j and i then
+local l,k=pcall(function()return i.getAll()end)
+if l and type(k)=="table"then local m={}for n=0,#k do local o=e(n+1,k[n])
+if o then m[#m+1]=o end end;return m end end end;local h,f=pcall(c.getInventorySize,b)
+if not h or not f then return nil,H end;local d={}
+for j=1,f do local i,k=pcall(c.getStackInSlot,b,j)if i then local l=e(j,k)if l then
+d[#d+1]=l end end end;return d end
+function u.sides()if not v()then return{}end;local b=s or w;local a={}
+local c={[0]="bottom","top","north","south","west","east"}
+for d=0,5 do local f,e=pcall(b.getInventorySize,d)if
+f and type(e)=="number"and e>0 then
+a[#a+1]={side=d,name=c[d]or tostring(d),size=e}end end;return a end
+function u.transfer(e,d,b,c,a)if not v()then return nil,A end;b=B(b)if c~=nil then local f,g=y(c)if not f then
+return nil,"fromSlot: "..g end;c=f end
+if a~=nil then
+local f,g=y(a)if not f then return nil,"toSlot: "..g end;a=f end
+if t==z then local f,h=x(e)if not f then return nil,h end;local g,i=x(d)if not g then return nil,i end
+local j,k=pcall(w.transferItem,f,g,b,c,a)if not j then return nil,"transfer failed"end;return k end
+if t=="ic"then local f,g=x(d)if not f then return nil,g end
+if a then
+local h,i=pcall(s.dropIntoSlot,f,a,b)if not h then return nil,I end;return i else local h,i=pcall(s.dropIntoSlot,f,1,b)if
+not h then return nil,I end;return i end end;return nil,"no transfer method available"end
+function u.suckFromSlot(a,b,c)if not v()or t~="ic"then return nil,C end;local d,f=x(a)if not d then
+return nil,f end;local e,g=y(b)if not e then return nil,g end
+local h,i=pcall(s.suckFromSlot,d,e,B(c))if not h then return nil,"suck failed"end;return i end
+function u.dropIntoSlot(a,b,c)if not v()or t~="ic"then return nil,C end;local d,f=x(a)if not d then
+return nil,f end;local e,g=y(b)if not e then return nil,g end
+local h,i=pcall(s.dropIntoSlot,d,e,B(c))if not h then return nil,I end;return i end
+function u.equip()if not v()or t~="ic"then return nil,C end;return s.equip()end;function u.available()return v()~=nil end;function u.getMode()v()return t end;function u.refresh()s,w,t=
+nil,nil,nil;return v()~=nil end;return u

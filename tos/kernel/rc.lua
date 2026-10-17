@@ -1,505 +1,163 @@
-local rc = {}
-local RC_DIR = "/etc/rc.d"
-local services = {}
-local fs = nil
-local log = nil
-local proc = nil
-local DEFAULT_SERVICE_CAPS = {
-["fs.read"] = true,
-["fs.write"] = true,
-["component"] = true,
-["net"] = true,
-}
-local ALLOWED_SERVICE_CAPS = {
-["fs.read"] = true, ["fs.write"] = true, ["component"] = true,
-["compat.io"] = true, ["load"] = true, ["net"] = true,
-}
-local KERNEL_REQUIRE_ALLOW = {
-["computer"] = true,
-["component"] = true,
-["kernel.event"] = true,
-["kernel.log"] = true,
-["kernel.serialize"] = true,
-["kernel.config"] = true,
-}
-local function gatedKernelRequire(modName)
-if type(modName) ~= "string" then
-error("require: module name must be a string", 2)
-end
-if KERNEL_REQUIRE_ALLOW[modName] then
-return require(modName)
-end
-error("rc.d kernel service denied require('" .. modName .. "') (#SEC CR-6)", 2)
-end
---! restartCount used to be per-LIFETIME. Stopping at maxRestart ends a
---! crash loop, but a service that crashed once a week used its budget up
---! eventually and then stayed down for good, a log line the only trace. A
---! service that has stayed up RESTART_DECAY seconds since it last started
---! gets the budget back, and an operator's `service start` resets it.
---! (test_rc_peek_decay.lua)
-local RESTART_DECAY = 600
-local function now()
-local ok, c = pcall(require, "computer")
-return (ok and type(c) == "table" and type(c.uptime) == "function") and c.uptime() or 0
-end
-local function normalizeCaps(spec)
-if type(spec) ~= "table" then
-local out = {}
-for k, v in pairs(DEFAULT_SERVICE_CAPS) do out[k] = v end
-return out
-end
-local out = {}
-for k, v in pairs(spec) do
-local name
-if type(k) == "number" and type(v) == "string" then
-name = v
-elseif type(k) == "string" and v then
-name = k
-end
-if name and ALLOWED_SERVICE_CAPS[name] then
-out[name] = true
-end
-end
-return out
-end
-local function sessionForUser(userName)
-local ok, usersmod = pcall(require, "kernel.users")
-if not ok or not usersmod then return nil, "users module unavailable" end
-if not userName then
-if _G._TOS and _G._TOS.bootSession then return _G._TOS.bootSession end
-if usersmod.kernelSession then return usersmod.kernelSession() end
-return nil, "no session available"
-end
-if userName == "_kernel_" then
-if usersmod.kernelSession then return usersmod.kernelSession() end
-return nil, "kernelSession unavailable"
-end
-if usersmod.sessionFor then
-local s = usersmod.sessionFor(userName)
-if s then return s end
-end
-if usersmod.getUser then
-local u = usersmod.getUser(userName)
-if u and usersmod.createSession then
-local s = usersmod.createSession(u)
-if s then return s end
-end
-end
-return nil, "unknown user '" .. tostring(userName) .. "'"
-end
-function rc.init(modules)
-fs = modules.fs
-log = modules.log
-proc = modules.proc
-end
-local function topoSort(svcs)
-local visited, sorted, inStack = {}, {}, {}
-local function visit(name)
-if visited[name] then return end
-if inStack[name] then
-if log then log.warn("rc", "Circular dependency at '" .. name .. "' — breaking cycle") end
-return
-end
-inStack[name] = true
-local rec = svcs[name]
-if rec and rec.deps then
-for _, dep in ipairs(rec.deps) do
-visit(dep)
-end
-end
-inStack[name] = nil
-visited[name] = true
-sorted[#sorted + 1] = name
-end
-local allNames = {}
-for name in pairs(svcs) do allNames[#allNames + 1] = name end
-table.sort(allNames)
-for _, n in ipairs(allNames) do visit(n) end
-return sorted
-end
---! The peek reads CODE, not comments: block comments go first, then the
---! rest of any line from a `--` that is not inside a string. Reading the
---! raw source, a comment that mentioned `restart = true` made a service
---! restart, and one that sketched a caps table stood in for the real
---! one. (test_rc_peek_decay.lua)
-local function stripComments(src)
-src = src:gsub("%-%-%[(=*)%[.-%]%1%]", "")
-local out = {}
-for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-local i, inS, inD, cut = 1, false, false, #line
-while i <= #line do
-local c = line:sub(i, i)
-if not inS and not inD and c == "-" and line:sub(i + 1, i + 1) == "-" then
-cut = i - 1; break
-end
-if not inD and c == "'" and line:sub(i - 1, i - 1) ~= "\\" then inS = not inS end
-if not inS and c == '"' and line:sub(i - 1, i - 1) ~= "\\" then inD = not inD end
-i = i + 1
-end
-out[#out + 1] = line:sub(1, cut)
-end
-return table.concat(out, "\n")
-end
-local function peekServiceMeta(src)
-local meta = {}
-local code = stripComments(src)
-local capsStr = code:match("caps%s*=%s*(%b{})")
-if capsStr then
---! Decoded as DATA (kernel.serialize runs no code), so every literal
---! form reads alike: { "net" }, { ["net"] = true } and { net = true }.
---! The quoted-name scan read only the first two, so cluster-storaged's
---! `net = true` was dropped and the daemon started without the
---! network it serves. A table that is not a literal falls back to
---! that scan, and normalizeCaps grants only ALLOWED_SERVICE_CAPS
---! either way.
-local okS, ser = pcall(require, "kernel.serialize")
-local okD, decoded = false, nil
-if okS and type(ser) == "table" and ser.decode then
-okD, decoded = pcall(ser.decode, capsStr)
-end
-if okD and type(decoded) == "table" then
-meta.caps = decoded
-else
-meta.caps = {}
-for cap in capsStr:gmatch('"([%w%._]+)"') do
-meta.caps[#meta.caps + 1] = cap
-end
-for cap in capsStr:gmatch("'([%w%._]+)'") do
-meta.caps[#meta.caps + 1] = cap
-end
-end
-end
-meta.user = src:match('user%s*=%s*"([%w_-]+)"')
-or src:match("user%s*=%s*'([%w_-]+)'")
-if meta.user == "_kernel_" then
-meta._kernelClaimed = true
-end
-meta.restart = code:match("restart%s*=%s*true") and true or false
-meta.needs = code:match('needs%s*=%s*"([%w_]+)"')
-or code:match("needs%s*=%s*'([%w_]+)'")
-local mr = code:match("maxRestart%s*=%s*(%d+)")
-if mr then meta.maxRestart = tonumber(mr) end
-return meta
-end
-local NEEDS = {
-net = {
-met = function() return _G._TOS ~= nil and _G._TOS.net ~= nil end,
-reason = "needs network hardware",
-hint = "add a network card or linked card and reboot",
-},
-}
-local KERNEL_SERVICE_ALLOWLIST = {
-["10-discoveryd"] = true,
-["20-chatrelay"] = true,
-["20-fileshare"] = true,
-["20-rshd"] = true,
-}
-local function kernelTokenOutsideComments(src)
-for line in (src .. "\n"):gmatch("([^\n]*)\n") do
-local code = {}
-local i = 1
-local inS, inD = false, false
-while i <= #line do
-local c = line:sub(i, i)
-if not inS and not inD and c == "-" and line:sub(i+1, i+1) == "-" then
-break
-end
-if not inD and c == "'" and line:sub(i-1, i-1) ~= "\\" then inS = not inS end
-if not inS and c == '"' and line:sub(i-1, i-1) ~= "\\" then inD = not inD end
-code[#code + 1] = c
-i = i + 1
-end
-if table.concat(code):find('"_kernel_"', 1, true)
-or table.concat(code):find("'_kernel_'", 1, true) then
-return true
-end
-end
-return false
-end
-local function buildKernelEnv()
-local env = {
-assert = assert, error = error, pcall = pcall, xpcall = xpcall,
-type = type, tostring = tostring, tonumber = tonumber,
-pairs = pairs, ipairs = ipairs, next = next, select = select,
-rawequal = rawequal, rawlen = rawlen,
-setmetatable = setmetatable, getmetatable = getmetatable,
-math = math, string = string, table = table,
-utf8 = utf8, coroutine = coroutine,
-print = print,
-require = gatedKernelRequire,
-_VERSION = _VERSION,
-}
-if _G._TOS then
-local tos = _G._TOS
-env._TOS = setmetatable({}, {
-__index = tos,
-__newindex = function(_, k)
-error("_TOS is read-only from rc.d services (key=" .. tostring(k) .. ")", 2)
-end,
-__metatable = false,
-})
-end
-env._G = env
-return env
-end
-local function loadService(name)
-local registered, failure
-local path = RC_DIR .. "/" .. name
-local svcName = name:gsub("%.lua$", "")
-if log then log.info("rc", "Loading: " .. name) end
-local source = fs.readFile(path)
-if source then
-local meta = peekServiceMeta(source)
-if meta._kernelClaimed then
-if not KERNEL_SERVICE_ALLOWLIST[svcName] then
-if log then
-log.warn("rc", "Refusing kernel-tier service '" .. name ..
-"': not in C2 allowlist; demoting to user-tier")
-end
-meta.user = "root"
-elseif not kernelTokenOutsideComments(source) then
-if log then
-log.warn("rc", "Refusing kernel-tier service '" .. name ..
-"': _kernel_ token only appears in comments")
-end
-meta.user = "root"
-end
-end
-local caps = normalizeCaps(meta.caps)
-local need = meta.needs and NEEDS[meta.needs]
-if need and not need.met() then
-services[svcName] = {
-running = false,
-unavailable = need.reason,
-hint = need.hint,
-disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled"),
-path = path,
-deps = {},
-restart = false,
-caps = caps,
-user = meta.user,
-restartCount = 0,
-maxRestart = 0,
-}
-if log then log.info("rc", "Not loading " .. name .. ": " .. need.reason) end
-return services[svcName]
-end
-local session, sessErr = sessionForUser(meta.user)
-if not session then
-failure = "Skipping '" .. name .. "': " .. tostring(sessErr)
-if log then log.warn("rc", failure) end
-else
-local svcEnv
-if meta.user == "_kernel_" then
-svcEnv = buildKernelEnv()
-else
-svcEnv = require("kernel.sandbox").build({
-caps = caps, session = session,
-allowUserLibs = true })
-end
-local fn, err = load(source, "=" .. path, "t", svcEnv)
-if fn then
-local ok, result = pcall(fn)
-if ok then
-if type(result) == "table" and result.start then
-local disabledAtBoot = fs.exists(RC_DIR .. "/" .. svcName .. ".disabled")
-services[svcName] = {
-start = result.start,
-stop = result.stop,
-running = false,
-disabledAtBoot = disabledAtBoot,
-path = path,
-deps = result.deps or {},
-restart = meta.restart or (result.restart and true) or false,
-caps = caps,
-user = meta.user,
-restartCount = 0,
-maxRestart = meta.maxRestart or result.maxRestart or 5,
-}
-registered = services[svcName]
-end
-else
-failure = "Error in " .. name .. ": " .. tostring(result)
-if log then log.warn("rc", failure) end
-end
-else
-failure = "Syntax error in " .. name .. ": " .. tostring(err)
-if log then log.warn("rc", failure) end
-end
-end
-end
-return registered, failure
-end
-function rc.runAll()
-if not fs then return end
-if not fs.exists(RC_DIR) then
-fs.makeDirectory(RC_DIR)
-return
-end
-local files = fs.list(RC_DIR)
-if not files then return end
-local names = {}
-if type(files) == "table" then
-for _, name in ipairs(files) do
-if name:match("%.lua$") then
-names[#names + 1] = name
-end
-end
-elseif type(files) == "function" then
-for name in files do
-if name:match("%.lua$") then
-names[#names + 1] = name
-end
-end
-end
-table.sort(names)
-for _, name in ipairs(names) do loadService(name) end
-local order = topoSort(services)
-for _, svcName in ipairs(order) do
-local svc = services[svcName]
-if svc and svc.unavailable then
-elseif svc and svc.disabledAtBoot and not svc.running then
-if log then log.info("rc", "Service registered (disabled): " .. svcName) end
-elseif svc and not svc.running then
-local sok, serr = pcall(svc.start)
-if sok then
-svc.running = true
-svc.startedAt = now()
-if log then log.info("rc", "Service started: " .. svcName) end
-else
-svc.running = false
-svc.lastError = tostring(serr)
-if log then log.warn("rc", "Service start failed: " .. svcName .. ": " .. tostring(serr)) end
-end
-end
-end
-end
-function rc.stopAll()
-for name, svc in pairs(services) do
-if svc.running and svc.stop then
-local ok, err = pcall(svc.stop)
-if ok then
-svc.running = false
-if log then log.info("rc", "Service stopped: " .. name) end
-else
-if log then log.warn("rc", "Service stop failed: " .. name .. ": " .. tostring(err)) end
-end
-end
-end
-end
-function rc.start(name)
-local svc = services[name]
-if svc and svc.running then return false, "Already running" end
---! #SEC — the name becomes a path, so it must stay in /etc/rc.d. A name
---! like "../tmp/x" would load /tmp/x.lua as a service, bound to a root
---! session: an admin's file run as root. Only a plain file name passes.
-if type(name) ~= "string" or not name:match("^[%w_][%w_.%-]*$") or name:find("..", 1, true) then
-return false, "Unknown service: " .. tostring(name)
-end
-if fs and fs.exists(RC_DIR .. "/" .. name .. ".lua") then
-local fresh, why = loadService(name .. ".lua")
-if not fresh then
-return false, why or ("Not a service: " .. name)
-end
-svc = fresh
-if svc.unavailable then
-return false, name .. " " .. svc.unavailable .. " (" .. svc.hint .. ")"
-end
-elseif svc then
-services[name] = nil
-svc = nil
-end
-if not svc then return false, "Unknown service: " .. name end
-local ok, err = pcall(svc.start)
-if ok then
-svc.running = true
-svc.startedAt = now()
-svc.restartCount = 0
-if svc.disabledAtBoot and fs then
-pcall(fs.remove, RC_DIR .. "/" .. name .. ".disabled")
-svc.disabledAtBoot = false
-end
-return true
-end
-return false, tostring(err)
-end
-function rc.stop(name)
-local svc = services[name]
-if not svc then return false, "Unknown service: " .. name end
-if not svc.running then return false, "Not running" end
-if not svc.stop then return false, "No stop handler" end
-local ok, err = pcall(svc.stop)
-if ok then
-svc.running = false
-return true
-end
-return false, tostring(err)
-end
-function rc.list()
-local result = {}
-for name, svc in pairs(services) do
-result[#result + 1] = {
-name = name,
-running = svc.running,
-enabled = not svc.disabledAtBoot,
-path = svc.path,
-deps = svc.deps,
-restart = svc.restart,
-restartCount = svc.restartCount,
-caps = svc.caps,
-user = svc.user,
-unavailable = svc.unavailable,
-}
-end
-table.sort(result, function(a, b) return a.name < b.name end)
-return result
-end
-function rc.tryRestart(name)
-local svc = services[name]
-if not svc then return false end
-if not svc.restart then return false end
-if svc.startedAt and now() - svc.startedAt >= RESTART_DECAY then
-svc.restartCount = 0
-end
-if svc.restartCount >= svc.maxRestart then
-if log then log.warn("rc", "Service '" .. name .. "' exceeded max restarts (" .. svc.maxRestart .. ")") end
-return false
-end
-svc.restartCount = svc.restartCount + 1
-if log then log.info("rc", "Restarting service: " .. name .. " (attempt " .. svc.restartCount .. ")") end
-local ok, err = pcall(svc.start)
-if ok then
-svc.running = true
-svc.startedAt = now()
-return true
-end
-if log then log.warn("rc", "Restart failed: " .. name .. ": " .. tostring(err)) end
-return false
-end
-function rc.supervise()
-for name, svc in pairs(services) do
-if svc.running and type(svc.check) == "function" then
-local ok, alive = pcall(svc.check)
-if not ok or not alive then
-svc.running = false
-svc.lastError = (not ok) and tostring(alive) or "check returned false"
-end
-end
-if svc.restart and not svc.running and not svc.disabledAtBoot then
-rc.tryRestart(name)
-end
-end
-end
-function rc.enable(name, content)
-if not fs then return false end
-if not fs.exists(RC_DIR) then fs.makeDirectory(RC_DIR) end
-return fs.writeFile(RC_DIR .. "/" .. name .. ".lua", content)
-end
-function rc.disable(name)
-if not fs then return false end
-rc.stop(name)
-return fs.remove(RC_DIR .. "/" .. name .. ".lua")
-end
-rc._gatedKernelRequire = gatedKernelRequire
-rc._KERNEL_REQUIRE_ALLOW = KERNEL_REQUIRE_ALLOW
-return rc
+
+local N,J,O,P,Q,R,S="component","string","function","_kernel_","%.lua$",".disabled","Unknown service: "local F={}local H="/etc/rc.d"local G={}local E=nil;local D=nil;local T=nil
+local U={["fs.read"]=true,["fs.write"]=true,[N]=true,["net"]=true}
+local V={["fs.read"]=true,["fs.write"]=true,[N]=true,["compat.io"]=true,["load"]=true,["net"]=true}
+local K={["computer"]=true,[N]=true,["kernel.event"]=true,["kernel.log"]=true,["kernel.serialize"]=true,["kernel.config"]=true}
+local function L(a)if type(a)~=J then
+error("require: module name must be a string",2)end;if K[a]then return require(a)end
+error(
+"rc.d kernel service denied require('"..a.."') (#SEC CR-6)",2)end;local W=600;local function I()local b,a=pcall(require,"computer")
+return(
+b and type(a)=="table"and type(a.uptime)==O)and
+a.uptime()or 0 end
+local function X(a)
+if
+type(a)~="table"then local c={}for d,e in pairs(U)do c[d]=e end;return c end;local b={}for c,d in pairs(a)do local e;if type(c)=="number"and type(d)==J then e=d elseif
+type(c)==J and d then e=c end
+if e and V[e]then b[e]=true end end
+return b end
+local function Y(a)local c,b=pcall(require,"kernel.users")if not c or not b then
+return nil,"users module unavailable"end
+if not a then if _G._TOS and _G._TOS.bootSession then return
+_G._TOS.bootSession end;if b.kernelSession then
+return b.kernelSession()end;return nil,"no session available"end;if a==P then if b.kernelSession then return b.kernelSession()end;return nil,
+"kernelSession unavailable"end
+if
+b.sessionFor then local d=b.sessionFor(a)if d then return d end end
+if b.getUser then local d=b.getUser(a)if d and b.createSession then
+local e=b.createSession(d)if e then return e end end end;return nil,"unknown user '"..tostring(a).."'"end;function F.init(a)E=a.fs;D=a.log;T=a.proc end
+local function Z(a)local e,c,d={},{},{}
+local function f(g)
+if e[g]then return end
+if d[g]then if D then
+D.warn("rc","Circular dependency at '"..g.."' — breaking cycle")end;return end;d[g]=true;local h=a[g]
+if h and h.deps then for j,i in ipairs(h.deps)do f(i)end end;d[g]=nil;e[g]=true;c[#c+1]=g end;local b={}for g in pairs(a)do b[#b+1]=g end;table.sort(b)for h,g in ipairs(b)do
+f(g)end;return c end
+local function _(a)a=a:gsub("%-%-%[(=*)%[.-%]%1%]","")local b={}
+for c in
+(a.."\n"):gmatch("([^\n]*)\n")do local d,e,f,g=1,false,false,#c
+while d<=#c do local h=c:sub(d,d)
+if
+not e and not f and h=="-"and c:sub(d+1,d+1)=="-"then g=d-1;break end
+if not f and h=="'"and c:sub(d-1,d-1)~="\\"then e=not e end
+if not e and h=='"'and c:sub(d-1,d-1)~="\\"then f=not f end;d=d+1 end;b[#b+1]=c:sub(1,g)end;return table.concat(b,"\n")end
+local function aa(a)local b={}local c=_(a)local d=c:match("caps%s*=%s*(%b{})")
+if d then
+local i,f=pcall(require,"kernel.serialize")local h,g=false,nil;if i and type(f)=="table"and f.decode then
+h,g=pcall(f.decode,d)end
+if h and type(g)=="table"then b.caps=g else
+b.caps={}
+for j in d:gmatch('"([%w%._]+)"')do b.caps[#b.caps+1]=j end
+for j in d:gmatch("'([%w%._]+)'")do b.caps[#b.caps+1]=j end end end
+b.user=a:match('user%s*=%s*"([%w_-]+)"')or a:match("user%s*=%s*'([%w_-]+)'")if b.user==P then b._kernelClaimed=true end
+b.restart=
+c:match("restart%s*=%s*true")and true or false
+b.needs=c:match('needs%s*=%s*"([%w_]+)"')or c:match("needs%s*=%s*'([%w_]+)'")local e=c:match("maxRestart%s*=%s*(%d+)")if e then
+b.maxRestart=tonumber(e)end;return b end
+local ab={net={met=function()return _G._TOS~=nil and _G._TOS.net~=nil end,reason="needs network hardware",hint="add a network card or linked card and reboot"}}
+local ac={["10-discoveryd"]=true,["20-chatrelay"]=true,["20-fileshare"]=true,["20-rshd"]=true}
+local function ad(a)
+for b in(a.."\n"):gmatch("([^\n]*)\n")do local d={}local c=1;local e,f=false,false
+while c<=#b do
+local g=b:sub(c,c)if
+not e and not f and g=="-"and b:sub(c+1,c+1)=="-"then break end;if not f and g=="'"and
+b:sub(c-1,c-1)~="\\"then e=not e end
+if not e and g=='"'and b:sub(
+c-1,c-1)~="\\"then f=not f end;d[#d+1]=g;c=c+1 end
+if table.concat(d):find('"_kernel_"',1,true)or
+table.concat(d):find("'_kernel_'",1,true)then return true end end;return false end
+local function ae()
+local a={assert=assert,error=error,pcall=pcall,xpcall=xpcall,type=type,tostring=tostring,tonumber=tonumber,pairs=pairs,ipairs=ipairs,next=next,select=select,rawequal=rawequal,rawlen=rawlen,setmetatable=setmetatable,getmetatable=getmetatable,math=math,string=string,table=table,utf8=utf8,coroutine=coroutine,print=print,require=L,_VERSION=_VERSION}
+if _G._TOS then local b=_G._TOS
+a._TOS=setmetatable({},{__index=b,__newindex=function(d,c)
+error("_TOS is read-only from rc.d services (key="..tostring(c)..")",2)end,__metatable=false})end;a._G=a;return a end
+local function M(a)local f,b;local d=H.."/"..a;local c=a:gsub(Q,"")if D then
+D.info("rc","Loading: "..a)end;local e=E.readFile(d)
+if e then local g=aa(e)
+if g._kernelClaimed then
+if not ac[c]then if D then
+D.warn("rc",
+"Refusing kernel-tier service '"..a.."': not in C2 allowlist; demoting to user-tier")end;g.user="root"elseif
+not ad(e)then if D then
+D.warn("rc","Refusing kernel-tier service '"..a.."': _kernel_ token only appears in comments")end;g.user="root"end end;local i=X(g.caps)local h=g.needs and ab[g.needs]
+if
+h and not h.met()then
+G[c]={running=false,unavailable=h.reason,hint=h.hint,disabledAtBoot=E.exists(H.."/"..c..R),path=d,deps={},restart=false,caps=i,user=g.user,restartCount=0,maxRestart=0}if D then
+D.info("rc","Not loading "..a..": "..h.reason)end;return G[c]end;local j,k=Y(g.user)
+if not j then
+b="Skipping '"..a.."': "..tostring(k)if D then D.warn("rc",b)end else local l;if g.user==P then l=ae()else
+l=require("kernel.sandbox").build({caps=i,session=j,allowUserLibs=true})end
+local m,n=load(e,"="..d,"t",l)
+if m then local p,o=pcall(m)
+if p then
+if type(o)=="table"and o.start then
+local q=E.exists(H.."/"..c..R)
+G[c]={start=o.start,stop=o.stop,running=false,disabledAtBoot=q,path=d,deps=o.deps or{},restart=g.restart or(o.restart and true)or false,caps=i,user=g.user,restartCount=0,maxRestart=
+g.maxRestart or o.maxRestart or 5}f=G[c]end else b="Error in "..a..": "..tostring(o)if D then
+D.warn("rc",b)end end else
+b="Syntax error in "..a..": "..tostring(n)if D then D.warn("rc",b)end end end end;return f,b end
+function F.runAll()if not E then return end
+if not E.exists(H)then E.makeDirectory(H)return end;local b=E.list(H)if not b then return end;local a={}
+if type(b)=="table"then for e,d in ipairs(b)do if
+d:match(Q)then a[#a+1]=d end end elseif type(b)==O then for d in b do if
+d:match(Q)then a[#a+1]=d end end end;table.sort(a)for e,d in ipairs(a)do M(d)end;local c=Z(G)
+for e,d in ipairs(c)do local f=G[d]
+if
+f and f.unavailable then elseif f and f.disabledAtBoot and not f.running then
+if D then D.info("rc",
+"Service registered (disabled): "..d)end elseif f and not f.running then local h,g=pcall(f.start)
+if h then f.running=true
+f.startedAt=I()
+if D then D.info("rc","Service started: "..d)end else f.running=false;f.lastError=tostring(g)if D then
+D.warn("rc","Service start failed: "..d..
+": "..tostring(g))end end end end end
+function F.stopAll()
+for b,a in pairs(G)do
+if a.running and a.stop then local c,d=pcall(a.stop)
+if c then a.running=false;if D then D.info("rc",
+"Service stopped: "..b)end else if D then
+D.warn("rc",
+"Service stop failed: "..b..": "..tostring(d))end end end end end
+function F.start(a)local b=G[a]
+if b and b.running then return false,"Already running"end;if
+type(a)~=J or not a:match("^[%w_][%w_.%-]*$")or a:find("..",1,true)then
+return false,S..tostring(a)end
+if E and
+E.exists(H.."/"..a..".lua")then local e,f=M(a..".lua")if not e then return false,f or
+("Not a service: "..a)end;b=e;if b.unavailable then return false,
+a..
+" "..b.unavailable.." ("..b.hint..")"end elseif b then
+G[a]=nil;b=nil end;if not b then return false,S..a end;local c,d=pcall(b.start)
+if c then b.running=true
+b.startedAt=I()b.restartCount=0;if b.disabledAtBoot and E then
+pcall(E.remove,H.."/"..a..R)b.disabledAtBoot=false end;return true end;return false,tostring(d)end
+function F.stop(a)local b=G[a]if not b then return false,S..a end;if not b.running then
+return false,"Not running"end
+if not b.stop then return false,"No stop handler"end;local c,d=pcall(b.stop)if c then b.running=false;return true end;return false,
+tostring(d)end
+function F.list()local a={}
+for c,b in pairs(G)do
+a[#a+1]={name=c,running=b.running,enabled=not b.disabledAtBoot,path=b.path,deps=b.deps,restart=b.restart,restartCount=b.restartCount,caps=b.caps,user=b.user,unavailable=b.unavailable}end
+table.sort(a,function(c,d)return c.name<d.name end)return a end
+function F.tryRestart(a)local b=G[a]if not b then return false end
+if not b.restart then return false end
+if b.startedAt and I()-b.startedAt>=W then b.restartCount=0 end
+if b.restartCount>=b.maxRestart then if D then
+D.warn("rc","Service '"..a..
+"' exceeded max restarts ("..b.maxRestart..")")end;return false end;b.restartCount=b.restartCount+1;if D then
+D.info("rc","Restarting service: "..a.." (attempt "..
+b.restartCount..")")end;local c,d=pcall(b.start)if c then
+b.running=true;b.startedAt=I()return true end;if D then
+D.warn("rc","Restart failed: "..a..": "..
+tostring(d))end;return false end
+function F.supervise()
+for b,a in pairs(G)do
+if a.running and type(a.check)==O then
+local c,d=pcall(a.check)if not c or not d then a.running=false
+a.lastError=(not c)and tostring(d)or"check returned false"end end;if a.restart and not a.running and not a.disabledAtBoot then
+F.tryRestart(b)end end end;function F.enable(a,b)if not E then return false end;if not E.exists(H)then
+E.makeDirectory(H)end
+return E.writeFile(H.."/"..a..".lua",b)end;function F.disable(a)if not
+E then return false end;F.stop(a)return
+E.remove(H.."/"..a..".lua")end
+F._gatedKernelRequire=L;F._KERNEL_REQUIRE_ALLOW=K;return F

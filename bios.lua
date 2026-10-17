@@ -1,133 +1,64 @@
-local c,p=component,computer
-local G,D,R=0x00ff00,0xaaaaaa,0xff0000
-local l=c.list
-local e=l("eeprom")()
-local function E(m,...)local o,v=pcall(c.invoke,e,m,...)if o then return v end end
-p.getBootAddress=function()return(E("getData")or""):match("^[^\n]*")end
-p.setBootAddress=function(a)return E("setData",a)end
-local function X(a)local o,x=pcall(c.proxy,a)return o and x end
-local g,s=X(l("gpu")()),l("screen")()
-if not s then g=nil end
-local w,h,d,y=50,16,1,1
-if g then
-pcall(g.bind,s)
-local o,a,b=pcall(g.maxResolution)
-if o and a and b then w,h=math.min(80,a),math.min(25,b)end
-pcall(g.setResolution,w,h)
-o,a=pcall(g.getDepth)if o and a then d=a end
-pcall(g.setBackground,0)
-pcall(g.setForeground,d<2 and 0xffffff or G)
-pcall(g.fill,1,1,w,h," ")
-end
-local function P(t,f)
-if not g then return end
-if not pcall(function()
-g.setForeground(d<2 and 0xffffff or f)
-if y>h then g.copy(1,2,w,h-1,0,-1)y=h end
-g.fill(1,y,w,1," ")g.set(1,y,tostring(t):sub(1,w))y=y+1
-end)then g=nil end
-end
-local function K(o)local e,_,c repeat e,_,c=p.pullSignal(1e9)until e=="key_down"if o and c==100 then E("setData","SKP:"..o)end p.shutdown(true)end
-local function F(n,t,o)
-local x=(E("getData")or""):gsub("\nSRM:%S*","")
-E("setData",x.."\nSRM:"..n)
-P("SRM "..n.." - POST FAILED",R)
-if t then P(t,0xff6600)end
-P("Any key reboots. Then run 'srm'",D)
-if o then P("d: other disk",D)end
-p.beep(400,.4)
-for _=1,n:byte(2)-48 do p.beep(900,.1)end
-K(o)
-end
-local function T(x)
-local v=X(x)
-if not v or not v.readSector then return end
-local o,sc=pcall(v.readSector,1)
-if not o or type(sc)~="string"or #sc<40 or sc:sub(1,4)~="TBFS"or sc:byte(5)~=1 then return end
-local bs,bb=("<I4"):unpack(sc,32),("<I4"):unpack(sc,36)
-if bb<1 then return end
-local r={}
-for i=bs+1,bs+bb do
-local k,dd=pcall(v.readSector,i)
-r[#r+1]=k and type(dd)=="string"and dd or""
-end
-r=table.concat(r)
-if #r<5 then return end
-local n=("<I4"):unpack(r)
-if n>0 and n<=#r-4 then return r:sub(5,4+n)end
-end
-P("TOS BIOS",G)
-if not load("return 1<<1")then F("C1","Lua 5.3+ CPU: sneak-click it to switch")end
-local function ex(z)
-local k,r=pcall(z.exists,"/init.lua")
-return k and r
-end
-local a=p.getBootAddress()
-local sk=a:match"^SKP:(.+)"
-local f,b,blob
-if a and a~=""then
-local px=X(a)
-if px then
-if px.readSector then blob=T(a)
-elseif px.exists and ex(px)then f=px end
-end
-end
-if not f and not blob then
-for x in l("filesystem")do
-local z=X(x)
-if z and ex(z)then f,b,a=z,x,x if x~=sk then break end end
-end
-end
-if not f and not blob then
-for x in l("drive",true)do
-local z=T(x)
-if z then blob,b,a=z,x,x break end
-end
-end
-if not f and not blob then F("D2","Need an /init.lua disk or a TBFS drive")end
-local one=false
-if b then
-P("Boot drive changed: "..b:sub(1,8),0xffaa00)
-P("Save it? Y=yes Shift+Enter=once other=halt",D)
-local t=p.uptime()+30
-local sh
+local C="setData"local o,c=component,computer;local i,j,t=0x00ff00,0xaaaaaa,0xff0000
+local p=o.list;local u=p("eeprom")()local function q(F,...)local G,H=pcall(o.invoke,u,F,...)
+if G then return H end end
+c.getBootAddress=function()return
+(q("getData")or""):match("^[^\n]*")end;c.setBootAddress=function(F)return q(C,F)end;local function r(F)
+local G,H=pcall(o.proxy,F)return G and H end
+local b,x=r(p("gpu")()),p("screen")()if not x then b=nil end;local k,l,s,g=50,16,1,1
+if b then pcall(b.bind,x)
+local G,F,H=pcall(b.maxResolution)
+if G and F and H then k,l=math.min(80,F),math.min(25,H)end;pcall(b.setResolution,k,l)G,F=pcall(b.getDepth)
+if G and F then s=F end;pcall(b.setBackground,0)
+pcall(b.setForeground,s<2 and 0xffffff or i)pcall(b.fill,1,1,k,l," ")end
+local function a(F,G)if not b then return end
+if
+not
+pcall(function()
+b.setForeground(s<2 and 0xffffff or G)if g>l then b.copy(1,2,k,l-1,0,-1)g=l end
+b.fill(1,g,k,1," ")b.set(1,g,tostring(F):sub(1,k))g=g+1 end)then b=nil end end
+local function v(F)local u,G,o;repeat u,G,o=c.pullSignal(1e9)until u=="key_down"if F and
+o==100 then q(C,"SKP:"..F)end;c.shutdown(true)end
+local function m(F,G,H)
+local I=(q("getData")or""):gsub("\nSRM:%S*","")q(C,I.."\nSRM:"..F)
+a("SRM "..F.." - POST FAILED",t)if G then a(G,0xff6600)end
+a("Any key reboots. Then run 'srm'",j)if H then a("d: other disk",j)end;c.beep(400,.4)for J=1,F:byte(2)-
+48 do c.beep(900,.1)end;v(H)end
+local function y(F)local I=r(F)if not I or not I.readSector then return end
+local M,H=pcall(I.readSector,1)if
+not M or type(H)~="string"or#H<40 or
+H:sub(1,4)~="TBFS"or H:byte(5)~=1 then return end
+local K,L=("<I4"):unpack(H,32),("<I4"):unpack(H,36)if L<1 then return end;local G={}for N=K+1,K+L do local P,O=pcall(I.readSector,N)
+G[#G+1]=P and
+type(O)=="string"and O or""end;G=table.concat(G)if
+#G<5 then return end;local J=("<I4"):unpack(G)if J>0 and J<=#G-4 then return
+G:sub(5,4+J)end end;a("TOS BIOS",i)if not load("return 1<<1")then
+m("C1","Lua 5.3+ CPU: sneak-click it to switch")end;local function z(F)
+local G,H=pcall(F.exists,"/init.lua")return G and H end
+local d=c.getBootAddress()local D=d:match"^SKP:(.+)"local e,f,h
+if d and d~=""then local F=r(d)if F then if F.readSector then h=y(d)elseif
+F.exists and z(F)then e=F end end end
+if not e and not h then for F in p("filesystem")do local G=r(F)
+if G and z(G)then e,f,d=G,F,F;if F~=D then break end end end end;if not e and not h then
+for F in p("drive",true)do local G=y(F)if G then h,f,d=G,F,F;break end end end;if not e and not h then
+m("D2","Need an /init.lua disk or a TBFS drive")end;local A=false
+if f then
+a("Boot drive changed: "..f:sub(1,8),0xffaa00)a("Save it? Y=yes Shift+Enter=once other=halt",j)local G=
+c.uptime()+30;local F
 repeat
-local ev,_,ch,k=p.pullSignal(t-p.uptime())
-if ev=="key_down"then
-if k==42 or k==54 then sh=true
-elseif ch==89 or ch==121 then
-p.setBootAddress(b)P("Boot drive saved",G)b=nil
-elseif k==28 and sh then
-one=true P("One-time boot",G)b=nil
-else break end
-elseif ev=="key_up"and(k==42 or k==54)then sh=false end
-until not b or p.uptime()>=t
-if b then P("Boot cancelled",R)K()end
-end
-_G._BIOS_DEPTH=d
-_G._BIOS_ONETIME=one
-P("POST...",D)
-if blob then
-local fn,er=load(blob,"=tbfs-boot","t")
-if not fn then F("B3",er)end
-P("POST OK",G)p.beep()
-P("Booting: raw drive "..a:sub(1,8),D)
-_G._BIOS_CY=y
-_G._TBFS_BOOT_DRIVE=a
-local o2,e2=pcall(fn)
-if not o2 then P("TBFS boot failed: "..tostring(e2),R)end
-K()
-end
-local q=f.open("/init.lua","r")
-if not q then F("I5","cannot open /init.lua",a)end
-local z={}
-repeat local x=f.read(q,4096)if x then z[#z+1]=x end until not x
-f.close(q)
-z=table.concat(z)
-if z:find("TOS",1,true)and not f.exists("/tos/kernel/init.lua")then F("K4","/tos/kernel/init.lua is missing",a)end
-local fn,er=load(z,"=init.lua","t")
-if not fn then F("I6",er,a)end
-P("POST OK",G)pcall(p.beep)
-P("Booting: "..(f.getLabel()or a:sub(1,8)),D)
-_G._BIOS_CY=y
-fn(f)
+local I,K,J,H=c.pullSignal(G-c.uptime())
+if I=="key_down"then
+if H==42 or H==54 then F=true elseif J==89 or J==121 then
+c.setBootAddress(f)a("Boot drive saved",i)f=nil elseif H==28 and F then A=true
+a("One-time boot",i)f=nil else break end elseif I=="key_up"and(H==42 or H==54)then F=false end until not f or c.uptime()>=G;if f then a("Boot cancelled",t)v()end end;_G._BIOS_DEPTH=s;_G._BIOS_ONETIME=A;a("POST...",j)
+if h then
+local F,G=load(h,"=tbfs-boot","t")if not F then m("B3",G)end;a("POST OK",i)c.beep()a("Booting: raw drive "..
+d:sub(1,8),j)_G._BIOS_CY=g
+_G._TBFS_BOOT_DRIVE=d;local H,I=pcall(F)if not H then
+a("TBFS boot failed: "..tostring(I),t)end;v()end;local w=e.open("/init.lua","r")if not w then
+m("I5","cannot open /init.lua",d)end;local n={}repeat local F=e.read(w,4096)
+if F then n[#n+1]=F end until not F;e.close(w)
+n=table.concat(n)
+if
+n:find("TOS",1,true)and not e.exists("/tos/kernel/init.lua")then m("K4","/tos/kernel/init.lua is missing",d)end;local B,E=load(n,"=init.lua","t")if not B then m("I6",E,d)end
+a("POST OK",i)pcall(c.beep)
+a("Booting: ".. (e.getLabel()or d:sub(1,8)),j)_G._BIOS_CY=g;B(e)

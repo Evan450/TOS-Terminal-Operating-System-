@@ -1,97 +1,22 @@
-local text = {}
-function text.trim(s)
-return (s:match("^%s*(.-)%s*$"))
-end
-function text.wrap(str, width)
-width = width or 80
-local lines = {}
-for paragraph in str:gmatch("[^\n]*") do
-if paragraph == "" then
-lines[#lines + 1] = ""
-else
-local line = ""
-for word in paragraph:gmatch("%S+") do
-if line == "" then
-line = word
-elseif #line + 1 + #word <= width then
-line = line .. " " .. word
-else
-lines[#lines + 1] = line
-line = word
-end
-end
-lines[#lines + 1] = line
-end
-end
-return lines
-end
-function text.padRight(s, n)
-local len = #s
-if len >= n then return s end
-return s .. string.rep(" ", n - len)
-end
-function text.padLeft(s, n)
-local len = #s
-if len >= n then return s end
-return string.rep(" ", n - len) .. s
-end
-function text.detab(s, tabWidth)
-tabWidth = tabWidth or 8
-local col = 0
-local out = {}
-for i = 1, #s do
-local ch = s:sub(i, i)
-if ch == "\t" then
-local spaces = tabWidth - (col % tabWidth)
-out[#out + 1] = string.rep(" ", spaces)
-col = col + spaces
-elseif ch == "\n" then
-out[#out + 1] = ch
-col = 0
-else
-out[#out + 1] = ch
-col = col + 1
-end
-end
-return table.concat(out)
-end
-function text.tokenize(s)
-local tokens = {}
-local i = 1
-local len = #s
-while i <= len do
-local ws = s:match("^%s+", i)
-if ws then i = i + #ws end
-if i > len then break end
-local ch = s:sub(i, i)
-if ch == '"' or ch == "'" then
-local quote = ch
-i = i + 1
-local buf = {}
-while i <= len do
-local c = s:sub(i, i)
-if c == "\\" and i < len then
-i = i + 1
-buf[#buf + 1] = s:sub(i, i)
-elseif c == quote then
-break
-else
-buf[#buf + 1] = c
-end
-i = i + 1
-end
-tokens[#tokens + 1] = table.concat(buf)
-i = i + 1
-else
-local tok = s:match("^[^%s'\"]+", i)
-if tok then
-tokens[#tokens + 1] = tok
-i = i + #tok
-else
-i = i + 1
-end
-end
-end
-return tokens
-end
-return text
+local b={}
+function b.trim(a)return(a:match("^%s*(.-)%s*$"))end
+function b.wrap(c,a)a=a or 80;local d={}
+for e in c:gmatch("[^\n]*")do
+if e==""then d[#d+1]=""else local f=""for g in
+e:gmatch("%S+")do
+if f==""then f=g elseif#f+1+#g<=a then f=f.." "..g else d[#d+1]=f;f=g end end;d[#d+1]=f end end;return d end;function b.padRight(a,c)local d=#a;if d>=c then return a end
+return a..string.rep(" ",c-d)end
+function b.padLeft(a,c)local d=#a
+if d>=c then return a end;return string.rep(" ",c-d)..a end
+function b.detab(c,a)a=a or 8;local e=0;local d={}
+for f=1,#c do local g=c:sub(f,f)
+if g=="\t"then local h=a- (e%a)
+d[#d+1]=string.rep(" ",h)e=e+h elseif g=="\n"then d[#d+1]=g;e=0 else d[#d+1]=g;e=e+1 end end;return table.concat(d)end
+function b.tokenize(a)local d={}local c=1;local e=#a
+while c<=e do local g=a:match("^%s+",c)if g then c=c+#g end;if c>e then
+break end;local f=a:sub(c,c)
+if f=='"'or f=="'"then local i=f;c=c+1;local h={}while c<=e do
+local j=a:sub(c,c)
+if j=="\\"and c<e then c=c+1;h[#h+1]=a:sub(c,c)elseif j==i then break else h[#h+1]=j end;c=c+1 end
+d[#d+1]=table.concat(h)c=c+1 else local h=a:match("^[^%s'\"]+",c)
+if h then d[#d+1]=h;c=c+#h else c=c+1 end end end;return d end;return b

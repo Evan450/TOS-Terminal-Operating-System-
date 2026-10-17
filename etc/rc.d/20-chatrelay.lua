@@ -1,105 +1,27 @@
-local running = false
-local listenerID = nil
-local HISTORY_SIZE = 64
-local history = {}
-local histHead = 1
-local histCount = 0
-local function recordMessage(from, text, timestamp)
-history[histHead] = {
-from = from,
-text = text,
-time = timestamp,
-}
-histHead = (histHead % HISTORY_SIZE) + 1
-if histCount < HISTORY_SIZE then histCount = histCount + 1 end
-end
-local function start()
-local net = _G._TOS and _G._TOS.net
-if not net then return end
-running = true
-local protocol = net.getProtocol()
-local computer = require("computer")
-local rate = {}
-local WINDOW_SEC = 5
-local MAX_PER_WINDOW = 20
-local MAX_TEXT_LEN = 512
-listenerID = net.on(protocol.TYPE.MSG, function(packet, remoteAddr)
-if not running then return end
-local now = computer.uptime()
-local entry = rate[remoteAddr]
-if not entry then
-rate.__order = rate.__order or {}
-if #rate.__order >= 256 then
-local victim = table.remove(rate.__order, 1)
-if victim ~= nil then rate[victim] = nil end
-end
-rate.__order[#rate.__order + 1] = remoteAddr
-entry = { windowStart = now, count = 0 }
-rate[remoteAddr] = entry
-end
-if (now - entry.windowStart) > WINDOW_SEC then
-entry.windowStart = now
-entry.count = 0
-end
-entry.count = entry.count + 1
-if entry.count > MAX_PER_WINDOW then
-return
-end
-local text = ""
-if packet.payload then
-text = type(packet.payload) == "string" and packet.payload
-or (packet.payload.text or tostring(packet.payload))
-end
-if type(text) ~= "string" then text = tostring(text or "") end
-if #text > MAX_TEXT_LEN then text = text:sub(1, MAX_TEXT_LEN) end
-local hostname = "?"
-local peer = net.findPeer(remoteAddr)
-if peer and peer.hostname then hostname = peer.hostname end
-recordMessage(hostname .. " (" .. remoteAddr:sub(1, 8) .. ")", text, now)
---! Say it arrived. Only an OPEN chat tab acknowledged a message, so a
---! sender could not tell a machine that heard it from one that was
---! switched off: a chat group counted every member it had SENT to as
---! delivered (two headless machines, 2026-10-10). This service runs on
---! every machine whether or not anyone is chatting, and this is where a
---! message is recorded, so this is where it is acknowledged -- by the
---! seq it came with. (test_chat_app.lua)
-pcall(net.send, remoteAddr, protocol.makePacket(protocol.TYPE.MSG_ACK,
-{ ref = packet.seq }, { to = remoteAddr }))
-if _G._TOS and _G._TOS.log then
-_G._TOS.log("chat", "[" .. hostname .. "] " .. text)
-end
-end)
-end
-local function stop()
-running = false
-if listenerID then
-local net = _G._TOS and _G._TOS.net
-if net then
-local protocol = net.getProtocol()
-net.off(protocol.TYPE.MSG, listenerID)
-end
-listenerID = nil
-end
-end
-local function getHistory()
-if histCount == 0 then return {} end
-local result = {}
-local startIdx = histCount < HISTORY_SIZE and 1 or histHead
-for i = 0, histCount - 1 do
-local idx = ((startIdx - 1 + i) % HISTORY_SIZE) + 1
-if history[idx] then
-result[#result + 1] = history[idx]
-end
-end
-return result
-end
-return {
-start = start,
-stop = stop,
-deps = {},
-restart = true,
-caps = { net = true },
-needs = "net",
-user = "_kernel_",
-getHistory = getHistory,
-}
+local o=false;local l=nil;local m=64;local p={}local n=1;local k=0;local function q(a,b,c)p[n]={from=a,text=b,time=c}
+n=(n%m)+1;if k<m then k=k+1 end end
+local function r()local b=_G._TOS and
+_G._TOS.net;if not b then return end;o=true
+local c=b.getProtocol()local e=require("computer")local a={}local f=5;local g=20;local d=512
+l=b.on(c.TYPE.MSG,function(i,h)
+if not o then return end;local v=e.uptime()local j=a[h]
+if not j then a.__order=a.__order or{}
+if
+#a.__order>=256 then local y=table.remove(a.__order,1)if y~=nil then a[y]=nil end end;a.__order[#a.__order+1]=h;j={windowStart=v,count=0}
+a[h]=j end
+if(v-j.windowStart)>f then j.windowStart=v;j.count=0 end;j.count=j.count+1;if j.count>g then return end;local u=""if i.payload then
+u=type(i.payload)==
+"string"and i.payload or
+(i.payload.text or tostring(i.payload))end;if type(u)~="string"then u=tostring(
+u or"")end
+if#u>d then u=u:sub(1,d)end;local w="?"local x=b.findPeer(h)
+if x and x.hostname then w=x.hostname end
+q(w.." ("..h:sub(1,8)..")",u,v)
+pcall(b.send,h,c.makePacket(c.TYPE.MSG_ACK,{ref=i.seq},{to=h}))if _G._TOS and _G._TOS.log then
+_G._TOS.log("chat","["..w.."] "..u)end end)end;local function s()o=false
+if l then local a=_G._TOS and _G._TOS.net;if a then local b=a.getProtocol()
+a.off(b.TYPE.MSG,l)end;l=nil end end
+local function t()if k==0 then
+return{}end;local a={}local b=k<m and 1 or n;for c=0,k-1 do
+local d=((b-1+c)%m)+1;if p[d]then a[#a+1]=p[d]end end;return a end
+return{start=r,stop=s,deps={},restart=true,caps={net=true},needs="net",user="_kernel_",getHistory=t}

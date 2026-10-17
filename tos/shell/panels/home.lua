@@ -1,348 +1,143 @@
-local ui = require("shell.panels.ui")
-local M = {}
-local _desktop = nil
-local function desktopMod()
-if _desktop == nil then
-local ok, mod = pcall(require, "shell.panels.desktop")
-_desktop = (ok and mod) or false
-end
-return _desktop or nil
-end
-function M._forgetDesktop() _desktop = nil end
-local function ustrLib()
-local ok, u = pcall(require, "kernel.ustr")
-return (ok and u) or nil
-end
-local function ufit(s, cols)
-local u = ustrLib()
-if u and u.fit then return u.fit(s, cols) end
-return tostring(s or ""):sub(1, cols)
-end
-local function uwidth(s)
-local u = ustrLib()
-if u and u.width then return u.width(s) end
-return #tostring(s or "")
-end
-function M.markToggle(S, row, s, e)
-S._viewToggleSpans = S._viewToggleSpans or {}
-S._viewToggleSpans[row] = (s and e) and { s = s, e = e } or nil
-end
-function M.hitToggle(S, x, y)
-local sp = S._viewToggleSpans and S._viewToggleSpans[y]
-return sp ~= nil and x >= sp.s and x <= sp.e
-end
-local function tr(key, default, ...)
-local ok, i18n = pcall(require, "kernel.i18n")
-if ok and i18n and i18n.t then return i18n.t(key, default, ...) end
-if select("#", ...) > 0 then return string.format(default, ...) end
-return default
-end
-function M.enabled(S)
-return S and not S.uiSplit
-end
-local function homeTab(S)
-local tab = S.tabs and S.tabs[S.activeTab]
-if tab and (tab.type == nil or tab.type == "shell") then return tab end
-for _, t in ipairs(S.tabs or {}) do
-if t.type == "shell" then return t end
-end
-return nil
-end
-M.tab = homeTab
-function M.view(S, tab)
-if not M.enabled(S) then return "files" end
-tab = tab or homeTab(S)
-return (tab and tab.view == "tiles") and "tiles" or "files"
-end
-function M.isTiles(S, tab) return M.view(S, tab) == "tiles" end
-function M.setView(S, view, tab)
-if not M.enabled(S) then return false end
-tab = tab or homeTab(S)
-if not tab then return false end
-local want = (view == "tiles") and "tiles" or "files"
-if tab.view == want then return false end
-if want == "tiles" and not desktopMod() then
-S.lastOut = { "Tiles unavailable: not enough memory to load the app list",
-(S.T or {}).error }
-return false
-end
-tab.view = want
-if want == "tiles" then M.refresh(S, tab) end
-return true
-end
-function M.toggle(S, tab)
-tab = tab or homeTab(S)
-return M.setView(S, M.isTiles(S, tab) and "files" or "tiles", tab)
-end
-function M.viewKeyLabel(S)
-local ok, keys = pcall(require, "shell.keys")
-if ok and keys and keys.label then
-local lbl = keys.label("view", S and S.who or nil)
-if lbl and lbl ~= "" then return (lbl:match("^[^/]+") or lbl):gsub("%s+$", "") end
-end
-return "F2"
-end
-function M.cycleKeyLabel(S)
-return M.enabled(S) and "Tab" or "F2"
-end
-function M.isViewKey(S, ch, co)
-local ok, keys = pcall(require, "shell.keys")
-if ok and keys and keys.is then
-return keys.is("view", ch, co, S and S.who or nil)
-end
-return co == (S and S.KEYS and S.KEYS.homeView or 60)
-end
-function M.refresh(S, tab)
-tab = tab or homeTab(S)
-if not tab then return end
-local d = desktopMod()
-if not d then tab.apps = tab.apps or {}; return end
-d.refresh(S, tab, { home = M.enabled(S) })
-end
-function M.apps(S, tab)
-tab = tab or homeTab(S)
-if not tab then return {} end
-if not tab.apps then M.refresh(S, tab) end
-return tab.apps or {}
-end
-function M.listMode(S)
-return (S.tier or 1) < 2 or S.W < 46 or S.TILE_H < 4
-end
-function M.grid(S)
-local region = { x = 2, y = S.TILE_TOP, w = S.W - 2, h = math.max(3, S.TILE_H) }
-local tileW = (S.W >= 120) and 18 or 14
-local tileH = (S.H >= 40) and 5 or 4
-return ui.tileGrid(region, { tileW = tileW, tileH = tileH })
-end
-function M.perPage(S)
-if M.listMode(S) then return math.max(1, S.TILE_H) end
-return M.grid(S).perPage
-end
-function M.pageOf(S, tab)
-local apps = M.apps(S, tab)
-local pp = M.perPage(S)
-local sel = (tab and tab.sel) or 1
-local pages = math.max(1, math.ceil(#apps / pp))
-local page = math.min(pages, math.floor((sel - 1) / pp) + 1)
-return page, pages, (page - 1) * pp, pp
-end
-function M.drawHeader(S, tab)
-local D, T, W = S.D, S.T, S.W
-local host = (S.SC and S.SC.get and S.SC.get("hostname")) or "tos"
-local clock = "--:--"
-local okT, t = pcall(os.date, "*t")
-if okT and t then clock = string.format("%02d:%02d", t.hour, t.min) end
-ui.drawRail(D, T, S.RAIL_ROW, W, {
-{ label = "\226\140\130 " .. (S.who or "?") .. "@" .. host },
-{ text = S.cwd or "/" },
-{ text = clock, at = W - 8 },
-}, { labelFg = T.title or T.fg })
-end
-function M.drawBand(S, tab)
-local D, T, W = S.D, S.T, S.W
-local apps = M.apps(S, tab)
-local page, pages, pageStart, pp = M.pageOf(S, tab)
-local shown = math.max(0, math.min(pp, #apps - pageStart))
-local parts = {}
-S._homeBand = nil
-if pages > 1 then
-parts[#parts + 1] = { label = "\226\128\185 page " .. page .. "/" .. pages .. " \226\128\186" }
-end
-local facts = tr("home.band", "%d tiles \194\183 %d shown", #apps, shown)
-if pages > 1 then
-facts = facts .. " \194\183 " .. ((page < pages)
-and tr("home.band.next", "PgDn next page")
-or tr("home.band.back", "PgUp back"))
-end
-parts[#parts + 1] = { text = facts }
-local spans = ui.drawRail(D, T, S.BAND_ROW, W, parts, { labelFg = T.title or T.fg })
-if pages > 1 and spans[1] then
-S._homeBand = { row = S.BAND_ROW, prev = spans[1].s,
-next = spans[1].e, pages = pages }
-end
-end
-function M.drawTiles(S, tab)
-local D, T, W = S.D, S.T, S.W
-local apps = M.apps(S, tab)
-local _, _, pageStart, pp = M.pageOf(S, tab)
-local sel = tab.sel or 1
-D.fill(1, S.TILE_TOP, W, math.max(0, S.TILE_H), " ", T.fg, T.bg)
-if M.listMode(S) then
-for slot = 1, pp do
-local i = pageStart + slot
-local app = apps[i]
-if not app then break end
-local y = S.TILE_TOP + slot - 1
-local selected = (i == sel)
-local fg = selected and (T.sel_fg or T.bg) or T.fg
-local bg = selected and (T.sel_bg or T.highlight) or T.bg
-D.fill(1, y, W, 1, " ", fg, bg)
-local num = (slot <= 9) and ("[" .. slot .. "] ") or "    "
-D.set(2, y, num, selected and fg or (T.dim or T.fg), bg)
-D.set(6, y, app.glyph or "\194\183", selected and fg or (T.title or T.fg), bg)
-D.set(8, y, ufit(tostring(app.label), W - 9), fg, bg)
-end
-return
-end
-local g = M.grid(S)
-for slot = 1, g.perPage do
-local i = pageStart + slot
-local app = apps[i]
-if not app then break end
-local r = ui.tileRect(g, slot)
-if r then
-ui.drawTile(D, T, r, {
-glyph = app.glyph, label = app.label,
-selected = (i == sel), dim = app.pkg,
-})
-end
-end
-end
-function M.summaryText(S, tab)
-local apps = M.apps(S, tab)
-local _, _, pageStart, pp = M.pageOf(S, tab)
-local shown = math.max(0, math.min(pp, #apps - pageStart))
-local txt = tr("home.sum", "%d tiles \194\183 %d shown", #apps, shown)
-if S.browser and S.browser.freeStr then
-txt = txt .. " \194\183 " .. S.browser.freeStr .. " free"
-end
-return txt
-end
-function M.hintText(S, tab)
-local apps = M.apps(S, tab)
-local app = apps[tab.sel or 1]
-local vk = M.viewKeyLabel(S)
-local page, pages = M.pageOf(S, tab)
-local lead
-if app and app.hint and app.hint ~= "" then
-lead = (app.label or "") .. " \226\128\148 " .. app.hint
-else
-lead = tr("home.keys", "Enter Open \194\183 Arrows Move \194\183 Alt+1-9 Quick")
-end
-local flip = vk .. " " .. tr("home.key.files", "Files")
-local keys = { flip }
-if pages > 1 then
-keys[#keys + 1] = ((page < pages) and "PgDn" or "PgUp") .. " " .. tr("home.key.page", "Page")
-end
-keys[#keys + 1] = "F10 " .. tr("home.key.quit", "Quit")
-local s = " " .. lead
-local spanS, spanE = nil, nil
-for _, k in ipairs(keys) do
-local cand = s .. " \194\183 " .. k
-if uwidth(cand) > S.W - 2 then break end
-if k == flip then
-spanS = uwidth(s) + 4
-spanE = spanS + uwidth(k) - 1
-end
-s = cand
-end
-if tab.dropped and tab.dropped > 0 then
-local cand = s .. tr("home.more", "   (+%d more via the prompt)", tab.dropped)
-if uwidth(cand) <= S.W - 2 then s = cand end
-end
-return ufit(s, S.W - 1), spanS, spanE
-end
-function M.activate(S, tab, idx, deps)
-local d = desktopMod()
-if not d then return 0 end
-local act = d.resolveApp(tab.apps, idx)
-if act.type == "tab" then
-M.setView(S, "files", tab)
-return 3
-elseif act.type == "settings" then
-local ok, settingsMod = pcall(require, "shell.panels.settingsapp")
-if ok and settingsMod then settingsMod.open(S)
-else S.lastOut = { "Settings unavailable: " .. tostring(settingsMod), S.T.error } end
-return 3
-elseif act.type == "logout" then
-S.E.push("tos_logout", S.displayIdx)
-return 3, "exit"
-elseif act.type == "cmd" then
-if deps and deps.exec then deps.exec(act.cmd) end
-return 3
-end
-return 0
-end
-local DIGIT_CODE_BASE = 1
-local function altDigit(ch, co)
-if type(co) ~= "number" or co < 2 or co > 10 then return nil end
-if ch ~= nil and ch ~= 0 then return nil end
-return co - DIGIT_CODE_BASE
-end
-M._altDigit = altDigit
-function M.handleKey(S, tab, ch, co, deps)
-local apps = M.apps(S, tab)
-local sel = tab.sel or 1
-local _, _, _, pp = M.pageOf(S, tab)
-local cols = M.listMode(S) and 1 or M.grid(S).cols
-if co == 28 and (S.cmdline == "" or S.cmdline == nil) then
-return M.activate(S, tab, sel, deps)
-end
-local n = altDigit(ch, co)
-if n then
-local _, _, pageStart = M.pageOf(S, tab)
-local i = pageStart + n
-if apps[i] then
-tab.sel = i
-return M.activate(S, tab, i, deps)
-end
-return 0
-end
-if co == 203 then
-if sel > 1 then tab.sel = sel - 1; return 3 end
-return 0
-elseif co == 205 then
-if sel < #apps then tab.sel = sel + 1; return 3 end
-return 0
-elseif co == 200 then
-if sel - cols >= 1 then tab.sel = sel - cols; return 3 end
-return 0
-elseif co == 208 then
-if sel + cols <= #apps then tab.sel = sel + cols; return 3 end
-return 0
-elseif co == 201 then
-tab.sel = math.max(1, sel - pp); return 3
-elseif co == 209 then
-tab.sel = math.min(math.max(1, #apps), sel + pp); return 3
-elseif co == 199 and (S.cmdline == "" or S.cmdline == nil) then
-tab.sel = 1; return 3
-elseif co == 207 and (S.cmdline == "" or S.cmdline == nil) then
-tab.sel = math.max(1, #apps); return 3
-end
-return nil
-end
-function M.handleClick(S, tab, ev, deps)
-local apps = M.apps(S, tab)
-local _, _, pageStart, pp = M.pageOf(S, tab)
-local band = S._homeBand
-if band and ev.y == band.row then
-if ev.x == band.prev then
-tab.sel = math.max(1, (tab.sel or 1) - pp); return 3
-elseif ev.x == band.next then
-tab.sel = math.min(math.max(1, #apps), (tab.sel or 1) + pp); return 3
-end
-return 0
-end
-if ev.y < S.TILE_TOP or ev.y >= S.TILE_TOP + S.TILE_H then return 0 end
-local hitIdx
-if M.listMode(S) then
-local slot = ev.y - S.TILE_TOP + 1
-if slot >= 1 and slot <= pp then hitIdx = pageStart + slot end
-else
-local slot = ui.tileHit(M.grid(S), ev.x, ev.y)
-if slot then hitIdx = pageStart + slot end
-end
-if not hitIdx or not apps[hitIdx] then return 0 end
-tab.sel = hitIdx
-if ev.button == 1 then return 3 end
-return M.activate(S, tab, hitIdx, deps)
-end
-function M.handleScroll(S, tab, ev)
-local apps = M.apps(S, tab)
-local delta = (ev.dir or 0) > 0 and -1 or 1
-local newSel = math.max(1, math.min(math.max(1, #apps), (tab.sel or 1) + delta))
-if newSel == tab.sel then return 0 end
-tab.sel = newSel
-return 3
-end
-return M
+local y=" \194\183 "local p=require("shell.panels.ui")local n={}local r=nil
+local function t()if
+r==nil then local a,b=pcall(require,"shell.panels.desktop")
+r=(a and b)or false end;return r or nil end;function n._forgetDesktop()r=nil end;local u=nil;local function v()if u==nil then
+local a,b=pcall(require,"kernel.ustr")u=(a and b)or false end
+return u or nil end;local function w(a,b)local c=v()if c and c.fit then return
+c.fit(a,b)end
+return tostring(a or""):sub(1,b)end
+local function s(a)local b=v()if b and b.width then return
+b.width(a)end;return#tostring(a or"")end
+function n.markToggle(a,d,b,c)a._viewToggleSpans=a._viewToggleSpans or{}a._viewToggleSpans[d]=(
+b and c)and{s=b,e=c}or nil end
+function n.hitToggle(a,b,c)
+local d=a._viewToggleSpans and a._viewToggleSpans[c]return d~=nil and b>=d.s and b<=d.e end
+local function o(b,a,...)local d,c=pcall(require,"kernel.i18n")if d and c and c.t then
+return c.t(b,a,...)end;if select("#",...)>0 then
+return string.format(a,...)end;return a end;function n.enabled(a)return a and not a.uiSplit end
+local function q(a)local b=a.tabs and
+a.tabs[a.activeTab]if b and
+(b.type==nil or b.type=="shell")then return b end;for d,c in ipairs(a.tabs or{})do if
+c.type=="shell"then return c end end
+return nil end;n.tab=q
+function n.view(b,a)if not n.enabled(b)then return"files"end;a=a or q(b)return
+(a and
+a.view=="tiles")and"tiles"or"files"end;function n.isTiles(a,b)return n.view(a,b)=="tiles"end
+function n.setView(b,c,a)if not
+n.enabled(b)then return false end;a=a or q(b)
+if not a then return false end;local d=(c=="tiles")and"tiles"or"files"if
+a.view==d then return false end
+if d=="tiles"and not t()then
+b.lastOut={"Tiles unavailable: not enough memory to load the app list",(
+b.T or{}).error}return false end;a.view=d;if d=="tiles"then n.refresh(b,a)end;return true end;function n.toggle(b,a)a=a or q(b)return
+n.setView(b,n.isTiles(b,a)and"files"or"tiles",a)end
+function n.viewKeyLabel(a)
+local c,b=pcall(require,"shell.keys")
+if c and b and b.label then
+local d=b.label("view",a and a.who or nil)if d and d~=""then return
+(d:match("^[^/]+")or d):gsub("%s+$","")end end;return"F2"end
+function n.cycleKeyLabel(a)return n.enabled(a)and"Tab"or"F2"end
+function n.isViewKey(a,c,b)local e,d=pcall(require,"shell.keys")
+if e and d and d.is then return d.is("view",c,b,
+a and a.who or nil)end;return b==
+(a and a.KEYS and a.KEYS.homeView or 60)end
+function n.refresh(b,a)a=a or q(b)if not a then return end;local c=t()
+if not c then a.apps=a.apps or{}return end;c.refresh(b,a,{home=n.enabled(b)})end
+function n.apps(b,a)a=a or q(b)if not a then return{}end
+if not a.apps then n.refresh(b,a)end;return a.apps or{}end;function n.listMode(a)return
+(a.tier or 1)<2 or a.W<46 or a.TILE_H<4 end
+function n.grid(a)
+local b={x=2,y=a.TILE_TOP,w=a.W-2,h=math.max(3,a.TILE_H)}local c=(a.W>=120)and 18 or 14
+local d=(a.H>=40)and 5 or 4;return p.tileGrid(b,{tileW=c,tileH=d})end
+function n.perPage(a)
+if n.listMode(a)then return math.max(1,a.TILE_H)end;return n.grid(a).perPage end
+function n.pageOf(b,a)local f=n.apps(b,a)local c=n.perPage(b)
+local g=(a and a.sel)or 1;local d=math.max(1,math.ceil(#f/c))local e=math.min(d,
+math.floor((g-1)/c)+1)return e,d, (e-1)*c,c end
+function n.drawHeader(a,b)local g,c,e=a.D,a.T,a.W;local h=
+(a.SC and a.SC.get and a.SC.get("hostname"))or"tos"local f="--:--"
+local i,d=pcall(os.date,"*t")
+if i and d then f=string.format("%02d:%02d",d.hour,d.min)end
+p.drawRail(g,c,a.RAIL_ROW,e,{{label="\226\140\130 ".. (a.who or"?").."@"..h},{text=
+a.cwd or"/"},{text=f,at=e-8}},{labelFg=c.title or
+c.fg})end
+function n.drawBand(a,b)local j,e,k=a.D,a.T,a.W;local h=n.apps(a,b)local i,c,l,m=n.pageOf(a,b)local A=math.max(0,math.min(m,
+#h-l))local d={}a._homeBand=nil;if c>1 then
+d[#d+1]={label=
+"\226\128\185 page "..i.."/"..c.." \226\128\186"}end
+local f=o("home.band","%d tiles \194\183 %d shown",#h,A)if c>1 then
+f=f..y..
+((i<c)and o("home.band.next","PgDn next page")or
+o("home.band.back","PgUp back"))end;d[#d+1]={text=f}
+local g=p.drawRail(j,e,a.BAND_ROW,k,d,{labelFg=
+e.title or e.fg})if c>1 and g[1]then
+a._homeBand={row=a.BAND_ROW,prev=g[1].s,next=g[1].e,pages=c}end end
+function n.drawTiles(a,b)local d,c,e=a.D,a.T,a.W;local f=n.apps(a,b)local l,l,h,k=n.pageOf(a,b)
+local i=b.sel or 1
+d.fill(1,a.TILE_TOP,e,math.max(0,a.TILE_H)," ",c.fg,c.bg)
+if n.listMode(a)then
+for g=1,k do local E=h+g;local D=f[E]if not D then break end
+local m=a.TILE_TOP+g-1;local A=(E==i)
+local B=A and(c.sel_fg or c.bg)or c.fg
+local C=A and(c.sel_bg or c.highlight)or c.bg;d.fill(1,m,e,1," ",B,C)
+local F=(g<=9)and("["..g.."] ")or"    "
+d.set(2,m,F,A and B or(c.dim or c.fg),C)
+d.set(6,m,D.glyph or"\194\183",A and B or(c.title or c.fg),C)
+d.set(8,m,w(tostring(D.label),e-9),B,C)end;return end;local j=n.grid(a)
+for g=1,j.perPage do local A=h+g;local m=f[A]if not m then break end
+local B=p.tileRect(j,g)if B then
+p.drawTile(d,c,B,{glyph=m.glyph,label=m.label,selected=(A==i),dim=m.pkg})end end end
+function n.summaryText(a,b)local d=n.apps(a,b)local h,h,e,f=n.pageOf(a,b)
+local g=math.max(0,math.min(f,#d-e))local c=o("home.sum","%d tiles \194\183 %d shown",#d,g)if
+a.browser and a.browser.freeStr then c=c..
+y..a.browser.freeStr.." free"end
+return c end
+function n.hintText(a,b)local k=n.apps(a,b)local d=k[b.sel or 1]
+local l=n.viewKeyLabel(a)local m,h=n.pageOf(a,b)local f
+if d and d.hint and d.hint~=""then f=
+(d.label or"").." \226\128\148 "..d.hint else
+f=o("home.keys","Enter Open \194\183 Arrows Move \194\183 Alt+1-9 Quick")end
+local i=l.." "..o("home.key.files","Files")local e={i}if h>1 then
+e[#e+1]=((m<h)and"PgDn"or"PgUp").." "..
+o("home.key.page","Page")end
+e[#e+1]="F10 "..o("home.key.quit","Quit")local c=" "..f;local g,j=nil,nil
+for B,A in ipairs(e)do local C=c..y..A
+if s(C)>a.W-2 then break end;if A==i then g=s(c)+4;j=g+s(A)-1 end;c=C end
+if b.dropped and b.dropped>0 then local A=c..
+o("home.more","   (+%d more via the prompt)",b.dropped)if
+s(A)<=a.W-2 then c=A end end;return w(c,a.W-1),g,j end
+function n.activate(a,c,d,b)local f=t()if not f then return 0 end;local e=f.resolveApp(c.apps,d)
+if e.type==
+"tab"then n.setView(a,"files",c)return 3 elseif e.type=="settings"then
+local h,g=pcall(require,"shell.panels.settingsapp")if h and g then g.open(a)else
+a.lastOut={"Settings unavailable: "..tostring(g),a.T.error}end;return 3 elseif e.type=="logout"then
+a.E.push("tos_logout",a.displayIdx)return 3,"exit"elseif e.type=="cmd"then if b and b.exec then b.exec(e.cmd)end
+return 3 end;return 0 end;local z=1
+local function x(b,a)
+if type(a)~="number"or a<2 or a>10 then return nil end;if b~=nil and b~=0 then return nil end;return a-z end;n._altDigit=x
+function n.handleKey(b,a,e,c,d)local g=n.apps(b,a)local f=a.sel or 1
+local k,k,k,i=n.pageOf(b,a)
+local h=n.listMode(b)and 1 or n.grid(b).cols;if
+c==28 and(b.cmdline==""or b.cmdline==nil)then return n.activate(b,a,f,d)end
+local j=x(e,c)if j then local k,k,m=n.pageOf(b,a)local l=m+j
+if g[l]then a.sel=l;return n.activate(b,a,l,d)end;return 0 end
+if c==203 then if f>1 then
+a.sel=f-1;return 3 end;return 0 elseif c==205 then if f<#g then a.sel=f+1;return 3 end;return 0 elseif
+c==200 then if f-h>=1 then a.sel=f-h;return 3 end;return 0 elseif c==208 then
+if f+h<=#g then a.sel=f+h;return 3 end;return 0 elseif c==201 then a.sel=math.max(1,f-i)return 3 elseif c==209 then
+a.sel=math.min(math.max(1,#g),f+i)return 3 elseif
+c==199 and(b.cmdline==""or b.cmdline==nil)then a.sel=1;return 3 elseif
+c==207 and(b.cmdline==""or b.cmdline==nil)then a.sel=math.max(1,#g)return 3 end;return nil end
+function n.handleClick(a,c,b,d)local h=n.apps(a,c)local j,j,i,g=n.pageOf(a,c)local f=a._homeBand
+if f and
+b.y==f.row then
+if b.x==f.prev then
+c.sel=math.max(1,(c.sel or 1)-g)return 3 elseif b.x==f.next then
+c.sel=math.min(math.max(1,#h),(c.sel or 1)+g)return 3 end;return 0 end
+if b.y<a.TILE_TOP or b.y>=a.TILE_TOP+a.TILE_H then return 0 end;local e
+if n.listMode(a)then local k=b.y-a.TILE_TOP+1
+if k>=1 and k<=g then e=i+k end else local k=p.tileHit(n.grid(a),b.x,b.y)if k then e=i+k end end;if not e or not h[e]then return 0 end;c.sel=e
+if b.button==1 then return 3 end;return n.activate(a,c,e,d)end
+function n.handleScroll(b,a,c)local e=n.apps(b,a)
+local f=(c.dir or 0)>0 and-1 or 1
+local d=math.max(1,math.min(math.max(1,#e),(a.sel or 1)+f))if d==a.sel then return 0 end;a.sel=d;return 3 end;return n

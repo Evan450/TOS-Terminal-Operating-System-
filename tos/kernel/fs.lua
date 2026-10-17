@@ -1,511 +1,149 @@
-local component = require("component")
-local fs = {}
-local mounts = {}
-local bootFS = nil
-function fs.init(bfs)
-bootFS = bfs
-mounts["/"] = bootFS
-end
-function fs.normalize(path)
-if path == nil or path == "" then return "/" end
-if type(path) ~= "string" then return nil end
-if path:find("\0", 1, true) then return nil end
-path = path:gsub("\\", "/")
-if path:sub(1, 1) ~= "/" then path = "/" .. path end
-local parts = {}
-for segment in path:gmatch("[^/]+") do
-if segment == ".." then
-parts[#parts] = nil
-elseif segment ~= "." then
-parts[#parts + 1] = segment
-end
-end
-local result = "/" .. table.concat(parts, "/")
-return result
-end
-function fs.split(path)
-path = fs.normalize(path)
-if not path then return nil, nil end
-local dir, name = path:match("^(.-)([^/]+)$")
-if not dir or dir == "" then dir = "/" end
-return dir, name or ""
-end
-function fs.join(...)
-local parts = {...}
-return fs.normalize(table.concat(parts, "/"))
-end
-function fs.mount(path, proxy)
-path = fs.normalize(path)
-if not path then return false, "invalid mount path" end
-if mounts[path] then
-return false, "Already mounted at " .. path
-end
-if path ~= "/" and fs.exists(path) then
-if fs.isDirectory(path) then
-local items = fs.list(path)
-if type(items) == "table" and #items > 0 then
-return false, "Refusing to mount over non-empty directory: " .. path
-end
-else
-return false, "Mount path is a file, not a directory: " .. path
-end
-end
-mounts[path] = proxy
-return true
-end
-function fs.unmount(path)
-path = fs.normalize(path)
-if not path then return false, "invalid path" end
-if path == "/" then return false, "Cannot unmount root" end
-local proxy = mounts[path]
-mounts[path] = nil
-if type(proxy) == "table" and type(proxy.unmount) == "function" then
-pcall(proxy.unmount)
-end
-return true
-end
-local function resolve(path)
-path = fs.normalize(path)
-if not path then return nil end
-local bestMount = "/"
-local bestLen = 1
-for mp in pairs(mounts) do
-if #mp > bestLen then
-if mp == "/" or (path:sub(1, #mp) == mp and (#path == #mp or path:sub(#mp + 1, #mp + 1) == "/")) then
-bestMount = mp
-bestLen = #mp
-end
-end
-end
-local relPath = path:sub(bestLen + 1)
-if relPath == "" then relPath = "/" end
-if relPath:sub(1, 1) ~= "/" then relPath = "/" .. relPath end
-return mounts[bestMount], relPath
-end
---! A mount point's PARENTS exist whether or not the disk below has them.
---! TOS mounts a disk at /mnt/<label> without creating /mnt on the boot
---! disk, so /mnt was a directory nobody could see: `ls /mnt` said "no such
---! file" with two floppies mounted under it (headless machine,
---! 2026-10-09), and the file browser and `cd` agreed. OpenOS shows mount
---! paths as directories; so does this, by answering for every proper
---! ancestor of a mount point and listing the mount names among what the
---! disk below really holds. (test_fs_mount_parents.lua)
-local function mountChildren(path)
-local norm = fs.normalize(path)
-if not norm then return nil end
-local prefix = norm == "/" and "/" or norm .. "/"
-local out = nil
-for mp in pairs(mounts) do
-if mp ~= norm and #mp > #prefix and mp:sub(1, #prefix) == prefix then
-local child = mp:sub(#prefix + 1):match("^[^/]+")
-if child then
-out = out or {}
-out[child .. "/"] = true
-end
-end
-end
-return out
-end
-function fs.exists(path)
-local proxy, rel = resolve(path)
-if not proxy then return false end
-local ok, result = pcall(proxy.exists, rel)
-if ok and result then return result end
-return mountChildren(path) ~= nil
-end
-function fs.isDirectory(path)
-local proxy, rel = resolve(path)
-if not proxy then return false end
-local ok, result = pcall(proxy.isDirectory, rel)
-if ok and result then return result end
-return mountChildren(path) ~= nil
-end
-function fs.list(path)
-local proxy, rel = resolve(path)
-if not proxy then return {} end
-local ok, result = pcall(proxy.list, rel)
-if not ok or type(result) ~= "table" then result = {} end
-local extra = mountChildren(path)
-if extra then
-local merged, seen = {}, {}
-for _, name in ipairs(result) do
-merged[#merged + 1] = name
-seen[(tostring(name):gsub("/$", ""))] = true
-end
-local add = {}
-for name in pairs(extra) do
-if not seen[(name:gsub("/$", ""))] then add[#add + 1] = name end
-end
-table.sort(add)
-for _, name in ipairs(add) do merged[#merged + 1] = name end
-return merged
-end
-return result
-end
---! CREATES PARENTS. The layer below does not, on any backend TOS runs on.
---!
---! OpenComputers' managed filesystem component is single-level: the
---! disk-backed one calls Java's File.mkdir() (not mkdirs()), and the
---! in-memory one resolves the parent and fails when it is absent. OpenOS
---! is the same by construction -- lib/core/full_filesystem.lua hands the
---! path straight to node.fs.makeDirectory, and OpenOS's own `mkdir` has
---! no -p flag at all.
---!
---! Several places in TOS believed otherwise. pkg.init() said in a comment
---! that "the OC proxy creates parents recursively, so a single call covers
---! /var, /var/pkg, /var/pkg/installed" and then made exactly that call:
---! on a fresh managed disk it failed and logged a warning, because
---! /var/pkg did not exist yet. backup.lua hand-rolled the segment loop
---! because it had found out. TBFS grew its own recursion for the same
---! reason, which left the two backends disagreeing -- code written
---! against a raw drive would break when moved to a managed one.
---!
---! So the guarantee lives HERE, once, where every caller already is.
---! Below this line the proxies stay single-level and portable.
---!
---! The return value is unchanged: true when this call created the final
---! directory, false when it was already there (what the OC proxy returns,
---! and what callers test). (test_fs_mkdir_parents.lua)
-function fs.makeDirectory(path)
-local norm = fs.normalize(path)
-if not norm then return false, "invalid path" end
-if norm == "/" then return false, "already exists" end
-local acc, created = "", false
-for seg in norm:gmatch("[^/]+") do
-acc = acc .. "/" .. seg
-if fs.exists(acc) then
-if not fs.isDirectory(acc) then
-return false, "not a directory: " .. acc
-end
-created = false
-else
-local proxy, rel = resolve(acc)
-if not proxy then return false, "No filesystem" end
-local ok, result = pcall(proxy.makeDirectory, rel)
-if not ok then return false, tostring(result) end
-if result == false then
-return false, "could not create " .. acc
-end
-created = true
-end
-end
-if not created then return false, "already exists" end
-return true
-end
-function fs.remove(path)
-path = fs.normalize(path)
-if not path then return false, "invalid path" end
-if mounts[path] then
-return false, "Cannot delete a mount point (use umount)"
-end
-local proxy, rel = resolve(path)
-if not proxy then return false, "No filesystem" end
-local ok, result = pcall(proxy.remove, rel)
-if not ok then return false, tostring(result) end
-return result
-end
-function fs.rename(from, to)
-from = fs.normalize(from)
-to = fs.normalize(to)
-if not from or not to then return false, "invalid path" end
-if mounts[from] then
-return false, "Cannot rename a mount point"
-end
-local proxyFrom, relFrom = resolve(from)
-local proxyTo, relTo = resolve(to)
-if not proxyFrom then return false, "Source not found" end
-if proxyFrom ~= proxyTo then
-return false, "Cannot rename across filesystems"
-end
-local ok, result = pcall(proxyFrom.rename, relFrom, relTo)
-if not ok then return false, tostring(result) end
-return result
-end
-function fs.size(path)
-local proxy, rel = resolve(path)
-if not proxy then return 0 end
-local ok, result = pcall(proxy.size, rel)
-return ok and result or 0
-end
-function fs.lastModified(path)
-local proxy, rel = resolve(path)
-if not proxy then return 0 end
-local ok, result = pcall(proxy.lastModified, rel)
-return ok and result or 0
-end
-local coopProc = nil
-local function coopYield()
-if coopProc == nil then
-local okP, m = pcall(require, "kernel.process")
-coopProc = (okP and m and m.yieldCooperative) and m or false
-end
-if coopProc then coopProc.yieldCooperative() end
-end
-function fs.readFile(path)
-local proxy, rel = resolve(path)
-if not proxy then return nil, "No filesystem" end
-local ok0, exists = pcall(proxy.exists, rel)
-if not ok0 or not exists then return nil, "File not found: " .. path end
-local h, err = proxy.open(rel, "r")
-if not h then return nil, err end
-local chunks = {}
-local readOk, result = pcall(function()
-repeat
-local chunk = proxy.read(h, 4096)
-if chunk then chunks[#chunks + 1] = chunk end
-until not chunk
-return table.concat(chunks)
-end)
-proxy.close(h)
-chunks = nil
-if not readOk then return nil, tostring(result) end
-return result
-end
---! A FAILED WRITE HAS TWO SHAPES, AND pcall ONLY SEES ONE. OC hands soft
---! errors back as VALUES, not raises: OpenOS reports a full disk as
---! `write() -> nil, "not enough space"` (lib/buffer.lua), and some proxies
---! answer `false, err`. `local ok = pcall(proxy.write, ...)` sees ok=true
---! for both and threw the reason away, so writeFile returned true having
---! written nothing -- and open(path,"w") had ALREADY truncated the file.
---!
---! writeFileAtomic is built on this, so the guard whose whole job is
---! "either the intact old file or the intact new one" removed the good
---! file and renamed an empty temp over it, reporting success. On a full
---! disk that is how /etc/users.dat, the elevate DB and the trust DB get
---! zeroed. init.lua's copier already caught both shapes ("#REV finding
---! #5"); this brings the kernel's own writers in line.
---! (test_fs_write_full.lua)
-local function writeAll(proxy, h, content)
-local ok, res, werr = pcall(proxy.write, h, content)
-if not ok then return false, tostring(res) end
-if res == false or (res == nil and werr ~= nil) then
-return false, tostring(werr or "write refused")
-end
-return true
-end
-function fs.writeFile(path, content)
-local proxy, rel = resolve(path)
-if not proxy then return false, "No filesystem" end
-local dir = rel:match("^(.+)/[^/]+$")
-if dir and dir ~= "" then
-local ok0, isDir = pcall(proxy.isDirectory, dir)
-if not ok0 or not isDir then pcall(proxy.makeDirectory, dir) end
-end
-local h, err = proxy.open(rel, "w")
-if not h then return false, err end
-local ok, werr = writeAll(proxy, h, content)
-proxy.close(h)
-if not ok then return false, "Write failed: " .. tostring(werr) end
-return true
-end
-function fs.appendFile(path, content)
-local proxy, rel = resolve(path)
-if not proxy then return false, "No filesystem" end
-local h, err = proxy.open(rel, "a")
-if not h then return false, err end
-local ok, werr = writeAll(proxy, h, content)
-proxy.close(h)
-if not ok then return false, "Write failed: " .. tostring(werr) end
-return true
-end
-local ATOMIC_SUFFIX = ".tos-tmp"
-function fs.writeFileAtomic(path, content)
-path = fs.normalize(path)
-if not path then return false, "invalid path" end
-local tmp = path .. ATOMIC_SUFFIX
-local ok, err = fs.writeFile(tmp, content)
-if not ok then
-pcall(fs.remove, tmp)
-return false, err or "temp write failed"
-end
---! Judged by whether the file is GONE, not by pcall: fs.remove reports a
---! refusal as `false, err` and never raises, so `pcall(fs.remove, path)`
---! was always true and this branch could not run. A target that would
---! not go (read-only disk, a mount point) then failed later as a
---! misleading "rename failed", with the temp left behind until the next
---! boot's recoverAtomic. (test_fs_write_full.lua)
-if fs.exists(path) then
-pcall(fs.remove, path)
-if fs.exists(path) then
-pcall(fs.remove, tmp)
-return false, "cannot replace target"
-end
-end
-local mok, merr = fs.rename(tmp, path)
-if not mok then return false, "rename failed: " .. tostring(merr) end
-return true
-end
-function fs.recoverAtomic(paths)
-local recovered, cleaned = 0, 0
-for _, base in ipairs(paths or {}) do
-base = fs.normalize(base)
-if base then
-local tmp = base .. ATOMIC_SUFFIX
-if fs.exists(tmp) then
-if fs.exists(base) then
-pcall(fs.remove, tmp); cleaned = cleaned + 1
-else
-local pok, fok = pcall(fs.rename, tmp, base)
-if pok and fok then recovered = recovered + 1 end
-end
-end
-end
-end
-return recovered, cleaned
-end
---! #MEM (pentest, Sep 2026) — copy a FILE a block at a time. fs.copy read
---! the whole source into one string (holding every chunk AND the joined
---! copy while readFile concatenated) and wrote it back out, so copying a
---! file needed its size in heap, more than once: a 150 KB file could not be
---! copied on a 256 KB machine at all, and `cp` of a big log could take the
---! kernel down with it. This holds one 4 KB block. Copying a path onto
---! itself is a no-op, because opening the destination "w" would truncate
---! the source before the first read. (test_fs_copy_stream.lua)
-local COPY_BLOCK = 4096
-function fs.copyFile(src, dst)
-src = fs.normalize(src)
-dst = fs.normalize(dst)
-if not src or not dst then return false, "invalid path" end
-if src == dst then return true end
-local sProxy, sRel = resolve(src)
-local dProxy, dRel = resolve(dst)
-if not sProxy or not dProxy then return false, "No filesystem" end
-local okE, exists = pcall(sProxy.exists, sRel)
-if not okE or not exists then return false, "File not found: " .. src end
-local dir = dRel:match("^(.+)/[^/]+$")
-if dir and dir ~= "" then
-local ok0, isDir = pcall(dProxy.isDirectory, dir)
-if not ok0 or not isDir then pcall(dProxy.makeDirectory, dir) end
-end
-local hin, ierr = sProxy.open(sRel, "r")
-if not hin then return false, ierr end
-local hout, oerr = dProxy.open(dRel, "w")
-if not hout then pcall(sProxy.close, hin); return false, oerr end
-local ok, err = pcall(function()
-while true do
-local chunk = sProxy.read(hin, COPY_BLOCK)
-if not chunk then return end
---! `w == false` alone missed the shape OpenOS actually produces on a
---! full disk -- write() -> nil, "not enough space" -- so the copy ran
---! to completion and reported success having written nothing. Share
---! the same two-shape test as writeFile. (test_fs_write_full.lua)
-local okW, werr = writeAll(dProxy, hout, chunk)
-if not okW then error(tostring(werr), 0) end
-coopYield()
-end
-end)
-pcall(sProxy.close, hin)
-pcall(dProxy.close, hout)
-if not ok then return false, tostring(err) end
-return true
-end
-function fs.copy(src, dst)
-src = fs.normalize(src)
-dst = fs.normalize(dst)
-if not src or not dst then return false, "invalid path" end
-if fs.isDirectory(src) then
-return fs.copyRecursive(src, dst)
-end
-return fs.copyFile(src, dst)
-end
-function fs.copyRecursive(src, dst)
-src = fs.normalize(src)
-dst = fs.normalize(dst)
-if not src or not dst then return false, "invalid path" end
-if not fs.exists(src) then
-return false, "Source not found: " .. src
-end
-if not fs.isDirectory(src) then
-return fs.copy(src, dst)
-end
-if src == "/" or dst == src or dst:sub(1, #src + 1) == src .. "/" then
-return false, "Cannot copy a directory into itself"
-end
-if not fs.exists(dst) then
-local ok, err = fs.makeDirectory(dst)
-if not ok then return false, "Cannot create directory: " .. tostring(err) end
-end
-local items = fs.list(src)
-if not items then return false, "Cannot list source directory" end
-local copied, failed = 0, 0
-for _, name in ipairs(items) do
-coopYield()
-local cleanName = name:match("^(.-)/?$") or name
-if cleanName ~= "" then
-local srcPath = fs.join(src, cleanName)
-local dstPath = fs.join(dst, cleanName)
-if fs.isDirectory(srcPath) then
-local ok, err = fs.copyRecursive(srcPath, dstPath)
-if ok then copied = copied + 1 else failed = failed + 1 end
-else
-if fs.copyFile(srcPath, dstPath) then copied = copied + 1 else failed = failed + 1 end
-end
-end
-end
-if failed > 0 then
-return false, string.format("Copied %d items, %d failed", copied, failed)
-end
-return true
-end
-function fs.open(path, mode)
-local proxy, rel = resolve(path)
-if not proxy then return nil, "No filesystem" end
-local h, err = proxy.open(rel, mode or "r")
-if not h then return nil, err end
-return {
-handle = h,
-proxy = proxy,
-read = function(self, n)
-return proxy.read(h, n or 4096)
-end,
-write = function(self, data)
-return proxy.write(h, data)
-end,
-close = function(self)
-return proxy.close(h)
-end,
-seek = function(self, whence, offset)
-return proxy.seek(h, whence, offset)
-end,
-}
-end
-function fs.spaceTotal(path)
-local proxy = resolve(path or "/")
-if not proxy then return 0 end
-local ok, result = pcall(proxy.spaceTotal)
-return ok and result or 0
-end
-function fs.spaceUsed(path)
-local proxy = resolve(path or "/")
-if not proxy then return 0 end
-local ok, result = pcall(proxy.spaceUsed)
-return ok and result or 0
-end
-function fs.spaceFree(path)
-return fs.spaceTotal(path) - fs.spaceUsed(path)
-end
-function fs.mounts()
-local result = {}
-for mp, proxy in pairs(mounts) do
-local label = "Unnamed"
-pcall(function() label = proxy.getLabel() or "Unnamed" end)
-local total, used = 0, 0
-pcall(function() total = proxy.spaceTotal() end)
-pcall(function() used = proxy.spaceUsed() end)
-local openFiles = nil
-if type(proxy) == "table" and type(proxy.openHandles) == "function" then
-local okH, n = pcall(proxy.openHandles)
-if okH and type(n) == "number" then openFiles = n end
-end
-result[#result + 1] = {
-mountPoint = mp,
-label = label,
-address = proxy.address,
-total = total,
-used = used,
-openFiles = openFiles,
-}
-end
-return result
-end
-return fs
+local q,r="invalid path","No filesystem"local z=require("component")local n={}
+local p={}local v=nil;function n.init(a)v=a;p["/"]=v end
+function n.normalize(a)
+if a==nil or a==""then return"/"end;if type(a)~="string"then return nil end
+if a:find("\0",1,true)then return nil end;a=a:gsub("\\","/")if a:sub(1,1)~="/"then a="/"..a end
+local b={}for d in a:gmatch("[^/]+")do
+if d==".."then b[#b]=nil elseif d~="."then b[#b+1]=d end end
+local c="/"..table.concat(b,"/")return c end
+function n.split(a)a=n.normalize(a)if not a then return nil,nil end
+local b,c=a:match("^(.-)([^/]+)$")if not b or b==""then b="/"end;return b,c or""end;function n.join(...)local a={...}
+return n.normalize(table.concat(a,"/"))end
+function n.mount(a,b)a=n.normalize(a)if not a then return false,
+"invalid mount path"end;if p[a]then
+return false,"Already mounted at "..a end
+if a~="/"and n.exists(a)then
+if n.isDirectory(a)then
+local c=n.list(a)
+if type(c)=="table"and#c>0 then return false,
+"Refusing to mount over non-empty directory: "..a end else return false,"Mount path is a file, not a directory: "..a end end;p[a]=b;return true end
+function n.unmount(a)a=n.normalize(a)if not a then return false,q end;if a=="/"then
+return false,"Cannot unmount root"end;local b=p[a]p[a]=nil
+if type(b)=="table"and type(b.unmount)==
+"function"then pcall(b.unmount)end;return true end
+local function o(a)a=n.normalize(a)if not a then return nil end;local d="/"local c=1;for e in pairs(p)do
+if#e>c then if
+e=="/"or(a:sub(1,
+#e)==e and
+(#a==#e or a:sub(#e+1,#e+1)=="/"))then d=e;c=#e end end end
+local b=a:sub(c+1)if b==""then b="/"end;if b:sub(1,1)~="/"then b="/"..b end;return p[d],b end
+local function t(a)local b=n.normalize(a)if not b then return nil end
+local c=b=="/"and"/"or b.."/"local d=nil;for e in pairs(p)do
+if e~=b and#e>#c and e:sub(1,#c)==c then
+local f=e:sub(#c+1):match("^[^/]+")if f then d=d or{}d[f.."/"]=true end end end;return d end
+function n.exists(a)local b,d=o(a)if not b then return false end;local e,c=pcall(b.exists,d)if e and c then return
+c end;return t(a)~=nil end
+function n.isDirectory(a)local b,d=o(a)if not b then return false end
+local e,c=pcall(b.isDirectory,d)if e and c then return c end;return t(a)~=nil end
+function n.list(a)local c,e=o(a)if not c then return{}end;local f,b=pcall(c.list,e)if not f or
+type(b)~="table"then b={}end;local d=t(a)
+if d then local g,i={},{}for k,j in ipairs(b)do
+g[#g+1]=j
+i[(tostring(j):gsub("/$",""))]=true end;local h={}
+for j in pairs(d)do if not
+i[(j:gsub("/$",""))]then h[#h+1]=j end end;table.sort(h)for k,j in ipairs(h)do g[#g+1]=j end;return g end;return b end
+function n.makeDirectory(a)local c=n.normalize(a)if not c then return false,q end;if c=="/"then return false,
+"already exists"end;local b,d="",false
+for e in c:gmatch("[^/]+")do
+b=b.."/"..e
+if n.exists(b)then if not n.isDirectory(b)then
+return false,"not a directory: "..b end;d=false else local f,h=o(b)
+if not f then return false,r end;local i,g=pcall(f.makeDirectory,h)
+if not i then return false,tostring(g)end
+if g==false then return false,"could not create "..b end;d=true end end;if not d then return false,"already exists"end;return true end
+function n.remove(a)a=n.normalize(a)if not a then return false,q end;if p[a]then return false,
+"Cannot delete a mount point (use umount)"end;local b,d=o(a)if
+not b then return false,r end;local e,c=pcall(b.remove,d)if not e then
+return false,tostring(c)end;return c end
+function n.rename(a,b)a=n.normalize(a)b=n.normalize(b)
+if not a or not b then return false,q end;if p[a]then return false,"Cannot rename a mount point"end
+local c,e=o(a)local f,g=o(b)if not c then return false,"Source not found"end;if c~=f then return false,
+"Cannot rename across filesystems"end
+local h,d=pcall(c.rename,e,g)if not h then return false,tostring(d)end;return d end;function n.size(a)local b,c=o(a)if not b then return 0 end;local d,e=pcall(b.size,c)
+return d and e or 0 end
+function n.lastModified(a)local b,c=o(a)if not b then
+return 0 end;local d,e=pcall(b.lastModified,c)return d and e or 0 end;local s=nil
+local function w()if s==nil then local b,a=pcall(require,"kernel.process")
+s=(b and a and
+a.yieldCooperative)and a or false end;if s then
+s.yieldCooperative()end end
+function n.readFile(a)local b,e=o(a)if not b then return nil,r end;local g,h=pcall(b.exists,e)if not g or
+not h then return nil,"File not found: "..a end
+local d,i=b.open(e,"r")if not d then return nil,i end;local c={}
+local j,f=pcall(function()repeat local k=b.read(d,4096)
+if k then c[#c+1]=k end until not k;return table.concat(c)end)b.close(d)c=nil;if not j then return nil,tostring(f)end;return f end
+local function u(a,b,c)local f,d,e=pcall(a.write,b,c)
+if not f then return false,tostring(d)end;if d==false or(d==nil and e~=nil)then return false,
+tostring(e or"write refused")end;return true end
+function n.writeFile(a,b)local c,f=o(a)if not c then return false,r end
+local d=f:match("^(.+)/[^/]+$")
+if d and d~=""then local j,k=pcall(c.isDirectory,d)if not j or not k then
+pcall(c.makeDirectory,d)end end;local e,g=c.open(f,"w")if not e then return false,g end;local h,i=u(c,e,b)
+c.close(e)
+if not h then return false,"Write failed: "..tostring(i)end;return true end
+function n.appendFile(a,b)local c,e=o(a)if not c then return false,r end;local d,f=c.open(e,"a")if not d then
+return false,f end;local g,h=u(c,d,b)c.close(d)if not g then return false,
+"Write failed: "..tostring(h)end;return true end;local x=".tos-tmp"
+function n.writeFileAtomic(a,b)a=n.normalize(a)if not a then return false,q end
+local c=a..x;local d,e=n.writeFile(c,b)if not d then pcall(n.remove,c)return false,
+e or"temp write failed"end;if n.exists(a)then
+pcall(n.remove,a)
+if n.exists(a)then pcall(n.remove,c)return false,"cannot replace target"end end
+local f,g=n.rename(c,a)
+if not f then return false,"rename failed: "..tostring(g)end;return true end
+function n.recoverAtomic(a)local b,c=0,0
+for e,d in ipairs(a or{})do d=n.normalize(d)
+if d then local f=d..x
+if n.exists(f)then if
+n.exists(d)then pcall(n.remove,f)c=c+1 else local g,h=pcall(n.rename,f,d)
+if g and h then b=b+1 end end end end end;return b,c end;local y=4096
+function n.copyFile(a,b)a=n.normalize(a)b=n.normalize(b)if not a or not b then
+return false,q end;if a==b then return true end;local c,h=o(a)local d,i=o(b)if
+not c or not d then return false,r end;local j,k=pcall(c.exists,h)if not j or not k then return
+false,"File not found: "..a end
+local e=i:match("^(.+)/[^/]+$")
+if e and e~=""then local C,D=pcall(d.isDirectory,e)if not C or not D then
+pcall(d.makeDirectory,e)end end;local f,l=c.open(h,"r")if not f then return false,l end
+local g,m=d.open(i,"w")if not g then pcall(c.close,f)return false,m end
+local A,B=pcall(function()while true do
+local C=c.read(f,y)if not C then return end;local D,E=u(d,g,C)
+if not D then error(tostring(E),0)end;w()end end)pcall(c.close,f)pcall(d.close,g)
+if not A then return false,tostring(B)end;return true end
+function n.copy(a,b)a=n.normalize(a)b=n.normalize(b)
+if not a or not b then return false,q end;if n.isDirectory(a)then return n.copyRecursive(a,b)end;return
+n.copyFile(a,b)end
+function n.copyRecursive(a,b)a=n.normalize(a)b=n.normalize(b)
+if not a or not b then return false,q end
+if not n.exists(a)then return false,"Source not found: "..a end;if not n.isDirectory(a)then return n.copy(a,b)end
+if a=="/"or
+b==a or b:sub(1,#a+1)==a.."/"then return false,
+"Cannot copy a directory into itself"end;if not n.exists(b)then local f,g=n.makeDirectory(b)
+if not f then return false,"Cannot create directory: "..
+tostring(g)end end
+local e=n.list(a)if not e then return false,"Cannot list source directory"end
+local d,c=0,0
+for g,f in ipairs(e)do w()local h=f:match("^(.-)/?$")or f
+if h~=""then
+local i=n.join(a,h)local j=n.join(b,h)
+if n.isDirectory(i)then local k,l=n.copyRecursive(i,j)if k then d=d+1 else c=
+c+1 end else if n.copyFile(i,j)then d=d+1 else c=c+1 end end end end;if c>0 then
+return false,string.format("Copied %d items, %d failed",d,c)end;return true end
+function n.open(a,b)local c,e=o(a)if not c then return nil,r end;local d,f=c.open(e,b or"r")if not d then return
+nil,f end
+return
+{handle=d,proxy=c,read=function(h,g)return c.read(d,g or 4096)end,write=function(h,g)return
+c.write(d,g)end,close=function(g)return c.close(d)end,seek=function(i,g,h)
+return c.seek(d,g,h)end}end
+function n.spaceTotal(a)local b=o(a or"/")if not b then return 0 end
+local c,d=pcall(b.spaceTotal)return c and d or 0 end
+function n.spaceUsed(a)local b=o(a or"/")if not b then return 0 end
+local c,d=pcall(b.spaceUsed)return c and d or 0 end
+function n.spaceFree(a)return n.spaceTotal(a)-n.spaceUsed(a)end
+function n.mounts()local a={}
+for c,b in pairs(p)do local d="Unnamed"
+pcall(function()d=b.getLabel()or"Unnamed"end)local e,f=0,0
+pcall(function()e=b.spaceTotal()end)pcall(function()f=b.spaceUsed()end)
+local g=nil;if
+type(b)=="table"and type(b.openHandles)=="function"then local i,h=pcall(b.openHandles)
+if i and type(h)=="number"then g=h end end
+a[#a+1]={mountPoint=c,label=d,address=b.address,total=e,used=f,openFiles=g}end;return a end;return n

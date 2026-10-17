@@ -1,488 +1,183 @@
-local netfs = {}
-local BLOCK = 4096
-local RPC_TIMEOUT = 10
-local SPACE_TTL = 30
-local MAX_HANDLES = 16
-local HANDLE_IDLE = 120
-local MAX_PATH = 256
-local MAX_LIST = 256
-local net, fs, trustMgr, log, protocol, computer
-function netfs.init(modules)
-modules = modules or {}
-net = modules.net
-fs = modules.fs
-trustMgr = modules.trust
-log = modules.log
-computer = modules.computer or require("computer")
-protocol = modules.protocol or (net and net.getProtocol and net.getProtocol())
-if not protocol then
-local okP, mod = pcall(require, "kernel.net.protocol")
-if okP then protocol = mod end
-end
-if net and protocol then
-net.on(protocol.TYPE.NETFS_REQ, function(packet, fromAddr)
-netfs.handleRequest(packet, fromAddr)
-end)
-end
-if log and log.info then log.info("netfs", "netfs module initialized") end
-return true
-end
-local enabled = false
-function netfs.setEnabled(v) enabled = v and true or false end
-function netfs.isEnabled() return enabled end
-netfs.EXPORTS_PATH = "/etc/netfs-exports.cfg"
-local _exports = {}
-function netfs._validateExports(cfg)
-if type(cfg) ~= "table" then return nil, "invalid_config: not a table" end
-local out, seen = {}, {}
-for i, e in ipairs(cfg) do
-local where = "entry " .. i
-if type(e) ~= "table" then return nil, "invalid_export: " .. where .. " not a table" end
-if type(e.name) ~= "string" or not e.name:match("^[%w_%-]+$") then
-return nil, "invalid_export: " .. where .. " needs a [%w_-] name"
-end
-if seen[e.name] then return nil, "invalid_export: duplicate name " .. e.name end
-if type(e.path) ~= "string" or e.path == "" then
-return nil, "invalid_export: " .. e.name .. " needs a path"
-end
-local mode = e.mode or "ro"
-if mode ~= "ro" and mode ~= "rw" then
-return nil, "invalid_export: " .. e.name .. " mode must be ro or rw"
-end
-if e.allow ~= nil and type(e.allow) ~= "table" then
-return nil, "invalid_export: " .. e.name .. " allow must be a list"
-end
-local root = fs and fs.normalize and fs.normalize(e.path) or e.path
-if type(root) ~= "string" or root == "" then
-return nil, "invalid_export: " .. e.name .. " path does not normalize"
-end
-root = root:gsub("/+$", "")
-if root == "" then root = "/" end
-if root == "/" then
-return nil, "invalid_export: " .. e.name .. " refuses to export /"
-end
-seen[e.name] = true
-out[#out + 1] = {
-name = e.name, path = root, mode = mode,
-allow = e.allow or {},
-}
-end
-return out
-end
-function netfs.setExports(list) _exports = list or {} end
-function netfs.getExports() return _exports end
-function netfs.loadExports(fsModule, serializeMod)
-fsModule = fsModule or fs
-if not (fsModule and fsModule.exists and fsModule.exists(netfs.EXPORTS_PATH)) then
-_exports = {}
-return true, "no_exports"
-end
-local content = fsModule.readFile(netfs.EXPORTS_PATH)
-if not content or content == "" then _exports = {}; return true, "no_exports" end
-local ser = serializeMod or require("kernel.serialize")
-local ok, cfg = pcall(ser.decode, content, { maxBytes = 8192 })
-if not ok or type(cfg) ~= "table" then
-return false, "decode_failed: netfs-exports.cfg"
-end
-local list, err = netfs._validateExports(cfg)
-if not list then return false, err end
-_exports = list
-return true
-end
-function netfs.arm(on)
-local ok, err = true, nil
-if on then
-ok, err = netfs.loadExports(fs)
-if not ok and log and log.warn then
-log.warn("netfs", "not serving: " .. tostring(err))
-end
-end
-enabled = (on and ok) and true or false
-if not enabled then _exports = {} end
-return ok, err
-end
-function netfs._findExport(name)
-for _, e in ipairs(_exports) do
-if e.name == name then return e end
-end
-return nil
-end
-function netfs._accessOk(export, addr, wantWrite)
-if not export then return false, "no_such_export" end
-if wantWrite and export.mode ~= "rw" then return false, "read_only_export" end
-local allowed = false
-for _, entry in ipairs(export.allow) do
-if entry == addr then allowed = true; break end
-if entry == "*paired*" then
-if trustMgr and trustMgr.getLevel and trustMgr.LEVEL
-and trustMgr.getLevel(addr) >= trustMgr.LEVEL.TRUSTED then
-allowed = true; break
-end
-end
-end
-if not allowed then return false, "not_allowed" end
-return true
-end
-function netfs._confine(export, rel)
-if type(rel) ~= "string" or #rel > MAX_PATH then return nil, "invalid_path" end
-if rel == "" then rel = "/" end
-if rel:sub(1, 1) ~= "/" then rel = "/" .. rel end
-local abs = fs and fs.normalize and fs.normalize(export.path .. rel) or nil
-if type(abs) ~= "string" or abs == "" then return nil, "invalid_path" end
-if abs ~= export.path and abs:sub(1, #export.path + 1) ~= export.path .. "/" then
-return nil, "invalid_path"
-end
-return abs
-end
-local _handles = {}
-local _nextHandle = 1
-local function _reap(now)
-for addr, tbl in pairs(_handles) do
-for id, st in pairs(tbl) do
-if now - (st.last or 0) > HANDLE_IDLE then
-pcall(function() if st.h and st.h.close then st.h:close() end end)
-tbl[id] = nil
-end
-end
-if next(tbl) == nil then _handles[addr] = nil end
-end
-end
-local function _countHandles(addr)
-local n = 0
-for _ in pairs(_handles[addr] or {}) do n = n + 1 end
-return n
-end
-function netfs._dispatch(op, p, fromAddr)
-p = p or {}
-local now = computer and computer.uptime() or 0
-_reap(now)
-if op == "space" then
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, false)
-if not ok then return { err = err } end
-return {
-total = fs.spaceTotal and fs.spaceTotal(e.path) or 0,
-used = fs.spaceUsed and fs.spaceUsed(e.path) or 0,
-read_only = e.mode ~= "rw",
-}
-end
-if op == "stat" then
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, false)
-if not ok then return { err = err } end
-local abs, perr = netfs._confine(e, p.path)
-if not abs then return { err = perr } end
-if not fs.exists(abs) then return { exists = false } end
-return {
-exists = true,
-is_dir = fs.isDirectory(abs) and true or false,
-size = fs.size and fs.size(abs) or 0,
-mtime = fs.lastModified and fs.lastModified(abs) or 0,
-}
-end
-if op == "list" then
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, false)
-if not ok then return { err = err } end
-local abs, perr = netfs._confine(e, p.path)
-if not abs then return { err = perr } end
-local items = fs.list(abs)
-if type(items) ~= "table" then return { entries = {} } end
-local out = {}
-for i = 1, math.min(#items, MAX_LIST) do out[i] = items[i] end
-return { entries = out, truncated = #items > MAX_LIST }
-end
-if op == "mkdir" then
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, true)
-if not ok then return { err = err } end
-local abs, perr = netfs._confine(e, p.path)
-if not abs then return { err = perr } end
-return { ok = fs.makeDirectory(abs) and true or false }
-end
-if op == "remove" then
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, true)
-if not ok then return { err = err } end
-local abs, perr = netfs._confine(e, p.path)
-if not abs then return { err = perr } end
-return { ok = fs.remove(abs) and true or false }
-end
-if op == "rename" then
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, true)
-if not ok then return { err = err } end
-local from, ferr = netfs._confine(e, p.path)
-if not from then return { err = ferr } end
-local to, terr = netfs._confine(e, p.to)
-if not to then return { err = terr } end
-return { ok = fs.rename(from, to) and true or false }
-end
-if op == "open" then
-local mode = p.mode or "r"
---! #SEC (pentest, Sep 2026) — the mode comes off the wire, so only the
---! six OpenComputers accepts get through, and only a WRITE mode counts as
---! a write. The old test searched for w/a/+ and called everything else a
---! read: mode "x" on a READ-ONLY export passed the access check, and a
---! TBFS-backed export (blockfs opens every mode but "r" writable, and
---! creates the file) handed the peer a writer. A non-string mode raised.
---! Same closed set as securefs.open. (test_netfs_open_mode.lua)
-local READ_MODES = { r = true, rb = true }
-local WRITE_MODES = { w = true, wb = true, a = true, ab = true }
-if type(mode) ~= "string" or not (READ_MODES[mode] or WRITE_MODES[mode]) then
-return { err = "bad_mode" }
-end
-local wantWrite = WRITE_MODES[mode] == true
-local e = netfs._findExport(p.share)
-local ok, err = netfs._accessOk(e, fromAddr, wantWrite)
-if not ok then return { err = err } end
-local abs, perr = netfs._confine(e, p.path)
-if not abs then return { err = perr } end
-if _countHandles(fromAddr) >= MAX_HANDLES then
-return { err = "too_many_handles" }
-end
-local h, oerr = fs.open(abs, mode)
-if not h then return { err = "open_failed: " .. tostring(oerr) } end
-local id = _nextHandle; _nextHandle = _nextHandle + 1
-_handles[fromAddr] = _handles[fromAddr] or {}
-_handles[fromAddr][id] = { h = h, export = e, mode = mode, last = now }
-return { handle_id = id }
-end
-local st = p.handle_id and _handles[fromAddr] and _handles[fromAddr][p.handle_id]
-if op == "read" then
-if not st then return { err = "no_such_handle" } end
-st.last = now
-local n = tonumber(p.n) or BLOCK
-if n > BLOCK then n = BLOCK end
-local chunk = st.h:read(n)
-if chunk == nil then return { eof = true } end
-return { data = chunk, eof = false }
-end
-if op == "write" then
-if not st then return { err = "no_such_handle" } end
-if st.export.mode ~= "rw" then return { err = "read_only_export" } end
-st.last = now
-local d = p.data
-if type(d) ~= "string" then return { err = "invalid_data" } end
-if #d > BLOCK then return { err = "chunk_too_large" } end
-local wok = st.h:write(d)
-return { ok = wok and true or false, written = #d }
-end
-if op == "close" then
-if not st then return { ok = true } end
-pcall(function() st.h:close() end)
-_handles[fromAddr][p.handle_id] = nil
-return { ok = true }
-end
-if op == "seek" then
-if not st then return { err = "no_such_handle" } end
-st.last = now
-return { pos = st.h:seek(p.whence or "set", tonumber(p.offset) or 0) }
-end
-return { err = "unknown_op" }
-end
-function netfs.handleRequest(packet, fromAddr)
-if not (net and protocol) then return end
-if not enabled then return end
-local function deny()
-local pkt = protocol.makePacket(protocol.TYPE.NETFS_RES,
-{ req_id = packet and packet.payload and packet.payload.req_id,
-err = "denied" }, { to = fromAddr })
-net.send(fromAddr, pkt)
-end
-if not (trustMgr and trustMgr.getLevel and trustMgr.LEVEL) then return deny() end
-if trustMgr.getLevel(fromAddr) < trustMgr.LEVEL.TRUSTED then
-if log and log.warn then
-log.warn("netfs", "request from non-trusted peer " .. tostring(fromAddr):sub(1, 8))
-end
-return deny()
-end
-if net.verifyPeer then
-local vOk = net.verifyPeer(fromAddr)
-if not vOk then
-if log and log.warn then
-log.warn("netfs", "verification failed for " .. tostring(fromAddr):sub(1, 8))
-end
-return deny()
-end
-end
-local p = packet.payload or {}
-local reply = netfs._dispatch(p.op, p, fromAddr)
-reply.req_id = p.req_id
-net.send(fromAddr, protocol.makePacket(protocol.TYPE.NETFS_RES, reply,
-{ to = fromAddr }))
-end
-local function _netTransport(hostAddr)
-local reqId = 0
-return function(op, payload)
-if not (net and protocol) then return nil, "no_network" end
-reqId = reqId + 1
-local myId = reqId
-payload.op = op
-payload.req_id = myId
-local got, res = false, nil
-local lid = net.on(protocol.TYPE.NETFS_RES, function(pkt, from)
-if from ~= hostAddr then return end
-local pl = pkt.payload or {}
-if pl.req_id ~= myId then return end
-got, res = true, pl
-end)
-local sent = net.send(hostAddr, protocol.makePacket(protocol.TYPE.NETFS_REQ,
-payload, { to = hostAddr }))
-if not sent then
-net.off(protocol.TYPE.NETFS_RES, lid)
-return nil, "send_failed"
-end
-net.waitFor(function() return got end, RPC_TIMEOUT)
-net.off(protocol.TYPE.NETFS_RES, lid)
-if not got then return nil, "timeout" end
-return res
-end
-end
-function netfs.attach(hostAddr, share, opts)
-opts = opts or {}
-local rpc = opts.transport or _netTransport(hostAddr)
-local proxy = {}
-proxy.address = "netfs:" .. tostring(hostAddr):sub(1, 8) .. ":" .. tostring(share)
-function proxy.getLabel() return "netfs(" .. tostring(share) .. ")" end
-local function call(op, payload)
-payload = payload or {}
-payload.share = share
-local res, err = rpc(op, payload)
-if not res then return nil, err or "no_reply" end
-if res.err then return nil, res.err end
-return res
-end
-proxy._call = call
-local spaceAt, spaceVal = -math.huge, nil
-local function space()
-local now = computer and computer.uptime() or 0
-if spaceVal and (now - spaceAt) < SPACE_TTL then return spaceVal end
-local res = call("space")
-if res then spaceVal = res; spaceAt = now end
-return spaceVal
-end
-function proxy.spaceTotal() local s = space(); return s and s.total or 0 end
-function proxy.spaceUsed() local s = space(); return s and s.used or 0 end
-function proxy.isReadOnly() local s = space(); return s and s.read_only or false end
-local function stat(rel)
-local res = call("stat", { path = rel })
-return res
-end
-function proxy.exists(rel) local s = stat(rel); return s ~= nil and s.exists == true end
-function proxy.isDirectory(rel) local s = stat(rel); return s ~= nil and s.is_dir == true end
-function proxy.size(rel) local s = stat(rel); return s and s.size or 0 end
-function proxy.lastModified(rel) local s = stat(rel); return s and s.mtime or 0 end
-function proxy.list(rel)
-local res = call("list", { path = rel })
-return res and res.entries or {}
-end
-function proxy.makeDirectory(rel)
-local res = call("mkdir", { path = rel }); return res ~= nil and res.ok == true
-end
-function proxy.remove(rel)
-local res = call("remove", { path = rel }); return res ~= nil and res.ok == true
-end
-function proxy.rename(from, to)
-local res = call("rename", { path = from, to = to })
-if not res then return false end
-return res.ok == true
-end
-local handles, nextLocal = {}, 1
-function proxy.open(rel, mode)
-mode = mode or "r"
-local res, err = call("open", { path = rel, mode = mode })
-if not res then return nil, err end
-local id = nextLocal; nextLocal = nextLocal + 1
-handles[id] = {
-remote = res.handle_id, mode = mode,
-buf = "", pos = 1, eof = false,
-wbuf = {}, wlen = 0,
-}
-return id
-end
-function proxy.read(id, n)
-local st = handles[id]; if not st then return nil end
-n = tonumber(n) or BLOCK
-while (#st.buf - st.pos + 1) < n and not st.eof do
-local res = call("read", { handle_id = st.remote, n = BLOCK })
-if not res or res.eof or not res.data then st.eof = true; break end
-st.buf = st.buf:sub(st.pos) .. res.data
-st.pos = 1
-end
-local avail = #st.buf - st.pos + 1
-if avail <= 0 then return nil end
-local take = n < avail and n or avail
-local out = st.buf:sub(st.pos, st.pos + take - 1)
-st.pos = st.pos + take
-return out
-end
-local function flush(st)
-if st.wlen == 0 then return true end
-local blob = table.concat(st.wbuf)
-st.wbuf, st.wlen = {}, 0
-while #blob > 0 do
-local piece = blob:sub(1, BLOCK)
-blob = blob:sub(BLOCK + 1)
-local res = call("write", { handle_id = st.remote, data = piece })
-if not res or res.ok ~= true then return false end
-end
-return true
-end
-function proxy.write(id, d)
-local st = handles[id]; if not st then return false end
-if type(d) ~= "string" then return false end
-st.wbuf[#st.wbuf + 1] = d
-st.wlen = st.wlen + #d
-if st.wlen >= BLOCK then return flush(st) end
-return true
-end
-function proxy.close(id)
-local st = handles[id]; if not st then return true end
-local ok = flush(st)
-call("close", { handle_id = st.remote })
-handles[id] = nil
-return ok
-end
-function proxy.seek(id, whence, offset)
-local st = handles[id]; if not st then return nil end
-flush(st)
-local res = call("seek", { handle_id = st.remote, whence = whence, offset = offset })
-st.buf, st.pos, st.eof = "", 1, false
-return res and res.pos or nil
-end
-return proxy
-end
-netfs._internal = {
-BLOCK = BLOCK,
-MAX_HANDLES = MAX_HANDLES,
-MAX_LIST = MAX_LIST,
-HANDLE_IDLE = HANDLE_IDLE,
-handles = function() return _handles end,
-resetHandles = function() _handles = {}; _nextHandle = 1 end,
-}
---! Lazy self-initialization, as kernel.net.transfer and kernel.net.remote
---! do it. Nothing in the kernel ever called netfs.init: the module shipped
---! with only its tests wiring it, so a loaded kernel.netfs had no net to
---! answer NETFS_REQ on (handleRequest returned at its first line) and the
---! client half of `netfs mount` timed out with "no_network". It now wires
---! itself from the live _TOS handles wherever it loads -- the first inbound
---! NETFS_REQ (net's lazy dispatch), the `netfs` command, or anything else
---! that requires it -- and applies the arm netfsd recorded in net, so a
---! service started before this module loaded still governs it. No recorded
---! arm ⇒ disabled. Off-box tests (no _TOS.net) keep using explicit init().
-do
-local T = rawget(_G, "_TOS")
-if T and T.net and not net then
-local okI = pcall(netfs.init, {
-net = T.net,
-fs = T.fs,
-trust = T.net.getTrust and T.net.getTrust() or nil,
-log = T.logObj,
-})
-if okI and T.net.getServiceArm and T.net.getServiceArm("netfsd") then
-netfs.arm(true)
-end
-end
-end
-return netfs
+local J,I,Q,R="invalid_export: ","string","invalid_path","no_such_handle"local z={}
+local G=4096;local S=10;local T=30;local O=16;local P=120;local U=256;local N=256;local B,A,E,D,C,K
+function z.init(a)a=a or{}B=a.net;A=a.fs
+E=a.trust;D=a.log;K=a.computer or require("computer")
+C=a.protocol or(B and
+B.getProtocol and B.getProtocol())
+if not C then local b,c=pcall(require,"kernel.net.protocol")if b then C=c end end;if B and C then
+B.on(C.TYPE.NETFS_REQ,function(b,c)z.handleRequest(b,c)end)end;if D and D.info then
+D.info("netfs","netfs module initialized")end;return true end;local L=false;function z.setEnabled(a)L=a and true or false end;function z.isEnabled()return
+L end;z.EXPORTS_PATH="/etc/netfs-exports.cfg"local H={}
+function z._validateExports(a)
+if
+type(a)~="table"then return nil,"invalid_config: not a table"end;local b,c={},{}
+for e,d in ipairs(a)do local h="entry "..e;if type(d)~="table"then return nil,
+J..h.." not a table"end;if type(d.name)~=I or not
+d.name:match("^[%w_%-]+$")then return nil,
+J..h.." needs a [%w_-] name"end
+if
+c[d.name]then return nil,"invalid_export: duplicate name "..d.name end;if type(d.path)~=I or d.path==""then return nil,
+J..d.name.." needs a path"end
+local g=d.mode or"ro"if g~="ro"and g~="rw"then
+return nil,J..d.name.." mode must be ro or rw"end;if d.allow~=nil and
+type(d.allow)~="table"then
+return nil,J..d.name.." allow must be a list"end
+local f=A and A.normalize and
+A.normalize(d.path)or d.path;if type(f)~=I or f==""then return nil,
+J..d.name.." path does not normalize"end
+f=f:gsub("/+$","")if f==""then f="/"end;if f=="/"then
+return nil,J..d.name.." refuses to export /"end;c[d.name]=true
+b[#b+1]={name=d.name,path=f,mode=g,allow=d.allow or{}}end;return b end;function z.setExports(a)H=a or{}end;function z.getExports()return H end
+function z.loadExports(a,b)
+a=a or A
+if not
+(a and a.exists and a.exists(z.EXPORTS_PATH))then H={}return true,"no_exports"end;local c=a.readFile(z.EXPORTS_PATH)if not c or c==""then H={}
+return true,"no_exports"end
+local f=b or require("kernel.serialize")local g,d=pcall(f.decode,c,{maxBytes=8192})
+if not g or
+type(d)~="table"then return false,"decode_failed: netfs-exports.cfg"end;local e,h=z._validateExports(d)if not e then return false,h end;H=e;return true end
+function z.arm(a)local b,c=true,nil;if a then b,c=z.loadExports(A)
+if not b and D and D.warn then D.warn("netfs",
+"not serving: "..tostring(c))end end;L=
+(a and b)and true or false;if not L then H={}end;return b,c end;function z._findExport(a)for c,b in ipairs(H)do if b.name==a then return b end end
+return nil end
+function z._accessOk(a,b,c)if not a then
+return false,"no_such_export"end
+if c and a.mode~="rw"then return false,"read_only_export"end;local d=false
+for f,e in ipairs(a.allow)do if e==b then d=true;break end
+if e=="*paired*"then if
+E and E.getLevel and
+E.LEVEL and E.getLevel(b)>=E.LEVEL.TRUSTED then d=true;break end end end;if not d then return false,"not_allowed"end;return true end
+function z._confine(b,a)if type(a)~=I or#a>U then return nil,Q end
+if a==""then a="/"end;if a:sub(1,1)~="/"then a="/"..a end
+local c=A and A.normalize and
+A.normalize(b.path..a)or nil;if type(c)~=I or c==""then return nil,Q end
+if c~=b.path and
+c:sub(1,#b.path+1)~=b.path.."/"then return nil,Q end;return c end;local F={}local M=1
+local function V(a)
+for c,b in pairs(F)do
+for e,d in pairs(b)do if a- (d.last or 0)>P then
+pcall(function()if
+d.h and d.h.close then d.h:close()end end)b[e]=nil end end;if next(b)==nil then F[c]=nil end end end
+local function W(a)local b=0;for c in pairs(F[a]or{})do b=b+1 end;return b end
+function z._dispatch(c,a,b)a=a or{}local e=K and K.uptime()or 0;V(e)
+if c=="space"then
+local f=z._findExport(a.share)local g,h=z._accessOk(f,b,false)if not g then return{err=h}end;return
+{total=A.spaceTotal and
+A.spaceTotal(f.path)or 0,used=
+A.spaceUsed and A.spaceUsed(f.path)or 0,read_only=f.mode~="rw"}end
+if c=="stat"then local g=z._findExport(a.share)
+local h,i=z._accessOk(g,b,false)if not h then return{err=i}end;local f,j=z._confine(g,a.path)if not f then
+return{err=j}end
+if not A.exists(f)then return{exists=false}end;return
+{exists=true,is_dir=A.isDirectory(f)and true or false,size=A.size and A.size(f)or 0,mtime=
+A.lastModified and A.lastModified(f)or 0}end
+if c=="list"then local g=z._findExport(a.share)
+local j,k=z._accessOk(g,b,false)if not j then return{err=k}end;local h,l=z._confine(g,a.path)if not h then
+return{err=l}end;local f=A.list(h)
+if type(f)~="table"then return{entries={}}end;local i={}for m=1,math.min(#f,N)do i[m]=f[m]end
+return{entries=i,truncated=#f>N}end
+if c=="mkdir"then local f=z._findExport(a.share)
+local h,i=z._accessOk(f,b,true)if not h then return{err=i}end;local g,j=z._confine(f,a.path)if not g then
+return{err=j}end;return
+{ok=A.makeDirectory(g)and true or false}end
+if c=="remove"then local f=z._findExport(a.share)
+local h,i=z._accessOk(f,b,true)if not h then return{err=i}end;local g,j=z._confine(f,a.path)if not g then
+return{err=j}end
+return{ok=A.remove(g)and true or false}end
+if c=="rename"then local f=z._findExport(a.share)
+local i,j=z._accessOk(f,b,true)if not i then return{err=j}end;local g,k=z._confine(f,a.path)if not g then
+return{err=k}end;local h,l=z._confine(f,a.to)if not h then return{err=l}end;return{ok=
+A.rename(g,h)and true or false}end
+if c=="open"then local f=a.mode or"r"local m={r=true,rb=true}
+local i={w=true,wb=true,a=true,ab=true}if type(f)~=I or not(m[f]or i[f])then
+return{err="bad_mode"}end;local n=i[f]==true
+local g=z._findExport(a.share)local o,p=z._accessOk(g,b,n)if not o then return{err=p}end
+local j,q=z._confine(g,a.path)if not j then return{err=q}end
+if W(b)>=O then return{err="too_many_handles"}end;local k,r=A.open(j,f)if not k then
+return{err="open_failed: "..tostring(r)}end;local l=M;M=M+1;F[b]=F[b]or{}
+F[b][l]={h=k,export=g,mode=f,last=e}return{handle_id=l}end
+local d=a.handle_id and F[b]and F[b][a.handle_id]
+if c=="read"then if not d then return{err=R}end;d.last=e
+local f=tonumber(a.n)or G;if f>G then f=G end;local g=d.h:read(f)if g==nil then return{eof=true}end;return
+{data=g,eof=false}end
+if c=="write"then if not d then return{err=R}end;if d.export.mode~="rw"then return
+{err="read_only_export"}end;d.last=e;local f=a.data;if
+type(f)~=I then return{err="invalid_data"}end;if#f>G then return
+{err="chunk_too_large"}end;local g=d.h:write(f)return{ok=g and true or false,written=
+#f}end
+if c=="close"then if not d then return{ok=true}end
+pcall(function()d.h:close()end)F[b][a.handle_id]=nil;return{ok=true}end;if c=="seek"then if not d then return{err=R}end;d.last=e
+return{pos=d.h:seek(a.whence or"set",
+tonumber(a.offset)or 0)}end;return
+{err="unknown_op"}end
+function z.handleRequest(b,a)if not(B and C)then return end;if not L then return end
+local function c()
+local f=C.makePacket(C.TYPE.NETFS_RES,{req_id=
+b and b.payload and b.payload.req_id,err="denied"},{to=a})B.send(a,f)end
+if not(E and E.getLevel and E.LEVEL)then return c()end
+if E.getLevel(a)<E.LEVEL.TRUSTED then if D and D.warn then
+D.warn("netfs","request from non-trusted peer "..
+tostring(a):sub(1,8))end;return c()end
+if B.verifyPeer then local f=B.verifyPeer(a)
+if not f then if D and D.warn then
+D.warn("netfs","verification failed for "..
+tostring(a):sub(1,8))end;return c()end end;local d=b.payload or{}local e=z._dispatch(d.op,d,a)
+e.req_id=d.req_id
+B.send(a,C.makePacket(C.TYPE.NETFS_RES,e,{to=a}))end
+local function X(a)local b=0
+return
+function(d,c)if not(B and C)then return nil,"no_network"end;b=b+1;local f=b
+c.op=d;c.req_id=f;local e,g=false,nil
+local h=B.on(C.TYPE.NETFS_RES,function(j,k)if k~=a then return end
+local l=j.payload or{}if l.req_id~=f then return end;e,g=true,l end)
+local i=B.send(a,C.makePacket(C.TYPE.NETFS_REQ,c,{to=a}))
+if not i then B.off(C.TYPE.NETFS_RES,h)return nil,"send_failed"end;B.waitFor(function()return e end,S)
+B.off(C.TYPE.NETFS_RES,h)if not e then return nil,"timeout"end;return g end end
+function z.attach(c,a,b)b=b or{}local m=b.transport or X(c)local d={}
+d.address="netfs:"..
+tostring(c):sub(1,8)..":"..tostring(a)
+function d.getLabel()return"netfs("..tostring(a)..")"end
+local function e(o,n)n=n or{}n.share=a;local p,q=m(o,n)
+if not p then return nil,q or"no_reply"end;if p.err then return nil,p.err end;return p end;d._call=e;local l,g=-math.huge,nil
+local function i()
+local n=K and K.uptime()or 0;if g and(n-l)<T then return g end;local o=e("space")if o then g=o;l=n end;return g end
+function d.spaceTotal()local n=i()return n and n.total or 0 end;function d.spaceUsed()local n=i()return n and n.used or 0 end
+function d.isReadOnly()
+local n=i()return n and n.read_only or false end;local function h(n)local o=e("stat",{path=n})return o end
+function d.exists(n)
+local o=h(n)return o~=nil and o.exists==true end
+function d.isDirectory(n)local o=h(n)return o~=nil and o.is_dir==true end;function d.size(n)local o=h(n)return o and o.size or 0 end;function d.lastModified(n)
+local o=h(n)return o and o.mtime or 0 end;function d.list(n)
+local o=e("list",{path=n})return o and o.entries or{}end
+function d.makeDirectory(n)
+local o=e("mkdir",{path=n})return o~=nil and o.ok==true end;function d.remove(n)local o=e("remove",{path=n})
+return o~=nil and o.ok==true end
+function d.rename(n,o)
+local p=e("rename",{path=n,to=o})if not p then return false end;return p.ok==true end;local f,j={},1
+function d.open(o,n)n=n or"r"local p,r=e("open",{path=o,mode=n})if not p then
+return nil,r end;local q=j;j=j+1
+f[q]={remote=p.handle_id,mode=n,buf="",pos=1,eof=false,wbuf={},wlen=0}return q end
+function d.read(p,o)local n=f[p]if not n then return nil end;o=tonumber(o)or G
+while(
+#n.buf-n.pos+1)<o and not n.eof do
+local t=e("read",{handle_id=n.remote,n=G})
+if not t or t.eof or not t.data then n.eof=true;break end;n.buf=n.buf:sub(n.pos)..t.data;n.pos=1 end;local q=#n.buf-n.pos+1;if q<=0 then return nil end
+local r=o<q and o or q;local s=n.buf:sub(n.pos,n.pos+r-1)n.pos=n.pos+r;return s end
+local function k(n)if n.wlen==0 then return true end;local o=table.concat(n.wbuf)
+n.wbuf,n.wlen={},0
+while#o>0 do local q=o:sub(1,G)o=o:sub(G+1)
+local p=e("write",{handle_id=n.remote,data=q})if not p or p.ok~=true then return false end end;return true end
+function d.write(o,n)local p=f[o]if not p then return false end
+if type(n)~=I then return false end;p.wbuf[#p.wbuf+1]=n;p.wlen=p.wlen+#n
+if p.wlen>=G then return k(p)end;return true end
+function d.close(n)local o=f[n]if not o then return true end;local p=k(o)
+e("close",{handle_id=o.remote})f[n]=nil;return p end
+function d.seek(n,o,p)local q=f[n]if not q then return nil end;k(q)
+local r=e("seek",{handle_id=q.remote,whence=o,offset=p})q.buf,q.pos,q.eof="",1,false;return r and r.pos or nil end;return d end
+z._internal={BLOCK=G,MAX_HANDLES=O,MAX_LIST=N,HANDLE_IDLE=P,handles=function()return F end,resetHandles=function()F={}M=1 end}
+do local a=rawget(_G,"_TOS")
+if a and a.net and not B then
+local b=pcall(z.init,{net=a.net,fs=a.fs,trust=a.net.getTrust and
+a.net.getTrust()or nil,log=a.logObj})if
+b and a.net.getServiceArm and a.net.getServiceArm("netfsd")then z.arm(true)end end end;return z

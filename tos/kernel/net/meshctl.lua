@@ -1,427 +1,169 @@
-local mesh = require("kernel.net.mesh")
-local meshctl = {}
-meshctl.__index = meshctl
-meshctl.RELAY_BUDGET = 32
-meshctl.MAX_PAYLOAD = 8192
---! Reliability (Sep 2026: the operator's design, after the relay-flood fix).
---!   * A relay keeps up to mesh.RELAY_HOLD_MAX passed-through copies while it
---!     has the memory for them, and sheds them, oldest first, as soon as free
---!     memory falls under RELAY_FLOOR. They are a courtesy, never a promise.
---!   * The SENDER is the one that promises. It keeps its own copy until the
---!     receiver acknowledges it, and instead of re-flooding the whole message
---!     every retry window it floods a small PROBE ("do you have <id>?"). The
---!     receiver answers ACK if it has it and WANT if it never saw it. Only a
---!     WANT -- or FULL_EVERY probes with no answer, which is also how an
---!     older node that ignores probes still gets its mail -- sends the whole
---!     message again, under a new resend counter so that relays which saw the
---!     first flood pass it on (mesh.seenKey).
---!   * An ACK or WANT about a sealed message carries a MAC under the secret
---!     the two ends share, so a node in between cannot say "delivered" for a
---!     message that was not, and leave it a ghost.
---!   * Both ends survive a reset: the sender's messages awaiting delivery and
---!     the receiver's recently delivered ids live in `store` (the kernel keeps
---!     them in /var/lib/mesh, admin-read-only). Message ids carry a per-boot
---!     prefix: they used to restart at the same numbers after a reboot, and a
---!     receiver that remembered the old ones dropped the new messages as
---!     duplicates.
---!   * Keeping its OWN side is enough for a node to hold a whole
---!     conversation: the other side is what it received.
---! (test_mesh_reliability.lua)
-meshctl.RELAY_FLOOR = 48 * 1024
-meshctl.FULL_EVERY = 4
-meshctl.ORIGIN_MAX = 16
-meshctl.DELIVERED_MAX = 64
-meshctl.ORIGIN_TTL = 3600
-local crypto, serialize, log
-local clock = function() return 0 end
-function meshctl.init(modules)
-modules = modules or {}
-crypto = modules.crypto
-serialize = modules.serialize or require("kernel.serialize")
-log = modules.log
-if modules.clock then clock = modules.clock end
-end
-function meshctl.sealEnv(env, secret)
-if not (crypto and secret and secret ~= "") then
-env.sealed = nil
-return env
-end
-local plain = serialize.encode(env.payload or {})
-local ct, method = crypto.encrypt(plain, secret)
-local nonce = crypto.salt and crypto.salt(16) or ""
-env.sealed = ct
-env.encMethod = method
-env.nonce = nonce
-env.mac = crypto.hmac(secret, table.concat({
-tostring(env.id), tostring(env.from), tostring(env.to),
-tostring(env.svc), method or "", nonce, ct }, "\0"))
-env.payload = nil
-return env
-end
-function meshctl.openEnv(env, secret)
-if not env.sealed then
-return env.payload or {}, "plaintext"
-end
-if not (crypto and secret and secret ~= "") then
-return nil, "sealed but no secret"
-end
-local expect = crypto.hmac(secret, table.concat({
-tostring(env.id), tostring(env.from), tostring(env.to),
-tostring(env.svc), env.encMethod or "", env.nonce or "", env.sealed }, "\0"))
-local eq = crypto.ctEquals or function(a, b) return a == b end
-if not eq(expect, env.mac or "") then
-return nil, "MAC mismatch (tampered or wrong key)"
-end
-local plain = crypto.decrypt(env.sealed, secret, env.encMethod)
-if not plain then return nil, "decryption failed" end
-local ok, parsed = pcall(serialize.decode, plain, { maxBytes = meshctl.MAX_PAYLOAD + 512 })
-if not ok or type(parsed) ~= "table" then return nil, "corrupt sealed payload" end
-return parsed, "sealed"
-end
-local function replyMac(secret, kind, msgId, from, to)
-if not (crypto and crypto.hmac and secret and secret ~= "") then return nil end
-return crypto.hmac(secret, table.concat({
-tostring(kind), tostring(msgId), tostring(from), tostring(to) }, "\0"))
-end
-meshctl._replyMac = replyMac
-function meshctl.compose(opts)
-opts = opts or {}
-local env = mesh.newEnvelope(opts.from, opts.to, {
-id = opts.id, seq = opts.seq, ttl = opts.ttl,
-fromUser = opts.fromUser, user = opts.user,
-ts = opts.ts or clock(),
-kind = "msg",
-})
-env.svc = opts.svc
-env.payload = opts.payload or {}
-return meshctl.sealEnv(env, opts.secret)
-end
-function meshctl.ingest(env, selfAddr, isForMe, seen, secretFor)
-local r = mesh.route(env, selfAddr, isForMe, seen)
-local act = { dup = r.dup, forward = r.forward, out = r.out, deliver = false }
-if r.dup or not r.deliver then return act end
-if env.kind == "ack" or env.kind == "probe" or env.kind == "want" then
-act.deliver = true
-act.kind = env.kind
-act.ackId = env.ackId
-return act
-end
-local secret = secretFor and secretFor(env.from) or nil
-local content, how = meshctl.openEnv(env, secret)
-act.deliver = true
-act.kind = "msg"
-act.svc = env.svc
-act.message = {
-id = env.id, from = env.from, fromUser = env.fromUser,
-to = env.to, user = env.user,
-payload = content,
-ts = env.ts, sealed = (env.sealed ~= nil),
-readable = (content ~= nil), how = how,
-}
-if not content and log then
-log.warn("mesh", "Delivered sealed '" .. tostring(env.svc) .. "' from "
-.. tostring(env.from):sub(1, 8) .. " could not be opened: " .. tostring(how))
-end
-if env.to ~= mesh.BROADCAST and env.to ~= nil then
-act.ackTo = env.from
-end
-return act
-end
-local function bootEpoch()
-local raw = crypto and crypto.salt and crypto.salt(4)
-if type(raw) == "string" and #raw >= 4 then
-return (raw:sub(1, 4):gsub(".", function(c) return string.format("%02x", c:byte()) end))
-end
-return string.format("%08x", math.floor((os.time and os.time() or 0) + clock() * 1000) % 0x100000000)
-end
-function meshctl.new(deps)
-deps = deps or {}
-local self = setmetatable({}, meshctl)
-self.myAddr = deps.myAddr
-self.broadcast = deps.broadcast or function() end
-self.secretFor = deps.secretFor or function() return nil end
-self.clock = deps.clock or function() return 0 end
-self.log = deps.log
-self.isForMe = deps.isForMe or function(env)
-return env.to == self.myAddr
-end
-self.freeMemory = deps.freeMemory
-self.store = deps.store
-self.seen = mesh.newSeen()
-self.outbox = mesh.newOutbox()
-self.delivered = { set = {}, order = {} }
-self._handlers = {}
-self._seq = 0
-self._epoch = bootEpoch()
-self._relayWindow, self._relayCount = -1, 0
-self:_load()
-return self
-end
-function meshctl:on(svc, fn)
-self._handlers[svc] = fn
-end
-function meshctl:off(svc)
-self._handlers[svc] = nil
-end
-function meshctl:hasHandler(svc)
-return self._handlers[svc] ~= nil
-end
-function meshctl:_nextId(prefix)
-self._seq = self._seq + 1
-return (prefix or "x") .. ":" .. tostring(self.myAddr) .. ":" .. self._epoch
-.. ":" .. tostring(self._seq)
-end
-function meshctl:_mayRelay()
-local sec = math.floor(self.clock())
-if sec ~= self._relayWindow then
-self._relayWindow, self._relayCount = sec, 0
-end
-if self._relayCount >= meshctl.RELAY_BUDGET then return false end
-self._relayCount = self._relayCount + 1
-return true
-end
-local function freeOf(self)
-if not self.freeMemory then return nil end
-local ok, free = pcall(self.freeMemory)
-if ok and type(free) == "number" then return free end
-return nil
-end
-function meshctl:_canHold(bytes)
-local free = freeOf(self)
-if free == nil then return bytes <= mesh.RELAY_HOLD_BYTES end
-return free - bytes >= meshctl.RELAY_FLOOR
-end
-function meshctl:_memoryLow()
-local free = freeOf(self)
-return free ~= nil and free < meshctl.RELAY_FLOOR
-end
-function meshctl:_noteDelivered(id)
-local d = self.delivered
-if d.set[id] then return end
-d.set[id] = true
-d.order[#d.order + 1] = id
-while #d.order > meshctl.DELIVERED_MAX do
-d.set[table.remove(d.order, 1)] = nil
-end
-end
-function meshctl:_save()
-local st = self.store
-if not (st and st.save) then return end
-local now = self.clock()
-local out = {}
-for _, it in pairs(self.outbox.items) do
-if not it.relay then
-out[#out + 1] = { env = it.env, rs = it.rs, probes = it.probes,
-left = it.deadline and (it.deadline - now) or nil }
-end
-end
-local okS, err = pcall(st.save, { outbox = out, delivered = self.delivered.order })
-if not okS and self.log then
-self.log.warn("mesh", "could not save mesh state: " .. tostring(err))
-end
-end
-function meshctl:_load()
-local st = self.store
-if not (st and st.load) then return end
-local okL, state = pcall(st.load)
-if not okL or type(state) ~= "table" then return end
-local now = self.clock()
-for _, rec in ipairs(type(state.outbox) == "table" and state.outbox or {}) do
-local env = type(rec) == "table" and rec.env or nil
-if type(env) == "table" and type(env.id) == "string" then
-local left = tonumber(rec.left) or meshctl.ORIGIN_TTL
-mesh.enqueue(self.outbox, env, { interval = mesh.RETRY_EVERY, deadline = now + left }, now)
-local it = self.outbox.items[env.id]
-if it then it.rs = tonumber(rec.rs); it.probes = tonumber(rec.probes) or 0 end
-mesh.sawBefore(self.seen, env.id)
-end
-end
-for _, id in ipairs(type(state.delivered) == "table" and state.delivered or {}) do
-if type(id) == "string" then self:_noteDelivered(id) end
-end
-end
-function meshctl:_reply(kind, msgId, to)
-local env = mesh.newEnvelope(self.myAddr, to, {
-id = self:_nextId(kind:sub(1, 1)), kind = kind, ts = self.clock() })
-if kind == "ack" then env.ackId = msgId else env.wantId = msgId end
-env.mac = replyMac(self.secretFor(to), kind, msgId, self.myAddr, to)
-mesh.sawBefore(self.seen, env.id)
-self.broadcast(env)
-return env
-end
-function meshctl:_verifyReply(kind, it, env)
-if env.from ~= it.env.to then return false end
-if not it.env.sealed then return true end
-local expect = replyMac(self.secretFor(it.env.to), kind, it.env.id, env.from, env.to)
-local eq = (crypto and crypto.ctEquals) or function(a, b) return a == b end
-return expect ~= nil and type(env.mac) == "string" and eq(expect, env.mac)
-end
-function meshctl:_resend(it)
-it.rs = (it.rs or 0) + 1
-it.probes = 0
-it.lastSent = self.clock()
-local out = {}
-for k, v in pairs(it.env) do out[k] = v end
-out.rs = it.rs
-out.path = {}
-mesh.sawBefore(self.seen, mesh.seenKey(out))
-self.broadcast(out)
-end
-function meshctl:_probe(it)
-local env = mesh.newEnvelope(self.myAddr, it.env.to, {
-id = self:_nextId("p"), kind = "probe", ts = self.clock() })
-env.probeId = it.env.id
-mesh.sawBefore(self.seen, env.id)
-self.broadcast(env)
-end
-function meshctl:_onAck(env)
-local it = type(env.ackId) == "string" and self.outbox.items[env.ackId]
-if not it or it.relay then return end
-if not self:_verifyReply("ack", it, env) then
-if self.log then
-self.log.warn("mesh", "ignored an ACK that does not verify: " .. tostring(env.ackId))
-end
-return
-end
-mesh.ack(self.outbox, env.ackId)
-self:_save()
-end
-function meshctl:_onProbe(env)
-local id = env.probeId
-if type(id) ~= "string" or #id > mesh.MAX_ID then return end
-if self.delivered.set[id] then
-self:_reply("ack", id, env.from)
-elseif not self.seen.set[id] then
-self:_reply("want", id, env.from)
-end
-end
-function meshctl:_onWant(env)
-local it = type(env.wantId) == "string" and self.outbox.items[env.wantId]
-if not it or it.relay then return end
-if not self:_verifyReply("want", it, env) then return end
-if it.lastSent and self.clock() - it.lastSent < mesh.RETRY_EVERY / 2 then return end
-self:_resend(it)
-end
-function meshctl:send(opts)
-opts = opts or {}
-if type(opts.svc) ~= "string" or opts.svc == "" then
-return nil, "mesh send needs a service kind (svc)"
-end
-local unicast = (opts.to ~= nil and opts.to ~= mesh.BROADCAST)
-local secret = unicast and self.secretFor(opts.to) or nil
-if not secret and not opts.allowPlaintext then
-if unicast then
-return nil, "no shared secret with " .. tostring(opts.to):sub(1, 8)
-.. "... — pair first (net pair) or allow plaintext explicitly"
-end
-return nil, "broadcasts can't be sealed — allow plaintext explicitly"
-end
-if unicast then
-local waiting = self:pending()
-if waiting >= meshctl.ORIGIN_MAX then
-return nil, "mesh outbox full: " .. waiting .. " messages are still awaiting delivery"
-end
-end
-local id = self:_nextId(opts.svc:sub(1, 1))
-local env = meshctl.compose({
-from = self.myAddr, to = opts.to, svc = opts.svc,
-fromUser = opts.fromUser, user = opts.user,
-payload = opts.payload,
-secret = secret, id = id, ttl = opts.ttl, ts = self.clock(),
-})
-if unicast then
-local now = self.clock()
-mesh.enqueue(self.outbox, env, { interval = mesh.RETRY_EVERY,
-deadline = now + meshctl.ORIGIN_TTL }, now)
-local it = self.outbox.items[id]
-if it then it.nextAt = now + mesh.RETRY_EVERY; it.lastSent = now end
-self:_save()
-end
-mesh.sawBefore(self.seen, id)
-self.broadcast(env)
-return id, (secret ~= nil)
-end
-function meshctl:onPacket(env)
-local unicast = type(env) == "table" and env.to ~= mesh.BROADCAST and env.to ~= nil
-local act = meshctl.ingest(env, self.myAddr, self.isForMe, self.seen, self.secretFor)
-if type(env) == "table" and env.kind == "ack" and type(env.ackId) == "string" then
-mesh.ackRelay(self.outbox, env.ackId)
-end
-if act.forward and act.out then
-if self:_mayRelay() then
-self.broadcast(act.out)
-if env.kind == "msg" and unicast then
-mesh.enqueue(self.outbox, act.out, { relay = true,
-canHold = function(b) return self:_canHold(b) end }, self.clock())
-end
-elseif self.log then
-self.log.warn("mesh", "relay budget exceeded; dropping a forward")
-end
-end
-if act.dup and unicast and env.kind == "msg" and self.delivered.set[env.id]
-and self.isForMe(env) then
-self:_reply("ack", env.id, env.from)
-end
-if act.deliver then
-if act.kind == "ack" then
-self:_onAck(env)
-elseif act.kind == "probe" then
-self:_onProbe(env)
-elseif act.kind == "want" then
-self:_onWant(env)
-elseif act.kind == "msg" and act.message then
-local handled = false
-if act.ackTo and self.delivered.set[env.id] then
-handled = true
-else
-local h = self._handlers[act.svc or ""]
-if h then
-local ok, res = pcall(h, act.message, env)
-handled = ok and res and true or false
-if not ok and self.log then
-self.log.warn("mesh", "'" .. tostring(act.svc) .. "' handler error: " .. tostring(res))
-end
-elseif self.log then
-self.log.warn("mesh", "no local service for mesh kind '"
-.. tostring(act.svc) .. "' (message from "
-.. tostring(env.from):sub(1, 8) .. " dropped, not ACKed)")
-end
-if handled and act.ackTo then
-self:_noteDelivered(env.id)
-self:_save()
-end
-end
-if act.ackTo and handled then
-self:_reply("ack", env.id, act.ackTo)
-end
-act.handled = handled
-end
-end
-return act
-end
-function meshctl:tick(now)
-now = now or self.clock()
-if self:_memoryLow() then mesh.shedRelays(self.outbox, 0) end
-local items, dropped = mesh.dueItems(self.outbox, now)
-for _, it in ipairs(items) do
-if it.relay then
-self.broadcast(it.env)
-else
-it.probes = (it.probes or 0) + 1
-if it.probes >= meshctl.FULL_EVERY then
-self:_resend(it)
-else
-self:_probe(it)
-end
-end
-end
-if dropped > 0 then self:_save() end
-end
-function meshctl:pending()
-local n = 0
-for _, it in pairs(self.outbox.items) do
-if not it.relay then n = n + 1 end
-end
-return n
-end
-return meshctl
+local n="string"local l=require("kernel.net.mesh")local k={}k.__index=k
+k.RELAY_BUDGET=32;k.MAX_PAYLOAD=8192;k.RELAY_FLOOR=48*1024;k.FULL_EVERY=4;k.ORIGIN_MAX=16
+k.DELIVERED_MAX=64;k.ORIGIN_TTL=3600;local m,o,p;local q=function()return 0 end
+function k.init(a)a=a or{}
+m=a.crypto
+o=a.serialize or require("kernel.serialize")p=a.log;if a.clock then q=a.clock end end
+function k.sealEnv(a,b)
+if not(m and b and b~="")then a.sealed=nil;return a end;local f=o.encode(a.payload or{})local c,d=m.encrypt(f,b)local e=m.salt and
+m.salt(16)or""a.sealed=c;a.encMethod=d;a.nonce=e
+a.mac=m.hmac(b,table.concat({tostring(a.id),tostring(a.from),tostring(a.to),tostring(a.svc),
+d or"",e,c},"\0"))a.payload=nil;return a end
+function k.openEnv(a,b)
+if not a.sealed then return a.payload or{},"plaintext"end
+if not(m and b and b~="")then return nil,"sealed but no secret"end
+local e=m.hmac(b,table.concat({tostring(a.id),tostring(a.from),tostring(a.to),tostring(a.svc),
+a.encMethod or"",a.nonce or"",a.sealed},"\0"))local f=m.ctEquals or function(h,i)return h==i end
+if not f(e,
+a.mac or"")then return nil,"MAC mismatch (tampered or wrong key)"end;local c=m.decrypt(a.sealed,b,a.encMethod)if not c then
+return nil,"decryption failed"end
+local g,d=pcall(o.decode,c,{maxBytes=k.MAX_PAYLOAD+512})
+if not g or type(d)~="table"then return nil,"corrupt sealed payload"end;return d,"sealed"end
+local function r(a,b,c,d,e)if not(m and m.hmac and a and a~="")then
+return nil end;return
+m.hmac(a,table.concat({tostring(b),tostring(c),tostring(d),tostring(e)},"\0"))end;k._replyMac=r
+function k.compose(a)a=a or{}
+local b=l.newEnvelope(a.from,a.to,{id=a.id,seq=a.seq,ttl=a.ttl,fromUser=a.fromUser,user=a.user,ts=a.ts or q(),kind="msg"})b.svc=a.svc;b.payload=a.payload or{}
+return k.sealEnv(b,a.secret)end
+function k.ingest(a,c,d,e,b)local g=l.route(a,c,d,e)
+local f={dup=g.dup,forward=g.forward,out=g.out,deliver=false}if g.dup or not g.deliver then return f end
+if a.kind=="ack"or
+a.kind=="probe"or a.kind=="want"then f.deliver=true
+f.kind=a.kind;f.ackId=a.ackId;return f end;local j=b and b(a.from)or nil;local h,i=k.openEnv(a,j)
+f.deliver=true;f.kind="msg"f.svc=a.svc
+f.message={id=a.id,from=a.from,fromUser=a.fromUser,to=a.to,user=a.user,payload=h,ts=a.ts,sealed=(a.sealed~=nil),readable=(h~=nil),how=i}
+if not h and p then
+p.warn("mesh","Delivered sealed '"..tostring(a.svc)..
+"' from "..
+tostring(a.from):sub(1,8).." could not be opened: "..tostring(i))end
+if a.to~=l.BROADCAST and a.to~=nil then f.ackTo=a.from end;return f end
+local function t()local a=m and m.salt and m.salt(4)
+if type(a)==n and#a>=4 then return
+(a:sub(1,4):gsub(".",function(b)return
+string.format("%02x",b:byte())end))end;return
+string.format("%08x",math.floor((os.time and os.time()or 0)+
+q()*1000)%0x100000000)end
+function k.new(a)a=a or{}local b=setmetatable({},k)b.myAddr=a.myAddr;b.broadcast=a.broadcast or
+function()end
+b.secretFor=a.secretFor or function()return nil end;b.clock=a.clock or function()return 0 end;b.log=a.log
+b.isForMe=
+a.isForMe or function(c)return c.to==b.myAddr end;b.freeMemory=a.freeMemory;b.store=a.store;b.seen=l.newSeen()
+b.outbox=l.newOutbox()b.delivered={set={},order={}}b._handlers={}b._seq=0;b._epoch=t()b._relayWindow,b._relayCount=
+-1,0;b:_load()return b end;function k:on(a,b)self._handlers[a]=b end;function k:off(a)
+self._handlers[a]=nil end
+function k:hasHandler(a)return self._handlers[a]~=nil end
+function k:_nextId(a)self._seq=self._seq+1;return
+(a or"x")..":"..
+tostring(self.myAddr)..":"..
+self._epoch..":"..tostring(self._seq)end
+function k:_mayRelay()local a=math.floor(self.clock())if a~=self._relayWindow then
+self._relayWindow,self._relayCount=a,0 end;if self._relayCount>=k.RELAY_BUDGET then
+return false end
+self._relayCount=self._relayCount+1;return true end
+local function s(a)if not a.freeMemory then return nil end;local c,b=pcall(a.freeMemory)if c and
+type(b)=="number"then return b end;return nil end
+function k:_canHold(a)local b=s(self)
+if b==nil then return a<=l.RELAY_HOLD_BYTES end;return b-a>=k.RELAY_FLOOR end
+function k:_memoryLow()local a=s(self)return a~=nil and a<k.RELAY_FLOOR end
+function k:_noteDelivered(a)local b=self.delivered;if b.set[a]then return end;b.set[a]=true;b.order[#
+b.order+1]=a;while#b.order>k.DELIVERED_MAX do b.set[table.remove(b.order,1)]=
+nil end end
+function k:_save()local a=self.store;if not(a and a.save)then return end
+local c=self.clock()local b={}
+for g,f in pairs(self.outbox.items)do if not f.relay then
+b[#b+1]={env=f.env,rs=f.rs,probes=f.probes,left=f.deadline and(f.deadline-
+c)or nil}end end
+local d,e=pcall(a.save,{outbox=b,delivered=self.delivered.order})if not d and self.log then
+self.log.warn("mesh","could not save mesh state: "..tostring(e))end end
+function k:_load()local b=self.store;if not(b and b.load)then return end
+local d,a=pcall(b.load)if not d or type(a)~="table"then return end
+local c=self.clock()
+for f,e in
+ipairs(type(a.outbox)=="table"and a.outbox or{})do local g=type(e)=="table"and e.env or nil
+if
+type(g)=="table"and type(g.id)==n then
+local i=tonumber(e.left)or k.ORIGIN_TTL
+l.enqueue(self.outbox,g,{interval=l.RETRY_EVERY,deadline=c+i},c)local h=self.outbox.items[g.id]if h then h.rs=tonumber(e.rs)h.probes=
+tonumber(e.probes)or 0 end
+l.sawBefore(self.seen,g.id)end end
+for f,e in
+ipairs(type(a.delivered)=="table"and a.delivered or{})do if type(e)==n then self:_noteDelivered(e)end end end
+function k:_reply(a,b,c)
+local d=l.newEnvelope(self.myAddr,c,{id=self:_nextId(a:sub(1,1)),kind=a,ts=self.clock()})if a=="ack"then d.ackId=b else d.wantId=b end
+d.mac=r(self.secretFor(c),a,b,self.myAddr,c)l.sawBefore(self.seen,d.id)self.broadcast(d)return d end
+function k:_verifyReply(c,b,a)if a.from~=b.env.to then return false end;if not b.env.sealed then
+return true end
+local d=r(self.secretFor(b.env.to),c,b.env.id,a.from,a.to)
+local e=(m and m.ctEquals)or function(f,g)return f==g end
+return d~=nil and type(a.mac)==n and e(d,a.mac)end
+function k:_resend(a)a.rs=(a.rs or 0)+1;a.probes=0
+a.lastSent=self.clock()local b={}for c,d in pairs(a.env)do b[c]=d end;b.rs=a.rs;b.path={}
+l.sawBefore(self.seen,l.seenKey(b))self.broadcast(b)end
+function k:_probe(a)
+local b=l.newEnvelope(self.myAddr,a.env.to,{id=self:_nextId("p"),kind="probe",ts=self.clock()})b.probeId=a.env.id;l.sawBefore(self.seen,b.id)
+self.broadcast(b)end
+function k:_onAck(a)
+local b=type(a.ackId)==n and self.outbox.items[a.ackId]if not b or b.relay then return end
+if
+not self:_verifyReply("ack",b,a)then if self.log then
+self.log.warn("mesh","ignored an ACK that does not verify: "..tostring(a.ackId))end;return end;l.ack(self.outbox,a.ackId)self:_save()end
+function k:_onProbe(a)local b=a.probeId
+if type(b)~=n or#b>l.MAX_ID then return end
+if self.delivered.set[b]then self:_reply("ack",b,a.from)elseif not
+self.seen.set[b]then self:_reply("want",b,a.from)end end
+function k:_onWant(a)
+local b=type(a.wantId)==n and self.outbox.items[a.wantId]if not b or b.relay then return end;if
+not self:_verifyReply("want",b,a)then return end
+if b.lastSent and self.clock()-b.lastSent<
+l.RETRY_EVERY/2 then return end;self:_resend(b)end
+function k:send(a)a=a or{}if type(a.svc)~=n or a.svc==""then
+return nil,"mesh send needs a service kind (svc)"end
+local b=(a.to~=nil and a.to~=l.BROADCAST)local d=b and self.secretFor(a.to)or nil
+if
+not d and not a.allowPlaintext then
+if b then return nil,
+"no shared secret with "..
+tostring(a.to):sub(1,8).."... — pair first (net pair) or allow plaintext explicitly"end;return nil,"broadcasts can't be sealed — allow plaintext explicitly"end;if b then local f=self:pending()
+if f>=k.ORIGIN_MAX then return nil,"mesh outbox full: "..
+f.." messages are still awaiting delivery"end end
+local c=self:_nextId(a.svc:sub(1,1))
+local e=k.compose({from=self.myAddr,to=a.to,svc=a.svc,fromUser=a.fromUser,user=a.user,payload=a.payload,secret=d,id=c,ttl=a.ttl,ts=self.clock()})
+if b then local f=self.clock()
+l.enqueue(self.outbox,e,{interval=l.RETRY_EVERY,deadline=f+k.ORIGIN_TTL},f)local g=self.outbox.items[c]if g then g.nextAt=f+l.RETRY_EVERY
+g.lastSent=f end;self:_save()end;l.sawBefore(self.seen,c)self.broadcast(e)
+return c, (d~=nil)end
+function k:onPacket(a)
+local c=type(a)=="table"and a.to~=l.BROADCAST and a.to~=nil
+local b=k.ingest(a,self.myAddr,self.isForMe,self.seen,self.secretFor)
+if
+type(a)=="table"and a.kind=="ack"and type(a.ackId)==n then l.ackRelay(self.outbox,a.ackId)end
+if b.forward and b.out then
+if self:_mayRelay()then self.broadcast(b.out)if
+a.kind=="msg"and c then
+l.enqueue(self.outbox,b.out,{relay=true,canHold=function(d)return self:_canHold(d)end},self.clock())end elseif self.log then
+self.log.warn("mesh","relay budget exceeded; dropping a forward")end end;if
+b.dup and c and a.kind=="msg"and self.delivered.set[a.id]and self.isForMe(a)then
+self:_reply("ack",a.id,a.from)end
+if b.deliver then
+if
+b.kind=="ack"then self:_onAck(a)elseif b.kind=="probe"then self:_onProbe(a)elseif b.kind=="want"then
+self:_onWant(a)elseif b.kind=="msg"and b.message then local d=false
+if b.ackTo and
+self.delivered.set[a.id]then d=true else local e=self._handlers[b.svc or""]
+if e then
+local f,g=pcall(e,b.message,a)d=f and g and true or false;if not f and self.log then
+self.log.warn("mesh",
+"'"..tostring(b.svc).."' handler error: "..tostring(g))end elseif self.log then
+self.log.warn("mesh",
+"no local service for mesh kind '"..
+tostring(b.svc).."' (message from "..
+tostring(a.from):sub(1,8).." dropped, not ACKed)")end
+if d and b.ackTo then self:_noteDelivered(a.id)self:_save()end end
+if b.ackTo and d then self:_reply("ack",a.id,b.ackTo)end;b.handled=d end end;return b end
+function k:tick(a)a=a or self.clock()if self:_memoryLow()then
+l.shedRelays(self.outbox,0)end;local b,c=l.dueItems(self.outbox,a)
+for e,d in
+ipairs(b)do if d.relay then self.broadcast(d.env)else
+d.probes=(d.probes or 0)+1
+if d.probes>=k.FULL_EVERY then self:_resend(d)else self:_probe(d)end end end;if c>0 then self:_save()end end;function k:pending()local a=0
+for c,b in pairs(self.outbox.items)do if not b.relay then a=a+1 end end;return a end;return k

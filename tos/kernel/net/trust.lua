@@ -1,435 +1,106 @@
-local computer = require("computer")
-local serialize = require("kernel.serialize")
-local trust = {}
-local LEVEL = {
-BLOCKED = -1,
-UNKNOWN = 0,
-KNOWN = 1,
-TRUSTED = 2,
-}
-local PERMISSIONS = {
-[LEVEL.BLOCKED] = {},
-[LEVEL.UNKNOWN] = {
-ping = true, pong = true,
-cl_pair_init = true,
-cl_pair_conf = true,
-},
---! The pairing pair is allowed at EVERY level below BLOCKED, not only at
---! UNKNOWN. A Manager trusts its Master BEFORE the round trip (cluster-
---! manager's pair: "apply locally FIRST"), so the Master's confirm arrives
---! from a TRUSTED peer -- and was refused right here. Every pairing through
---! the wizard reported "no confirm received" while the Master had in fact
---! paired and the Manager went on to register (2-machine headless run,
---! 2026-10-10). Nothing is widened: these packets are authenticated by the
---! pairing code's MAC, not by level, and UNKNOWN peers could already send
---! them. (test_net_trusted_gate.lua)
-[LEVEL.KNOWN] = { ping = true, pong = true, hello = true, hello_ack = true,
-info_req = true, info_res = true,
-trust_req = true, trust_ack = true, trust_deny = true,
-cl_pair_init = true, cl_pair_conf = true },
-[LEVEL.TRUSTED] = { ping = true, pong = true, hello = true, hello_ack = true,
-info_req = true, info_res = true,
-trust_req = true, trust_ack = true, trust_deny = true, trust_rev = true,
-cl_pair_init = true, cl_pair_conf = true,
-msg = true, msg_ack = true,
-file_req = true, file_res = true, file_deny = true,
-challenge = true, chall_res = true,
-remote_exec = true, remote_res = true,
-cl_reg = true,
-cl_reg_ack = true,
-cl_hb = true,
-cl_asn = true,
-cl_asn_ack = true,
-cl_res = true,
-cl_res_chunk = true,
-cl_cancel = true,
-cl_drain = true,
-cl_st_req = true,
-cl_st_res = true,
-rly_fwd = true,
-rly_fail = true,
-peer_st = true,
-st_put = true,
-st_put_ack = true,
-st_put_chunk = true,
-st_ext = true,
-st_rel = true,
-st_list = true,
-st_list_res = true,
-st_err = true,
-ch_pair_init = true,
-ch_pair_conf = true,
-mesh = true,
-mesh_ack = true,
---! Remote filesystem shares (kernel.netfs). Missing
---! from this table since netfs shipped -- the #CLUSTER-1
---! bug again: every NETFS_REQ was refused HERE, at
---! TRUSTED, before netfs.handleRequest (which does its
---! own arm/trust/verifyPeer/ACL checks) ever saw it, so
---! `netfs mount` timed out against every real host.
---! test_netfs.lua drove a fake net and could not see it;
---! test_net_trusted_gate.lua now pins every wire type.
-nfs_req = true,
-nfs_res = true },
-}
-local peers = {}
-local DB_PATH = "/etc/trust.dat"
-local MAX_UNKNOWN_PEERS = 64
-local pendingRequests = {}
-local PENDING_TTL = 300
-local MAX_PENDING = 32
-local fs = nil
-local crypto = nil
-local log = nil
-local config = nil
-local function saveDB()
-if not fs then return false end
-local saveData = {}
-for addr, peer in pairs(peers) do
-saveData[addr] = {
-level = peer.level,
-hostname = peer.hostname,
-firstSeen = peer.firstSeen,
-lastSeen = peer.lastSeen,
-sharedSecret = peer.sharedSecret,
-notes = peer.notes,
-}
-end
-return (fs.writeFileAtomic or fs.writeFile)(DB_PATH, serialize.encode(saveData))
-end
---! A peer's hostname is its own claim about itself. net.lua cleans it on
---! the way in (cleanClaim: a printable string of at most 32, or nil); this
---! holds the same line for any other caller and for names an older build
---! already saved into trust.dat raw.
-local function cleanHostname(v)
-if type(v) ~= "string" then return nil end
-v = v:gsub("%c", ""):sub(1, 32)
-if v == "" then return nil end
-return v
-end
-local VALID_LEVELS = {
-[LEVEL.BLOCKED] = true, [LEVEL.UNKNOWN] = true,
-[LEVEL.KNOWN] = true, [LEVEL.TRUSTED] = true,
-}
-local function loadDB()
-if not fs or not fs.exists(DB_PATH) then return end
-local data, err = fs.readFile(DB_PATH)
-if not data then return end
-local db = serialize.decode(data)
-if type(db) ~= "table" then return end
-peers = db
-for addr, peer in pairs(peers) do
-if not VALID_LEVELS[peer.level] then
-peer.level = LEVEL.UNKNOWN
-end
-peer.hostname = cleanHostname(peer.hostname)
-peer.firstSeen = peer.firstSeen or 0
-peer.lastSeen = peer.lastSeen or 0
-end
-end
-function trust.init(modules)
-fs = modules.fs
-crypto = modules.crypto
-log = modules.log
-config = modules.config
-loadDB()
-local peerCount = 0
-for _ in pairs(peers) do peerCount = peerCount + 1 end
-if log then
-log.info("trust", "Trust manager initialized (" .. peerCount .. " known peers)")
-end
-return true
-end
-local function resolveAddress(partial)
-if not partial then return nil end
-if peers[partial] then return partial end
-local match = nil
-for addr in pairs(peers) do
-if addr:sub(1, #partial) == partial then
-if match then
-return nil
-end
-match = addr
-end
-end
-return match
-end
-function trust.getLevel(address)
-if not address then return LEVEL.UNKNOWN end
-address = resolveAddress(address)
-local peer = peers[address]
-if not peer then return LEVEL.UNKNOWN end
-return peer.level
-end
-function trust.getPeer(address)
-if not address then return nil end
-address = resolveAddress(address)
-return peers[address]
-end
-function trust.isAllowed(address, msgType)
-local level = trust.getLevel(address)
-if level == LEVEL.BLOCKED then return false end
-local perms = PERMISSIONS[level]
-if not perms then return false end
-return perms[msgType] == true
-end
-function trust.seen(address)
-if not peers[address] then
-local unknownCount = 0
-for _, peer in pairs(peers) do
-if peer.level == LEVEL.UNKNOWN then unknownCount = unknownCount + 1 end
-end
-if unknownCount >= MAX_UNKNOWN_PEERS then
-local oldest, oldestTime = nil, math.huge
-for addr, peer in pairs(peers) do
-if peer.level == LEVEL.UNKNOWN and (peer.lastSeen or 0) < oldestTime then
-oldest = addr
-oldestTime = peer.lastSeen or 0
-end
-end
-if oldest then
-peers[oldest] = nil
-if log then log.debug("trust", "Evicted old unknown peer: " .. oldest:sub(1, 8)) end
-end
-end
-peers[address] = {
-level = LEVEL.UNKNOWN,
-hostname = nil,
-firstSeen = computer.uptime(),
-lastSeen = computer.uptime(),
-}
-else
-peers[address].lastSeen = computer.uptime()
-end
-end
-function trust.setLevel(actor, address, level, actorTier)
-actorTier = actorTier or 0
-if actorTier < 2 then
-return false, "Admin privileges required to modify trust"
-end
-local validLevels = {
-[LEVEL.BLOCKED] = true, [LEVEL.UNKNOWN] = true,
-[LEVEL.KNOWN] = true, [LEVEL.TRUSTED] = true,
-}
-if not validLevels[level] then
-return false, "Invalid trust level: " .. tostring(level)
-end
-local resolved = resolveAddress(address)
-if resolved then
-address = resolved
-else
-local ok = type(address) == "string"
-and #address == 36
-and address:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") ~= nil
-if not ok then
-return false, "Ambiguous or invalid address: " .. tostring(address)
-end
-end
-if not peers[address] then
-peers[address] = {
-firstSeen = computer.uptime(),
-lastSeen = computer.uptime(),
-}
-end
-local oldLevel = peers[address].level or LEVEL.UNKNOWN
-peers[address].level = level
-saveDB()
-if log then
-local levelNames = { [-1]="BLOCKED", [0]="UNKNOWN", [1]="KNOWN", [2]="TRUSTED" }
-log.info("trust", string.format("Trust for %s: %s -> %s (by %s)",
-address:sub(1, 8) .. "...",
-levelNames[oldLevel] or "?",
-levelNames[level] or "?",
-actor))
-end
-pendingRequests[address] = nil
-return true
-end
-function trust.trustKnown(actor, address, actorTier)
-return trust.setLevel(actor, address, LEVEL.KNOWN, actorTier)
-end
-function trust.trustFull(actor, address, actorTier)
-return trust.setLevel(actor, address, LEVEL.TRUSTED, actorTier)
-end
-function trust.block(actor, address, actorTier)
-return trust.setLevel(actor, address, LEVEL.BLOCKED, actorTier)
-end
-function trust.revoke(actor, address, actorTier)
-return trust.setLevel(actor, address, LEVEL.UNKNOWN, actorTier)
-end
-function trust.forget(actor, address, actorTier)
-if not address then return false, "No address" end
-actorTier = actorTier or 0
-if actorTier < 2 then
-return false, "Admin privileges required"
-end
-address = resolveAddress(address)
-if not peers[address] then return false, "Peer not found" end
-peers[address] = nil
-pendingRequests[address] = nil
-saveDB()
-if log then
-log.info("trust", "Peer forgotten: " .. address:sub(1, 8) .. " (by " .. actor .. ")")
-end
-return true
-end
-local function requireAdminActor(actor, actorTier, op)
-actorTier = tonumber(actorTier) or 0
-if actorTier < 2 then
-return false, "Admin privileges required to " .. op
-end
-if not actor or actor == "" then
-return false, "Actor required to " .. op
-end
-return true
-end
-function trust.setSecret(actor, address, secret, actorTier)
-local ok, err = requireAdminActor(actor, actorTier, "set peer secret")
-if not ok then return false, err end
-address = resolveAddress(address)
-if not peers[address] then return false, "Unknown peer" end
-if peers[address].level < LEVEL.TRUSTED then
-return false, "Peer must be TRUSTED for shared secrets"
-end
-peers[address].sharedSecret = secret
-saveDB()
-pcall(function()
-local netMod = require("kernel.net")
-if netMod and netMod.invalidateVerification then
-netMod.invalidateVerification(address)
-end
-end)
-if log then
-log.info("trust", "Shared secret " .. (secret and "set" or "cleared")
-.. " for " .. address:sub(1, 8) .. "... (by " .. tostring(actor) .. ")")
-end
-return true
-end
-function trust.getSecret(actor, address, actorTier)
-local ok, err = requireAdminActor(actor, actorTier, "read peer secret")
-if not ok then return nil, err end
-address = resolveAddress(address)
-local peer = peers[address]
-if not peer then return nil, "Unknown peer" end
-if log then
-log.info("trust", "Secret read for " .. address:sub(1, 8) .. "... (by "
-.. tostring(actor) .. ")")
-end
-return peer.sharedSecret
-end
-function trust.generateSecret(actor, address, actorTier)
-local ok, err = requireAdminActor(actor, actorTier, "generate peer secret")
-if not ok then return nil, err end
-if not crypto then return nil, "Crypto not available" end
-local secret = crypto.salt(32)
-local okS, sErr = trust.setSecret(actor, address, secret, actorTier)
-if not okS then return nil, sErr end
-return secret
-end
-local _bootstrapToken = nil
-local _tokenConsumed = false
-function trust._internalGetSecret(address, token)
-if not _bootstrapToken or token ~= _bootstrapToken then
-return nil
-end
-address = resolveAddress(address)
-local peer = peers[address]
-return peer and peer.sharedSecret or nil
-end
-function trust.getBootstrapToken()
-if _tokenConsumed then return nil end
-if not _bootstrapToken then
-if not crypto then return nil end
-_bootstrapToken = crypto.salt(64)
-end
-_tokenConsumed = true
-return _bootstrapToken
-end
-local function expirePendingRequests()
-local now = computer.uptime()
-for addr, req in pairs(pendingRequests) do
-if now - req.time > PENDING_TTL then
-pendingRequests[addr] = nil
-end
-end
-end
-function trust.addPendingRequest(address, hostname)
-hostname = cleanHostname(hostname)
-expirePendingRequests()
-if pendingRequests[address] then
-pendingRequests[address].time = computer.uptime()
-pendingRequests[address].hostname = hostname
-return
-end
-local count = 0
-for _ in pairs(pendingRequests) do count = count + 1 end
-if count >= MAX_PENDING then
-local oldestAddr, oldestTime = nil, math.huge
-for addr, req in pairs(pendingRequests) do
-if req.time < oldestTime then
-oldestAddr = addr
-oldestTime = req.time
-end
-end
-if oldestAddr then pendingRequests[oldestAddr] = nil end
-end
-pendingRequests[address] = {
-time = computer.uptime(),
-hostname = hostname,
-}
-if log then
-log.info("trust", "Trust request from " .. address:sub(1, 8) ..
-" (" .. (hostname or "unknown") .. ")")
-end
-end
-function trust.getPendingRequests()
-expirePendingRequests()
-local copy = {}
-for addr, req in pairs(pendingRequests) do
-copy[addr] = { time = req.time, hostname = req.hostname }
-end
-return copy
-end
-function trust.clearPendingRequest(address)
-pendingRequests[address] = nil
-end
-function trust.listPeers()
-local result = {}
-for addr, peer in pairs(peers) do
-result[#result + 1] = {
-address = addr,
-level = peer.level,
-hostname = peer.hostname,
-firstSeen = peer.firstSeen,
-lastSeen = peer.lastSeen,
-hasSecret = peer.sharedSecret ~= nil,
-notes = peer.notes,
-}
-end
-table.sort(result, function(a, b)
-if a.level ~= b.level then return a.level > b.level end
-return (a.lastSeen or 0) > (b.lastSeen or 0)
-end)
-return result
-end
-function trust.stats()
-local counts = { blocked = 0, unknown = 0, known = 0, trusted = 0 }
-for _, peer in pairs(peers) do
-local l = peer.level
-if l == LEVEL.BLOCKED then counts.blocked = counts.blocked + 1
-elseif l == LEVEL.KNOWN then counts.known = counts.known + 1
-elseif l == LEVEL.TRUSTED then counts.trusted = counts.trusted + 1
-else counts.unknown = counts.unknown + 1 end
-end
-return counts
-end
-function trust.levelName(level)
-if level == LEVEL.BLOCKED then return "BLOCKED"
-elseif level == LEVEL.UNKNOWN then return "UNKNOWN"
-elseif level == LEVEL.KNOWN then return "KNOWN"
-elseif level == LEVEL.TRUSTED then return "TRUSTED"
-else return "?" end
-end
-trust.resolveAddress = resolveAddress
-trust.LEVEL = LEVEL
-return trust
+local D=require("computer")local L=require("kernel.serialize")
+local z={}local y={BLOCKED=-1,UNKNOWN=0,KNOWN=1,TRUSTED=2}
+local P={[y.BLOCKED]={},[y.UNKNOWN]={ping=true,pong=true,cl_pair_init=true,cl_pair_conf=true},[y.KNOWN]={ping=true,pong=true,hello=true,hello_ack=true,info_req=true,info_res=true,trust_req=true,trust_ack=true,trust_deny=true,cl_pair_init=true,cl_pair_conf=true},[y.TRUSTED]={ping=true,pong=true,hello=true,hello_ack=true,info_req=true,info_res=true,trust_req=true,trust_ack=true,trust_deny=true,trust_rev=true,cl_pair_init=true,cl_pair_conf=true,msg=true,msg_ack=true,file_req=true,file_res=true,file_deny=true,challenge=true,chall_res=true,remote_exec=true,remote_res=true,cl_reg=true,cl_reg_ack=true,cl_hb=true,cl_asn=true,cl_asn_ack=true,cl_res=true,cl_res_chunk=true,cl_cancel=true,cl_drain=true,cl_st_req=true,cl_st_res=true,rly_fwd=true,rly_fail=true,peer_st=true,st_put=true,st_put_ack=true,st_put_chunk=true,st_ext=true,st_rel=true,st_list=true,st_list_res=true,st_err=true,ch_pair_init=true,ch_pair_conf=true,mesh=true,mesh_ack=true,nfs_req=true,nfs_res=true}}local A={}local I="/etc/trust.dat"local Q=64;local C={}local R=300;local S=32;local F=nil;local G=nil;local B=nil
+local T=nil
+local function J()if not F then return false end;local a={}for c,b in pairs(A)do
+a[c]={level=b.level,hostname=b.hostname,firstSeen=b.firstSeen,lastSeen=b.lastSeen,sharedSecret=b.sharedSecret,notes=b.notes}end;return
+(
+F.writeFileAtomic or F.writeFile)(I,L.encode(a))end
+local function M(a)if type(a)~="string"then return nil end
+a=a:gsub("%c",""):sub(1,32)if a==""then return nil end;return a end
+local U={[y.BLOCKED]=true,[y.UNKNOWN]=true,[y.KNOWN]=true,[y.TRUSTED]=true}
+local function V()if not F or not F.exists(I)then return end
+local a,c=F.readFile(I)if not a then return end;local b=L.decode(a)
+if type(b)~="table"then return end;A=b
+for e,d in pairs(A)do if not U[d.level]then d.level=y.UNKNOWN end
+d.hostname=M(d.hostname)d.firstSeen=d.firstSeen or 0;d.lastSeen=d.lastSeen or 0 end end
+function z.init(a)F=a.fs;G=a.crypto;B=a.log;T=a.config;V()local b=0;for c in pairs(A)do b=b+1 end;if B then
+B.info("trust",
+"Trust manager initialized ("..b.." known peers)")end;return true end
+local function E(a)if not a then return nil end;if A[a]then return a end;local b=nil
+for c in pairs(A)do if c:sub(1,#a)==a then if
+b then return nil end;b=c end end;return b end
+function z.getLevel(a)if not a then return y.UNKNOWN end;a=E(a)local b=A[a]
+if not b then return y.UNKNOWN end;return b.level end
+function z.getPeer(a)if not a then return nil end;a=E(a)return A[a]end
+function z.isAllowed(a,b)local c=z.getLevel(a)if c==y.BLOCKED then return false end
+local d=P[c]if not d then return false end;return d[b]==true end
+function z.seen(a)
+if not A[a]then local b=0
+for d,c in pairs(A)do if c.level==y.UNKNOWN then b=b+1 end end
+if b>=Q then local c,d=nil,math.huge;for f,e in pairs(A)do
+if e.level==y.UNKNOWN and
+(e.lastSeen or 0)<d then c=f;d=e.lastSeen or 0 end end
+if c then A[c]=nil;if B then
+B.debug("trust",
+"Evicted old unknown peer: "..c:sub(1,8))end end end
+A[a]={level=y.UNKNOWN,hostname=nil,firstSeen=D.uptime(),lastSeen=D.uptime()}else A[a].lastSeen=D.uptime()end end
+function z.setLevel(d,a,b,c)c=c or 0
+if c<2 then return false,"Admin privileges required to modify trust"end
+local f={[y.BLOCKED]=true,[y.UNKNOWN]=true,[y.KNOWN]=true,[y.TRUSTED]=true}
+if not f[b]then return false,"Invalid trust level: "..tostring(b)end;local e=E(a)
+if e then a=e else
+local h=type(a)=="string"and#a==36 and
+a:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$")~=nil;if not h then
+return false,"Ambiguous or invalid address: "..tostring(a)end end
+if not A[a]then A[a]={firstSeen=D.uptime(),lastSeen=D.uptime()}end;local g=A[a].level or y.UNKNOWN;A[a].level=b;J()
+if B then
+local h={[-1]="BLOCKED",[0]="UNKNOWN",[1]="KNOWN",[2]="TRUSTED"}
+B.info("trust",string.format("Trust for %s: %s -> %s (by %s)",a:sub(1,8).."...",h[g]or"?",h[b]or"?",d))end;C[a]=nil;return true end
+function z.trustKnown(a,b,c)return z.setLevel(a,b,y.KNOWN,c)end
+function z.trustFull(a,b,c)return z.setLevel(a,b,y.TRUSTED,c)end
+function z.block(a,b,c)return z.setLevel(a,b,y.BLOCKED,c)end
+function z.revoke(a,b,c)return z.setLevel(a,b,y.UNKNOWN,c)end
+function z.forget(c,a,b)if not a then return false,"No address"end;b=b or 0;if b<2 then return false,
+"Admin privileges required"end;a=E(a)if not A[a]then
+return false,"Peer not found"end;A[a]=nil;C[a]=nil;J()if B then
+B.info("trust","Peer forgotten: "..a:sub(1,8).." (by "..c..
+")")end;return true end
+local function K(b,a,c)a=tonumber(a)or 0;if a<2 then
+return false,"Admin privileges required to "..c end;if not b or b==""then
+return false,"Actor required to "..c end;return true end
+function z.setSecret(b,a,c,d)local e,f=K(b,d,"set peer secret")if not e then return false,f end
+a=E(a)if not A[a]then return false,"Unknown peer"end
+if
+A[a].level<y.TRUSTED then return false,"Peer must be TRUSTED for shared secrets"end;A[a].sharedSecret=c;J()
+pcall(function()local g=require("kernel.net")if
+g and g.invalidateVerification then g.invalidateVerification(a)end end)if B then
+B.info("trust","Shared secret "..
+(c and"set"or"cleared").." for "..a:sub(1,8).."... (by "..
+tostring(b)..")")end;return true end
+function z.getSecret(b,a,c)local e,f=K(b,c,"read peer secret")if not e then return nil,f end
+a=E(a)local d=A[a]if not d then return nil,"Unknown peer"end;if B then
+B.info("trust","Secret read for "..
+a:sub(1,8).."... (by "..tostring(b)..")")end;return d.sharedSecret end
+function z.generateSecret(a,c,b)local e,f=K(a,b,"generate peer secret")
+if not e then return nil,f end;if not G then return nil,"Crypto not available"end
+local d=G.salt(32)local g,h=z.setSecret(a,c,d,b)if not g then return nil,h end;return d end;local H=nil;local N=false
+function z._internalGetSecret(a,b)if not H or b~=H then return nil end;a=E(a)
+local c=A[a]return c and c.sharedSecret or nil end
+function z.getBootstrapToken()if N then return nil end
+if not H then if not G then return nil end;H=G.salt(64)end;N=true;return H end;local function O()local a=D.uptime()
+for b,c in pairs(C)do if a-c.time>R then C[b]=nil end end end
+function z.addPendingRequest(a,b)b=M(b)O()if C[a]then
+C[a].time=D.uptime()C[a].hostname=b;return end;local c=0
+for d in pairs(C)do c=c+1 end
+if c>=S then local d,e=nil,math.huge
+for g,f in pairs(C)do if f.time<e then d=g;e=f.time end end;if d then C[d]=nil end end;C[a]={time=D.uptime(),hostname=b}if B then
+B.info("trust","Trust request from "..a:sub(1,8).." (".. (b or
+"unknown")..")")end end;function z.getPendingRequests()O()local a={}
+for c,b in pairs(C)do a[c]={time=b.time,hostname=b.hostname}end;return a end;function z.clearPendingRequest(a)C[a]=
+nil end
+function z.listPeers()local a={}
+for c,b in pairs(A)do
+a[#a+1]={address=c,level=b.level,hostname=b.hostname,firstSeen=b.firstSeen,lastSeen=b.lastSeen,hasSecret=
+b.sharedSecret~=nil,notes=b.notes}end
+table.sort(a,function(c,d)
+if c.level~=d.level then return c.level>d.level end
+return(c.lastSeen or 0)> (d.lastSeen or 0)end)return a end
+function z.stats()local a={blocked=0,unknown=0,known=0,trusted=0}
+for c,b in pairs(A)do local d=b.level
+if
+d==y.BLOCKED then a.blocked=a.blocked+1 elseif d==y.KNOWN then a.known=a.known+1 elseif d==y.TRUSTED then a.trusted=
+a.trusted+1 else a.unknown=a.unknown+1 end end;return a end
+function z.levelName(a)
+if a==y.BLOCKED then return"BLOCKED"elseif a==y.UNKNOWN then return"UNKNOWN"elseif a==y.KNOWN then return"KNOWN"elseif a==
+y.TRUSTED then return"TRUSTED"else return"?"end end;z.resolveAddress=E;z.LEVEL=y;return z

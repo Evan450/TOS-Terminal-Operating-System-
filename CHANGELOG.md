@@ -9,8 +9,12 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 22 rounds of work:
+Everything since v1.5.0, in 26 rounds of work:
 
+- [A second optimization pass, past the render path](#a-second-optimization-pass-past-the-render-path)
+- [The release build renames its own local variables now](#the-release-build-renames-its-own-local-variables-now)
+- [The render path re-required its own helpers every frame](#the-render-path-re-required-its-own-helpers-every-frame)
+- [A broken source file stripped exactly as cleanly as a good one](#a-broken-source-file-stripped-exactly-as-cleanly-as-a-good-one)
 - [The open queue, worked through](#the-open-queue-worked-through)
 - [Package identity, and dependencies across sources](#package-identity-and-dependencies-across-sources)
 - [A kernel-side network wait could only time out on real hardware](#a-kernel-side-network-wait-could-only-time-out-on-real-hardware)
@@ -33,6 +37,47 @@ Everything since v1.5.0, in 22 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A second optimization pass, past the render path
+
+The first optimization pass covered the render loop and the command executor. This one went further: a sweep of every kernel/net file and shell UI input handler not yet reviewed, looking for the same two things OpenComputers' per-tick budget punishes — an uncached `require()` repeated on a path that fires often, and a string built one character at a time.
+
+- **Two network challenge/response functions re-required `kernel.crypto` on every call**, in `kernel/net/init.lua`'s inbound-`CHALLENGE` handler and `verifyPeer` — shadowing a module-level `crypto` already cached once in `net.init` and used everywhere else in the same file. Both now use that existing reference directly.
+- **Every mouse click and scroll re-required three modules.** `shell/panels/mouse.lua`'s `M.handle` is the entry point for every raw touch/drag/drop/scroll signal, and on a box without the mouse driver installed — the common case, since it's an Optional Utilities add-on, not base image — that is *every* mouse event on the machine. `shell.panels.home` and `shell.panels.apps` were each re-required at two call sites (click and scroll); the module's own `uptime()` helper re-required `computer` on every call for the same reason, used by the probe this entry point runs first. All four, plus `uptime`, now use the same lazy-cache idiom the file already uses for `shell.panels.textcol` two lines above the first of them — which is what made the other four read as an oversight rather than a different choice.
+- **A security-gate check re-required the command registry on every dispatch.** `shell/panels/helpers.lua`'s `M.tierRefusal` — the #SEC fix from a prior pentest round that makes `watch` and the tape toolbox enforce the same tier check the executor does for an ordinary command — re-required `shell.panels.commands` every time `watch` or the tape toolbox ran a named sub-action. Cached the same way, kept lazy (not top-level: `commands.lua` and friends require `helpers.lua` back, so a top-level require here would be the circular load this was always avoiding).
+- **A dialog's non-coroutine fallback re-required `computer` every polling iteration.** Low real-world impact (the good path, inside a coroutine, never reaches this branch at all), but free to fix the same way — cached without `pcall`, deliberately: the original let a missing module raise here, and a cache must not quietly turn that into a silent infinite wait instead.
+
+Also measured, and deliberately left alone: a diagnostic-only string-concatenation loop in `screendump` (admin-invoked, bounded to a screen's row count — tens, not thousands — so the real cost is negligible, and touching it risks the one thing that command cannot afford, a subtly wrong byte in its own precision output).
+
+Every fix re-ran its module's existing off-box tests clean, including the two most security-sensitive: the net challenge/response change against the full `test_net_*` suite, and the tier-gate change against `test_watch_tier.lua` and `test_dispatch_tier.lua`.
+
+### The release build renames its own local variables now
+
+The release has been comment-stripped and whitespace-minified for a while, but every local variable and function parameter still shipped under its full dev-source name — `recommendedMaxLength`, `trustedPublisherLabel`, that kind of thing — and this project's names run long, on purpose, because clarity was never rationed in TOS-Dev. That cost real bytes a machine reading the shipped code never benefits from, and the margin had gotten thin: 1907.2 KB used of the 1920 KB budget a 2 MB drive leaves after First Boot Setup, 12.8 KB of slack.
+
+`build/strip.lua` gained `--minify-vars`, now the release default: every local and parameter is renamed to the shortest name that is still unambiguous in its scope, via a vendored, patched copy of [stravant/LuaMinify](https://github.com/stravant/LuaMinify) (MIT; `build/vendor/luaminify/`). Globals and table fields are never touched — only `local`s and parameters, the same way the existing comment-strip marker convention (`--!` keeps, `--` strips) never touches code either.
+
+Patched, not used as-is, because upstream's parser predates Lua 5.3 and has no support for its bitwise/shift operators (`& | ~ << >>`) or floor division (`//`) — it hard-errors on all five, and `kernel/sha256.lua` alone uses every one of them in its core compression function. TOS requires Lua 5.3+ (5.2 is rejected at boot), so this is load-bearing cryptography, not an edge case. Also found and fixed a real upstream bug along the way: its minifying formatter called an undefined function on every `goto` or `::label::`, which `tos/kernel/init.lua`, `tos/shell/syntax.lua` and `tos/shell/panels/commands/admin.lua` all use — so upstream, unpatched, could not have minified this codebase at all, goto or no goto. And replaced its variable-renaming scheme entirely: upstream generates *random* 1-8 character names (built for obfuscation, where resisting pattern-matching is the point), which could make a 1-character original name *longer*. Renaming now picks the shortest not-yet-used name, deterministically, handed out by descending reference count so the busiest variable in a scope gets the shortest name available.
+
+A second addition, `DedupStrings.lua` (not upstream — a TOS-only pass run between parsing and formatting), hoists a string literal repeated three or more times in one file into a single shared local: a string and a local holding that string are interchangeable in every expression position, so this can never change behaviour, independent of where in the grammar it sits. Two places a string-shaped thing appears in the AST without being a full string expression at all are never touched, by construction rather than by a special case that could be forgotten: a `{foo = 1}` table key is a bare Lua string with no expression node for the walker to find, and `f"str"` sugar-call syntax stores its argument as a raw token, not a `StringExpr`. Measured potential before writing it (~10 KB across the whole tree, by far the smallest of the three passes) kept the bar for attempting it deliberately low-risk rather than clever.
+
+Together, the release drops from **1907.2 KB to 1313.2 KB — headroom goes from 12.8 KB to 606.8 KB**.
+
+None of this was trusted on "it parses now" alone. Every new operator's precedence and associativity was checked by *running* representative expressions — including ones designed to prove explicit parentheses survive exactly when they have to and get dropped exactly when they are genuinely redundant — both before and after minification, comparing actual return values. The dedup pass's two exclusions were checked the same way: a string that would otherwise qualify is confirmed to survive untouched in both excluded positions, and the program's output is confirmed identical either way. The two highest-stakes modules in the kernel, `kernel/sha256.lua` and `kernel/ed25519.lua`, were minified and run differentially against their own unminified originals across multiple inputs, with identical results every time. `test_minify_vars.lua` (75 checks) pins all of it, and the real release build (166 files) passes the existing `load()`-must-compile gate and every manifest digest check clean.
+
+### The render path re-required its own helpers every frame
+
+An optimization pass over the hottest Lua paths — the render loop and the command executor — looking for exactly the things OpenComputers' per-tick budget punishes: a module re-`require()`d on every call instead of once, and a string built one character at a time.
+
+- **Five redraw-time `require()` calls were uncached.** `kernel.ustr` was re-resolved with a fresh `pcall(require, ...)` on every width/fit call in `shell.panels.draw`, `desktop` and `home` — once per row or tile, on every redraw — while the identical module two lines away in `home.lua` (and in `shell.panels.ui`) was already cached after first resolution. `shell.panels.home` and `shell.panels.apps` were the same story in `draw.lua`: re-required at five and two call sites respectively, each reached on an ordinary redraw, instead of once. All six now share one cached accessor per module, matching the idiom `kernel.event`'s `getProc` and `kernel.process`'s `getScreen` already use for their own hottest loops.
+- **The disk-free status-bar widget re-required `shell.panels.helpers` on every repaint** — every keystroke in the command line, not a throttled clock tick — while every sibling widget in the same table touched only already-cached locals. Hoisted to a module-level require.
+- **A constant lookup table was rebuilt on every keystroke in the editor.** The eight-scancode "is this a navigation key" set in `shell.panels.events`'s edit-tab key handler was a fresh table literal on every `key_down`, with nothing in it ever varying between calls. Hoisted to a module-level constant.
+- **The command-line tokenizer built every token one byte at a time.** `shell.panels.executor`'s quote-aware tokenizer (#SEC M4) used `cur = cur .. c` per character; Lua strings are immutable, so that reallocated the whole string-so-far on every character — O(n²) in a single token's length. Rewritten to accumulate whole spans (the run to the next delimiter, quote-close or escape) and join once per token with `table.concat`. Verified byte-for-byte identical to the original across 26 quoting/escaping/unterminated-input cases, including the ones most likely for a rewrite to get wrong: empty quoted strings, escaped quotes and backslashes, and a lone trailing backslash at end of input. `test_executor_tokenize.lua`, and the function moved to module scope (it closed over nothing from `M.build`) so it's reachable for that test at all.
+- **`kernel.ustr.fit`'s byte-math fallback had the same per-character concat.** Hit mainly off-box and on exotic hosts — a real OC machine normally has the `unicode` library this falls back from — but the off-box suite exercises it on every run, and the fix is the same `table.concat` pattern for consistency with the above.
+
+### A broken source file stripped exactly as cleanly as a good one
+
+`build/strip.lua`'s tokenizer partitions bytes into "comment" vs "not a comment" — it never checked that what it emitted was still valid Lua, and neither did anything downstream of it. A source file that was already broken (an uncommitted syntax slip, a stray merge-conflict marker) stripped exactly as cleanly as a good one, because stripping never looked at syntax either way: a broken dev file could ship as a broken release file with no warning. Every stripped `.lua` file is now compiled with `load()` — the same compiler frontend that will load it for real on the target machine — before it is written, and a failure hard-stops the build, matching the existing #SEC M-13 precedent for an unterminated comment or string. `test_strip_validates_output.lua` proves the gate on a file that is genuinely unparseable, under both a plain and a `--minify` build, and that an ordinary file still strips and still compiles.
 
 ### The open queue, worked through
 

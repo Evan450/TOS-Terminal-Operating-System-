@@ -1,141 +1,54 @@
-local M = {}
-local MIN_PAGE_LINES = 120
-local DEFAULT_PRESSURE_PCT = 25
-local swapSeq = 0
-local computerMod = nil
-local function comp()
-if computerMod == nil then
-local ok, c = pcall(require, "computer")
-computerMod = (ok and type(c) == "table") and c or false
-end
-return computerMod or nil
-end
-local function swapMod()
-local K = _G._TOS and _G._TOS.kernel
-if not (K and K.getSwap) then return nil end
-local ok, sw = pcall(K.getSwap)
-if ok and type(sw) == "table" and sw.store and sw.fetch then return sw end
-return nil
-end
-local pagedMT
-pagedMT = {
-__index = function(t, k)
-if k ~= "content" then return nil end
-local key = rawget(t, "_swapKey")
-if not key then return nil end
-local sw = swapMod()
-local data = sw and sw.fetch(key) or nil
-if type(data) ~= "table" then
-data = { { "(view content was paged out and could not be restored)" } }
-end
-if sw and sw.free then pcall(sw.free, key) end
-rawset(t, "_swapKey", nil)
-rawset(t, "_swapLines", nil)
-rawset(t, "content", data)
-if getmetatable(t) == pagedMT then setmetatable(t, nil) end
-return data
-end,
-}
-function M.isPaged(tab)
-return type(tab) == "table" and rawget(tab, "_swapKey") ~= nil
-end
-function M.pageOut(tab)
-if type(tab) ~= "table" or M.isPaged(tab) then return false end
-if tab.type ~= "view" and tab.type ~= "output" then return false end
-if tab.live then return false end
-local content = rawget(tab, "content")
-if type(content) ~= "table" or #content < MIN_PAGE_LINES then return false end
-local sw = swapMod()
-if not sw then return false end
-swapSeq = swapSeq + 1
-local key = "shell.view." .. swapSeq
-local pok, sok = pcall(sw.store, key, content)
-if not pok or not sok then return false end
-rawset(tab, "_swapKey", key)
-rawset(tab, "_swapLines", #content)
-rawset(tab, "content", nil)
-setmetatable(tab, pagedMT)
-return true
-end
-function M.dropPaged(tab)
-if not M.isPaged(tab) then return false end
-local sw = swapMod()
-if sw and sw.free then pcall(sw.free, rawget(tab, "_swapKey")) end
-rawset(tab, "_swapKey", nil)
-if getmetatable(tab) == pagedMT then setmetatable(tab, nil) end
-return true
-end
-function M.underPressure()
-local c = comp()
-if not c then return false end
-local total = c.totalMemory and c.totalMemory() or 0
-local free = c.freeMemory and c.freeMemory() or 0
-if total <= 0 then return false end
-local pct = DEFAULT_PRESSURE_PCT
-local K = _G._TOS and _G._TOS.kernel
-if K and K.getConfig then
-local okC, cfg = pcall(K.getConfig)
-if okC and cfg and cfg.get then
-local v = tonumber(cfg.get("swapPressurePct"))
-if v and v >= 0 and v <= 100 then pct = v end
-end
-end
-return free < (total * pct / 100)
-end
-function M.sweepCold(S, force)
-if type(S) ~= "table" or type(S.tabs) ~= "table" then return 0 end
-if not force and not M.underPressure() then return 0 end
-local n = 0
-for i, tab in ipairs(S.tabs) do
-if i ~= S.activeTab and M.pageOut(tab) then n = n + 1 end
-end
-return n
-end
-function M.pagedStats(S)
-local tabsPaged, lines = 0, 0
-if type(S) == "table" and type(S.tabs) == "table" then
-for _, tab in ipairs(S.tabs) do
-if M.isPaged(tab) then
-tabsPaged = tabsPaged + 1
-lines = lines + (rawget(tab, "_swapLines") or 0)
-end
-end
-end
-return tabsPaged, lines
-end
-function M.create(S, tabType, label, data)
-local tab = { type = tabType, label = label }
-if data then for k, v in pairs(data) do tab[k] = v end end
-S.tabs[#S.tabs + 1] = tab
-S.activeTab = #S.tabs
-return tab
-end
-function M.close(S, idx)
-idx = idx or S.activeTab
-local tab = S.tabs[idx]
-if not tab or tab.type == "shell" then return false end
-local ok, apps = pcall(require, "shell.panels.apps")
-if ok and apps then
-if apps.ensureBuiltins then pcall(apps.ensureBuiltins) end
-local app = apps.get(tab.type)
-if app and app.onClose then pcall(app.onClose, S, tab) end
-end
-M.dropPaged(tab)
-table.remove(S.tabs, idx)
-if S.activeTab > #S.tabs then S.activeTab = #S.tabs end
-if S.activeTab < 1 then S.activeTab = 1 end
-return true
-end
-function M.cycle(S, dir)
-if #S.tabs <= 1 then return end
-S.activeTab = S.activeTab + (dir or 1)
-if S.activeTab > #S.tabs then S.activeTab = 1 end
-if S.activeTab < 1 then S.activeTab = #S.tabs end
-end
-function M.find(S, tabType, path)
-for i, tab in ipairs(S.tabs) do
-if tab.type == tabType and tab.path == path then return i end
-end
-return nil
-end
-return M
+local r,m,s="content","_swapKey","_swapLines"local l={}local t=120;local u=25;local o=0;local p=nil
+local function v()if p==nil then
+local b,a=pcall(require,"computer")
+p=(b and type(a)=="table")and a or false end;return p or nil end
+local function q()local b=_G._TOS and _G._TOS.kernel;if
+not(b and b.getSwap)then return nil end;local c,a=pcall(b.getSwap)
+if
+c and type(a)=="table"and a.store and a.fetch then return a end;return nil end;local n
+n={__index=function(a,b)if b~=r then return nil end;local e=rawget(a,m)if not e then return nil end
+local c=q()local d=c and c.fetch(e)or nil;if type(d)~="table"then
+d={{"(view content was paged out and could not be restored)"}}end;if c and c.free then
+pcall(c.free,e)end;rawset(a,m,nil)rawset(a,s,nil)
+rawset(a,r,d)if getmetatable(a)==n then setmetatable(a,nil)end;return
+d end}function l.isPaged(a)
+return type(a)=="table"and rawget(a,m)~=nil end
+function l.pageOut(a)if
+type(a)~="table"or l.isPaged(a)then return false end;if
+a.type~="view"and a.type~="output"then return false end;if a.live then return false end
+local b=rawget(a,r)if type(b)~="table"or#b<t then return false end;local c=q()if not c then return
+false end;o=o+1;local d="shell.view."..o
+local e,f=pcall(c.store,d,b)if not e or not f then return false end;rawset(a,m,d)
+rawset(a,s,#b)rawset(a,r,nil)setmetatable(a,n)return true end
+function l.dropPaged(a)if not l.isPaged(a)then return false end;local b=q()if b and b.free then
+pcall(b.free,rawget(a,m))end;rawset(a,m,nil)if getmetatable(a)==n then
+setmetatable(a,nil)end;return true end
+function l.underPressure()local a=v()if not a then return false end;local c=
+a.totalMemory and a.totalMemory()or 0;local e=
+a.freeMemory and a.freeMemory()or 0;if c<=0 then return false end;local d=u;local b=
+_G._TOS and _G._TOS.kernel
+if b and b.getConfig then
+local g,f=pcall(b.getConfig)
+if g and f and f.get then
+local h=tonumber(f.get("swapPressurePct"))if h and h>=0 and h<=100 then d=h end end end;return e< (c*d/100)end
+function l.sweepCold(a,b)
+if type(a)~="table"or type(a.tabs)~="table"then return 0 end
+if not b and not l.underPressure()then return 0 end;local c=0;for d,e in ipairs(a.tabs)do
+if d~=a.activeTab and l.pageOut(e)then c=c+1 end end;return c end
+function l.pagedStats(a)local b,c=0,0
+if
+type(a)=="table"and type(a.tabs)=="table"then for e,d in ipairs(a.tabs)do if l.isPaged(d)then b=b+1
+c=c+ (rawget(d,s)or 0)end end end;return b,c end
+function l.create(a,c,d,b)local e={type=c,label=d}
+if b then for f,g in pairs(b)do e[f]=g end end;a.tabs[#a.tabs+1]=e;a.activeTab=#a.tabs;return e end
+function l.close(a,b)b=b or a.activeTab;local c=a.tabs[b]if not c or c.type=="shell"then return
+false end
+local e,d=pcall(require,"shell.panels.apps")
+if e and d then if d.ensureBuiltins then pcall(d.ensureBuiltins)end
+local f=d.get(c.type)if f and f.onClose then pcall(f.onClose,a,c)end end;l.dropPaged(c)table.remove(a.tabs,b)if
+a.activeTab>#a.tabs then a.activeTab=#a.tabs end
+if a.activeTab<1 then a.activeTab=1 end;return true end
+function l.cycle(a,b)if#a.tabs<=1 then return end
+a.activeTab=a.activeTab+ (b or 1)if a.activeTab>#a.tabs then a.activeTab=1 end;if a.activeTab<1 then a.activeTab=
+#a.tabs end end;function l.find(a,b,c)
+for e,d in ipairs(a.tabs)do if d.type==b and d.path==c then return e end end;return nil end;return l

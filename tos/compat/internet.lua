@@ -1,126 +1,41 @@
---! PROVENANCE. Parts of this file follow OpenOS's lib/internet.lua (MIT
---! licence, the OpenComputers project) line for line: the checkArg
---! contract of request/socket/open, and the loop that form-encodes a table
---! `data` into a POST body. They are kept identical on purpose -- a ported
---! program must see the same behaviour -- and credited here for that
---! reason. The rest is TOS's own. (build/test_provenance.py)
---! This shim reaches the internet card DIRECTLY, exactly as the OpenOS
---! library does — an OpenOS program's `internet.request` is expected to
---! stream, and routing it through kernel.internet's bounded string reader
---! would change its semantics. The `internet` capability is the gate, and it
---! is enforced where this module is REQUIRED: kernel.sandbox refuses
---! `compat.internet` to a sandbox without the cap. It has to be there,
---! because this file resolves the card through the kernel's own component
---! library, not the sandbox's filtered one -- until the pentest (Sep 2026)
---! the claim that the cap gated this was simply untrue. This file is the
---! shape; it holds no authority check of its own.
-local component = require("component")
-local internet = {}
-local function checkArg(n, have, ...)
-local want = { ... }
-local t = type(have)
-for _, w in ipairs(want) do
-if t == w then return end
-end
-error("bad argument #" .. n .. " (" .. table.concat(want, " or ")
-.. " expected, got " .. t .. ")", 3)
-end
-local function card()
-local addr = component.list and component.list("internet")()
-if not addr then return nil end
-local ok, p = pcall(component.proxy, addr)
-if not ok then return nil end
-return p
-end
-local function pause()
-local okP, proc = pcall(require, "kernel.process")
-if okP and proc and proc.yieldCooperative then
-proc.yieldCooperative()
+local k="string"local l=require("component")local i={}
+local function h(a,b,...)local c={...}local d=type(b)for f,e in
+ipairs(c)do if d==e then return end end
+error("bad argument #"..a..
+" ("..
+table.concat(c," or ").." expected, got "..d..")",3)end
+local function m()local a=l.list and l.list("internet")()if not a then
+return nil end;local b,c=pcall(l.proxy,a)if not b then return nil end;return c end
+local function n()local c,a=pcall(require,"kernel.process")if
+c and a and a.yieldCooperative then a.yieldCooperative()return end
+local d,b=pcall(require,"kernel.event")if d and b and b.pull then pcall(b.pull,0)end end
+function i.request(b,a,c,d)h(1,b,k)h(2,a,k,"table","nil")h(3,c,"table","nil")
+h(4,d,k,"nil")local g=m()
+if not g then error("no primary internet card found",2)end;local e
+if type(a)==k then e=a elseif type(a)=="table"then for p,q in pairs(a)do
+e=e and(e.."&")or""
+e=e..tostring(p).."="..tostring(q)end end;local f,o=g.request(b,e,c,d)if not f then
+error(tostring(o or"request failed"),2)end
 return
-end
-local okE, ev = pcall(require, "kernel.event")
-if okE and ev and ev.pull then pcall(ev.pull, 0) end
-end
-function internet.request(url, data, headers, method)
-checkArg(1, url, "string")
-checkArg(2, data, "string", "table", "nil")
-checkArg(3, headers, "table", "nil")
-checkArg(4, method, "string", "nil")
-local inet = card()
-if not inet then error("no primary internet card found", 2) end
-local post
-if type(data) == "string" then
-post = data
-elseif type(data) == "table" then
-for k, v in pairs(data) do
-post = post and (post .. "&") or ""
-post = post .. tostring(k) .. "=" .. tostring(v)
-end
-end
-local request, reason = inet.request(url, post, headers, method)
-if not request then error(tostring(reason or "request failed"), 2) end
-return setmetatable({
-close = setmetatable({}, {
-__call = function() return request.close() end,
-__tostring = function() return "function() -- closes the connection" end,
-}),
-}, {
-__call = function()
-while true do
-local chunk, err = request.read()
-if not chunk then
-pcall(function() request.close() end)
-if err then error(err, 2) end
-return nil
-elseif #chunk > 0 then
-return chunk
-end
-pause()
-end
-end,
-__index = request,
-})
-end
-local socketStream = {}
-function socketStream:close()
-if self.socket then
-pcall(function() self.socket.close() end)
-self.socket = nil
-end
-end
-function socketStream:seek() return nil, "bad file descriptor" end
-function socketStream:read(n)
-if not self.socket then return nil, "connection is closed" end
-return self.socket.read(n)
-end
-function socketStream:write(value)
-if not self.socket then return nil, "connection is closed" end
-while #value > 0 do
-local written, reason = self.socket.write(value)
-if not written then return nil, reason end
-value = string.sub(value, written + 1)
-end
-return true
-end
-function internet.socket(address, port)
-checkArg(1, address, "string")
-checkArg(2, port, "number", "nil")
-local inet = card()
-if not inet then return nil, "no primary internet card found" end
-if not inet.connect then return nil, "internet card has no TCP support" end
-local target = port and (address .. ":" .. port) or address
-local socket, reason = inet.connect(target)
-if not socket then return nil, reason end
-return setmetatable({ inet = inet, socket = socket },
-{ __index = socketStream, __metatable = "socketstream" })
-end
-function internet.open(address, port)
-local stream, reason = internet.socket(address, port)
-if not stream then return nil, reason end
-local ok, buffer = pcall(require, "buffer")
-if not ok or not buffer or not buffer.new then
-return nil, "buffer library unavailable"
-end
-return buffer.new("rwb", stream)
-end
-return internet
+setmetatable({close=setmetatable({},{__call=function()return f.close()end,__tostring=function()return
+"function() -- closes the connection"end})},{__call=function()
+while
+true do local p,q=f.read()
+if not p then pcall(function()f.close()end)if
+q then error(q,2)end;return nil elseif#p>0 then return p end;n()end end,__index=f})end;local j={}
+function j:close()if self.socket then
+pcall(function()self.socket.close()end)self.socket=nil end end;function j:seek()return nil,"bad file descriptor"end;function j:read(a)if
+not self.socket then return nil,"connection is closed"end;return
+self.socket.read(a)end
+function j:write(a)if not
+self.socket then return nil,"connection is closed"end
+while#a>0 do
+local b,c=self.socket.write(a)if not b then return nil,c end;a=string.sub(a,b+1)end;return true end
+function i.socket(a,b)h(1,a,k)h(2,b,"number","nil")local c=m()if not c then
+return nil,"no primary internet card found"end;if not c.connect then
+return nil,"internet card has no TCP support"end
+local e=b and(a..":"..b)or a;local d,f=c.connect(e)if not d then return nil,f end;return
+setmetatable({inet=c,socket=d},{__index=j,__metatable="socketstream"})end
+function i.open(a,b)local d,e=i.socket(a,b)if not d then return nil,e end
+local f,c=pcall(require,"buffer")
+if not f or not c or not c.new then return nil,"buffer library unavailable"end;return c.new("rwb",d)end;return i

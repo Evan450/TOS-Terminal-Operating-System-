@@ -1,592 +1,165 @@
-local securefs = {}
-local fs = nil
-local usermod = nil
-local log = nil
-local process = nil
-function securefs.init(modules)
-fs = modules.fs
-usermod = modules.users
-log = modules.log
-process = modules.process
-end
-local function sessionOf(explicit)
-if explicit then return explicit end
-if process and process.currentSession then
-local s = process.currentSession()
-if s then return s end
-end
-if usermod and usermod.currentSession then
-local s = usermod.currentSession()
-if s then return s end
-end
-local tos = _G._TOS
-if tos and tos.bootSession and not tos.bootCompleted then
-return tos.bootSession
-end
-return nil
-end
---! #SEC (pentest, Sep 2026) — a path fs.normalize rejects (a NUL byte, a
---! non-string) is refused here, by name. It used to reach the ACL as nil,
---! which read it as "/" and said yes, and a write raised in the
---! protected-path check instead of refusing.
-local INVALID_PATH = "Permission denied: invalid path  [E-401 ERR_PERM_DENIED]"
-local function checkRead(path, session)
-if not fs or not usermod then return false, "securefs not initialized" end
-path = fs.normalize(path)
-if not path then return false, INVALID_PATH end
-local sess = sessionOf(session)
-local allowed, reason = usermod.canAccessAs(sess, path, "r")
-if not allowed then
-if log then log.warn("securefs", "READ denied: " .. path .. " (" .. (reason or "?") .. ")") end
-return false, "Permission denied: " .. (reason or "access denied") .. "  [E-401 ERR_PERM_DENIED]", path
-end
-return true, nil, path
-end
-local _isProtectedTarget
---! Forward-declared for the same reason as the guard above:
---! checkWrite needs it and it is defined further down, next to
---! the protected-path tables it describes.
-local protectedMsg
-local function checkWrite(path, session)
-if not fs or not usermod then return false, "securefs not initialized" end
-path = fs.normalize(path)
-if not path then return false, INVALID_PATH end
---! Resolve the principal BEFORE the protected check, not after. The
---! shell supplies its session through the process, not as an explicit
---! argument, so `session` here is usually nil -- and an override armed
---! by root would never have been seen.
-local sess = sessionOf(session)
-if _isProtectedTarget then
-local hit = _isProtectedTarget(path, sess)
-if hit then
-if log then log.warn("securefs",
-"WRITE denied (protected system path " .. hit .. "): " .. path ..
-" -- root can lift this for one session with `protect off`") end
-local hint = ""
-if hit == "/usr/lib" or hit == "/usr/modules" or hit == "/usr/bin"
-or hit == "/var/pkg" then
-hint = " — install add-ons with 'pkg install', not by copying files here"
-end
-return false, protectedMsg("writing to", hit, sess) .. hint, path
-end
-end
-local allowed, reason = usermod.canAccessAs(sess, path, "w")
-if not allowed then
-if log then log.warn("securefs", "WRITE denied: " .. path .. " (" .. (reason or "?") .. ")") end
-return false, "Permission denied: " .. (reason or "access denied") .. "  [E-401 ERR_PERM_DENIED]", path
-end
-return true, nil, path
-end
-function securefs.exists(path, session)
-local ok, _, norm = checkRead(path, session)
-if not ok then return false end
-return fs.exists(norm)
-end
-function securefs.isDirectory(path, session)
-local ok, _, norm = checkRead(path, session)
-if not ok then return false end
-return fs.isDirectory(norm)
-end
-function securefs.list(path, session)
-local ok, err, norm = checkRead(path, session)
-if not ok then return {}, err end
-path = norm
-local rawList = fs.list(norm)
-local sess = sessionOf(session)
---! #SEC (pentest, Sep 2026) — matched on the folded key: "/HOME" lists
---! /home on a case-insensitive disk, and skipped both filters below.
-local key = usermod.pathKey and usermod.pathKey(path) or path
-if key == "/home" then
-if not sess or sess.tier < usermod.TIER.ADMIN then
-local filtered = {}
-if type(rawList) == "table" and sess and sess.user then
-for _, name in ipairs(rawList) do
-local cleanName = name:gsub("/$", "")
-if cleanName == sess.user then
-filtered[#filtered + 1] = name
-end
-end
-end
-return filtered
-end
-end
-if key == "/var/mail" then
-if not sess or sess.tier < usermod.TIER.ADMIN then
-local filtered = {}
-if type(rawList) == "table" and sess and sess.user then
-for _, name in ipairs(rawList) do
-if name:gsub("/$", "") == sess.user then
-filtered[#filtered + 1] = name
-end
-end
-end
-return filtered
-end
-end
-return rawList
-end
-function securefs.readFile(path, session)
-local ok, err, norm = checkRead(path, session)
-if not ok then return nil, err end
-return fs.readFile(norm)
-end
-function securefs.size(path, session)
-local ok, _, norm = checkRead(path, session)
-if not ok then return 0 end
-return fs.size(norm)
-end
-function securefs.lastModified(path, session)
-local ok, _, norm = checkRead(path, session)
-if not ok then return 0 end
-return fs.lastModified(norm)
-end
-function securefs.writeFile(path, content, session)
-local ok, err, norm = checkWrite(path, session)
-if not ok then return false, err end
-return fs.writeFile(norm, content)
-end
-function securefs.writeFileAtomic(path, content, session)
-local ok, err, norm = checkWrite(path, session)
-if not ok then return false, err end
-if not fs.writeFileAtomic then return fs.writeFile(norm, content) end
-return fs.writeFileAtomic(norm, content)
-end
-function securefs.appendFile(path, content, session)
-local ok, err, norm = checkWrite(path, session)
-if not ok then return false, err end
-return fs.appendFile(norm, content)
-end
-function securefs.makeDirectory(path, session)
-local ok, err, norm = checkWrite(path, session)
-if not ok then return false, err end
-return fs.makeDirectory(norm)
-end
-local REMOVE_PROTECTED = {
-"/tos", "/etc", "/init.lua", "/bios.lua", "/install.lua",
-"/var", "/usr",
-"/var/pkg", "/var/pkg/installed",
-"/usr/modules", "/usr/lib", "/usr/bin",
---! #SEC — the two CODE roots C18 missed, both OpenOS's and both searched
---! AHEAD of the TOS roots they shadow:
---!   /lib  init.lua's require looked here before /usr/lib, and ran what it
---!         found in the kernel's own _G. The shell pcall-requires add-on
---!         names in kernel context (`mouse` at every shell start), so an
---!         ADMIN writing /lib/mouse.lua ran as the kernel at the next login.
---!         (/lib is no longer searched at all, since 2026-10; it stays
---!         here because OpenOS's boot code lives in it.)
---!   /bin  the first of the shell's trusted SYSTEM_BIN_DIRS, ahead of
---!         /usr/bin: /bin/ssh.lua ran instead of /usr/bin/ssh.lua, with the
---!         session and fs.write of whoever typed `ssh` -- root included.
---! Either walked around every ROOT-only line. test_code_roots_protected
---! reads both lists from source, so a new code root must be added here.
-"/lib", "/bin",
-}
-local NODE_PROTECTED = {
-"/home", "/root", "/public",
-}
-local WRITE_PROTECTED_EXEMPT = {
-["/etc/users.dat"] = true,
-["/etc/tos.cfg"] = true,
-["/etc/hostname"] = true,
-["/etc/motd"] = true,
-["/etc/profile"] = true,
-["/etc/critical.bak"] = true,
-["/etc/.tutorial_done"] = true,
-["/etc/peer_aliases.dat"] = true,
-["/etc/selftest.on"] = true,
-["/etc/cluster-master.cfg"] = true,
-["/etc/cluster-manager.cfg"] = true,
-["/etc/kiosk.cfg"] = true,
-["/etc/component_caps.cfg"] = true,
-["/etc/pkg_caps.cfg"] = true,
-["/etc/pkg_trust.cfg"] = true,
-["/etc/menu.cfg"] = true,
-["/etc/keys.cfg"] = true,
-["/etc/chat-groups.cfg"] = true,
-["/etc/intercom.cues"] = true,
-["/etc/intercom.cfg"] = true,
-["/etc/jbod.cfg"] = true,
-["/etc/widgets"] = true,
-["/var/log"] = true,
-["/var/run"] = true,
-["/var/lib"] = true,
-["/var/cluster"] = true,
-}
---! The protected set above is defence-in-depth against a TAMPERED admin
---! session, and it is worth having. What it should not be is a wall the
---! machine's owner cannot get past on their own hardware: creating a
---! file in /etc, clearing OpenOS's man pages out of /usr/man, and
---! tidying an install were all simply refused, with no supported way to
---! say "yes, I mean it".
---!
---! So it stays on by default and becomes something ROOT can stand down
---! deliberately, for their own session only:
---!
---!   * ROOT tier only. An admin cannot arm it, which is the whole point
---!     of the defence-in-depth line -- a compromised admin session is
---!     still stopped.
---!   * Per SESSION, never global, and gone on logout or reboot. It
---!     cannot be left on by accident for the next person at the seat.
---!   * Every bypass is logged with the path. Trusting the operator is
---!     not the same as keeping no record.
---!
---! This is the "warn, then let them" model rather than "refuse and let
---! them go around securefs with raw kernel.fs" -- which is what the old
---! comment actually recommended, and which produced neither safety nor
---! a log entry.
-local overrideSessions = setmetatable({}, { __mode = "k" })
-local function hasOverride(session)
-if not session then return false end
-return overrideSessions[session] == true
-end
-function securefs.setOperatorOverride(session, enabled)
-if not usermod then return false, "securefs not initialized" end
-if not session then return false, "no session" end
-local TIER = usermod.TIER
-local tier = session.tier
-if not (TIER and tier and tier >= TIER.ROOT) then
-return false, "Operator override requires root"
-end
-if enabled then
-overrideSessions[session] = true
-if log then
-log.warn("securefs", "Operator override ARMED by '" ..
-tostring(session.user) .. "' — protected system paths are writable " ..
-"for this session")
-end
-else
-overrideSessions[session] = nil
-if log then
-log.info("securefs", "Operator override disarmed for '" ..
-tostring(session.user) .. "'")
-end
-end
-return true
-end
-function securefs.operatorOverride(session)
-return hasOverride(session)
-end
---! One place builds the refusal text, so every path -- write, remove,
---! rename -- says the same three things: WHAT was refused, WHY, and what
---! to do about it.
---!
---! The old messages said only "Cannot write protected system path
---! (/etc)". True, and useless: the operator learned neither that the
---! rule is deliberate rather than a bug, nor that there is a supported
---! way past it. The full explanation existed only in the kernel log,
---! which is not somewhere anyone looks unless they already know to.
---!
---! The remedy line is TAILORED. Telling a plain user to run a root-only
---! command is noise that sends them looking for a permission they cannot
---! have, so they are told what it would take instead.
-function protectedMsg(verb, hit, session)
-local base = "Refused: " .. verb .. " " .. hit ..
-" is a protected system path. This guard sits above the permission " ..
-"model and stops even an admin overwriting the kernel or its libraries."
-local TIER = usermod and usermod.TIER
-local isRoot = TIER and session and session.tier and session.tier >= TIER.ROOT
-if isRoot then
-return base .. "  You own this machine: `protect off` stands the guard " ..
-"down for THIS SESSION ONLY (it ends at logout, and every path it " ..
-"allows is logged).  [E-402 ERR_PATH_PROTECTED]"
-end
-return base .. "  Only root can lift it, with `protect off`, and only " ..
-"for their own session.  [E-402 ERR_PATH_PROTECTED]"
-end
-local TREE_EXEMPT = {
-"/var/log/", "/var/run/", "/var/lib/", "/var/cluster/", "/etc/widgets/",
-}
-local function protectedHit(path)
-if WRITE_PROTECTED_EXEMPT[path] then return nil end
-for _, prefix in ipairs(TREE_EXEMPT) do
-if path:sub(1, #prefix) == prefix then return nil end
-end
-for _, p in ipairs(NODE_PROTECTED) do
-if path == p then return p end
-end
-for _, p in ipairs(REMOVE_PROTECTED) do
-if path == p or path:sub(1, #p + 1) == p .. "/" then
-return p
-end
-end
-return nil
-end
---! #SEC (pentest, Sep 2026) — checked as written AND as users.pathKey
---! folds it, because the disk may be case-insensitive (see pathKey in
---! kernel/users.lua): "/TOS/kernel/init.lua" was not "/tos", so an admin
---! could rewrite the kernel through it. Not a string: refused -- a NUL
---! byte makes fs.normalize return nil, and this used to raise on it.
-local function isProtectedTarget(path, session)
-if type(path) ~= "string" then return "(invalid path)" end
---! An armed root session sees no protected targets at all. Logged at
---! the point of use so the record names the path, not just the arming.
-if hasOverride(session) then
-if log then
-log.warn("securefs", "Operator override: allowing protected path " .. tostring(path))
-end
-return nil
-end
-local hit = protectedHit(path)
-if hit then return hit end
-local key = usermod and usermod.pathKey and usermod.pathKey(path)
-if key and key ~= path then return protectedHit(key) end
-return nil
-end
-_isProtectedTarget = isProtectedTarget
---! For `rm`, which used to answer `rm /tos/x` with "add -r" and `rm -r
---! /tos/x` with this guard's refusal -- two different errors, the first
---! recommending a flag that could not help. Same check, same words as
---! securefs.remove below. (test_rm_system_guard.lua)
-function securefs.removeRefusal(path, session)
-path = fs.normalize(path)
-if not path then return INVALID_PATH end
-local hit = isProtectedTarget(path, sessionOf(session))
-if hit then return protectedMsg("removing", hit, sessionOf(session)) end
-return nil
-end
-function securefs.remove(path, session)
-path = fs.normalize(path)
-if not path then return false, INVALID_PATH end
-local hit = isProtectedTarget(path, sessionOf(session))
-if hit then
-return false, protectedMsg("removing", hit, sessionOf(session))
-end
-local ok, err = checkWrite(path, session)
-if not ok then return false, err end
-return fs.remove(path)
-end
-function securefs.rename(from, to, session)
-local nFrom = fs.normalize(from)
-local nTo = fs.normalize(to)
-if not nFrom or not nTo then return false, INVALID_PATH end
-local hitFrom = isProtectedTarget(nFrom, sessionOf(session))
-if hitFrom then
-return false, protectedMsg("renaming", hitFrom, sessionOf(session))
-end
-local hitTo = isProtectedTarget(nTo, sessionOf(session))
-if hitTo then
-return false, protectedMsg("renaming onto", hitTo, sessionOf(session))
-end
-local ok1, err1, normFrom = checkWrite(nFrom, session)
-if not ok1 then return false, err1 end
-local ok2, err2, normTo = checkWrite(nTo, session)
-if not ok2 then return false, err2 end
-return fs.rename(normFrom, normTo)
-end
-local coopProc = nil
-local function coopYield()
-if coopProc == nil then
-local okP, m = pcall(require, "kernel.process")
-coopProc = (okP and type(m) == "table" and m.yieldCooperative) and m or false
-end
-if coopProc then coopProc.yieldCooperative() end
-end
-local function isUnder(p, root)
-return p == root or root == "/" or p:sub(1, #root + 1) == root .. "/"
-end
---! #SEC (pentest, Sep 2026) — a DIRECTORY copy is checked per entry, as
---! the caller. It used to check the top path only and hand the tree to
---! kernel.fs.copyRecursive, which walks the raw filesystem. "/home" and
---! "/etc" are readable as directory NODES by any user, so `cp /home ~/x`
---! copied every other user's home and `cp /etc ~/x` copied
---! /etc/users.dat. Each entry now goes back through securefs.copy: the
---! same read check, the same filtered listing (/home and /var/mail show a
---! user only their own), the same write check on the destination.
---! (test_securefs_session_bind.lua)
-local function copyTree(src, dst, session)
-if isUnder(dst, src) then
-return false, "Cannot copy a directory into itself"
-end
-if not fs.exists(dst) then
-local ok, err = fs.makeDirectory(dst)
-if not ok then return false, "Cannot create directory: " .. tostring(err) end
-end
-local copied, failed = 0, 0
-for _, name in ipairs(securefs.list(src, session)) do
-coopYield()
-local clean = name:match("^(.-)/?$") or name
-if clean ~= "" then
-if securefs.copy(fs.join(src, clean), fs.join(dst, clean), session) then
-copied = copied + 1
-else
-failed = failed + 1
-end
-end
-end
-if failed > 0 then
-return false, string.format("Copied %d items, %d failed", copied, failed)
-end
-return true
-end
-function securefs.copy(src, dst, session)
-local ok1, err1, normSrc = checkRead(src, session)
-if not ok1 then return false, err1 end
-local ok2, err2, normDst = checkWrite(dst, session)
-if not ok2 then return false, err2 end
-if fs.isDirectory(normSrc) then
-return copyTree(normSrc, normDst, session)
-end
-if fs.copyFile then return fs.copyFile(normSrc, normDst) end
-local content, err = fs.readFile(normSrc)
-if not content then return false, err end
-return fs.writeFile(normDst, content)
-end
---! #SEC (pentest, Sep 2026) — the mode is matched against the closed set
---! OpenComputers' managed filesystem accepts, not searched for "w"/"a"/"+".
---! Anything without those letters used to count as a READ, and a backend
---! decides for itself what an odd mode means: TBFS (blockfs) opens every
---! mode except exactly "r" writable, so open(p, "x") passed the read check
---! and came back with a handle that writes. On a machine booted from a raw
---! drive, that was any user rewriting /tos/kernel.
-local READ_MODES = { r = true, rb = true }
-local WRITE_MODES = { w = true, wb = true, a = true, ab = true }
-function securefs.open(path, mode, session)
-mode = mode or "r"
-if not (READ_MODES[mode] or WRITE_MODES[mode]) then
-return nil, "Unsupported open mode: " .. tostring(mode)
-end
-local ok, err, norm
-if WRITE_MODES[mode] then
-ok, err, norm = checkWrite(path, session)
-else
-ok, err, norm = checkRead(path, session)
-end
-if not ok then return nil, err end
-local h, herr = fs.open(norm, mode)
-if not h then return nil, herr end
---! #SEC (pentest, Sep 2026) — return the four methods and nothing else.
---! kernel.fs's handle also carries `proxy` -- the raw filesystem
---! component -- and this table goes straight to sandboxed code, so one
---! fs.open("/etc/motd") handed a program the whole disk with no ACL at
---! all: h.proxy.remove("/init.lua"). (test_securefs_session_bind.lua)
-return {
-read = function(_, n) return h:read(n) end,
-write = function(_, data) return h:write(data) end,
-seek = function(_, whence, offset) return h:seek(whence, offset) end,
-close = function() return h:close() end,
-}
-end
-function securefs.normalize(path) return fs.normalize(path) end
-function securefs.split(path) return fs.split(path) end
-function securefs.join(...) return fs.join(...) end
-function securefs.spaceTotal(path) return fs.spaceTotal(path) end
-function securefs.spaceUsed(path) return fs.spaceUsed(path) end
-function securefs.spaceFree(path) return fs.spaceFree(path) end
-function securefs.mounts() return fs.mounts() end
-local function requireAdmin(session)
-if not usermod or not usermod.TIER then return nil, "users module unavailable" end
-local sess = sessionOf(session)
-if not sess then return nil, "no session" end
-if sess.tier < usermod.TIER.ADMIN then return nil, "mount requires admin" end
-return sess
-end
---! #SEC (pentest, Sep 2026) — a mount point is held to the protected-path
---! guard, as a write is. A mount replaces what a path resolves to, and
---! fs.mount takes an empty or absent directory anywhere, so an admin -- or
---! a drive's label, before `drive mount` sanitised it -- could put a disk of
---! their choosing at an empty /var/pkg/secrets or /etc/rc.d, where the guard
---! stops even an admin writing. /mnt, homes and /tmp are unaffected, and
---! root lifts it with `protect off` like any other. (test_mount_points.lua)
-function securefs.mount(path, proxy, session)
-if not fs then return false, "securefs not initialized" end
-local ok, err = requireAdmin(session)
-if not ok then
-if log then log.warn("securefs", "MOUNT denied: " .. tostring(path) .. " (" .. err .. ")") end
-return false, "Permission denied: " .. err .. "  [E-401 ERR_PERM_DENIED]"
-end
-local norm = fs.normalize(path)
-if not norm then return false, INVALID_PATH end
-local hit = isProtectedTarget(norm, ok)
-if hit then
-if log then log.warn("securefs", "MOUNT denied (protected system path " .. hit .. "): " .. norm) end
-return false, protectedMsg("mounting over", hit, ok)
-end
-return fs.mount(norm, proxy)
-end
-function securefs.unmount(path, session)
-if not fs then return false, "securefs not initialized" end
-local ok, err = requireAdmin(session)
-if not ok then
-if log then log.warn("securefs", "UNMOUNT denied: " .. tostring(path) .. " (" .. err .. ")") end
-return false, "Permission denied: " .. err .. "  [E-401 ERR_PERM_DENIED]"
-end
-return fs.unmount(path)
-end
-function securefs.home(session)
-local sess = sessionOf(session)
-if sess then return sess.home end
-return "/tmp"
-end
-function securefs.resolve(path, session)
-if path == "~" or path:sub(1, 2) == "~/" then
-return securefs.home(session) .. path:sub(2)
-end
-return path
-end
-function securefs.forSession(session)
-local proxy = {}
---! #SEC (pentest, Sep 2026) — FIXED ARITY. Every method takes exactly
---! the arguments its securefs counterpart declares, and the bound session
---! always lands in the session slot. The old proxy appended the session
---! AFTER whatever the caller passed, so one extra argument moved into the
---! session slot: fs.readFile(p, { tier = 3 }) ran with the CALLER's table
---! as its principal (the bound session landed one past it, unread), and
---! users.checkAccess trusts any table's .tier. Any sandboxed program with
---! fs.read could read /etc/users.dat; with fs.write, rewrite it. This
---! proxy is handed straight to untrusted code, so it must never forward
---! caller-supplied arguments past the ones it names.
---! (test_securefs_session_bind.lua)
-local ONE_ARG = {
-"exists", "isDirectory", "list", "readFile", "makeDirectory", "remove",
-"size", "lastModified", "resolve",
-}
-for _, name in ipairs(ONE_ARG) do
-local fn = securefs[name]
-proxy[name] = function(a) return fn(a, session) end
-end
-local TWO_ARGS = { "writeFile", "appendFile", "open", "rename", "copy" }
-for _, name in ipairs(TWO_ARGS) do
-local fn = securefs[name]
-proxy[name] = function(a, b) return fn(a, b, session) end
-end
-proxy.home = function() return securefs.home(session) end
-proxy.normalize = securefs.normalize
-proxy.split = securefs.split
-proxy.join = securefs.join
-proxy.spaceTotal = securefs.spaceTotal
-proxy.spaceUsed = securefs.spaceUsed
-proxy.spaceFree = securefs.spaceFree
---! #SEC H15 — this proxy is the `fs` a sandboxed program is given, and
---! its mounts() handed back every disk's REAL component address.
---! compat.filesystem.get() has hidden that address since H15 (it is the
---! handle `component.proxy` turns into raw, unmediated disk access);
---! fs.mounts() gave it out anyway. Same rule as there: admin-or-better
---! sees the address, anyone else the opaque id securefs.opaqueMountId
---! derives, so the two views of one disk agree. Copies, so nothing the
---! caller does to the list reaches fs.lua. (test_securefs_session_bind.lua)
-proxy.mounts = function()
-local list = securefs.mounts() or {}
-local sess = sessionOf(session)
-local admin = sess and usermod and usermod.TIER
-and (sess.tier or 0) >= (usermod.TIER.ADMIN or 2)
-local out = {}
-for i, m in ipairs(list) do
-local c = {}
-for k, v in pairs(m) do c[k] = v end
-if not admin then c.address = securefs.opaqueMountId(m.mountPoint, m.address) end
-out[i] = c
-end
-return out
-end
-return proxy
-end
-function securefs.opaqueMountId(mountPoint, addr)
-local okC, cryptoMod = pcall(require, "kernel.crypto")
-if okC and cryptoMod and cryptoMod.hash then
-return "fs:" .. cryptoMod.hash(tostring(mountPoint) .. "|" .. tostring(addr)):sub(1, 16)
-end
-return "fs:" .. tostring(mountPoint)
-end
-securefs._isProtectedTarget = function(p, s) return _isProtectedTarget(p, s) end
-securefs._protectedMsg = function(v, h, s) return protectedMsg(v, h, s) end
-return securefs
+
+local S,M,U,V="securefs not initialized","securefs","Permission denied: ","  [E-401 ERR_PERM_DENIED]"local E={}local F=nil;local G=nil;local H=nil;local P=nil
+function E.init(a)F=a.fs;G=a.users;H=a.log;P=a.process end
+local function I(a)if a then return a end;if P and P.currentSession then local c=P.currentSession()
+if c then return c end end;if G and G.currentSession then
+local c=G.currentSession()if c then return c end end;local b=_G._TOS
+if b and
+b.bootSession and not b.bootCompleted then return b.bootSession end;return nil end;local N="Permission denied: invalid path  [E-401 ERR_PERM_DENIED]"
+local function K(a,b)if not F or not G then return
+false,S end;a=F.normalize(a)
+if not a then return false,N end;local d=I(b)local e,c=G.canAccessAs(d,a,"r")
+if not e then if H then
+H.warn(M,"READ denied: "..a.." ("..
+(c or"?")..")")end;return false,U..
+(c or"access denied")..V,a end;return true,nil,a end;local Q;local L
+local function J(a,b)if not F or not G then return false,S end;a=F.normalize(a)if
+not a then return false,N end;local c=I(b)
+if Q then local f=Q(a,c)
+if f then if H then
+H.warn(M,"WRITE denied (protected system path "..
+f.."): "..a..
+" -- root can lift this for one session with `protect off`")end;local g=""if
+f==
+"/usr/lib"or f=="/usr/modules"or f=="/usr/bin"or f=="/var/pkg"then
+g=" — install add-ons with 'pkg install', not by copying files here"end;return
+false,L("writing to",f,c)..g,a end end;local e,d=G.canAccessAs(c,a,"w")
+if not e then if H then
+H.warn(M,"WRITE denied: "..a..
+" (".. (d or"?")..")")end;return false,U..
+(d or"access denied")..V,a end;return true,nil,a end
+function E.exists(a,b)local c,e,d=K(a,b)if not c then return false end;return F.exists(d)end
+function E.isDirectory(a,b)local c,e,d=K(a,b)if not c then return false end;return F.isDirectory(d)end
+function E.list(a,b)local g,h,e=K(a,b)if not g then return{},h end;a=e;local d=F.list(e)local c=I(b)local f=G.pathKey and
+G.pathKey(a)or a
+if f=="/home"then
+if not c or
+c.tier<G.TIER.ADMIN then local i={}if type(d)=="table"and c and c.user then
+for k,j in
+ipairs(d)do local l=j:gsub("/$","")if l==c.user then i[#i+1]=j end end end;return i end end
+if f=="/var/mail"then
+if not c or c.tier<G.TIER.ADMIN then local i={}
+if
+type(d)=="table"and c and c.user then for k,j in ipairs(d)do if j:gsub("/$","")==c.user then
+i[#i+1]=j end end end;return i end end;return d end
+function E.readFile(a,b)local c,d,e=K(a,b)if not c then return nil,d end;return F.readFile(e)end
+function E.size(a,b)local c,e,d=K(a,b)if not c then return 0 end;return F.size(d)end
+function E.lastModified(a,b)local c,e,d=K(a,b)if not c then return 0 end;return F.lastModified(d)end
+function E.writeFile(a,b,c)local d,e,f=J(a,c)if not d then return false,e end;return F.writeFile(f,b)end
+function E.writeFileAtomic(b,a,c)local e,f,d=J(b,c)if not e then return false,f end;if not F.writeFileAtomic then return
+F.writeFile(d,a)end;return F.writeFileAtomic(d,a)end;function E.appendFile(a,b,c)local d,e,f=J(a,c)if not d then return false,e end
+return F.appendFile(f,b)end
+function E.makeDirectory(a,b)local c,d,e=J(a,b)if
+not c then return false,d end;return F.makeDirectory(e)end
+local _={"/tos","/etc","/init.lua","/bios.lua","/install.lua","/var","/usr","/var/pkg","/var/pkg/installed","/usr/modules","/usr/lib","/usr/bin","/lib","/bin"}local aa={"/home","/root","/public"}
+local ab={["/etc/users.dat"]=true,["/etc/tos.cfg"]=true,["/etc/hostname"]=true,["/etc/motd"]=true,["/etc/profile"]=true,["/etc/critical.bak"]=true,["/etc/.tutorial_done"]=true,["/etc/peer_aliases.dat"]=true,["/etc/selftest.on"]=true,["/etc/cluster-master.cfg"]=true,["/etc/cluster-manager.cfg"]=true,["/etc/kiosk.cfg"]=true,["/etc/component_caps.cfg"]=true,["/etc/pkg_caps.cfg"]=true,["/etc/pkg_trust.cfg"]=true,["/etc/menu.cfg"]=true,["/etc/keys.cfg"]=true,["/etc/chat-groups.cfg"]=true,["/etc/intercom.cues"]=true,["/etc/intercom.cfg"]=true,["/etc/jbod.cfg"]=true,["/etc/widgets"]=true,["/var/log"]=true,["/var/run"]=true,["/var/lib"]=true,["/var/cluster"]=true}local T=setmetatable({},{__mode="k"})local function W(a)if not a then return false end;return
+T[a]==true end
+function E.setOperatorOverride(a,b)if not G then
+return false,S end;if not a then return false,"no session"end;local c=G.TIER
+local d=a.tier;if not(c and d and d>=c.ROOT)then
+return false,"Operator override requires root"end
+if b then T[a]=true;if H then
+H.warn(M,"Operator override ARMED by '"..
+
+tostring(a.user).."' — protected system paths are writable ".."for this session")end else
+T[a]=nil;if H then
+H.info(M,"Operator override disarmed for '"..tostring(a.user).."'")end end;return true end;function E.operatorOverride(a)return W(a)end
+function L(b,c,a)
+local d="Refused: "..
+b..
+" "..c..
+
+" is a protected system path. This guard sits above the permission ".."model and stops even an admin overwriting the kernel or its libraries."local e=G and G.TIER
+local f=e and a and a.tier and a.tier>=e.ROOT
+if f then
+return
+d..
+"  You own this machine: `protect off` stands the guard ".."down for THIS SESSION ONLY (it ends at logout, and every path it "..
+"allows is logged).  [E-402 ERR_PATH_PROTECTED]"end
+return d..
+"  Only root can lift it, with `protect off`, and only ".."for their own session.  [E-402 ERR_PATH_PROTECTED]"end
+local ac={"/var/log/","/var/run/","/var/lib/","/var/cluster/","/etc/widgets/"}
+local function X(a)if ab[a]then return nil end;for c,b in ipairs(ac)do
+if a:sub(1,#b)==b then return nil end end
+for c,b in ipairs(aa)do if a==b then return b end end;for c,b in ipairs(_)do
+if a==b or a:sub(1,#b+1)==b.."/"then return b end end;return nil end
+local function O(a,b)if type(a)~="string"then return"(invalid path)"end
+if W(b)then if H then
+H.warn(M,
+"Operator override: allowing protected path "..tostring(a))end;return nil end;local d=X(a)if d then return d end
+local c=G and G.pathKey and G.pathKey(a)if c and c~=a then return X(c)end;return nil end;Q=O
+function E.removeRefusal(a,b)a=F.normalize(a)if not a then return N end;local c=O(a,I(b))if c then return
+L("removing",c,I(b))end;return nil end
+function E.remove(a,b)a=F.normalize(a)if not a then return false,N end;local c=O(a,I(b))if c then return
+false,L("removing",c,I(b))end;local d,e=J(a,b)if not d then return
+false,e end;return F.remove(a)end
+function E.rename(b,c,a)local d=F.normalize(b)local e=F.normalize(c)if not d or not e then
+return false,N end;local f=O(d,I(a))if f then
+return false,L("renaming",f,I(a))end;local g=O(e,I(a))if g then
+return false,L("renaming onto",g,I(a))end;local h,i,j=J(d,a)if not h then return false,i end
+local k,l,m=J(e,a)if not k then return false,l end;return F.rename(j,m)end;local R=nil
+local function ad()
+if R==nil then local b,a=pcall(require,"kernel.process")R=
+(b and
+type(a)=="table"and a.yieldCooperative)and a or false end;if R then R.yieldCooperative()end end;local function ae(b,a)
+return b==a or a=="/"or b:sub(1,#a+1)==a.."/"end
+local function af(b,a,c)if ae(a,b)then
+return false,"Cannot copy a directory into itself"end
+if not F.exists(a)then
+local f,g=F.makeDirectory(a)if not f then
+return false,"Cannot create directory: "..tostring(g)end end;local e,d=0,0
+for g,f in ipairs(E.list(b,c))do ad()
+local h=f:match("^(.-)/?$")or f;if h~=""then
+if E.copy(F.join(b,h),F.join(a,h),c)then e=e+1 else d=d+1 end end end;if d>0 then
+return false,string.format("Copied %d items, %d failed",e,d)end;return true end
+function E.copy(b,c,a)local g,h,d=K(b,a)if not g then return false,h end;local i,j,e=J(c,a)
+if not i then return false,j end;if F.isDirectory(d)then return af(d,e,a)end;if F.copyFile then
+return F.copyFile(d,e)end;local f,k=F.readFile(d)if not f then return false,k end;return
+F.writeFile(e,f)end;local ag={r=true,rb=true}local Y={w=true,wb=true,a=true,ab=true}
+function E.open(b,a,c)
+a=a or"r"if not(ag[a]or Y[a])then
+return nil,"Unsupported open mode: "..tostring(a)end;local e,f,g
+if Y[a]then e,f,g=J(b,c)else e,f,g=K(b,c)end;if not e then return nil,f end;local d,h=F.open(g,a)if not d then return nil,h end
+return
+{read=function(j,i)return
+d:read(i)end,write=function(j,i)return d:write(i)end,seek=function(k,i,j)
+return d:seek(i,j)end,close=function()return d:close()end}end;function E.normalize(a)return F.normalize(a)end;function E.split(a)
+return F.split(a)end;function E.join(...)return F.join(...)end;function E.spaceTotal(a)return
+F.spaceTotal(a)end
+function E.spaceUsed(a)return F.spaceUsed(a)end;function E.spaceFree(a)return F.spaceFree(a)end;function E.mounts()
+return F.mounts()end
+local function Z(a)
+if not G or not G.TIER then return nil,"users module unavailable"end;local b=I(a)if not b then return nil,"no session"end;if b.tier<G.TIER.ADMIN then return nil,
+"mount requires admin"end;return b end
+function E.mount(a,b,c)if not F then return false,S end;local e,g=Z(c)
+if not e then if H then
+H.warn(M,"MOUNT denied: "..tostring(a).." ("..
+g..")")end;return false,U..g..V end;local d=F.normalize(a)if not d then return false,N end;local f=O(d,e)if f then if H then
+H.warn(M,
+"MOUNT denied (protected system path "..f.."): "..d)end
+return false,L("mounting over",f,e)end
+return F.mount(d,b)end
+function E.unmount(a,b)if not F then return false,S end;local d,c=Z(b)
+if not d then if H then
+H.warn(M,"UNMOUNT denied: "..tostring(a).." ("..
+c..")")end;return false,U..c..V end;return F.unmount(a)end
+function E.home(a)local b=I(a)if b then return b.home end;return"/tmp"end
+function E.resolve(a,b)if a=="~"or a:sub(1,2)=="~/"then
+return E.home(b)..a:sub(2)end;return a end
+function E.forSession(a)local b={}
+local c={"exists","isDirectory","list","readFile","makeDirectory","remove","size","lastModified","resolve"}
+for f,e in ipairs(c)do local g=E[e]b[e]=function(h)return g(h,a)end end;local d={"writeFile","appendFile","open","rename","copy"}
+for f,e in
+ipairs(d)do local g=E[e]b[e]=function(h,i)return g(h,i,a)end end;b.home=function()return E.home(a)end
+b.normalize=E.normalize;b.split=E.split;b.join=E.join;b.spaceTotal=E.spaceTotal
+b.spaceUsed=E.spaceUsed;b.spaceFree=E.spaceFree
+b.mounts=function()local g=E.mounts()or{}local e=I(a)
+local h=
+e and G and G.TIER and(e.tier or 0)>= (G.TIER.ADMIN or 2)local f={}
+for k,j in ipairs(g)do local i={}for l,m in pairs(j)do i[l]=m end;if not h then
+i.address=E.opaqueMountId(j.mountPoint,j.address)end;f[k]=i end;return f end;return b end
+function E.opaqueMountId(a,b)local d,c=pcall(require,"kernel.crypto")
+if d and c and c.hash then return
+"fs:"..
+c.hash(tostring(a).."|"..tostring(b)):sub(1,16)end;return"fs:"..tostring(a)end;E._isProtectedTarget=function(a,b)return Q(a,b)end;E._protectedMsg=function(a,b,c)
+return L(a,b,c)end;return E

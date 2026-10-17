@@ -1,117 +1,46 @@
-local computer = require("computer")
-local component = require("component")
-local M = {}
-function M.run(ctx)
-local stateMod = require("shell.panels.state")
-local S = stateMod.new(ctx)
-local helpers = require("shell.panels.helpers")
-local widgetsMod = require("shell.panels.widgets")
-local dialogsMod = require("shell.panels.dialogs")
-local drawMod = require("shell.panels.draw")
-local editorMod = require("shell.panels.editor")
-local executorMod= require("shell.panels.executor")
-local commandsMod= require("shell.panels.commands")
-local eventsMod = require("shell.panels.events")
-local makeProgramEnv = require("shell.progenv").builder(S)
-S.menuDefs = drawMod.buildMenuDefs(S)
-pcall(function()
-local landing = nil
-local okP, profileMod = pcall(require, "kernel.profile")
-if okP and profileMod and profileMod.load then
-local sess = (S.U and S.st and S.U.getSession and S.U.getSession(S.st)) or nil
-local okL, p = pcall(profileMod.load, sess)
-if okL and type(p) == "table" then landing = p.landing end
-end
-if not landing then
-landing = (S.who == "root") and "shell" or "desktop"
-end
-local wantsTiles = (landing == "desktop" or landing == "tiles")
-if not S.uiSplit then
-if wantsTiles and computer.freeMemory() >= 300 * 1024 then
-local homeMod = require("shell.panels.home")
-homeMod.setView(S, "tiles")
-end
-return
-end
-if not wantsTiles and computer.freeMemory() < 300 * 1024 then
-return
-end
-local desktopMod = require("shell.panels.desktop")
-desktopMod.open(S, { background = not wantsTiles })
-end)
-local widgetDefs = widgetsMod.makeWidgetDefs(S)
-pcall(widgetsMod.loadCustomWidgets, S, widgetDefs)
-local C = commandsMod.build(S, {
-rp = function(p) return helpers.resolvePath(S, p) end,
-openViewTab = function(buf, label) return editorMod.openViewTab(S, buf, label) end,
-openLiveTab = function(label, fn, interval) return editorMod.openLiveTab(S, label, fn, interval) end,
-openEditTab = function(path) return editorMod.openEditTab(S, path) end,
-refreshBrowser = function() return helpers.refreshBrowser(S) end,
-canRead = function(path, o) return helpers.canRead(S, path, o) end,
-canWrite = function(path, o) return helpers.canWrite(S, path, o) end,
-canAccess = function(path, mode, o) return helpers.canAccess(S, path, mode, o) end,
-rootOnly = function(o) return helpers.rootOnly(S, o) end,
-adminOnly = function(o) return helpers.adminOnly(S, o) end,
-makeProgramEnv = makeProgramEnv,
-promptInput = function(msg, maxLen, isPw) return dialogsMod.promptInput(S, msg, maxLen, isPw) end,
-dialog = function(opts)
-opts = opts or {}; opts.redraw = opts.redraw or function() drawMod.all(S, widgetDefs) end
-return dialogsMod.dialog(S, opts)
-end,
-alert = function(msg, opts)
-opts = opts or {}; opts.redraw = opts.redraw or function() drawMod.all(S, widgetDefs) end
-return dialogsMod.alert(S, msg, opts)
-end,
-confirm = function(msg, opts)
-opts = opts or {}
---! `redraw = false` means "another box follows" -- do NOT replace
---! it with the default repaint, or a run of questions flickers the
---! whole shell between every one. `or` would have done exactly
---! that, since false is falsey.
-if opts.redraw == nil then
-opts.redraw = function() drawMod.all(S, widgetDefs) end
-end
-return dialogsMod.confirm(S, msg, opts)
-end,
-confirmTyped = function(msg, word, opts)
-opts = opts or {}; opts.redraw = opts.redraw or function() drawMod.all(S, widgetDefs) end
-return dialogsMod.confirmTyped(S, msg, word, opts)
-end,
-drawAll = function() return drawMod.all(S, widgetDefs) end,
-drawOutRow = function(text, color) return drawMod.outRow(S, text, color) end,
-loadFiles = function(b) return helpers.loadFiles(S, b) end,
-createTab = function(tt, label, data) return require("shell.panels.tabs").create(S, tt, label, data) end,
-tabs = S.tabs,
-pullSignal = function()
-if coroutine.isyieldable and coroutine.isyieldable() then return coroutine.yield() end
-return computer.pullSignal(0.05)
-end,
-})
-local exec = executorMod.build(S, {
-rp = function(p) return helpers.resolvePath(S, p) end,
-makeProgramEnv = makeProgramEnv,
-C = C,
-})
-local TOSk = _G._TOS and _G._TOS.kernel
-if TOSk and TOSk.setMonitorHost then pcall(TOSk.setMonitorHost, true) end
-local result = eventsMod.run(S, {
-C = C,
-exec = exec,
-makeProgramEnv = makeProgramEnv,
-widgetDefs = widgetDefs,
-})
-if S.sudoDrop then pcall(S.sudoDrop) end
---! #SEC — wipe the seat's TEXT clipboard on the way out. A seat is a
---! physical screen the next person walks up to, and "whatever the last
---! operator copied" is sometimes a password on its way to a prompt. The
---! panels->CLI handoff is NOT an exit (it sets S._exitTo and returns
---! "cli"), so this does not fire between the two shells of one session,
---! which is the case where keeping the clipboard is the correct answer.
-if result ~= "cli" then
-local okCB, clip = pcall(require, "kernel.clipboard")
-if okCB and clip and clip.clear then pcall(clip.clear, S.displayIdx) end
-end
-if TOSk and TOSk.setMonitorHost then pcall(TOSk.setMonitorHost, false) end
-return result
-end
-return M
+local d=require("computer")local f=require("component")local e={}
+function e.run(a)
+local p=require("shell.panels.state")local b=p.new(a)local c=require("shell.panels.helpers")
+local m=require("shell.panels.widgets")local j=require("shell.panels.dialogs")
+local g=require("shell.panels.draw")local k=require("shell.panels.editor")
+local q=require("shell.panels.executor")local r=require("shell.panels.commands")
+local s=require("shell.panels.events")
+local l=require("shell.progenv").builder(b)b.menuDefs=g.buildMenuDefs(b)
+pcall(function()local u=nil
+local x,v=pcall(require,"kernel.profile")
+if x and v and v.load then local A=
+(b.U and b.st and b.U.getSession and b.U.getSession(b.st))or nil
+local B,z=pcall(v.load,A)if B and type(z)=="table"then u=z.landing end end;if not u then
+u=(b.who=="root")and"shell"or"desktop"end
+local w=(u=="desktop"or u=="tiles")if not b.uiSplit then
+if w and d.freeMemory()>=300*1024 then
+local z=require("shell.panels.home")z.setView(b,"tiles")end;return end;if not w and
+d.freeMemory()<300*1024 then return end
+local y=require("shell.panels.desktop")y.open(b,{background=not w})end)local h=m.makeWidgetDefs(b)
+pcall(m.loadCustomWidgets,b,h)
+local n=r.build(b,{rp=function(u)return c.resolvePath(b,u)end,openViewTab=function(u,v)
+return k.openViewTab(b,u,v)end,openLiveTab=function(u,v,w)return k.openLiveTab(b,u,v,w)end,openEditTab=function(u)return
+k.openEditTab(b,u)end,refreshBrowser=function()return c.refreshBrowser(b)end,canRead=function(u,v)return
+c.canRead(b,u,v)end,canWrite=function(u,v)return c.canWrite(b,u,v)end,canAccess=function(u,v,w)return
+c.canAccess(b,u,v,w)end,rootOnly=function(u)return c.rootOnly(b,u)end,adminOnly=function(u)return
+c.adminOnly(b,u)end,makeProgramEnv=l,promptInput=function(u,v,w)return j.promptInput(b,u,v,w)end,dialog=function(u)u=
+u or{}
+u.redraw=u.redraw or function()g.all(b,h)end;return j.dialog(b,u)end,alert=function(v,u)
+u=u or{}u.redraw=u.redraw or function()g.all(b,h)end;return
+j.alert(b,v,u)end,confirm=function(v,u)u=u or{}if
+u.redraw==nil then u.redraw=function()g.all(b,h)end end;return
+j.confirm(b,v,u)end,confirmTyped=function(v,w,u)u=u or{}u.redraw=
+u.redraw or function()g.all(b,h)end;return
+j.confirmTyped(b,v,w,u)end,drawAll=function()
+return g.all(b,h)end,drawOutRow=function(u,v)return g.outRow(b,u,v)end,loadFiles=function(u)
+return c.loadFiles(b,u)end,createTab=function(u,v,w)return
+require("shell.panels.tabs").create(b,u,v,w)end,tabs=b.tabs,pullSignal=function()if
+coroutine.isyieldable and coroutine.isyieldable()then
+return coroutine.yield()end;return d.pullSignal(0.05)end})
+local t=q.build(b,{rp=function(u)return c.resolvePath(b,u)end,makeProgramEnv=l,C=n})local i=_G._TOS and _G._TOS.kernel;if i and i.setMonitorHost then
+pcall(i.setMonitorHost,true)end
+local o=s.run(b,{C=n,exec=t,makeProgramEnv=l,widgetDefs=h})if b.sudoDrop then pcall(b.sudoDrop)end;if o~="cli"then
+local v,u=pcall(require,"kernel.clipboard")
+if v and u and u.clear then pcall(u.clear,b.displayIdx)end end;if
+i and i.setMonitorHost then pcall(i.setMonitorHost,false)end
+return o end;return e

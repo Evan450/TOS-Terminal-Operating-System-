@@ -1,141 +1,30 @@
-local computer = require("computer")
-local audio = {}
-local enabled = true
-local volume = 1.0
---! OpenComputers plays no beep shorter than 50 ms (Machine.beep clamps
---! the duration to [50, 5000] ms), so that is the floor here too. Below
---! 10 ms this used to RETURN instead -- and since the "volume" is a
---! duration multiplier, `audio volume 10` silently muted notify, tick and
---! chat (0.06 s and less) while error and critical stayed audible.
-local MIN_TONE = 0.05
-local function tone(freq, dur)
-if not enabled then return end
-dur = dur * volume
-if dur < MIN_TONE then dur = MIN_TONE end
-pcall(computer.beep, freq, dur)
-end
---! #SEC L (audio.gap) — never pullSignal here: it POPS the next event (a
---! key_down typed during the beeps) and throws it away. But the answer to
---! that was a 50 ms busy-spin that never yields either, which on this
---! cooperative scheduler froze every other seat for each gap (AUDIT 5).
---! Inside a process the gap is now proc.pause: cooperative yields, during
---! which nothing is delivered to us and anything that arrives is kept for
---! our next ordinary yield. Only with no process to yield from (boot, a
---! kernel event listener, a panic) does it still spin -- briefly, and
---! there is nothing else that could be running in that context anyway.
-local GAP = 0.05
-local procMod = nil
-local function gap()
-if procMod == nil then
-local ok, m = pcall(require, "kernel.process")
-procMod = (ok and type(m) == "table" and type(m.pause) == "function") and m or false
-end
-if procMod and procMod.pause(GAP) then return end
-local target = computer.uptime() + GAP
-while computer.uptime() < target do
-end
-end
---! Each tone PAUSES THE MACHINE for its own length: Ocelot's
---! Machine.beep(Context, Arguments) calls Context.pause(duration) after
---! emitting it (AUDIT 5, read off the bytecode). So a sound that can be
---! triggered from outside -- chat() on every incoming message, warning()
---! on every command-not-found -- was a way to stall every seat on demand:
---! a chat flood was a system-wide stall. A pattern that played less than
---! COOLDOWN seconds ago is now skipped; one chime per burst says
---! everything the next twenty would have. critical() is exempt: it marks
---! a failure, and nothing sends those in a stream.
-local COOLDOWN = 1.0
-local lastPlayed = {}
-local function allowed(name)
-local now = computer.uptime()
-local last = lastPlayed[name]
-if last and now - last < COOLDOWN and now >= last then return false end
-lastPlayed[name] = now
-return true
-end
-function audio.success()
-if not allowed("success") then return end
-tone(1000, 0.1)
-end
-function audio.confirm()
-if not allowed("confirm") then return end
-tone(800, 0.08)
-gap()
-tone(1200, 0.1)
-end
-function audio.error()
-if not allowed("error") then return end
-tone(300, 0.3)
-end
-function audio.critical()
-tone(400, 0.15)
-gap()
-tone(400, 0.15)
-gap()
-tone(400, 0.15)
-end
-function audio.warning()
-if not allowed("warning") then return end
-tone(500, 0.1)
-gap()
-tone(500, 0.1)
-end
-function audio.notify()
-if not allowed("notify") then return end
-tone(1200, 0.06)
-end
-function audio.shutdown()
-if not allowed("shutdown") then return end
-tone(800, 0.12)
-gap()
-tone(400, 0.15)
-end
-function audio.boot()
-if not allowed("boot") then return end
-tone(1000, 0.15)
-end
-function audio.bootComplete()
-if not allowed("bootComplete") then return end
-tone(800, 0.08)
-gap()
-tone(1000, 0.08)
-gap()
-tone(1200, 0.1)
-end
-function audio.chat()
-if not allowed("chat") then return end
-tone(1000, 0.05)
-gap()
-tone(1400, 0.08)
-end
-function audio.tick()
-if not allowed("tick") then return end
-tone(600, 0.02)
-end
-function audio.setEnabled(state)
-enabled = state ~= false
-end
-function audio.isEnabled()
-return enabled
-end
-function audio.setVolume(v)
-volume = math.max(0.1, math.min(2.0, tonumber(v) or 1.0))
-end
-function audio.getVolume()
-return volume
-end
-function audio._resetCooldown() lastPlayed = {} end
-audio.COOLDOWN = COOLDOWN
-function audio.init(config)
-if config then
-local audioEnabled = config.get("audio")
-if audioEnabled ~= nil then
-enabled = audioEnabled ~= false
-end
-local audioVolume = config.get("audioVolume")
-if audioVolume then
-audio.setVolume(audioVolume)
-end
-end
-end
-return audio
+local q=require("computer")local m={}local r=true;local t=1.0;local v=0.05
+local function n(b,a)
+if not r then return end;a=a*t;if a<v then a=v end;pcall(q.beep,b,a)end;local w=0.05;local s=nil
+local function p()if s==nil then local c,b=pcall(require,"kernel.process")
+s=
+(c and
+type(b)=="table"and type(b.pause)=="function")and b or false end;if s and
+s.pause(w)then return end;local a=q.uptime()+w
+while q.uptime()<a do end end;local x=1.0;local u={}local function o(a)local b=q.uptime()local c=u[a]
+if c and b-c<x and b>=c then return false end;u[a]=b;return true end
+function m.success()if
+not o("success")then return end;n(1000,0.1)end;function m.confirm()if not o("confirm")then return end;n(800,0.08)p()
+n(1200,0.1)end;function m.error()
+if not o("error")then return end;n(300,0.3)end;function m.critical()n(400,0.15)p()
+n(400,0.15)p()n(400,0.15)end
+function m.warning()if not o("warning")then
+return end;n(500,0.1)p()n(500,0.1)end
+function m.notify()if not o("notify")then return end;n(1200,0.06)end;function m.shutdown()if not o("shutdown")then return end;n(800,0.12)p()
+n(400,0.15)end;function m.boot()
+if not o("boot")then return end;n(1000,0.15)end;function m.bootComplete()if
+not o("bootComplete")then return end;n(800,0.08)p()n(1000,0.08)p()
+n(1200,0.1)end
+function m.chat()if not o("chat")then
+return end;n(1000,0.05)p()n(1400,0.08)end
+function m.tick()if not o("tick")then return end;n(600,0.02)end;function m.setEnabled(a)r=a~=false end;function m.isEnabled()return r end
+function m.setVolume(a)t=math.max(0.1,math.min(2.0,
+tonumber(a)or 1.0))end;function m.getVolume()return t end;function m._resetCooldown()u={}end;m.COOLDOWN=x
+function m.init(a)if a then
+local b=a.get("audio")if b~=nil then r=b~=false end;local c=a.get("audioVolume")if c then
+m.setVolume(c)end end end;return m

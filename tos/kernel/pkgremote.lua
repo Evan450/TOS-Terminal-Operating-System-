@@ -1,543 +1,198 @@
---! THREAT MODEL. This is the path by which EXECUTABLE CODE FROM OUTSIDE
---! THE WORLD reaches a TOS machine. Everything downloaded is hostile until
---! proven otherwise, and "proven otherwise" is not something this module
---! can do — it is what the operator does by choosing a repo and by having
---! to say --allow-unverified when an index ships no hashes.
---!
---! Four rules hold the line here:
---!   1. HOST ALLOWLIST. Only repos an admin wrote into /etc/pkg-repos.cfg
---!      are AUTHORITIES; there is no default repo. A package may NAME
---!      others (KNOWN_CFG), and a fetch looks in one only for what no
---!      configured repo has; pkg's floor holds what it takes (a key
---!      trusted here, never unsigned). An index cannot send a fetch to
---!      another host: a package's files come from its index's repo.
---!   2. PATHS FROM A STRANGER ARE NOT PATHS. Every source path in a
---!      remote index is vetted BEFORE it is used to build either a URL or
---!      a staging destination. This is the sharp edge: the index says
---!      where to write, and "master/../../../tos/kernel/fs.lua" would
---!      escape the staging directory into the live system if it were
---!      taken at face value. validateManifest checks this too, but that
---!      runs at INSTALL time — after these bytes have already hit the
---!      disk — so it cannot be the only check.
---!   3. BOUNDED. Files per package, bytes per file, bytes per package.
---!      A machine with 192 KB of RAM and a 2 MB disk cannot afford to
---!      discover a repo's size by running out.
---!   4. STAGING IS DISPOSABLE. Everything lands under /var/pkg/remote,
---!      which is package-owned space, and is cleared before each fetch so
---!      a previous failure cannot contribute files to the next install.
-local fs = require("kernel.fs")
-local serialize = require("kernel.serialize")
-local pkgremote = {}
-local log = nil
-local REPO_CFG = "/etc/pkg-repos.cfg"
-local KNOWN_CFG = "/var/pkg/known-repos.cfg"
-local MAX_KNOWN = 32
-local MAX_DISCOVERED = 8
-local STAGE_ROOT = "/var/pkg/remote"
-local MAX_INDEX_BYTES = 128 * 1024
-local MAX_FILE_BYTES = 128 * 1024
-local MAX_PKG_BYTES = 512 * 1024
-local MAX_FILES_PER_PKG = 64
-local validHint = function() return false end
-function pkgremote.init(modules)
-modules = modules or {}
-log = modules.log
-if type(modules.validRepoHint) == "function" then validHint = modules.validRepoHint end
-end
-local function inet()
-local ok, m = pcall(require, "kernel.internet")
-if ok then return m end
-return nil
-end
-local function validRepoName(n)
-return type(n) == "string" and #n <= 32 and n:match("^[%w_%-]+$") ~= nil
-end
---! #SEC — a package name becomes a staging PATH below (and the staging
---! root is removed before every fetch), so it must be a name and nothing
---! else: the rule pkg.lua's validName applies to manifests -- alphanumerics
---! with inner dashes, 64 at most, no dots, no separators. A hand-typed
---! name was only the operator's own risk; a dependency name comes from a
---! REMOTE manifest, and "../../tos" there must not reach fs.remove.
---! (test_pkgremote_deps.lua)
-local function validPkgName(n)
-if type(n) ~= "string" or n == "" or #n > 64 then return false end
-if #n == 1 then return n:match("^%w$") ~= nil end
-return n:match("^%w[%w%-]*%w$") ~= nil
-end
-pkgremote.validPkgName = validPkgName
-function pkgremote.repos()
-local out = {}
-if not fs.exists(REPO_CFG) then return out end
-local data = fs.readFile(REPO_CFG)
-if not data then return out end
-local ok, raw = pcall(serialize.decode, data, { maxBytes = 16384 })
-if not ok or type(raw) ~= "table" then
-if log then log.warn("pkgremote", "Corrupt " .. REPO_CFG .. "; ignoring") end
-return out
-end
-local im = inet()
-for _, e in ipairs(raw) do
-if type(e) == "table" and validRepoName(e.name) and type(e.url) == "string" then
-local host = im and im.hostOf(e.url) or nil
-if host then
-out[#out + 1] = {
-name = e.name,
-url = (e.url:gsub("/+$", "")),
-host = host,
-description = type(e.description) == "string" and e.description or nil,
-}
-elseif log then
-log.warn("pkgremote", "Repo '" .. tostring(e.name) .. "' has an unusable URL")
-end
-end
-end
-return out
-end
-local function saveRepos(list)
-local clean = {}
-for _, r in ipairs(list) do
-clean[#clean + 1] = { name = r.name, url = r.url, description = r.description }
-end
-return fs.writeFileAtomic and fs.writeFileAtomic(REPO_CFG, serialize.encode(clean))
-or fs.writeFile(REPO_CFG, serialize.encode(clean))
-end
-function pkgremote.addRepo(name, url, description)
-if not validRepoName(name) then
-return false, "invalid repo name (letters, digits, _ and - only)"
-end
-local im = inet()
-if not im then return false, "internet module unavailable" end
-local ok, err = im.parseUrl(url)
-if not ok then return false, err end
-local list = pkgremote.repos()
-local replaced = false
-for _, r in ipairs(list) do
-if r.name == name then
-r.url, r.description, replaced = (url:gsub("/+$", "")), description, true
-end
-end
-if not replaced then
-list[#list + 1] = { name = name, url = (url:gsub("/+$", "")), description = description }
-end
-local okW = saveRepos(list)
-if not okW then return false, "could not write " .. REPO_CFG end
-if log then log.info("pkgremote", "Repo '" .. name .. "' -> " .. url) end
-return true
-end
-function pkgremote.removeRepo(name)
-local list, out, found = pkgremote.repos(), {}, false
-for _, r in ipairs(list) do
-if r.name == name then found = true else out[#out + 1] = r end
-end
-if not found then return false, "no such repo: " .. tostring(name) end
-if not saveRepos(out) then return false, "could not write " .. REPO_CFG end
-return true
-end
---! #SEC /var/pkg/known-repos.cfg -- what installed packages said about
---! where they come from. KNOWN is not CONFIGURED: written by installs,
---! trusted with nothing, and kept apart from REPO_CFG so no install can
---! add to the allowlist. Every entry reads back through pkg's URL rule.
-local function readKnown()
-local out = {}
-if not fs.exists(KNOWN_CFG) then return out end
-local data = fs.readFile(KNOWN_CFG)
-if not data then return out end
-local ok, raw = pcall(serialize.decode, data, { maxBytes = 16384 })
-if not ok or type(raw) ~= "table" then
-if log then log.warn("pkgremote", "Corrupt " .. KNOWN_CFG .. "; ignoring") end
-return out
-end
-for _, e in ipairs(raw) do
-if type(e) == "table" and validHint(e.url) then
-local from = {}
-for _, f in ipairs(type(e.from) == "table" and e.from or {}) do
-if validPkgName(f) then from[#from + 1] = f end
-end
-out[#out + 1] = { url = (e.url:gsub("/+$", "")), from = from }
-end
-end
-while #out > MAX_KNOWN do table.remove(out, 1) end
-return out
-end
-local function saveKnown(list)
-local clean = {}
-for _, e in ipairs(list) do clean[#clean + 1] = { url = e.url, from = e.from } end
-local body = serialize.encode(clean)
-if fs.writeFileAtomic then return fs.writeFileAtomic(KNOWN_CFG, body) end
-return fs.writeFile(KNOWN_CFG, body)
-end
-function pkgremote.known() return readKnown() end
-function pkgremote.learn(urls, from)
-if type(urls) ~= "table" then return 0 end
-local list = readKnown()
-local configured = {}
-for _, r in ipairs(pkgremote.repos()) do configured[r.url] = true end
-local added = 0
-for _, u in ipairs(urls) do
-if validHint(u) then
-local url = (u:gsub("/+$", ""))
-if not configured[url] then
-local hit
-for _, e in ipairs(list) do if e.url == url then hit = e; break end end
-if not hit then
-hit = { url = url, from = {} }
-list[#list + 1] = hit
-added = added + 1
-end
-if validPkgName(from) then
-local has = false
-for _, f in ipairs(hit.from) do if f == from then has = true end end
-if not has and #hit.from < 8 then hit.from[#hit.from + 1] = from end
-end
-end
-end
-end
-while #list > MAX_KNOWN do table.remove(list, 1) end
-local ok = saveKnown(list)
-if not ok then return 0, "could not write " .. KNOWN_CFG end
-if added > 0 and log then
-log.info("pkgremote", ("Learned %d repo(s) from '%s' (known, not trusted)"):format(
-added, tostring(from)))
-end
-return added
-end
-function pkgremote.forget(which)
-local list = readKnown()
-if which == "all" then
-if not saveKnown({}) then return false, "could not write " .. KNOWN_CFG end
-return true, #list
-end
-local idx = tonumber(which)
-if not idx then
-local url = type(which) == "string" and (which:gsub("/+$", "")) or nil
-for i, e in ipairs(list) do if e.url == url then idx = i end end
-end
-if not idx or not list[idx] then
-return false, "no known repo " .. tostring(which) .. " (see 'pkg repo list')"
-end
-table.remove(list, idx)
-if not saveKnown(list) then return false, "could not write " .. KNOWN_CFG end
-return true, 1
-end
-local function discoveredRepo(url)
-if not validHint(url) then return nil end
-url = (url:gsub("/+$", ""))
-local okC, crypto = pcall(require, "kernel.crypto")
-local im = inet()
-if not okC or type(crypto) ~= "table" or type(crypto.hash) ~= "function" or not im then
-return nil
-end
-local host = im.hostOf and im.hostOf(url)
-local h = tostring(crypto.hash(url) or "")
-if not host or not h:match("^%x+$") or #h < 12 then return nil end
-return { name = "k" .. h:sub(1, 12), url = url, host = host, discovered = true }
-end
-local function discoveredCandidates(repos, hints)
-local configured, seen, out = {}, {}, {}
-for _, r in ipairs(repos) do configured[r.url] = true end
-local function consider(u)
-if #out >= MAX_DISCOVERED or type(u) ~= "string" then return end
-local url = (u:gsub("/+$", ""))
-if configured[url] or seen[url] then return end
-seen[url] = true
-local r = discoveredRepo(url)
-if r then out[#out + 1] = r end
-end
-for _, u in ipairs(type(hints) == "table" and hints or {}) do consider(u) end
-for _, k in ipairs(readKnown()) do consider(k.url) end
-return out
-end
---! A source path out of a remote index is used for two things: appended to
---! the repo URL, and appended to the staging directory. Both are injection
---! sites. Refused: absolute paths, any "." or ".." segment, backslashes,
---! control characters, a scheme (so an index cannot redirect the fetch to
---! another host), a protocol-relative "//" prefix, and query/fragment
---! punctuation that would make the URL mean something else.
-local function safeRepoPath(p)
-if type(p) ~= "string" or p == "" then return nil end
-if #p > 256 then return nil end
-if p:find("[%c]") then return nil end
-if p:find("\\", 1, true) then return nil end
-if p:sub(1, 1) == "/" then return nil end
-if p:find("://", 1, true) then return nil end
-if p:find("?", 1, true) or p:find("#", 1, true) then return nil end
-if p:find("@", 1, true) then return nil end
-for seg in p:gmatch("[^/]+") do
-if seg == "." or seg == ".." then return nil end
-end
-return (p:gsub("/+", "/"))
-end
-local indexCache = {}
-local sigCache = {}
---! #SEC / #MEM (pentest, Sep 2026) — the byte bound was the only one. A
---! 128 KB index of "{{},{},...}" built 805 KB of tables before the decoder's
---! per-table entry cap stopped it, and "{{{}},...}" 1.5 MB: whoever runs a
---! configured repo could take down every machine that ran `pkg search`
---! against it. The budget stops either at 64 KB of heap; the largest real
---! index (Optional Utilities', 8.6 KB) is charged 26 KB of it.
---! (test_untrusted_index_budget.lua)
-local MAX_INDEX_COST = 64 * 1024
-function pkgremote.index(repo, opts)
-opts = opts or {}
-local im = inet()
-if not im then return nil, "internet module unavailable" end
-if not opts.refresh and indexCache[repo.name] then
-return indexCache[repo.name].index
-end
-local url = repo.url .. "/programs.cfg"
-local body, err = im.get(url, { maxBytes = MAX_INDEX_BYTES })
-if not body then
-return nil, "could not fetch " .. url .. ": " .. tostring(err)
-end
---! The index is DATA, and is decoded by kernel.serialize with a byte
---! bound — never `load()`ed. A repo index is a table written by a
---! stranger; running it as Lua would be handing them the machine before
---! they had even shipped a package.
-local ok, raw = pcall(serialize.decode, body, { maxBytes = MAX_INDEX_BYTES,
-maxCost = MAX_INDEX_COST, maxKeys = 1024 })
-if not ok or type(raw) ~= "table" then
-return nil, "repo '" .. repo.name .. "' returned an index that is not a table"
-end
-indexCache[repo.name] = { index = raw }
-return raw
-end
-function pkgremote.clearCache() indexCache = {}; sigCache = {} end
---! pkgsign's own bound on a .sig: a real one is about 300 bytes.
-local MAX_SIG_BYTES = 4096
---! Absent and broken are different verdicts (pkgsign: a signature that
---! will not parse is evidence, and is refused), so what counts as "the
---! repo has no signature" is decided here, narrowly:
---!   * the server said so: any 4xx;
---!   * it sent something that is not a signature at all -- a body that
---!     does not decode as a table, or more bytes than a signature can be.
---!     An OpenComputers card without handle.response() cannot report a
---!     404, so a host's error page arrives as the body; staging that would
---!     refuse every package from every unsigned repo.
---! A body that IS a table is the repo's signature, and pkgsign judges it.
---! No answer at all (a timeout, a 5xx, a dropped transfer) is not "none":
---! guessing "none" records a signed package as unsigned, which is the bug
---! this exists to fix. The fetch is refused and the next one asks again,
---! as it already is when any of the package's own files fails to arrive.
-local function indexSignature(im, repo, opts)
-if not opts.refresh and sigCache[repo.name] ~= nil then return sigCache[repo.name] end
-local body, err, meta = im.get(repo.url .. "/programs.sig", { maxBytes = MAX_SIG_BYTES })
-local answer
-if type(body) == "string" then
-local okD, rec = pcall(serialize.decode, body, { maxBytes = MAX_SIG_BYTES })
-answer = (okD and type(rec) == "table") and body or false
-else
-meta = type(meta) == "table" and meta or {}
-local status = tonumber(meta.status) or tonumber(tostring(err):match("^HTTP (%d%d%d)"))
-if (status and status >= 400 and status < 500) or (meta.bytes or 0) > MAX_SIG_BYTES then
-answer = false
-else
-return nil, "could not ask repo '" .. repo.name .. "' whether it signs its index: "
-.. tostring(err) .. "  [E-501 ERR_NET_NO_ANSWER]"
-end
-end
-sigCache[repo.name] = answer
-return answer
-end
-function pkgremote.search(opts)
-local out = {}
-for _, repo in ipairs(pkgremote.repos()) do
-local idx, err = pkgremote.index(repo, opts)
-if idx then
-for name, entry in pairs(idx) do
-if type(name) == "string" and type(entry) == "table" and not entry.hidden then
-out[#out + 1] = {
-name = name,
-repo = repo.name,
-description = entry.description or entry.note,
-version = entry.version,
-}
-end
-end
-elseif log then
-log.warn("pkgremote", tostring(err))
-end
-end
-table.sort(out, function(a, b) return (a.name or "") < (b.name or "") end)
-return out
-end
-function pkgremote.fetch(name, opts)
-opts = opts or {}
-if not validPkgName(name) then
-return nil, "not a package name: " .. tostring(name):sub(1, 64)
-.. "  [E-602 ERR_PKG_BAD_NAME]"
-end
-local im = inet()
-if not im then return nil, "internet module unavailable" end
-if not im.available() then
-local st = im.status()
-return nil, st.reason or "internet is not available"
-end
-local repos = pkgremote.repos()
---! Repos nobody configured are read only under a discoveredPolicy other
---! than "off"; pkg.installRemote holds what comes from one to the floor.
-local discovery = opts.discoveredPolicy ~= nil and opts.discoveredPolicy ~= "off"
-local others = discovery and discoveredCandidates(repos, opts.hints) or {}
-if #repos == 0 and #others == 0 then
-return nil, "no remote repositories configured (see 'pkg repo add')"
-end
-local repo, entry
-local unusable = {}
-for _, r in ipairs(repos) do
-local idx, iErr = pkgremote.index(r, opts)
-if idx and type(idx[name]) == "table" then
-repo, entry = r, idx[name]
-break
-elseif not idx then
-unusable[#unusable + 1] = tostring(iErr)
-end
-end
-if not entry then
-for _, r in ipairs(others) do
-local idx, iErr = pkgremote.index(r, opts)
-if idx and type(idx[name]) == "table" then
-repo, entry = r, idx[name]
-break
-elseif not idx then
-unusable[#unusable + 1] = tostring(iErr)
-end
-end
-end
---! A repo may sign its WHOLE index: programs.sig beside programs.cfg,
---! covering the index's raw bytes. Staging a re-encoded one-entry index
---! (below) threw that signature away, so a package from a publisher the
---! machine trusts was recorded as `unsigned`. When the repo serves a
---! signature, the index is fetched again at that moment -- so the bytes
---! and the signature are a pair -- and this package's entry is taken
---! from THOSE bytes, the ones the signature covers. A repo with no
---! signature costs one request per session and is staged as before.
---! (test_pkgremote_signed_index.lua)
-local signedIndex, sigBody
-if entry then
-local sig, sErr = indexSignature(im, repo, opts)
-if sig == nil then return nil, sErr end
-if sig then
-local fresh, fErr = im.get(repo.url .. "/programs.cfg", { maxBytes = MAX_INDEX_BYTES })
-local okD, freshIdx = false, nil
-if type(fresh) == "string" then
-okD, freshIdx = pcall(serialize.decode, fresh, { maxBytes = MAX_INDEX_BYTES,
-maxCost = MAX_INDEX_COST, maxKeys = 1024 })
-end
---! The session's cached copy may predate the signature, so this read
---! is the only copy the signature can cover. Without it, refuse.
-if not (okD and type(freshIdx) == "table") then
-return nil, "repo '" .. repo.name .. "' signs its index, and re-reading it failed: "
-.. tostring(fErr or "it did not decode")
-end
-if type(freshIdx[name]) ~= "table" then
-return nil, "package '" .. tostring(name) .. "' is no longer in repo '"
-.. repo.name .. "''s signed index"
-end
-signedIndex, sigBody, entry = fresh, sig, freshIdx[name]
-end
-end
-if not entry then
---! A repo whose index would not load used to vanish from the answer:
---! "not in any configured repo" when the truth was "that repo's index
---! is broken". Say both. (test_pkgremote_malformed.lua)
-local why = "package '" .. tostring(name) .. "' is not in any configured repo"
-.. (#others > 0 and (", nor in the " .. #others .. " other repo(s) it was pointed to") or "")
-if #unusable > 0 then why = why .. " (" .. table.concat(unusable, "; ") .. ")" end
-return nil, why .. "  [E-601 ERR_PKG_NOT_FOUND]"
-end
-if type(entry.files) ~= "table" then
-return nil, "package '" .. name .. "' declares no files"
-end
---! #SEC — the entry is a stranger's data, and every key is used as a
---! string below. A `files` table written as an array ({ "a.lua" })
---! has number keys, and `src:gsub` on one THREW out of `pkg fetch`
---! instead of refusing. Check the whole shape before anything is staged
---! or downloaded: OPPM's files map is source path -> destination dir,
---! both strings. (test_pkgremote_malformed.lua)
-for src, dest in pairs(entry.files) do
-if type(src) ~= "string" or type(dest) ~= "string" then
-return nil, "package '" .. name .. "' in repo '" .. repo.name
-.. "' has a malformed file list (expected { [\"source/path\"] = \"/dest/dir\" }, got "
-.. type(src) .. " -> " .. type(dest) .. ")"
-end
-end
---! One root PER PACKAGE, not per repo: `pkg fetch` stages a package's
---! dependencies while the package itself is still staged, and a
---! per-repo root was wiped by the next fetch from the same repo. "." is
---! legal in neither a repo name nor a package name, so no two collide.
-local root = fs.join(STAGE_ROOT, repo.name .. "." .. name)
-local pkgDir = fs.join(root, name)
-pcall(fs.remove, root)
-if not fs.makeDirectory(root) or not fs.makeDirectory(pkgDir) then
-return nil, "could not create staging directory " .. pkgDir
-end
---! Every refusal from here on leaves staging empty. Two of them (an
---! OPPM directory copy, an unsafe path) returned with the staged index
---! still on disk.
-local function fail(msg)
-pcall(fs.remove, root)
-return nil, msg
-end
-local okIdx
-if signedIndex then
-okIdx = fs.writeFile(fs.join(root, "programs.cfg"), signedIndex)
-and fs.writeFile(fs.join(root, "programs.sig"), sigBody)
-else
-okIdx = fs.writeFile(fs.join(root, "programs.cfg"),
-serialize.encode({ [name] = entry }))
-end
-if not okIdx then return fail("could not stage the package index") end
-local count, total = 0, 0
-for src in pairs(entry.files) do
-local rel = safeRepoPath(src:gsub("^:", ""))
-if src:sub(1, 1) == ":" then
-return fail("package '" .. name ..
-"' uses an OPPM directory-copy entry (" .. tostring(src) ..
-"); TOS installs a declared file list")
-end
-if not rel then
-if log then
-log.warn("pkgremote", "Refused unsafe source path from repo '"
-.. repo.name .. "': " .. tostring(src))
-end
-return fail("package '" .. name .. "' declares an unsafe file path: " .. tostring(src))
-end
-count = count + 1
-if count > MAX_FILES_PER_PKG then
-return fail("package '" .. name .. "' exceeds the " .. MAX_FILES_PER_PKG
-.. "-file limit")
-end
-local url = repo.url .. "/" .. rel
-local dest = fs.join(root, rel)
-local parent = dest:match("^(.*)/[^/]+$")
-if parent and parent ~= "" then fs.makeDirectory(parent) end
-local okD, dErr, meta = im.download(url, dest, { maxBytes = MAX_FILE_BYTES })
-if not okD then
-return fail("downloading " .. rel .. ": " .. tostring(dErr))
-end
-total = total + ((meta and meta.bytes) or 0)
-if total > MAX_PKG_BYTES then
-return fail("package '" .. name .. "' exceeds the "
-.. math.floor(MAX_PKG_BYTES / 1024) .. " KB total limit")
-end
-end
-if count == 0 then
-return fail("package '" .. name .. "' listed no installable files")
-end
-if log then
-log.info("pkgremote", string.format("Fetched %s from %s (%d files, %d bytes)",
-name, repo.name, count, total))
-end
-return pkgDir, nil, { repo = repo.name, url = repo.url, files = count, bytes = total,
-discovered = repo.discovered and repo.url or nil }
-end
-function pkgremote.cleanup(pkgDir)
-if type(pkgDir) ~= "string" then return end
-local root = pkgDir:match("^(" .. STAGE_ROOT:gsub("%-", "%%-") .. "/[^/]+)")
-if root then pcall(fs.remove, root) end
-end
-pkgremote.STAGE_ROOT = STAGE_ROOT
-pkgremote.REPO_CFG = REPO_CFG
-pkgremote.KNOWN_CFG = KNOWN_CFG
-pkgremote.MAX_KNOWN = MAX_KNOWN
-pkgremote._safeRepoPath = safeRepoPath
-return pkgremote
+
+local K,P,ah,X,O="string","pkgremote","internet module unavailable","could not write ","package '"local I=require("kernel.fs")
+local L=require("kernel.serialize")local H={}local J=nil;local N="/etc/pkg-repos.cfg"local M="/var/pkg/known-repos.cfg"local Y=32
+local ai=8;local Z="/var/pkg/remote"local R=128*1024;local aj=128*1024;local ab=512*1024;local ac=64;local S=function()return
+false end
+function H.init(a)a=a or{}J=a.log;if
+type(a.validRepoHint)=="function"then S=a.validRepoHint end end
+local function Q()local a,b=pcall(require,"kernel.internet")if a then return b end;return nil end;local function ad(a)return
+type(a)==K and#a<=32 and a:match("^[%w_%-]+$")~=nil end
+local function T(a)if
+type(a)~=K or a==""or#a>64 then return false end;if
+#a==1 then return a:match("^%w$")~=nil end;return
+a:match("^%w[%w%-]*%w$")~=nil end;H.validPkgName=T
+function H.repos()local a={}if not I.exists(N)then return a end
+local b=I.readFile(N)if not b then return a end
+local e,c=pcall(L.decode,b,{maxBytes=16384})
+if not e or type(c)~="table"then if J then
+J.warn(P,"Corrupt "..N.."; ignoring")end;return a end;local d=Q()
+for g,f in ipairs(c)do
+if type(f)=="table"and ad(f.name)and
+type(f.url)==K then
+local h=d and d.hostOf(f.url)or nil
+if h then
+a[#a+1]={name=f.name,url=(f.url:gsub("/+$","")),host=h,description=type(f.description)==K and
+f.description or nil}elseif J then
+J.warn(P,"Repo '"..tostring(f.name).."' has an unusable URL")end end end;return a end
+local function ae(a)local b={}for d,c in ipairs(a)do
+b[#b+1]={name=c.name,url=c.url,description=c.description}end;return
+I.writeFileAtomic and
+I.writeFileAtomic(N,L.encode(b))or I.writeFile(N,L.encode(b))end
+function H.addRepo(a,b,c)
+if not ad(a)then return false,"invalid repo name (letters, digits, _ and - only)"end;local e=Q()if not e then return false,ah end;local g,h=e.parseUrl(b)
+if not g then return false,h end;local d=H.repos()local f=false
+for k,j in ipairs(d)do if j.name==a then
+j.url,j.description,f=(b:gsub("/+$","")),c,true end end;if not f then
+d[#d+1]={name=a,url=(b:gsub("/+$","")),description=c}end;local i=ae(d)
+if not i then return false,X..N end
+if J then J.info(P,"Repo '"..a.."' -> "..b)end;return true end
+function H.removeRepo(a)local d,b,c=H.repos(),{},false;for f,e in ipairs(d)do
+if e.name==a then c=true else b[#b+1]=e end end;if not c then
+return false,"no such repo: "..tostring(a)end;if not ae(b)then return false,X..N end
+return true end
+local function U()local a={}if not I.exists(M)then return a end;local b=I.readFile(M)if not b then
+return a end;local d,c=pcall(L.decode,b,{maxBytes=16384})
+if not d or
+type(c)~="table"then if J then
+J.warn(P,"Corrupt "..M.."; ignoring")end;return a end
+for g,f in ipairs(c)do
+if type(f)=="table"and S(f.url)then local e={}for g,h in ipairs(
+type(f.from)=="table"and f.from or{})do if T(h)then
+e[#e+1]=h end end
+a[#a+1]={url=(f.url:gsub("/+$","")),from=e}end end;while#a>Y do table.remove(a,1)end;return a end
+local function _(a)local b={}
+for e,d in ipairs(a)do b[#b+1]={url=d.url,from=d.from}end;local c=L.encode(b)
+if I.writeFileAtomic then return I.writeFileAtomic(M,c)end;return I.writeFile(M,c)end;function H.known()return U()end
+function H.learn(b,a)if type(b)~="table"then return 0 end
+local c=U()local e={}for h,g in ipairs(H.repos())do e[g.url]=true end;local d=0
+for h,g in
+ipairs(b)do
+if S(g)then local i=(g:gsub("/+$",""))
+if not e[i]then local j;for h,k in ipairs(c)do
+if k.url==i then j=k;break end end
+if not j then j={url=i,from={}}c[#c+1]=j;d=d+1 end;if T(a)then local k=false;for h,l in ipairs(j.from)do if l==a then k=true end end
+if
+not k and#j.from<8 then j.from[#j.from+1]=a end end end end end;while#c>Y do table.remove(c,1)end;local f=_(c)
+if not f then return 0,X..M end;if d>0 and J then
+J.info(P,("Learned %d repo(s) from '%s' (known, not trusted)"):format(d,tostring(a)))end;return d end
+function H.forget(a)local b=U()
+if a=="all"then if not _({})then return false,X..M end;return true,#b end;local c=tonumber(a)if not c then local d=type(a)==K and(a:gsub("/+$",""))or
+nil
+for f,g in ipairs(b)do if g.url==d then c=f end end end
+if
+not c or not b[c]then return false,
+"no known repo "..tostring(a).." (see 'pkg repo list')"end;table.remove(b,c)if not _(b)then return false,X..M end;return true,1 end
+local function ak(a)if not S(a)then return nil end;a=(a:gsub("/+$",""))
+local f,b=pcall(require,"kernel.crypto")local c=Q()
+if
+not f or type(b)~="table"or type(b.hash)~="function"or not c then return nil end;local e=c.hostOf and c.hostOf(a)
+local d=tostring(b.hash(a)or"")
+if not e or not d:match("^%x+$")or#d<12 then return nil end
+return{name="k"..d:sub(1,12),url=a,host=e,discovered=true}end
+local function al(b,a)local d,e,c={},{},{}for h,g in ipairs(b)do d[g.url]=true end
+local function f(g)if
+#c>=ai or type(g)~=K then return end;local h=(g:gsub("/+$",""))
+if d[h]or e[h]then return end;e[h]=true;local i=ak(h)if i then c[#c+1]=i end end
+for h,g in ipairs(type(a)=="table"and a or{})do f(g)end;for h,g in ipairs(U())do f(g.url)end;return c end
+local function af(a)if type(a)~=K or a==""then return nil end
+if#a>256 then return nil end;if a:find("[%c]")then return nil end
+if a:find("\\",1,true)then return nil end;if a:sub(1,1)=="/"then return nil end
+if a:find("://",1,true)then return nil end
+if a:find("?",1,true)or a:find("#",1,true)then return nil end;if a:find("@",1,true)then return nil end;for b in a:gmatch("[^/]+")do if
+b=="."or b==".."then return nil end end;return
+(a:gsub("/+","/"))end;local V={}local W={}local ag=64*1024
+function H.index(a,b)b=b or{}local d=Q()if not d then return nil,ah end
+if not
+b.refresh and V[a.name]then return V[a.name].index end;local e=a.url.."/programs.cfg"local f,g=d.get(e,{maxBytes=R})if
+not f then
+return nil,"could not fetch "..e..": "..tostring(g)end
+local h,c=pcall(L.decode,f,{maxBytes=R,maxCost=ag,maxKeys=1024})
+if not h or type(c)~="table"then return nil,"repo '"..
+a.name.."' returned an index that is not a table"end;V[a.name]={index=c}return c end;function H.clearCache()V={}W={}end;local aa=4096
+local function am(b,a,c)if
+not c.refresh and W[a.name]~=nil then return W[a.name]end
+local f,g,d=b.get(a.url.."/programs.sig",{maxBytes=aa})local e
+if type(f)==K then local h,i=pcall(L.decode,f,{maxBytes=aa})
+e=(h and type(i)==
+"table")and f or false else d=type(d)=="table"and d or{}local h=tonumber(d.status)or
+tonumber(tostring(g):match("^HTTP (%d%d%d)"))
+if
+(h and
+h>=400 and h<500)or(d.bytes or 0)>aa then e=false else
+return nil,"could not ask repo '"..
+a.name.."' whether it signs its index: "..
+tostring(g).."  [E-501 ERR_NET_NO_ANSWER]"end end;W[a.name]=e;return e end
+function H.search(a)local b={}
+for d,c in ipairs(H.repos())do local e,f=H.index(c,a)
+if e then
+for h,g in pairs(e)do if type(h)==K and
+type(g)=="table"and not g.hidden then
+b[#b+1]={name=h,repo=c.name,description=
+g.description or g.note,version=g.version}end end elseif J then J.warn(P,tostring(f))end end
+table.sort(b,function(c,d)return(c.name or"")< (d.name or"")end)return b end
+function H.fetch(a,b)b=b or{}if not T(a)then
+return nil,"not a package name: "..tostring(a):sub(1,64)..
+"  [E-602 ERR_PKG_BAD_NAME]"end;local g=Q()
+if not g then return nil,ah end;if not g.available()then local r=g.status()return nil,
+r.reason or"internet is not available"end
+local l=H.repos()
+local q=b.discoveredPolicy~=nil and b.discoveredPolicy~="off"local k=q and al(l,b.hints)or{}
+if#l==0 and#k==0 then return nil,
+"no remote repositories configured (see 'pkg repo add')"end;local c,d;local h={}for t,s in ipairs(l)do local r,u=H.index(s,b)
+if
+r and type(r[a])=="table"then c,d=s,r[a]break elseif not r then h[#h+1]=tostring(u)end end
+if not d then
+for t,s in
+ipairs(k)do local r,u=H.index(s,b)if r and type(r[a])=="table"then c,d=s,r[a]break elseif not r then h[#h+
+1]=tostring(u)end end end;local m,p
+if d then local r,s=am(g,c,b)if r==nil then return nil,s end
+if r then
+local u,w=g.get(c.url.."/programs.cfg",{maxBytes=R})local v,t=false,nil;if type(u)==K then
+v,t=pcall(L.decode,u,{maxBytes=R,maxCost=ag,maxKeys=1024})end
+if not
+(v and type(t)=="table")then
+return nil,"repo '"..
+c.name.."' signs its index, and re-reading it failed: "..
+tostring(w or"it did not decode")end;if type(t[a])~="table"then
+return nil,O..tostring(a)..
+"' is no longer in repo '"..c.name.."''s signed index"end;m,p,d=u,r,t[a]end end
+if not d then
+local r=O..tostring(a)..
+"' is not in any configured repo".. (
+#k>0 and(", nor in the "..
+#k.." other repo(s) it was pointed to")or"")if#h>0 then
+r=r.." ("..table.concat(h,"; ")..")"end
+return nil,r.."  [E-601 ERR_PKG_NOT_FOUND]"end;if type(d.files)~="table"then
+return nil,O..a.."' declares no files"end
+for r,s in pairs(d.files)do
+if
+type(r)~=K or type(s)~=K then
+return nil,
+O..a..
+"' in repo '"..c.name..
+"' has a malformed file list (expected { [\"source/path\"] = \"/dest/dir\" }, got "..type(r).." -> "..
+type(s)..")"end end;local e=I.join(Z,c.name.."."..a)local n=I.join(e,a)
+pcall(I.remove,e)
+if
+not I.makeDirectory(e)or not I.makeDirectory(n)then return nil,"could not create staging directory "..n end;local function f(r)pcall(I.remove,e)return nil,r end;local o
+if m then
+o=
+I.writeFile(I.join(e,"programs.cfg"),m)and I.writeFile(I.join(e,"programs.sig"),p)else
+o=I.writeFile(I.join(e,"programs.cfg"),L.encode({[a]=d}))end
+if not o then return f("could not stage the package index")end;local i,j=0,0
+for r in pairs(d.files)do local s=af(r:gsub("^:",""))
+if
+r:sub(1,1)==":"then return
+f(O..
+a.."' uses an OPPM directory-copy entry ("..
+tostring(r).."); TOS installs a declared file list")end
+if not s then if J then
+J.warn(P,"Refused unsafe source path from repo '"..c.name.."': "..tostring(r))end;return
+f(O..a..
+"' declares an unsafe file path: "..tostring(r))end;i=i+1;if i>ac then return
+f(O..a.."' exceeds the "..ac.."-file limit")end
+local w=c.url.."/"..s;local u=I.join(e,s)local t=u:match("^(.*)/[^/]+$")if t and t~=""then
+I.makeDirectory(t)end;local x,y,v=g.download(w,u,{maxBytes=aj})if not x then
+return f(
+"downloading "..s..": "..tostring(y))end
+j=j+ ((v and v.bytes)or 0)
+if j>ab then return
+f(O..a..
+"' exceeds the "..math.floor(ab/1024).." KB total limit")end end;if i==0 then return
+f(O..a.."' listed no installable files")end;if J then
+J.info(P,string.format("Fetched %s from %s (%d files, %d bytes)",a,c.name,i,j))end
+return n,nil,{repo=c.name,url=c.url,files=i,bytes=j,discovered=
+c.discovered and c.url or nil}end
+function H.cleanup(a)if type(a)~=K then return end;local b=a:match("^("..
+Z:gsub("%-","%%-").."/[^/]+)")if b then
+pcall(I.remove,b)end end;H.STAGE_ROOT=Z;H.REPO_CFG=N;H.KNOWN_CFG=M;H.MAX_KNOWN=Y;H._safeRepoPath=af;return H

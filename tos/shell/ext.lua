@@ -1,476 +1,243 @@
-local computer=require("computer")
-local X={}
-local function getActor(ctx)
-local U = ctx.U
-if U and ctx.st then
-local s = U.getSession(ctx.st)
-if s then return s.user, s.tier end
-end
-return "unknown", 0
-end
---! #SEC — SETTING is admin. The consolidation gave the whole command
---! `device`'s tier 0, so a guest could rename the machine: the name is
---! written to /etc/tos.cfg (which `config` guards at admin) and is what
---! HELLO announces to every KNOWN peer. Showing it stays open to anyone.
---! The name is held to what a peer will keep of it anyway (net.lua's
---! cleanClaim: printable, at most 32).
-function X.hostname(a,ctx)
-local SC=ctx.K.getConfig() if not SC then ctx.o("No config",0xFF0000) return end
-if a[1] then
-local _, tier = getActor(ctx)
-if (tier or 0) < 2 then
-ctx.o("Setting the hostname requires admin (it is this machine's name on the network).",0xFF0000)
-return
-end
-local name = a[1]
-if #name > 32 or name:find("%c") then
-ctx.o("Hostname must be 1-32 printable characters.",0xFF0000)
-return
-end
-SC.set("hostname",name) SC.save()
-local NM = ctx.K.getNet and ctx.K.getNet()
-if NM and NM.setHostname then NM.setHostname(name) end
-end
-ctx.o("Device: "..SC.deviceType().." | Host: "..(SC.get("hostname") or "?"))
-end
-function X.config(a,ctx)
-local SC=ctx.K.getConfig() if not SC then ctx.o("No config",0xFF0000) return end
-for k,v in pairs(SC.getAll()) do ctx.o(" "..k.." = "..tostring(v),0xC0C0C0) end
-end
-function X.battery(a,ctx)
-local pm=ctx.K.getPower()
-if not pm then ctx.o("N/A") return end
-local s=pm.statusString()
-if s then ctx.o(s) else ctx.o("AC power (no battery on this device)") end
-end
-local _lastScan = nil
-local function fmtAddr(addr)
-local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
-if A and A.format then return A.format(addr) end
-if type(addr) ~= "string" then return "?" end
-return addr:sub(1, 8) .. "..."
-end
-local function resolvePeer(s)
-if type(s) ~= "string" or s == "" then return s end
-local n = tonumber(s)
-if n and _lastScan and _lastScan[n] then return _lastScan[n].addr end
-local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
-if A and A.resolve then
-local addr = A.resolve(s)
-if addr then return addr end
-end
-return s
-end
-function X.net(a,ctx)
-local NM=ctx.K.getNet() if not NM then ctx.o("No network",0xFF0000) return end
-if not a[1] then
-ctx.o("net <subcommand>",0xFFFF00)
-ctx.o("  status                       Show network state",0xAAAAAA)
-ctx.o("  discover (or scan)           Broadcast ping",0xAAAAAA)
-ctx.o("  peers                        List discovered peers",0xAAAAAA)
-ctx.o("  servers                      Discovered hosts w/ device + last-seen",0xAAAAAA)
-ctx.o("  trust <peer> [full]          Elevate peer to KNOWN / TRUSTED",0xAAAAAA)
-ctx.o("  trust gen <peer>             Generate shared secret (admin)",0xAAAAAA)
-ctx.o("  trust setSecret <peer> <hex> Mirror a secret from peer (admin)",0xAAAAAA)
-ctx.o("  trust showSecret <peer>      Show my secret with peer (admin)",0xAAAAAA)
-ctx.o("  block <peer>                 Block a peer",0xAAAAAA)
-ctx.o("  revoke <peer>                Drop peer back to UNKNOWN",0xAAAAAA)
-ctx.o("  forget <peer>                Remove peer record entirely",0xAAAAAA)
-ctx.o("  request <peer>               Ask a peer's admin for trust",0xAAAAAA)
-ctx.o("  requests                     Show pending trust requests",0xAAAAAA)
-ctx.o("  send <peer> <msg>            Send chat message",0xAAAAAA)
-ctx.o("  alias add <name> <peer>      Name a peer (admin)",0xAAAAAA)
-ctx.o("  alias rm  <name>             Remove an alias (admin)",0xAAAAAA)
-ctx.o("  alias list                   Show all aliases",0xAAAAAA)
-ctx.o("  alias show <peer>            Show the alias for a peer",0xAAAAAA)
-ctx.o("  pair start                   Open pairing window (admin)",0xAAAAAA)
-ctx.o("  pair <peer> <code>           Pair with peer using code (admin)",0xAAAAAA)
-ctx.o(" <peer> = alias, full address, prefix, or scan-index (1..N)",0x888888)
-return
-end
-local s=a[1]
-if s=="servers" then
-local peers=NM.peers and NM.peers() or {}
-if #peers==0 then
-ctx.o("No peers discovered yet.",0xAAAAAA)
-ctx.o("Run 'net scan' to search the network.",0x888888)
-return
-end
-ctx.o(string.format("%-10s %-8s %-6s %-5s %s",
-"Hostname","Device","Trust","Seen","Address"),0xAAAAAA)
-local trustLabels={[-1]="BLK",[0]="UNK",[1]="KNW",[2]="TRS"}
-local now=computer.uptime()
-for _,peer in ipairs(peers) do
-local age=now-(peer.lastSeen or 0)
-local ageStr
-if age<60 then ageStr=math.floor(age).."s"
-elseif age<3600 then ageStr=math.floor(age/60).."m"
-else ageStr=math.floor(age/3600).."h" end
-ctx.o(string.format("%-10s %-8s %-6s %-5s %s",
-(peer.hostname or "?"):sub(1,10),(peer.device or "?"):sub(1,8),
-trustLabels[peer.trust] or "?",ageStr,(peer.addr or "?"):sub(1,12)))
-end
-ctx.o(#peers.." peer(s) found.",0x888888)
-elseif s=="status" then
-local i=NM.status()
-ctx.o("Host: "..(i.hostname or "?"))
-ctx.o("Addr: "..(i.address or "?"))
-local modemCount = NM.modemCount and NM.modemCount() or (i.hasModem and 1 or 0)
-ctx.o("Modem: "..(i.hasModem and "Yes" or "No")..
-(modemCount > 1 and (" (x"..modemCount..")") or "")..
-(i.hasTunnel and " + Tunnel" or ""))
-ctx.o("Encrypted: "..(i.encrypted and "Yes" or "No"))
-ctx.o("Port: "..tostring(i.listenPort or "?"))
-if i.portOwner then
-ctx.o("  (registered to "..i.portOwner.." -- TOS traffic shares that network; TOS's own is 42)",0xFFFF00)
-end
-local p=i.peers or {}
-local total=(p.unknown or 0)+(p.known or 0)+(p.trusted or 0)+(p.blocked or 0)
-ctx.o("Peers: "..total.." (trusted:".. (p.trusted or 0).." known:"..(p.known or 0).." blocked:"..(p.blocked or 0)..")")
-elseif s=="discover" or s=="scan" then
-ctx.o("Scanning...", 0xFFFF00)
-if NM.scan then
-local found = NM.scan(3)
-table.sort(found, function(a2, b2)
-return tostring(a2.addr or "") < tostring(b2.addr or "")
-end)
-_lastScan = found
-if #found > 0 then
-ctx.o(string.format(" %-3s %-20s %-4s %-8s %s",
-"#", "Peer", "Trst", "Device", "Host"), 0xAAAAAA)
-for i, p in ipairs(found) do
-local lvl = p.trust or 0
-local lbl = ({"BLK","UNK","KNW","TRS"})[lvl + 2] or "?"
-local color = (lvl == 2 and 0x55FF55)
-or (lvl == 1 and 0xFFFF55)
-or (lvl == -1 and 0xFF5555)
-or 0xAAAAAA
-ctx.o(string.format(" %2d. %-20s %-4s %-8s %s",
-i, fmtAddr(p.addr), lbl, p.device or "?", p.hostname or ""),
-color)
-end
-ctx.o("Tip: 'net trust 1' references the first peer above.", 0x888888)
-end
-ctx.o(#found .. " peer(s) responded.", 0x00FF00)
-else
-NM.discover()
-ctx.o("Discovery broadcast sent.", 0x00FF00)
-end
-elseif s=="peers" or s=="list" then
-local peers = NM.peers and NM.peers() or {}
-if #peers > 0 then
-_lastScan = peers
-ctx.o(string.format(" %-3s %-20s %-4s %-8s %s",
-"#", "Peer", "Trst", "Device", "Host"), 0xAAAAAA)
-for i, p in ipairs(peers) do
-local lvl = p.trust or 0
-local lbl = ({"BLK","UNK","KNW","TRS"})[lvl + 2] or "?"
-local color = (lvl == 2 and 0x55FF55)
-or (lvl == 1 and 0xFFFF55)
-or (lvl == -1 and 0xFF5555)
-or 0xAAAAAA
-ctx.o(string.format(" %2d. %-20s %-4s %-8s %s",
-i, fmtAddr(p.addr), lbl, p.device or "?", p.hostname or ""),
-color)
-end
-else
-local tm = NM.getTrust()
-for _, p in ipairs(tm.listPeers()) do
-ctx.o(string.format(" %-20s T%d %s",
-fmtAddr(p.address), p.level, p.hostname or ""))
-end
-end
-if #peers == 0 then ctx.o("  No peers discovered. Run 'net scan' first.", 0xAAAAAA) end
-elseif s=="trust" then
-local tm=NM.getTrust()
-local actor, tier = getActor(ctx)
-local sub2 = a[2]
-if sub2 == "gen" or sub2 == "generate" then
-local addr = resolvePeer(a[3])
-if not addr then ctx.o("Usage: net trust gen <peer>",0xFFFF00) return end
-local secret, gerr = tm.generateSecret(actor, addr, tier)
-if secret then
-ctx.o("Generated shared secret for " .. fmtAddr(addr) .. " ("..#secret.." bytes)",0x00FF00)
-ctx.o("Easier: run 'net pair start' on the peer and 'net pair " ..
-fmtAddr(addr) .. " <code>' here.",0xAAAAAA)
-ctx.o("Or copy: run `net trust setSecret <our-addr> <hex>` on the peer.",0xAAAAAA)
-local hex = {}
-for i = 1, #secret do hex[i] = string.format("%02x", secret:byte(i)) end
-ctx.o("Secret (hex): " .. table.concat(hex), 0xFFFF55)
-else
-ctx.o("Failed: " .. tostring(gerr or "unknown"),0xFF0000)
-end
-elseif sub2 == "setSecret" or sub2 == "secret" then
-local addr = resolvePeer(a[3])
-local hex = a[4]
-if not addr then
-ctx.o("Usage: net trust setSecret <peer> <hex-string|->",0xFFFF00)
-ctx.o("       Use - or empty to clear the secret.",0xAAAAAA)
-return
-end
-local secret
-if not hex or hex == "" or hex == "-" then
-secret = nil
-else
-if #hex % 2 ~= 0 or hex:match("[^%x]") then
-ctx.o("Bad hex string (need pairs of 0-9 a-f).",0xFF0000); return
-end
-local bytes = {}
-for i = 1, #hex, 2 do
-bytes[#bytes+1] = string.char(tonumber(hex:sub(i, i+1), 16))
-end
-secret = table.concat(bytes)
-end
-local ok2, err2 = tm.setSecret(actor, addr, secret, tier)
-if ok2 then
-ctx.o(secret and "Secret set." or "Secret cleared.",0x00FF00)
-else
-ctx.o("Failed: " .. tostring(err2 or "unknown"),0xFF0000)
-end
-elseif sub2 == "showSecret" then
-local addr = resolvePeer(a[3])
-if not addr then ctx.o("Usage: net trust showSecret <peer>",0xFFFF00) return end
-local secret, gerr = tm.getSecret(actor, addr, tier)
-if not secret then
-ctx.o(gerr or "no secret set",0xAAAAAA); return
-end
-local hex = {}
-for i = 1, #secret do hex[i] = string.format("%02x", secret:byte(i)) end
-ctx.o(table.concat(hex),0xFFFF55)
-elseif sub2 then
-local addr = resolvePeer(sub2)
-local ok2, err2
-if a[3]=="full" then ok2, err2 = tm.trustFull(actor, addr, tier)
-else ok2, err2 = tm.trustKnown(actor, addr, tier) end
-if ok2 then
-ctx.o("Trust updated for "..fmtAddr(addr)..".",0x00FF00)
-if a[3] == "full" then
-ctx.o("Next: 'net pair start' on the peer + 'net pair "..
-fmtAddr(addr).." <code>' here to install a shared secret.",0x888888)
-end
-else ctx.o(err2 or "Trust update failed",0xFF0000) end
-else
-ctx.o("Usage: net trust <gen|setSecret|showSecret|<addr> [full]>",0xFFFF00)
-end
-elseif s=="block" and a[2] then
-local actor, tier = getActor(ctx)
-local addr = resolvePeer(a[2])
-local ok2, err2 = NM.getTrust().block(actor, addr, tier)
-if ok2 then ctx.o("Blocked "..fmtAddr(addr)..".",0x00FF00)
-else ctx.o(err2 or "Block failed",0xFF0000) end
-elseif s=="revoke" and a[2] then
-local actor, tier = getActor(ctx)
-local addr = resolvePeer(a[2])
-local ok2, err2 = NM.getTrust().revoke(actor, addr, tier)
-if ok2 then ctx.o("Trust revoked for "..fmtAddr(addr).." (now UNKNOWN).",0x00FF00)
-else ctx.o(err2 or "Revoke failed",0xFF0000) end
-elseif s=="forget" and a[2] then
-local actor, tier = getActor(ctx)
-local addr = resolvePeer(a[2])
-local ok2, err2 = NM.getTrust().forget(actor, addr, tier)
-if ok2 then ctx.o("Forgot peer "..fmtAddr(addr).." (record removed).",0x00FF00)
-else ctx.o(err2 or "Forget failed",0xFF0000) end
-elseif s=="request" and a[2] then
-local addr = resolvePeer(a[2])
-local ok2, err2 = NM.requestTrust(addr)
-if ok2 then
-ctx.o("Trust request sent to "..fmtAddr(addr)..".",0x00FF00)
-ctx.o("Their admin sees it under 'net requests'.",0x888888)
-else ctx.o(err2 or "Request failed",0xFF0000) end
-elseif s=="requests" then
-local reqs = NM.getTrust().getPendingRequests()
-local n = 0
-for addr, req in pairs(reqs) do
-n = n + 1
-ctx.o(string.format("  %-38s %s", fmtAddr(addr),
-req.hostname or "(no hostname)"),0xFFFF55)
-end
-if n == 0 then ctx.o("No pending trust requests.",0xAAAAAA)
-else
-ctx.o("Approve: net trust <peer> [full]   Refuse: net block <peer>",0x888888)
-end
-elseif s=="send" and a[2] and a[3] then
-local addr = resolvePeer(a[2])
-local ok2, err2 = NM.sendMessage(addr, table.concat(a, " ", 3))
-if ok2 then ctx.o("Sent.",0x00FF00)
-else ctx.o("Send failed: "..tostring(err2 or "unknown"),0xFF0000) end
-elseif s == "alias" then
-local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
-if not A then ctx.o("aliases module unavailable",0xFF0000) return end
-local sub2 = a[2]
-if sub2 == "add" or sub2 == "set" then
-local name = a[3]
-local addr = resolvePeer(a[4])
-if not name or not addr then
-ctx.o("Usage: net alias add <name> <peer>",0xFFFF00); return
-end
-local ok2, err2 = A.set(name, addr)
-if ok2 then
-ctx.o(string.format("alias %s -> %s", name, fmtAddr(addr)), 0x00FF00)
-else ctx.o(err2 or "alias failed",0xFF0000) end
-elseif sub2 == "rm" or sub2 == "remove" or sub2 == "del" then
-local name = a[3]
-if not name then ctx.o("Usage: net alias rm <name>",0xFFFF00); return end
-local ok2, err2 = A.remove(name)
-if ok2 then ctx.o("removed.",0x00FF00)
-else ctx.o(err2 or "remove failed",0xFF0000) end
-elseif sub2 == "list" or sub2 == nil then
-local rows = A.list()
-if #rows == 0 then
-ctx.o("No aliases defined.",0xAAAAAA); return
-end
-ctx.o(string.format(" %-16s  %s", "Alias", "Address"),0xAAAAAA)
-for _, r in ipairs(rows) do
-ctx.o(string.format(" %-16s  %s", r.alias, r.address))
-end
-elseif sub2 == "show" then
-local addr = resolvePeer(a[3])
-if not addr then ctx.o("Usage: net alias show <peer>",0xFFFF00); return end
-local name = A.aliasOf(addr)
-if name then ctx.o(name .. " -> " .. addr, 0x00FF00)
-else ctx.o("No alias for " .. addr:sub(1, 12) .. "...", 0xAAAAAA) end
-else
-ctx.o("Usage: net alias <add|rm|list|show>",0xFFFF00)
-end
-elseif s == "pair" then
-local CP = NM.getChatPair and NM.getChatPair() or nil
-if not CP then ctx.o("chat-pair unavailable",0xFF0000) return end
-local sub2 = a[2]
---! #SEC (pentest, Sep 2026) — opening a pairing window or completing a
---! pair INSTALLS A SHARED SECRET, which trust.setSecret reserves for
---! ADMIN -- but chatpair calls it as the kernel, and `net` is a tier-1
---! command. Every other trust-changing `net` subcommand hands the
---! caller's tier to the trust manager; this one checked nothing, so a
---! plain user could key this machine to a peer. `status` stays open.
-if sub2 ~= "status" then
-local _, tier = getActor(ctx)
-if (tier or 0) < 2 then ctx.o("net pair requires admin",0xFF0000) return end
-end
-if sub2 == "start" then
-local code, expiresAt = CP.startWindow()
-if not code then
-ctx.o("could not open pairing window: " .. tostring(expiresAt), 0xFF0000)
-return
-end
-local secs = math.max(0, math.floor(expiresAt - computer.uptime()))
-ctx.o("Pairing window open for " .. secs .. "s.", 0xFFFF55)
-ctx.o("Type this on the OTHER peer:", 0xAAAAAA)
-ctx.o("  net pair <our-addr-or-alias> " .. code, 0xFFFF00)
-ctx.o("Pre-condition: both peers must already be TRUSTED on both sides.",0x888888)
-elseif sub2 == "status" then
-local info = CP.windowInfo()
-if info then
-ctx.o(string.format("Window open: %ds left, %d peers paired",
-math.floor(info.expires_in), info.paired), 0xFFFF55)
-else
-ctx.o("No pairing window open.", 0xAAAAAA)
-end
-elseif sub2 == "close" or sub2 == "cancel" then
-CP.closeWindow()
-ctx.o("Pairing window closed.", 0x00FF00)
-elseif sub2 and a[3] then
-local addr = resolvePeer(sub2)
-local code = a[3]
-ctx.o("Pairing with " .. fmtAddr(addr) .. "...", 0xFFFF55)
-local ok2, err2 = CP.connect(addr, code, 10)
-if ok2 then
-ctx.o("Paired. Shared secret installed on both sides.", 0x00FF00)
-else
-ctx.o("Pair failed: " .. tostring(err2), 0xFF0000)
-end
-else
-ctx.o("Usage: net pair start | net pair <peer> <code> | net pair status",0xFFFF00)
-end
-else ctx.o("Unknown: net "..s,0xFF0000) end
-end
---! `ping <peer>` sent {type="PING"}: no protocol magic, and the wire type is
---! lower-case "ping", so every receiver dropped it in protocol.validate and
---! the command answered "Ping sent." to a packet nobody could read. It now
---! sends protocol.ping(), accepts an alias or scan index like `net`, and
---! waits briefly for the PONG so it can say whether anything answered.
-function X.ping(a,ctx)
-local NM=ctx.K.getNet() if not NM then ctx.o("No network",0xFF0000) return end
-if not a[1] then
-NM.discover()
-ctx.o("Discovery ping broadcast. 'net peers' lists who answered.",0x00FF00)
-return
-end
-local protocol = NM.getProtocol and NM.getProtocol()
-if not protocol then ctx.o("Network protocol unavailable",0xFF0000) return end
-local addr = resolvePeer(a[1])
-local got, t0 = false, computer.uptime()
-local lid = NM.onceFrom and NM.onceFrom(protocol.TYPE.PONG, addr, function() got = true end)
-local ok, err = NM.send(addr, protocol.ping())
-if not ok then
-if lid then NM.off(protocol.TYPE.PONG, lid) end
-ctx.o("Ping failed: "..tostring(err or "send error"),0xFF0000)
-return
-end
-if not lid then ctx.o("Ping sent.",0x00FF00) return end
-NM.waitFor(function() return got end, 3)
-NM.off(protocol.TYPE.PONG, lid)
-if got then
-ctx.o(string.format("Reply from %s in %d ms.", fmtAddr(addr),
-math.floor((computer.uptime() - t0) * 1000 + 0.5)),0x00FF00)
-else
-ctx.o("No reply from "..fmtAddr(addr).." within 3s.",0xFFFF00)
-end
-end
-function X.audio(a,ctx)
-local A=_G._TOS and _G._TOS.audio
-if not A then ctx.o("Audio module not available.",0xFF0000) return end
-local s=a[1]
-if not s then
-ctx.o("Audio: "..(A.isEnabled() and "ON" or "OFF").."  Volume: "..string.format("%.0f%%",A.getVolume()*100),0xFFFF00)
-ctx.o("  audio on|off         Enable/disable audio",0xAAAAAA)
-ctx.o("  audio volume <0-100> Set volume level",0xAAAAAA)
-ctx.o("  audio test           Play all beep codes",0xAAAAAA)
-return
-end
-if s=="on" then
-A.setEnabled(true)
-local SC=ctx.K.getConfig()
-if SC then SC.set("audio",true) SC.save() end
-A.success()
-ctx.o("Audio enabled.",0x00FF00)
-elseif s=="off" then
-A.setEnabled(false)
-local SC=ctx.K.getConfig()
-if SC then SC.set("audio",false) SC.save() end
-ctx.o("Audio disabled.",0xAAAAAA)
-elseif s=="volume" or s=="vol" then
-local v=tonumber(a[2])
-if not v then ctx.o("Usage: audio volume <0-100>",0xAAAAAA) return end
-v = math.max(0, math.min(100, v))
-A.setVolume(v/100)
-local SC=ctx.K.getConfig()
-if SC then SC.set("audioVolume",v/100) SC.save() end
-A.success()
-ctx.o("Volume: "..string.format("%.0f%%",A.getVolume()*100),0x00FF00)
-elseif s=="test" then
---! The gaps were raw computer.pullSignal(0.3): inside the shell process
---! that POPS whatever signal arrives next -- another seat's keystroke, a
---! modem packet -- before the scheduler can route it, nine times over.
---! proc.sleep yields instead (and falls back to a raw wait only where
---! there is no scheduler to yield to).
-local okP, P = pcall(require, "kernel.process")
-local function pause(t)
-if okP and P and P.sleep then P.sleep(t) else computer.pullSignal(t) end
-end
-ctx.o("Testing beep codes...",0xFFFF00)
-ctx.o("  success (1 beep):",0xAAAAAA) A.success() pause(0.3)
-ctx.o("  confirm (2 ascending):",0xAAAAAA) A.confirm() pause(0.3)
-ctx.o("  warning (2 beeps):",0xAAAAAA) A.warning() pause(0.3)
-ctx.o("  error (1 long low):",0xAAAAAA) A.error() pause(0.3)
-ctx.o("  critical (3 low):",0xAAAAAA) A.critical() pause(0.3)
-ctx.o("  notify (1 quick high):",0xAAAAAA) A.notify() pause(0.3)
-ctx.o("  chat (2-tone chime):",0xAAAAAA) A.chat() pause(0.3)
-ctx.o("  shutdown (2 descending):",0xAAAAAA) A.shutdown() pause(0.3)
-ctx.o("  boot complete (3 ascending):",0xAAAAAA) A.bootComplete() pause(0.3)
-ctx.o("Test complete.",0x00FF00)
-else
-ctx.o("Unknown: audio "..s,0xFF0000)
-ctx.o("Usage: audio [on|off|volume|test]",0xAAAAAA)
-end
-end
-return X
+local p,q,r="unknown","Device","status"local n=require("computer")local l={}local function m(a)
+local b=a.U
+if b and a.st then local c=b.getSession(a.st)if c then return c.user,c.tier end end;return p,0 end
+function l.hostname(c,b)
+local a=b.K.getConfig()if not a then b.o("No config",0xFF0000)return end
+if c[1]then
+local g,f=m(b)if(f or 0)<2 then
+b.o("Setting the hostname requires admin (it is this machine's name on the network).",0xFF0000)return end;local d=c[1]if#d>
+32 or d:find("%c")then
+b.o("Hostname must be 1-32 printable characters.",0xFF0000)return end
+a.set("hostname",d)a.save()local e=b.K.getNet and b.K.getNet()if
+e and e.setHostname then e.setHostname(d)end end
+b.o("Device: "..a.deviceType()..
+" | Host: ".. (a.get("hostname")or"?"))end
+function l.config(c,b)local a=b.K.getConfig()
+if not a then b.o("No config",0xFF0000)return end;for d,e in pairs(a.getAll())do
+b.o(" "..d.." = "..tostring(e),0xC0C0C0)end end
+function l.battery(c,b)local a=b.K.getPower()if not a then b.o("N/A")return end
+local d=a.statusString()
+if d then b.o(d)else b.o("AC power (no battery on this device)")end end;local o=nil
+local function j(a)
+local b=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if b and b.format then return b.format(a)end;if type(a)~="string"then
+return"?"end;return a:sub(1,8).."..."end
+local function k(a)if type(a)~="string"or a==""then return a end
+local b=tonumber(a)if b and o and o[b]then return o[b].addr end;local c=
+_G._TOS and _G._TOS.net and _G._TOS.net.aliases
+if c and
+c.resolve then local d=c.resolve(a)if d then return d end end;return a end
+function l.net(c,b)local a=b.K.getNet()
+if not a then b.o("No network",0xFF0000)return end
+if not c[1]then b.o("net <subcommand>",0xFFFF00)
+b.o("  status                       Show network state",0xAAAAAA)
+b.o("  discover (or scan)           Broadcast ping",0xAAAAAA)
+b.o("  peers                        List discovered peers",0xAAAAAA)
+b.o("  servers                      Discovered hosts w/ device + last-seen",0xAAAAAA)
+b.o("  trust <peer> [full]          Elevate peer to KNOWN / TRUSTED",0xAAAAAA)
+b.o("  trust gen <peer>             Generate shared secret (admin)",0xAAAAAA)
+b.o("  trust setSecret <peer> <hex> Mirror a secret from peer (admin)",0xAAAAAA)
+b.o("  trust showSecret <peer>      Show my secret with peer (admin)",0xAAAAAA)
+b.o("  block <peer>                 Block a peer",0xAAAAAA)
+b.o("  revoke <peer>                Drop peer back to UNKNOWN",0xAAAAAA)
+b.o("  forget <peer>                Remove peer record entirely",0xAAAAAA)
+b.o("  request <peer>               Ask a peer's admin for trust",0xAAAAAA)
+b.o("  requests                     Show pending trust requests",0xAAAAAA)
+b.o("  send <peer> <msg>            Send chat message",0xAAAAAA)
+b.o("  alias add <name> <peer>      Name a peer (admin)",0xAAAAAA)
+b.o("  alias rm  <name>             Remove an alias (admin)",0xAAAAAA)
+b.o("  alias list                   Show all aliases",0xAAAAAA)
+b.o("  alias show <peer>            Show the alias for a peer",0xAAAAAA)
+b.o("  pair start                   Open pairing window (admin)",0xAAAAAA)
+b.o("  pair <peer> <code>           Pair with peer using code (admin)",0xAAAAAA)
+b.o(" <peer> = alias, full address, prefix, or scan-index (1..N)",0x888888)return end;local d=c[1]
+if d=="servers"then local e=a.peers and a.peers()or{}if
+#e==0 then b.o("No peers discovered yet.",0xAAAAAA)
+b.o("Run 'net scan' to search the network.",0x888888)return end
+b.o(string.format("%-10s %-8s %-6s %-5s %s","Hostname",q,"Trust","Seen","Address"),0xAAAAAA)local f={[-1]="BLK",[0]="UNK",[1]="KNW",[2]="TRS"}
+local g=n.uptime()
+for i,h in ipairs(e)do local s=g- (h.lastSeen or 0)local t
+if s<60 then t=
+math.floor(s).."s"elseif s<3600 then t=math.floor(s/60).."m"else t=math.floor(
+s/3600).."h"end
+b.o(string.format("%-10s %-8s %-6s %-5s %s",(h.hostname or"?"):sub(1,10),(
+h.device or"?"):sub(1,8),f[h.trust]or"?",t,(h.addr or"?"):sub(1,12)))end;b.o(#e.." peer(s) found.",0x888888)elseif d==r then
+local e=a.status()
+b.o("Host: ".. (e.hostname or"?"))
+b.o("Addr: ".. (e.address or"?"))
+local g=a.modemCount and a.modemCount()or(e.hasModem and 1 or 0)
+b.o("Modem: "..
+(e.hasModem and"Yes"or"No").. (g>1 and
+(" (x"..g..")")or"")..
+(e.hasTunnel and" + Tunnel"or""))
+b.o("Encrypted: ".. (e.encrypted and"Yes"or"No"))
+b.o("Port: "..tostring(e.listenPort or"?"))if e.portOwner then
+b.o("  (registered to "..
+e.portOwner.." -- TOS traffic shares that network; TOS's own is 42)",0xFFFF00)end
+local f=e.peers or{}
+local h=
+(f.unknown or 0)+ (f.known or 0)+ (f.trusted or 0)+ (f.blocked or 0)
+b.o("Peers: "..h..
+" (trusted:".. (f.trusted or 0)..
+" known:".. (f.known or 0).." blocked:"..
+(f.blocked or 0)..")")elseif d=="discover"or d=="scan"then b.o("Scanning...",0xFFFF00)
+if
+a.scan then local e=a.scan(3)
+table.sort(e,function(f,g)return
+tostring(f.addr or"")<tostring(g.addr or"")end)o=e
+if#e>0 then
+b.o(string.format(" %-3s %-20s %-4s %-8s %s","#","Peer","Trst",q,"Host"),0xAAAAAA)
+for g,f in ipairs(e)do local h=f.trust or 0;local i=
+({"BLK","UNK","KNW","TRS"})[h+2]or"?"
+local s=
+(h==2 and 0x55FF55)or(h==1 and
+0xFFFF55)or(h==-1 and 0xFF5555)or 0xAAAAAA
+b.o(string.format(" %2d. %-20s %-4s %-8s %s",g,j(f.addr),i,f.device or"?",f.hostname or""),s)end
+b.o("Tip: 'net trust 1' references the first peer above.",0x888888)end;b.o(#e.." peer(s) responded.",0x00FF00)else
+a.discover()b.o("Discovery broadcast sent.",0x00FF00)end elseif d=="peers"or d=="list"then
+local e=a.peers and a.peers()or{}
+if#e>0 then o=e
+b.o(string.format(" %-3s %-20s %-4s %-8s %s","#","Peer","Trst",q,"Host"),0xAAAAAA)
+for g,f in ipairs(e)do local h=f.trust or 0;local i=
+({"BLK","UNK","KNW","TRS"})[h+2]or"?"
+local s=
+(h==2 and 0x55FF55)or(h==1 and
+0xFFFF55)or(h==-1 and 0xFF5555)or 0xAAAAAA
+b.o(string.format(" %2d. %-20s %-4s %-8s %s",g,j(f.addr),i,f.device or"?",f.hostname or""),s)end else local f=a.getTrust()for h,g in ipairs(f.listPeers())do
+b.o(string.format(" %-20s T%d %s",j(g.address),g.level,
+g.hostname or""))end end;if#e==0 then
+b.o("  No peers discovered. Run 'net scan' first.",0xAAAAAA)end elseif d=="trust"then local f=a.getTrust()
+local g,h=m(b)local e=c[2]
+if e=="gen"or e=="generate"then local i=k(c[3])if not i then
+b.o("Usage: net trust gen <peer>",0xFFFF00)return end;local s,t=f.generateSecret(g,i,h)
+if s then
+b.o(
+"Generated shared secret for "..j(i).." ("..#s.." bytes)",0x00FF00)
+b.o("Easier: run 'net pair start' on the peer and 'net pair "..j(i).." <code>' here.",0xAAAAAA)
+b.o("Or copy: run `net trust setSecret <our-addr> <hex>` on the peer.",0xAAAAAA)local u={}
+for v=1,#s do u[v]=string.format("%02x",s:byte(v))end
+b.o("Secret (hex): "..table.concat(u),0xFFFF55)else
+b.o("Failed: "..tostring(t or p),0xFF0000)end elseif e=="setSecret"or e=="secret"then local t=k(c[3])local i=c[4]
+if not t then
+b.o("Usage: net trust setSecret <peer> <hex-string|->",0xFFFF00)
+b.o("       Use - or empty to clear the secret.",0xAAAAAA)return end;local s
+if not i or i==""or i=="-"then s=nil else if
+#i%2 ~=0 or i:match("[^%x]")then
+b.o("Bad hex string (need pairs of 0-9 a-f).",0xFF0000)return end;local w={}
+for x=1,#i,2 do w[#w+1]=string.char(tonumber(i:sub(x,
+x+1),16))end;s=table.concat(w)end;local u,v=f.setSecret(g,t,s,h)if u then
+b.o(s and"Secret set."or"Secret cleared.",0x00FF00)else
+b.o("Failed: "..tostring(v or p),0xFF0000)end elseif e=="showSecret"then
+local s=k(c[3])if not s then
+b.o("Usage: net trust showSecret <peer>",0xFFFF00)return end;local i,u=f.getSecret(g,s,h)
+if not i then b.o(
+u or"no secret set",0xAAAAAA)return end;local t={}
+for v=1,#i do t[v]=string.format("%02x",i:byte(v))end;b.o(table.concat(t),0xFFFF55)elseif e then local i=k(e)local s,t
+if
+c[3]=="full"then s,t=f.trustFull(g,i,h)else s,t=f.trustKnown(g,i,h)end
+if s then
+b.o("Trust updated for "..j(i)..".",0x00FF00)if c[3]=="full"then
+b.o("Next: 'net pair start' on the peer + 'net pair "..
+j(i).." <code>' here to install a shared secret.",0x888888)end else b.o(t or
+"Trust update failed",0xFF0000)end else
+b.o("Usage: net trust <gen|setSecret|showSecret|<addr> [full]>",0xFFFF00)end elseif d=="block"and c[2]then local f,g=m(b)local e=k(c[2])
+local h,i=a.getTrust().block(f,e,g)
+if h then b.o("Blocked "..j(e)..".",0x00FF00)else b.o(i or
+"Block failed",0xFF0000)end elseif d=="revoke"and c[2]then local f,g=m(b)local e=k(c[2])
+local h,i=a.getTrust().revoke(f,e,g)
+if h then
+b.o("Trust revoked for "..j(e).." (now UNKNOWN).",0x00FF00)else b.o(i or"Revoke failed",0xFF0000)end elseif d=="forget"and c[2]then local f,g=m(b)local e=k(c[2])
+local h,i=a.getTrust().forget(f,e,g)
+if h then
+b.o("Forgot peer "..j(e).." (record removed).",0x00FF00)else b.o(i or"Forget failed",0xFF0000)end elseif d=="request"and c[2]then local e=k(c[2])local f,g=a.requestTrust(e)
+if f then
+b.o(
+"Trust request sent to "..j(e)..".",0x00FF00)
+b.o("Their admin sees it under 'net requests'.",0x888888)else b.o(g or"Request failed",0xFF0000)end elseif d=="requests"then
+local f=a.getTrust().getPendingRequests()local e=0;for g,h in pairs(f)do e=e+1
+b.o(string.format("  %-38s %s",j(g),h.hostname or"(no hostname)"),0xFFFF55)end;if e==0 then
+b.o("No pending trust requests.",0xAAAAAA)else
+b.o("Approve: net trust <peer> [full]   Refuse: net block <peer>",0x888888)end elseif
+d=="send"and c[2]and c[3]then local e=k(c[2])
+local f,g=a.sendMessage(e,table.concat(c," ",3))if f then b.o("Sent.",0x00FF00)else
+b.o("Send failed: "..tostring(g or p),0xFF0000)end elseif d=="alias"then local f=
+_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if not f then
+b.o("aliases module unavailable",0xFF0000)return end;local e=c[2]
+if e=="add"or e=="set"then
+local g=c[3]local h=k(c[4])if not g or not h then
+b.o("Usage: net alias add <name> <peer>",0xFFFF00)return end;local i,s=f.set(g,h)
+if i then
+b.o(string.format("alias %s -> %s",g,j(h)),0x00FF00)else b.o(s or"alias failed",0xFF0000)end elseif e=="rm"or e=="remove"or e=="del"then local g=c[3]if not g then
+b.o("Usage: net alias rm <name>",0xFFFF00)return end;local h,i=f.remove(g)
+if h then
+b.o("removed.",0x00FF00)else b.o(i or"remove failed",0xFF0000)end elseif e=="list"or e==nil then local g=f.list()if#g==0 then
+b.o("No aliases defined.",0xAAAAAA)return end
+b.o(string.format(" %-16s  %s","Alias","Address"),0xAAAAAA)for i,h in ipairs(g)do
+b.o(string.format(" %-16s  %s",h.alias,h.address))end elseif e=="show"then local g=k(c[3])if not g then
+b.o("Usage: net alias show <peer>",0xFFFF00)return end;local h=f.aliasOf(g)if h then
+b.o(h.." -> "..g,0x00FF00)else
+b.o("No alias for "..g:sub(1,12).."...",0xAAAAAA)end else
+b.o("Usage: net alias <add|rm|list|show>",0xFFFF00)end elseif d=="pair"then
+local f=a.getChatPair and a.getChatPair()or nil
+if not f then b.o("chat-pair unavailable",0xFF0000)return end;local e=c[2]
+if e~=r then local h,g=m(b)if(g or 0)<2 then
+b.o("net pair requires admin",0xFF0000)return end end
+if e=="start"then local g,h=f.startWindow()if not g then
+b.o("could not open pairing window: "..tostring(h),0xFF0000)return end
+local i=math.max(0,math.floor(h-n.uptime()))
+b.o("Pairing window open for "..i.."s.",0xFFFF55)b.o("Type this on the OTHER peer:",0xAAAAAA)b.o(
+"  net pair <our-addr-or-alias> "..g,0xFFFF00)
+b.o("Pre-condition: both peers must already be TRUSTED on both sides.",0x888888)elseif e==r then local g=f.windowInfo()
+if g then
+b.o(string.format("Window open: %ds left, %d peers paired",math.floor(g.expires_in),g.paired),0xFFFF55)else b.o("No pairing window open.",0xAAAAAA)end elseif e=="close"or e=="cancel"then f.closeWindow()
+b.o("Pairing window closed.",0x00FF00)elseif e and c[3]then local g=k(e)local h=c[3]
+b.o("Pairing with "..j(g).."...",0xFFFF55)local i,s=f.connect(g,h,10)if i then
+b.o("Paired. Shared secret installed on both sides.",0x00FF00)else
+b.o("Pair failed: "..tostring(s),0xFF0000)end else
+b.o("Usage: net pair start | net pair <peer> <code> | net pair status",0xFFFF00)end else b.o("Unknown: net "..d,0xFF0000)end end
+function l.ping(c,b)local a=b.K.getNet()
+if not a then b.o("No network",0xFF0000)return end;if not c[1]then a.discover()
+b.o("Discovery ping broadcast. 'net peers' lists who answered.",0x00FF00)return end;local d=a.getProtocol and
+a.getProtocol()if not d then
+b.o("Network protocol unavailable",0xFF0000)return end;local e=k(c[1])
+local g,h=false,n.uptime()
+local f=a.onceFrom and a.onceFrom(d.TYPE.PONG,e,function()g=true end)local i,s=a.send(e,d.ping())if not i then
+if f then a.off(d.TYPE.PONG,f)end
+b.o("Ping failed: "..tostring(s or"send error"),0xFF0000)return end;if not f then
+b.o("Ping sent.",0x00FF00)return end
+a.waitFor(function()return g end,3)a.off(d.TYPE.PONG,f)
+if g then
+b.o(string.format("Reply from %s in %d ms.",j(e),math.floor((
+n.uptime()-h)*1000+0.5)),0x00FF00)else
+b.o("No reply from "..j(e).." within 3s.",0xFFFF00)end end
+function l.audio(c,b)local a=_G._TOS and _G._TOS.audio;if not a then
+b.o("Audio module not available.",0xFF0000)return end;local d=c[1]
+if not d then
+b.o("Audio: ".. (
+a.isEnabled()and"ON"or"OFF").."  Volume: "..
+string.format("%.0f%%",a.getVolume()*100),0xFFFF00)
+b.o("  audio on|off         Enable/disable audio",0xAAAAAA)
+b.o("  audio volume <0-100> Set volume level",0xAAAAAA)
+b.o("  audio test           Play all beep codes",0xAAAAAA)return end
+if d=="on"then a.setEnabled(true)local e=b.K.getConfig()if e then
+e.set("audio",true)e.save()end;a.success()
+b.o("Audio enabled.",0x00FF00)elseif d=="off"then a.setEnabled(false)local e=b.K.getConfig()if e then
+e.set("audio",false)e.save()end
+b.o("Audio disabled.",0xAAAAAA)elseif d=="volume"or d=="vol"then local e=tonumber(c[2])if not e then
+b.o("Usage: audio volume <0-100>",0xAAAAAA)return end
+e=math.max(0,math.min(100,e))a.setVolume(e/100)local f=b.K.getConfig()if f then
+f.set("audioVolume",e/100)f.save()end;a.success()
+b.o("Volume: "..string.format("%.0f%%",
+a.getVolume()*100),0x00FF00)elseif d=="test"then local g,f=pcall(require,"kernel.process")
+local function e(h)if
+g and f and f.sleep then f.sleep(h)else n.pullSignal(h)end end;b.o("Testing beep codes...",0xFFFF00)
+b.o("  success (1 beep):",0xAAAAAA)a.success()e(0.3)
+b.o("  confirm (2 ascending):",0xAAAAAA)a.confirm()e(0.3)
+b.o("  warning (2 beeps):",0xAAAAAA)a.warning()e(0.3)
+b.o("  error (1 long low):",0xAAAAAA)a.error()e(0.3)b.o("  critical (3 low):",0xAAAAAA)
+a.critical()e(0.3)b.o("  notify (1 quick high):",0xAAAAAA)
+a.notify()e(0.3)b.o("  chat (2-tone chime):",0xAAAAAA)
+a.chat()e(0.3)b.o("  shutdown (2 descending):",0xAAAAAA)
+a.shutdown()e(0.3)
+b.o("  boot complete (3 ascending):",0xAAAAAA)a.bootComplete()e(0.3)
+b.o("Test complete.",0x00FF00)else b.o("Unknown: audio "..d,0xFF0000)
+b.o("Usage: audio [on|off|volume|test]",0xAAAAAA)end end;return l

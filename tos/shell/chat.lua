@@ -1,347 +1,128 @@
-local computer = require("computer")
-local chat = {}
-function chat.parseInput(line)
-line = line or ""
-if line:match("^%s*$") then return { kind = "empty" } end
-local cmd, rest = line:match("^/(%S+)%s*(.*)$")
-if cmd then return { kind = "command", name = cmd:lower(), arg = rest } end
-local grp, gmsg = line:match("^@([%w_%-]+):%s*(.+)$")
-if grp and gmsg then return { kind = "group", group = grp:lower(), text = gmsg } end
-local target, msg = line:match("^([^:%s]+):%s*(.+)$")
-if target and msg then return { kind = "directed", target = target, text = msg } end
-return { kind = "broadcast", text = line }
-end
-chat.GROUPS_PATH = "/etc/chat-groups.cfg"
-chat.MAX_GROUPS = 32
-chat.MAX_MEMBERS = 32
-function chat.validGroupName(name)
-return type(name) == "string" and name ~= "" and #name <= 24
-and name:match("^[%w_%-]+$") ~= nil
-end
-function chat.normalizeGroups(raw)
-local out = {}
-if type(raw) ~= "table" then return out end
-local n = 0
-for name, members in pairs(raw) do
-if type(name) == "string" and type(members) == "table" and n < chat.MAX_GROUPS then
-local lname = name:lower()
-if chat.validGroupName(lname) then
-local list, seen = {}, {}
-for _, m in ipairs(members) do
-if type(m) == "string" and m ~= "" and not seen[m]
-and #list < chat.MAX_MEMBERS then
-seen[m] = true; list[#list + 1] = m
-end
-end
-out[lname] = list
-n = n + 1
-end
-end
-end
-return out
-end
-function chat.resolveGroup(groups, name, peers, minLevel, resolveAlias)
-local members = groups and groups[(name or ""):lower()]
-if not members then return nil end
-local addrs, missing, seen, nameOf = {}, {}, {}, {}
-for _, tok in ipairs(members) do
-local a = chat.resolveTarget(peers, tok, minLevel, resolveAlias)
-if a and not seen[a] then seen[a] = true; addrs[#addrs + 1] = a; nameOf[a] = tok
-elseif not a then missing[#missing + 1] = tok end
-end
-return addrs, missing, nameOf
-end
-function chat.loadGroups(fs, serialize, path)
-path = path or chat.GROUPS_PATH
-if not (fs and serialize and fs.exists and fs.exists(path)) then return {} end
-local raw = fs.readFile(path)
-if type(raw) ~= "string" then return {} end
-local ok, parsed = pcall(serialize.decode, raw, { maxBytes = 16 * 1024 })
-if not ok then return {} end
-return chat.normalizeGroups(parsed)
-end
-function chat.saveGroups(fs, serialize, groups, path)
-path = path or chat.GROUPS_PATH
-if not (fs and serialize) then return false, "fs/serialize unavailable" end
-return serialize.saveFile(fs, path, chat.normalizeGroups(groups))
-end
---! `resolveAlias` is net.aliases.resolve (passed in, so this stays pure).
---! It was not consulted at all: `net` names a peer by "alias, full
---! address, prefix, or scan-index", but chat knew only prefixes and
---! hostnames -- and every fresh TOS is hostname "tos", so an alias is
---! how two of them are told apart. A group whose members were aliases
---! called every one "unreachable", with the peer on and TRUSTED (two
---! headless machines, 2026-10-10). An alias still has to name a peer at
---! minLevel. (test_chat_parse.lua)
-function chat.resolveTarget(peers, target, minLevel, resolveAlias)
-if not target or target == "" then return nil end
-minLevel = minLevel or 0
-if resolveAlias then
-local okA, addr = pcall(resolveAlias, target)
-if okA and type(addr) == "string" then
-for _, p in ipairs(peers or {}) do
-if p.address == addr and (p.level or 0) >= minLevel then return addr end
-end
-end
-end
-for _, p in ipairs(peers or {}) do
-if (p.level or 0) >= minLevel then
-if p.address and p.address:sub(1, #target) == target then return p.address end
-if p.hostname and p.hostname == target then return p.address end
-end
-end
-return nil
-end
-function chat.run(kernel, sessionToken)
-local D = kernel.getDisplay()
-local E = kernel.getEvent()
-local NM = kernel.getNet()
-if not NM then
-if D then
-local W, H = D.getSize()
-local T = D.getTheme()
-D.clear(T.bg)
-D.set(2, 2, "Chat unavailable: no network module", T.error, T.bg)
-D.set(2, 4, "Press any key to return.", T.dim, T.bg)
-local deadline = computer.uptime() + 10
-while computer.uptime() < deadline do
-local ev = computer.pullSignal(deadline - computer.uptime())
-if ev == "key_down" or not ev then break end
-end
-end
-return
-end
-local protocol = NM.getProtocol()
-local trustMgr = NM.getTrust()
-local W, H = D.getSize()
-local T = D.getTheme()
-local hostname = NM.getHostname() or "local"
-local HEADER_ROW = 1
-local MSG_TOP = 2
-local MSG_BOT = H - 1
-local INPUT_ROW = H
-local MSG_H = MSG_BOT - MSG_TOP + 1
-local MAX_MESSAGES = 128
-local messages = {}
-local inputBuf = ""
-local msgListenerID = nil
-local function formatTime(uptime)
-local h = math.floor(uptime / 3600)
-local m = math.floor((uptime % 3600) / 60)
-local s = math.floor(uptime % 60)
-return string.format("%02d:%02d:%02d", h, m, s)
-end
-local function addMessage(text, color)
-messages[#messages + 1] = {
-text = text,
-color = color or T.fg,
-time = computer.uptime(),
-}
-if #messages > MAX_MESSAGES then
-local trimmed = {}
-for i = #messages - MAX_MESSAGES + 1, #messages do
-trimmed[#trimmed + 1] = messages[i]
-end
-messages = trimmed
-end
-end
-local function trustedPeerCount()
-local n = 0
-for _, p in ipairs(trustMgr.listPeers()) do
-if p.level >= trustMgr.LEVEL.TRUSTED then n = n + 1 end
-end
-return n
-end
-local function drawHeader()
-D.fill(1, HEADER_ROW, W, 1, " ", T.menubar_fg, T.menubar_bg)
-local title = " TOS Chat - " .. hostname .. " "
-local help = " peers:" .. trustedPeerCount() .. "  /help  ^Q=Exit "
-D.set(1, HEADER_ROW, title, T.menubar_fg, T.menubar_bg)
-D.set(W - #help + 1, HEADER_ROW, help, T.dim, T.menubar_bg)
-end
-local function drawMessages()
-local startIdx = math.max(1, #messages - MSG_H + 1)
-for row = 0, MSG_H - 1 do
-local y = MSG_TOP + row
-local idx = startIdx + row
-D.fill(1, y, W, 1, " ", T.fg, T.bg)
-if idx >= 1 and idx <= #messages then
-local msg = messages[idx]
-local timeStr = formatTime(msg.time)
-local prefix = timeStr .. " "
-local textW = W - #prefix
-local line = msg.text
-if #line > textW then
-line = line:sub(1, textW - 1) .. "~"
-end
-D.set(1, y, prefix, T.dim, T.bg)
-D.set(#prefix + 1, y, line, msg.color, T.bg)
-end
-end
-end
-local function drawInput()
-D.fill(1, INPUT_ROW, W, 1, " ", T.fg, T.bg)
-D.set(1, INPUT_ROW, "> ", T.highlight, T.bg)
-local maxW = W - 3
-local shown = inputBuf
-if #shown > maxW then
-shown = shown:sub(#shown - maxW + 1)
-end
-D.set(3, INPUT_ROW, shown, T.fg, T.bg)
-local cursorX = 3 + math.min(#inputBuf, maxW)
-if cursorX <= W then
-D.set(cursorX, INPUT_ROW, "_", T.highlight, T.bg)
-end
-end
-local function redraw()
-D.clear(T.bg)
-drawHeader()
-drawMessages()
-drawInput()
-end
-local function onMessage(packet, fromAddr)
-local level = (trustMgr.getLevel and trustMgr.getLevel(fromAddr)) or 0
-if level < trustMgr.LEVEL.TRUSTED then return end
-local payload = packet.payload or {}
-local text = type(payload.text) == "string" and payload.text or ""
-local peer = trustMgr.getPeer(fromAddr)
-local senderName = (peer and peer.hostname) or fromAddr:sub(1, 8)
-addMessage("[" .. senderName .. "] " .. text, T.border)
-drawMessages()
-drawInput()
-if _G._TOS and _G._TOS.audio then _G._TOS.audio.chat() end
-local ack = protocol.makePacket(protocol.TYPE.MSG_ACK, { ref = packet.seq },
-{ to = fromAddr })
-NM.send(fromAddr, ack)
-end
-if E then
-msgListenerID = NM.on(protocol.TYPE.MSG, onMessage)
-end
-addMessage("Chat started. Send messages to TRUSTED peers.", T.title)
-addMessage("  peer:message   to one peer (addr prefix or hostname)", T.dim)
-addMessage("  message        broadcast to all trusted peers", T.dim)
-addMessage("  /who  /mail peer text  /clear  /help   ^Q=exit", T.dim)
-addMessage("", T.dim)
-local peers = trustMgr.listPeers()
-local trustedCount = 0
-for _, p in ipairs(peers) do
-if p.level >= trustMgr.LEVEL.TRUSTED then
-trustedCount = trustedCount + 1
-local name = p.hostname or "?"
-local addr = p.address:sub(1, 8)
-addMessage("  " .. addr .. "  " .. name, T.highlight)
-end
-end
-if trustedCount == 0 then
-addMessage("  (no trusted peers)", T.warning)
-end
-redraw()
-local running = true
-while running do
-local sig, _, char, code
-if E and E.pull then
-sig, _, char, code = E.pull(0.2)
-else
-sig, _, char, code = computer.pullSignal(0.2)
-end
-if sig == "key_down" then
-if char == 17 then
-running = false
-elseif code == 28 then
-if inputBuf ~= "" then
-local act = chat.parseInput(inputBuf)
-if act.kind == "command" then
-local name, arg = act.name, act.arg or ""
-if name == "quit" or name == "exit" then
-running = false
-elseif name == "clear" then
-messages = {}
-elseif name == "help" or name == "?" then
-addMessage("Commands:", T.title)
-addMessage("  peer:msg          send to one peer (addr-prefix or hostname)", T.dim)
-addMessage("  msg               broadcast to all trusted peers", T.dim)
-addMessage("  /who              list trusted peers", T.dim)
-addMessage("  /mail peer text   send a store-and-forward mesh mail", T.dim)
-addMessage("  /clear  /help  ^Q exit", T.dim)
-elseif name == "who" then
-local n = 0
-for _, p in ipairs(trustMgr.listPeers()) do
-if p.level >= trustMgr.LEVEL.TRUSTED then
-n = n + 1
-addMessage("  " .. p.address:sub(1, 8) .. "  " .. (p.hostname or "?"), T.highlight)
-end
-end
-if n == 0 then addMessage("  (no trusted peers)", T.warning) end
-elseif name == "mail" then
-local mp, mtext = arg:match("^(%S+)%s+(.+)$")
-local dest = mp and chat.resolveTarget(trustMgr.listPeers(), mp, trustMgr.LEVEL.TRUSTED,
-NM and NM.aliases and NM.aliases.resolve)
-local okLib, mailLib = pcall(require, "mail")
-if not mp or not mtext then
-addMessage("Usage: /mail <peer> <message>", T.warning)
-elseif not dest then
-addMessage("Unknown peer: " .. tostring(mp), T.error)
-elseif not (okLib and type(mailLib) == "table" and mailLib.send) then
-addMessage("Mail add-on not installed (pkg install mail).", T.error)
-else
-local id, sealed = mailLib.send({ to = dest, fromUser = hostname,
-subject = "(via chat)", body = mtext })
-if id then
-addMessage("Mail queued to " .. mp .. (sealed and "" or " (plaintext)"), T.title)
-else
-addMessage("Mail failed: " .. tostring(sealed), T.error)
-end
-end
-else
-addMessage("Unknown command: /" .. name .. "  (try /help)", T.warning)
-end
-elseif act.kind == "directed" then
-local destAddr = chat.resolveTarget(trustMgr.listPeers(), act.target, trustMgr.LEVEL.TRUSTED,
-NM and NM.aliases and NM.aliases.resolve)
-if destAddr then
-local ok, err = NM.sendMessage(destAddr, act.text)
-if ok then addMessage("[" .. hostname .. "] " .. act.text, T.title)
-else addMessage("Send failed: " .. tostring(err), T.error) end
-else
-addMessage("Unknown peer: " .. act.target, T.error)
-end
-elseif act.kind == "broadcast" then
-local sent = 0
-for _, p in ipairs(trustMgr.listPeers()) do
-if p.level >= trustMgr.LEVEL.TRUSTED then
-NM.sendMessage(p.address, act.text)
-sent = sent + 1
-end
-end
-if sent > 0 then addMessage("[" .. hostname .. "] " .. act.text, T.title)
-else addMessage("No trusted peers to send to.", T.warning) end
-end
-inputBuf = ""
-redraw()
-end
-drawInput()
-elseif code == 14 then
-if #inputBuf > 0 then
-inputBuf = inputBuf:sub(1, -2)
-drawInput()
-end
-elseif char and char >= 32 and char < 127 then
-inputBuf = inputBuf .. string.char(char)
-drawInput()
-end
-elseif sig == "clipboard" then
-local pastedText = char
-if type(pastedText) == "string" then
-inputBuf = inputBuf .. pastedText:gsub("\n", "")
-drawInput()
-end
-elseif sig == "tos_focus" then
-redraw()
-end
-end
-if msgListenerID and NM.off then
-NM.off(protocol.TYPE.MSG, msgListenerID)
-end
-addMessage("Chat ended.", T.dim)
-end
-return chat
+local f="string"local e=require("computer")local d={}
+function d.parseInput(a)a=a or""if
+a:match("^%s*$")then return{kind="empty"}end
+local b,j=a:match("^/(%S+)%s*(.*)$")
+if b then return{kind="command",name=b:lower(),arg=j}end;local c,g=a:match("^@([%w_%-]+):%s*(.+)$")if c and g then return
+{kind="group",group=c:lower(),text=g}end
+local h,i=a:match("^([^:%s]+):%s*(.+)$")
+if h and i then return{kind="directed",target=h,text=i}end;return{kind="broadcast",text=a}end;d.GROUPS_PATH="/etc/chat-groups.cfg"d.MAX_GROUPS=32;d.MAX_MEMBERS=32
+function d.validGroupName(a)return
+type(a)==f and a~=""and#a<=24 and
+a:match("^[%w_%-]+$")~=nil end
+function d.normalizeGroups(a)local b={}if type(a)~="table"then return b end;local c=0
+for g,h in pairs(a)do
+if
+type(g)==f and type(h)=="table"and c<d.MAX_GROUPS then
+local i=g:lower()
+if d.validGroupName(i)then local j,k={},{}for m,l in ipairs(h)do
+if
+type(l)==f and l~=""and not k[l]and#j<d.MAX_MEMBERS then k[l]=true;j[#j+1]=l end end;b[i]=j;c=c+1 end end end;return b end
+function d.resolveGroup(a,b,c,g,h)local k=a and a[(b or""):lower()]if not k then
+return nil end;local i,j,l,m={},{},{},{}for o,n in ipairs(k)do
+local p=d.resolveTarget(c,n,g,h)
+if p and not l[p]then l[p]=true;i[#i+1]=p;m[p]=n elseif not p then j[#j+1]=n end end
+return i,j,m end
+function d.loadGroups(a,c,b)b=b or d.GROUPS_PATH;if not
+(a and c and a.exists and a.exists(b))then return{}end
+local g=a.readFile(b)if type(g)~=f then return{}end
+local h,i=pcall(c.decode,g,{maxBytes=16*1024})if not h then return{}end;return d.normalizeGroups(i)end
+function d.saveGroups(b,c,g,a)a=a or d.GROUPS_PATH;if not(b and c)then
+return false,"fs/serialize unavailable"end
+return c.saveFile(b,a,d.normalizeGroups(g))end
+function d.resolveTarget(c,a,b,g)if not a or a==""then return nil end;b=b or 0;if g then local i,h=pcall(g,a)
+if i and
+type(h)==f then for k,j in ipairs(c or{})do if
+j.address==h and(j.level or 0)>=b then return h end end end end
+for i,h in ipairs(
+c or{})do
+if(h.level or 0)>=b then if h.address and
+h.address:sub(1,#a)==a then return h.address end;if h.hostname and
+h.hostname==a then return h.address end end end;return nil end
+function d.run(a,b)local h=a.getDisplay()local o=a.getEvent()local i=a.getNet()
+if not i then
+if h then
+local K,L=h.getSize()local I=h.getTheme()h.clear(I.bg)
+h.set(2,2,"Chat unavailable: no network module",I.error,I.bg)h.set(2,4,"Press any key to return.",I.dim,I.bg)local J=
+e.uptime()+10
+while e.uptime()<J do
+local M=e.pullSignal(J-e.uptime())if M=="key_down"or not M then break end end end;return end;local p=i.getProtocol()local j=i.getTrust()local m,x=h.getSize()
+local c=h.getTheme()local q=i.getHostname()or"local"local s=1;local y=2;local C=x-1;local r=x
+local z=C-y+1;local A=128;local l={}local k=""local t=nil
+local function D(I)local J=math.floor(I/3600)local K=math.floor(
+(I%3600)/60)local L=math.floor(I%60)return
+string.format("%02d:%02d:%02d",J,K,L)end;local function g(I,J)l[#l+1]={text=I,color=J or c.fg,time=e.uptime()}
+if#l>A then
+local K={}for L=#l-A+1,#l do K[#K+1]=l[L]end;l=K end end;local function E()local I=0
+for K,J in
+ipairs(j.listPeers())do if J.level>=j.LEVEL.TRUSTED then I=I+1 end end;return I end
+local function F()
+h.fill(1,s,m,1," ",c.menubar_fg,c.menubar_bg)local J=" TOS Chat - "..q.." "
+local I=" peers:"..E().."  /help  ^Q=Exit "h.set(1,s,J,c.menubar_fg,c.menubar_bg)
+h.set(m-#I+1,s,I,c.dim,c.menubar_bg)end
+local function B()local I=math.max(1,#l-z+1)
+for J=0,z-1 do local K=y+J;local L=I+J
+h.fill(1,K,m,1," ",c.fg,c.bg)
+if L>=1 and L<=#l then local N=l[L]local Q=D(N.time)local O=Q.." "local P=m-#O;local M=N.text;if
+#M>P then M=M:sub(1,P-1).."~"end
+h.set(1,K,O,c.dim,c.bg)h.set(#O+1,K,M,N.color,c.bg)end end end
+local function n()h.fill(1,r,m,1," ",c.fg,c.bg)
+h.set(1,r,"> ",c.highlight,c.bg)local J=m-3;local I=k;if#I>J then I=I:sub(#I-J+1)end
+h.set(3,r,I,c.fg,c.bg)local K=3+math.min(#k,J)if K<=m then
+h.set(K,r,"_",c.highlight,c.bg)end end;local function u()h.clear(c.bg)F()B()n()end
+local function G(J,I)local M=
+(j.getLevel and j.getLevel(I))or 0
+if M<j.LEVEL.TRUSTED then return end;local K=J.payload or{}
+local N=type(K.text)==f and K.text or""local L=j.getPeer(I)
+local O=(L and L.hostname)or I:sub(1,8)g("["..O.."] "..N,c.border)B()n()if
+_G._TOS and _G._TOS.audio then _G._TOS.audio.chat()end
+local P=p.makePacket(p.TYPE.MSG_ACK,{ref=J.seq},{to=I})i.send(I,P)end;if o then t=i.on(p.TYPE.MSG,G)end
+g("Chat started. Send messages to TRUSTED peers.",c.title)
+g("  peer:message   to one peer (addr prefix or hostname)",c.dim)
+g("  message        broadcast to all trusted peers",c.dim)
+g("  /who  /mail peer text  /clear  /help   ^Q=exit",c.dim)g("",c.dim)local H=j.listPeers()local v=0
+for J,I in ipairs(H)do
+if
+I.level>=j.LEVEL.TRUSTED then v=v+1;local K=I.hostname or"?"local L=I.address:sub(1,8)g("  "..L..
+"  "..K,c.highlight)end end
+if v==0 then g("  (no trusted peers)",c.warning)end;u()local w=true
+while w do local J,L,I,K;if o and o.pull then J,L,I,K=o.pull(0.2)else
+J,L,I,K=e.pullSignal(0.2)end
+if J=="key_down"then
+if I==17 then w=false elseif K==28 then
+if k~=""then
+local M=d.parseInput(k)
+if M.kind=="command"then local N,O=M.name,M.arg or""
+if N=="quit"or N=="exit"then
+w=false elseif N=="clear"then l={}elseif N=="help"or N=="?"then g("Commands:",c.title)
+g("  peer:msg          send to one peer (addr-prefix or hostname)",c.dim)
+g("  msg               broadcast to all trusted peers",c.dim)g("  /who              list trusted peers",c.dim)
+g("  /mail peer text   send a store-and-forward mesh mail",c.dim)g("  /clear  /help  ^Q exit",c.dim)elseif N=="who"then local P=0
+for L,Q in
+ipairs(j.listPeers())do if Q.level>=j.LEVEL.TRUSTED then P=P+1
+g("  "..Q.address:sub(1,8).."  "..
+(Q.hostname or"?"),c.highlight)end end
+if P==0 then g("  (no trusted peers)",c.warning)end elseif N=="mail"then local P,R=O:match("^(%S+)%s+(.+)$")
+local S=P and
+d.resolveTarget(j.listPeers(),P,j.LEVEL.TRUSTED,
+i and i.aliases and i.aliases.resolve)local T,Q=pcall(require,"mail")
+if not P or not R then
+g("Usage: /mail <peer> <message>",c.warning)elseif not S then
+g("Unknown peer: "..tostring(P),c.error)elseif
+not(T and type(Q)=="table"and Q.send)then
+g("Mail add-on not installed (pkg install mail).",c.error)else
+local V,U=Q.send({to=S,fromUser=q,subject="(via chat)",body=R})
+if V then
+g("Mail queued to "..P.. (U and""or" (plaintext)"),c.title)else g("Mail failed: "..tostring(U),c.error)end end else
+g("Unknown command: /"..N.."  (try /help)",c.warning)end elseif M.kind=="directed"then
+local N=d.resolveTarget(j.listPeers(),M.target,j.LEVEL.TRUSTED,i and i.aliases and
+i.aliases.resolve)
+if N then local O,P=i.sendMessage(N,M.text)
+if O then
+g("["..q.."] "..M.text,c.title)else g("Send failed: "..tostring(P),c.error)end else g("Unknown peer: "..M.target,c.error)end elseif M.kind=="broadcast"then local N=0;for L,O in ipairs(j.listPeers())do
+if
+O.level>=j.LEVEL.TRUSTED then i.sendMessage(O.address,M.text)N=N+1 end end;if N>0 then g("["..
+q.."] "..M.text,c.title)else
+g("No trusted peers to send to.",c.warning)end end;k=""u()end;n()elseif K==14 then if#k>0 then k=k:sub(1,-2)n()end elseif I and I>=32 and I<127 then k=k..
+string.char(I)n()end elseif J=="clipboard"then local M=I
+if type(M)==f then k=k..M:gsub("\n","")n()end elseif J=="tos_focus"then u()end end;if t and i.off then i.off(p.TYPE.MSG,t)end
+g("Chat ended.",c.dim)end;return d

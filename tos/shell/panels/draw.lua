@@ -1,749 +1,245 @@
-local computer = require("computer")
-local helpers = require("shell.panels.helpers")
-local widgets = require("shell.panels.widgets")
-local ui = require("shell.panels.ui")
-local selMod = require("shell.panels.selection")
-local tc = require("shell.panels.textcol")
-local M = {}
-local function ustrLib()
-local ok, u = pcall(require, "kernel.ustr")
-return (ok and u) or nil
-end
-local function ufitRow(s, cols)
-local u = ustrLib()
-if u and u.fit then return u.fit(s, cols) end
-return tostring(s or ""):sub(1, cols)
-end
-local function uwidthRow(s)
-local u = ustrLib()
-if u and u.width then return u.width(s) end
-return #tostring(s or "")
-end
-local function fitCells(S, s, cols)
-s = tostring(s or "")
-if tc.isAscii(s) then return (s .. S.padW):sub(1, cols) end
-local cut = tc.slice(s, 1, cols)
-return cut .. S.padW:sub(1, math.max(0, cols - tc.cells(cut)))
-end
-local BASE_MENUS = {
-{ label = "File", items = {
-{ label = "New File", action = "newfile" },
-{ label = "New Directory", action = "mkdir", key = "F7" },
-{ label = "Rename", action = "rename" },
-{ label = "Delete", action = "delete", key = "F8" },
-{ sep = true },
-{ label = "Refresh", action = "refresh" },
-}},
-{ label = "View", items = {
-{ label = "View File", action = "viewfile", key = "F3" },
-{ label = "Edit File", action = "editfile" },
-}},
-{ label = "Tools", items = {
-{ label = "Lua REPL", action = "lua" },
-{ label = "Verify System", action = "verify" },
-{ label = "Flash EEPROM", action = "flash" },
-{ sep = true },
-{ label = "Packages", action = "run:pkg" },
-{ label = "Repair (SRM)", action = "run:srm" },
-{ label = "Diagnostics", action = "run:doctor" },
-}},
-{ label = "System", items = {
-{ label = "Desktop", action = "run:desktop" },
-{ label = "Processes", action = "ps" },
-{ label = "Memory", action = "mem" },
-{ label = "Hardware", action = "hw" },
-{ label = "Disk Usage", action = "df" },
-{ label = "System Log", action = "log" },
-{ sep = true },
-{ label = "CLI Mode", action = "run:cli" },
-{ sep = true },
-{ label = "Log Out", action = "logout" },
-{ label = "Reboot", action = "reboot" },
-{ label = "Shut Down", action = "shutdown" },
-}},
-{ label = "Settings", items = {
-{ label = "Settings App", action = "run:settings" },
-{ label = "Theme", action = "run:theme list" },
-{ label = "Status Bar", action = "statusbar_cfg" },
-{ label = "Menu Bar", action = "run:menu" },
-{ label = "Boot Settings", action = "run:bootsettings" },
-}},
-{ label = "Help", items = {
-{ label = "Quick Help", action = "help", key = "F1" },
-{ label = "Keyboard Shortcuts", action = "keyhelp" },
-{ label = "Manual Pages", action = "man" },
-{ sep = true },
-{ label = "Tutorial", action = "tutorial" },
-{ label = "About TOS", action = "about" },
-}},
-}
-M.menuDefs = BASE_MENUS
-local function cloneMenus()
-local out = {}
-for _, menu in ipairs(BASE_MENUS) do
-local m = { label = menu.label, items = {} }
-for _, it in ipairs(menu.items) do
-local c = {}
-for k, v in pairs(it) do c[k] = v end
-m.items[#m.items + 1] = c
-end
-out[#out + 1] = m
-end
-return out
-end
---! Two files, applied in this order, both decoded as DATA (never
---! load()ed — a menu config can arrive on a floppy in someone's home
---! directory):
---!
---!   /etc/menu.cfg    system-wide. Admin-writable via securefs, so it is
---!                    the machine's bar: every user sees it.
---!   ~/.menu.cfg      per-user, layered on top.
---!
---! Each file is a LIST OF EDITS, and the reason it is edits rather than a
---! whole replacement bar is that a replacement goes stale the moment TOS
---! adds a command — which is exactly how the built-in set came to be a
---! year out of date. An edit list survives an upgrade.
---!
---!   { label = "Tetris", cmd = "tetris", menu = "Tools" }   -- add (legacy shape)
---!   { add    = "Tetris", cmd = "tetris", menu = "Tools", after = "Lua REPL" }
---!   { remove = "Flash EEPROM" }              -- an item, by label
---!   { remove = "Help", menu = true }         -- a whole top-level menu
---!   { rename = "Tools", to = "Utilities" }   -- a menu or an item
---!   { move   = "Desktop", menu = "Tools" }   -- item to another menu
---!   { menu   = "Reactor", after = "System" } -- a new empty top-level menu
---!
---! The legacy add shape is kept working byte-for-byte: `menu` config
---! files written before this existed must not break, and an operator who
---! only ever wanted "put my command in a drop-down" should not have to
---! learn the rest of it.
-local function findMenu(menus, label)
-for i, m in ipairs(menus) do
-if m.label == label then return m, i end
-end
-end
-local function findItem(menus, label)
-for _, m in ipairs(menus) do
-for i, it in ipairs(m.items) do
-if it.label == label then return it, i, m end
-end
-end
-end
-local function applyEdit(menus, e)
-if type(e) ~= "table" then return end
-local function str(v, max)
-return (type(v) == "string" and #v > 0 and #v <= (max or 24)) and v or nil
-end
-if e.remove ~= nil then
-local target = str(e.remove, 32)
-if not target then return end
-if e.menu == true then
-local _, idx = findMenu(menus, target)
-if idx then table.remove(menus, idx) end
-else
-local _, idx, owner = findItem(menus, target)
-if owner then table.remove(owner.items, idx) end
-end
-return
-end
-if e.rename ~= nil then
-local from, to = str(e.rename, 32), str(e.to, 24)
-if not (from and to) then return end
-local m = findMenu(menus, from)
-if m then m.label = to; return end
-local it = findItem(menus, from)
-if it then it.label = to end
-return
-end
-if e.move ~= nil then
-local target, dest = str(e.move, 32), str(e.menu, 24)
-if not (target and dest) then return end
-local it, idx, owner = findItem(menus, target)
-local into = findMenu(menus, dest)
-if it and owner and into then
-table.remove(owner.items, idx)
-into.items[#into.items + 1] = it
-end
-return
-end
-if e.menu ~= nil and e.cmd == nil and e.label == nil and e.add == nil then
-local name = str(e.menu, 24)
-if not name or findMenu(menus, name) then return end
-local newM = { label = name, items = {} }
-local _, at = findMenu(menus, str(e.after, 24) or "")
-if at then table.insert(menus, at + 1, newM)
-else table.insert(menus, math.max(1, #menus), newM) end
-return
-end
-local label = str(e.add, 24) or str(e.label, 24)
-local cmd = (type(e.cmd) == "string" and #e.cmd > 0 and #e.cmd <= 200) and e.cmd or nil
-if not (label and cmd) then return end
-local target = findMenu(menus, e.menu or "")
-if not target then
-target = findMenu(menus, "Custom")
-if not target then
-target = { label = "Custom", items = {} }
-table.insert(menus, math.max(1, #menus), target)
-end
-end
-local item = { label = label, action = "run:" .. cmd }
-local _, at, owner = findItem(menus, str(e.after, 32) or "")
-if at and owner == target then
-table.insert(target.items, at + 1, item)
-else
-target.items[#target.items + 1] = item
-end
-end
-local function applyConfig(menus, S, path)
-if not (S and S.F and S.F.exists and S.F.exists(path)) then return end
-local data = S.F.readFile(path)
-local okS, ser = pcall(require, "kernel.serialize")
-if not (data and okS and ser and ser.decode) then return end
-local okD, list = pcall(ser.decode, data, { maxBytes = 8192 })
-if not okD or type(list) ~= "table" then return end
-for _, e in ipairs(list) do applyEdit(menus, e) end
-end
-function M.buildMenuDefs(S)
-local menus = cloneMenus()
-applyConfig(menus, S, "/etc/menu.cfg")
-if S and S.who then
-local home = (S.who == "root") and "/root" or ("/home/" .. S.who)
-applyConfig(menus, S, home .. "/.menu.cfg")
-end
-if #menus == 0 then return cloneMenus() end
-return menus
-end
-M._applyEdit = applyEdit
-function M.topBar(S)
-local D, T, W = S.D, S.T, S.W
-local bfg = T.menubar_fg or T.bar_fg or T.fg
-local bbg = T.menubar_bg or T.bar_bg or T.bg
-D.fill(1, 1, W, 1, " ", bfg, bbg)
---! `dim` IS NOT ALWAYS LEGIBLE ON A BAR. T1 collapses the palette to
---! 1-bit and sets dim = 0xFFFFFF, while menubar_bg is also white — so
---! every inactive menu label used to be drawn white-on-white and simply
---! vanish. Found while mocking the rework against the real theme
---! tables. Fall back to the bar's own foreground whenever dim collides
---! with the bar's background; this is theme-general, so a future preset
---! that picks the same two colours can't reintroduce it.
-local mdim = (T.dim and T.dim ~= bbg) and T.dim or bfg
-local menuDefs = S.menuDefs or M.menuDefs
-local mSpans = ui.menuSpans(menuDefs)
-local activeIdx = S.menuOpen or (S.menuFocused and S.menuIdx or nil)
-for i, sp in ipairs(mSpans) do
-if menuDefs[i] then menuDefs[i]._x = sp.s end
-if i == activeIdx then
-D.set(sp.s, 1, sp.text, T.sel_fg or bbg, T.sel_bg or T.highlight)
-else
-D.set(sp.s, 1, sp.text, mdim, bbg)
-end
-end
-S._menuSpans = mSpans
-local menuEnd = #mSpans > 0 and mSpans[#mSpans].e or 1
-local mem = math.floor(computer.freeMemory() / 1024) .. "K"
-D.set(W - #mem, 1, mem, mdim, bbg)
-do
-local okA, appsMod = pcall(require, "shell.panels.apps")
-if okA and appsMod and appsMod.refreshTabs then
-pcall(appsMod.refreshTabs, S)
-end
-end
-local spans = ui.fitChips(S.tabs, S.activeTab, W - #mem - 2, menuEnd + 2)
-for _, sp in ipairs(spans) do
-if sp.state == "active" then
-D.set(sp.s, 1, sp.text, T.sel_fg or bbg, T.sel_bg or T.highlight)
-elseif sp.state == "busy" then
-D.set(sp.s, 1, sp.text, T.title or bfg, bbg)
-elseif sp.state == "more" then
-D.set(sp.s, 1, sp.text, T.highlight or T.title or bfg, bbg)
-else
-D.set(sp.s, 1, sp.text, bfg, bbg)
-end
-end
-S._tabSpans = spans
-local fillS = menuEnd + 2
-local fillE = ((spans[1] and spans[1].s) or (W - #mem - 1)) - 2
-if fillE >= fillS then
-D.set(fillS, 1, string.rep("░", fillE - fillS + 1), mdim, bbg)
-end
-end
-M.tabBar = M.topBar
-function M.menuBar(S) end
-function M.rail(S)
-local T, W = S.T, S.W
-local SZ_W = 7
-local extraCols = S.tier >= 3 and W >= 80
-local typeW = extraCols and 6 or 0
-local nameW = extraCols and (W - SZ_W - typeW - 4) or (W - SZ_W - 3)
-local sizeAt = nameW + SZ_W - 3
-local parts = {
-{ label = S.browser.path },
-{ text = "Name" },
-}
-local okH, home = pcall(require, "shell.panels.home")
-local viewPart = nil
-if okH and home and home.enabled(S) then
-local label = home.viewKeyLabel(S) .. " \226\150\184 tiles"
-local at = sizeAt - (uwidthRow(label) + 5)
-if at > 14 then
-viewPart = { label = label, at = at }
-parts[#parts + 1] = viewPart
-end
-end
-parts[#parts + 1] = { text = "Size", at = sizeAt }
-if extraCols then
-parts[#parts + 1] = { text = "Type", at = nameW + SZ_W + 2 }
-end
-local spans = ui.drawRail(S.D, T, S.RAIL_ROW, W, parts, { labelFg = T.title or T.fg })
-if okH and home then
-home.markToggle(S, S.RAIL_ROW, nil, nil)
-for i, p in ipairs(parts) do
-if p == viewPart and spans[i] then
-home.markToggle(S, S.RAIL_ROW, spans[i].s, spans[i].e)
-end
-end
-end
-end
-function M.sumRail(S, text)
-local txt = text
-if not txt then
-local files = S.browser.files or {}
-local n = #files
-if files[1] and files[1].name == ".." then n = n - 1 end
-txt = n .. " items"
-if S.browser.freeStr then txt = txt .. " · " .. S.browser.freeStr .. " free" end
-end
-ui.drawRail(S.D, S.T, S.SUM_ROW, S.W, { { label = txt } })
-end
-local function fileListLayout(S)
-local W = S.W
-local SZ_W = 7
-local extraCols = S.tier >= 3 and W >= 80
-local typeW = extraCols and 6 or 0
-local nameW = extraCols and (W - SZ_W - typeW - 4) or (W - SZ_W - 3)
-return SZ_W, typeW, nameW, extraCols
-end
-local function renderFileListRow(S, fi, y, SZ_W, typeW, nameW, extraCols)
-local D, T, W = S.D, S.T, S.W
-if fi < 1 or fi > #S.browser.files then
-D.fill(1, y, W, 1, " ", T.bg, T.bg)
-return
-end
-local f = S.browser.files[fi]
-local name = f.dir and ("[" .. f.name .. "]") or f.name
-local szStr = f.dir and " <DIR> " or helpers.padL(helpers.fmtSz(f.sz), SZ_W)
-name = name:sub(1, nameW - 2)
-local namePad = "   " .. helpers.padR(name, nameW - 2)
-local line
-if extraCols then
-local ext = f.dir and "dir" or (f.name:match("%.(%w+)$") or "")
-line = namePad .. " " .. szStr .. " " .. helpers.padR(ext:sub(1, typeW), typeW)
-else
-line = namePad .. " " .. szStr
-end
-local fg, bg
-if fi == S.browser.sel then
-fg, bg = T.sel_fg, T.sel_bg
-else
-fg, bg = helpers.fileColor(S, f), T.bg
-end
-D.set(1, y, fitCells(S, line, W), fg, bg)
-if W >= 4 then
-D.set(2, y, ui.fileGlyph(f.name, f.dir), fg, bg)
-end
-end
-function M.fileList(S)
-local SZ_W, typeW, nameW, extraCols = fileListLayout(S)
-for row = 1, S.LIST_H do
-local fi = S.browser.scroll + row
-local y = S.LIST_TOP + row - 1
-renderFileListRow(S, fi, y, SZ_W, typeW, nameW, extraCols)
-end
-end
-function M.fileListRow(S, fi)
-local row = fi - S.browser.scroll
-if row < 1 or row > S.LIST_H then return end
-local SZ_W, typeW, nameW, extraCols = fileListLayout(S)
-renderFileListRow(S, fi, S.LIST_TOP + row - 1, SZ_W, typeW, nameW, extraCols)
-end
-function M.outRow(S, text, color)
-local D, T, W = S.D, S.T, S.W
-if S._viewToggleSpans then S._viewToggleSpans[S.OUT_ROW] = nil end
-local s = ufitRow(text and tostring(text) or "", W)
-D.set(1, S.OUT_ROW, s .. S.padW:sub(1, math.max(0, W - uwidthRow(s))),
-color or T.dim, T.bg)
-end
-local HINT_PARTS = {
-"F1 Help", "F3 View", "F5 Copy", "F6 Move",
-"F7 New", "F8 Del", "F9 Menu", "F10 Quit", "Tab Complete",
-}
-function M.idleHint(S)
-local D, T, W = S.D, S.T, S.W
-local parts = HINT_PARTS
-local okH, home = pcall(require, "shell.panels.home")
-local flip = nil
-if okH and home and home.enabled(S) then
-flip = home.viewKeyLabel(S) .. " Tiles"
-parts = { HINT_PARTS[1], flip }
-for i = 2, #HINT_PARTS do parts[#parts + 1] = HINT_PARTS[i] end
-home.markToggle(S, S.OUT_ROW, nil, nil)
-end
-local sep, s = "  ", ""
-for _, part in ipairs(parts) do
-local cand = (s == "") and (" " .. part) or (s .. sep .. part)
-if #cand > W then break end
-if flip and part == flip then home.markToggle(S, S.OUT_ROW, #cand - #part + 1, #cand) end
-s = cand
-end
-local padded = (s .. S.padW):sub(1, W)
-D.set(1, S.OUT_ROW, padded, T.dim, T.bg)
-end
-function M.cmdGeom(S)
-local W = S.W
-local host = S.SC and S.SC.get("hostname") or "tos"
-local elevated = S._sudo ~= nil
-local mark = elevated and "[sudo] " or ""
-local sigil = elevated and "# " or "$ "
-local pr = mark .. S.who .. "@" .. host .. ":" .. S.cwd .. sigil
-if #pr > math.floor(W / 2) then pr = mark .. S.who .. sigil end
-local px = #pr + 1
-local avail = W - #pr
-if avail < 1 then avail = 1 end
-local cl = S.cmdline
-local cur = S.cmdCursor or (#cl + 1)
-if cur < 1 then cur = 1 elseif cur > #cl + 1 then cur = #cl + 1 end
-local hs = helpers.cmdScroll(#cl, cur, avail)
-return pr, px, avail, hs, cur, elevated
-end
-function M.cmdIndexAt(S, x)
-local _, px, avail, hs = M.cmdGeom(S)
-if not x or x < px then return nil end
-if x > px + avail - 1 then x = px + avail - 1 end
-local i = (x - px) + 1 + hs
-return math.max(1, math.min(#S.cmdline + 1, i))
-end
-function M.cmdRow(S)
-local D, T, W = S.D, S.T, S.W
-local pr, px, avail, hs, cur, elevated = M.cmdGeom(S)
-local cl = S.cmdline
-local visible = cl:sub(hs + 1, hs + avail)
-local trail = S.padW:sub(1, math.max(0, avail - #visible))
-D.set(1, S.CMD_ROW, pr, T.highlight, T.bg)
-if elevated then D.set(1, S.CMD_ROW, "[sudo]", T.warning, T.bg) end
-D.set(px, S.CMD_ROW, visible .. trail, T.fg, T.bg)
-local selFrom, selTo = selMod.range(S.cmdSel, cur)
-if selFrom then
-local sfg = T.sel_fg or T.bg
-local sbg = T.sel_bg or T.highlight
-for i = selFrom, selTo - 1 do
-local x = px + (i - 1) - hs
-if x >= px and x <= W then
-D.set(x, S.CMD_ROW, cl:sub(i, i), sfg, sbg)
-end
-end
-end
-local curCol = px + ((cur - 1) - hs)
-if curCol >= px and curCol <= W then
-local under = (cur <= #cl) and cl:sub(cur, cur) or "_"
-if under == " " then under = "_" end
-D.set(curCol, S.CMD_ROW, under, T.bg, T.highlight)
-end
-end
-function M.statusBar(S, widgetDefs)
-local D, T, W = S.D, S.T, S.W
-local wlist = widgets.getWidgetList(S)
-local parts = {}
-for _, wname in ipairs(wlist) do
-local fn = widgetDefs[wname]
-if fn then
-local ok2, val = pcall(fn)
-if ok2 and val then
-parts[#parts + 1] = wname:sub(1, 1):upper() .. wname:sub(2) .. ":" .. val
-end
-end
-end
-ui.drawRampBar(D, T, S.STAT_ROW, W, table.concat(parts, " │ "), nil,
-T.statusbar_fg, T.statusbar_bg)
-end
-function M.viewTab(S, tab)
-local D, T, W, H = S.D, S.T, S.W, S.H
-local content = tab.content or {}
-local gutterW = S.tier >= 2 and (#tostring(#content) + 1) or 0
-local viewW = W - gutterW
-local viewH = H - 2
-D.fill(1, 2, W, viewH, " ", T.fg, T.bg)
-for i = 1, viewH do
-local li = tab.offset + i
-if li <= #content then
-local e = content[li]
-local txt = type(e) == "table" and e[1] or tostring(e)
-local col = type(e) == "table" and e[2] or T.fg
-if gutterW > 0 then
-D.set(1, 1 + i, helpers.formatLineNum(li, gutterW), T.dim, T.bg)
-end
-if tab.searchTerm and #tab.searchTerm > 0 then
-local pos = txt:find(tab.searchTerm, 1, true)
-if pos then
-D.set(gutterW + 1, 1 + i, tc.slice(txt, 1, viewW), col, T.bg)
-local cell = tc.cellOf(txt, pos)
-local matchText = txt:sub(pos, pos + #tab.searchTerm - 1)
-if cell <= viewW then
-D.set(gutterW + cell, 1 + i, tc.slice(matchText, 1, viewW - cell + 1), T.sel_fg, T.sel_bg)
-end
-else
-D.set(gutterW + 1, 1 + i, tc.slice(txt, 1, viewW), col, T.bg)
-end
-else
-D.set(gutterW + 1, 1 + i, tc.slice(txt, 1, viewW), col, T.bg)
-end
-if tab.selAnchor and selMod.lineRange(tab.selAnchor, tab.selCur or tab.selAnchor) then
-local from, to = selMod.lineRange(tab.selAnchor, tab.selCur or tab.selAnchor)
-if li >= from and li <= to then
-D.set(gutterW + 1, 1 + i,
-fitCells(S, txt, viewW), T.sel_fg or T.bg, T.sel_bg or T.highlight)
-end
-end
-end
-end
-local shown = math.min(viewH, math.max(0, #content - tab.offset))
-local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
-local okH, home = pcall(require, "shell.panels.home")
-local cyc = (okH and home) and home.cycleKeyLabel(S) or "F2"
-local info = string.format("%d-%d / %d%s  [^Q]Close [^F]Find [%s]Tab",
-tab.offset + 1, tab.offset + shown, #content, searchInfo, cyc)
-ui.drawRampBar(D, T, H, W, info, nil, T.bar_fg, T.bar_bg)
-end
-function M.editTab(S, tab)
-local D, T, W, H = S.D, S.T, S.W, S.H
-local lines = tab.lines or { "" }
-local edH = H - 2
-local gutterW = S.tier >= 2 and (math.max(#tostring(#lines), 2) + 1) or 0
-local editW = W - gutterW
-local isLua = tab.path and tab.path:match("%.lua$")
-local syn = isLua and widgets.getSyntax(S)
---! Horizontal scroll offset, decided HERE and nowhere else.
---!
---! This is the only code that knows the real geometry: gutterW depends
---! on the tier and the line count, editW on the current screen width.
---! Computing it in the key handler as well would be two places
---! deriving the same number from different information -- and the one
---! that gets it wrong is invisible, because a mis-scrolled view just
---! looks like the editor lost your cursor.
---!
---! Deciding it at draw time also means a screen RESIZE needs no
---! special handling: the next repaint recomputes from the new width.
---!
---! viewLeft, lastCol and every x below are CELLS, which is what the
---! screen counts; tab.curCol is a BYTE column into the line, which is
---! what the edits count. textcol is the one map between them. Doing
---! this in bytes drew text, the cursor, the selection and the scroll
---! edge in the wrong place from a line's first non-ASCII character
---! (AUDIT 5). (test_editor_utf8_columns.lua)
-local curCell = tc.cellOf(lines[tab.curRow] or "", tab.curCol)
-local viewLeft = tab.viewLeft or 1
-if curCell < viewLeft then viewLeft = curCell end
-if curCell > viewLeft + editW - 1 then viewLeft = curCell - editW + 1 end
-if viewLeft < 1 then viewLeft = 1 end
-tab.viewLeft = viewLeft
-local lastCol = viewLeft + editW - 1
-D.fill(1, 2, W, edH, " ", T.fg, T.bg)
-for i = 1, edH do
-local li = tab.viewTop + i - 1
-if li <= #lines then
-local lineText = lines[li]
-local y = 1 + i
-if gutterW > 0 then
-local lnColor = li == tab.curRow and T.title or T.dim
-D.set(1, y, helpers.formatLineNum(li, gutterW), lnColor, T.bg)
-end
-if syn then
---! Tokenize the WHOLE line, then clip each token to the visible
---! window. Tokenizing only the visible slice would be simpler
---! and wrong: a slice can cut a string literal or comment in
---! half, and the highlighter would then colour the remainder as
---! code from there to the end of the line.
-local tokens = syn.tokenize(lineText)
-local col = 1
-for _, tok in ipairs(tokens) do
-local tokText = tok.text
-local tokEnd = col + tc.cells(tokText) - 1
-local from = math.max(col, viewLeft)
-local to = math.min(tokEnd, lastCol)
-if to >= from then
-local piece = tc.slice(tokText, from - col + 1, to - col + 1)
-if #piece > 0 then
-D.set(gutterW + (from - viewLeft) + 1, y,
-piece, syn.tokenColor(tok.type, T), T.bg)
-end
-end
-col = tokEnd + 1
-if col > lastCol then break end
-end
-else
-D.set(gutterW + 1, y, tc.slice(lineText, viewLeft, lastCol), T.fg, T.bg)
-end
---! Say when a line runs past either edge, the way nano does. Only
---! drawn when there IS more text that way, so the markers are
---! information rather than decoration -- and only over the edge
---! cell, which is the one column they cost.
-if viewLeft > 1 then
-D.set(gutterW + 1, y, "<", T.dim, T.bg)
-end
-if tc.cells(lineText) > lastCol then
-D.set(gutterW + editW, y, ">", T.dim, T.bg)
-end
-end
-end
-if tab.selAnchor then
-local sfg = T.sel_fg or T.bg
-local sbg = T.sel_bg or T.highlight
-local here = { row = tab.curRow, col = tab.curCol }
-for i = 1, edH do
-local li = tab.viewTop + i - 1
-local lineText = lines[li]
-if lineText then
---! Walk the VISIBLE cells, not 1..editW. Iterating from 1
---! painted the selection at the wrong x once the view scrolled,
---! and highlighted cells the operator could not see. selMod
---! speaks byte columns, so each cell asks about the byte it
---! starts at, and paints what that cell shows.
-local starts, disps
-if tc.isAscii(lineText) then
-starts = nil
-else
-starts, disps = tc.units(lineText)
-end
-local nCells = starts and #starts or #lineText
-for cix = viewLeft, math.min(nCells, lastCol) do
-local bcol = starts and starts[cix] or cix
-if selMod.contains(tab.selAnchor, here, li, bcol) then
-D.set(gutterW + (cix - viewLeft) + 1, 1 + i,
-starts and disps[cix] or lineText:sub(cix, cix), sfg, sbg)
-end
-end
-local eol = nCells + 1
-if eol >= viewLeft and eol <= lastCol
-and selMod.contains(tab.selAnchor, here, li, #lineText + 1) then
-D.set(gutterW + (eol - viewLeft) + 1, 1 + i, " ", sfg, sbg)
-end
-end
-end
-end
-local cy = tab.curRow - tab.viewTop + 2
-if cy >= 2 and cy < 2 + edH then
---! Offset by the scroll, so the cursor is drawn where the character
---! it sits on actually IS. Previously this was gutterW + curCol and
---! simply skipped when that fell past the screen -- which is what
---! made typing past the right edge look like a frozen editor.
-local curX = gutterW + (curCell - viewLeft) + 1
-if curX >= gutterW + 1 and curX <= gutterW + editW then
-local char = tc.slice(lines[tab.curRow] or "", curCell, curCell)
-if char == "" then char = " " end
-D.set(curX, cy, char, T.sel_fg, T.sel_bg)
-end
-end
-local mod = tab.modified and " [+]" or ""
-local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
-local stat = string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find [^Q]Close",
-tab.label, mod, tab.curRow, curCell, searchInfo)
-ui.drawRampBar(D, T, H, W, stat, nil, T.bar_fg, T.bar_bg)
-end
-function M.shell(S, widgetDefs)
-local okH, home = pcall(require, "shell.panels.home")
-local tab = S.tabs[S.activeTab]
-local tiles = okH and home and home.isTiles(S, tab)
-if tiles then
-home.drawHeader(S, tab)
-home.drawBand(S, tab)
-home.drawTiles(S, tab)
-M.sumRail(S, home.summaryText(S, tab))
-else
-S._homeBand = nil
-M.rail(S)
-M.fileList(S)
-M.sumRail(S)
-end
-if okH and home then home.markToggle(S, S.OUT_ROW, nil, nil) end
-if S.outLines and #S.outLines > 0 then M.outLines(S)
-elseif S.lastOut then M.outMessage(S, S.lastOut[1], S.lastOut[2])
-elseif tiles then
-local txt, ts, te = home.hintText(S, tab)
-M.outRow(S, txt, S.T.dim)
-home.markToggle(S, S.OUT_ROW, ts, te)
-else M.idleHint(S) end
-M.cmdRow(S)
-M.statusBar(S, widgetDefs)
-end
---! A one-line result that does not fit gets the rows it needs.
---!
---! Operator report, real emulator: an error ran off the right edge and
---! stopped mid-word -- "Refused: removing /usr is a protected system
---! path. This guard sit". The message was written to explain a refusal
---! and the explanation is the half that got cut, which is the worst
---! possible place to lose it.
---!
---! S.lastOut is one row by construction and outRow truncates to fit. The
---! multi-row region already exists for command output (M.outLines, which
---! grows upward and stops at the top of the content area), so a long
---! message uses it instead of being cut. Short ones -- almost all of
---! them -- still take exactly one row and look identical.
---! (test_out_message_wrap.lua)
-function M.outMessage(S, text, color)
-local W = S.W
-local s = tostring(text or "")
-if uwidthRow(s) <= W then return M.outRow(S, s, color) end
-local wrapped = helpers.wrapLine(s, W)
-local lines = {}
-for _, l in ipairs(wrapped) do lines[#lines + 1] = { l, color } end
-M.outLines(S, lines)
-end
-function M.outLines(S, override)
-local D, T, W = S.D, S.T, S.W
-local lines = override or S.outLines
-if not lines or #lines == 0 then return end
-local top = S.LIST_TOP
-local okH, home = pcall(require, "shell.panels.home")
-if okH and home and home.isTiles(S) then top = S.TILE_TOP end
-local n = math.min(#lines, S.OUT_ROW - top + 1)
-local top = S.OUT_ROW - n + 1
-for i = 1, n do
-local e = lines[i] or { "", T.fg }
-D.set(1, top + i - 1, fitCells(S, e[1], W), e[2] or T.fg, T.bg)
-end
-end
-function M.all(S, widgetDefs)
-local framed = S.D and S.D.beginFrame and S.D.beginFrame()
-if not framed then return M._allBody(S, widgetDefs) end
-local ok, err = pcall(M._allBody, S, widgetDefs)
-S.D.endFrame()
-if not ok then error(err, 0) end
-end
-function M._allBody(S, widgetDefs)
-M.topBar(S)
-local tab = S.tabs[S.activeTab]
-if not tab or tab.type == "shell" then
-M.shell(S, widgetDefs)
-elseif tab.type == "view" or tab.type == "output" then
-M.viewTab(S, tab)
-elseif tab.type == "edit" then
-M.editTab(S, tab)
-else
-local ok, apps = pcall(require, "shell.panels.apps")
-if ok and apps then
-apps.ensureBuiltins()
-local app = apps.get(tab.type)
-if app and app.draw then app.draw(S, tab) end
-end
-end
-end
-function M.menuDropdown(S)
-if not S.menuOpen then return end
-local def = (S.menuDefs or M.menuDefs)[S.menuOpen]
-if not def then return end
-local x = def._x or 2
-S.D.dropdown(x, S.MENU_ROW + 1, def.items, S.menuSel)
-end
-function M.contextMenu(S)
-if not S.ctxOpen then return end
-S.D.dropdown(S.ctxX, S.ctxY, S.ctxItems, S.ctxSel)
-end
-return M
+local W=require("computer")
+local B=require("shell.panels.helpers")local N=require("shell.panels.widgets")
+local C=require("shell.panels.ui")local E=require("shell.panels.selection")
+local A=require("shell.panels.textcol")local z={}local I=nil
+local function O()if I==nil then local a,b=pcall(require,"kernel.ustr")I=(a and b)or
+false end;return I or nil end;local function X(a,b)local c=O()if c and c.fit then return c.fit(a,b)end;return
+tostring(a or""):sub(1,b)end;local function J(a)
+local b=O()if b and b.width then return b.width(a)end
+return#tostring(a or"")end;local K=nil;local function F()if K==nil then
+local a,b=pcall(require,"shell.panels.home")K=(a and b)or false end;return
+K or nil end;local L=nil
+local function P()if L==
+nil then local a,b=pcall(require,"shell.panels.apps")
+L=(a and b)or false end;return L or nil end
+local function M(c,a,b)a=tostring(a or"")if A.isAscii(a)then
+return(a..c.padW):sub(1,b)end;local d=A.slice(a,1,b)return d..
+c.padW:sub(1,math.max(0,b-A.cells(d)))end
+local Q={{label="File",items={{label="New File",action="newfile"},{label="New Directory",action="mkdir",key="F7"},{label="Rename",action="rename"},{label="Delete",action="delete",key="F8"},{sep=true},{label="Refresh",action="refresh"}}},{label="View",items={{label="View File",action="viewfile",key="F3"},{label="Edit File",action="editfile"}}},{label="Tools",items={{label="Lua REPL",action="lua"},{label="Verify System",action="verify"},{label="Flash EEPROM",action="flash"},{sep=true},{label="Packages",action="run:pkg"},{label="Repair (SRM)",action="run:srm"},{label="Diagnostics",action="run:doctor"}}},{label="System",items={{label="Desktop",action="run:desktop"},{label="Processes",action="ps"},{label="Memory",action="mem"},{label="Hardware",action="hw"},{label="Disk Usage",action="df"},{label="System Log",action="log"},{sep=true},{label="CLI Mode",action="run:cli"},{sep=true},{label="Log Out",action="logout"},{label="Reboot",action="reboot"},{label="Shut Down",action="shutdown"}}},{label="Settings",items={{label="Settings App",action="run:settings"},{label="Theme",action="run:theme list"},{label="Status Bar",action="statusbar_cfg"},{label="Menu Bar",action="run:menu"},{label="Boot Settings",action="run:bootsettings"}}},{label="Help",items={{label="Quick Help",action="help",key="F1"},{label="Keyboard Shortcuts",action="keyhelp"},{label="Manual Pages",action="man"},{sep=true},{label="Tutorial",action="tutorial"},{label="About TOS",action="about"}}}}z.menuDefs=Q
+local function R()local a={}
+for c,b in ipairs(Q)do local d={label=b.label,items={}}
+for c,e in ipairs(b.items)do
+local f={}for g,h in pairs(e)do f[g]=h end;d.items[#d.items+1]=f end;a[#a+1]=d end;return a end
+local function D(a,b)for d,c in ipairs(a)do if c.label==b then return c,d end end end
+local function G(a,b)for d,c in ipairs(a)do
+for f,e in ipairs(c.items)do if e.label==b then return e,f,c end end end end
+local function S(b,a)if type(a)~="table"then return end
+local function c(k,l)return(type(k)=="string"and#k>0 and#k<=
+(l or 24))and k or
+nil end
+if a.remove~=nil then local k=c(a.remove,32)if not k then return end
+if a.menu==true then
+local m,l=D(b,k)if l then table.remove(b,l)end else local n,m,l=G(b,k)if l then
+table.remove(l.items,m)end end;return end
+if a.rename~=nil then local k,l=c(a.rename,32),c(a.to,24)
+if not(k and l)then return end;local n=D(b,k)if n then n.label=l;return end;local o=G(b,k)if o then o.label=l end;return end
+if a.move~=nil then local l,m=c(a.move,32),c(a.menu,24)
+if not(l and m)then return end;local n,p,o=G(b,l)local k=D(b,m)if n and o and k then table.remove(o.items,p)k.items[
+#k.items+1]=n end;return end
+if a.menu~=nil and a.cmd==nil and a.label==nil and
+a.add==nil then local k=c(a.menu,24)
+if not k or D(b,k)then return end;local l={label=k,items={}}local n,m=D(b,c(a.after,24)or"")if m then table.insert(b,
+m+1,l)else
+table.insert(b,math.max(1,#b),l)end;return end;local e=c(a.add,24)or c(a.label,24)
+local f=
+(
+type(a.cmd)=="string"and#a.cmd>0 and#a.cmd<=200)and a.cmd or nil;if not(e and f)then return end;local d=D(b,a.menu or"")
+if not d then
+d=D(b,"Custom")if not d then d={label="Custom",items={}}
+table.insert(b,math.max(1,#b),d)end end;local g={label=e,action="run:"..f}
+local j,h,i=G(b,c(a.after,32)or"")if h and i==d then table.insert(d.items,h+1,g)else
+d.items[#d.items+1]=g end end
+local function T(c,a,b)if not
+(a and a.F and a.F.exists and a.F.exists(b))then return end
+local e=a.F.readFile(b)local g,d=pcall(require,"kernel.serialize")if not
+(e and g and d and d.decode)then return end
+local h,f=pcall(d.decode,e,{maxBytes=8192})if not h or type(f)~="table"then return end
+for j,i in ipairs(f)do S(c,i)end end
+function z.buildMenuDefs(a)local b=R()T(b,a,"/etc/menu.cfg")
+if a and a.who then
+local c=
+(a.who=="root")and"/root"or("/home/"..a.who)T(b,a,c.."/.menu.cfg")end;if#b==0 then return R()end;return b end;z._applyEdit=S
+function z.topBar(a)local d,b,g=a.D,a.T,a.W
+local e=b.menubar_fg or b.bar_fg or b.fg;local c=b.menubar_bg or b.bar_bg or b.bg
+d.fill(1,1,g,1," ",e,c)
+local j=(b.dim and b.dim~=c)and b.dim or e;local k=a.menuDefs or z.menuDefs;local f=C.menuSpans(k)
+local o=a.menuOpen or(
+a.menuFocused and a.menuIdx or nil)
+for q,p in ipairs(f)do if k[q]then k[q]._x=p.s end
+if q==o then
+d.set(p.s,1,p.text,b.sel_fg or c,b.sel_bg or b.highlight)else d.set(p.s,1,p.text,j,c)end end;a._menuSpans=f;local m=#f>0 and f[#f].e or 1;local h=math.floor(
+W.freeMemory()/1024).."K"d.set(g-
+#h,1,h,j,c)do local p=P()if p and p.refreshTabs then
+pcall(p.refreshTabs,a)end end;local i=C.fitChips(a.tabs,a.activeTab,
+g-#h-2,m+2)
+for q,p in ipairs(i)do
+if
+p.state=="active"then
+d.set(p.s,1,p.text,b.sel_fg or c,b.sel_bg or b.highlight)elseif p.state=="busy"then d.set(p.s,1,p.text,b.title or e,c)elseif p.state==
+"more"then
+d.set(p.s,1,p.text,b.highlight or b.title or e,c)else d.set(p.s,1,p.text,e,c)end end;a._tabSpans=i;local l=m+2;local n=
+((i[1]and i[1].s)or(g-#h-1))-2;if n>=l then
+d.set(l,1,string.rep("░",n-l+1),j,c)end end;z.tabBar=z.topBar;function z.menuBar(a)end
+function z.rail(a)local f,d=a.T,a.W;local e=7
+local g=a.tier>=3 and d>=80;local l=g and 6 or 0
+local j=g and(d-e-l-4)or(d-e-3)local k=j+e-3
+local b={{label=a.browser.path},{text="Name"}}local c=F()local h=nil;if c and c.enabled(a)then
+local m=c.viewKeyLabel(a).." \226\150\184 tiles"local n=k- (J(m)+5)
+if n>14 then h={label=m,at=n}b[#b+1]=h end end
+b[#b+1]={text="Size",at=k}if g then b[#b+1]={text="Type",at=j+e+2}end
+local i=C.drawRail(a.D,f,a.RAIL_ROW,d,b,{labelFg=
+f.title or f.fg})if c then c.markToggle(a,a.RAIL_ROW,nil,nil)
+for m,n in ipairs(b)do if n==h and i[m]then
+c.markToggle(a,a.RAIL_ROW,i[m].s,i[m].e)end end end end
+function z.sumRail(a,b)local c=b
+if not c then local d=a.browser.files or{}local e=#d;if d[1]and
+d[1].name==".."then e=e-1 end;c=e.." items"
+if a.browser.freeStr then c=c.." · "..
+a.browser.freeStr.." free"end end;C.drawRail(a.D,a.T,a.SUM_ROW,a.W,{{label=c}})end
+local function U(a)local b=a.W;local c=7;local d=a.tier>=3 and b>=80;local e=d and 6 or 0;local f=d and(b-c-e-
+4)or(b-c-3)return c,e,f,d end
+local function V(a,b,c,f,d,e,g)local l,i,m=a.D,a.T,a.W;if b<1 or b>#a.browser.files then
+l.fill(1,c,m,1," ",i.bg,i.bg)return end;local h=a.browser.files[b]
+local n=
+h.dir and("["..h.name.."]")or h.name
+local p=h.dir and" <DIR> "or B.padL(B.fmtSz(h.sz),f)n=n:sub(1,e-2)local q="   "..B.padR(n,e-2)local o
+if g then
+local r=
+h.dir and"dir"or(h.name:match("%.(%w+)$")or"")
+o=q.." "..p.." "..B.padR(r:sub(1,d),d)else o=q.." "..p end;local j,k;if b==a.browser.sel then j,k=i.sel_fg,i.sel_bg else
+j,k=B.fileColor(a,h),i.bg end;l.set(1,c,M(a,o,m),j,k)
+if m>=
+4 then l.set(2,c,C.fileGlyph(h.name,h.dir),j,k)end end
+function z.fileList(a)local b,c,d,e=U(a)for f=1,a.LIST_H do local g=a.browser.scroll+f
+local h=a.LIST_TOP+f-1;V(a,g,h,b,c,d,e)end end
+function z.fileListRow(a,b)local c=b-a.browser.scroll
+if c<1 or c>a.LIST_H then return end;local d,e,f,g=U(a)V(a,b,a.LIST_TOP+c-1,d,e,f,g)end
+function z.outRow(a,b,c)local g,d,e=a.D,a.T,a.W;if a._viewToggleSpans then
+a._viewToggleSpans[a.OUT_ROW]=nil end
+local f=X(b and tostring(b)or"",e)
+g.set(1,a.OUT_ROW,f..a.padW:sub(1,math.max(0,e-J(f))),c or
+d.dim,d.bg)end
+local H={"F1 Help","F3 View","F5 Copy","F6 Move","F7 New","F8 Del","F9 Menu","F10 Quit","Tab Complete"}
+function z.idleHint(a)local h,f,g=a.D,a.T,a.W;local c=H;local b=F()local d=nil
+if b and b.enabled(a)then d=
+b.viewKeyLabel(a).." Tiles"c={H[1],d}
+for k=2,#H do c[#c+1]=H[k]end;b.markToggle(a,a.OUT_ROW,nil,nil)end;local i,e="  ",""
+for l,k in ipairs(c)do
+local m=(e=="")and(" "..k)or(e..i..k)if#m>g then break end;if d and k==d then
+b.markToggle(a,a.OUT_ROW,#m-#k+1,#m)end;e=m end;local j=(e..a.padW):sub(1,g)
+h.set(1,a.OUT_ROW,j,f.dim,f.bg)end
+function z.cmdGeom(a)local g=a.W
+local j=a.SC and a.SC.get("hostname")or"tos"local f=a._sudo~=nil;local h=f and"[sudo] "or""
+local i=f and"# "or"$ "
+local c=h..a.who.."@"..j..":"..a.cwd..i;if#c>math.floor(g/2)then c=h..a.who..i end
+local k=#c+1;local d=g-#c;if d<1 then d=1 end;local e=a.cmdline;local b=a.cmdCursor or(#e+1)if
+b<1 then b=1 elseif b>#e+1 then b=#e+1 end;local l=B.cmdScroll(#e,b,d)return c,k,
+d,l,b,f end
+function z.cmdIndexAt(b,a)local g,c,d,e=z.cmdGeom(b)if not a or a<c then return nil end;if
+a>c+d-1 then a=c+d-1 end;local f=(a-c)+1+e;return
+math.max(1,math.min(#b.cmdline+1,f))end
+function z.cmdRow(a)local c,b,i=a.D,a.T,a.W;local m,d,j,f,e,n=z.cmdGeom(a)local g=a.cmdline
+local k=g:sub(f+1,f+j)local o=a.padW:sub(1,math.max(0,j-#k))
+c.set(1,a.CMD_ROW,m,b.highlight,b.bg)
+if n then c.set(1,a.CMD_ROW,"[sudo]",b.warning,b.bg)end;c.set(d,a.CMD_ROW,k..o,b.fg,b.bg)
+local l,p=E.range(a.cmdSel,e)
+if l then local q=b.sel_fg or b.bg;local r=b.sel_bg or b.highlight
+for s=l,p-1 do local t=
+d+ (s-1)-f;if t>=d and t<=i then
+c.set(t,a.CMD_ROW,g:sub(s,s),q,r)end end end;local h=d+ ((e-1)-f)
+if h>=d and h<=i then
+local q=(e<=#g)and g:sub(e,e)or"_"if q==" "then q="_"end;c.set(h,a.CMD_ROW,q,b.bg,b.highlight)end end
+function z.statusBar(a,b)local e,c,f=a.D,a.T,a.W;local g=N.getWidgetList(a)local d={}for i,h in ipairs(g)do
+local j=b[h]
+if j then local l,k=pcall(j)if l and k then d[#d+1]=h:sub(1,1):upper()..
+h:sub(2)..":"..k end end end
+C.drawRampBar(e,c,a.STAT_ROW,f,table.concat(d," │ "),
+nil,c.statusbar_fg,c.statusbar_bg)end
+function z.viewTab(b,a)local d,c,h,j=b.D,b.T,b.W,b.H;local g=a.content or{}local e=b.tier>=2 and(
+#tostring(#g)+1)or 0
+local f=h-e;local i=j-2;d.fill(1,2,h,i," ",c.fg,c.bg)
+for p=1,i do local q=a.offset+p
+if q<=#g then
+local s=g[q]
+local r=type(s)=="table"and s[1]or tostring(s)local t=type(s)=="table"and s[2]or c.fg
+if e>0 then d.set(1,
+1+p,B.formatLineNum(q,e),c.dim,c.bg)end
+if a.searchTerm and#a.searchTerm>0 then
+local u=r:find(a.searchTerm,1,true)
+if u then d.set(e+1,1+p,A.slice(r,1,f),t,c.bg)
+local v=A.cellOf(r,u)local w=r:sub(u,u+#a.searchTerm-1)if v<=f then
+d.set(e+v,1+p,A.slice(w,1,
+f-v+1),c.sel_fg,c.sel_bg)end else
+d.set(e+1,1+p,A.slice(r,1,f),t,c.bg)end else d.set(e+1,1+p,A.slice(r,1,f),t,c.bg)end
+if
+a.selAnchor and E.lineRange(a.selAnchor,a.selCur or a.selAnchor)then
+local u,v=E.lineRange(a.selAnchor,a.selCur or a.selAnchor)if q>=u and q<=v then
+d.set(e+1,1+p,M(b,r,f),c.sel_fg or c.bg,c.sel_bg or c.highlight)end end end end;local l=math.min(i,math.max(0,#g-a.offset))
+local m=
+a.searchTerm and(" [/"..a.searchTerm.."]")or""local k=F()local n=k and k.cycleKeyLabel(b)or"F2"
+local o=string.format("%d-%d / %d%s  [^Q]Close [^F]Find [%s]Tab",
+a.offset+1,a.offset+l,#g,m,n)C.drawRampBar(d,c,j,h,o,nil,c.bar_fg,c.bar_bg)end
+function z.editTab(b,a)local f,c,l,o=b.D,b.T,b.W,b.H;local h=a.lines or{""}local k=o-2;local e=
+b.tier>=2 and(math.max(#tostring(
+#h),2)+1)or 0;local j=l-e;local p=a.path and
+a.path:match("%.lua$")local m=p and N.getSyntax(b)local g=A.cellOf(
+h[a.curRow]or"",a.curCol)
+local d=a.viewLeft or 1;if g<d then d=g end;if g>d+j-1 then d=g-j+1 end;if d<1 then d=1 end;a.viewLeft=d;local i=
+d+j-1;f.fill(1,2,l,k," ",c.fg,c.bg)
+for t=1,k do
+local u=a.viewTop+t-1
+if u<=#h then local w=h[u]local v=1+t
+if e>0 then
+local x=u==a.curRow and c.title or c.dim;f.set(1,v,B.formatLineNum(u,e),x,c.bg)end
+if m then local y=m.tokenize(w)local x=1
+for Z,Y in ipairs(y)do local aa=Y.text
+local ab=x+A.cells(aa)-1;local _=math.max(x,d)local ac=math.min(ab,i)
+if ac>=_ then
+local ad=A.slice(aa,_-x+1,ac-x+1)if#ad>0 then
+f.set(e+ (_-d)+1,v,ad,m.tokenColor(Y.type,c),c.bg)end end;x=ab+1;if x>i then break end end else f.set(e+1,v,A.slice(w,d,i),c.fg,c.bg)end;if d>1 then f.set(e+1,v,"<",c.dim,c.bg)end;if
+A.cells(w)>i then f.set(e+j,v,">",c.dim,c.bg)end end end
+if a.selAnchor then local t=c.sel_fg or c.bg;local u=c.sel_bg or c.highlight
+local v={row=a.curRow,col=a.curCol}
+for w=1,k do local y=a.viewTop+w-1;local x=h[y]
+if x then local Y,_;if A.isAscii(x)then Y=nil else
+Y,_=A.units(x)end;local aa=Y and#Y or#x
+for ab=d,math.min(aa,i)do
+local ac=Y and Y[ab]or ab;if E.contains(a.selAnchor,v,y,ac)then
+f.set(e+ (ab-d)+1,1+w,Y and _[ab]or x:sub(ab,ab),t,u)end end;local Z=aa+1
+if
+Z>=d and Z<=i and E.contains(a.selAnchor,v,y,#x+1)then f.set(e+ (Z-d)+1,1+w," ",t,u)end end end end;local n=a.curRow-a.viewTop+2
+if n>=2 and n<2+k then
+local t=e+ (g-d)+1
+if t>=e+1 and t<=e+j then
+local u=A.slice(h[a.curRow]or"",g,g)if u==""then u=" "end;f.set(t,n,u,c.sel_fg,c.sel_bg)end end;local q=a.modified and" [+]"or""local r=a.searchTerm and
+(" [/"..a.searchTerm.."]")or""
+local s=string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find [^Q]Close",a.label,q,a.curRow,g,r)C.drawRampBar(f,c,o,l,s,nil,c.bar_fg,c.bar_bg)end
+function z.shell(a,b)local c=F()local d=a.tabs[a.activeTab]
+local e=c and c.isTiles(a,d)
+if e then c.drawHeader(a,d)c.drawBand(a,d)c.drawTiles(a,d)
+z.sumRail(a,c.summaryText(a,d))else a._homeBand=nil;z.rail(a)z.fileList(a)z.sumRail(a)end;if c then c.markToggle(a,a.OUT_ROW,nil,nil)end
+if
+a.outLines and#a.outLines>0 then z.outLines(a)elseif a.lastOut then
+z.outMessage(a,a.lastOut[1],a.lastOut[2])elseif e then local f,g,h=c.hintText(a,d)z.outRow(a,f,a.T.dim)
+c.markToggle(a,a.OUT_ROW,g,h)else z.idleHint(a)end;z.cmdRow(a)z.statusBar(a,b)end
+function z.outMessage(a,c,b)local f=a.W;local d=tostring(c or"")
+if J(d)<=f then return z.outRow(a,d,b)end;local g=B.wrapLine(d,f)local e={}
+for i,h in ipairs(g)do e[#e+1]={h,b}end;z.outLines(a,e)end
+function z.outLines(a,b)local h,d,i=a.D,a.T,a.W;local c=b or a.outLines
+if not c or#c==0 then return end;local e=a.LIST_TOP;local f=F()
+if f and f.isTiles(a)then e=a.TILE_TOP end;local g=math.min(#c,a.OUT_ROW-e+1)
+local e=a.OUT_ROW-g+1;for j=1,g do local k=c[j]or{"",d.fg}
+h.set(1,e+j-1,M(a,k[1],i),k[2]or d.fg,d.bg)end end
+function z.all(a,b)
+local c=a.D and a.D.beginFrame and a.D.beginFrame()if not c then return z._allBody(a,b)end
+local d,e=pcall(z._allBody,a,b)a.D.endFrame()if not d then error(e,0)end end
+function z._allBody(a,b)z.topBar(a)local c=a.tabs[a.activeTab]
+if
+not c or c.type=="shell"then z.shell(a,b)elseif c.type=="view"or c.type=="output"then
+z.viewTab(a,c)elseif c.type=="edit"then z.editTab(a,c)else local d=P()
+if d then d.ensureBuiltins()
+local e=d.get(c.type)if e and e.draw then e.draw(a,c)end end end end
+function z.menuDropdown(a)if not a.menuOpen then return end
+local b=(a.menuDefs or z.menuDefs)[a.menuOpen]if not b then return end;local c=b._x or 2
+a.D.dropdown(c,a.MENU_ROW+1,b.items,a.menuSel)end;function z.contextMenu(a)if not a.ctxOpen then return end
+a.D.dropdown(a.ctxX,a.ctxY,a.ctxItems,a.ctxSel)end;return z

@@ -1,262 +1,82 @@
-local computer = require("computer")
-local transfer = {}
-local MAX_FILE_SIZE = 6144
-local TIMEOUT = 30
-local net = nil
-local fs = nil
-local trustMgr = nil
-local crypto = nil
-local log = nil
-local event = nil
-local protocol = nil
-local securefs = nil
-local usersmod = nil
-local enabled = false
-function transfer.setEnabled(v) enabled = v and true or false end
-function transfer.isEnabled() return enabled end
-function transfer.init(modules)
-net = modules.net
-fs = modules.fs
-trustMgr = modules.trust
-crypto = modules.crypto
-log = modules.log
-event = modules.event
-securefs = modules.securefs
-usersmod = modules.users
-protocol = require("kernel.net.protocol")
-if net then
-net.on(protocol.TYPE.FILE_REQ, function(packet, fromAddr)
-transfer.handleRequest(packet, fromAddr)
-end)
-end
-if log then
-log.info("transfer", "File transfer module initialized")
-end
-return true
-end
-function transfer.request(address, remotePath, localPath, opts)
-if not net then return false, "Network not available" end
-if not protocol then return false, "Protocol not loaded" end
-opts = opts or {}
-local session = opts.session
-local level = trustMgr.getLevel(address)
-if level < trustMgr.LEVEL.TRUSTED then
-return false, "Peer is not TRUSTED"
-end
-if net.verifyPeer then
-local vOk, vErr = net.verifyPeer(address)
-if not vOk then
-return false, "Peer verification failed: " .. tostring(vErr)
-end
-end
-local normLocal = fs.normalize and fs.normalize(localPath) or localPath
-if type(normLocal) ~= "string" or normLocal == "" or normLocal == "/" then
-return false, "Invalid local path"
-end
-local actor = nil
-if session and session.user then
-actor = session.user
-elseif usersmod and usersmod.currentSession then
-local s = usersmod.currentSession()
-if s then actor = s.user end
-end
-if actor and not actor:match("^[%w_%-]+$") then actor = nil end
-local function startsWith(s, p) return s:sub(1, #p) == p end
-local allowed = false
-if startsWith(normLocal, "/tmp/") then allowed = true end
-if startsWith(normLocal, "/public/") then allowed = true end
-if actor and startsWith(normLocal, "/home/" .. actor .. "/") then allowed = true end
-if actor == "root" and (normLocal == "/root" or startsWith(normLocal, "/root/")) then allowed = true end
-if not allowed then
-return false, "Refusing to write outside /tmp, /public, or /home/<you>: " .. normLocal
-end
-local received = false
-local result = false
-local errMsg = "Timeout waiting for response"
-local listeners = {
-{ type = protocol.TYPE.FILE_RES,
-id = net.onceFrom(protocol.TYPE.FILE_RES, address, function(rpkt)
-received = true
-local payload = rpkt.payload or {}
-if type(payload.data) ~= "string" then
-errMsg = "Invalid response: data not a string"
-elseif payload.path and payload.path ~= remotePath then
-errMsg = "Invalid response: path mismatch (" ..
-tostring(payload.path) .. " ~= " .. tostring(remotePath) .. ")"
-elseif #payload.data > MAX_FILE_SIZE then
-errMsg = "Response too large: " .. #payload.data .. " bytes (max " .. MAX_FILE_SIZE .. ")"
-else
-local writeOk, writeErr
---! securefs.writeFile's third argument IS the session. This passed
---! { session = session }, a table with no tier, which the ACL
---! raised on -- inside a pcall'd listener, so every documented
---! opts.session caller got "Timeout waiting for response" for a
---! reply that had arrived. (test_transfer_paths.lua)
-if securefs and session and securefs.writeFile then
-writeOk, writeErr = securefs.writeFile(localPath, payload.data, session)
-else
-writeOk, writeErr = fs.writeFile(localPath, payload.data)
-end
-if writeOk then
-result = true
-if log then
-log.info("transfer", "Received file: " .. remotePath ..
-" (" .. tostring(payload.size or #payload.data) .. " bytes)")
-end
-else
-errMsg = "Failed to write local file: " .. tostring(writeErr or localPath)
-end
-end
-end) },
-{ type = protocol.TYPE.FILE_DENY,
-id = net.onceFrom(protocol.TYPE.FILE_DENY, address, function(rpkt)
-received = true
-local payload = rpkt.payload or {}
-errMsg = payload.reason or "File request denied"
-end) },
-}
-local pkt = protocol.makePacket(protocol.TYPE.FILE_REQ, {
-path = remotePath,
-}, { to = address })
-local ok, sendErr = net.send(address, pkt)
-if not ok then
-net.offAll(listeners)
-return false, "Send failed: " .. tostring(sendErr)
-end
-if log then
-log.info("transfer", "Requested file: " .. remotePath ..
-" from " .. address:sub(1, 8) .. "...")
-end
-net.waitFor(function() return received end, TIMEOUT)
-net.offAll(listeners)
-if not received then
-return false, errMsg
-end
-if result then return true end
-return false, errMsg
-end
-function transfer.handleRequest(packet, fromAddr)
-if not net or not protocol then return end
-if not enabled then return end
-local level = trustMgr.getLevel(fromAddr)
-if level < trustMgr.LEVEL.TRUSTED then
-if log then
-log.warn("transfer", "FILE_REQ denied from non-trusted peer: " ..
-fromAddr:sub(1, 8) .. "...")
-end
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "Insufficient trust level",
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-if net.verifyPeer then
-local vOk, vErr = net.verifyPeer(fromAddr)
-if not vOk then
-if log then
-log.warn("transfer", "Refusing FILE_REQ from " ..
-fromAddr:sub(1, 8) .. ": " .. tostring(vErr))
-end
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "Insufficient trust level",
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-end
-local payload = packet.payload or {}
-local path = payload.path
-if not path or path == "" then
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "No file path specified",
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-local normalized = fs.normalize(path)
-if type(normalized) ~= "string"
-or (normalized:sub(1, 8) ~= "/public/" and normalized ~= "/public") then
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "Access restricted to /public/",
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-if not fs.exists(normalized) then
-if log then
-log.info("transfer", "FILE_REQ for missing file: " .. normalized ..
-" from " .. fromAddr:sub(1, 8))
-end
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "File not found: " .. normalized,
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-local sz = fs.size and fs.size(normalized) or nil
-if type(sz) == "number" and sz > MAX_FILE_SIZE then
-if log then
-log.info("transfer", "FILE_REQ denied (too large): " .. normalized ..
-" (" .. sz .. " bytes)")
-end
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "File too large for single transfer (" ..
-sz .. " > " .. MAX_FILE_SIZE .. " bytes)",
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-local content = fs.readFile(normalized)
-if not content then
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "Cannot read file: " .. normalized,
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-if #content > MAX_FILE_SIZE then
-if log then
-log.info("transfer", "FILE_REQ denied post-read (too large): " ..
-normalized .. " (" .. #content .. " bytes)")
-end
-local deny = protocol.makePacket(protocol.TYPE.FILE_DENY, {
-reason = "File too large for single transfer (" ..
-#content .. " > " .. MAX_FILE_SIZE .. " bytes)",
-}, { to = fromAddr })
-net.send(fromAddr, deny)
-return
-end
-if log then
-log.info("transfer", "Sending file: " .. normalized ..
-" (" .. #content .. " bytes) to " .. fromAddr:sub(1, 8) .. "...")
-end
-local res = protocol.makePacket(protocol.TYPE.FILE_RES, {
-path = normalized,
-data = content,
-size = #content,
-}, { to = fromAddr })
-local ok, err = net.send(fromAddr, res)
-if not ok and log then
-log.warn("transfer", "Failed to send file response: " .. tostring(err))
-end
-end
-do
-local T = rawget(_G, "_TOS")
-if T and T.net and not net then
-local okC, cryptoMod = pcall(require, "kernel.crypto")
-local okI = pcall(transfer.init, {
-net = T.net,
-fs = T.fs,
-trust = T.net.getTrust and T.net.getTrust() or nil,
-crypto = okC and cryptoMod or nil,
-log = T.logObj,
-event = T.event,
-securefs = T.securefs,
-users = T.users,
-})
-if okI and T.net.getServiceArm and T.net.getServiceArm("fileshare") then
-transfer.setEnabled(true)
-end
-end
-end
-return transfer
+local w,D,B="transfer","string"," bytes)"local H=require("computer")local u={}
+local x=6144;local E=30;local s=nil;local v=nil;local y=nil;local F=nil;local t=nil;local G=nil;local r=nil;local z=nil;local A=nil
+local C=false;function u.setEnabled(a)C=a and true or false end
+function u.isEnabled()return C end
+function u.init(a)s=a.net;v=a.fs;y=a.trust;F=a.crypto;t=a.log;G=a.event;z=a.securefs;A=a.users
+r=require("kernel.net.protocol")if s then
+s.on(r.TYPE.FILE_REQ,function(b,c)u.handleRequest(b,c)end)end;if t then
+t.info(w,"File transfer module initialized")end;return true end
+function u.request(a,b,c,d)if not s then return false,"Network not available"end;if not r then return false,
+"Protocol not loaded"end;d=d or{}local h=d.session
+local n=y.getLevel(a)
+if n<y.LEVEL.TRUSTED then return false,"Peer is not TRUSTED"end
+if s.verifyPeer then local I,J=s.verifyPeer(a)if not I then return false,
+"Peer verification failed: "..tostring(J)end end;local e=v.normalize and v.normalize(c)or c
+if
+type(e)~=D or e==""or e=="/"then return false,"Invalid local path"end;local f=nil
+if h and h.user then f=h.user elseif A and A.currentSession then
+local I=A.currentSession()if I then f=I.user end end
+if f and not f:match("^[%w_%-]+$")then f=nil end;local function j(J,I)return J:sub(1,#I)==I end;local i=false;if j(e,"/tmp/")then
+i=true end;if j(e,"/public/")then i=true end;if f and
+j(e,"/home/"..f.."/")then i=true end;if f=="root"and
+(e=="/root"or j(e,"/root/"))then i=true end
+if not i then return false,
+"Refusing to write outside /tmp, /public, or /home/<you>: "..e end;local k=false;local l=false;local g="Timeout waiting for response"
+local m={{type=r.TYPE.FILE_RES,id=s.onceFrom(r.TYPE.FILE_RES,a,function(I)
+k=true;local J=I.payload or{}
+if type(J.data)~=D then
+g="Invalid response: data not a string"elseif J.path and J.path~=b then
+g="Invalid response: path mismatch ("..tostring(J.path).." ~= "..
+tostring(b)..")"elseif#J.data>x then
+g="Response too large: "..#J.data.." bytes (max "..x..")"else local K,L;if z and h and z.writeFile then K,L=z.writeFile(c,J.data,h)else
+K,L=v.writeFile(c,J.data)end
+if K then l=true;if t then
+t.info(w,"Received file: "..
+b.." ("..tostring(J.size or#
+J.data)..B)end else
+g="Failed to write local file: "..tostring(L or c)end end end)},{type=r.TYPE.FILE_DENY,id=s.onceFrom(r.TYPE.FILE_DENY,a,function(I)
+k=true;local J=I.payload or{}g=J.reason or"File request denied"end)}}local o=r.makePacket(r.TYPE.FILE_REQ,{path=b},{to=a})
+local p,q=s.send(a,o)
+if not p then s.offAll(m)return false,"Send failed: "..tostring(q)end;if t then
+t.info(w,"Requested file: "..b.." from "..a:sub(1,8).."...")end
+s.waitFor(function()return k end,E)s.offAll(m)if not k then return false,g end;if l then return true end
+return false,g end
+function u.handleRequest(b,a)if not s or not r then return end;if not C then return end
+local g=y.getLevel(a)
+if g<y.LEVEL.TRUSTED then if t then
+t.warn(w,"FILE_REQ denied from non-trusted peer: "..a:sub(1,8).."...")end
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason="Insufficient trust level"},{to=a})s.send(a,l)return end
+if s.verifyPeer then local l,m=s.verifyPeer(a)
+if not l then if t then
+t.warn(w,"Refusing FILE_REQ from "..a:sub(1,8)..
+": "..tostring(m))end
+local n=r.makePacket(r.TYPE.FILE_DENY,{reason="Insufficient trust level"},{to=a})s.send(a,n)return end end;local h=b.payload or{}local f=h.path
+if not f or f==""then
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason="No file path specified"},{to=a})s.send(a,l)return end;local c=v.normalize(f)
+if type(c)~=D or
+(c:sub(1,8)~="/public/"and c~="/public")then
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason="Access restricted to /public/"},{to=a})s.send(a,l)return end
+if not v.exists(c)then if t then
+t.info(w,"FILE_REQ for missing file: "..c.." from "..a:sub(1,8))end
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason="File not found: "..c},{to=a})s.send(a,l)return end;local e=v.size and v.size(c)or nil
+if
+type(e)=="number"and e>x then if t then
+t.info(w,"FILE_REQ denied (too large): "..c.." ("..e..B)end
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason="File too large for single transfer ("..e.." > "..x..
+B},{to=a})s.send(a,l)return end;local d=v.readFile(c)if not d then
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason="Cannot read file: "..c},{to=a})s.send(a,l)return end
+if#
+d>x then if t then
+t.info(w,"FILE_REQ denied post-read (too large): "..c.." ("..#d..B)end
+local l=r.makePacket(r.TYPE.FILE_DENY,{reason=
+"File too large for single transfer ("..#d.." > "..x..B},{to=a})s.send(a,l)return end;if t then
+t.info(w,"Sending file: "..c.." ("..
+#d.." bytes) to "..a:sub(1,8).."...")end
+local i=r.makePacket(r.TYPE.FILE_RES,{path=c,data=d,size=#d},{to=a})local j,k=s.send(a,i)if not j and t then
+t.warn(w,"Failed to send file response: "..tostring(k))end end
+do local a=rawget(_G,"_TOS")
+if a and a.net and not s then
+local b,c=pcall(require,"kernel.crypto")
+local d=pcall(u.init,{net=a.net,fs=a.fs,trust=a.net.getTrust and a.net.getTrust()or nil,crypto=
+b and c or nil,log=a.logObj,event=a.event,securefs=a.securefs,users=a.users})if
+d and a.net.getServiceArm and a.net.getServiceArm("fileshare")then u.setEnabled(true)end end end;return u

@@ -1,173 +1,60 @@
-local aliases = {}
-local fs = nil
-local securefs = nil
-local users = nil
-local log = nil
-local serialize = nil
-local ALIAS_PATH = "/etc/peer_aliases.dat"
-local _byName = {}
-local _byAddr = {}
-function aliases.init(modules)
-fs = modules.fs
-securefs = modules.securefs
-users = modules.users
-log = modules.log
-serialize = modules.serialize or require("kernel.serialize")
-aliases._load()
-end
-function aliases._load()
-_byName, _byAddr = {}, {}
-if not fs or not fs.exists or not fs.exists(ALIAS_PATH) then return end
-local raw = fs.readFile(ALIAS_PATH)
-if not raw or #raw == 0 then return end
-local ok, data = pcall(serialize.decode, raw, { maxBytes = 16384 })
-if not ok or type(data) ~= "table" then
-if log then log.warn("aliases", "Corrupt alias file at " .. ALIAS_PATH) end
-return
-end
-for k, v in pairs(data) do
-if type(k) == "string" and type(v) == "table"
-and type(v.alias) == "string" and type(v.address) == "string" then
-_byName[k] = v
-_byAddr[v.address] = k
-end
-end
-end
-local function _save()
-if not fs then return false, "fs unavailable" end
-return (fs.writeFileAtomic or fs.writeFile)(ALIAS_PATH, serialize.encode(_byName))
-end
---! A refused save must not leave the change in memory. set/remove used to
---! mutate both tables and THEN persist, so a failed write reported an
---! error while resolve()/list() went on answering with the new mapping
---! until the reboot quietly dropped it. The tables are a few dozen entries
---! at most, so a shallow copy before the change is the whole rollback.
-local function _snapshot()
-local n, a = {}, {}
-for k, v in pairs(_byName) do n[k] = v end
-for k, v in pairs(_byAddr) do a[k] = v end
-return n, a
-end
-local function requireAdmin(opName)
---! Injected at init, and read from _TOS when the injection is missing.
---! "No users module" is taken to mean early boot and lets the caller
---! through, so a WIRING slip must not look like that: kernel/init.lua
---! once passed this module a nil `users` for its whole life, and every
---! account could rewrite the machine's aliases. (test_net_aliases.lua)
-local u = users or (_G._TOS and _G._TOS.users)
-if not u or not u.currentSession or not u.TIER then
-return true
-end
-local sess = u.currentSession()
-if not sess then return false, "no session" end
-if sess.isKernel then return true end
-if (sess.tier or 0) < (u.TIER.ADMIN or 2) then
-return false, "alias " .. opName .. " requires admin tier"
-end
-return true
-end
-local function validAlias(s)
-if type(s) ~= "string" then return false, "not a string" end
-if #s < 1 or #s > 32 then return false, "alias must be 1-32 chars" end
-if not s:match("^[%w_%-]+$") then
-return false, "alias must be alphanumeric + _ + -"
-end
-return true
-end
-local function validAddress(s)
-if type(s) ~= "string" then return false, "not a string" end
-if #s < 8 or #s > 64 then return false, "address looks malformed" end
-if not s:match("^[%w%-]+$") then return false, "address has odd chars" end
-return true
-end
-function aliases.set(alias, address)
-local okT, terr = requireAdmin("set")
-if not okT then return false, terr end
-local okA, aerr = validAlias(alias)
-if not okA then return false, aerr end
-local okD, derr = validAddress(address)
-if not okD then return false, derr end
-local key = alias:lower()
-local keepN, keepA = _snapshot()
-local prev = _byName[key]
-if prev and prev.address ~= address then
-_byAddr[prev.address] = nil
-end
-local prevKey = _byAddr[address]
-if prevKey and prevKey ~= key then
-_byName[prevKey] = nil
-end
-_byName[key] = { alias = alias, address = address }
-_byAddr[address] = key
-local ok, err = _save()
-if not ok then
-_byName, _byAddr = keepN, keepA
-return false, "persist: " .. tostring(err)
-end
-if log then
-log.info("aliases", string.format("aliased %s -> %s",
-alias, address:sub(1, 12) .. "..."))
-end
-return true
-end
-function aliases.remove(alias)
-local okT, terr = requireAdmin("remove")
-if not okT then return false, terr end
-if type(alias) ~= "string" then return false, "alias is not a string" end
-local key = alias:lower()
-local entry = _byName[key]
-if not entry then return false, "no such alias" end
-local keepN, keepA = _snapshot()
-_byName[key] = nil
-_byAddr[entry.address] = nil
-local ok, err = _save()
-if not ok then
-_byName, _byAddr = keepN, keepA
-return false, "persist: " .. tostring(err)
-end
-if log then log.info("aliases", "removed alias " .. alias) end
-return true
-end
-function aliases.addressOf(alias)
-if type(alias) ~= "string" then return nil end
-local entry = _byName[alias:lower()]
-return entry and entry.address or nil
-end
-function aliases.aliasOf(address)
-if type(address) ~= "string" then return nil end
-local key = _byAddr[address]
-return key and _byName[key] and _byName[key].alias or nil
-end
-function aliases.list()
-local out = {}
-for _, entry in pairs(_byName) do
-out[#out + 1] = { alias = entry.alias, address = entry.address }
-end
-table.sort(out, function(a, b) return a.alias:lower() < b.alias:lower() end)
-return out
-end
-function aliases.resolve(s)
-if type(s) ~= "string" or s == "" then
-return nil, "empty"
-end
-local viaAlias = aliases.addressOf(s)
-if viaAlias then return viaAlias end
-if s:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$") then
-return s
-end
-local matches = {}
-for addr in pairs(_byAddr) do
-if addr:sub(1, #s) == s then matches[#matches + 1] = addr end
-end
-if #matches == 1 then return matches[1] end
-if #matches > 1 then return nil, "ambiguous prefix matches multiple aliases" end
-return nil, "no alias and no known peer matches '" .. s .. "'"
-end
-function aliases.format(address)
-if type(address) ~= "string" then return "?" end
-local short = address:sub(1, 8) .. "..."
-local alias = aliases.aliasOf(address)
-if alias then return alias .. " (" .. short .. ")" end
-return short
-end
-return aliases
+local C,t="aliases","string"local r={}local u=nil;local D=nil;local y=nil;local v=nil;local x=nil
+local w="/etc/peer_aliases.dat"local q={}local s={}
+function r.init(a)u=a.fs;D=a.securefs;y=a.users;v=a.log;x=a.serialize or
+require("kernel.serialize")r._load()end
+function r._load()q,s={},{}if not u or not u.exists or not u.exists(w)then
+return end;local a=u.readFile(w)
+if not a or#a==0 then return end;local c,b=pcall(x.decode,a,{maxBytes=16384})if not c or
+type(b)~="table"then if v then
+v.warn(C,"Corrupt alias file at "..w)end;return end
+for e,d in
+pairs(b)do if
+type(e)==t and type(d)=="table"and type(d.alias)==t and type(d.address)==t then q[e]=d
+s[d.address]=e end end end
+local function z()if not u then return false,"fs unavailable"end;return
+(u.writeFileAtomic or u.writeFile)(w,x.encode(q))end
+local function A()local b,c={},{}for a,d in pairs(q)do b[a]=d end;for a,d in pairs(s)do c[a]=d end;return b,c end
+local function B(a)
+local b=y or(_G._TOS and _G._TOS.users)
+if not b or not b.currentSession or not b.TIER then return true end;local c=b.currentSession()
+if not c then return false,"no session"end;if c.isKernel then return true end
+if
+(c.tier or 0)< (b.TIER.ADMIN or 2)then return false,"alias "..a.." requires admin tier"end;return true end
+local function E(a)if type(a)~=t then return false,"not a string"end;if#a<1 or#a>32 then return
+false,"alias must be 1-32 chars"end
+if not
+a:match("^[%w_%-]+$")then return false,"alias must be alphanumeric + _ + -"end;return true end
+local function F(a)if type(a)~=t then return false,"not a string"end;if#a<8 or#a>64 then return
+false,"address looks malformed"end
+if not
+a:match("^[%w%-]+$")then return false,"address has odd chars"end;return true end
+function r.set(b,a)local f,g=B("set")if not f then return false,g end;local h,i=E(b)
+if not h then return false,i end;local j,k=F(a)if not j then return false,k end;local c=b:lower()local l,m=A()local d=q[c]if d and
+d.address~=a then s[d.address]=nil end;local e=s[a]if
+e and e~=c then q[e]=nil end;q[c]={alias=b,address=a}s[a]=c;local n,o=z()
+if not n then q,s=l,m;return
+false,"persist: "..tostring(o)end;if v then
+v.info(C,string.format("aliased %s -> %s",b,a:sub(1,12).."..."))end;return true end
+function r.remove(a)local d,e=B("remove")if not d then return false,e end;if type(a)~=t then return false,
+"alias is not a string"end;local b=a:lower()local c=q[b]if
+not c then return false,"no such alias"end;local f,g=A()q[b]=nil
+s[c.address]=nil;local h,i=z()
+if not h then q,s=f,g;return false,"persist: "..tostring(i)end;if v then v.info(C,"removed alias "..a)end
+return true end
+function r.addressOf(a)if type(a)~=t then return nil end;local b=q[a:lower()]return
+b and b.address or nil end
+function r.aliasOf(a)if type(a)~=t then return nil end;local b=s[a]return
+b and q[b]and q[b].alias or nil end
+function r.list()local a={}
+for c,b in pairs(q)do a[#a+1]={alias=b.alias,address=b.address}end
+table.sort(a,function(c,d)
+return c.alias:lower()<d.alias:lower()end)return a end
+function r.resolve(a)if type(a)~=t or a==""then return nil,"empty"end
+local c=r.addressOf(a)if c then return c end;if
+a:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x$")then return a end;local b={}for d in pairs(s)do if
+d:sub(1,#a)==a then b[#b+1]=d end end;if#b==1 then return
+b[1]end
+if#b>1 then return nil,"ambiguous prefix matches multiple aliases"end
+return nil,"no alias and no known peer matches '"..a.."'"end
+function r.format(a)if type(a)~=t then return"?"end;local b=a:sub(1,8).."..."
+local c=r.aliasOf(a)if c then return c.." ("..b..")"end;return b end;return r

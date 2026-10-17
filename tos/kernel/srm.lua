@@ -1,578 +1,232 @@
-local srm = {}
-srm.VERSION = 1
-srm.DIR = "/var/srm"
-srm.INDEX = "/var/srm/index.dat"
-srm.STORE = "/var/srm/store"
-srm.LAST = "/var/srm/last.dat"
-srm.MAX_STORE_BYTES = 128 * 1024
---! Keep in sync with the F() call sites in bios.lua. The digit is also the
---! number of short beeps SRM Basic emits, so a screenless box is diagnosable
---! by ear; test_bios.lua pins both halves of that contract.
---!
---! The text lives in kernel.errors now, which also gives each code its
---! E-number and symbol (C1 is E-101 ERR_CPU_ARCH). One table, so what SRM
---! prints and what the stop screen shows cannot drift apart. If the registry
---! will not load this degrades to "unrecognised code" instead of taking SRM
---! down with it: SRM runs at exactly the moments things like that happen.
-do
-local okE, errors = pcall(require, "kernel.errors")
-srm.errors = (okE and type(errors) == "table") and errors or nil
-srm.BASIC_CODES = srm.errors and srm.errors.biosTable() or {}
-end
-local function tryRequire(name)
-local ok, mod = pcall(require, name)
-if ok then return mod end
-end
-function srm.deps(d)
-d = d or {}
-local TOS = _G._TOS or {}
-local out = {
-fs = d.fs or TOS.fs,
-serialize = d.serialize or tryRequire("kernel.serialize"),
-crypto = d.crypto or TOS.crypto or tryRequire("kernel.crypto"),
-log = d.log or TOS.logObj,
-eeprom = d.eeprom,
-component = d.component,
-}
-if not out.eeprom then
-local component = out.component or tryRequire("component")
-if component and component.list then
-local ok, addr = pcall(function() return component.list("eeprom")() end)
-if ok and addr then
-local okP, proxy = pcall(component.proxy, addr)
-if okP then out.eeprom = proxy end
-end
-end
-end
-return out
-end
-local function gc()
-local K = _G._TOS and _G._TOS.kernel
-if K and K.gc then pcall(K.gc); return end
-if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
-end
---! Cooperative slice between FILES.
---!
---! SRM reads and hashes every file in the manifest. That is the longest
---! job in the OS by a wide margin, and it was the only long job that never
---! yielded -- ten other modules do, including compress, pkg, fs and
---! ed25519. So `srm scan` did not merely run slowly, it FROZE the machine
---! for its whole duration: no other seat drew, no timer fired, nothing.
---! Reported from a real box, and the operator's guess that it might be an
---! outlier rather than just the slowest command was the right one.
---!
---! Between whole files only, never mid-file, so a file is still read and
---! hashed within one resume. yieldCooperative is throttled inside
---! kernel.process (it returns false until the slice is actually spent), so
---! calling it once per file is cheap, and it is a no-op in kernel context
---! and off-box.
---!
---! This matters more here than the freeze alone: OpenComputers kills a
---! machine that goes too long without yielding, and TOS's own preemption
---! cannot save it (see kernel/process.lua -- debug.sethook does not exist
---! on OC). A big enough manifest would take the whole computer down.
---! (test_srm_yields.lua)
-local coopProc = nil
-local function coopYield()
-if coopProc == nil then
-local okP, m = pcall(require, "kernel.process")
-coopProc = (okP and m and m.yieldCooperative) and m or false
-end
-if coopProc then coopProc.yieldCooperative() end
-end
-local function newReport(title)
-return {
-title = title,
-findings = {},
-counts = { ok = 0, info = 0, warn = 0, err = 0 },
-fixed = 0,
-}
-end
-srm.newReport = newReport
-local function add(rep, text, sev)
-sev = sev or "info"
-rep.findings[#rep.findings + 1] = { text = text, sev = sev }
-rep.counts[sev] = (rep.counts[sev] or 0) + 1
-return rep
-end
-srm.add = add
-function srm.worst(rep)
-local c = rep and rep.counts or {}
-if (c.err or 0) > 0 then return "err" end
-if (c.warn or 0) > 0 then return "warn" end
-return "ok"
-end
-function srm.parseFault(data)
-if type(data) ~= "string" then return nil end
-local code = data:match("^SRM:(%S+)") or data:match("\nSRM:(%S+)")
-if not code or code == "" then return nil end
-return code
-end
-function srm.stripFault(data)
-if type(data) ~= "string" then return "" end
-local out = data:gsub("\nSRM:%S*", ""):gsub("^SRM:%S*\n?", "")
-return out
-end
-function srm.readFault(deps)
-deps = srm.deps(deps)
-local ep = deps.eeprom
-if not ep or not ep.getData then return nil end
-local ok, data = pcall(ep.getData)
-if not ok then return nil end
-local code = srm.parseFault(data)
-if not code then return nil end
-local e = srm.errors and srm.errors.find(code)
-return {
-code = code,
-why = srm.BASIC_CODES[code] or "unrecognised SRM Basic code (newer BIOS?)",
-err = e and srm.errors.label(e) or nil,
-}
-end
-function srm.clearFault(deps)
-deps = srm.deps(deps)
-local ep = deps.eeprom
-if not ep or not ep.getData or not ep.setData then return false, "no EEPROM" end
-local ok, data = pcall(ep.getData)
-if not ok then return false, "EEPROM unreadable" end
-if not srm.parseFault(data) then return true end
-local okW = pcall(ep.setData, srm.stripFault(data))
-if not okW then return false, "EEPROM write failed" end
-return true
-end
-local FALLBACK_CRITICAL = {
-"/init.lua",
-"/tos/kernel/init.lua",
-"/tos/kernel/log.lua",
-"/tos/kernel/hal.lua",
-"/tos/kernel/event.lua",
-"/tos/kernel/process.lua",
-"/tos/kernel/fs.lua",
-"/tos/kernel/serialize.lua",
-"/tos/kernel/display.lua",
-"/tos/shell/init.lua",
-}
-function srm.criticalPaths(deps)
-deps = srm.deps(deps)
-local fs, ser = deps.fs, deps.serialize
-local function fromTableFile(path, pick)
-if not (fs and ser and fs.exists and fs.exists(path)) then return nil end
-local raw = fs.readFile(path)
-if type(raw) ~= "string" then return nil end
-local tbl = ser.decode(raw, { maxBytes = 64 * 1024 })
-if type(tbl) ~= "table" then return nil end
-local out = pick(tbl)
-if type(out) == "table" and #out > 0 then return out end
-end
-local list = fromTableFile("/var/pkg/installed/tos-core/package.lua", function(t)
-local o = {}
-if type(t.critical) == "table" then
-for _, p in ipairs(t.critical) do if type(p) == "string" then o[#o + 1] = p end end
-end
-return o
-end)
-if list then return list, "tos-core/package.lua" end
-list = fromTableFile("/etc/critical.bak", function(t)
-local o = {}
-for _, p in ipairs(t) do if type(p) == "string" then o[#o + 1] = p end end
-return o
-end)
-if list then return list, "critical.bak" end
-local manifest = tryRequire("system_manifest")
-if type(manifest) == "table" then
-local o = {}
-for _, e in ipairs(manifest) do
-if type(e) == "table" and e.critical and type(e.path) == "string" then
-o[#o + 1] = e.path
-end
-end
-if #o > 0 then return o, "system_manifest.lua" end
-end
-return FALLBACK_CRITICAL, "built-in fallback"
-end
-function srm.storePathFor(path)
-return srm.STORE .. path
-end
-local function readHashed(deps, path, keep)
-local fs, crypto = deps.fs, deps.crypto
-if not (fs and crypto and crypto.hash) then return nil, "crypto unavailable" end
-local content, err = fs.readFile(path)
-if type(content) ~= "string" then return nil, err or "unreadable" end
-local size = #content
-local ok, hash = pcall(crypto.hash, content)
-if not keep then content = nil; gc() end
-if not ok or type(hash) ~= "string" then return nil, "hash failed: " .. tostring(hash) end
-return hash, size, content
-end
-local function hashFile(deps, path)
-return readHashed(deps, path)
-end
-srm.hashFile = hashFile
-local function writeSafely(fs, path, content)
-if fs.writeFileAtomic then return fs.writeFileAtomic(path, content) end
-return fs.writeFile(path, content)
-end
-function srm.loadIndex(deps)
-deps = srm.deps(deps)
-local fs, ser = deps.fs, deps.serialize
-if not (fs and ser and fs.exists and fs.exists(srm.INDEX)) then return nil end
-local raw = fs.readFile(srm.INDEX)
-if type(raw) ~= "string" then return nil end
-local idx = ser.decode(raw, { maxBytes = 256 * 1024 })
-if type(idx) ~= "table" or type(idx.files) ~= "table" then return nil end
-return idx
-end
-local function saveIndex(deps, idx)
-local fs, ser = deps.fs, deps.serialize
-if not (fs and ser) then return false, "fs/serialize unavailable" end
-if fs.makeDirectory and not (fs.exists and fs.exists(srm.DIR)) then
-pcall(fs.makeDirectory, srm.DIR)
-end
-return ser.saveFile(fs, srm.INDEX, idx)
-end
-function srm.baseline(deps, opts)
-deps = srm.deps(deps)
-opts = opts or {}
-local fs = deps.fs
-if not fs then return false, "no filesystem" end
-if not (deps.crypto and deps.crypto.hash) then return false, "crypto unavailable" end
-local paths, source = opts.paths, "caller"
-if not paths then paths, source = srm.criticalPaths(deps) end
-local idx = {
-version = srm.VERSION,
-created = (os.time and os.time()) or 0,
-boot = (_G._TOS and _G._TOS.bootCount) or 0,
-content = opts.content and true or false,
-source = source,
-files = {},
-}
-local summary = { hashed = 0, stored = 0, skipped = 0, bytes = 0, missing = {},
-pruned = 0, source = source }
-local prev = srm.loadIndex(deps)
-for _, path in ipairs(paths) do
-coopYield()
-if not (fs.exists and fs.exists(path)) then
-summary.missing[#summary.missing + 1] = path
-else
-local hash, size, content = readHashed(deps, path, opts.content and true or false)
-if not hash then
-summary.skipped = summary.skipped + 1
-else
-local rec = { hash = hash, size = size, stored = false }
-summary.hashed = summary.hashed + 1
-if opts.content then
-if size > srm.MAX_STORE_BYTES then
-summary.skipped = summary.skipped + 1
-elseif content and writeSafely(fs, srm.storePathFor(path), content) then
-rec.stored = true
-summary.stored = summary.stored + 1
-summary.bytes = summary.bytes + size
-else
-summary.skipped = summary.skipped + 1
-end
-end
-content = nil
-gc()
-idx.files[path] = rec
-end
-end
-end
-if prev and type(prev.files) == "table" and fs.remove then
-for path, rec in pairs(prev.files) do
-if rec.stored and not (idx.files[path] and idx.files[path].stored) then
-local sp = srm.storePathFor(path)
-if fs.exists and fs.exists(sp) and pcall(fs.remove, sp) then
-summary.pruned = summary.pruned + 1
-end
-end
-end
-end
-local ok, err = saveIndex(deps, idx)
-if not ok then return false, "could not write the index: " .. tostring(err) end
-if deps.log and deps.log.info then
-deps.log.info("srm", string.format(
-"Baseline captured: %d hashed, %d stored (%d bytes), %d pruned, from %s",
-summary.hashed, summary.stored, summary.bytes, summary.pruned, source))
-end
-return true, summary
-end
-function srm.scan(deps, opts)
-deps = srm.deps(deps)
-opts = opts or {}
-local rep = newReport("baseline scan")
-rep.drift, rep.missing, rep.unbaselined = {}, {}, {}
-local fs = deps.fs
-if not fs then add(rep, "no filesystem — nothing to scan", "err"); return rep end
-local idx = srm.loadIndex(deps)
-if not idx then
-add(rep, "no baseline captured yet — run 'srm baseline' on a system you trust", "warn")
-return rep
-end
-local paths = {}
-for p in pairs(idx.files) do paths[#paths + 1] = p end
-table.sort(paths)
-add(rep, string.format("baseline: %d file(s), captured from %s%s",
-#paths, tostring(idx.source or "?"),
-idx.content and ", with stored copies" or ", hashes only"), "info")
-for _, path in ipairs(paths) do
-coopYield()
-local rec = idx.files[path]
-if not (fs.exists and fs.exists(path)) then
-rep.missing[#rep.missing + 1] = path
-add(rep, "MISSING  " .. path, "err")
-else
-local hash, why = hashFile(deps, path)
-if not hash then
---! Say why. "UNREADABLE /tos/kernel/display.lua" came back once on
---! the headless machine for a file nobody had touched and that the
---! next scan read fine, with nothing to tell a read error from a
---! failed hash or a full memory. (test_srm.lua)
-add(rep, "UNREADABLE  " .. path .. "  (" .. tostring(why or "no reason given") .. ")", "err")
-rep.drift[#rep.drift + 1] = path
-elseif hash ~= rec.hash then
-rep.drift[#rep.drift + 1] = path
-add(rep, "CHANGED  " .. path .. "  (baseline " ..
-tostring(rec.hash):sub(1, 12) .. ", now " .. hash:sub(1, 12) .. ")", "err")
-end
-end
-end
-if idx.content and opts.checkStore ~= false then
-local rotted = 0
-for _, path in ipairs(paths) do
-coopYield()
-local rec = idx.files[path]
-if rec.stored then
-local sp = srm.storePathFor(path)
-if not (fs.exists and fs.exists(sp)) then
-rotted = rotted + 1
-add(rep, "store copy gone: " .. path, "warn")
-else
-local sh = hashFile(deps, sp)
-if sh ~= rec.hash then
-rotted = rotted + 1
-add(rep, "store copy is corrupt: " .. path, "warn")
-end
-end
-end
-end
-if rotted == 0 then add(rep, "store: every copy verifies", "ok") end
-end
-local crit = srm.criticalPaths(deps)
-for _, path in ipairs(crit) do
-coopYield()
-if not idx.files[path] then
-rep.unbaselined[#rep.unbaselined + 1] = path
-add(rep, "not in baseline: " .. path .. " (re-run 'srm baseline')", "warn")
-end
-end
-if #rep.missing == 0 and #rep.drift == 0 then
-add(rep, "all baselined files match", "ok")
-else
-add(rep, "", "info")
-add(rep, "Changed files mean one of two things: damage, or an upgrade you", "info")
-add(rep, "meant to install. After a deliberate upgrade, re-run", "info")
-add(rep, "'srm baseline' to bless the new files. Otherwise 'srm repair", "info")
-add(rep, "--restore' puts them back.", "info")
-end
-return rep
-end
-function srm.restore(deps, opts)
-deps = srm.deps(deps)
-opts = opts or {}
-local rep = newReport("restore")
-local fs = deps.fs
-if not fs then add(rep, "no filesystem", "err"); return rep end
-local idx = srm.loadIndex(deps)
-local targets = opts.paths
-if not targets then
-local scan = srm.scan(deps, { checkStore = false })
-targets = {}
-for _, p in ipairs(scan.missing) do targets[#targets + 1] = p end
-for _, p in ipairs(scan.drift) do targets[#targets + 1] = p end
-end
-if #targets == 0 then
-add(rep, "nothing to restore — no missing or changed files", "ok")
-return rep
-end
-if not idx and not opts.unverified then
-add(rep, "no baseline to verify a restore against.", "err")
-add(rep, "  capture one first ('srm baseline'), or accept an unchecked", "info")
-add(rep, "  copy explicitly with --unverified.", "info")
-return rep
-end
-for _, path in ipairs(targets) do
-coopYield()
-local want = idx and idx.files[path] and idx.files[path].hash or nil
-local candidates = {}
-if idx and idx.files[path] and idx.files[path].stored then
-candidates[#candidates + 1] = { src = srm.storePathFor(path), what = "store" }
-end
-if opts.source then
-candidates[#candidates + 1] = { src = opts.source .. path, what = opts.source }
-end
-if #candidates == 0 then
-add(rep, "no source for " .. path ..
-(idx and " (baseline is hashes-only — pass --source <mount>)" or ""), "err")
-else
-local done = false
-for _, c in ipairs(candidates) do
-if not done and fs.exists and fs.exists(c.src) then
-local hash, _, content = readHashed(deps, c.src, true)
-if want and hash ~= want then
-add(rep, "rejected " .. c.what .. " copy of " .. path ..
-" — hash does not match the baseline", "warn")
-elseif not want and not opts.unverified then
-add(rep, "skipped " .. path .. " — no baseline hash to check against", "warn")
-done = true
-elseif not content then
-add(rep, "unreadable source for " .. path .. " at " .. c.what, "warn")
-else
-local okC, errC = writeSafely(fs, path, content)
-if okC then
-rep.fixed = rep.fixed + 1
-add(rep, "restored " .. path .. " from " .. c.what ..
-(want and " (hash verified)" or " (UNVERIFIED)"),
-want and "ok" or "warn")
-else
-add(rep, "write failed for " .. path .. ": " .. tostring(errC), "err")
-end
-done = true
-end
-content = nil
-gc()
-end
-end
-if not done then
-add(rep, "no usable source for " .. path, "err")
-end
-end
-end
-if deps.log and deps.log.warn and rep.fixed > 0 then
-deps.log.warn("srm", "Restored " .. rep.fixed .. " system file(s) from a verified source")
-end
-return rep
-end
-function srm.storeUsage(deps)
-deps = srm.deps(deps)
-local idx = srm.loadIndex(deps)
-local out = { files = 0, bytes = 0 }
-if not idx then return out end
-local fs = deps.fs
-for path, rec in pairs(idx.files) do
-if rec.stored then
-out.files = out.files + 1
-local sz = rec.size or 0
-if fs and fs.size then
-local okS, live = pcall(fs.size, srm.storePathFor(path))
-if okS and type(live) == "number" then sz = live end
-end
-out.bytes = out.bytes + sz
-end
-end
-return out
-end
-function srm.repair(deps, opts)
-deps = srm.deps(deps)
-opts = opts or {}
-local rep = newReport("repair")
-local repairMod = tryRequire("kernel.repair")
-if repairMod and repairMod.run then
-local ok, sub = pcall(repairMod.run, {
-fs = deps.fs, serialize = deps.serialize, log = deps.log,
-})
-if ok and type(sub) == "table" then
-for _, line in ipairs(sub.lines or {}) do
-add(rep, line, line:sub(1, 5) == "WARN:" and "warn" or "info")
-end
-rep.fixed = rep.fixed + (sub.fixed or 0)
-else
-add(rep, "fixer pass failed: " .. tostring(sub), "err")
-end
-else
-add(rep, "kernel.repair unavailable — skipping the fixer pass", "warn")
-end
-if opts.restore then
-local sub = srm.restore(deps, { source = opts.source, unverified = opts.unverified })
-for _, f in ipairs(sub.findings) do add(rep, f.text, f.sev) end
-rep.fixed = rep.fixed + (sub.fixed or 0)
-end
-return rep
-end
-function srm.parseArgs(args)
-local verb, flags, paths = nil, {}, {}
-local consumed = nil
-for i = 1, #(args or {}) do
-local a = tostring(args[i])
-if i == consumed then
-elseif a:sub(1, 2) == "--" then
-local k, v = a:match("^%-%-([%w%-]+)=?(.*)$")
-if k then
-if v ~= "" then
-flags[k] = v
-elseif k == "source" then
-local nxt = args[i + 1]
-if nxt and tostring(nxt):sub(1, 2) ~= "--" then
-flags.source = tostring(nxt); consumed = i + 1
-else
-flags[k] = true
-end
-else
-flags[k] = true
-end
-end
-elseif not verb then verb = a:lower()
-else paths[#paths + 1] = a end
-end
-return verb or "status", flags, paths
-end
-function srm.status(deps, opts)
-deps = srm.deps(deps)
-opts = opts or {}
-local rep = newReport("status")
-local TOS = _G._TOS or {}
-local fault = srm.readFault(deps)
---! The boot that succeeds after a failed POST reports the parked code and
---! clears it from the EEPROM, and keeps it as _TOS.postFault -- so the
---! failed screen's "Then run 'srm'" still finds it here, for the rest of
---! this boot. It said "POST: no parked fault" instead (headless machine,
---! 2026-10-09). A warning, not an error: the machine booted.
-local consumed = not fault and type(TOS.postFault) == "table" and TOS.postFault or nil
-if fault then
-add(rep, "LAST BOOT FAILED POST — SRM " .. fault.code, "err")
-add(rep, "  " .. fault.why, "err")
-if opts.clearFault then
-local okC = srm.clearFault(deps)
-add(rep, okC and "  (fault code cleared)" or "  (could not clear the fault code)",
-okC and "info" or "warn")
-else
-add(rep, "  clears automatically on the next successful boot", "info")
-end
-elseif consumed and consumed.code then
-add(rep, "THE BOOT BEFORE THIS ONE FAILED POST — SRM " .. tostring(consumed.code)
-.. (consumed.err and (" / " .. consumed.err) or ""), "warn")
-add(rep, "  " .. tostring(consumed.why or "?"), "warn")
-add(rep, "  this boot reported it and cleared it from the EEPROM", "info")
-else
-add(rep, "POST: no parked fault from SRM Basic", "ok")
-end
-if TOS.unsafeShutdown then
-add(rep, "last shutdown was UNSAFE (power loss / forced off)", "warn")
-end
-local idx = srm.loadIndex(deps)
-if not idx then
-add(rep, "no baseline — 'srm baseline' records what a good system looks like", "warn")
-else
-local n = 0
-for _ in pairs(idx.files) do n = n + 1 end
-add(rep, string.format("baseline: %d file(s) from %s (boot #%s)",
-n, tostring(idx.source or "?"), tostring(idx.boot or "?")), "info")
-if idx.content then
-local u = srm.storeUsage(deps)
-add(rep, string.format("store: %d copies, %.1f KB — local repair available",
-u.files, u.bytes / 1024), "ok")
-else
-add(rep, "store: hashes only — repair needs --source <mount>", "info")
-end
-end
-return rep
-end
-return srm
+local p="string"local n={}n.VERSION=1;n.DIR="/var/srm"n.INDEX="/var/srm/index.dat"
+n.STORE="/var/srm/store"n.LAST="/var/srm/last.dat"n.MAX_STORE_BYTES=128*1024;do
+local b,a=pcall(require,"kernel.errors")
+n.errors=(b and type(a)=="table")and a or nil
+n.BASIC_CODES=n.errors and n.errors.biosTable()or{}end;local function q(a)
+local b,c=pcall(require,a)if b then return c end end
+function n.deps(a)a=a or{}
+local c=_G._TOS or{}
+local b={fs=a.fs or c.fs,serialize=a.serialize or q("kernel.serialize"),crypto=a.crypto or c.crypto or
+q("kernel.crypto"),log=a.log or c.logObj,eeprom=a.eeprom,component=a.component}
+if not b.eeprom then local d=b.component or q("component")
+if d and d.list then
+local f,e=pcall(function()return
+d.list("eeprom")()end)
+if f and e then local g,h=pcall(d.proxy,e)if g then b.eeprom=h end end end end;return b end
+local function u()local a=_G._TOS and _G._TOS.kernel
+if a and a.gc then pcall(a.gc)return end;if type(collectgarbage)=="function"then
+pcall(collectgarbage,"collect")end end;local t=nil
+local function r()if t==nil then local b,a=pcall(require,"kernel.process")
+t=(b and a and
+a.yieldCooperative)and a or false end;if t then
+t.yieldCooperative()end end;local function s(a)
+return{title=a,findings={},counts={ok=0,info=0,warn=0,err=0},fixed=0}end;n.newReport=s
+local function o(a,c,b)b=b or"info"a.findings[
+#a.findings+1]={text=c,sev=b}a.counts[b]=(
+a.counts[b]or 0)+1;return a end;n.add=o;function n.worst(a)local b=a and a.counts or{}if(b.err or 0)>0 then
+return"err"end;if(b.warn or 0)>0 then return"warn"end
+return"ok"end
+function n.parseFault(a)if
+type(a)~=p then return nil end
+local b=a:match("^SRM:(%S+)")or a:match("\nSRM:(%S+)")if not b or b==""then return nil end;return b end;function n.stripFault(a)if type(a)~=p then return""end
+local b=a:gsub("\nSRM:%S*",""):gsub("^SRM:%S*\n?","")return b end
+function n.readFault(a)
+a=n.deps(a)local c=a.eeprom;if not c or not c.getData then return nil end
+local e,f=pcall(c.getData)if not e then return nil end;local b=n.parseFault(f)if not b then return nil end;local d=
+n.errors and n.errors.find(b)return
+{code=b,why=n.BASIC_CODES[b]or
+"unrecognised SRM Basic code (newer BIOS?)",err=d and n.errors.label(d)or nil}end
+function n.clearFault(a)a=n.deps(a)local b=a.eeprom;if
+not b or not b.getData or not b.setData then return false,"no EEPROM"end
+local d,c=pcall(b.getData)if not d then return false,"EEPROM unreadable"end;if
+not n.parseFault(c)then return true end
+local e=pcall(b.setData,n.stripFault(c))if not e then return false,"EEPROM write failed"end;return true end
+local y={"/init.lua","/tos/kernel/init.lua","/tos/kernel/log.lua","/tos/kernel/hal.lua","/tos/kernel/event.lua","/tos/kernel/process.lua","/tos/kernel/fs.lua","/tos/kernel/serialize.lua","/tos/kernel/display.lua","/tos/shell/init.lua"}
+function n.criticalPaths(a)a=n.deps(a)local c,d=a.fs,a.serialize
+local function e(g,h)if not
+(c and d and c.exists and c.exists(g))then return nil end
+local j=c.readFile(g)if type(j)~=p then return nil end
+local k=d.decode(j,{maxBytes=64*1024})if type(k)~="table"then return nil end;local i=h(k)if
+type(i)=="table"and#i>0 then return i end end
+local b=e("/var/pkg/installed/tos-core/package.lua",function(g)local h={}
+if type(g.critical)=="table"then for j,i in
+ipairs(g.critical)do if type(i)==p then h[#h+1]=i end end end;return h end)if b then return b,"tos-core/package.lua"end
+b=e("/etc/critical.bak",function(g)local h={}for j,i in ipairs(g)do if
+type(i)==p then h[#h+1]=i end end;return h end)if b then return b,"critical.bak"end;local f=q("system_manifest")
+if
+type(f)=="table"then local g={}for i,h in ipairs(f)do
+if type(h)=="table"and h.critical and
+type(h.path)==p then g[#g+1]=h.path end end;if#g>0 then
+return g,"system_manifest.lua"end end;return y,"built-in fallback"end;function n.storePathFor(a)return n.STORE..a end
+local function v(a,b,c)local g,e=a.fs,a.crypto
+if not(g and e and
+e.hash)then return nil,"crypto unavailable"end;local d,h=g.readFile(b)
+if type(d)~=p then return nil,h or"unreadable"end;local i=#d;local j,f=pcall(e.hash,d)if not c then d=nil;u()end
+if
+not j or type(f)~=p then return nil,"hash failed: "..tostring(f)end;return f,i,d end;local function w(a,b)return v(a,b)end;n.hashFile=w
+local function x(a,b,c)if a.writeFileAtomic then
+return a.writeFileAtomic(b,c)end;return a.writeFile(b,c)end
+function n.loadIndex(a)a=n.deps(a)local b,d=a.fs,a.serialize
+if not(b and d and b.exists and
+b.exists(n.INDEX))then return nil end;local e=b.readFile(n.INDEX)if type(e)~=p then return nil end;local c=d.decode(e,{maxBytes=256*
+1024})if type(c)~="table"or
+type(c.files)~="table"then return nil end
+return c end
+local function z(a,b)local c,d=a.fs,a.serialize
+if not(c and d)then return false,"fs/serialize unavailable"end
+if
+c.makeDirectory and not(c.exists and c.exists(n.DIR))then pcall(c.makeDirectory,n.DIR)end;return d.saveFile(c,n.INDEX,b)end
+function n.baseline(a,b)a=n.deps(a)b=b or{}local d=a.fs
+if not d then return false,"no filesystem"end;if not(a.crypto and a.crypto.hash)then
+return false,"crypto unavailable"end;local g,e=b.paths,"caller"if not g then
+g,e=n.criticalPaths(a)end
+local f={version=n.VERSION,created=(os.time and os.time())or 0,boot=(
+_G._TOS and _G._TOS.bootCount)or 0,content=
+b.content and true or false,source=e,files={}}local c={hashed=0,stored=0,skipped=0,bytes=0,missing={},pruned=0,source=e}
+local h=n.loadIndex(a)
+for l,k in ipairs(g)do r()
+if not(d.exists and d.exists(k))then c.missing[#
+c.missing+1]=k else
+local B,m,A=v(a,k,b.content and true or false)
+if not B then c.skipped=c.skipped+1 else local C={hash=B,size=m,stored=false}
+c.hashed=c.hashed+1
+if b.content then
+if m>n.MAX_STORE_BYTES then c.skipped=c.skipped+1 elseif A and
+x(d,n.storePathFor(k),A)then C.stored=true;c.stored=c.stored+1;c.bytes=c.bytes+m else c.skipped=
+c.skipped+1 end end;A=nil;u()f.files[k]=C end end end
+if h and type(h.files)=="table"and d.remove then
+for k,l in
+pairs(h.files)do
+if l.stored and
+not(f.files[k]and f.files[k].stored)then local m=n.storePathFor(k)
+if
+d.exists and d.exists(m)and pcall(d.remove,m)then c.pruned=c.pruned+1 end end end end;local i,j=z(a,f)if not i then
+return false,"could not write the index: "..tostring(j)end
+if a.log and a.log.info then
+a.log.info("srm",string.format("Baseline captured: %d hashed, %d stored (%d bytes), %d pruned, from %s",c.hashed,c.stored,c.bytes,c.pruned,e))end;return true,c end
+function n.scan(a,b)a=n.deps(a)b=b or{}local c=s("baseline scan")
+c.drift,c.missing,c.unbaselined={},{},{}local f=a.fs;if not f then
+o(c,"no filesystem — nothing to scan","err")return c end;local d=n.loadIndex(a)if not d then
+o(c,"no baseline captured yet — run 'srm baseline' on a system you trust","warn")return c end;local e={}for h in
+pairs(d.files)do e[#e+1]=h end;table.sort(e)
+o(c,string.format("baseline: %d file(s), captured from %s%s",
+#e,tostring(d.source or"?"),d.content and", with stored copies"or", hashes only"),"info")
+for i,h in ipairs(e)do r()local j=d.files[h]
+if
+not(f.exists and f.exists(h))then c.missing[#c.missing+1]=h
+o(c,"MISSING  "..h,"err")else local k,l=w(a,h)
+if not k then
+o(c,"UNREADABLE  "..h.."  ("..
+tostring(l or"no reason given")..")","err")c.drift[#c.drift+1]=h elseif k~=j.hash then
+c.drift[#c.drift+1]=h
+o(c,"CHANGED  "..h..
+"  (baseline "..tostring(j.hash):sub(1,12)..", now "..
+k:sub(1,12)..")","err")end end end
+if d.content and b.checkStore~=false then local h=0
+for j,i in ipairs(e)do r()local k=d.files[i]
+if
+k.stored then local l=n.storePathFor(i)
+if
+not(f.exists and f.exists(l))then h=h+1;o(c,"store copy gone: "..i,"warn")else
+local m=w(a,l)if m~=k.hash then h=h+1
+o(c,"store copy is corrupt: "..i,"warn")end end end end
+if h==0 then o(c,"store: every copy verifies","ok")end end;local g=n.criticalPaths(a)
+for i,h in ipairs(g)do r()if not d.files[h]then c.unbaselined[
+#c.unbaselined+1]=h
+o(c,"not in baseline: "..
+h.." (re-run 'srm baseline')","warn")end end
+if#c.missing==0 and#c.drift==0 then
+o(c,"all baselined files match","ok")else o(c,"","info")
+o(c,"Changed files mean one of two things: damage, or an upgrade you","info")
+o(c,"meant to install. After a deliberate upgrade, re-run","info")
+o(c,"'srm baseline' to bless the new files. Otherwise 'srm repair","info")o(c,"--restore' puts them back.","info")end;return c end
+function n.restore(a,b)a=n.deps(a)b=b or{}local c=s("restore")local f=a.fs;if not f then
+o(c,"no filesystem","err")return c end;local d=n.loadIndex(a)local e=b.paths
+if not e then
+local g=n.scan(a,{checkStore=false})e={}for i,h in ipairs(g.missing)do e[#e+1]=h end;for i,h in ipairs(g.drift)do
+e[#e+1]=h end end;if#e==0 then
+o(c,"nothing to restore — no missing or changed files","ok")return c end
+if
+not d and not b.unverified then
+o(c,"no baseline to verify a restore against.","err")
+o(c,"  capture one first ('srm baseline'), or accept an unchecked","info")o(c,"  copy explicitly with --unverified.","info")
+return c end
+for h,g in ipairs(e)do r()
+local j=d and d.files[g]and d.files[g].hash or nil;local i={}if d and d.files[g]and d.files[g].stored then
+i[#i+1]={src=n.storePathFor(g),what="store"}end;if b.source then
+i[#i+1]={src=b.source..g,what=b.source}end
+if#i==0 then
+o(c,"no source for "..
+g.. (
+d and" (baseline is hashes-only — pass --source <mount>)"or""),"err")else local k=false
+for h,l in ipairs(i)do
+if not k and f.exists and f.exists(l.src)then
+local A,h,m=v(a,l.src,true)
+if j and A~=j then
+o(c,"rejected "..l.what..
+" copy of "..g.." — hash does not match the baseline","warn")elseif not j and not b.unverified then
+o(c,"skipped "..
+g.." — no baseline hash to check against","warn")k=true elseif not m then
+o(c,"unreadable source for "..g.." at "..l.what,"warn")else local B,C=x(f,g,m)
+if B then c.fixed=c.fixed+1
+o(c,"restored "..g..
+" from "..l.what.. (j and" (hash verified)"or
+" (UNVERIFIED)"),
+j and"ok"or"warn")else
+o(c,"write failed for "..g..": "..tostring(C),"err")end;k=true end;m=nil;u()end end
+if not k then o(c,"no usable source for "..g,"err")end end end;if a.log and a.log.warn and c.fixed>0 then
+a.log.warn("srm","Restored "..c.fixed..
+" system file(s) from a verified source")end;return c end
+function n.storeUsage(a)a=n.deps(a)local d=n.loadIndex(a)local b={files=0,bytes=0}
+if not d then return b end;local c=a.fs
+for f,e in pairs(d.files)do
+if e.stored then b.files=b.files+1;local g=e.size or 0
+if
+c and c.size then local i,h=pcall(c.size,n.storePathFor(f))if i and
+type(h)=="number"then g=h end end;b.bytes=b.bytes+g end end;return b end
+function n.repair(a,b)a=n.deps(a)b=b or{}local c=s("repair")
+local d=q("kernel.repair")
+if d and d.run then
+local f,e=pcall(d.run,{fs=a.fs,serialize=a.serialize,log=a.log})
+if f and type(e)=="table"then for h,g in ipairs(e.lines or{})do
+o(c,g,
+g:sub(1,5)=="WARN:"and"warn"or"info")end
+c.fixed=c.fixed+ (e.fixed or 0)else
+o(c,"fixer pass failed: "..tostring(e),"err")end else
+o(c,"kernel.repair unavailable — skipping the fixer pass","warn")end
+if b.restore then
+local e=n.restore(a,{source=b.source,unverified=b.unverified})for h,g in ipairs(e.findings)do o(c,g.text,g.sev)end;c.fixed=
+c.fixed+ (e.fixed or 0)end;return c end
+function n.parseArgs(a)local c,b,d=nil,{},{}local e=nil
+for f=1,# (a or{})do local g=tostring(a[f])
+if f==e then elseif
+g:sub(1,2)=="--"then local h,i=g:match("^%-%-([%w%-]+)=?(.*)$")
+if h then
+if i~=""then b[h]=i elseif h==
+"source"then local j=a[f+1]
+if
+j and tostring(j):sub(1,2)~="--"then b.source=tostring(j)e=f+1 else b[h]=true end else b[h]=true end end elseif not c then c=g:lower()else d[#d+1]=g end end;return c or"status",b,d end
+function n.status(a,b)a=n.deps(a)b=b or{}local c=s("status")local g=_G._TOS or{}
+local f=n.readFault(a)local d=
+not f and type(g.postFault)=="table"and g.postFault or nil
+if f then
+o(c,
+"LAST BOOT FAILED POST — SRM "..f.code,"err")o(c,"  "..f.why,"err")
+if b.clearFault then local h=n.clearFault(a)
+o(c,h and
+"  (fault code cleared)"or"  (could not clear the fault code)",
+h and"info"or"warn")else
+o(c,"  clears automatically on the next successful boot","info")end elseif d and d.code then
+o(c,"THE BOOT BEFORE THIS ONE FAILED POST — SRM "..tostring(d.code).. (
+d.err and(" / "..d.err)or""),"warn")
+o(c,"  "..tostring(d.why or"?"),"warn")
+o(c,"  this boot reported it and cleared it from the EEPROM","info")else o(c,"POST: no parked fault from SRM Basic","ok")end;if g.unsafeShutdown then
+o(c,"last shutdown was UNSAFE (power loss / forced off)","warn")end;local e=n.loadIndex(a)
+if not e then
+o(c,"no baseline — 'srm baseline' records what a good system looks like","warn")else local h=0;for i in pairs(e.files)do h=h+1 end
+o(c,string.format("baseline: %d file(s) from %s (boot #%s)",h,tostring(
+e.source or"?"),tostring(e.boot or"?")),"info")
+if e.content then local i=n.storeUsage(a)
+o(c,string.format("store: %d copies, %.1f KB — local repair available",i.files,
+i.bytes/1024),"ok")else
+o(c,"store: hashes only — repair needs --source <mount>","info")end end;return c end;return n

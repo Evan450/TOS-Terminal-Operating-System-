@@ -1,278 +1,67 @@
-local computer = require("computer")
-local event = {}
-local listeners = {}
-local timers = {}
-local timerNextID = 1
-local timerErrPending, timerErrTotal = 0, 0
-local timerErrLast, timerErrSource = nil, nil
-local function noteTimerError(t, err)
-timerErrPending = timerErrPending + 1
-timerErrTotal = timerErrTotal + 1
-timerErrLast = tostring(err)
-timerErrSource = t and t.source or "unknown"
-end
-function event.timerErrors()
-return timerErrTotal, timerErrLast, timerErrSource
-end
-local procModCache = nil
-local function getProc()
-if not procModCache then
-local okP, m = pcall(require, "kernel.process")
-if okP then procModCache = m end
-end
-return procModCache
-end
-function event.on(signal, callback, source)
-if not listeners[signal] then
-listeners[signal] = {}
-end
-local regPid = nil
-local regGen = nil
-local procMod = getProc()
-if procMod and procMod.current then
-local cur = procMod.current()
-if cur then
-regPid = cur.pid
-regGen = procMod.genOf and procMod.genOf(cur.pid) or nil
-end
-end
-local entry = {
-callback = callback,
-source = source or "unknown",
-id = timerNextID,
-regPid = regPid,
-regGen = regGen,
-}
-timerNextID = timerNextID + 1
-listeners[signal][#listeners[signal] + 1] = entry
-return entry.id
-end
-function event.once(signal, callback, source)
-local id
-id = event.on(signal, function(...)
-event.off(signal, id)
-return callback(...)
-end, source)
-return id
-end
-function event.off(signal, id)
-if not listeners[signal] then return end
-for i, entry in ipairs(listeners[signal]) do
-if entry.id == id then
-table.remove(listeners[signal], i)
-return true
-end
-end
-return false
-end
-function event.removeSource(source)
-for signal, list in pairs(listeners) do
-for i = #list, 1, -1 do
-if list[i].source == source then
-table.remove(list, i)
-end
-end
-end
-end
---! #MEM/#SEC (pentest, Sep 2026) — drop every listener and timer a process
---! registered, once it is dead. The dispatcher already refused to RUN them
---! (the M-11 generation check), but nothing removed them, and each entry's
---! callback keeps its program's whole environment alive. compat.event
---! registers under "compat:event", which proc.kill's removeSource never
---! matched, and a natural exit called nothing at all -- so every run of a
---! program that listened and exited leaked that program for good, and a
---! user could run a two-line program in a loop until the heap was gone.
---! process.lua calls this on both death paths. (test_event_owner_purge.lua)
-function event.purgeOwner(pid)
-if pid == nil then return 0 end
-local n = 0
-for signal, list in pairs(listeners) do
-for i = #list, 1, -1 do
-if list[i].regPid == pid then table.remove(list, i); n = n + 1 end
-end
-if #list == 0 then listeners[signal] = nil end
-end
-for i = #timers, 1, -1 do
-if timers[i].regPid == pid then table.remove(timers, i); n = n + 1 end
-end
-return n
-end
-local function captureRegPid()
-local procMod = getProc()
-if procMod and procMod.current then
-local cur = procMod.current()
-if cur then
-local gen = procMod.genOf and procMod.genOf(cur.pid) or nil
-return cur.pid, gen
-end
-end
-return nil, nil
-end
-function event.timer(delay, callback, source)
-local id = timerNextID
-timerNextID = timerNextID + 1
-local regPid, regGen = captureRegPid()
-timers[#timers + 1] = {
-deadline = computer.uptime() + delay,
-callback = callback,
-source = source or "unknown",
-id = id,
-interval = nil,
-regPid = regPid,
-regGen = regGen,
-}
-return id
-end
-function event.interval(delay, callback, source)
-local id = timerNextID
-timerNextID = timerNextID + 1
-local regPid, regGen = captureRegPid()
-timers[#timers + 1] = {
-deadline = computer.uptime() + delay,
-callback = callback,
-source = source or "unknown",
-id = id,
-interval = delay,
-regPid = regPid,
-regGen = regGen,
-}
-return id
-end
-function event.cancelTimer(id)
-for i, t in ipairs(timers) do
-if t.id == id then
-table.remove(timers, i)
-return true
-end
-end
-return false
-end
-function event.pull(timeout)
-timeout = timeout or 0.5
-if timerErrPending > 0 then
-local lg = package.loaded and package.loaded["kernel.log"]
-if lg and lg.warn then
-pcall(lg.warn, "event", "timer callback errors: +" .. timerErrPending
-.. " (total " .. timerErrTotal .. "), last ["
-.. tostring(timerErrSource) .. "]: " .. tostring(timerErrLast))
-timerErrPending = 0
-end
-end
-local now = computer.uptime()
-local nextDeadline = now + timeout
-local procMod = getProc()
---! Two passes, never one. A callback may add or cancel timers, and
---! `timers` is a plain array: cancelling an EARLIER entry shifts every
---! later one down by an index. The old single reverse walk removed the
---! fired one-shot by index AFTER its callback ran, so a callback that
---! cancelled an older timer left itself in the array one slot lower
---! (fired again -- same pass, then every pass) and the index removal
---! deleted a different, already-processed timer instead.
---! (test_event_timer_reentry.lua)
-local due = nil
-for i = 1, #timers do
-local t = timers[i]
-if now >= t.deadline then
-due = due or {}
-due[#due + 1] = t
-elseif t.deadline < nextDeadline then
-nextDeadline = t.deadline
-end
-end
-if due then
-for _, t in ipairs(due) do
-local idx = nil
-for i = 1, #timers do
-if timers[i] == t then idx = i; break end
-end
-if idx then
-local stale = t.regPid ~= nil and t.regGen ~= nil and procMod
-and procMod.genOf and (procMod.genOf(t.regPid) ~= t.regGen)
-if stale or not t.interval then
-table.remove(timers, idx)
-else
-t.deadline = now + t.interval
-if t.deadline < nextDeadline then nextDeadline = t.deadline end
-end
-if not stale then
-local ok, err
-if procMod and procMod.withListener and t.regPid then
-ok, err = pcall(procMod.withListener, t.regPid, t.callback)
-else
-ok, err = pcall(t.callback)
-end
-if not ok then noteTimerError(t, err) end
-end
-end
-end
-end
-local waitTime = math.max(0, math.min(timeout, nextDeadline - computer.uptime()))
-local signal = table.pack(computer.pullSignal(waitTime))
-if signal[1] then
-local stype = signal[1]
-local function dispatchOne(entry, ...)
-if procMod and procMod.withListener and entry.regPid then
-if entry.regGen ~= nil and procMod.genOf
-and procMod.genOf(entry.regPid) ~= entry.regGen then
-return false
-end
-local ok = pcall(procMod.withListener, entry.regPid, entry.callback, ...)
-return ok
-end
-return pcall(entry.callback, ...)
-end
-if listeners[stype] then
-local snapshot = {table.unpack(listeners[stype])}
-for _, entry in ipairs(snapshot) do
-dispatchOne(entry, table.unpack(signal, 1, signal.n))
-end
-end
-end
-return table.unpack(signal, 1, signal.n)
-end
-function event.pullFiltered(filter, timeout)
-local deadline = computer.uptime() + (timeout or math.huge)
-while true do
-local remaining = deadline - computer.uptime()
-if remaining <= 0 then return nil end
-local sig = table.pack(event.pull(remaining))
-if sig[1] and (not filter or filter(table.unpack(sig, 1, sig.n))) then
-return table.unpack(sig, 1, sig.n)
-end
-end
-end
---! #SEC — signals only the machine or the kernel may raise. User code
---! reaches the queue two ways -- the sandbox's computer.pushSignal (the
---! `component` cap) and compat.event.push (no cap at all: `compat.` is a free
---! require prefix) -- and each kept its own denylist. Both missed signals
---! that trusted code acts on, and proc.tick hands a non-input signal to
---! EVERY process, so one push reached every seat:
---!   tos_interrupt / tos_monitor / tos_focus  wiped each shell's command
---!       line, opened the Monitor, yanked the program tab -- on all seats
---!   component_removed <mounted fs addr>       every admin/root shell
---!       unmounted that disk (fs.mounts() shows any program the address)
---!   component_added <addr> "eeprom"           answered root's `flash` wait
---!   interrupted                               `write`, PaneUI, the RBMK
---!       panel and the CLI prompt all take it as "quit"
---!   screen_resized                            relayout on every seat
---! One rule, in one place, used by both routes: the whole `tos_` namespace
---! (the kernel's; a control signal added later is covered already), plus
---! everything OpenComputers itself generates for hardware -- input, the
---! modem, component hot-plug, screen size, OpenOS's interrupt. Custom
---! signals a program invents still push. (test_sandbox_push.lua)
-local MACHINE_SIGNALS = {
-key_down = true, key_up = true, clipboard = true,
-touch = true, drag = true, drop = true, scroll = true, walk = true,
-modem_message = true,
-component_added = true, component_removed = true,
-component_available = true, component_unavailable = true,
-screen_resized = true, interrupted = true,
-}
-function event.reservedSignal(name)
-if type(name) ~= "string" then return false end
-return MACHINE_SIGNALS[name] == true or name:sub(1, 4) == "tos_"
-end
-function event.push(...)
-computer.pushSignal(...)
-end
-return event
+local A="unknown"local t=require("computer")local p={}local r={}local q={}local s=1;local u,v=0,0;local w,x=nil,
+nil
+local function C(a,b)u=u+1;v=v+1;w=tostring(b)x=a and a.source or A end;function p.timerErrors()return v,w,x end;local y=nil
+local function z()if not y then
+local a,b=pcall(require,"kernel.process")if a then y=b end end;return y end
+function p.on(a,b,c)if not r[a]then r[a]={}end;local e=nil;local f=nil;local d=z()if d and d.current then
+local h=d.current()
+if h then e=h.pid;f=d.genOf and d.genOf(h.pid)or nil end end
+local g={callback=b,source=c or A,id=s,regPid=e,regGen=f}s=s+1;r[a][#r[a]+1]=g;return g.id end;function p.once(a,b,c)local d
+d=p.on(a,function(...)p.off(a,d)return b(...)end,c)return d end
+function p.off(a,b)
+if not r[a]then return end;for c,d in ipairs(r[a])do
+if d.id==b then table.remove(r[a],c)return true end end;return false end;function p.removeSource(a)
+for c,b in pairs(r)do for d=#b,1,-1 do
+if b[d].source==a then table.remove(b,d)end end end end
+function p.purgeOwner(a)if a==nil then
+return 0 end;local b=0;for d,c in pairs(r)do for e=#c,1,-1 do if c[e].regPid==a then table.remove(c,e)
+b=b+1 end end
+if#c==0 then r[d]=nil end end
+for c=#q,1,-1 do if
+q[c].regPid==a then table.remove(q,c)b=b+1 end end;return b end
+local function B()local a=z()
+if a and a.current then local b=a.current()if b then
+local c=a.genOf and a.genOf(b.pid)or nil;return b.pid,c end end;return nil,nil end
+function p.timer(a,b,c)local d=s;s=s+1;local e,f=B()
+q[#q+1]={deadline=t.uptime()+a,callback=b,source=c or A,id=d,interval=nil,regPid=e,regGen=f}return d end
+function p.interval(a,b,c)local d=s;s=s+1;local e,f=B()
+q[#q+1]={deadline=t.uptime()+a,callback=b,source=c or A,id=d,interval=a,regPid=e,regGen=f}return d end
+function p.cancelTimer(a)for b,c in ipairs(q)do
+if c.id==a then table.remove(q,b)return true end end;return false end
+function p.pull(a)a=a or 0.5
+if u>0 then
+local h=package.loaded and package.loaded["kernel.log"]if h and h.warn then
+pcall(h.warn,"event","timer callback errors: +"..u..
+" (total "..v.."), last ["..tostring(x)..
+"]: "..tostring(w))u=0 end end;local f=t.uptime()local e=f+a;local b=z()local c=nil;for h=1,#q do local i=q[h]
+if f>=i.deadline then c=c or{}c[
+#c+1]=i elseif i.deadline<e then e=i.deadline end end
+if c then
+for i,h in ipairs(c)do local j=nil;for k=1,#q do if
+q[k]==h then j=k;break end end
+if j then
+local k=
+h.regPid~=nil and h.regGen~=nil and b and b.genOf and
+(b.genOf(h.regPid)~=h.regGen)
+if k or not h.interval then table.remove(q,j)else
+h.deadline=f+h.interval;if h.deadline<e then e=h.deadline end end
+if not k then local l,m
+if b and b.withListener and h.regPid then
+l,m=pcall(b.withListener,h.regPid,h.callback)else l,m=pcall(h.callback)end;if not l then C(h,m)end end end end end
+local g=math.max(0,math.min(a,e-t.uptime()))local d=table.pack(t.pullSignal(g))
+if d[1]then local h=d[1]
+local function i(j,...)
+if
+b and b.withListener and j.regPid then
+if j.regGen~=nil and b.genOf and
+b.genOf(j.regPid)~=j.regGen then return false end;local k=pcall(b.withListener,j.regPid,j.callback,...)return k end;return pcall(j.callback,...)end;if r[h]then local j={table.unpack(r[h])}for l,k in ipairs(j)do
+i(k,table.unpack(d,1,d.n))end end end;return table.unpack(d,1,d.n)end
+function p.pullFiltered(a,b)local c=t.uptime()+ (b or math.huge)
+while true do local e=c-
+t.uptime()if e<=0 then return nil end
+local d=table.pack(p.pull(e))
+if
+d[1]and(not a or a(table.unpack(d,1,d.n)))then return table.unpack(d,1,d.n)end end end
+local D={key_down=true,key_up=true,clipboard=true,touch=true,drag=true,drop=true,scroll=true,walk=true,modem_message=true,component_added=true,component_removed=true,component_available=true,component_unavailable=true,screen_resized=true,interrupted=true}
+function p.reservedSignal(a)if type(a)~="string"then return false end;return D[a]==true or a:sub(1,4)==
+"tos_"end;function p.push(...)t.pushSignal(...)end;return p

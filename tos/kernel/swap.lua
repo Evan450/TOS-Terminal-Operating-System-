@@ -1,198 +1,60 @@
-local swap = {}
-local fs = nil
-local serialize = nil
-local log = nil
-local config = nil
-local compress = nil
-local useCompress = false
-local SWAP_DIR = "/var/swap"
-local DEFAULT_MAX_KB = 4096
-local DISK_MARGIN = 65536
-local LRU_DEFAULT = 16
-local maxBytes = DEFAULT_MAX_KB * 1024
-local entries = {}
-local totalBytes = 0
-local nextId = 0
-local proxies = setmetatable({}, { __mode = "k" })
-local function nextFile()
-nextId = nextId + 1
-return SWAP_DIR .. "/s" .. nextId
-end
-function swap.init(modules)
-modules = modules or {}
-fs = modules.fs or fs
-serialize = modules.serialize or require("kernel.serialize")
-log = modules.log
-config = modules.config
-compress = modules.compress or compress
-useCompress = (compress and compress.available and compress.available()) or false
-if not fs then return false, "fs module required" end
-if config and config.get then
-local m = config.get("swapMaxKB")
-if type(m) == "number" and m > 0 then maxBytes = math.floor(m) * 1024 end
-end
-if fs.spaceFree then
-local free = (fs.spaceFree(SWAP_DIR) or fs.spaceFree("/") or 0)
-local ceil = free - DISK_MARGIN
-if ceil < 0 then ceil = 0 end
-if maxBytes > ceil then maxBytes = ceil end
-end
-if not fs.exists(SWAP_DIR) then fs.makeDirectory(SWAP_DIR) end
-swap.clear()
-if log then
-log.info("swap", "Disk swap ready at " .. SWAP_DIR ..
-" (cap " .. math.floor(maxBytes / 1024) .. " KB" ..
-(useCompress and ", compressed" or "") .. ")")
-end
-return true
-end
-function swap.clear()
-if not fs then return end
-if not fs.exists(SWAP_DIR) then
-fs.makeDirectory(SWAP_DIR)
-else
-local list = fs.list(SWAP_DIR) or {}
-for _, n in ipairs(list) do
-local clean = n:gsub("/$", "")
-if clean ~= "" then pcall(fs.remove, SWAP_DIR .. "/" .. clean) end
-end
-end
-entries = {}
-totalBytes = 0
-end
-function swap.store(key, value)
-if not fs then return false, "swap not initialized" end
-if type(key) ~= "string" then return false, "key must be a string" end
-if value == nil then swap.free(key); return true end
-local ok, data = pcall(serialize.encode, value)
-if not ok then return false, "serialize failed: " .. tostring(data) end
-if useCompress then
-local packed = compress.pack(data)
-if packed then data = packed end
-end
-local n = #data
-local old = entries[key]
-local oldBytes = old and old.bytes or 0
-if (totalBytes - oldBytes + n) > maxBytes then
-return false, "swap full (cap " .. math.floor(maxBytes / 1024) .. " KB)"
-end
-local file = (old and old.file) or nextFile()
-local wOk, wErr = fs.writeFile(file, data)
-if not wOk then return false, wErr or "write failed" end
-totalBytes = totalBytes - oldBytes + n
-entries[key] = { file = file, bytes = n }
-return true
-end
-function swap.fetch(key)
-if not fs then return nil end
-local e = entries[key]
-if not e then return nil end
-local data = fs.readFile(e.file)
-if not data then return nil end
-if useCompress and compress and compress.isPacked(data) then
-data = compress.unpack(data)
-if not data then return nil end
-end
-local v = serialize.decode(data, { maxBytes = maxBytes + 1024 })
-return v
-end
-function swap.free(key)
-local e = entries[key]
-if not e then return false end
-pcall(fs.remove, e.file)
-totalBytes = totalBytes - e.bytes
-entries[key] = nil
-return true
-end
-function swap.has(key) return entries[key] ~= nil end
-function swap.keys()
-local out = {}
-for k in pairs(entries) do out[#out + 1] = k end
-table.sort(out)
-return out
-end
-function swap.usage()
-local count = 0
-for _ in pairs(entries) do count = count + 1 end
-return { bytes = totalBytes, count = count, max = maxBytes }
-end
-local function keyStr(ns, k)
-local t = type(k)
-if t == "number" then return ns .. "n" .. tostring(k) end
-if t == "string" then return ns .. "s" .. k end
-return nil
-end
-function swap.table(opts)
-opts = opts or {}
-local hotMax = tonumber(opts.hot) or LRU_DEFAULT
-if hotMax < 1 then hotMax = 1 end
-nextId = nextId + 1
-local ns = "t" .. nextId .. ":"
-local hot = {}
-local order = {}
-local keyset = {}
-local function untrackOrder(s)
-for i = 1, #order do
-if order[i] == s then table.remove(order, i); return end
-end
-end
-local function touch(s)
-untrackOrder(s)
-table.insert(order, 1, s)
-while #order > hotMax do
-local victim = table.remove(order)
-if victim then hot[victim] = nil end
-end
-end
-local proxy = setmetatable({}, {
-__index = function(_, k)
-local s = keyStr(ns, k); if not s then return nil end
-if hot[s] ~= nil then touch(s); return hot[s] end
-local v = swap.fetch(s)
-if v ~= nil then hot[s] = v; touch(s) end
-return v
-end,
-__newindex = function(_, k, v)
-local s = keyStr(ns, k)
-if not s then error("swap.table: unsupported key type " .. type(k), 2) end
-if v == nil then
-swap.free(s); hot[s] = nil; keyset[s] = nil; untrackOrder(s)
-return
-end
-local ok, err = swap.store(s, v)
-if not ok then error("swap.table: " .. tostring(err), 2) end
-keyset[s] = k
-hot[s] = v
-touch(s)
-end,
-__len = function()
-local n = 0
-for _ in pairs(keyset) do n = n + 1 end
-return n
-end,
-__pairs = function(_)
-local list = {}
-for s, ok in pairs(keyset) do list[#list + 1] = { s = s, k = ok } end
-local i = 0
-return function()
-i = i + 1
-local e = list[i]
-if not e then return nil end
-local v = hot[e.s]
-if v == nil then v = swap.fetch(e.s) end
-return e.k, v
-end
-end,
-})
-proxies[proxy] = { keyset = keyset }
-return proxy
-end
-function swap.freeTable(proxy)
-local info = proxies[proxy]
-if not info then return false, "not a swap table" end
-for s in pairs(info.keyset) do swap.free(s) end
-proxies[proxy] = nil
-return true
-end
-swap.SWAP_DIR = SWAP_DIR
-return swap
+local s={}local t=nil;local C=nil;local D=nil;local A=nil;local v=nil;local B=false;local u="/var/swap"local G=4096
+local H=65536;local I=16;local x=G*1024;local w={}local y=0;local z=0
+local E=setmetatable({},{__mode="k"})local function J()z=z+1;return u.."/s"..z end
+function s.init(a)a=a or{}t=a.fs or t;C=
+a.serialize or require("kernel.serialize")
+D=a.log;A=a.config;v=a.compress or v;B=
+(v and v.available and v.available())or false;if not t then
+return false,"fs module required"end;if A and A.get then local b=A.get("swapMaxKB")
+if
+type(b)=="number"and b>0 then x=math.floor(b)*1024 end end
+if t.spaceFree then
+local c=(t.spaceFree(u)or
+t.spaceFree("/")or 0)local b=c-H;if b<0 then b=0 end;if x>b then x=b end end;if not t.exists(u)then t.makeDirectory(u)end
+s.clear()if D then
+D.info("swap","Disk swap ready at "..u..
+" (cap "..math.floor(x/1024).." KB"..
+(B and", compressed"or"")..")")end;return true end
+function s.clear()if not t then return end
+if not t.exists(u)then t.makeDirectory(u)else local a=t.list(u)or
+{}for c,b in ipairs(a)do local d=b:gsub("/$","")if d~=""then
+pcall(t.remove,u.."/"..d)end end end;w={}y=0 end
+function s.store(a,b)if not t then return false,"swap not initialized"end;if
+type(a)~="string"then return false,"key must be a string"end;if b==nil then
+s.free(a)return true end;local h,c=pcall(C.encode,b)if not h then return false,"serialize failed: "..
+tostring(c)end;if B then
+local k=v.pack(c)if k then c=k end end;local e=#c;local d=w[a]
+local f=d and d.bytes or 0;if(y-f+e)>x then return false,
+"swap full (cap "..math.floor(x/1024).." KB)"end;local g=
+(d and d.file)or J()local i,j=t.writeFile(g,c)if not i then return false,
+j or"write failed"end;y=y-f+e;w[a]={file=g,bytes=e}
+return true end
+function s.fetch(a)if not t then return nil end;local c=w[a]if not c then return nil end
+local b=t.readFile(c.file)if not b then return nil end;if B and v and v.isPacked(b)then b=v.unpack(b)if not b then
+return nil end end
+local d=C.decode(b,{maxBytes=x+1024})return d end
+function s.free(a)local b=w[a]if not b then return false end;pcall(t.remove,b.file)y=y-
+b.bytes;w[a]=nil;return true end;function s.has(a)return w[a]~=nil end;function s.keys()local a={}
+for b in pairs(w)do a[#a+1]=b end;table.sort(a)return a end
+function s.usage()
+local a=0;for b in pairs(w)do a=a+1 end;return{bytes=y,count=a,max=x}end
+local function F(b,a)local c=type(a)
+if c=="number"then return b.."n"..tostring(a)end;if c=="string"then return b.."s"..a end;return nil end
+function s.table(a)a=a or{}local e=tonumber(a.hot)or I;if e<1 then e=1 end;z=z+1;local g="t"..
+z..":"local b={}local c={}local d={}local function h(j)for k=1,#c do
+if c[k]==j then table.remove(c,k)return end end end
+local function f(j)
+h(j)table.insert(c,1,j)while#c>e do local k=table.remove(c)
+if k then b[k]=nil end end end
+local i=setmetatable({},{__index=function(k,j)local l=F(g,j)if not l then return nil end
+if b[l]~=nil then f(l)return b[l]end;local m=s.fetch(l)if m~=nil then b[l]=m;f(l)end;return m end,__newindex=function(l,j,k)
+local m=F(g,j)if not m then
+error("swap.table: unsupported key type "..type(j),2)end;if k==nil then s.free(m)b[m]=nil;d[m]=nil;h(m)
+return end;local n,o=s.store(m,k)if not n then
+error("swap.table: "..tostring(o),2)end;d[m]=j;b[m]=k;f(m)end,__len=function()
+local j=0;for k in pairs(d)do j=j+1 end;return j end,__pairs=function(j)local k={}for m,n in
+pairs(d)do k[#k+1]={s=m,k=n}end;local l=0;return
+function()l=l+1;local m=k[l]
+if not m then return nil end;local n=b[m.s]if n==nil then n=s.fetch(m.s)end;return m.k,n end end})E[i]={keyset=d}return i end
+function s.freeTable(a)local b=E[a]if not b then return false,"not a swap table"end;for c in
+pairs(b.keyset)do s.free(c)end;E[a]=nil;return true end;s.SWAP_DIR=u;return s

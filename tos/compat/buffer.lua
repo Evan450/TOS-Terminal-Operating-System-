@@ -1,113 +1,37 @@
-local buffer = {}
-function buffer.new(mode, stream)
-local buf = {
-mode = mode or "r",
-stream = stream,
-readBuf = "",
-closed = false,
-}
-function buf:read(fmt)
-if self.closed then return nil, "closed" end
-fmt = fmt or "*l"
-if fmt == "*a" or fmt == "a" then
-local parts = {self.readBuf}
-self.readBuf = ""
+local d="closed"local c={}
+function c.new(a,b)
+local e={mode=a or"r",stream=b,readBuf="",closed=false}
+function e:read(f)if self.closed then return nil,d end;f=f or"*l"
+if f=="*a"or f=="a"then
+local g={self.readBuf}self.readBuf=""while true do local h=self.stream:read(4096)
+if not h then break end;g[#g+1]=h end
+return table.concat(g)elseif f=="*l"or f=="l"then
 while true do
-local chunk = self.stream:read(4096)
-if not chunk then break end
-parts[#parts + 1] = chunk
-end
-return table.concat(parts)
-elseif fmt == "*l" or fmt == "l" then
+local g=self.readBuf:find("\n",1,true)if g then local i=self.readBuf:sub(1,g-1)
+self.readBuf=self.readBuf:sub(g+1)return i end
+local h=self.stream:read(4096)if not h then
+if#self.readBuf>0 then local i=self.readBuf;self.readBuf=""return i end;return nil end
+self.readBuf=self.readBuf..h end elseif f=="*n"or f=="n"then
 while true do
-local nl = self.readBuf:find("\n", 1, true)
-if nl then
-local line = self.readBuf:sub(1, nl - 1)
-self.readBuf = self.readBuf:sub(nl + 1)
-return line
-end
-local chunk = self.stream:read(4096)
-if not chunk then
-if #self.readBuf > 0 then
-local rest = self.readBuf
-self.readBuf = ""
-return rest
-end
-return nil
-end
-self.readBuf = self.readBuf .. chunk
-end
-elseif fmt == "*n" or fmt == "n" then
-while true do
-local stripped = self.readBuf:match("^%s*(.*)")
-if stripped and #stripped > 0 then
-local firstCh = stripped:sub(1, 1)
-if not firstCh:match("[%d%+%-%.eE]") then
-return nil
-end
-local s = self.readBuf:match("^%s*([%+%-]?%d[%d%.eE%+%-]*)")
-if s then
-local num = tonumber(s)
-if num then
-local _, endpos = self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")
-self.readBuf = self.readBuf:sub((endpos or 0) + 1)
-return num
-end
-local _, endpos = self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")
-self.readBuf = self.readBuf:sub((endpos or 0) + 1)
-return nil
-end
-if #stripped > 64 then
-self.readBuf = stripped
-return nil
-end
-end
-local chunk = self.stream:read(256)
-if not chunk then return nil end
-self.readBuf = self.readBuf .. chunk
-end
-elseif type(fmt) == "number" then
-local want = fmt
-while #self.readBuf < want do
-local chunk = self.stream:read(want - #self.readBuf)
-if not chunk then break end
-self.readBuf = self.readBuf .. chunk
-end
-if #self.readBuf == 0 then return nil end
-local data = self.readBuf:sub(1, want)
-self.readBuf = self.readBuf:sub(want + 1)
-return data
-end
-end
-function buf:write(...)
-if self.closed then return nil, "closed" end
-for i = 1, select("#", ...) do
-local s = tostring(select(i, ...))
-self.stream:write(s)
-end
-return self
-end
-function buf:lines()
-return function()
-return self:read("*l")
-end
-end
-function buf:close()
-if self.closed then return nil, "closed" end
-self.closed = true
-if self.stream.close then self.stream:close() end
-return true
-end
-function buf:seek(whence, offset)
-if self.stream.seek then
-self.readBuf = ""
-return self.stream:seek(whence, offset)
-end
-return nil, "not seekable"
-end
-function buf:flush()
-return self
-end
-return buf
-end
-return buffer
+local g=self.readBuf:match("^%s*(.*)")
+if g and#g>0 then local j=g:sub(1,1)
+if not j:match("[%d%+%-%.eE]")then return nil end
+local i=self.readBuf:match("^%s*([%+%-]?%d[%d%.eE%+%-]*)")
+if i then local k=tonumber(i)if k then
+local o,n=self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")self.readBuf=self.readBuf:sub((n or 0)+1)
+return k end
+local m,l=self.readBuf:find("^%s*[%+%-]?%d[%d%.eE%+%-]*")self.readBuf=self.readBuf:sub((l or 0)+1)
+return nil end;if#g>64 then self.readBuf=g;return nil end end;local h=self.stream:read(256)if not h then return nil end;self.readBuf=
+self.readBuf..h end elseif type(f)=="number"then local g=f
+while#self.readBuf<g do local i=self.stream:read(g-
+#self.readBuf)if not i then break end;self.readBuf=
+self.readBuf..i end;if#self.readBuf==0 then return nil end
+local h=self.readBuf:sub(1,g)self.readBuf=self.readBuf:sub(g+1)return h end end
+function e:write(...)if self.closed then return nil,d end
+for f=1,select("#",...)do
+local g=tostring(select(f,...))self.stream:write(g)end;return self end
+function e:lines()return function()return self:read("*l")end end
+function e:close()if self.closed then return nil,d end;self.closed=true;if self.stream.close then
+self.stream:close()end;return true end
+function e:seek(f,g)if self.stream.seek then self.readBuf=""
+return self.stream:seek(f,g)end;return nil,"not seekable"end;function e:flush()return self end;return e end;return c

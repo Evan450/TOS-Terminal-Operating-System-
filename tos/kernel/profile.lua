@@ -1,172 +1,67 @@
-local profile = {}
-local securefs = nil
-local usersmod = nil
-local themeMod = nil
-local envMod = nil
-local log = nil
-local serialize = nil
-local PROFILE_FILE = ".profile.cfg"
-local MAX_PROFILE_BYTES = 8192
-local MAX_STARTUP_CMDS = 16
-local MAX_ALIASES = 48
-function profile.init(modules)
-securefs = modules.securefs
-usersmod = modules.users
-themeMod = modules.theme
-envMod = modules.env
-log = modules.log
-serialize = modules.serialize or require("kernel.serialize")
-end
-local function profilePathFor(session)
-if not session or session.isKernel then return nil end
-if not session.home or session.home == "" or session.home == "/" then return nil end
-return session.home .. "/" .. PROFILE_FILE
-end
-local function defaults()
-return {
-name = "default",
-theme = nil,
-env = {},
-startup = {},
-cwd = nil,
-prompt = nil,
-landing = nil,
-lang = nil,
-aliases = {},
-}
-end
-local function sanitize(raw)
-local out = defaults()
-if type(raw) ~= "table" then return out end
-if type(raw.name) == "string" and #raw.name <= 32
-and raw.name:match("^[%w_%-]+$") then
-out.name = raw.name
-end
-if type(raw.theme) == "string" and #raw.theme <= 32
-and raw.theme:match("^[%w_%-]+$") then
-out.theme = raw.theme
-end
-if type(raw.env) == "table" then
-local n = 0
-for k, v in pairs(raw.env) do
-if type(k) == "string" and type(v) == "string"
-and #k <= 32 and #v <= 1024
-and k:match("^[%w_]+$") then
-out.env[k] = v
-n = n + 1
-if n >= 32 then break end
-end
-end
-end
-if type(raw.startup) == "table" then
-for i, cmd in ipairs(raw.startup) do
-if i > MAX_STARTUP_CMDS then break end
-if type(cmd) == "string" and #cmd <= 200 then
-if not cmd:find("[\n\r]") then
-out.startup[#out.startup + 1] = cmd
-end
-end
-end
-end
-if type(raw.cwd) == "string" and #raw.cwd <= 256 then
-out.cwd = raw.cwd
-end
-if type(raw.prompt) == "string" and #raw.prompt <= 200 then
-out.prompt = raw.prompt
-end
-if raw.landing == "desktop" or raw.landing == "shell"
-or raw.landing == "tiles" or raw.landing == "files" then
-out.landing = raw.landing
-end
---! The NAME is restricted to the same character class a command name can
---! have (no spaces, slashes or quotes), so a stored alias can never carry
---! a second command, a path, or shell punctuation into the position where
---! the executor reads a command name. The VALUE is free text but must be
---! a single line — a newline would let one alias define two commands.
---! Neither side grants privilege: the expansion is dispatched through the
---! ordinary tier gates (see helpers.expandAlias).
-if type(raw.aliases) == "table" then
-local n = 0
-for k, v in pairs(raw.aliases) do
-if type(k) == "string" and type(v) == "string"
-and #k <= 32 and #v <= 200
-and k:match("^[%w_%-]+$")
-and not v:find("[\n\r]") then
-out.aliases[k:lower()] = v
-n = n + 1
-if n >= MAX_ALIASES then break end
-end
-end
-end
-if type(raw.lang) == "string" then
-local okI, i18nMod = pcall(require, "kernel.i18n")
-local valid = (okI and i18nMod and i18nMod.validCode)
-and i18nMod.validCode(raw.lang)
-or (#raw.lang >= 2 and #raw.lang <= 8 and raw.lang:match("^%l%l[%l%d_%-]*$") ~= nil)
-if valid then out.lang = raw.lang end
-end
-return out
-end
-function profile.load(session)
-session = session or (usersmod and usersmod.currentSession()) or nil
-if not session then return defaults(), false end
-local path = profilePathFor(session)
-if not path or not securefs then return defaults(), false end
-if not securefs.exists(path, session) then return defaults(), false end
-local data = securefs.readFile(path, session)
-if not data then return defaults(), false end
-if #data > MAX_PROFILE_BYTES then
-if log then log.warn("profile", "Profile file too large for " ..
-session.user .. " (" .. #data .. " bytes); using defaults") end
-return defaults(), false
-end
-local ok, raw = pcall(serialize.decode, data, { maxBytes = MAX_PROFILE_BYTES })
-if not ok or type(raw) ~= "table" then
-if log then log.warn("profile", "Corrupt profile for " .. session.user
-.. "; using defaults") end
-return defaults(), false
-end
-return sanitize(raw), true
-end
-function profile.save(p, session)
-session = session or (usersmod and usersmod.currentSession()) or nil
-if not session then return false, "no session" end
-local path = profilePathFor(session)
-if not path then return false, "no profile path (guest or no home)" end
-if not securefs then return false, "securefs not available" end
-local clean = sanitize(p or {})
-local encoded = serialize.encode(clean)
-if #encoded > MAX_PROFILE_BYTES then
-return false, "profile too large after sanitization"
-end
-return securefs.writeFile(path, encoded, session)
-end
-function profile.apply(p, opts)
-opts = opts or {}
-local session = opts.session or (usersmod and usersmod.currentSession()) or nil
-if not p then p = defaults() end
-local liveTheme = themeMod or (_G._TOS and _G._TOS.theme)
-if liveTheme and liveTheme.apply and p.theme then
-local saved = liveTheme.hasSavedTheme
-and liveTheme.hasSavedTheme(session) or false
-if not saved then
-pcall(liveTheme.apply, p.theme)
-end
-end
-if p.lang and p.lang ~= "" then
-local i18nMod = _G._TOS and _G._TOS.i18n
-if i18nMod and i18nMod.setLanguage then pcall(i18nMod.setLanguage, p.lang) end
-end
-if envMod and envMod.write then
-local procMod
-local okP, m = pcall(require, "kernel.process"); if okP then procMod = m end
-local cur = procMod and procMod.current and procMod.current() or nil
-if cur and cur.env then
-for k, v in pairs(p.env or {}) do
-cur.env[k] = v
-end
-end
-end
-return p.startup or {}, p
-end
-return profile
+local q,C="string","^[%w_%-]+$"local u={}local t=nil;local s=nil;local z=nil;local w=nil;local v=nil;local x=nil
+local D=".profile.cfg"local y=8192;local E=16;local F=48
+function u.init(a)t=a.securefs;s=a.users;z=a.theme;w=a.env;v=a.log;x=a.serialize or
+require("kernel.serialize")end
+local function A(a)if not a or a.isKernel then return nil end;if
+not a.home or a.home==""or a.home=="/"then return nil end;return
+a.home.."/"..D end;local function r()
+return{name="default",theme=nil,env={},startup={},cwd=nil,prompt=nil,landing=nil,lang=nil,aliases={}}end
+local function B(a)local b=r()if type(a)~=
+"table"then return b end
+if
+type(a.name)==q and#a.name<=32 and a.name:match(C)then b.name=a.name end;if
+type(a.theme)==q and#a.theme<=32 and a.theme:match(C)then b.theme=a.theme end
+if
+type(a.env)=="table"then local c=0
+for d,e in pairs(a.env)do
+if
+type(d)==q and type(e)==q and#d<=32 and#
+e<=1024 and d:match("^[%w_]+$")then b.env[d]=e;c=c+1;if c>=32 then break end end end end
+if type(a.startup)=="table"then
+for d,c in ipairs(a.startup)do if d>E then break end;if type(c)==q and#c<=
+200 then if not c:find("[\n\r]")then
+b.startup[#b.startup+1]=c end end end end
+if type(a.cwd)==q and#a.cwd<=256 then b.cwd=a.cwd end
+if type(a.prompt)==q and#a.prompt<=200 then b.prompt=a.prompt end;if
+a.landing=="desktop"or a.landing=="shell"or a.landing=="tiles"or a.landing=="files"then
+b.landing=a.landing end
+if
+type(a.aliases)=="table"then local c=0
+for d,e in pairs(a.aliases)do
+if
+type(d)==q and type(e)==q and#d<=32 and#e<=200 and d:match(C)and not
+e:find("[\n\r]")then
+b.aliases[d:lower()]=e;c=c+1;if c>=F then break end end end end
+if type(a.lang)==q then local d,c=pcall(require,"kernel.i18n")
+local e=(d and c and
+c.validCode)and c.validCode(a.lang)or(
+#a.lang>=2 and#a.lang<=8 and
+a.lang:match("^%l%l[%l%d_%-]*$")~=nil)if e then b.lang=a.lang end end;return b end
+function u.load(a)
+a=a or(s and s.currentSession())or nil;if not a then return r(),false end;local c=A(a)
+if not c or not t then return r(),false end;if not t.exists(c,a)then return r(),false end
+local b=t.readFile(c,a)if not b then return r(),false end
+if#b>y then if v then
+v.warn("profile","Profile file too large for "..a.user.." ("..#b..
+" bytes); using defaults")end;return r(),false end;local e,d=pcall(x.decode,b,{maxBytes=y})
+if
+not e or type(d)~="table"then if v then
+v.warn("profile","Corrupt profile for "..a.user.."; using defaults")end;return r(),false end;return B(d),true end
+function u.save(b,a)
+a=a or(s and s.currentSession())or nil;if not a then return false,"no session"end;local c=A(a)if not c then return false,
+"no profile path (guest or no home)"end;if not t then return false,
+"securefs not available"end;local e=B(b or{})
+local d=x.encode(e)
+if#d>y then return false,"profile too large after sanitization"end;return t.writeFile(c,d,a)end
+function u.apply(a,b)b=b or{}local d=
+b.session or(s and s.currentSession())or nil;if not a then a=r()end;local c=z or(_G._TOS and
+_G._TOS.theme)
+if c and c.apply and
+a.theme then
+local e=c.hasSavedTheme and c.hasSavedTheme(d)or false;if not e then pcall(c.apply,a.theme)end end
+if a.lang and a.lang~=""then local e=_G._TOS and _G._TOS.i18n;if
+e and e.setLanguage then pcall(e.setLanguage,a.lang)end end
+if w and w.write then local e;local g,h=pcall(require,"kernel.process")
+if g then e=h end
+local f=e and e.current and e.current()or nil
+if f and f.env then for i,j in pairs(a.env or{})do f.env[i]=j end end end;return a.startup or{},a end;return u

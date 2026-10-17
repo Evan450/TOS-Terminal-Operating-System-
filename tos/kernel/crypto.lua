@@ -1,393 +1,110 @@
-local component = require("component")
-local computer = require("computer")
-local crypto = {}
-local dataCard = nil
-local hwCrypto = false
-function crypto.init()
-local ok, _ = pcall(function()
-for addr in component.list("data") do
-dataCard = component.proxy(addr)
-hwCrypto = true
-return
-end
-end)
-return hwCrypto
-end
-function crypto.hasHardware()
-return hwCrypto
-end
-local function djb2(str)
-local hash = 5381
-for i = 1, #str do
-hash = ((hash << 5) + hash + str:byte(i)) & 0xFFFFFFFF
-end
-return hash
-end
-local function fnv1a(str)
-local hash = 0x811C9DC5
-for i = 1, #str do
-hash = hash ~ str:byte(i)
-hash = (hash * 0x01000193) & 0xFFFFFFFF
-end
-return hash
-end
-local function softHash(data)
-local h1 = djb2(data)
-local h2 = fnv1a(data)
-return string.format("%08x%08x", h1, h2)
-end
-local sha256_hex = require("kernel.sha256").hex
-function crypto.hash(data)
-if dataCard then
-local ok, result = pcall(function()
-local raw = dataCard.sha256(data)
-local hex = {}
-for i = 1, #raw do
-hex[#hex + 1] = string.format("%02x", raw:byte(i))
-end
-return table.concat(hex)
-end)
-if ok and result then return result end
-end
-return sha256_hex(data)
-end
-local function ctEquals(a, b)
-if type(a) ~= "string" or type(b) ~= "string" then return false end
-local la, lb = #a, #b
-local n = la > lb and la or lb
-local diff = la ~ lb
-for i = 1, n do
-local ba = i <= la and a:byte(i) or 0
-local bb = i <= lb and b:byte(i) or 0
-diff = diff | (ba ~ bb)
-end
-return diff == 0
-end
-crypto.ctEquals = ctEquals
-local PW_ROUNDS = 256
-local function effectiveRounds()
-return PW_ROUNDS
-end
-local function hashPasswordLegacy(password, salt)
-local pass1 = crypto.hash(salt .. password)
-local pass2 = crypto.hash(pass1 .. salt .. "tos")
-return pass2
-end
-local function hashPasswordSw256(password, salt, rounds)
-local h = sha256_hex(salt .. password .. "tos")
-for _ = 2, (rounds or PW_ROUNDS) do
-h = sha256_hex(h .. salt)
-end
-return h
-end
-local hmacSha256
-local function pwInner(password, salt, rounds)
-local key = salt .. "tos"
-local h = hmacSha256(key, password)
-for i = 2, rounds do
-h = hmacSha256(key, h .. string.char(i & 0xFF, (i >> 8) & 0xFF))
-end
-return h
-end
-local function pwInnerV3(password, salt, rounds)
-local key = salt .. "\0tos.v3"
-local h = hmacSha256(key, password .. "\0" .. salt)
-for i = 2, rounds do
-h = hmacSha256(key, h .. "\0" .. string.char(i & 0xFF, (i >> 8) & 0xFF))
-end
-return h
-end
-function crypto.hashPassword(password, salt)
-local rounds = effectiveRounds()
-return "v3$" .. tostring(rounds) .. "$" .. pwInnerV3(password, salt, rounds)
-end
-function crypto.verifyPassword(password, salt, storedHash)
-if type(storedHash) ~= "string" then return false, false end
-if type(password) ~= "string" then return false, false end
-if type(salt) ~= "string" then return false, false end
-local v3Rounds, v3Hex = storedHash:match("^v3%$(%d+)%$(%x+)$")
-if v3Rounds and v3Hex and #v3Hex == 64 then
-local rounds = tonumber(v3Rounds)
-if rounds and rounds >= 1 and rounds <= 100000 then
-if ctEquals(pwInnerV3(password, salt, rounds), v3Hex) then
-local cur = effectiveRounds()
-return true, (rounds ~= cur)
-end
-end
-return false, false
-end
-local roundsStr, hex = storedHash:match("^v2%$(%d+)%$(%x+)$")
-if roundsStr and hex and #hex == 64 then
-local rounds = tonumber(roundsStr)
-if rounds and rounds >= 1 and rounds <= 100000 then
-if ctEquals(pwInner(password, salt, rounds), hex) then
-return true, true
-end
-end
-return false, false
-end
-if #storedHash == 64 then
-if ctEquals(hashPasswordSw256(password, salt, PW_ROUNDS), storedHash) then
-return true, true
-end
-if ctEquals(hashPasswordLegacy(password, salt), storedHash) then
-return true, true
-end
-return false, false
-end
-if #storedHash == 16 then
-pcall(function()
-local logMod = require("kernel.log")
-if logMod and logMod.warn then
-logMod.warn("crypto", "Refused legacy 16-hex hash; account must be reset")
-end
-end)
-return false, false
-end
-return false, false
-end
-local _rngState = 0
-local _rngCounter = 0
-local function rngMixEntropy()
-_rngCounter = _rngCounter + 1
-local pool = table.concat({
-tostring(computer.uptime()),
-tostring(computer.freeMemory()),
-tostring(computer.totalMemory and computer.totalMemory() or 0),
-tostring(_rngCounter),
-tostring(_rngState),
-tostring({}),
-}, "|")
-local h = sha256_hex(pool)
-local s = 0
-for i = 1, 16 do
-s = ((s << 4) | tonumber(h:sub(i, i), 16)) & 0xFFFFFFFFFFFFFFFF
-end
-if s == 0 then s = 0xDEADBEEFCAFEBABE end
-_rngState = s
-end
-local function rngNext()
-if _rngState == 0 then rngMixEntropy() end
-local x = _rngState
-x = x ~ (x >> 12); x = x & 0xFFFFFFFFFFFFFFFF
-x = x ~ (x << 25); x = x & 0xFFFFFFFFFFFFFFFF
-x = x ~ (x >> 27); x = x & 0xFFFFFFFFFFFFFFFF
-_rngState = x
-return (x * 0x2545F4914F6CDD1D) & 0xFFFFFFFFFFFFFFFF
-end
-function crypto.addEntropy(seed)
-if type(seed) ~= "string" or seed == "" then return false end
-local mixed = sha256_hex(seed .. "|" .. tostring(_rngState) .. "|" .. tostring(_rngCounter))
-local s = 0
-for i = 1, 16 do
-s = ((s << 4) | tonumber(mixed:sub(i, i), 16)) & 0xFFFFFFFFFFFFFFFF
-end
-_rngState = (_rngState ~ s) & 0xFFFFFFFFFFFFFFFF
-if _rngState == 0 then _rngState = (s ~= 0) and s or 0xA5A5A5A5A5A5A5A5 end
-_rngCounter = _rngCounter + 1
-return true
-end
-function crypto.exportEntropy(n)
-n = (type(n) == "number" and n > 0) and math.floor(n) or 32
-rngMixEntropy()
-local out = {}
-for i = 1, n do
-out[i] = string.char(rngNext() & 0xFF)
-end
-return table.concat(out)
-end
-local _rngDegradedWarned = false
-local function warnDegradedRng()
-if _rngDegradedWarned or dataCard then return end
-_rngDegradedWarned = true
-pcall(function()
-local logMod = require("kernel.log")
-if logMod and logMod.warn then
-logMod.warn("crypto",
-"No data card — session tokens/salts use the software RNG (degraded; not a CSPRNG)")
-end
-end)
-end
-function crypto.salt(length)
-length = length or 16
-local chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-local nChars = #chars
-local function pickFromByte(b)
-if b >= 248 then return nil end
-return chars:sub((b % nChars) + 1, (b % nChars) + 1)
-end
-local RNG_LIMIT = 0xFFFFFFFFFFFFFFF0
-local function pickFromRng()
-while true do
-local r = rngNext()
-if math.ult(r, RNG_LIMIT) then
-return chars:sub((r % nChars) + 1, (r % nChars) + 1)
-end
-end
-end
-if dataCard then
-local result = {}
-local idx = 1
-while idx <= length do
-local ok, raw = pcall(dataCard.random, length * 2)
-if not ok or not raw then break end
-for i = 1, #raw do
-if idx > length then break end
-local pick = pickFromByte(raw:byte(i))
-if pick then result[idx] = pick; idx = idx + 1 end
-end
-end
-if idx > length then return table.concat(result) end
-end
-rngMixEntropy()
-local result = {}
-for i = 1, length do
-result[i] = pickFromRng()
-end
-return table.concat(result)
-end
-local _tokenCounter = 0
-function crypto.token()
-warnDegradedRng()
-_tokenCounter = _tokenCounter + 1
-return crypto.hash(crypto.salt(32)
-.. crypto.salt(16)
-.. tostring(computer.uptime())
-.. tostring(_tokenCounter))
-end
---! #MEM (pentest, Sep 2026) — a BLOCK at a time, not a byte. One
---! string.char per byte, each in its own result slot, cost ~16x the payload
---! in heap for every XOR packet on a machine without a data card -- the
---! machines with the least RAM. Now 256 bytes per string.char, with the
---! key's bytes read once per call. (test_crypto_xor_alloc.lua)
-local function xorCipher(data, key)
-local keyLen = #key
-local kb = { key:byte(1, keyLen) }
-local out, buf = {}, {}
-local n = #data
-for i = 1, n, 256 do
-local j = (i + 255 < n) and (i + 255) or n
-local k = 0
-for idx = i, j do
-k = k + 1
-buf[k] = data:byte(idx) ~ kb[((idx - 1) % keyLen) + 1]
-end
-out[#out + 1] = string.char(table.unpack(buf, 1, k))
-end
-return table.concat(out)
-end
-local _xorWarned = false
-local function makeIv16()
-if dataCard then
-local ok, raw = pcall(dataCard.random, 16)
-if ok and type(raw) == "string" and #raw == 16 then
-return raw
-end
-end
-rngMixEntropy()
-local out = {}
-for i = 1, 2 do
-local n = rngNext()
-for shift = 56, 0, -8 do
-out[#out + 1] = string.char((n >> shift) & 0xFF)
-end
-end
-return table.concat(out)
-end
-crypto._makeIv16 = makeIv16
---! #SEC (pentest, Sep 2026) — the data card's AES is AES-128. Ocelot's
---! DataCard$Tier2 refuses anything but a 16-byte key ("expected a 128-bit
---! AES key") and a 16-byte IV. Peer secrets are 32 characters
---! (trust.generateSecret -> crypto.salt(32)), so every hardware encrypt
---! raised, the pcall below swallowed it, and every "encrypted" packet went
---! out as XOR -- which a receiver WITH a data card then refuses as a
---! downgrade (#SEC C10), so two carded machines could not talk encrypted
---! at all, and a carded-to-uncarded link was XOR while reporting AES
---! hardware. The AES key is the first 16 bytes of SHA-256(secret), derived
---! identically on both ends. (test_crypto_aes_key.lua)
-local function aesKey16(secret)
-local hex = sha256_hex(secret)
-return (hex:sub(1, 32):gsub("..", function(h) return string.char(tonumber(h, 16)) end))
-end
-function crypto.encrypt(data, key)
-if dataCard then
-local ok, result = pcall(function()
-local iv = makeIv16()
-local encrypted = dataCard.encrypt(data, aesKey16(key), iv)
-return iv .. encrypted
-end)
-if ok and result then
-return result, "aes"
-end
-end
-if not _xorWarned then
-_xorWarned = true
-pcall(function()
-local log = require("kernel.log")
-if log then
-log.warn("crypto", "No data card — encryption falling back to XOR (not secure)")
-end
-end)
-end
-local hashedKey = crypto.hash(key)
-return xorCipher(data, hashedKey), "xor"
-end
-function crypto.decrypt(data, key, method)
-if type(data) ~= "string" or type(key) ~= "string" then
-return nil
-end
-if method == "aes" then
-if not dataCard then return nil end
-if #data < 17 then return nil end
-local ok, result = pcall(function()
-local iv = data:sub(1, 16)
-local ciphertext = data:sub(17)
-return dataCard.decrypt(ciphertext, aesKey16(key), iv)
-end)
-if ok and result then return result end
-return nil
-end
-if method == "xor" then
-local hashedKey = crypto.hash(key)
-return xorCipher(data, hashedKey)
-end
-return nil
-end
-function crypto.checksum(data)
-return crypto.hash(data)
-end
-local HMAC_BLOCK = 64
-local function shaHex(s)
-return sha256_hex(s)
-end
-hmacSha256 = function(key, msg)
-if #key > HMAC_BLOCK then
-local hexed = shaHex(key)
-local raw = {}
-for i = 1, 32 do
-raw[i] = string.char(tonumber(hexed:sub(i * 2 - 1, i * 2), 16))
-end
-key = table.concat(raw)
-end
-if #key < HMAC_BLOCK then
-key = key .. string.rep("\0", HMAC_BLOCK - #key)
-end
-local ipad, opad = {}, {}
-for i = 1, HMAC_BLOCK do
-local kb = key:byte(i)
-ipad[i] = string.char(kb ~ 0x36)
-opad[i] = string.char(kb ~ 0x5C)
-end
-local ipadS, opadS = table.concat(ipad), table.concat(opad)
-local innerHex = shaHex(ipadS .. msg)
-local innerRaw = {}
-for i = 1, 32 do
-innerRaw[i] = string.char(tonumber(innerHex:sub(i * 2 - 1, i * 2), 16))
-end
-return shaHex(opadS .. table.concat(innerRaw))
-end
-crypto.hmac = hmacSha256
-function crypto.sign(data, secret)
-return hmacSha256(secret or "", data or "")
-end
-return crypto
+local K,ae,af="string","kernel.log","crypto"local X=require("component")
+local O=require("computer")local H={}local I=nil;local S=false;function H.init()
+local a,b=pcall(function()
+for c in X.list("data")do I=X.proxy(c)S=true;return end end)return S end
+function H.hasHardware()return S end
+local function ag(a)local b=5381;for c=1,#a do
+b=((b<<5)+b+a:byte(c))&0xFFFFFFFF end;return b end
+local function ah(a)local b=0x811C9DC5;for c=1,#a do b=b~a:byte(c)
+b=(b*0x01000193)&0xFFFFFFFF end;return b end
+local function am(a)local b=ag(a)local c=ah(a)return string.format("%08x%08x",b,c)end;local L=require("kernel.sha256").hex
+function H.hash(a)
+if I then
+local c,b=pcall(function()
+local e=I.sha256(a)local d={}
+for f=1,#e do d[#d+1]=string.format("%02x",e:byte(f))end;return table.concat(d)end)if c and b then return b end end;return L(a)end
+local function P(c,d)if type(c)~=K or type(d)~=K then return false end
+local a,b=#c,#d;local f=a>b and a or b;local e=a~b
+for g=1,f do
+local h=g<=a and c:byte(g)or 0;local i=g<=b and d:byte(g)or 0;e=e| (h~i)end;return e==0 end;H.ctEquals=P;local T=256;local function Y()return T end;local function ai(b,a)local c=H.hash(a..b)
+local d=H.hash(c..a.."tos")return d end
+local function aj(b,a,c)
+local d=L(a..b.."tos")for e=2,(c or T)do d=L(d..a)end;return d end;local M;local function ak(a,b,c)local e=b.."tos"local d=M(e,a)
+for f=2,c do d=M(e,d..
+string.char(f&0xFF,(f>>8)&0xFF))end;return d end
+local function Z(b,a,c)
+local e=a.."\0tos.v3"local d=M(e,b.."\0"..a)for f=2,c do
+d=M(e,d.."\0"..
+string.char(f&0xFF,(f>>8)&0xFF))end;return d end;function H.hashPassword(a,b)local c=Y()
+return"v3$"..tostring(c).."$"..Z(a,b,c)end
+function H.verifyPassword(b,c,a)
+if type(a)~=K then return false,false end;if type(b)~=K then return false,false end
+if type(c)~=K then return false,false end;local f,d=a:match("^v3%$(%d+)%$(%x+)$")
+if f and d and#d==64 then
+local h=tonumber(f)if h and h>=1 and h<=100000 then
+if P(Z(b,c,h),d)then local i=Y()return true, (h~=i)end end;return false,false end;local g,e=a:match("^v2%$(%d+)%$(%x+)$")
+if g and e and#e==64 then
+local h=tonumber(g)if h and h>=1 and h<=100000 then
+if P(ak(b,c,h),e)then return true,true end end;return false,false end
+if#a==64 then if P(aj(b,c,T),a)then return true,true end;if P(ai(b,c),a)then
+return true,true end;return false,false end
+if#a==16 then
+pcall(function()local h=require(ae)if h and h.warn then
+h.warn(af,"Refused legacy 16-hex hash; account must be reset")end end)return false,false end;return false,false end;local J=0;local N=0
+local function Q()N=N+1
+local b=table.concat({tostring(O.uptime()),tostring(O.freeMemory()),tostring(
+O.totalMemory and O.totalMemory()or 0),tostring(N),tostring(J),tostring({})},"|")local c=L(b)local a=0
+for d=1,16 do a=
+((a<<4)|tonumber(c:sub(d,d),16))&0xFFFFFFFFFFFFFFFF end;if a==0 then a=0xDEADBEEFCAFEBABE end;J=a end
+local function U()if J==0 then Q()end;local a=J;a=a~ (a>>12)a=a&0xFFFFFFFFFFFFFFFF;a=a~
+(a<<25)a=a&0xFFFFFFFFFFFFFFFF;a=a~ (a>>27)
+a=a&0xFFFFFFFFFFFFFFFF;J=a
+return(a*0x2545F4914F6CDD1D)&0xFFFFFFFFFFFFFFFF end
+function H.addEntropy(a)if type(a)~=K or a==""then return false end
+local c=L(a.."|"..tostring(J)..
+"|"..tostring(N))local b=0
+for d=1,16 do b=((b<<4)|tonumber(c:sub(d,d),16))&
+0xFFFFFFFFFFFFFFFF end;J=(J~b)&0xFFFFFFFFFFFFFFFF;if J==0 then
+J=(b~=0)and b or 0xA5A5A5A5A5A5A5A5 end;N=N+1;return true end
+function H.exportEntropy(a)a=
+(type(a)=="number"and a>0)and math.floor(a)or 32;Q()local b={}for c=1,a do b[c]=string.char(U()&
+0xFF)end
+return table.concat(b)end;local _=false
+local function al()if _ or I then return end;_=true
+pcall(function()local a=require(ae)if a and a.warn then
+a.warn(af,"No data card — session tokens/salts use the software RNG (degraded; not a CSPRNG)")end end)end
+function H.salt(a)a=a or 16
+local c="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"local b=#c;local function e(h)if h>=248 then return nil end
+return c:sub((h%b)+1,(h%b)+1)end;local f=0xFFFFFFFFFFFFFFF0;local function g()
+while true do local h=U()if
+math.ult(h,f)then return c:sub((h%b)+1,(h%b)+1)end end end
+if I then local i={}local h=1
+while h<=a do
+local k,j=pcall(I.random,a*2)if not k or not j then break end;for l=1,#j do if h>a then break end;local m=e(j:byte(l))if m then
+i[h]=m;h=h+1 end end end;if h>a then return table.concat(i)end end;Q()local d={}for h=1,a do d[h]=g()end;return table.concat(d)end;local V=0
+function H.token()al()V=V+1;return
+H.hash(H.salt(32)..H.salt(16)..tostring(O.uptime())..
+tostring(V))end
+local function aa(a,b)local e=#b;local g={b:byte(1,e)}local c,f={},{}local d=#a
+for h=1,d,256 do local k=
+(h+255 <d)and(h+255)or d;local i=0;for j=h,k do i=i+1;f[i]=a:byte(j)~
+g[((j-1)%e)+1]end
+c[#c+1]=string.char(table.unpack(f,1,i))end;return table.concat(c)end;local ab=false
+local function ac()if I then local c,b=pcall(I.random,16)if
+c and type(b)==K and#b==16 then return b end end
+Q()local a={}for b=1,2 do local c=U()for d=56,0,-8 do
+a[#a+1]=string.char((c>>d)&0xFF)end end;return
+table.concat(a)end;H._makeIv16=ac
+local function ad(a)local b=L(a)return
+(b:sub(1,32):gsub("..",function(c)return
+string.char(tonumber(c,16))end))end
+function H.encrypt(a,b)
+if I then
+local e,d=pcall(function()local f=ac()local g=I.encrypt(a,ad(b),f)return f..g end)if e and d then return d,"aes"end end
+if not ab then ab=true
+pcall(function()local d=require(ae)if d then
+d.warn(af,"No data card — encryption falling back to XOR (not secure)")end end)end;local c=H.hash(b)return aa(a,c),"xor"end
+function H.decrypt(a,b,c)if type(a)~=K or type(b)~=K then return nil end
+if
+c=="aes"then if not I then return nil end;if#a<17 then return nil end
+local e,d=pcall(function()local f=a:sub(1,16)
+local g=a:sub(17)return I.decrypt(g,ad(b),f)end)if e and d then return d end;return nil end;if c=="xor"then local d=H.hash(b)return aa(a,d)end;return nil end;function H.checksum(a)return H.hash(a)end;local R=64;local function W(a)return L(a)end
+M=function(a,b)
+if
+#a>R then local j=W(a)local i={}for k=1,32 do
+i[k]=string.char(tonumber(j:sub(k*2-1,k*2),16))end;a=table.concat(i)end;if#a<R then a=a..string.rep("\0",R-#a)end
+local c,d={},{}for j=1,R do local i=a:byte(j)c[j]=string.char(i~0x36)
+d[j]=string.char(i~0x5C)end
+local f,g=table.concat(c),table.concat(d)local h=W(f..b)local e={}for j=1,32 do
+e[j]=string.char(tonumber(h:sub(j*2-1,j*2),16))end
+return W(g..table.concat(e))end;H.hmac=M;function H.sign(a,b)return M(b or"",a or"")end;return H

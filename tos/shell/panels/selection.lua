@@ -1,112 +1,41 @@
-local sel = {}
-function sel.range(anchor, cursor)
-if type(anchor) ~= "number" or type(cursor) ~= "number" then return nil end
-local from, to = anchor, cursor
-if from > to then from, to = to, from end
-if from == to then return nil end
-return from, to
-end
-function sel.text(s, anchor, cursor)
-local from, to = sel.range(anchor, cursor)
-if not from then return nil end
-return tostring(s or ""):sub(from, to - 1)
-end
-function sel.remove(s, anchor, cursor)
-s = tostring(s or "")
-local from, to = sel.range(anchor, cursor)
-if not from then return s, nil, cursor end
-return s:sub(1, from - 1) .. s:sub(to), s:sub(from, to - 1), from
-end
-function sel.insert(s, at, text)
-s = tostring(s or "")
-text = tostring(text or "")
-at = math.max(1, math.min(#s + 1, at or (#s + 1)))
-return s:sub(1, at - 1) .. text .. s:sub(at), at + #text
-end
-function sel.replace(s, anchor, cursor, text)
-local cut, _, at = sel.remove(s, anchor, cursor)
-return sel.insert(cut, at or cursor, text)
-end
-function sel.orderPos(a, b)
-if type(a) ~= "table" or type(b) ~= "table" then return nil end
-local ar, ac = a.row or 1, a.col or 1
-local br, bc = b.row or 1, b.col or 1
-if ar == br and ac == bc then return nil end
-if ar > br or (ar == br and ac > bc) then
-ar, ac, br, bc = br, bc, ar, ac
-end
-return { row = ar, col = ac }, { row = br, col = bc }
-end
-function sel.extract(lines, a, b)
-local first, last = sel.orderPos(a, b)
-if not first then return nil end
-lines = lines or {}
-if first.row == last.row then
-local l = lines[first.row] or ""
-return { l:sub(first.col, last.col - 1) }
-end
-local out = { (lines[first.row] or ""):sub(first.col) }
-for r = first.row + 1, last.row - 1 do out[#out + 1] = lines[r] or "" end
-out[#out + 1] = (lines[last.row] or ""):sub(1, last.col - 1)
-return out
-end
-function sel.removeBlock(lines, a, b)
-local first, last = sel.orderPos(a, b)
-if not first then return nil end
-local removed = sel.extract(lines, first, last)
-local head = (lines[first.row] or ""):sub(1, first.col - 1)
-local tail = (lines[last.row] or ""):sub(last.col)
-for _ = first.row + 1, last.row do table.remove(lines, first.row + 1) end
-lines[first.row] = head .. tail
-if #lines == 0 then lines[1] = "" end
-return removed, first.row, first.col
-end
-function sel.insertBlock(lines, row, col, block)
-lines = lines or {}
-block = block or {}
-if #block == 0 then return row, col end
-if #lines == 0 then lines[1] = "" end
-row = math.max(1, math.min(#lines, row or 1))
-local line = lines[row] or ""
-col = math.max(1, math.min(#line + 1, col or 1))
-local head, tail = line:sub(1, col - 1), line:sub(col)
-if #block == 1 then
-lines[row] = head .. block[1] .. tail
-return row, col + #block[1]
-end
-lines[row] = head .. block[1]
-for i = 2, #block do
-table.insert(lines, row + i - 1, block[i])
-end
-local lastRow = row + #block - 1
-local lastCol = #block[#block] + 1
-lines[lastRow] = block[#block] .. tail
-return lastRow, lastCol
-end
-function sel.contains(a, b, row, col)
-local first, last = sel.orderPos(a, b)
-if not first then return false end
-if row < first.row or row > last.row then return false end
-if row == first.row and col < first.col then return false end
-if row == last.row and col >= last.col then return false end
-return true
-end
-function sel.lineRange(anchor, cursor)
-if type(anchor) ~= "number" or type(cursor) ~= "number" then return nil end
-if anchor > cursor then return cursor, anchor end
-return anchor, cursor
-end
-function sel.lines(content, anchor, cursor)
-local from, to = sel.lineRange(anchor, cursor)
-if not from then return nil end
-content = content or {}
-local out = {}
-for i = math.max(1, from), math.min(#content, to) do
-local row = content[i]
-if type(row) == "table" then out[#out + 1] = tostring(row[1] or "")
-else out[#out + 1] = tostring(row or "") end
-end
-if #out == 0 then return nil end
-return out
-end
-return sel
+local d="number"local c={}
+function c.range(a,b)
+if type(a)~=d or type(b)~=d then return nil end;local e,f=a,b;if e>f then e,f=f,e end;if e==f then return nil end;return e,f end
+function c.text(a,b,e)local f,g=c.range(b,e)if not f then return nil end;return tostring(a or""):sub(f,
+g-1)end
+function c.remove(a,e,b)a=tostring(a or"")local f,g=c.range(e,b)
+if not f then return a,nil,b end;return a:sub(1,f-1)..a:sub(g),a:sub(f,g-1),f end
+function c.insert(a,b,e)a=tostring(a or"")e=tostring(e or"")b=math.max(1,math.min(#a+1,b or(
+#a+1)))return
+a:sub(1,b-1)..e..a:sub(b),b+#e end
+function c.replace(b,e,a,f)local g,i,h=c.remove(b,e,a)return c.insert(g,h or a,f)end
+function c.orderPos(e,f)
+if type(e)~="table"or type(f)~="table"then return nil end;local a,g=e.row or 1,e.col or 1;local b,h=f.row or 1,f.col or 1;if
+a==b and g==h then return nil end
+if a>b or(a==b and g>h)then a,g,b,h=b,h,a,g end;return{row=a,col=g},{row=b,col=h}end
+function c.extract(e,f,g)local a,b=c.orderPos(f,g)if not a then return nil end;e=e or{}
+if
+a.row==b.row then local i=e[a.row]or""return{i:sub(a.col,b.col-1)}end
+local h={(e[a.row]or""):sub(a.col)}for i=a.row+1,b.row-1 do h[#h+1]=e[i]or""end;h[#h+1]=(
+e[b.row]or""):sub(1,b.col-1)return h end
+function c.removeBlock(e,f,g)local a,b=c.orderPos(f,g)if not a then return nil end
+local h=c.extract(e,a,b)local i=(e[a.row]or""):sub(1,a.col-1)local j=(
+e[b.row]or""):sub(b.col)for k=a.row+1,b.row do table.remove(e,
+a.row+1)end;e[a.row]=i..j;if#e==0 then
+e[1]=""end;return h,a.row,a.col end
+function c.insertBlock(b,e,f,a)b=b or{}a=a or{}if#a==0 then return e,f end;if#b==0 then b[1]=""end;e=math.max(1,math.min(
+#b,e or 1))local g=b[e]or""f=math.max(1,math.min(
+#g+1,f or 1))
+local h,i=g:sub(1,f-1),g:sub(f)if#a==1 then b[e]=h..a[1]..i;return e,f+#a[1]end;b[e]=h..
+a[1]
+for l=2,#a do table.insert(b,e+l-1,a[l])end;local j=e+#a-1;local k=#a[#a]+1;b[j]=a[#a]..i;return j,k end
+function c.contains(g,h,e,f)local a,b=c.orderPos(g,h)if not a then return false end;if
+e<a.row or e>b.row then return false end
+if e==a.row and f<a.col then return false end;if e==b.row and f>=b.col then return false end;return true end
+function c.lineRange(a,b)if type(a)~=d or type(b)~=d then return nil end;if a>b then
+return b,a end;return a,b end
+function c.lines(a,b,e)local g,h=c.lineRange(b,e)if not g then return nil end;a=a or{}local f={}for j=math.max(1,g),math.min(
+#a,h)do local i=a[j]
+if type(i)=="table"then
+f[#f+1]=tostring(i[1]or"")else f[#f+1]=tostring(i or"")end end;if#f==0 then
+return nil end;return f end;return c

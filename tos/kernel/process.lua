@@ -1,780 +1,222 @@
-local computer = require("computer")
-local proc = {}
-local STATE = {
-RUNNING = "running",
-READY = "ready",
-SLEEPING = "sleeping",
-TSR = "tsr",
-DEAD = "dead",
-}
-local processes = {}
-local pidCounter = 0
-local genCounter = 0
-local currentPID = nil
-local foregroundPID = nil
-local displayForeground = {}
-local INPUT_SIGNALS = {
-key_down = true, key_up = true, clipboard = true,
-touch = true, drag = true, drop = true, scroll = true,
-}
---! #SEC (AUDIT 5, H-03) — OpenComputers' keyboard component has NO
---! isKeyDown method: it only emits key_down / key_up. OpenOS tracks held
---! keys in software from those signals, and compat.keyboard called
---! component.keyboard.isKeyDown -- which raised on every machine that HAS a
---! keyboard (isAltDown/isControlDown/isShiftDown with it; OpenOS's own
---! Ctrl-C test is isControlDown()), and would have answered for the
---! PRIMARY keyboard, another seat's on a multi-seat box.
---!
---! Tracked HERE because proc.tick is the one place that sees every input
---! signal from boot on, in kernel context: no listener to register, none
---! that dies with whichever program happened to load compat first.
---! Per keyboard ADDRESS, so compat.keyboard can answer for the caller's
---! seat only. A key_up that never arrives (hold a key, close the screen
---! GUI, release it elsewhere) would wedge a key down forever, so a
---! keyboard idle for KEY_STALE seconds reads as all-released -- the same
---! rule, for the same reason, as shell.keys' modifier state.
---! (test_compat_keyboard.lua)
-local KEY_STALE = 15
-local MAX_KEYBOARDS = 16
-local keyState = {}
-local keyboardCount = 0
-local function trackKey(sigType, kb, ch, code)
-if type(kb) ~= "string" then return end
-local st = keyState[kb]
-if not st then
-if keyboardCount >= MAX_KEYBOARDS then keyState, keyboardCount = {}, 0 end
-st = { codes = {}, chars = {}, at = 0 }
-keyState[kb] = st
-keyboardCount = keyboardCount + 1
-end
-local now = computer.uptime()
-if st.at > 0 and now - st.at > KEY_STALE then st.codes, st.chars = {}, {} end
-st.at = now
-local down = (sigType == "key_down") or nil
-if type(code) == "number" then st.codes[code] = down end
-if type(ch) == "number" and ch > 0 then st.chars[ch] = down end
-end
-function proc.keyDown(charOrCode, keyboards)
-local want, byChar
-if type(charOrCode) == "number" then
-want = charOrCode
-elseif type(charOrCode) == "string" and charOrCode ~= "" then
-local okC, cp = pcall(utf8.codepoint, charOrCode, 1)
-if not okC then return false end
-want, byChar = cp, true
-else
-return false
-end
-local now = computer.uptime()
-local function held(st)
-if not st or (st.at > 0 and now - st.at > KEY_STALE) then return false end
-return (byChar and st.chars or st.codes)[want] == true
-end
-if type(keyboards) == "table" then
-for _, kb in ipairs(keyboards) do
-if held(keyState[kb]) then return true end
-end
-return false
-end
-for _, st in pairs(keyState) do
-if held(st) then return true end
-end
-return false
-end
-proc.KEY_STALE = KEY_STALE
-local screenMod = nil
-local function getScreen()
-if screenMod == nil then
-local ok, mod = pcall(require, "kernel.screen")
-screenMod = ok and mod or false
-end
-return screenMod or nil
-end
-local runnableCache = nil
-local runnableDirty = true
-local function invalidateRunnable() runnableDirty = true end
-local listenerPID = nil
-function proc.withListener(pid, fn, ...)
-local prev = listenerPID
-listenerPID = pid
-local ok, a, b, c, d = pcall(fn, ...)
-listenerPID = prev
-if not ok then error(a, 0) end
-return a, b, c, d
-end
-function proc.genOf(pid)
-local p = processes[pid]
-return p and p.gen or nil
-end
-local function effectiveCallerPID()
-if currentPID then return currentPID end
-if listenerPID then return listenerPID end
-return nil
-end
-local function rebuildRunnable()
-local pids = {}
-for pid, p in pairs(processes) do
-if p.state ~= STATE.DEAD then pids[#pids + 1] = pid end
-end
-local prio = {}
-for _, pid in ipairs(pids) do prio[pid] = processes[pid].priority or 5 end
-table.sort(pids, function(a, b) return prio[a] < prio[b] end)
-runnableCache = pids
-runnableDirty = false
-end
-local function buildInterestSet(decl)
-if type(decl) ~= "table" then return nil end
-local set = {}
-local any = false
-for k, v in pairs(decl) do
-if type(k) == "number" and type(v) == "string" then
-set[v] = true; any = true
-elseif type(k) == "string" and v == true then
-set[k] = true; any = true
-end
-end
-return any and set or nil
-end
-function proc.spawn(name, func, opts)
-opts = opts or {}
-repeat
-pidCounter = pidCounter + 1
-until processes[pidCounter] == nil
-local pid = pidCounter
-genCounter = genCounter + 1
-local gen = genCounter
-local co = coroutine.create(func)
-local parentProc = currentPID and processes[currentPID] or nil
-local inherit = (opts.inherit ~= false)
-local principal = opts.principal
-local token = opts.token
-local cwd = opts.cwd
-local stdin = opts.stdin
-local stdout = opts.stdout
-local stderr = opts.stderr
-local display = opts.display
-if inherit and parentProc then
-principal = principal or parentProc.principal
-token = token or parentProc.token
-cwd = cwd or parentProc.cwd
-stdin = stdin or parentProc.stdin
-stdout = stdout or parentProc.stdout
-stderr = stderr or parentProc.stderr
-display = display or parentProc.display
-end
-local caps = {}
-if opts.caps then
-for k, v in pairs(opts.caps) do caps[k] = v end
-elseif inherit and parentProc and parentProc.caps then
-for k, v in pairs(parentProc.caps) do caps[k] = v end
-end
-if inherit and parentProc then
-local parentCaps = parentProc.caps or {}
-for k in pairs(caps) do
-if not parentCaps[k] then caps[k] = nil end
-end
-end
-processes[pid] = {
-pid = pid,
-gen = gen,
-name = name or ("proc_" .. pid),
-coroutine = co,
-state = STATE.READY,
-tsr = opts.tsr or false,
-priority = opts.priority or 5,
-source = opts.source or "user",
-created = computer.uptime(),
-lastRun = 0,
-cpuTime = 0,
-cpuBudget = opts.cpuBudget,
-signalInterest = buildInterestSet(opts.signalInterest),
-background = opts.background,
-bgSince = nil,
-bgTicks = 0,
-signals = {},
-sigHead = 1,
-sigTail = 0,
-env = {},
-parent = currentPID,
-principal = principal,
-token = token,
-caps = caps,
-cwd = cwd or "/",
-stdin = stdin,
-stdout = stdout,
-stderr = stderr,
-display = display,
-}
-invalidateRunnable()
-return pid
-end
-local COOP_SLICE = 0.05
-local function canYield()
-if coroutine.isyieldable then return coroutine.isyieldable() end
-local co, isMain = coroutine.running()
-if isMain == true then return false end
-return co ~= nil
-end
-function proc.yieldCooperative()
-local p = currentPID and processes[currentPID]
-if not p then return false end
-if not canYield() then return false end
-if computer.uptime() - (p._resumeStart or 0) < COOP_SLICE then return false end
-p._coopYield = true
-coroutine.yield()
-return true
-end
-proc._canYield = canYield
---!
---! Not the same question as coroutine.isyieldable(), and on real hardware
---! the two disagree. OpenComputers runs the whole kernel inside
---! machine.lua's coroutine, so isyieldable() is TRUE in kernel context as
---! well -- the boot battery measured it (92-term, 2026-09-25). A yield
---! there goes to the HOST, which resumes the kernel with the next queued
---! signal: nothing dispatches it, and a caller that ignores the yield's
---! return value has thrown it away. Code that means "am I in a process?"
---! must ask this. (test_inprocess_waitfor.lua)
-function proc.inProcess()
-return currentPID ~= nil and processes[currentPID] ~= nil and canYield()
-end
-function proc.pause(seconds)
-local p = currentPID and processes[currentPID]
-if not p or not canYield() then return false end
-local deadline = computer.uptime() + (tonumber(seconds) or 0)
-repeat
-p._coopYield = true
-coroutine.yield()
-until computer.uptime() >= deadline
-return true
-end
-function proc.setSignalInterest(decl)
-local p = currentPID and processes[currentPID]
-if not p then return false, "no current process" end
-p.signalInterest = buildInterestSet(decl)
-return true
-end
-function proc.currentSession()
-local p = proc.current()
-return p and p.principal or nil
-end
-function proc.currentToken()
-local p = proc.current()
-return p and p.token or nil
-end
-function proc.current()
-return currentPID and processes[currentPID] or nil
-end
-function proc.get(pid) return processes[pid] end
-function proc.list()
-local result = {}
-for pid, p in pairs(processes) do
-if p.state ~= STATE.DEAD then
-result[#result + 1] = {
-pid = p.pid, name = p.name, state = p.state,
-tsr = p.tsr, priority = p.priority,
-cpuTime = p.cpuTime, source = p.source,
-parent = p.parent,
-user = p.principal and p.principal.user or nil,
-caps = (function()
-if type(p.caps) ~= "table" then return nil end
-local c = {}
-for k, v in pairs(p.caps) do c[k] = v end
-return c
-end)(),
-cwd = p.cwd,
-display = p.display,
-sigDropped = p.sigDropped or 0,
-}
-end
-end
-table.sort(result, function(a, b) return a.pid < b.pid end)
-return result
-end
-local function callerMayControl(caller, p)
-local callerTier = caller.principal and caller.principal.tier or 0
-if callerTier >= 3 then return true end
-local callerUser = caller.principal and caller.principal.user
-local targetUser = p.principal and p.principal.user
-if callerUser == nil or targetUser == nil then
-return callerTier >= 2 and caller.display ~= nil
-and caller.display == p.display
-end
-if callerTier >= 2 then
-return callerUser == targetUser or caller.display == p.display
-end
-return callerUser == targetUser
-end
-function proc.kill(pid, opts)
-local p = processes[pid]
-if not p then return false, "No such process" end
-local callerPid = effectiveCallerPID()
-if not callerPid then
-if not (type(opts) == "table" and opts.kernel) then
-return false, "Permission denied (no caller)"
-end
-else
-local caller = processes[callerPid]
-if caller and not callerMayControl(caller, p) then
-return false, "Permission denied"
-end
-end
-p.state = STATE.DEAD
-invalidateRunnable()
-if pid == foregroundPID then
-if p.parent and processes[p.parent] and processes[p.parent].state ~= STATE.DEAD then
-foregroundPID = p.parent
-else
-proc.cycleForeground()
-end
-end
-for dIdx, fgPid in pairs(displayForeground) do
-if fgPid == pid then
-if p.parent and processes[p.parent]
-and processes[p.parent].state ~= STATE.DEAD
-and processes[p.parent].display == dIdx then
-displayForeground[dIdx] = p.parent
-else
-displayForeground[dIdx] = nil
-end
-end
-end
-local event = require("kernel.event")
-event.removeSource("proc:" .. pid)
-if event.purgeOwner then event.purgeOwner(pid) end
-p._purged = true
-return true
-end
-function proc.goTSR(pid)
-local targetPid = pid or currentPID
-local p = processes[targetPid]
-if not p then return false end
-local callerPid = effectiveCallerPID()
-if pid and callerPid and pid ~= callerPid then
-local caller = processes[callerPid]
-if caller and not callerMayControl(caller, p) then
-return false, "Permission denied"
-end
-end
-p.tsr = true; p.state = STATE.TSR
-return true
-end
-local MAX_SIGNAL_QUEUE = 256
-local function sigCount(p)
-return p.sigTail - p.sigHead + 1
-end
-local function enqueueSignal(p, ...)
-if p.sigHead == nil then p.sigHead, p.sigTail = 1, #p.signals end
-if sigCount(p) >= MAX_SIGNAL_QUEUE then
-p.signals[p.sigHead] = nil
-p.sigHead = p.sigHead + 1
-p.sigDropped = (p.sigDropped or 0) + 1
-end
-p.sigTail = p.sigTail + 1
-p.signals[p.sigTail] = table.pack(...)
-if p.sigHead > 256 and p.sigHead <= p.sigTail + 1 then
-local newSignals = {}
-local j = 1
-for i = p.sigHead, p.sigTail do
-newSignals[j] = p.signals[i]
-j = j + 1
-end
-p.signals = newSignals
-p.sigTail = j - 1
-p.sigHead = 1
-elseif p.sigHead > p.sigTail then
-p.signals = {}
-p.sigHead, p.sigTail = 1, 0
-end
-end
-function proc.signal(pid, ...)
-local p = processes[pid]
-if not p or p.state == STATE.DEAD then return false end
-local callerPid = effectiveCallerPID()
-if not callerPid then
-return false, "Permission denied (no caller)"
-end
-if pid ~= callerPid then
-local caller = processes[callerPid]
-if caller and not callerMayControl(caller, p) then
-return false, "Permission denied"
-end
-end
-enqueueSignal(p, ...)
-return true
-end
-function proc.signalKernel(pid, ...)
-local p = processes[pid]
-if not p or p.state == STATE.DEAD then return false end
-enqueueSignal(p, ...)
-return true
-end
-function proc.setForeground(pid, displayIdx, opts)
-if opts and opts.kernel then
-if displayIdx then displayForeground[displayIdx] = pid
-else foregroundPID = pid end
-return true
-end
-local caller = currentPID and processes[currentPID] or nil
-if caller and displayIdx then
-local callerTier = caller.principal and caller.principal.tier or 0
-if callerTier < 3 and caller.display ~= displayIdx then
-return false, "Permission denied (wrong seat)"
-end
-end
-if caller and pid then
-local target = processes[pid]
-local ownChildSameSeat = target ~= nil
-and target.parent == currentPID
-and caller.display ~= nil
-and target.display == caller.display
-if target and not ownChildSameSeat
-and not callerMayControl(caller, target) then
-return false, "Permission denied (not your process)"
-end
-end
-if displayIdx then
-displayForeground[displayIdx] = pid
-else
-foregroundPID = pid
-end
-return true
-end
-function proc.getForeground(displayIdx)
-if displayIdx then
-return displayForeground[displayIdx] or foregroundPID
-end
-return foregroundPID
-end
-function proc.cycleForeground()
-local pids = {}
-for pid, p in pairs(processes) do
-if p.state ~= STATE.DEAD then pids[#pids + 1] = pid end
-end
-table.sort(pids)
-if #pids == 0 then foregroundPID = nil return end
-local idx = 1
-for i, pid in ipairs(pids) do
-if pid == foregroundPID then idx = i break end
-end
-idx = (idx % #pids) + 1
-foregroundPID = pids[idx]
-return foregroundPID
-end
-local PREEMPT_CRUMB = "/var/crash/preempt.txt"
-function proc.preemptionAvailable()
-return type(debug) == "table" and type(debug.sethook) == "function"
-end
-local function preemptCrumb(p)
-pcall(function()
-local f = _G._TOS and _G._TOS.fs
-if not f or not f.writeFile then return end
-pcall(f.makeDirectory, "/var/crash")
-f.writeFile(PREEMPT_CRUMB,
-"pid=" .. tostring(p.pid) .. " name=" .. tostring(p.name or "?") ..
-" user=" .. tostring(p.principal and p.principal.user or "?") ..
-" uptime=" .. tostring(computer.uptime()) .. "\n" ..
-"This process exceeded its CPU budget and trapped the preemption\n" ..
-"error; if the machine then rebooted via the OC watchdog, it was\n" ..
-"the likely cause.\n")
-end)
-end
-local function clearPreemptCrumb()
-pcall(function()
-local f = _G._TOS and _G._TOS.fs
-if f and f.remove and f.exists and f.exists(PREEMPT_CRUMB) then
-f.remove(PREEMPT_CRUMB)
-end
-end)
-end
-local function starveHook()
-error("scheduler: preempted (wall-clock budget exceeded)", 0)
-end
-proc.BG_DIVISOR = 2
-proc.BG_GRACE = 30
-function proc.bgShouldResume(policy, bgSeconds, bgTicks)
-bgSeconds = bgSeconds or 0
-bgTicks = bgTicks or 0
-if policy == "freeze" then return false, "frozen" end
-if policy ~= "always" and bgSeconds >= proc.BG_GRACE then
-return false, "frozen"
-end
-return (bgTicks % proc.BG_DIVISOR) == 0, "drowsy"
-end
-local function markBackground(p, isForeground, now)
-if not p or not p.background then return end
-if isForeground then
-p.bgSince, p.bgTicks = nil, 0
-elseif not p.bgSince then
-p.bgSince, p.bgTicks = now or computer.uptime(), 0
-end
-end
-function proc.bgState(pid, now)
-local p = processes[pid]
-if not p or not p.background or not p.bgSince then return "live" end
-local _, state = proc.bgShouldResume(p.background,
-(now or computer.uptime()) - p.bgSince, p.bgTicks)
-return state
-end
-local function bgSkipped(p, pid, inputFgPID)
-if not p.background then return false end
-local seatFg = p.display and displayForeground[p.display] or nil
-if pid == seatFg or (not p.display and pid == foregroundPID)
-or pid == inputFgPID then
-markBackground(p, true)
-return false
-end
-if (p.sigTail or 0) >= (p.sigHead or 1) then return false end
-markBackground(p, false)
-local resume = proc.bgShouldResume(p.background,
-computer.uptime() - (p.bgSince or 0), p.bgTicks)
-p.bgTicks = p.bgTicks + 1
-return not resume
-end
-local function wakeSkipped(p, signal, isInput)
-if not p.signalInterest then return false end
-if p._coopYield then return false end
-if isInput or not signal or signal[1] == nil then return false end
-if p.sigHead == nil then p.sigHead, p.sigTail = 1, #p.signals end
-if p.sigTail >= p.sigHead then return false end
-return not p.signalInterest[signal[1]]
-end
-function proc.tick(signal)
-if runnableDirty then rebuildRunnable() end
-local pids = runnableCache
-local isInput = signal and signal[1] and INPUT_SIGNALS[signal[1]]
-if isInput and (signal[1] == "key_down" or signal[1] == "key_up") then
-trackKey(signal[1], signal[2], signal[3], signal[4])
-end
-local inputFgPID = foregroundPID
-if isInput and signal[2] then
-local scr = getScreen()
-if scr then
-local dIdx
-local sigType = signal[1]
-if sigType == "key_down" or sigType == "key_up" or sigType == "clipboard" then
-dIdx = scr.displayForKeyboard(signal[2])
-elseif sigType == "touch" or sigType == "drag" or sigType == "drop" or sigType == "scroll" then
-dIdx = scr.displayForScreen(signal[2])
-end
-if dIdx then
-inputFgPID = displayForeground[dIdx] or foregroundPID
-end
-end
-end
-for _, pid in ipairs(pids) do
-local p = processes[pid]
-if p and p.state ~= STATE.DEAD then
-local co = p.coroutine
-local coStatus = coroutine.status(co)
-if coStatus == "dead" then
-p.state = STATE.DEAD
-invalidateRunnable()
-elseif coStatus == "suspended" and wakeSkipped(p, signal, isInput) then
-elseif coStatus == "suspended" and bgSkipped(p, pid, inputFgPID) then
-elseif coStatus == "suspended" then
-currentPID = pid
-p.state = STATE.RUNNING
-local startTime = computer.uptime()
-p._resumeStart = startTime
-local resumeData = nil
-if p.sigHead == nil then p.sigHead, p.sigTail = 1, #p.signals end
-if p._coopYield then
-p._coopYield = false
---! ...but THIS tick's signal is kept, not dropped. It used to fall
---! on the floor: a key typed while `cp` walked a tree, or while a
---! beep sequence paused, was neither delivered nor queued, so the
---! "typed-ahead keys reach the shell later" promise held only for
---! signals that were ALREADY queued. Queued now if the process
---! would have received it -- input when it is in front on its
---! seat, a broadcast it has not declared uninterest in -- which is
---! exactly what it would have got at its next yield had the work
---! not been sliced at all. (test_coop_yield.lua)
-if signal and signal[1] ~= nil then
-local wanted
-if isInput then
-wanted = (pid == inputFgPID)
-else
-wanted = not (p.signalInterest and not p.signalInterest[signal[1]])
-end
-if wanted then enqueueSignal(p, table.unpack(signal, 1, signal.n)) end
-end
-elseif p.sigTail >= p.sigHead then
---! ...and THIS tick's signal goes on the tail, by the same rule as
---! the sliced case above. It was dropped: with a backlog, the
---! process got the head and the key typed at that moment
---! vanished. Any slow step that left something queued (keys typed
---! while a package installed) made the next few keys disappear --
---! cluster-setup on the headless machine lost an Enter at one
---! prompt and an "n" at the next box this way (2026-10-10).
---! (test_coop_yield.lua)
-if signal and signal[1] ~= nil then
-local wanted
-if isInput then
-wanted = (pid == inputFgPID)
-else
-wanted = not (p.signalInterest and not p.signalInterest[signal[1]])
-end
-if wanted then enqueueSignal(p, table.unpack(signal, 1, signal.n)) end
-end
-resumeData = p.signals[p.sigHead]
-p.signals[p.sigHead] = nil
-p.sigHead = p.sigHead + 1
-elseif isInput then
-if pid == inputFgPID then
-resumeData = signal
-end
-else
-resumeData = signal
-end
---! PREEMPTION DOES NOT HAPPEN ON OPENCOMPUTERS. Everything below
---! hangs off debug.sethook, and OC's sandbox does not export it:
---! machine.lua's `debug = {` table is exactly getinfo, traceback,
---! getlocal and getupvalue. The machine keeps sethook for its own
---! "too long without yielding" deadline and does not hand guest code
---! a way to disarm that. So `debug.sethook` is nil, the guard below
---! is false, and no budget is ever armed.
---!
---! The comment that follows was written believing otherwise: it said
---! the hook was available "on every Lua version OC ships" and that
---! the wall-clock fallback therefore worked here. The reasoning about
---! yielding across a C boundary is correct and worth keeping; the
---! conclusion drawn from it is not.
---!
---! What actually bounds a runaway process on OC is the machine
---! watchdog, which kills the WHOLE COMPUTER rather than the process
---! -- which is precisely the "blast radius" this code was written to
---! shrink, and does not. The preemptCrumb breadcrumb below still
---! earns its keep for exactly that reason: on OC the watchdog reboot
---! IS the outcome, so a note naming the culprit is the only thing
---! that survives to explain it -- except that it too is only written
---! from inside the hook, so it never fires either.
---!
---! Kept rather than deleted: it is correct on any host that does
---! export sethook (every off-box test run, and the suite exercises
---! it), and TOS is not exclusively an OC target in principle. But
---! nothing may describe this as a live guarantee. (test_sethook_absent.lua)
-local PROC_WALL_BUDGET = 0.5
-local budget = (p.cpuBudget == nil) and PROC_WALL_BUDGET or p.cpuBudget
-local hookInstalled = false
-local hookFired = false
-if budget ~= math.huge and type(debug) == "table" and debug.sethook then
-local deadline = startTime + budget
-local ok2 = pcall(debug.sethook, co, function()
-if computer.uptime() > deadline then
-if not hookFired then
-hookFired = true
-p._preempted = true
-preemptCrumb(p)
-pcall(debug.sethook, starveHook, "", 1)
-end
-error("scheduler: process exceeded wall-clock budget (" ..
-budget .. "s)", 0)
-end
-end, "", 10000)
-if ok2 then hookInstalled = true end
-end
-local ok, result
-if resumeData then
-ok, result = coroutine.resume(co, table.unpack(resumeData, 1, resumeData.n or #resumeData))
-else
-ok, result = coroutine.resume(co)
-end
-if hookInstalled then
-pcall(debug.sethook, co)
-end
-if hookFired then
-clearPreemptCrumb()
-end
-p.cpuTime = p.cpuTime + (computer.uptime() - startTime)
-p.lastRun = computer.uptime()
-if not ok then
-p.state = STATE.DEAD
-p.error = tostring(result)
-invalidateRunnable()
-elseif coroutine.status(co) == "dead" then
-p.state = STATE.DEAD
-invalidateRunnable()
-else
-p.state = p.tsr and STATE.TSR or STATE.READY
-end
-currentPID = nil
-end
-end
-end
-local okEv, evMod = nil, nil
-for pid, p in pairs(processes) do
-if p.state == STATE.DEAD then
-if p.coroutine then p.coroutine = nil end
-if not p._purged then
-p._purged = true
-if okEv == nil then okEv, evMod = pcall(require, "kernel.event") end
-if okEv and type(evMod) == "table" and evMod.purgeOwner then
-evMod.purgeOwner(pid)
-end
-end
-end
-end
-local deadPIDs = {}
-for pid, p in pairs(processes) do
-if p.state == STATE.DEAD then deadPIDs[#deadPIDs + 1] = pid end
-end
-if #deadPIDs > 3 then
-table.sort(deadPIDs)
-for i = 1, #deadPIDs - 3 do
-processes[deadPIDs[i]] = nil
-end
-end
-for dIdx, fgPid in pairs(displayForeground) do
-if not processes[fgPid] or processes[fgPid].state == STATE.DEAD then
-local deadP = processes[fgPid]
-if deadP and deadP.parent and processes[deadP.parent]
-and processes[deadP.parent].state ~= STATE.DEAD
-and processes[deadP.parent].display == dIdx then
-displayForeground[dIdx] = deadP.parent
-else
-displayForeground[dIdx] = nil
-end
-end
-end
-end
---! A no-op outside a process. It asked coroutine.isyieldable(), which is
---! TRUE in kernel context on OpenComputers (see proc.inProcess), so a
---! kernel-context call yielded to the HOST and the signal that resumed it
---! was thrown away. (test_inprocess_callers.lua)
-function proc.yield()
-if proc.inProcess() then
-return coroutine.yield()
-end
-end
---! Outside a process there is no scheduler to yield to. The isyieldable()
---! test sent a kernel-context sleep -- os.sleep in an rc.d service's start
---! code -- to the host, which resumed it with whatever signal came next
---! (on an idle machine, not for a long time) and dropped that signal. It
---! waits in bounded slices now, pumping kernel.event when it is loaded so
---! listeners and timers still run: net.waitFor's answer to the same
---! question. (test_inprocess_callers.lua)
-function proc.sleep(seconds)
-local deadline = computer.uptime() + (tonumber(seconds) or 0)
-if proc.inProcess() then
-while computer.uptime() < deadline do coroutine.yield() end
+
+local al,aq,am,ar,as,at="string","key_down","number","Permission denied","kernel.event","suspended"local V=require("computer")local R={}
+local T={RUNNING="running",READY="ready",SLEEPING="sleeping",TSR="tsr",DEAD="dead"}local S={}local aa=0;local af=0;local U=nil;local W=nil;local X={}
+local au={key_down=true,key_up=true,clipboard=true,touch=true,drag=true,drop=true,scroll=true}local ag=15;local av=16;local Y={}local ab=0
+local function aw(d,a,b,c)if type(a)~=al then return end;local e=Y[a]
+if not e then if ab>=av then
+Y,ab={},0 end;e={codes={},chars={},at=0}Y[a]=e;ab=ab+1 end;local f=V.uptime()
+if e.at>0 and f-e.at>ag then e.codes,e.chars={},{}end;e.at=f;local g=(d==aq)or nil
+if type(c)==am then e.codes[c]=g end;if type(b)==am and b>0 then e.chars[b]=g end end
+function R.keyDown(a,b)local c,d
+if type(a)==am then c=a elseif type(a)==al and a~=""then
+local g,h=pcall(utf8.codepoint,a,1)if not g then return false end;c,d=h,true else return false end;local f=V.uptime()
+local function e(g)if not g or(g.at>0 and f-g.at>ag)then return
+false end;return
+(d and g.chars or g.codes)[c]==true end;if type(b)=="table"then
+for h,g in ipairs(b)do if e(Y[g])then return true end end;return false end;for h,g in pairs(Y)do
+if e(g)then return true end end;return false end;R.KEY_STALE=ag;local ah=nil;local function ax()if ah==nil then
+local a,b=pcall(require,"kernel.screen")ah=a and b or false end
+return ah or nil end;local an=nil
+local ai=true;local function Z()ai=true end;local _=nil
+function R.withListener(a,b,...)local f=_;_=a;local g,e,h,i,j=pcall(b,...)_=f;if not g then
+error(e,0)end;return e,h,i,j end;function R.genOf(a)local b=S[a]return b and b.gen or nil end
+local function aj()if
+U then return U end;if _ then return _ end;return nil end
+local function ay()local a={}
+for c,d in pairs(S)do if d.state~=T.DEAD then a[#a+1]=c end end;local b={}for d,c in ipairs(a)do b[c]=S[c].priority or 5 end
+table.sort(a,function(c,d)return
+b[c]<b[d]end)an=a;ai=false end
+local function ao(a)if type(a)~="table"then return nil end;local b={}local c=false
+for d,e in pairs(a)do if
+type(d)==am and type(e)==al then b[e]=true;c=true elseif type(d)==al and e==true then
+b[d]=true;c=true end end;return c and b or nil end
+function R.spawn(b,c,a)a=a or{}repeat aa=aa+1 until S[aa]==nil;local f=aa;af=af+1;local o=af
+local p=coroutine.create(c)local d=U and S[U]or nil;local g=(a.inherit~=false)
+local h=a.principal;local i=a.token;local j=a.cwd;local k=a.stdin;local l=a.stdout;local m=a.stderr;local n=a.display
+if
+g and d then h=h or d.principal;i=i or d.token;j=j or d.cwd;k=k or d.stdin;l=
+l or d.stdout;m=m or d.stderr;n=n or d.display end;local e={}
+if a.caps then for q,r in pairs(a.caps)do e[q]=r end elseif g and d and d.caps then for q,r in
+pairs(d.caps)do e[q]=r end end;if g and d then local q=d.caps or{}
+for r in pairs(e)do if not q[r]then e[r]=nil end end end
+S[f]={pid=f,gen=o,name=b or("proc_"..f),coroutine=p,state=T.READY,tsr=
+a.tsr or false,priority=a.priority or 5,source=a.source or"user",created=V.uptime(),lastRun=0,cpuTime=0,cpuBudget=a.cpuBudget,signalInterest=ao(a.signalInterest),background=a.background,bgSince=
+nil,bgTicks=0,signals={},sigHead=1,sigTail=0,env={},parent=U,principal=h,token=i,caps=e,cwd=j or"/",stdin=k,stdout=l,stderr=m,display=n}Z()return f end;local az=0.05
+local function ac()
+if coroutine.isyieldable then return coroutine.isyieldable()end;local a,b=coroutine.running()if b==true then return false end
+return a~=nil end
+function R.yieldCooperative()local a=U and S[U]if not a then return false end
+if not ac()then return false end;if V.uptime()- (a._resumeStart or 0)<az then return
+false end;a._coopYield=true
+coroutine.yield()return true end;R._canYield=ac;function R.inProcess()
+return U~=nil and S[U]~=nil and ac()end
+function R.pause(a)local b=U and S[U]if not b or not ac()then
+return false end
+local c=V.uptime()+ (tonumber(a)or 0)
+repeat b._coopYield=true;coroutine.yield()until V.uptime()>=c;return true end
+function R.setSignalInterest(a)local b=U and S[U]
+if not b then return false,"no current process"end;b.signalInterest=ao(a)return true end
+function R.currentSession()local a=R.current()return a and a.principal or nil end
+function R.currentToken()local a=R.current()return a and a.token or nil end;function R.current()return U and S[U]or nil end
+function R.get(a)return S[a]end
+function R.list()local a={}
+for c,b in pairs(S)do
+if b.state~=T.DEAD then
+a[#a+1]={pid=b.pid,name=b.name,state=b.state,tsr=b.tsr,priority=b.priority,cpuTime=b.cpuTime,source=b.source,parent=b.parent,user=
+b.principal and b.principal.user or nil,caps=(function()if
+type(b.caps)~="table"then return nil end;local d={}for e,f in pairs(b.caps)do d[e]=f end
+return d end)(),cwd=b.cwd,display=b.display,sigDropped=
+b.sigDropped or 0}end end
+table.sort(a,function(c,d)return c.pid<d.pid end)return a end
+local function ad(a,b)
+local c=a.principal and a.principal.tier or 0;if c>=3 then return true end
+local d=a.principal and a.principal.user;local e=b.principal and b.principal.user;if d==nil or e==nil then
 return
-end
-while computer.uptime() < deadline do
-local slice = math.min(0.05, deadline - computer.uptime())
-local E = package.loaded["kernel.event"]
-if type(E) == "table" and type(E.pull) == "function" then
-E.pull(slice)
-else
-computer.pullSignal(slice)
-end
-end
-end
-function proc.count()
-local alive = 0
-for _, p in pairs(processes) do
-if p.state ~= STATE.DEAD then alive = alive + 1 end
-end
-return alive
-end
-proc.STATE = STATE
-return proc
+c>=2 and a.display~=nil and a.display==b.display end;if c>=2 then return
+d==e or a.display==b.display end;return d==e end
+function R.kill(a,b)local c=S[a]if not c then return false,"No such process"end;local e=aj()
+if
+not e then if not(type(b)=="table"and b.kernel)then return false,
+"Permission denied (no caller)"end else
+local f=S[e]if f and not ad(f,c)then return false,ar end end;c.state=T.DEAD;Z()if a==W then
+if c.parent and S[c.parent]and
+S[c.parent].state~=T.DEAD then W=c.parent else R.cycleForeground()end end
+for f,g in pairs(X)do if g==a then
+if c.parent and
+S[c.parent]and S[c.parent].state~=T.DEAD and
+S[c.parent].display==f then X[f]=c.parent else X[f]=nil end end end;local d=require(as)d.removeSource("proc:"..a)if d.purgeOwner then
+d.purgeOwner(a)end;c._purged=true;return true end
+function R.goTSR(a)local d=a or U;local b=S[d]if not b then return false end;local c=aj()
+if a and c and a~=c then
+local e=S[c]if e and not ad(e,b)then return false,ar end end;b.tsr=true;b.state=T.TSR;return true end;local aA=256
+local function aB(a)return a.sigTail-a.sigHead+1 end
+local function ae(a,...)
+if a.sigHead==nil then a.sigHead,a.sigTail=1,#a.signals end
+if aB(a)>=aA then a.signals[a.sigHead]=nil;a.sigHead=a.sigHead+1;a.sigDropped=(
+a.sigDropped or 0)+1 end;a.sigTail=a.sigTail+1
+a.signals[a.sigTail]=table.pack(...)
+if a.sigHead>256 and a.sigHead<=a.sigTail+1 then local c={}local b=1;for d=a.sigHead,a.sigTail
+do c[b]=a.signals[d]b=b+1 end;a.signals=c
+a.sigTail=b-1;a.sigHead=1 elseif a.sigHead>a.sigTail then a.signals={}a.sigHead,a.sigTail=1,0 end end
+function R.signal(a,...)local b=S[a]
+if not b or b.state==T.DEAD then return false end;local c=aj()
+if not c then return false,"Permission denied (no caller)"end
+if a~=c then local d=S[c]if d and not ad(d,b)then return false,ar end end;ae(b,...)return true end
+function R.signalKernel(a,...)local b=S[a]
+if not b or b.state==T.DEAD then return false end;ae(b,...)return true end
+function R.setForeground(a,b,c)
+if c and c.kernel then if b then X[b]=a else W=a end;return true end;local d=U and S[U]or nil;if d and b then
+local e=d.principal and d.principal.tier or 0
+if e<3 and d.display~=b then return false,"Permission denied (wrong seat)"end end
+if
+d and a then local e=S[a]
+local f=e~=nil and e.parent==U and d.display~=nil and e.display==
+d.display;if e and not f and not ad(d,e)then
+return false,"Permission denied (not your process)"end end;if b then X[b]=a else W=a end;return true end
+function R.getForeground(a)if a then return X[a]or W end;return W end
+function R.cycleForeground()local a={}
+for c,d in pairs(S)do if d.state~=T.DEAD then a[#a+1]=c end end;table.sort(a)if#a==0 then W=nil;return end;local b=1;for c,d in ipairs(a)do
+if d==W then b=c;break end end;b=(b%#a)+1;W=a[b]return W end;local ak="/var/crash/preempt.txt"function R.preemptionAvailable()
+return type(debug)=="table"and
+type(debug.sethook)=="function"end
+local function aC(a)
+pcall(function()
+local b=_G._TOS and _G._TOS.fs;if not b or not b.writeFile then return end
+pcall(b.makeDirectory,"/var/crash")
+b.writeFile(ak,"pid="..
+tostring(a.pid)..
+" name="..
+tostring(a.name or"?")..
+" user="..
+tostring(a.principal and
+a.principal.user or"?")..
+" uptime="..
+
+tostring(V.uptime())..
+"\n"..
+"This process exceeded its CPU budget and trapped the preemption\n".."error; if the machine then rebooted via the OC watchdog, it was\n"..
+"the likely cause.\n")end)end;local function aD()
+pcall(function()local a=_G._TOS and _G._TOS.fs;if a and a.remove and a.exists and
+a.exists(ak)then a.remove(ak)end end)end;local function aE()
+error("scheduler: preempted (wall-clock budget exceeded)",0)end;R.BG_DIVISOR=2;R.BG_GRACE=30
+function R.bgShouldResume(c,a,b)a=
+a or 0;b=b or 0;if c=="freeze"then return false,"frozen"end;if
+c~="always"and a>=R.BG_GRACE then return false,"frozen"end;return(b%
+R.BG_DIVISOR)==0,"drowsy"end
+local function ap(a,b,c)if not a or not a.background then return end
+if b then
+a.bgSince,a.bgTicks=nil,0 elseif not a.bgSince then a.bgSince,a.bgTicks=c or V.uptime(),0 end end
+function R.bgState(a,b)local c=S[a]if
+not c or not c.background or not c.bgSince then return"live"end
+local e,d=R.bgShouldResume(c.background,
+(b or V.uptime())-c.bgSince,c.bgTicks)return d end
+local function aF(a,b,c)if not a.background then return false end
+local d=a.display and X[a.display]or nil;if
+b==d or(not a.display and b==W)or b==c then ap(a,true)return false end
+if
+(a.sigTail or 0)>= (a.sigHead or 1)then return false end;ap(a,false)
+local e=R.bgShouldResume(a.background,V.uptime()- (a.bgSince or 0),a.bgTicks)a.bgTicks=a.bgTicks+1;return not e end
+local function aG(a,b,c)if not a.signalInterest then return false end
+if a._coopYield then return false end;if c or not b or b[1]==nil then return false end;if a.sigHead==nil then a.sigHead,a.sigTail=1,
+#a.signals end;if
+a.sigTail>=a.sigHead then return false end
+return not a.signalInterest[b[1]]end
+function R.tick(a)if ai then ay()end;local g=an;local b=a and a[1]and au[a[1]]if b and(
+a[1]==aq or a[1]=="key_up")then
+aw(a[1],a[2],a[3],a[4])end;local d=W
+if b and a[2]then local h=ax()
+if h then local j;local i=a[1]
+if i==aq or i==
+"key_up"or i=="clipboard"then
+j=h.displayForKeyboard(a[2])elseif
+i=="touch"or i=="drag"or i=="drop"or i=="scroll"then j=h.displayForScreen(a[2])end;if j then d=X[j]or W end end end
+for i,h in ipairs(g)do local j=S[h]
+if j and j.state~=T.DEAD then local k=j.coroutine
+local l=coroutine.status(k)
+if l=="dead"then j.state=T.DEAD;Z()elseif l==at and aG(j,a,b)then elseif l==at and aF(j,h,d)then elseif l==at then U=h
+j.state=T.RUNNING;local n=V.uptime()j._resumeStart=n;local m=nil;if j.sigHead==nil then
+j.sigHead,j.sigTail=1,#j.signals end
+if j._coopYield then j._coopYield=false
+if a and a[1]~=nil then local u
+if b then u=(
+h==d)else u=not
+(j.signalInterest and not j.signalInterest[a[1]])end;if u then ae(j,table.unpack(a,1,a.n))end end elseif j.sigTail>=j.sigHead then
+if a and a[1]~=nil then local u;if b then u=(h==d)else
+u=not(j.signalInterest and not
+j.signalInterest[a[1]])end;if u then
+ae(j,table.unpack(a,1,a.n))end end;m=j.signals[j.sigHead]j.signals[j.sigHead]=nil;j.sigHead=j.sigHead+
+1 elseif b then if h==d then m=a end else m=a end;local t=0.5
+local o=(j.cpuBudget==nil)and t or j.cpuBudget;local s=false;local p=false
+if o~=math.huge and type(debug)=="table"and
+debug.sethook then local u=n+o
+local v=pcall(debug.sethook,k,function()
+if V.uptime()>u then
+if not p then p=true
+j._preempted=true;aC(j)pcall(debug.sethook,aE,"",1)end
+error("scheduler: process exceeded wall-clock budget ("..o.."s)",0)end end,"",10000)if v then s=true end end;local q,r
+if m then
+q,r=coroutine.resume(k,table.unpack(m,1,m.n or#m))else q,r=coroutine.resume(k)end;if s then pcall(debug.sethook,k)end;if p then aD()end;j.cpuTime=
+j.cpuTime+ (V.uptime()-n)
+j.lastRun=V.uptime()
+if not q then j.state=T.DEAD;j.error=tostring(r)Z()elseif
+coroutine.status(k)=="dead"then j.state=T.DEAD;Z()else j.state=j.tsr and T.TSR or T.READY end;U=nil end end end;local f,e=nil,nil
+for i,h in pairs(S)do
+if h.state==T.DEAD then if h.coroutine then h.coroutine=nil end;if not
+h._purged then h._purged=true;if f==nil then f,e=pcall(require,as)end
+if f and
+type(e)=="table"and e.purgeOwner then e.purgeOwner(i)end end end end;local c={}
+for h,i in pairs(S)do if i.state==T.DEAD then c[#c+1]=h end end
+if#c>3 then table.sort(c)for h=1,#c-3 do S[c[h]]=nil end end
+for h,i in pairs(X)do
+if not S[i]or S[i].state==T.DEAD then local j=S[i]if
+j and j.parent and
+S[j.parent]and S[j.parent].state~=T.DEAD and S[j.parent].display==h then
+X[h]=j.parent else X[h]=nil end end end end
+function R.yield()if R.inProcess()then return coroutine.yield()end end
+function R.sleep(a)local b=V.uptime()+ (tonumber(a)or 0)
+if
+R.inProcess()then while V.uptime()<b do coroutine.yield()end;return end
+while V.uptime()<b do local d=math.min(0.05,b-V.uptime())
+local c=package.loaded[as]if type(c)=="table"and type(c.pull)=="function"then
+c.pull(d)else V.pullSignal(d)end end end;function R.count()local a=0
+for c,b in pairs(S)do if b.state~=T.DEAD then a=a+1 end end;return a end;R.STATE=T;return R

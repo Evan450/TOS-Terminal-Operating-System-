@@ -1,289 +1,112 @@
-local ui = {}
-local _ustr = nil
-local function ustrLib()
-if _ustr == nil then
-local ok, m = pcall(require, "kernel.ustr")
-_ustr = (ok and m) or false
-end
-return _ustr or nil
-end
-local function ufit(s, cols)
-local u = ustrLib()
-if u then return u.fit(s, cols) end
-return tostring(s or ""):sub(1, cols)
-end
-local function uwidth(s)
-local u = ustrLib()
-if u then return u.width(s) end
-return #tostring(s or "")
-end
-function ui.tileGrid(region, opts)
-opts = opts or {}
-local tw = math.max(6, opts.tileW or 14)
-local th = math.max(3, opts.tileH or 4)
-local gx = opts.gapX or 2
-local gy = opts.gapY or 1
-local cols = math.max(1, math.floor((region.w + gx) / (tw + gx)))
-local rows = math.max(1, math.floor((region.h + gy) / (th + gy)))
-local usedW = cols * tw + (cols - 1) * gx
-local ox = region.x + math.max(0, math.floor((region.w - usedW) / 2))
-return { cols = cols, rows = rows, perPage = cols * rows,
-tileW = tw, tileH = th, gapX = gx, gapY = gy,
-ox = ox, oy = region.y }
-end
-function ui.tileRect(g, slot)
-if type(slot) ~= "number" or slot < 1 or slot > g.perPage then return nil end
-local i = slot - 1
-local c = i % g.cols
-local r = math.floor(i / g.cols)
-return { x = g.ox + c * (g.tileW + g.gapX),
-y = g.oy + r * (g.tileH + g.gapY),
-w = g.tileW, h = g.tileH }
-end
-function ui.tileHit(g, x, y)
-for slot = 1, g.perPage do
-local r = ui.tileRect(g, slot)
-if r and x >= r.x and x < r.x + r.w
-and y >= r.y and y < r.y + r.h then
-return slot
-end
-end
-return nil
-end
-function ui.cycle(values, current, dir)
-if type(values) ~= "table" or #values == 0 then return current end
-local idx = 0
-for i, v in ipairs(values) do
-if v == current then idx = i; break end
-end
-if idx == 0 then return values[1] end
-idx = idx + (dir or 1)
-if idx > #values then idx = 1 elseif idx < 1 then idx = #values end
-return values[idx]
-end
-local EXT_GLYPHS = {
-lua = "♦",
-txt = "≡", md = "≡", log = "≡",
-man = "¶",
-cfg = "§", conf = "§", json = "§",
-dat = "▓", tcz = "▓", bak = "▓", bin = "▓",
-}
-function ui.fileGlyph(name, isDir)
-if isDir then
-return (name == "..") and "«" or "■"
-end
-local ext = type(name) == "string" and name:match("%.(%w+)$") or nil
-return (ext and EXT_GLYPHS[ext:lower()]) or "·"
-end
-function ui.drawTile(D, th, r, opts)
-opts = opts or {}
-local bg = opts.selected and (th.sel_bg or th.highlight) or (th.panel_bg or th.bg)
-local fg = opts.selected and (th.sel_fg or th.bg) or (opts.dim and (th.dim or th.fg) or th.fg)
-local frame = opts.selected and (th.highlight or th.title) or (th.border or th.dim or th.fg)
-local interior = r.w - 2
-D.set(r.x, r.y, "┌" .. string.rep("─", interior) .. "┐", frame, bg)
-for row = 1, r.h - 2 do
-D.set(r.x, r.y + row, "│" .. string.rep(" ", interior) .. "│", frame, bg)
-end
-D.set(r.x, r.y + r.h - 1, "└" .. string.rep("─", interior) .. "┘", frame, bg)
-local gy = r.y + r.h - 3
-local ly = r.y + r.h - 2
-if gy > r.y then
-D.set(r.x + math.floor(r.w / 2), gy, opts.glyph or "•",
-opts.selected and fg or (th.title or th.fg), bg)
-end
-local label = ufit(tostring(opts.label or ""), interior)
-local off = math.max(0, math.floor((interior - uwidth(label)) / 2))
-D.set(r.x + 1 + off, ly, label, fg, bg)
-end
-function ui.railText(W, parts)
-local segs, spans = {}, {}
-local col = 1
-local function fill(n)
-if n > 0 then segs[#segs + 1] = string.rep("─", n); col = col + n end
-end
-for _, p in ipairs(parts or {}) do
-local tabbed = p.label ~= nil
-local label = tostring(p.label or p.text or "")
-local lw = uwidth(label)
-if p.at and p.at > col then fill(p.at - col) end
-if col == 1 then fill(1) end
-local cellW = lw + (tabbed and 4 or 2)
-if col + cellW - 1 > W then
-local avail = W - col - (tabbed and 4 or 2)
-if avail < 1 then break end
-label = ufit(label, avail)
-lw = uwidth(label)
-cellW = lw + (tabbed and 4 or 2)
-end
-if tabbed then
-segs[#segs + 1] = "┤ " .. label .. " ├"
-spans[#spans + 1] = { s = col + 2, e = col + 1 + lw, label = label }
-else
-segs[#segs + 1] = " " .. label .. " "
-spans[#spans + 1] = { s = col + 1, e = col + lw, label = label }
-end
-col = col + cellW
-end
-fill(W - col + 1)
-return table.concat(segs), spans
-end
-function ui.drawRail(D, th, y, W, parts, opts)
-opts = opts or {}
-local line, spans = ui.railText(W, parts)
-local bg = opts.bg or th.bg
-D.set(1, y, line, opts.fg or th.dim or th.fg, bg)
-local lfg = opts.labelFg or th.fg
-for _, sp in ipairs(spans) do
-D.set(sp.s, y, sp.label, lfg, bg)
-end
-return spans
-end
-function ui.drawRampBar(D, th, y, W, left, right, fg, bg)
-fg = fg or th.statusbar_fg or th.bar_fg or th.fg
-bg = bg or th.statusbar_bg or th.bar_bg or th.bg
-local cap = th.dim or fg
-D.set(1, y, "▓▒░", cap, bg)
-if W > 6 then D.set(W - 2, y, "░▒▓", cap, bg) end
-local lt = ufit(tostring(left or ""), math.max(0, W - 9))
-local lw = uwidth(lt)
-local labelEnd = 3
-if lw > 0 then
-D.set(5, y, " " .. lt .. " ", fg, bg)
-labelEnd = 5 + lw + 1
-D.set(4, y, "░", cap, bg)
-end
-local rightStart = (W > 6) and (W - 2) or (W + 1)
-if right and #right > 0 then
-local rt = " " .. right .. " "
-local rx = W - 3 - #rt
-if rx > 5 + lw + 2 then
-D.set(rx, y, rt, fg, bg)
-local fx = rx + #rt
-if fx <= W - 3 then D.fill(fx, y, W - 2 - fx, 1, "░", cap, bg) end
-rightStart = rx
-end
-end
-local fx = labelEnd + 1
-if fx <= rightStart - 1 then D.fill(fx, y, rightStart - fx, 1, "░", cap, bg) end
-end
-function ui.tabChips(tabs, activeIdx, labelW)
-labelW = labelW or 10
-local chips = {}
-for i, tab in ipairs(tabs or {}) do
-local label = tostring(tab.label or "?")
-label = ufit(label, labelW)
-local state = "idle"
-if i == activeIdx then state = "active"
-elseif tab.live or (tab.type == "edit" and tab.modified) then state = "busy" end
-local text = (state == "busy") and ("[" .. label .. "]") or (" " .. label .. " ")
-chips[#chips + 1] = { text = text, state = state, idx = i }
-end
-return chips
-end
-function ui.chipSpans(chips, rightEnd, leftMin)
-leftMin = leftMin or 1
-local keep = {}
-for i, c in ipairs(chips or {}) do keep[i] = c end
-local total = #keep
-local function totalW(list)
-local w = 0
-for i, c in ipairs(list) do w = w + uwidth(c.text) + (i > 1 and 1 or 0) end
-return w
-end
-while #keep > 1 and totalW(keep) > (rightEnd - leftMin + 1) do
-if keep[1].state == "active" then table.remove(keep, 2)
-else table.remove(keep, 1) end
-end
-if #keep == 1 and totalW(keep) > (rightEnd - leftMin + 1) then
-return {}, total
-end
-local spans = {}
-local x = rightEnd - totalW(keep) + 1
-for i, c in ipairs(keep) do
-if i > 1 then x = x + 1 end
-local w = uwidth(c.text)
-spans[#spans + 1] = { s = x, e = x + w - 1, idx = c.idx, text = c.text, state = c.state }
-x = x + w
-end
-return spans, total - #keep
-end
-function ui.fitChips(tabs, activeIdx, rightEnd, leftMin)
-local spans, hidden
-for _, lw in ipairs({ 10, 8, 6, 5 }) do
-local chips = ui.tabChips(tabs, activeIdx, lw)
-spans, hidden = ui.chipSpans(chips, rightEnd, leftMin)
-if hidden == 0 then return spans end
-if lw == 5 then
-local moreText = "«" .. hidden
-spans, hidden = ui.chipSpans(chips, rightEnd, leftMin + #moreText + 3)
-moreText = "«" .. hidden
-local s = ((spans[1] and spans[1].s) or (rightEnd - #moreText + 1)) - #moreText - 1
-if s >= leftMin then
-table.insert(spans, 1,
-{ s = s, e = s + #moreText - 1, idx = 0, text = moreText, state = "more" })
-end
-return spans
-end
-end
-return spans or {}
-end
-function ui.menuSpans(menuDefs)
-local spans, x = {}, 2
-for i, m in ipairs(menuDefs or {}) do
-local cell = " " .. tostring(m.label or "") .. " "
-spans[#spans + 1] = { s = x, e = x + #cell - 1, idx = i, text = cell }
-x = x + #cell + 1
-end
-return spans
-end
-function ui.drawBar(D, th, y, W, left, right, fg, bg)
-fg = fg or th.bar_fg or th.fg
-bg = bg or th.bar_bg or th.bg
-D.fill(1, y, W, 1, " ", fg, bg)
-if left and #left > 0 then D.set(1, y, ufit(left, W), fg, bg) end
-if right and #right > 0 and #right < W then
-D.set(W - #right, y, right, fg, bg)
-end
-end
-function ui.drawSettingRow(D, th, y, x, w, row, selected)
-local bg = selected and (th.sel_bg or th.highlight) or th.bg
-local fg = selected and (th.sel_fg or th.bg) or th.fg
-D.fill(x, y, w, 1, " ", fg, bg)
-if row.kind == "header" then
-D.set(x, y, tostring(row.label or ""):sub(1, w), th.title or th.fg, th.bg)
-elseif row.kind == "info" then
-D.set(x + 1, y, tostring(row.text or ""):sub(1, w - 1), th.dim or th.fg, th.bg)
-elseif row.kind == "toggle" then
-local mark = row.value and "[x] " or "[ ] "
-D.set(x + 1, y, (mark .. tostring(row.label or "")):sub(1, w - 1), fg, bg)
-elseif row.kind == "choice" then
-D.set(x + 1, y, tostring(row.label or ""):sub(1, w - 1), fg, bg)
-local val = "« " .. tostring(row.value or "") .. " »"
-local vx = x + w - #val - 1
-if vx > x + 1 then
-D.set(vx, y, val, selected and fg or (th.highlight or th.fg), bg)
-end
-elseif row.kind == "button" then
-D.set(x + 1, y, ("[ " .. tostring(row.label or "") .. " ]"):sub(1, w - 1), fg, bg)
-end
-end
-function ui.rowSelectable(row)
-return row and (row.kind == "toggle" or row.kind == "choice"
-or row.kind == "button")
-end
-function ui.nextSelectable(rows, sel, dir)
-local n = sel
-repeat
-n = n + dir
-if n < 1 or n > #rows then return sel end
-until ui.rowSelectable(rows[n])
-return n
-end
-function ui.firstSelectable(rows)
-for i, r in ipairs(rows) do
-if ui.rowSelectable(r) then return i end
-end
-return nil
-end
-return ui
+local g={}local j=nil
+local function k()if j==nil then local a,b=pcall(require,"kernel.ustr")j=(a and b)or
+false end;return j or nil end;local function i(a,b)local c=k()if c then return c.fit(a,b)end;return
+tostring(a or""):sub(1,b)end
+local function h(a)local b=k()if b then return
+b.width(a)end;return#tostring(a or"")end
+function g.tileGrid(b,a)a=a or{}local e=math.max(6,a.tileW or 14)
+local m=math.max(3,a.tileH or 4)local c=a.gapX or 2;local f=a.gapY or 1
+local d=math.max(1,math.floor((b.w+c)/ (e+c)))
+local n=math.max(1,math.floor((b.h+f)/ (m+f)))local o=d*e+ (d-1)*c;local p=b.x+
+math.max(0,math.floor((b.w-o)/2))return
+{cols=d,rows=n,perPage=d*n,tileW=e,tileH=m,gapX=c,gapY=f,ox=p,oy=b.y}end
+function g.tileRect(a,b)
+if type(b)~="number"or b<1 or b>a.perPage then return nil end;local d=b-1;local e=d%a.cols;local f=math.floor(d/a.cols)return
+{x=a.ox+e*
+(a.tileW+a.gapX),y=a.oy+f* (a.tileH+a.gapY),w=a.tileW,h=a.tileH}end
+function g.tileHit(a,b,c)for d=1,a.perPage do local e=g.tileRect(a,d)
+if e and b>=e.x and b<e.x+e.w and c>=
+e.y and c<e.y+e.h then return d end end;return nil end
+function g.cycle(a,b,c)if type(a)~="table"or#a==0 then return b end;local d=0;for e,f in
+ipairs(a)do if f==b then d=e;break end end;if d==0 then return a[1]end;d=d+
+(c or 1)if d>#a then d=1 elseif d<1 then d=#a end;return a[d]end
+local l={lua="♦",txt="≡",md="≡",log="≡",man="¶",cfg="§",conf="§",json="§",dat="▓",tcz="▓",bak="▓",bin="▓"}
+function g.fileGlyph(a,b)
+if b then return(a=="..")and"«"or"■"end
+local c=type(a)=="string"and a:match("%.(%w+)$")or nil;return(c and l[c:lower()])or"·"end
+function g.drawTile(d,b,a,c)c=c or{}
+local e=c.selected and(b.sel_bg or b.highlight)or(
+b.panel_bg or b.bg)
+local n=c.selected and(b.sel_fg or b.bg)or(
+c.dim and(b.dim or b.fg)or b.fg)
+local m=c.selected and(b.highlight or b.title)or(b.border or b.dim or
+b.fg)local f=a.w-2
+d.set(a.x,a.y,"┌"..string.rep("─",f).."┐",m,e)for s=1,a.h-2 do
+d.set(a.x,a.y+s,"│"..string.rep(" ",f).."│",m,e)end
+d.set(a.x,a.y+a.h-1,"└"..
+string.rep("─",f).."┘",m,e)local o=a.y+a.h-3;local q=a.y+a.h-2;if o>a.y then
+d.set(a.x+math.floor(a.w/2),o,
+c.glyph or"•",c.selected and n or(b.title or b.fg),e)end
+local p=i(tostring(c.label or""),f)
+local r=math.max(0,math.floor((f-h(p))/2))d.set(a.x+1+r,q,p,n,e)end
+function g.railText(a,b)local d,e={},{}local c=1;local function f(m)
+if m>0 then d[#d+1]=string.rep("─",m)c=c+m end end
+for n,m in ipairs(b or{})do local q=m.label~=nil;local o=tostring(
+m.label or m.text or"")local p=h(o)if m.at and
+m.at>c then f(m.at-c)end;if c==1 then f(1)end;local r=p+
+(q and 4 or 2)
+if c+r-1 >a then local s=a-c- (q and 4 or 2)if s<
+1 then break end;o=i(o,s)p=h(o)r=p+ (q and 4 or 2)end
+if q then d[#d+1]="┤ "..o.." ├"
+e[#e+1]={s=c+2,e=c+1+p,label=o}else d[#d+1]=" "..o.." "e[#e+1]={s=c+1,e=c+p,label=o}end;c=c+r end;f(a-c+1)return table.concat(d),e end
+function g.drawRail(c,b,d,e,f,a)a=a or{}local o,m=g.railText(e,f)local n=a.bg or b.bg;c.set(1,d,o,
+a.fg or b.dim or b.fg,n)
+local p=a.labelFg or b.fg;for r,q in ipairs(m)do c.set(q.s,d,q.label,p,n)end;return m end
+function g.drawRampBar(c,d,e,a,n,m,f,b)
+f=f or d.statusbar_fg or d.bar_fg or d.fg
+b=b or d.statusbar_bg or d.bar_bg or d.bg;local o=d.dim or f;c.set(1,e,"▓▒░",o,b)if a>6 then
+c.set(a-2,e,"░▒▓",o,b)end
+local s=i(tostring(n or""),math.max(0,a-9))local p=h(s)local t=3;if p>0 then c.set(5,e," "..s.." ",f,b)t=5+p+1
+c.set(4,e,"░",o,b)end
+local q=(a>6)and(a-2)or(a+1)
+if m and#m>0 then local v=" "..m.." "local u=a-3-#v;if u>5+p+2 then
+c.set(u,e,v,f,b)local w=u+#v
+if w<=a-3 then c.fill(w,e,a-2-w,1,"░",o,b)end;q=u end end;local r=t+1;if r<=q-1 then c.fill(r,e,q-r,1,"░",o,b)end end
+function g.tabChips(b,c,a)a=a or 10;local d={}
+for f,e in ipairs(b or{})do
+local m=tostring(e.label or"?")m=i(m,a)local n="idle"if f==c then n="active"elseif e.live or
+(e.type=="edit"and e.modified)then n="busy"end
+local o=
+(n=="busy")and("["..m.."]")or(" "..m.." ")d[#d+1]={text=o,state=n,idx=f}end;return d end
+function g.chipSpans(c,b,a)a=a or 1;local d={}for o,p in ipairs(c or{})do d[o]=p end;local n=#d;local function f(o)local p=0
+for q,r in
+ipairs(o)do p=p+h(r.text)+ (q>1 and 1 or 0)end;return p end
+while#d>1 and
+f(d)> (b-a+1)do if d[1].state=="active"then table.remove(d,2)else
+table.remove(d,1)end end;if#d==1 and f(d)> (b-a+1)then return{},n end;local m={}local e=
+b-f(d)+1;for p,o in ipairs(d)do if p>1 then e=e+1 end;local q=h(o.text)
+m[#m+1]={s=e,e=e+q-1,idx=o.idx,text=o.text,state=o.state}e=e+q end
+return m,n-#d end
+function g.fitChips(c,d,a,b)local e,f
+for n,m in ipairs({10,8,6,5})do local o=g.tabChips(c,d,m)
+e,f=g.chipSpans(o,a,b)if f==0 then return e end
+if m==5 then local p="«"..f
+e,f=g.chipSpans(o,a,b+#p+3)p="«"..f;local q=
+((e[1]and e[1].s)or(a-#p+1))-#p-1;if q>=b then
+table.insert(e,1,{s=q,e=q+#p-1,idx=0,text=p,state="more"})end;return e end end;return e or{}end
+function g.menuSpans(a)local c,b={},2
+for d,e in ipairs(a or{})do
+local f=" "..tostring(e.label or"").." "c[#c+1]={s=b,e=b+#f-1,idx=d,text=f}b=b+#f+1 end;return c end
+function g.drawBar(f,d,m,e,n,a,b,c)b=b or d.bar_fg or d.fg
+c=c or d.bar_bg or d.bg;f.fill(1,m,e,1," ",b,c)
+if n and#n>0 then f.set(1,m,i(n,e),b,c)end;if a and#a>0 and#a<e then f.set(e-#a,m,a,b,c)end end
+function g.drawSettingRow(d,a,e,c,f,b,m)
+local n=m and(a.sel_bg or a.highlight)or a.bg;local o=m and(a.sel_fg or a.bg)or a.fg
+d.fill(c,e,f,1," ",o,n)
+if b.kind=="header"then
+d.set(c,e,tostring(b.label or""):sub(1,f),
+a.title or a.fg,a.bg)elseif b.kind=="info"then
+d.set(c+1,e,tostring(b.text or""):sub(1,f-1),
+a.dim or a.fg,a.bg)elseif b.kind=="toggle"then local p=b.value and"[x] "or"[ ] "
+d.set(c+1,e,(p..tostring(
+b.label or"")):sub(1,f-1),o,n)elseif b.kind=="choice"then
+d.set(c+1,e,tostring(b.label or""):sub(1,f-1),o,n)
+local p="« "..tostring(b.value or"").." »"local q=c+f-#p-1;if q>c+1 then
+d.set(q,e,p,m and o or(a.highlight or a.fg),n)end elseif b.kind=="button"then
+d.set(c+1,e,("[ "..
+tostring(b.label or"").." ]"):sub(1,f-1),o,n)end end
+function g.rowSelectable(a)return a and
+(a.kind=="toggle"or a.kind=="choice"or a.kind=="button")end;function g.nextSelectable(a,b,c)local d=b
+repeat d=d+c;if d<1 or d>#a then return b end until g.rowSelectable(a[d])return d end;function g.firstSelectable(a)for b,c in
+ipairs(a)do if g.rowSelectable(c)then return b end end
+return nil end;return g

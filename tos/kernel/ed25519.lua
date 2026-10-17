@@ -1,393 +1,117 @@
-local sha512 = require("kernel.sha512")
-local ed25519 = {}
-local yieldCoop
+local aQ="string"local av=require("kernel.sha512")local am={}local aD
 do
-local okP, procMod = pcall(require, "kernel.process")
-if okP and type(procMod) == "table" and type(procMod.yieldCooperative) == "function" then
-yieldCoop = procMod.yieldCooperative
-else
-yieldCoop = function() end
-end
-end
-local BN_BITS = 24
-local BN_BASE = 1 << BN_BITS
-local BN_MASK = BN_BASE - 1
-local function bnZero() return { 0 } end
-local function bnTrim(a)
-while #a > 1 and a[#a] == 0 do a[#a] = nil end
-return a
-end
-local function bnFromInt(n)
-local a = {}
-if n == 0 then return { 0 } end
-while n > 0 do a[#a + 1] = n & BN_MASK; n = n >> BN_BITS end
-return a
-end
-local function bnCmp(a, b)
-if #a ~= #b then return #a < #b and -1 or 1 end
-for i = #a, 1, -1 do
-if a[i] ~= b[i] then return a[i] < b[i] and -1 or 1 end
-end
-return 0
-end
-local function bnAdd(a, b)
-local out, carry = {}, 0
-local n = math.max(#a, #b)
-for i = 1, n do
-local s = (a[i] or 0) + (b[i] or 0) + carry
-out[i] = s & BN_MASK
-carry = s >> BN_BITS
-end
-if carry ~= 0 then out[n + 1] = carry end
-return bnTrim(out)
-end
-local function bnSub(a, b)
-local out, borrow = {}, 0
-for i = 1, #a do
-local s = a[i] - (b[i] or 0) - borrow
-if s < 0 then s = s + BN_BASE; borrow = 1 else borrow = 0 end
-out[i] = s
-end
-return bnTrim(out)
-end
-local function bnShl(a, n)
-if bnCmp(a, bnZero()) == 0 then return bnZero() end
-local limbShift, bitShift = n // BN_BITS, n % BN_BITS
-local out = {}
-for i = 1, limbShift do out[i] = 0 end
-local carry = 0
-for i = 1, #a do
-local v = (a[i] << bitShift) | carry
-out[limbShift + i] = v & BN_MASK
-carry = v >> BN_BITS
-end
-if carry ~= 0 then out[limbShift + #a + 1] = carry end
-return bnTrim(out)
-end
-local function bnMul(a, b)
-local out = {}
-for i = 1, #a + #b do out[i] = 0 end
-for i = 1, #a do
-local carry = 0
-local ai = a[i]
-if ai ~= 0 then
-for j = 1, #b do
-local t = out[i + j - 1] + ai * b[j] + carry
-out[i + j - 1] = t & BN_MASK
-carry = t >> BN_BITS
-end
-local k = i + #b
-while carry ~= 0 do
-local t = out[k] + carry
-out[k] = t & BN_MASK
-carry = t >> BN_BITS
-k = k + 1
-end
-end
-end
-return bnTrim(out)
-end
-local function bnBitLen(a)
-local top = a[#a]
-if top == 0 and #a == 1 then return 0 end
-local n = (#a - 1) * BN_BITS
-while top > 0 do n = n + 1; top = top >> 1 end
-return n
-end
-local function bnBit(a, i)
-local limb = a[(i // BN_BITS) + 1]
-if not limb then return 0 end
-return (limb >> (i % BN_BITS)) & 1
-end
-local function bnMod(a, m)
-if bnCmp(a, m) < 0 then return a end
-local r = bnZero()
-for i = bnBitLen(a) - 1, 0, -1 do
-r = bnShl(r, 1)
-if bnBit(a, i) == 1 then r = bnAdd(r, bnFromInt(1)) end
-if bnCmp(r, m) >= 0 then r = bnSub(r, m) end
-end
-return r
-end
-local function bnFromBytesLE(s)
-local a = bnZero()
-for i = #s, 1, -1 do
-a = bnShl(a, 8)
-a = bnAdd(a, bnFromInt(s:byte(i)))
-end
-return a
-end
-local function bnToBytesLE(a, n)
-local out = {}
-for i = 0, n - 1 do
-local byte = 0
-for b = 0, 7 do byte = byte | (bnBit(a, i * 8 + b) << b) end
-out[i + 1] = string.char(byte)
-end
-return table.concat(out)
-end
-local function bnToBitsMSB(a)
-local out = {}
-for i = bnBitLen(a) - 1, 0, -1 do out[#out + 1] = bnBit(a, i) end
-return out
-end
-local FE_OFF = { 0, 26, 51, 77, 102, 128, 153, 179, 204, 230 }
-local FE_BITS = { 26, 25, 26, 25, 26, 25, 26, 25, 26, 25 }
-local FE_POW = {}
-local FE_HALF = {}
-for i = 1, 10 do
-FE_POW[i] = 1 << FE_BITS[i]
-FE_HALF[i] = 1 << (FE_BITS[i] - 1)
-end
-local function feNew() return { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } end
-local function feCopy(f)
-return { f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10] }
-end
-local function feCarry(h)
-for _ = 1, 2 do
-for i = 1, 10 do
-local c = (h[i] + FE_HALF[i]) // FE_POW[i]
-if i == 10 then
-h[1] = h[1] + 19 * c
-else
-h[i + 1] = h[i + 1] + c
-end
-h[i] = h[i] - c * FE_POW[i]
-end
-end
-return h
-end
-local function feAdd(f, g)
-local h = {}
-for i = 1, 10 do h[i] = f[i] + g[i] end
-return feCarry(h)
-end
-local function feSub(f, g)
-local h = {}
-for i = 1, 10 do h[i] = f[i] - g[i] end
-return feCarry(h)
-end
-local function feNeg(f)
-local h = {}
-for i = 1, 10 do h[i] = -f[i] end
-return feCarry(h)
-end
-local function feMul(f, g)
-local h = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-for i = 0, 9 do
-local fi = f[i + 1]
-if fi ~= 0 then
-local iOdd = (i % 2) == 1
-for j = 0, 9 do
-local t = fi * g[j + 1]
-if iOdd and (j % 2) == 1 then t = t * 2 end
-local k = i + j
-if k >= 10 then
-h[k - 10 + 1] = h[k - 10 + 1] + 19 * t
-else
-h[k + 1] = h[k + 1] + t
-end
-end
-end
-end
-return feCarry(h)
-end
-local function feSq(f) return feMul(f, f) end
-local FE_ZERO = feNew()
-local FE_ONE = feNew(); FE_ONE[1] = 1
-local function fePow(f, bits)
-local r = feCopy(FE_ONE)
-for i = 1, #bits do
-r = feSq(r)
-if bits[i] == 1 then r = feMul(r, f) end
-if (i % 32) == 0 then yieldCoop() end
-end
-return r
-end
-local P_BN = bnSub(bnShl(bnFromInt(1), 255), bnFromInt(19))
-local function bitsAt(s, start, n)
-local v = 0
-for k = 0, n - 1 do
-local bit = start + k
-local byte = s:byte((bit >> 3) + 1)
-v = v | (((byte >> (bit & 7)) & 1) << k)
-end
-return v
-end
-local function feFromBytes(s)
-local h = {}
-for i = 1, 10 do h[i] = bitsAt(s, FE_OFF[i], FE_BITS[i]) end
-h[10] = h[10] & ((1 << 25) - 1)
-return feCarry(h)
-end
-local function feToBn(h)
-local acc = bnMul(P_BN, bnFromInt(16))
-for i = 1, 10 do
-local v = h[i]
-if v ~= 0 then
-local neg = v < 0
-if neg then v = -v end
-local t = bnShl(bnFromInt(v), FE_OFF[i])
-acc = neg and bnSub(acc, t) or bnAdd(acc, t)
-end
-end
-return bnMod(acc, P_BN)
-end
-local function feToBytes(h) return bnToBytesLE(feToBn(h), 32) end
-local function feIsZero(h) return bnCmp(feToBn(h), bnZero()) == 0 end
-local function feEq(a, b) return bnCmp(feToBn(a), feToBn(b)) == 0 end
-local function feIsNegative(h) return bnBit(feToBn(h), 0) == 1 end
-local function feInvert(f)
-return fePow(f, bnToBitsMSB(bnSub(P_BN, bnFromInt(2))))
-end
-local D, D2, SQRTM1
+local b,a=pcall(require,"kernel.process")
+if b and type(a)=="table"and
+type(a.yieldCooperative)=="function"then aD=a.yieldCooperative else aD=function()end end end;local ae=24;local aR=1 <<ae;local aw=aR-1;local function ah()return{0}end;local function aE(b)while#b>1 and b[#b]==0 do b[#b]=
+nil end;return b end
+local function af(a)local b={}if
+a==0 then return{0}end;while a>0 do b[#b+1]=a&aw;a=a>>ae end;return b end
+local function ai(c,d)if#c~=#d then return#c<#d and-1 or 1 end
+for a=#c,1,-1 do if c[a]~=d[a]then return
+c[a]<d[a]and-1 or 1 end end;return 0 end
+local function an(c,d)local b,a={},0;local e=math.max(#c,#d)for f=1,e do
+local g=(c[f]or 0)+ (d[f]or 0)+a;b[f]=g&aw;a=g>>ae end
+if a~=0 then b[e+1]=a end;return aE(b)end
+local function ao(c,d)local b,a={},0;for e=1,#c do local f=c[e]- (d[e]or 0)-a
+if f<0 then f=f+aR;a=1 else a=0 end;b[e]=f end;return aE(b)end
+local function ap(b,c)if ai(b,ah())==0 then return ah()end;local e,f=c//ae,c%ae;local a={}
+for g=1,e do a[g]=0 end;local d=0
+for g=1,#b do local h=(b[g]<<f)|d;a[e+g]=h&aw;d=h>>ae end;if d~=0 then a[e+#b+1]=d end;return aE(a)end
+local function aS(d,c)local a={}for b=1,#d+#c do a[b]=0 end
+for b=1,#d do local e=0;local f=d[b]
+if f~=0 then
+for h=1,#c do local i=
+a[b+h-1]+f*c[h]+e;a[b+h-1]=i&aw;e=i>>ae end;local g=b+#c
+while e~=0 do local h=a[g]+e;a[g]=h&aw;e=h>>ae;g=g+1 end end end;return aE(a)end
+local function aF(b)local a=b[#b]if a==0 and#b==1 then return 0 end;local c=(#b-1)*ae;while a>0 do
+c=c+1;a=a>>1 end;return c end;local function aq(c,b)local a=c[(b//ae)+1]if not a then return 0 end
+return(a>> (b%ae))&1 end
+local function ar(b,c)
+if ai(b,c)<0 then return b end;local a=ah()
+for d=aF(b)-1,0,-1 do a=ap(a,1)
+if aq(b,d)==1 then a=an(a,af(1))end;if ai(a,c)>=0 then a=ao(a,c)end end;return a end;local function ag(a)local b=ah()
+for c=#a,1,-1 do b=ap(b,8)b=an(b,af(a:byte(c)))end;return b end
+local function aT(b,c)local a={}for d=0,c-1 do local e=0;for f=0,7 do e=e| (
+aq(b,d*8+f)<<f)end
+a[d+1]=string.char(e)end;return table.concat(a)end
+local function aj(b)local a={}for c=aF(b)-1,0,-1 do a[#a+1]=aq(b,c)end;return a end;local aU={0,26,51,77,102,128,153,179,204,230}
+local aK={26,25,26,25,26,25,26,25,26,25}local aL={}local aV={}
+for a=1,10 do aL[a]=1 <<aK[a]aV[a]=1 << (aK[a]-1)end;local function ax()return{0,0,0,0,0,0,0,0,0,0}end;local function as(a)return
+{a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10]}end
+local function ay(a)for b=1,2 do
+for c=1,10 do local d=(
+a[c]+aV[c])//aL[c]if c==10 then a[1]=a[1]+19*d else a[c+1]=a[
+c+1]+d end;a[c]=a[c]-d*aL[c]end end;return a end
+local function ak(a,b)local c={}for d=1,10 do c[d]=a[d]+b[d]end;return ay(c)end
+local function az(a,b)local c={}for d=1,10 do c[d]=a[d]-b[d]end;return ay(c)end
+local function aM(a)local b={}for c=1,10 do b[c]=-a[c]end;return ay(b)end
+local function D(a,b)local c={0,0,0,0,0,0,0,0,0,0}
+for d=0,9 do local e=a[d+1]
+if e~=0 then local f=(d%2)==1;for g=0,9 do
+local i=e*b[g+1]if f and(g%2)==1 then i=i*2 end;local h=d+g
+if h>=10 then c[h-10+1]=c[h-10+1]+
+19*i else c[h+1]=c[h+1]+i end end end end;return ay(c)end;local function aA(a)return D(a,a)end;local aW=ax()local al=ax()al[1]=1;local function aN(b,a)local c=as(al)
+for d=1,#a do
+c=aA(c)if a[d]==1 then c=D(c,b)end;if(d%32)==0 then aD()end end;return c end
+local at=ao(ap(af(1),255),af(19))local function bd(a,b,c)local d=0
+for e=0,c-1 do local f=b+e;local g=a:byte((f>>3)+1)d=d| (
+((g>> (f&7))&1)<<e)end;return d end
+local function aX(a)local b={}for c=1,10
+do b[c]=bd(a,aU[c],aK[c])end;b[10]=b[10]&
+((1 <<25)-1)return ay(b)end
+local function aB(a)local b=aS(at,af(16))for c=1,10 do local d=a[c]
+if d~=0 then local e=d<0;if e then d=-d end
+local f=ap(af(d),aU[c])b=e and ao(b,f)or an(b,f)end end
+return ar(b,at)end;local function aY(a)return aT(aB(a),32)end;local function be(a)
+return ai(aB(a),ah())==0 end
+local function aZ(c,d)return ai(aB(c),aB(d))==0 end;local function a_(a)return aq(aB(a),0)==1 end;local function aO(a)return
+aN(a,aj(ao(at,af(2))))end;local aG,ba,bb
+do local d=ax()d[1]=121665
+local e=ax()e[1]=121666;aG=D(aM(d),aO(e))ba=ak(aG,aG)local f=ao(at,af(1))
+local c=ah()
+for a=aF(f)-1,2,-1 do c=an(ap(c,1),af(aq(f,a)))end;local g=ax()g[1]=2;bb=aN(g,aj(c))end
+local au=ag(string.char(0xed,0xd3,0xf5,0x5c,0x1a,0x63,0x12,0x58,0xd6,0x9c,0xf7,0xa2,0xde,0xf9,0xde,0x14,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x10))
+local function bf()return{X=as(aW),Y=as(al),Z=as(al),T=as(aW)}end
+local function aP(a,b)local c=D(az(a.Y,a.X),az(b.Y,b.X))
+local d=D(ak(a.Y,a.X),ak(b.Y,b.X))local e=D(D(a.T,ba),b.T)local f=D(ak(a.Z,a.Z),b.Z)
+local g=az(d,c)local h=az(f,e)local i=ak(f,e)local j=ak(d,c)return
+{X=D(g,h),Y=D(i,j),T=D(g,j),Z=D(h,i)}end
+local function aH(a,b)local c=bf()for d=1,#a do c=aP(c,c)if a[d]==1 then c=aP(c,b)end
+if(d%16)==0 then aD()end end;return c end
+local function aC(a)local c=aO(a.Z)local e=D(a.X,c)local f=D(a.Y,c)local d=aY(f)local b=d:byte(32)if
+a_(e)then b=b|0x80 end
+return d:sub(1,31)..string.char(b)end
+local function aI(a)if#a~=32 then return nil end;local g=(a:byte(32)>>7)&1
+local e=aX(a)
 do
-local a = feNew(); a[1] = 121665
-local b = feNew(); b[1] = 121666
-D = feMul(feNeg(a), feInvert(b))
-D2 = feAdd(D, D)
-local pm1 = bnSub(P_BN, bnFromInt(1))
-local pm1_4 = bnZero()
-for i = bnBitLen(pm1) - 1, 2, -1 do
-pm1_4 = bnAdd(bnShl(pm1_4, 1), bnFromInt(bnBit(pm1, i)))
-end
-local two = feNew(); two[1] = 2
-SQRTM1 = fePow(two, bnToBitsMSB(pm1_4))
-end
-local L_BN = bnFromBytesLE(string.char(
-0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
-0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10))
-local function ptIdentity()
-return { X = feCopy(FE_ZERO), Y = feCopy(FE_ONE),
-Z = feCopy(FE_ONE), T = feCopy(FE_ZERO) }
-end
-local function ptAdd(p1, p2)
-local A = feMul(feSub(p1.Y, p1.X), feSub(p2.Y, p2.X))
-local B = feMul(feAdd(p1.Y, p1.X), feAdd(p2.Y, p2.X))
-local C = feMul(feMul(p1.T, D2), p2.T)
-local Dv = feMul(feAdd(p1.Z, p1.Z), p2.Z)
-local E = feSub(B, A)
-local F = feSub(Dv, C)
-local G = feAdd(Dv, C)
-local H = feAdd(B, A)
-return { X = feMul(E, F), Y = feMul(G, H), T = feMul(E, H), Z = feMul(F, G) }
-end
-local function ptMul(bits, p)
-local q = ptIdentity()
-for i = 1, #bits do
-q = ptAdd(q, q)
-if bits[i] == 1 then q = ptAdd(q, p) end
-if (i % 16) == 0 then yieldCoop() end
-end
-return q
-end
-local function ptEncode(p)
-local zInv = feInvert(p.Z)
-local x = feMul(p.X, zInv)
-local y = feMul(p.Y, zInv)
-local s = feToBytes(y)
-local last = s:byte(32)
-if feIsNegative(x) then last = last | 0x80 end
-return s:sub(1, 31) .. string.char(last)
-end
-local function ptDecode(s)
-if #s ~= 32 then return nil end
-local sign = (s:byte(32) >> 7) & 1
-local y = feFromBytes(s)
-do
-local yb = bnFromBytesLE(s:sub(1, 31) .. string.char(s:byte(32) & 0x7F))
-if bnCmp(yb, P_BN) >= 0 then return nil end
-end
-local y2 = feSq(y)
-local u = feSub(y2, FE_ONE)
-local v = feAdd(feMul(D, y2), FE_ONE)
-local v3 = feMul(feSq(v), v)
-local v7 = feMul(feSq(v3), v)
-local pm5_8 = bnZero()
-do
-local pm5 = bnSub(P_BN, bnFromInt(5))
-for i = bnBitLen(pm5) - 1, 3, -1 do
-pm5_8 = bnAdd(bnShl(pm5_8, 1), bnFromInt(bnBit(pm5, i)))
-end
-end
-local x = feMul(feMul(u, v3), fePow(feMul(u, v7), bnToBitsMSB(pm5_8)))
-local vx2 = feMul(v, feSq(x))
-if not feEq(vx2, u) then
-if feEq(vx2, feNeg(u)) then
-x = feMul(x, SQRTM1)
-else
-return nil
-end
-end
-if feIsZero(x) and sign == 1 then return nil end
-if (feIsNegative(x) and 1 or 0) ~= sign then x = feNeg(x) end
-return { X = x, Y = y, Z = feCopy(FE_ONE), T = feMul(x, y) }
-end
-local B_POINT = ptDecode(string.char(
-0x58, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
-0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
-0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66,
-0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66, 0x66))
-local function clamp(b)
-local t = { b:byte(1, 32) }
-t[1] = t[1] & 0xF8
-t[32] = (t[32] & 0x7F) | 0x40
-local out = {}
-for i = 1, 32 do out[i] = string.char(t[i]) end
-return table.concat(out)
-end
-function ed25519.publickey(seed)
-if type(seed) ~= "string" or #seed ~= 32 then
-return nil, "secret key must be 32 bytes"
-end
-local h = sha512.raw(seed)
-local a = bnFromBytesLE(clamp(h:sub(1, 32)))
-return ptEncode(ptMul(bnToBitsMSB(a), B_POINT))
-end
-function ed25519.sign(msg, seed, pk)
-if type(seed) ~= "string" or #seed ~= 32 then
-return nil, "secret key must be 32 bytes"
-end
-msg = tostring(msg or "")
-local h = sha512.raw(seed)
-local aBytes = clamp(h:sub(1, 32))
-local prefix = h:sub(33, 64)
-if not pk then pk = ed25519.publickey(seed) end
-local r = bnMod(bnFromBytesLE(sha512.raw(prefix .. msg)), L_BN)
-local R = ptEncode(ptMul(bnToBitsMSB(r), B_POINT))
-local k = bnMod(bnFromBytesLE(sha512.raw(R .. pk .. msg)), L_BN)
-local a = bnFromBytesLE(aBytes)
-local S = bnMod(bnAdd(r, bnMul(k, a)), L_BN)
-return R .. bnToBytesLE(S, 32)
-end
-function ed25519.verify(msg, sig, pk)
-if type(sig) ~= "string" or #sig ~= 64 then return false, "signature must be 64 bytes" end
-if type(pk) ~= "string" or #pk ~= 32 then return false, "public key must be 32 bytes" end
-msg = tostring(msg or "")
-local ok, result, why = pcall(function()
-local Rs = sig:sub(1, 32)
-local Ss = sig:sub(33, 64)
-local S = bnFromBytesLE(Ss)
-if bnCmp(S, L_BN) >= 0 then return false, "signature S is not reduced" end
-local A = ptDecode(pk)
-if not A then return false, "public key is not a curve point" end
-local R = ptDecode(Rs)
-if not R then return false, "signature R is not a curve point" end
-local k = bnMod(bnFromBytesLE(sha512.raw(Rs .. pk .. msg)), L_BN)
-local lhs = ptMul(bnToBitsMSB(S), B_POINT)
-local rhs = ptAdd(R, ptMul(bnToBitsMSB(k), A))
-if ptEncode(lhs) == ptEncode(rhs) then return true end
-return false, "signature does not match"
-end)
-if not ok then return false, "malformed signature" end
-if result then return true end
-return false, why or "signature does not match"
-end
-ed25519._internal = {
-feMul = feMul, feInvert = feInvert, feToBytes = feToBytes,
-feFromBytes = feFromBytes, ptEncode = ptEncode, ptDecode = ptDecode,
-B = B_POINT, bnMod = bnMod, bnFromBytesLE = bnFromBytesLE, L = L_BN,
-}
-return ed25519
+local l=ag(a:sub(1,31)..string.char(a:byte(32)&0x7F))if ai(l,at)>=0 then return nil end end;local h=aA(e)local c=az(h,al)local d=ak(D(aG,h),al)local i=D(aA(d),d)
+local k=D(aA(i),d)local f=ah()do local l=ao(at,af(5))for m=aF(l)-1,3,-1 do
+f=an(ap(f,1),af(aq(l,m)))end end
+local b=D(D(c,i),aN(D(c,k),aj(f)))local j=D(d,aA(b))if not aZ(j,c)then
+if aZ(j,aM(c))then b=D(b,bb)else return nil end end;if be(b)and g==1 then return nil end;if(
+a_(b)and 1 or 0)~=g then b=aM(b)end;return
+{X=b,Y=e,Z=as(al),T=D(b,e)}end
+local aJ=aI(string.char(0x58,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66,0x66))
+local function bc(a)local b={a:byte(1,32)}b[1]=b[1]&0xF8
+b[32]=(b[32]&0x7F)|0x40;local c={}for d=1,32 do c[d]=string.char(b[d])end;return
+table.concat(c)end
+function am.publickey(a)
+if type(a)~=aQ or#a~=32 then return nil,"secret key must be 32 bytes"end;local b=av.raw(a)local c=ag(bc(b:sub(1,32)))return
+aC(aH(aj(c),aJ))end
+function am.sign(a,b,c)
+if type(b)~=aQ or#b~=32 then return nil,"secret key must be 32 bytes"end;a=tostring(a or"")local d=av.raw(b)local g=bc(d:sub(1,32))
+local h=d:sub(33,64)if not c then c=am.publickey(b)end
+local e=ar(ag(av.raw(h..a)),au)local f=aC(aH(aj(e),aJ))
+local i=ar(ag(av.raw(f..c..a)),au)local j=ag(g)local k=ar(an(e,aS(i,j)),au)return f..aT(k,32)end
+function am.verify(c,a,b)
+if type(a)~=aQ or#a~=64 then return false,"signature must be 64 bytes"end
+if type(b)~=aQ or#b~=32 then return false,"public key must be 32 bytes"end;c=tostring(c or"")
+local d,e,f=pcall(function()local g=a:sub(1,32)local l=a:sub(33,64)
+local h=ag(l)
+if ai(h,au)>=0 then return false,"signature S is not reduced"end;local i=aI(b)
+if not i then return false,"public key is not a curve point"end;local j=aI(g)
+if not j then return false,"signature R is not a curve point"end;local m=ar(ag(av.raw(g..b..c)),au)
+local n=aH(aj(h),aJ)local o=aP(j,aH(aj(m),i))if aC(n)==aC(o)then return true end;return false,
+"signature does not match"end)if not d then return false,"malformed signature"end
+if e then return true end;return false,f or"signature does not match"end
+am._internal={feMul=D,feInvert=aO,feToBytes=aY,feFromBytes=aX,ptEncode=aC,ptDecode=aI,B=aJ,bnMod=ar,bnFromBytesLE=ag,L=au}return am

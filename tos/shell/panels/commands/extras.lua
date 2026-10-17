@@ -1,1508 +1,796 @@
-local computer = require("computer")
-local component = require("component")
-local helpers = require("shell.panels.helpers")
-local coopYield = function() end
+
+local x,r,t,y,u,v,z,A,B,w,C="kernel.pkg","string","status","Status","No removable disks mounted","Drive ","danger","Cancel","/bios.lua","/install.lua","No network available"local D=require("computer")local p=require("component")
+local q=require("shell.panels.helpers")local s=function()end
+do local b,a=pcall(require,"kernel.process")if b and a and
+a.yieldCooperative then s=a.yieldCooperative end end
+return
+function(b,a,c)local g,G,o,e,m,M=a.K,a.E,a.P,a.F,a.D,a.U;local P,k,f=a.SC,a.NM,a.st;local d=a.T;local Q=a.tier
+local I,R=a.W,a.H;local N=c.rp;local S=c.openViewTab;local T=c.openEditTab;local n=c.refreshBrowser
+local U=c.canRead;local V=c.canWrite;local W=c.canAccess;local J=c.rootOnly;local K=c.dialog;local h=c.adminOnly
+local X=c.makeProgramEnv;local j=q.fmtSz
+local Y=function(E)return q.expandBuf(a,E)end;local i=c.promptInput;local l=c.confirm
+local function F(H,E)
+local aa,_=pcall(require,"shell.panels.diskprobe")if not aa or type(_)~="table"then return nil end
+local ab,Z=pcall(_.probe,H)if not ab or type(Z)~="table"then return nil end
+if
+Z.kind=="tbfs"and E and E.stats then local ac,f=pcall(E.stats,H)
+if ac and
+type(f)=="table"then
+local ad=tostring(f.label or""):gsub("%c","?"):sub(1,24)return
+('a TBFS volume labelled "%s": %d file(s), %d dir(s)'):format(ad,
+tonumber(f.files)or 0,tonumber(f.dirs)or 0)end end;return Z.text end
+b.redstone=function(E,H)local _,Z=pcall(require,"peripheral.redstone")if not _ then
+H("No redstone module",d.error)return end
+if not E[1]then local aa=Z.status()if not aa then
+H("No redstone component",d.error)return end
+H(" Side      In  Out",d.title)for ac,ab in ipairs(aa)do
+H(string.format(" %-9s %2d  %2d",ab.name,ab.input,ab.output),d.fg)end elseif
+E[1]=="set"and E[2]and E[3]then
+local aa,ab=Z.setOutput(E[2],tonumber(E[3])or 15)
+H(aa and"Set "..E[2].." = "..E[3]or tostring(ab),
+aa and d.highlight or d.error)elseif E[1]=="pulse"and E[2]then
+Z.pulse(E[2],tonumber(E[3])or 0.5)H("Pulsed "..E[2],d.highlight)else
+H("Usage: redstone [set <side> <0-15>|pulse <side> [duration]]",d.dim)end end;b.rs=b.redstone
+b["cluster-setup"]=function(H,E)if not J(E)then return end
+local ac,aa=pcall(require,"shell.clustersetup")if not ac or not aa then
+E("cluster setup module unavailable",d.error)return end
+local _=_G._TOS and _G._TOS.fs
+local function ab()local ag,ah=pcall(require,x)return ag and ah or nil end
+local ad={ok=d.highlight,warn=d.warning,err=d.error,title=d.title}local Z={}
+Z.say=function(ag,ah)E(ag or"",ad[ah or""]or d.fg)end
+Z.choose=function(ai,ag,ah)
+if not K then Z.say(ai,"title")for ao,an in
+ipairs(type(ag)=="table"and ag or{ag})do Z.say(an,nil)end
+for an,ao in ipairs(ah)do Z.say("  "..an..
+". "..ao,nil)end
+local am=tonumber(i and i("Choice: ",4)or"")return(am and ah[am])and am or#ah end;local aj=type(ag)=="table"and table.concat(ag,"\n")or
+tostring(ag or"")
+local ak,al=pcall(K,{title=ai,message=aj,buttons=ah,style="install"})return ak and al or#ah end
+Z.ask=function(ah,ag)local aj=ah..
+(ag and(" ["..ag.."]")or"")..": "
+local ai=i and i(aj,64)or nil;if ai==nil then return ag end
+ai=tostring(ai):gsub("^%s+",""):gsub("%s+$","")if ai==""then return ag end;return ai end
+Z.installed=function(ag)local ah=ab()return
+(ah and ah.info and ah.info(ag))~=nil end
+Z.install=function(ag)local ah=ab()if not(ah and ah.installByName)then return false,
+"package manager unavailable"end;return
+ah.installByName(ag,{session=q.sessionOf(a)})end
+Z.writeFile=function(ag,ah)if not _ then return false,"filesystem unavailable"end;if
+_.writeFileAtomic then return _.writeFileAtomic(ag,ah)end;return
+_.writeFile(ag,ah)end
+Z.startService=function(ag)local ak,ah=pcall(require,"kernel.rc")if not
+(ak and ah and ah.start)then return false,"rc unavailable"end
+local ai,aj=ah.start(ag)if
+not ai and tostring(aj):find("Already running",1,true)then return true end;return ai,aj end
+Z.setBootStart=function(ag,ah)if not _ then return false,"filesystem unavailable"end;local ai=
+"/etc/rc.d/"..ag..".disabled"if ah then if _.exists(ai)then
+return _.remove(ai)end;return true end;if _.exists(ai)then return
+true end;return _.writeFile(ai,"1")end
+Z.modemCount=function()local ag,ah=0,0
+for ai,aj in p.list()do if aj=="modem"then ag=ag+1;local al,ak=pcall(p.proxy,ai)
+if
+al and ak and ak.isWireless and ak.isWireless()then ah=ah+1 end end end;return ag,ah end
+Z.myModemAddress=function()return(p.list("modem")())end
+Z.hostname=function()local ag=_G._TOS and _G._TOS.net;if ag and ag.getHostname then return
+ag.getHostname()end
+if
+_ and _.exists("/etc/hostname")then local ah=_.readFile("/etc/hostname")if type(ah)==r then return
+(ah:match("^[^\n]*"))end end end
+Z.startPairing=function()local ai,ag=pcall(require,"cluster.api")
+if not ai or not ag or not
+ag.startPairing then return nil,"the Master daemon is not up yet"end;local aj,ah,ak=pcall(ag.startPairing)
+if not aj then return nil,tostring(ah)end;return aa.pairingWindow(ah,ak)end
+Z.pairWith=function(ag,ah)local aj,ai=pcall(require,"cluster-manager")
+if not aj or not ai or not
+ai.pair then return false,"cluster-manager library not loadable"end;return ai.pair(ag,ah)end
+if(H[1]or""):lower()=="explain"then
+E("=== What a cluster is made of ===",d.title)for ah,ag in ipairs(aa.explain())do E(ag,d.fg)end;return end;local ae,af=pcall(aa.run,Z)if not ae then
+E("Setup failed: "..tostring(af),d.error)end;n()end
+b.intercom=function(H,E)local af,Z=pcall(require,"intercom")
+if
+not af or type(Z)~="table"or not Z.announce then
+E("The Intercom is an add-on and isn't installed on this machine.",d.error)
+E("Install it from the Optional Utilities disk:  pkg install intercom",d.dim)
+E("(then `service start intercom` so this box will HEAR announcements)",d.dim)return end;local ac=_G._TOS and _G._TOS.fs
+local _=(H[1]or""):lower()local aa,ab={},{}
+do local ag
+for ah=2,#H do local ai=tostring(H[ah])
+if ah==ag then elseif ai:sub(1,2)=="--"then
+local aj,ak=ai:match("^%-%-([%w%-]+)=?(.*)$")
+if aj then
+if ak~=""then aa[aj]=ak elseif
+(aj=="severity"or aj=="to"or aj=="drive")and H[ah+1]and
+tostring(H[ah+1]):sub(1,2)~="--"then
+aa[aj]=tostring(H[ah+1])ag=ah+1 else aa[aj]=true end end else ab[#ab+1]=ai end end end
+local function ad()local ag,ah=Z.loadCatalog(ac)for aj,ai in ipairs(ah)do
+E(string.format("  catalog line %d: %s",ai.line,ai.why),d.warning)end;return ag end
+local function ae(ag)
+for ai,ah in ipairs(ag.errors or{})do E("  "..ah,d.warning)end;if ag.played then
+E(string.format("Playing on the tape (%.1fs).",ag.seconds or 0),d.highlight)end
+if ag.sent then
+E("Broadcast to the network.",d.highlight)elseif not ag.localOnly then E("Nothing was broadcast.",d.warning)end end
+if _==""then local ah,ag=pcall(require,"intercomapp")if ah and ag and ag.open then
+ag.open(a)return end;_=t end
+if _==t then E("=== Intercom ===",d.title)local ag,ai=Z.findDrive()
+if ag then
+local al=(
+ag.getSize and ag.getSize())or 0;local ak=(ag.isReady and ag.isReady())and"tape loaded"or
+"NO TAPE"
+E(string.format("  tape drive : %s, %d bytes",ak,al),
+ak=="NO TAPE"and d.warning or d.fg)else
+E("  tape drive : none ("..tostring(ai)..") — text-only announcements",d.warning)end;local aj=ad()
+E("  catalog    : "..#aj.." cue(s) in "..Z.CUES_PATH,d.fg)local ah=Z.loadCfg(ac)
+E("  receiving  : ".. (Z.running()and"listening"or
+"STOPPED (service start intercom)"),
+Z.running()and d.highlight or d.warning)
+E(string.format("  popups     : at %s and above, at most one per %ds",ah.popupLevel,ah.popupCooldown),d.fg)
+E(string.format("  filter     : ignore anything below %s",ah.minLevel),d.dim)E("",d.dim)
+E("  intercom say \"...\" [--severity warn]   speak now, text only",d.dim)
+E("  intercom play <cue>                     tape + text",d.dim)
+E("  intercom test <cue>                     play it here, tell nobody",d.dim)E("  intercom cues | log | set <k> <v>",d.dim)elseif
+_=="cues"or _=="list"then local ag=ad()
+if#ag==0 then
+E("No cues catalogued yet.",d.warning)
+E("Edit "..Z.CUES_PATH.." and describe what is on the tape:",d.dim)
+E('  fuel-low  [0001] "Warning: Reactor fuel low." [0005]  warn',d.dim)return end
+E(string.format(" %-16s %-7s %-7s %-8s %s","name","start","end","severity","says"),d.title)for ai,ah in ipairs(ag)do
+E(string.format(" %-16s %-7d %-7d %-8s %s",ah.name,ah.start,ah.stop,ah.severity,ah.text),d.fg)end elseif _=="say"then
+local ah=table.concat(ab," ")
+if ah==""then
+E('Usage: intercom say "your announcement" [--severity warn] [--to <peer>]',d.dim)
+E("Severities: "..table.concat(Z.SEVERITIES," "),d.dim)return end
+local ag=type(aa.severity)==r and aa.severity or"info"if not Z.validSeverity(ag)then
+E("Unknown severity: "..ag,d.error)
+E("Use one of: "..table.concat(Z.SEVERITIES," "),d.dim)return end
+E(
+"Announcing ("..ag.."): "..ah,d.title)
+ae(Z.announce({text=ah,severity=ag,to=type(aa.to)==r and aa.to or nil}))elseif _=="play"or _=="test"then local ah=ab[1]if not ah then
+E("Usage: intercom "..
+_.." <cue>   (intercom cues to list them)",d.dim)return end
+local ag=Z.findCue(ad(),ah)
+if not ag then E("No such cue: "..ah,d.error)return end
+if _=="test"then
+E("Testing cue '"..ag.name.."' — playing locally, sending nothing.",d.title)E("  should say: "..ag.text,d.dim)
+E("  tape "..ag.start..
+" -> "..ag.stop,d.dim)else
+E("Announcing cue '"..ag.name.."' ("..ag.severity..")",d.title)E("  "..ag.text,d.fg)end
+ae(Z.announce({cue=ag,localOnly=(_=="test"),driveAddr=type(aa.drive)==r and aa.drive or nil,to=
+type(aa.to)==r and aa.to or nil}))elseif _=="log"then local ag=Z.loadSpool(ac)if#ag==0 then
+E("Nothing heard yet.",d.dim)return end;local ah=tonumber(ab[1])or 20
+for ai=math.max(1,
+#ag-ah+1),#ag do local ak=ag[ai]local aj=ak.severity or"info"
+E("  "..
+Z.formatLine(ak),
+(aj=="critical"or aj=="alert")and d.error or(aj=="warn")and d.warning or d.fg)end elseif _=="set"then if not h(E)then return end;local ag,ah=ab[1],ab[2]local ai=Z.loadCfg(ac)
+if
+not ag then
+E("Usage: intercom set <popuplevel|minlevel|cooldown|echotape> <value>",d.dim)
+E("  popuplevel <sev>   interrupt with a message box at this and above",d.dim)
+E("  minlevel   <sev>   ignore anything quieter than this",d.dim)
+E("  cooldown   <secs>  minimum quiet between message boxes",d.dim)
+E("  echotape   on|off  also play received cues on this box's tape",d.dim)return end;ag=ag:lower()
+if ag=="popuplevel"or ag=="minlevel"then if not
+Z.validSeverity(ah)then
+E("Severities: "..table.concat(Z.SEVERITIES," "),d.error)return end
+ai[
+ag=="popuplevel"and"popupLevel"or"minLevel"]=ah elseif ag=="cooldown"then local al=tonumber(ah)if not al or al<0 or al>3600 then
+E("cooldown: 0-3600 seconds",d.error)return end;ai.popupCooldown=al elseif
+ag=="echotape"then
+ai.echoToTape=(ah=="on"or ah=="true"or ah=="1")else E("Unknown setting: "..ag,d.error)return end;local aj,ak=Z.saveCfg(ai,ac)
+if aj then E("Saved.",d.highlight)else E("Save failed: "..
+tostring(ak),d.error)end else
+E("Usage: intercom [status|cues|say|play|test|log|set] ...",d.title)
+E("  intercom say \"text\" [--severity <lvl>]  announce text right now",d.dim)
+E("  intercom play <cue>                      play a tape cue AND announce it",d.dim)
+E("  intercom test <cue>                      play it here only, to check it",d.dim)
+E("  intercom cues                            what's catalogued on the tape",d.dim)
+E("  intercom log [N]                         what this box has heard",d.dim)
+E("  intercom set <key> <value>               receive policy (admin)",d.dim)end end
+b.mail=function(H,E)local ab,Z=pcall(require,"mail")
+if not ab or type(Z)~="table"or not
+Z.send then
+E("Mail is an add-on and isn't installed on this machine.",d.error)
+E("Install it from the Optional Utilities disk:  pkg install mail",d.dim)
+E("(then `service start mail` so this box can RECEIVE mail)",d.dim)return end;if not Z.available()then
+E("Mail unavailable (no network hardware?)",d.error)return end;Z.tick()
+local aa=a.who or"user"local _=H[1]
+if not _ or _=="ui"or _=="tui"then
+local ad,ac=pcall(require,"mailapp")if ad and ac and ac.open then ac.open(a)return end end
+if not Z.running()then
+E("Note: the mail service is stopped — this box won't RECEIVE mail.",d.warning)
+E("      Start it with:  service start mail",d.dim)end
+if _=="send"then local ae=H[2]if not ae then
+E("Usage: mail send <peer|alias|user@peer|*> [subject] [body...]",d.dim)return end
+local ag,ah=Z.resolveRecipient(ae,k and k.aliases and
+k.aliases.resolve)local ai=H[3]or""local ac;if H[4]then ac=table.concat(H," ",4)elseif i then
+ac=i("Body: ",200)end
+if not ac then E("Cancelled",d.dim)return end
+local af,ad=Z.send({to=ag,user=ah,fromUser=aa,subject=ai,body=ac})
+if af then
+E("Queued "..tostring(af):sub(1,18)..
+(ad and"  (sealed)"or"  (PLAINTEXT bulletin)"),
+ad and d.highlight or d.warning)else
+E("Send failed: "..tostring(ad),d.error)end elseif _=="read"then local ad=tonumber(H[2])local ae=Z.inboxBox(aa)
+local ac=ae and ad and ae:get(ad)if not ac then
+E("No message #"..tostring(H[2]),d.error)return end;ae:markRead(ad)
+E(string.rep("-",math.min(I,50)),d.dim)
+E("From:    "..
+
+(ac.fromUser and(ac.fromUser.." @ ")or"")..tostring(ac.from):sub(1,12),d.fg)
+E("Subject: "..
+(ac.subject~=""and ac.subject or"(no subject)"),d.title)if not ac.readable then
+E("[sealed - no shared secret to open this]",d.warning)end
+E(string.rep("-",math.min(I,50)),d.dim)for af in
+(tostring(ac.body).."\n"):gmatch("(.-)\n")do E(af,d.fg)end elseif _=="delete"or _=="rm"then
+local ac=tonumber(H[2])local ad=Z.inboxBox(aa)if ad and ac and ad:delete(ac)then
+E("Deleted #"..ac,d.highlight)else
+E("No message #"..tostring(H[2]),d.error)end else
+local ac,ae=Z.inbox(aa)if not ac then E(tostring(ae),d.error)return end
+if
+#ac==0 then E("(inbox empty)",d.dim)else
+E("Inbox for "..aa..":",d.title)for ag,af in ipairs(ac)do
+E(Z.inboxRow(af,ag,I-1),af.read and d.dim or d.fg)end end;local ad=Z.pending()if ad and ad>0 then
+E(ad.." outbound awaiting delivery",d.dim)end
+E("Commands: mail send <peer> [subj] [body] | read <n> | delete <n>",d.dim)end end
+b.rbmk=function(H,E)local _,Z=pcall(require,"rbmk-cmd")
+if
+not _ or type(Z)~="table"or not Z.run then
+E("The RBMK controller add-on isn't installed on this machine.",d.error)
+E("Install it from the Optional Utilities disk:  pkg install rbmk-control",d.dim)
+E("Then:  rbmk survey   (identifies the console's real API)",d.dim)return end;local aa,ab=pcall(require,"kernel.screen")
+Z.run(H,E,{display=m,event=G,screen=aa and ab or nil})end
+b.robot=function(H,E)local aa,Z=pcall(require,"peripheral.robot")if not aa then
+E("No robot module",d.error)return end;if not Z.available()then
+E("Not a robot",d.error)return end;local _=H[1]
+if _=="forward"or _=="fwd"then
+local ab,ac=Z.forward()
+E(ab and"Moved forward"or tostring(ac),ab and d.highlight or d.error)elseif _=="back"then local ab,ac=Z.back()
+E(ab and"Moved back"or tostring(ac),ab and
+d.highlight or d.error)elseif _=="up"then local ab,ac=Z.up()
+E(ab and"Moved up"or tostring(ac),
+ab and d.highlight or d.error)elseif _=="down"then local ab,ac=Z.down()
+E(ab and"Moved down"or tostring(ac),ab and
+d.highlight or d.error)elseif _=="left"then Z.turnLeft()E("Turned left",d.highlight)elseif
+_=="right"then Z.turnRight()E("Turned right",d.highlight)elseif _=="swing"then
+local ab,ac=Z.swing(H[2])
+E(ab and"Swing!"or tostring(ac),ab and d.highlight or d.error)elseif _=="use"then local ab,ac=Z.use(H[2])
+E(ab and"Used!"or tostring(ac),
+ab and d.highlight or d.error)elseif _=="detect"then local ab,ac=Z.detect(H[2])
+E(
+ab and"Block: "..tostring(ac)or"Nothing",d.fg)elseif _=="inv"then local ab=Z.inventory()if ab then
+for ad,ac in ipairs(ab)do if ac.count>0 then
+E(string.format(" [%2d] %dx %s",ac.slot,ac.count,
+ac.name or"?"),d.fg)end end end else
+E("Usage: robot <forward|back|up|down|left|right|swing|use|detect|inv>",d.dim)end end
+b.inventory=function(H,E)local aa,Z=pcall(require,"peripheral.inventory")if not aa then
+E("No inventory module",d.error)return end;if not Z.available()then
+E("No inventory controller/transposer",d.error)return end;local ab=H[1]and
+(tonumber(H[1])or H[1])or nil
+local _=Z.list(ab)
+if _ then
+E(string.format(" %-4s %-24s %s","Slot","Item","Count"),d.title)
+for ad,ac in ipairs(_)do if ac.count>0 then
+E(string.format(" %-4d %-24s %d",ac.slot,(ac.name or"?"):sub(1,24),ac.count),d.fg)end end else E("Cannot read inventory",d.error)end end;b.inv=b.inventory
+b.component=function(H,E)if not h(E)then return end
+if not H[1]then
+E("Usage: component <type> [method] [args...]",d.dim)
+E("  component list            List all component types",d.dim)
+E("  component gpu             Show GPU methods",d.dim)
+E("  component gpu getDepth    Call gpu.getDepth()",d.dim)
+E("  component reload-caps     Reload the cap configs (see below)",d.dim)return end
+if H[1]=="reload-caps"then local ae,ad=pcall(require,"kernel.sandbox")if not ae or not
+ad.reloadComponentConfig then
+E("Sandbox doesn't support reload-caps",d.error)return end
+local af,ag=ad.reloadComponentConfig()local aa,ab=0,0;for ai in pairs(af or{})do aa=aa+1 end
+for ai in pairs(ag or{})do ab=ab+1 end
+E(string.format("Reloaded: %d extra base, %d extra gated types",aa,ab),d.highlight)local ah,ac=pcall(require,x)
+if ah and ac and ac.reloadCapConfig then
+local ak,al=ac.reloadCapConfig()local ai,aj=0,0;for am in pairs(ak or{})do ai=ai+1 end;for am,an in pairs(al or{})do for ap in pairs(an)do aj=
+aj+1 end;local ao=am end
+E(string.format("Reloaded: %d extra package caps, %d denials",ai,aj),d.highlight)if ai>0 or aj>0 then
+E("Packages already loaded this boot keep their old caps.",d.dim)end end;return end
+if H[1]=="list"then local aa={}for ac,ab in p.list()do if not aa[ab]then aa[ab]=0 end
+aa[ab]=aa[ab]+1 end;for ab,ac in pairs(aa)do
+E(string.format("  %-20s x%d",ab,ac),d.fg)end;return end;if not J(E)then return end;local Z=H[1]
+local _=p.proxy(p.list(Z)()or"")
+if not _ then E("No component: "..Z,d.error)return end
+if not H[2]then local aa={}
+for ac,ab in pairs(_)do
+local ad=type(ab)=="table"and getmetatable(ab)
+if type(ab)=="function"or
+(type(ad)=="table"and ad.__call)then aa[#aa+1]=ac end end;table.sort(aa)
+for ac,ab in ipairs(aa)do E("  "..ab.."()",d.fg)end else
+if Z=="eeprom"and
+(H[2]=="set"or H[2]=="setData"or H[2]=="makeReadonly")then
+E("Denied: use the 'flash' command to write EEPROM",d.error)return end;local ac=_[H[2]]if not ac then
+E("Unknown method: "..H[2],d.error)return end;local aa={}
+for ad=3,#H do local ae=H[ad]
+if ae=="true"then
+aa[#aa+1]=true elseif ae=="false"then aa[#aa+1]=false elseif tonumber(ae)then aa[#aa+1]=tonumber(ae)else aa[
+#aa+1]=ae end end
+local ab=table.pack(pcall(ac,table.unpack(aa)))
+if ab[1]then
+for ad=2,ab.n do E("  "..tostring(ab[ad]),d.fg)end else E("Error: "..tostring(ab[2]),d.error)end end end
+b.internet=function(H,E)local aa,_=pcall(require,"kernel.internet")if not aa or not _ then
+E("internet module unavailable",d.error)return end
+local Z=(H[1]or t):lower()
+if Z==t then local f=_.status()
+if not f.present then
+E("No internet card installed.",d.warning)
+E("An Internet Card goes in a card slot; the machine needs no",d.dim)
+E("other change. TOS uses it for 'pkg fetch' and nothing else",d.dim)
+E("unless a package asks for the 'internet' capability.",d.dim)return end
+E("Internet card "..tostring(f.addr),d.title)
+E("  HTTP:    "..
+(f.http and"available"or"DISABLED by the server"),f.http and d.highlight or d.warning)
+E("  TCP:     "..
+(f.tcp and"available"or"disabled by the server"),f.tcp and d.fg or d.dim)
+E("  Machine: "..
+(f.enabled and"enabled"or"DISABLED (config: internet)"),f.enabled and d.highlight or d.warning)
+if f.reason then E("  -> "..f.reason,d.warning)end
+if not f.http and f.present then E("",d.dim)
+E("HTTP is switched off in the SERVER's OpenComputers config,",d.dim)
+E("not in TOS. Only the server owner can change it.",d.dim)end elseif Z=="on"or Z=="off"then if not h(E)then return end
+local ac,ab=pcall(require,"kernel.config")
+if not ac then E("config unavailable",d.error)return end;ab.set("internet",Z=="on")
+if ab.save then pcall(ab.save)end
+E("Internet access ".. (Z=="on"and"enabled"or"disabled")..
+" on this machine.",d.highlight)elseif Z=="get"then
+if not H[2]then E("Usage: internet get <url>",d.dim)return end;local ab,ae,ac=_.get(H[2])
+if not ab then E(tostring(ae),d.error)return end
+E(string.format("%d bytes%s",#ab,(ac and ac.status)and("  (HTTP "..
+tostring(ac.status)..")")or""),d.dim)local ad=0
+for af in ab:gmatch("([^\n]*)\n?")do
+if ad>=20 then E("... (truncated)",d.dim)break end;E(af,d.fg)ad=ad+1 end else
+E("Usage: internet [status|get <url>|on|off]",d.dim)end end
+b.compat=function(H,E)local Z,_=pcall(require,"compat")if not Z then
+E("Compat layer not loaded",d.error)return end;local aa=_.list()
+E(" OpenOS Compatibility Layer",d.title)
+E(string.format(" %-16s %s","Module",y),d.dim)for ac,ab in ipairs(aa)do
+E(string.format(" %-16s %s",ab.name,ab.loaded and"loaded"or"not loaded"),
+ab.loaded and d.highlight or d.dim)end end
+b.disk=function(H,E)local Z=H[1]
+if not Z or Z=="list"then
+local _=e.mounts and e.mounts()or nil
+if _ and type(_)=="table"and#_>0 then local aa={}for ac,ab in ipairs(_)do if
+ab.mountPoint~="/"then aa[#aa+1]=ab end end
+if#
+aa==0 then E(u,d.dim)else
+E(string.format(" %-16s %-10s %s","Mount","Label",y),d.title)E(string.rep("-",42),d.dim)
+for ac,ab in ipairs(aa)do
+local ad=ab.mountPoint;local ae=q.classifyDisk(e,ad)
+local af=(ab.label or""):sub(1,10)
+E(string.format(" %-16s %-10s %s",ad:sub(1,16),af,ae.desc),
+ae.kind~="data"and d.highlight or d.fg)end end elseif e.exists("/mnt")then local aa=e.list("/mnt")
+if aa and#aa==0 then E(u,d.dim)elseif aa then
+E(string.format(" %-16s %-8s %s","Mount","Type",y),d.title)E(string.rep("-",42),d.dim)
+for ac,ab in ipairs(aa)do local ad="/mnt/"..
+ab:gsub("/$","")local ae=q.classifyDisk(e,ad)
+E(string.format(" %-16s %-8s %s",ad:sub(1,16),"disk",ae.desc),
+ae.kind~="data"and d.highlight or d.fg)end else E(u,d.dim)end else E(u,d.dim)end
+do local aa=0;for ab in p.list("drive",true)do aa=aa+1 end
+if aa>0 then E("",d.dim)
+E(aa..
+" unmanaged (raw) drive(s) attached — not filesystems, so",d.warning)
+E("they cannot appear above until formatted and mounted.",d.dim)
+E("  drive list          see them, with address and capacity",d.dim)
+E("  drive format <addr> make one a TBFS filesystem",d.dim)end end
+E("disk info <mnt> for details  ·  df for space  ·  jbod to pool disks",d.dim)elseif Z=="info"then if not H[2]then
+E("Usage: disk info <mount-point>",d.dim)return end;local _=e.normalize(H[2])if not
+e.exists(_)or not e.isDirectory(_)then
+E("Not a valid mount point: ".._,d.error)return end
+local ab=e.spaceTotal(_)local ac=e.spaceFree(_)E(" Mount: ".._,d.title)if
+ab and ab>0 then
+E(string.format(" Space: %dK free / %dK total",math.floor(ac/1024),math.floor(ab/1024)),d.fg)end
+local aa=q.classifyDisk(e,_)
+E(" Contains: "..aa.desc,aa.kind~="data"and d.highlight or d.dim)if aa.hint then E("   -> "..aa.hint,d.dim)end elseif Z==
+"install"then
+E("'disk install' folded into the package manager:",d.warning)
+E("  pkg install              scan all mounts, confirm per package",d.dim)
+E("  pkg install <mnt>        install one specific directory",d.dim)elseif Z=="export"then
+E("'disk export' was removed with the legacy module system.",d.warning)
+E("To build an install disk for add-ons, use the Optional Utilities",d.dim)
+E("builder: TOS-Extras/build/build-disk.lua.",d.dim)
+E("For a full TOS image, use 'deploy <mount>' instead.",d.dim)elseif Z=="eject"then if not H[2]then
+E("Usage: disk eject <mount-point>",d.dim)return end;local _=e.normalize(H[2])
+local aa,ab=e.unmount(_)if aa then E("Ejected: ".._,d.highlight)else
+E("Eject failed: "..tostring(ab),d.error)end else
+E("Usage: disk [list|info <mnt>|eject <mnt>]",d.dim)
+E("  Removable disks + what's on them.  Install packages: 'pkg'.",d.dim)
+E("  Pool several disks into one: 'jbod'.   Free space per mount: 'df'.",d.dim)end end
+b.drive=function(H,E)local Z=H[1]local function ac()local af,ag=pcall(require,"blockfs")
+return af and ag or nil end
+local function aa(af)local ag={}for ak in p.list("drive",true)do
+if not af or ak:sub(1,
+#af)==af then ag[#ag+1]=ak end end;table.sort(ag)
+if#ag==0 then return nil,
+
+"no unmanaged drive found".. (af and(" for '"..af.."'")or"")end;if af and#ag>1 then return nil,
+"ambiguous prefix '"..af.."' ("..#ag.." drives)"end
+local ah=ag[1]local aj,ai=pcall(p.proxy,ah)
+if not aj or not ai then return nil,"cannot proxy drive"end;return ai,ah end
+if not Z or Z=="list"then
+E("Unmanaged drives (raw block devices):",d.title)local af,ag=0,ac()
+for ah in p.list("drive",true)do local aj,ai=pcall(p.proxy,ah)
+if aj and ai then
+af=af+1
+local al=(ai.getSectorSize and ai.getSectorSize())or 0
+local am=(ai.getCapacity and ai.getCapacity())or 0
+local an=(ai.getPlatterCount and ai.getPlatterCount())or 1;local ak="unformatted"
+if ag then local ao=ag.stats(ai)if ao then
+ak=string.format('TBFS "%s"  %s used  %d%% frag',ao.label,j(
+ao.usedBlocks*ao.sectorSize),math.floor(ao.fragmentation*100+0.5))end end
+E(string.format("  %s  %s  %dB/sector  %d platter(s)  %s",ah:sub(1,8).."...",j(am),al,an,ak),d.fg)end end
+if af==0 then E("  (none attached)",d.dim)
+E("  Managed disks appear under 'disk' / 'df'; this is for raw drives.",d.dim)elseif not ag then
+E("  Install 'blockfs' to format/mount them:  pkg install blockfs",d.dim)else
+E("  format | mount | check [--repair] | defrag [--if-over N] | read | write",d.dim)end;return end
+if Z=="info"then local af,ag=aa(H[2])
+if not af then E(tostring(ag),d.error)return end;E(v..ag:sub(1,8).."...",d.title)
+E(string.format("  capacity   %s",j((
+af.getCapacity and af.getCapacity())or 0)),d.fg)
+E(string.format("  sector     %d bytes",
+(af.getSectorSize and af.getSectorSize())or 0),d.fg)
+E(string.format("  platters   %d",
+(af.getPlatterCount and af.getPlatterCount())or 1),d.fg)local ah=ac()
+if ah then local ai=ah.stats(af)
+if ai then
+E("  TBFS volume:",d.highlight)
+E(string.format('    label "%s"   %s / %s used   %d file(s), %d dir(s)',ai.label,j(ai.usedBlocks*ai.sectorSize),j(
+ai.dataBlocks*ai.sectorSize),ai.files,ai.dirs),d.fg)
+E(string.format("    fragmentation %d%%   %s",math.floor(ai.fragmentation*100+0.5),
+ai.clean and"clean"or"DIRTY (mounted or unclean)"),d.fg)else
+E("  Not a TBFS volume. It holds "..
+(F(af)or"something unreadable")..".",d.dim)end else
+E("  It holds ".. (F(af)or"something unreadable")..".",d.dim)
+E("  (install 'blockfs' to format or mount it)",d.dim)end;return end;local _=ac()if not _ then
+E("The 'blockfs' package is required:  pkg install blockfs",d.error)return end
+local function ab(af)for ah,ag in ipairs(
+e.mounts and e.mounts()or{})do
+if ag.address==af then return ag.mountPoint,ag end end;return nil end
+local function ae(af)local ag,ah={},false
+for am,al in ipairs(e.mounts and e.mounts()or{})do
+if
+al.mountPoint==af then if al.openFiles==nil then ah=true elseif al.openFiles>0 then
+ag[#ag+1]=string.format("%d open file handle(s)",al.openFiles)end end end
+local ai=(af:sub(-1)=="/")and af or(af.."/")
+local aj,ak=pcall(function()return o and o.list and o.list()or{}end)
+for am,al in ipairs(aj and ak or{})do local an=al.cwd
+if type(an)==r and(an==af or
+an:sub(1,#ai)==ai)then
+ag[#ag+1]=string.format("%s (pid %s) is in %s",tostring(
+al.name or"?"),tostring(al.pid or"?"),an)end end;return ag,ah end
+local function ad(af,ai,ag,ah)local aj=ab(af)if not aj then return ah()end;local ak,ao=ae(aj)
+if#ak>0 or ao then
+local aw=
+(#ak>0)and(
+"\n  "..table.concat(ak,"\n  "))or"\n  (the driver cannot say what is open)"
+local av=string.format("'%s' has to take %s out of the mount table while it works.\n"..
+"Something is using it right now:%s\n\n"..
+"Continuing will pull the volume out from under it. It is\n".."remounted at %s afterwards.",ag,aj,aw,aj)local au
+if l then
+au=l(av,{title="Unmount "..aj.."?",severity=z,yes="Unmount and continue",no=A})else E(av,d.warning)
+local ax=i and
+i("Unmount "..aj.." and continue? [y/N]: ",4)or"n"au=(ax or""):lower()=="y"end;if not au then
+E("Cancelled; the drive is still mounted.",d.dim)return false end else
+E(string.format("Nothing is using %s — unmounting for the %s.",aj,ag),d.dim)end;local al=q.sessionOf(a)local ap,aq=e.unmount(aj,al)if ap==false then
+E("Could not unmount "..aj..
+": "..tostring(aq or"?"),d.error)return false end;local ar,am=pcall(ah)local as=function()
+return math.floor(
+g.uptime and g.uptime()or 0)end
+local an,at=_.mount(ai,{now=as})
+if an then local au,av=e.mount(aj,an,al)
+if au==false then
+E("Remount FAILED at "..aj..
+": "..tostring(av or"?"),d.error)
+E("  Mount it by hand:  drive mount "..af:sub(1,8).." "..aj,d.dim)else E("Remounted at "..aj..".",d.dim)pcall(n)end else
+E("Remount FAILED ("..tostring(at).."); the drive is detached.",d.error)
+E("  Mount it by hand:  drive mount "..af:sub(1,8).." "..aj,d.dim)end;if not ar then error(am,0)end;return am end
+if Z=="unmount"or Z=="umount"then if not h(E)then return end;local ah,af=aa(H[2])if not
+ah then E(tostring(af),d.error)return end
+local ag=ab(af)if not ag then
+E(v..af:sub(1,8).."... is not mounted.",d.dim)return end;local ai=q.sessionOf(a)
+local aj,ak=e.unmount(ag,ai)if aj==false then
+E(tostring(ak or"unmount failed"),d.error)return end
+E("Unmounted "..ag.." (volume marked clean).",d.highlight)pcall(n)return end
+if Z=="format"then if not h(E)then return end;local ag,af=aa(H[2])if not ag then
+E(tostring(af),d.error)return end
+local aj=H[3]or("disk"..af:sub(1,4))local ah=F(ag,_)local ai
+if l then
+ai=l("Format drive "..
+af:sub(1,8)..
+"... as TBFS?"..
+"\n\n".. (ah and
+("It holds "..ah..".\n")or"")..
+
+"Every file on it is destroyed. There is no undo and no\n".."recovery tool in TOS that can bring it back.",{title="Format drive",severity=z,yes="Format",no=A})else if ah then
+E(v..af:sub(1,8).."... holds "..ah..".",d.warning)end
+local ak=
+i and i("FORMAT "..
+af:sub(1,8).."... as TBFS? destroys all data [y/N]: ",4)or"n"ai=(ak or""):lower()=="y"end;if not ai then E("Cancelled.",d.dim)return end
+ad(af,ag,"format",function()
+local ak,al=_.format(ag,{label=aj,now=function()
+return math.floor(
+g.uptime and g.uptime()or 0)end})if ak then
+E('Formatted as TBFS "'..aj..'".',d.highlight)else
+E("Format failed: "..tostring(al),d.error)end end)if not ab(af)then
+E("Mount it with: drive mount "..af:sub(1,8),d.dim)end;return end
+if Z=="mount"then if not h(E)then return end;local ah,ai=aa(H[2])if not ah then
+E(tostring(ai),d.error)return end
+local ak=function()return
+math.floor(g.uptime and g.uptime()or 0)end;local ag,al=_.mount(ah,{now=ak})if not ag then
+E("Mount failed: "..tostring(al),d.error)return end
+local am=q.safeMountName(ag.getLabel and ag.getLabel(),ai)local af=H[3]or("/mnt/"..am)if af:sub(1,1)~="/"then
+af="/mnt/"..af end;if not e.exists("/mnt")then
+pcall(e.makeDirectory,"/mnt")end;if not e.exists(af)then
+pcall(e.makeDirectory,af)end;local an=q.sessionOf(a)
+local ao,ap=e.mount(af,ag,an)if ao==false then
+E(tostring(ap or"mount failed"),d.error)return end
+E("Mounted TBFS at "..af,d.highlight)local aj=_.stats(ah)
+if aj and aj.fragmentation>0.30 then
+E(string.format("  Note: %d%% fragmented — 'drive defrag %s' to compact.",math.floor(
+aj.fragmentation*100+0.5),ai:sub(1,8)),d.warning)end;pcall(n)return end
+if Z=="check"or Z=="fsck"then if not h(E)then return end;local ag,ah=aa(H[2])if not ag then
+E(tostring(ah),d.error)return end
+local ai=H[3]=="--repair"or H[3]=="-r"local af
+if ai then
+local ak=ad(ah,ag,"check --repair",function()af=_.check(ag,{repair=true,yield=s})end)if ak==false then return end else
+af=_.check(ag,{repair=false,yield=s})end
+if not af then E("Not a TBFS volume.",d.error)return end;local aj=ab(ah)
+if aj and not ai then local ak={}
+for am,al in ipairs(af.problems)do if
+al~="volume was not cleanly unmounted"then ak[#ak+1]=al end end;af.problems=ak;af.ok=(#ak==0)
+E("(mounted at "..
+aj..": the dirty flag is expected and not counted)",d.dim)end
+if af.ok then E("TBFS clean: no problems.",d.highlight)else
+E((af.repaired and
+"Repaired. Findings:"or"Problems found:"),
+af.repaired and d.highlight or d.warning)
+for al,ak in ipairs(af.problems)do E("  - "..ak,d.dim)end;if not ai and not af.ok then
+E("  Run 'drive check "..ah:sub(1,8).." --repair' to fix.",d.dim)end end;return end
+if Z=="defrag"then if not h(E)then return end;local af,ah=aa(H[2])if not af then
+E(tostring(ah),d.error)return end;local ag=nil
+for ai=3,#H do if
+H[ai]=="--if-over"and H[ai+1]then ag=tonumber(H[ai+1])end end
+if ag then local ai=_.stats(af)
+if
+ai and(ai.fragmentation*100)<ag then
+E(string.format("Fragmentation %d%% below %d%% — skipped.",math.floor(ai.fragmentation*100+0.5),ag),d.dim)return end end;E("Defragmenting...",d.title)
+ad(ah,af,"defrag",function()
+local ai,aj=_.defrag(af,{now=function()return math.floor(g.uptime and
+g.uptime()or 0)end})if not ai then
+E("Defrag failed: "..tostring(aj),d.error)return end
+E(string.format("Defragmented %d block(s): %d%% -> %d%% fragmented.",ai.moved,math.floor(
+ai.before*100+0.5),math.floor(ai.after*100+0.5)),d.highlight)end)return end
+if Z=="read"then if not h(E)then return end;local ai,aj=aa(H[2])if not ai then
+E(tostring(aj),d.error)return end;local af=tonumber(H[3])if not af then
+E("Usage: drive read <addr> <sector>",d.dim)return end
+local ak,ag=pcall(ai.readSector,af+1)if not ak then
+E("Read failed: "..tostring(ag),d.error)return end;local ah={}for al=1,math.min(64,# (ag or""))
 do
-local okP, procMod = pcall(require, "kernel.process")
-if okP and procMod and procMod.yieldCooperative then
-coopYield = procMod.yieldCooperative
-end
-end
-return function(C, S, deps)
-local K, E, P, F, D, U = S.K, S.E, S.P, S.F, S.D, S.U
-local SC, NM, st = S.SC, S.NM, S.st
-local T = S.T
-local tier = S.tier
-local W, H = S.W, S.H
-local rp = deps.rp
-local openViewTab = deps.openViewTab
-local openEditTab = deps.openEditTab
-local refreshBrowser = deps.refreshBrowser
-local canRead = deps.canRead
-local canWrite = deps.canWrite
-local canAccess = deps.canAccess
-local rootOnly = deps.rootOnly
-local dialog = deps.dialog
-local adminOnly = deps.adminOnly
-local makeProgramEnv = deps.makeProgramEnv
-local fmtSz = helpers.fmtSz
-local expandBuf = function(buf) return helpers.expandBuf(S, buf) end
-local promptInput = deps.promptInput
---! Framed yes/no box; text mode falls back to a [y/N] line.
---! Both default to no. See dialogs.M.confirm -- the SAFE
---! choice is the first button, so a click-through cancels.
-local confirmBox = deps.confirm
---! What a raw drive holds, said BEFORE it is erased: an OSDI table and a
---! blank drive are different decisions, and "not a TBFS volume" was all
---! TOS could say. Read-only (shell/panels/diskprobe.lua), loaded only
---! when a drive is about to be named. A TBFS volume is named from its own
---! stats when blockfs can read them. Returns the phrase, or nil.
---! (test_diskprobe.lua)
-local function driveHolds(px, lib)
-local okD, dp = pcall(require, "shell.panels.diskprobe")
-if not okD or type(dp) ~= "table" then return nil end
-local okP, r = pcall(dp.probe, px)
-if not okP or type(r) ~= "table" then return nil end
-if r.kind == "tbfs" and lib and lib.stats then
-local okS, st = pcall(lib.stats, px)
-if okS and type(st) == "table" then
-local label = tostring(st.label or ""):gsub("%c", "?"):sub(1, 24)
-return ('a TBFS volume labelled "%s": %d file(s), %d dir(s)'):format(
-label, tonumber(st.files) or 0, tonumber(st.dirs) or 0)
-end
-end
-return r.text
-end
-C.redstone = function(args, o)
-local ok2, rs = pcall(require, "peripheral.redstone")
-if not ok2 then o("No redstone module", T.error); return end
-if not args[1] then
-local st2 = rs.status()
-if not st2 then o("No redstone component", T.error); return end
-o(" Side      In  Out", T.title)
-for _, s in ipairs(st2) do
-o(string.format(" %-9s %2d  %2d", s.name, s.input, s.output), T.fg)
-end
-elseif args[1] == "set" and args[2] and args[3] then
-local ok3, err = rs.setOutput(args[2], tonumber(args[3]) or 15)
-o(ok3 and "Set " .. args[2] .. " = " .. args[3] or tostring(err), ok3 and T.highlight or T.error)
-elseif args[1] == "pulse" and args[2] then
-rs.pulse(args[2], tonumber(args[3]) or 0.5)
-o("Pulsed " .. args[2], T.highlight)
-else
-o("Usage: redstone [set <side> <0-15>|pulse <side> [duration]]", T.dim)
-end
-end
-C.rs = C.redstone
-C["cluster-setup"] = function(args, o)
-if not rootOnly(o) then return end
-local okW, wiz = pcall(require, "shell.clustersetup")
-if not okW or not wiz then o("cluster setup module unavailable", T.error); return end
-local fsMod = _G._TOS and _G._TOS.fs
-local function pkgMod()
-local okP, p = pcall(require, "kernel.pkg"); return okP and p or nil
-end
-local SEV = { ok = T.highlight, warn = T.warning, err = T.error,
-title = T.title }
-local ctx = {}
-ctx.say = function(text, kind) o(text or "", SEV[kind or ""] or T.fg) end
-ctx.choose = function(title, lines, opts)
-if not dialog then
-ctx.say(title, "title")
-for _, l in ipairs(type(lines) == "table" and lines or { lines }) do
-ctx.say(l, nil)
-end
-for i, label in ipairs(opts) do ctx.say("  " .. i .. ". " .. label, nil) end
-local pick = tonumber(promptInput and promptInput("Choice: ", 4) or "")
-return (pick and opts[pick]) and pick or #opts
-end
-local body = type(lines) == "table" and table.concat(lines, "\n") or tostring(lines or "")
-local okD, pick = pcall(dialog, {
-title = title, message = body, buttons = opts, style = "install",
-})
-return okD and pick or #opts
-end
-ctx.ask = function(prompt, default)
-local label = prompt .. (default and (" [" .. default .. "]") or "") .. ": "
-local v = promptInput and promptInput(label, 64) or nil
-if v == nil then return default end
-v = tostring(v):gsub("^%s+", ""):gsub("%s+$", "")
-if v == "" then return default end
-return v
-end
-ctx.installed = function(name)
-local p = pkgMod()
-return (p and p.info and p.info(name)) ~= nil
-end
-ctx.install = function(name)
-local p = pkgMod()
-if not (p and p.installByName) then return false, "package manager unavailable" end
-return p.installByName(name, { session = helpers.sessionOf(S) })
-end
-ctx.writeFile = function(path, data)
-if not fsMod then return false, "filesystem unavailable" end
-if fsMod.writeFileAtomic then return fsMod.writeFileAtomic(path, data) end
-return fsMod.writeFile(path, data)
-end
-ctx.startService = function(svcName)
-local okR, rc = pcall(require, "kernel.rc")
-if not (okR and rc and rc.start) then return false, "rc unavailable" end
-local okS, err = rc.start(svcName)
-if not okS and tostring(err):find("Already running", 1, true) then return true end
-return okS, err
-end
-ctx.setBootStart = function(svcName, on)
-if not fsMod then return false, "filesystem unavailable" end
-local marker = "/etc/rc.d/" .. svcName .. ".disabled"
-if on then
-if fsMod.exists(marker) then return fsMod.remove(marker) end
-return true
-end
-if fsMod.exists(marker) then return true end
-return fsMod.writeFile(marker, "1")
-end
-ctx.modemCount = function()
-local total, wireless = 0, 0
-for addr, ctype in component.list() do
-if ctype == "modem" then
-total = total + 1
-local okP, prx = pcall(component.proxy, addr)
-if okP and prx and prx.isWireless and prx.isWireless() then
-wireless = wireless + 1
-end
-end
-end
-return total, wireless
-end
-ctx.myModemAddress = function() return (component.list("modem")()) end
-ctx.hostname = function()
-local NMx = _G._TOS and _G._TOS.net
-if NMx and NMx.getHostname then return NMx.getHostname() end
-if fsMod and fsMod.exists("/etc/hostname") then
-local h = fsMod.readFile("/etc/hostname")
-if type(h) == "string" then return (h:match("^[^\n]*")) end
-end
-end
-ctx.startPairing = function()
-local okA, api = pcall(require, "cluster.api")
-if not okA or not api or not api.startPairing then
-return nil, "the Master daemon is not up yet"
-end
-local okS, w, err = pcall(api.startPairing)
-if not okS then return nil, tostring(w) end
-return wiz.pairingWindow(w, err)
-end
-ctx.pairWith = function(addr, code)
-local okM, mgr = pcall(require, "cluster-manager")
-if not okM or not mgr or not mgr.pair then
-return false, "cluster-manager library not loadable"
-end
-return mgr.pair(addr, code)
-end
-if (args[1] or ""):lower() == "explain" then
-o("=== What a cluster is made of ===", T.title)
-for _, line in ipairs(wiz.explain()) do o(line, T.fg) end
-return
-end
-local okRun, res = pcall(wiz.run, ctx)
-if not okRun then o("Setup failed: " .. tostring(res), T.error) end
-refreshBrowser()
-end
-C.intercom = function(args, o)
-local okLib, ic = pcall(require, "intercom")
-if not okLib or type(ic) ~= "table" or not ic.announce then
-o("The Intercom is an add-on and isn't installed on this machine.", T.error)
-o("Install it from the Optional Utilities disk:  pkg install intercom", T.dim)
-o("(then `service start intercom` so this box will HEAR announcements)", T.dim)
-return
-end
-local fsMod = _G._TOS and _G._TOS.fs
-local sub = (args[1] or ""):lower()
-local flags, rest = {}, {}
+ah[#ah+1]=string.format("%02X",(ag):byte(al))end
+E("Sector "..af.." (first 64 bytes):",d.title)E("  "..table.concat(ah," "),d.dim)
+return end
+if Z=="write"then if not h(E)then return end
+E("'drive write' is intentionally not exposed as a one-liner (a stray",d.warning)
+E("sector write corrupts a filesystem). Use the blockfs API from 'lua'",d.dim)
+E("for deliberate raw writes. Format/mount/defrag cover normal use.",d.dim)return end
+E("Usage: drive [list | info <addr> | format <addr> [label] | mount <addr> [path]",d.dim)
+E("             | unmount <addr> | check <addr> [--repair] | defrag <addr> [--if-over N]",d.dim)
+E("             | read <addr> <sec>]   (format/repair/defrag need the drive unmounted)",d.dim)end
+b.tape=function(H,E)local _,Z=pcall(require,x)
+if _ and Z and Z.getCommand then
+local aa=Z.getCommand("tape")if aa then aa(H,E)return end
+if Z.info and Z.info("tape")then
+E("The tape package is installed but not enabled.",d.warning)E("Enable it with:  pkg enable tape",d.highlight)
+return end end;E("Tape Storage",d.title)E("",d.fg)
+E("The 'tape' package isn't installed. To use Computronics tapes:",d.fg)E("",d.fg)
+E(" Install from the Optional Utilities disk:",d.highlight)
+E("    pkg install              (with the disk inserted)",d.dim)E("  or, if it's in a configured repo:",d.dim)
+E("    pkg install tape",d.dim)E("",d.fg)
+E(" Build your own: a /usr/modules/<name>/init.lua returning",d.dim)
+E("   { commands = { tape = function(args, o) ... end } }",d.dim)
+E(" plus a package.lua manifest (kind=\"command\"). See the TOS Manual.",d.dim)end
+b.deploy=function(H,E)if not J(E)then return end
+if H[1]=="drive"then
+local ay,ah=pcall(require,"blockfs")
+if not ay or not ah then
+E("Cannot deploy to a raw drive: TOS doesn't have the 'blockfs' package.",d.error)
+E("blockfs is the filesystem that makes a raw drive usable + bootable.",d.dim)E("Install it first, then retry:",d.dim)
+E("    pkg install blockfs",d.highlight)return end
+local au=e.exists("/usr/lib/blockfs.lua")and e.readFile("/usr/lib/blockfs.lua")
+if not au then
+E("blockfs is loadable but /usr/lib/blockfs.lua is missing — reinstall it:",d.error)E("    pkg install blockfs",d.highlight)return end;local ai={}
+for aF in p.list("drive",true)do if
+not H[2]or aF:sub(1,#H[2])==H[2]then ai[#ai+1]=aF end end;table.sort(ai)if#ai==0 then
+E("No unmanaged drive"..
+(H[2]and
+(" matching '"..H[2].."'")or"").." found.",d.error)return end;if H[2]and#ai>1 then
+E(
+"Ambiguous prefix '"..H[2].."' ("..#ai.." drives).",d.error)return end;local aj=ai[1]
+local az,ak=pcall(p.proxy,aj)if not az or not ak then
+E("Cannot proxy drive "..aj:sub(1,8),d.error)return end;local aq=ah.bootBlob(au)
+local ar=#aq+4096;local am={}local aA,av=pcall(require,"system_manifest")if aA and
+type(av)=="table"then
+for aG,aF in ipairs(av)do if
+type(aF)=="table"and type(aF.path)==r then am[#am+1]=aF.path end end end;if#am==0 then
+E("system_manifest not loadable — aborting.",d.error)return end;local as=nil
+if ah.plan and ah.blocksFor then
+local aF,aJ=ah.plan(ak,{bootBytes=ar})if not aF then
+E("This drive cannot hold TOS: "..tostring(aJ)..". Nothing was erased.",d.error)return end
+local function aK(aL)local aM,aN=0,1
+local aP,aQ={["/"]=0},{}
+local function aR(aS,aT)aP[aS]=(aP[aS]or 0)+5+#aT end
+local function aO(aS)local aT=aS:match("^(.*)/[^/]+$")return
+(aT==nil or aT=="")and"/"or aT end
+for aT,aS in ipairs(am)do local aV,aW=pcall(e.size,aS)
+aM=aM+ah.blocksFor(
+(aV and tonumber(aW))or 0,aL)aN=aN+1;aR(aO(aS),aS:match("([^/]+)$"))
+local aU=aO(aS)while aU~="/"and not aQ[aU]do aQ[aU]=true;aN=aN+1
+aR(aO(aU),aU:match("([^/]+)$"))aU=aO(aU)end end
+for aT,aS in pairs(aP)do aM=aM+ah.blocksFor(aS,aL)end;return aM,aN end;local aH,aG=aK(aF.ss)
+if aG>aF.inodeCount then local aM=math.ceil(aG*1.25)
+as=math.max(512,math.floor(
+aF.ss*aF.totalBlocks/aM))local aL=ah.plan(ak,{bootBytes=ar,inodeRatio=as})
+if not aL or
+aL.inodeCount<aG then
+E(string.format("TOS needs %d inodes and this drive cannot hold that many. ".."Nothing was erased.",aG),d.error)return end
+E(string.format("Sizing the inode table for this install: %d inodes (the default ".."would give %d, and TOS needs %d).",aL.inodeCount,aF.inodeCount,aG),d.dim)aF=aL end
+if aH>aF.dataBlocks then
+E(string.format("TOS will not fit on this drive: it needs %s, and the drive holds "..
+"%s once the boot region and metadata are laid out.  [E-306 ERR_DRIVE_TOO_SMALL]",j(
+aH*aF.ss),j(aF.dataBlocks*aF.ss)),d.error)
+E("Nothing was erased. Use a larger drive, or a managed disk: deploy <mount-point>",d.dim)return end;local aI=(aF.dataBlocks-aH)*aF.ss
+E(string.format("Fits: %s of %s, leaving %s spare; %d of %d inodes.",j(
+aH*aF.ss),j(aF.dataBlocks*aF.ss),j(aI),aG,aF.inodeCount),d.dim)if aI<64*1024 then
+E("Under 64 KB will be free after the install — logs, trash and swap fill that fast.",d.warning)end else
+E("(This blockfs cannot check capacity before erasing — 'pkg upgrade blockfs' adds it.)",d.warning)end;local at;local an=F(ak,ah)
+if l then
+at=l("Install TOS onto raw drive "..
+aj:sub(1,8)..
+"...?".."\n\n"..
+(an and
+("It holds "..an..".\n")or"")..
+"The drive is erased and reformatted as bootable TBFS.\n".."Anything on it now is gone.",{title="Erase and install",severity=z,yes="Erase",no=A})else if an then
+E(v..aj:sub(1,8).."... holds "..an..".",d.warning)end
+local aF=
+i and i("Install TOS onto raw drive "..
+aj:sub(1,8).."...? ERASES it [y/N]: ",4)or"n"at=(aF or""):lower()=="y"end;if not at then E("Cancelled.",d.dim)return end;local aw=function()
+return math.floor((g.uptime and
+g.uptime())or 0)end
+E("Formatting "..
+aj:sub(1,8).."... as bootable TBFS...",d.title)
+local aB,aC=ah.format(ak,{label="tos",bootBytes=ar,now=aw,inodeRatio=as})if not aB then
+E("Format failed: "..tostring(aC).." (drive too small?)",d.error)return end
+local al,aD=ah.mount(ak,{now=aw})if not al then
+E("Mount failed: "..tostring(aD),d.error)return end;local ao,ap=0,0
+for aG,aF in ipairs(am)do s()
+local aH=e.open(aF,"r")
+if aH then local aJ=aF:match("^(.*)/[^/]+$")
+if aJ and aJ~=""then local aL=""for aM in
+aJ:gmatch("[^/]+")do aL=aL.."/"..aM
+if not al.exists(aL)then al.makeDirectory(aL)end end end;local aI=al.open(aF,"w")local aK=aI~=nil
+while aK do local aL=aH:read(4096)
+if not aL then break end;aK=al.write(aI,aL)and true or false end;pcall(aH.close,aH)if aI then al.close(aI)end;if aK then ao=ao+1 else
+ap=ap+1;E("  FAIL "..aF,d.error)end end end;local ax,aE=ah.writeBoot(ak,aq)al.unmount()E("",d.fg)
+if
+ax and ap==0 then
+E(string.format("TBFS install written: %d files + boot blob (%s).",ao,j(#aq)),d.highlight)
+E("The TOS BIOS boots TBFS drives directly. If this box runs an older",d.dim)
+E("EEPROM, reflash first: 'flash /bios.lua'.",d.dim)
+E("The disk also mounts like any volume: 'drive mount "..aj:sub(1,8).."'.",d.dim)else
+E(string.format("Wrote %d files, %d failed; boot blob: %s.",ao,ap,ax and"ok"or
+("FAILED ("..tostring(aE)..")")),d.error)end;return end;local Z=H[1]
+if not Z then
+E("Usage: deploy <mount-point>   |   deploy drive <addr>  (raw disk, needs blockfs)",d.dim)
+E("  Creates a TOS install disk on a floppy or drive.",d.dim)E("  e.g. deploy /mnt/floppy",d.dim)
+E("  Insert the disk on another OpenOS computer and run:",d.dim)E("    # /mnt/<disk>/install.lua",d.dim)return end;Z=e.normalize(Z)
+if#Z>1 and Z:sub(-1)=="/"then Z=Z:sub(1,-2)end
+local ae={"/","/tos","/etc","/var","/usr","/home","/root","/public"}
+for ai,ah in ipairs(ae)do
+if Z==ah or Z:sub(1,#ah+1)==ah.."/"then
+E(
+"Refusing to deploy onto '"..Z.."' (would overwrite system).",d.error)
+E("Deploy only to an external mount such as /mnt/floppy.",d.dim)return end end;if not e.exists(Z)or not e.isDirectory(Z)then
+E(
+"Target does not exist or is not a directory: "..Z,d.error)return end
+E(
+"Creating TOS install disk on "..Z.." ...",d.title)local ac=e.spaceTotal(Z)local af=e.spaceFree(Z)if ac and ac>0 then
+E(string.format(" Target disk: %dK total, %dK free",math.floor(
+ac/1024),math.floor(af/1024)),d.dim)end
+local ag={"/tos/","/tos/kernel/","/tos/kernel/net/","/tos/shell/","/tos/compat/","/tos/peripheral/"}for ai,ah in ipairs(ag)do e.makeDirectory(Z..ah)end;local ab={}
 do
-local skip
-for i = 2, #args do
-local a = tostring(args[i])
-if i == skip then
-elseif a:sub(1, 2) == "--" then
-local k, v = a:match("^%-%-([%w%-]+)=?(.*)$")
-if k then
-if v ~= "" then flags[k] = v
-elseif (k == "severity" or k == "to" or k == "drive") and args[i + 1]
-and tostring(args[i + 1]):sub(1, 2) ~= "--" then
-flags[k] = tostring(args[i + 1]); skip = i + 1
-else flags[k] = true end
-end
-else rest[#rest + 1] = a end
-end
-end
-local function loadCues()
-local cues, errs = ic.loadCatalog(fsMod)
-for _, e in ipairs(errs) do
-o(string.format("  catalog line %d: %s", e.line, e.why), T.warning)
-end
-return cues
-end
-local function report(rep)
-for _, e in ipairs(rep.errors or {}) do o("  " .. e, T.warning) end
-if rep.played then
-o(string.format("Playing on the tape (%.1fs).", rep.seconds or 0), T.highlight)
-end
-if rep.sent then o("Broadcast to the network.", T.highlight)
-elseif not rep.localOnly then o("Nothing was broadcast.", T.warning) end
-end
-if sub == "" then
-local okA, app = pcall(require, "intercomapp")
-if okA and app and app.open then app.open(S); return end
-sub = "status"
-end
-if sub == "status" then
-o("=== Intercom ===", T.title)
-local drive, why = ic.findDrive()
-if drive then
-local sz = (drive.getSize and drive.getSize()) or 0
-local ready = (drive.isReady and drive.isReady()) and "tape loaded" or "NO TAPE"
-o(string.format("  tape drive : %s, %d bytes", ready, sz),
-ready == "NO TAPE" and T.warning or T.fg)
-else
-o("  tape drive : none (" .. tostring(why) .. ") — text-only announcements", T.warning)
-end
-local cues = loadCues()
-o("  catalog    : " .. #cues .. " cue(s) in " .. ic.CUES_PATH, T.fg)
-local cfg = ic.loadCfg(fsMod)
-o("  receiving  : " .. (ic.running() and "listening" or "STOPPED (service start intercom)"),
-ic.running() and T.highlight or T.warning)
-o(string.format("  popups     : at %s and above, at most one per %ds",
-cfg.popupLevel, cfg.popupCooldown), T.fg)
-o(string.format("  filter     : ignore anything below %s", cfg.minLevel), T.dim)
-o("", T.dim)
-o("  intercom say \"...\" [--severity warn]   speak now, text only", T.dim)
-o("  intercom play <cue>                     tape + text", T.dim)
-o("  intercom test <cue>                     play it here, tell nobody", T.dim)
-o("  intercom cues | log | set <k> <v>", T.dim)
-elseif sub == "cues" or sub == "list" then
-local cues = loadCues()
-if #cues == 0 then
-o("No cues catalogued yet.", T.warning)
-o("Edit " .. ic.CUES_PATH .. " and describe what is on the tape:", T.dim)
-o('  fuel-low  [0001] "Warning: Reactor fuel low." [0005]  warn', T.dim)
+local ai,ah=pcall(require,"system_manifest")
+if ai and type(ah)=="table"then for ak,aj in ipairs(ah)do
+if type(aj)=="table"and
+type(aj.path)==r then ab[#ab+1]=aj.path end end end
+if#ab==0 then
+E("  WARN: system_manifest not loadable, using minimal file list",d.warning)
+ab={"/init.lua","/tos/kernel/init.lua","/tos/kernel/hal.lua","/tos/kernel/event.lua","/tos/kernel/process.lua","/tos/kernel/fs.lua","/tos/kernel/display.lua","/tos/kernel/log.lua","/tos/kernel/serialize.lua","/tos/shell/init.lua"}end end;local _,aa,ad=0,0,0
+for ai,ah in ipairs(ab)do
+if e.exists(ah)then local aj,ak=e.copy(ah,Z..ah)if aj then _=_+1 else
+E("  FAIL "..ah..
+": "..tostring(ak),d.error)aa=aa+1 end else ad=ad+1 end end
+if e.exists(B)then if e.copy(B,Z..B)then _=_+1 else aa=aa+1 end end
+if e.exists(w)then
+do local ah,ai=e.copy(w,Z..w)
+if ah then _=_+1
+E("  Copied install.lua (automated installer)",d.highlight)else
+E("  FAIL writing install.lua: "..tostring(ai),d.error)aa=aa+1 end end else
+E("  WARNING: /install.lua not found on boot drive",d.error)
+E("  The install disk will not have an automated installer.",d.dim)end;E("",d.fg)
+if aa==0 then
+E("Install disk created: ".._.." files",d.highlight)E("",d.fg)
+E("On the target machine (OpenOS), run:",d.dim)E("  # "..Z..w,d.fg)
+E("Or insert the disk and run: /mnt/<disk>/install.lua",d.dim)else
+E(_.." files copied, "..aa.." failed",d.error)end end
+b.chat=function(H,E)if not k then E(C,d.error)return end
+local _,Z=pcall(require,"shell.panels.chatapp")if not _ then
+E("Chat unavailable: "..tostring(Z),d.error)return end;Z.open(a)end
+local function L(E)
+local H=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if type(E)==r and H and H.resolve then local Z=H.resolve(E)
+if Z then return Z end end;return E end
+b.rsh=function(H,E)if not h(E)then return end;if not H[1]or not H[2]then
+E("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)",d.dim)return end
+if not k then E(C,d.error)return end;local aa,ab=pcall(require,"kernel.net.remote")if not aa then
+E("Remote module unavailable",d.error)return end;local Z=L(H[1])
+local ac=table.concat(H," ",2)
+E("Executing on "..Z:sub(1,8).."...",d.dim)local _,ad=ab.execute(Z,ac)if _ then E(_,d.fg)else
+E("Error: "..tostring(ad),d.error)end end
+b.scp=function(H,E)if not h(E)then return end
+if not H[1]or not H[2]then
+E("Usage: scp <peer>:<remote_path> <local_path>",d.dim)
+E("  Copies a file from a TRUSTED peer's /public.",d.dim)return end;if not k then E(C,d.error)return end
+local aa,ab=pcall(require,"kernel.net.transfer")
+if not aa then E("Transfer module unavailable",d.error)return end;local Z,_=H[1]:match("^([^:]+):(.+)$")
+if Z then local ac=L(Z)local ad=N(H[2])
+E(
+"Downloading ".._..
+" from "..Z..
+(ac~=Z and(" ("..ac:sub(1,8)..")")or"").."...",d.dim)local ae,af=ab.request(ac,_,ad)if ae then n()
+E("Downloaded: ".._.." -> "..ad,d.highlight)else
+E("Transfer failed: "..tostring(af),d.error)end else
+E("Usage: scp <peer>:<remote_path> <local_path>",d.dim)end end
+b.screen=function(H,E)local _,Z=pcall(require,"kernel.screen")if not _ then
+E("Screen module unavailable",d.error)return end
+if H[1]=="res"then
+local ab=m.getGpu and m.getGpu()local ad,ae=m.getSize()local ag,ah=ad,ae
+if ab then
+local ao,an,ap=pcall(ab.maxResolution)if ao and an then ag,ah=an,ap end end;local aa=g.getConfig and g.getConfig()local ai=H[2]
+if not ai then
+E("=== Screen Resolution ===",d.title)
+E(string.format("Current : %dx%d",ad or 0,ae or 0),d.fg)
+E(string.format("Maximum : %dx%d",ag or 0,ah or 0),d.dim)
+if ab and ab.getScreen then local ao,an=pcall(ab.getScreen)
+if ao and type(an)==r then
+local aq,ap,ar=pcall(require("component").invoke,an,"getAspectRatio")if aq and ap then
+E(string.format("Blocks  : %dx%d (physical)",ap,ar),d.dim)end end end
+E("Policy  : ".. ((aa and aa.get and aa.get("screenRes"))or
+"auto"),d.fg)
+E("Set: screen res <auto|max|WxH>   (e.g. screen res 80x25)",d.dim)return end;if not h(E)then return end;local ac=tostring(ai):lower()
+if
+
+ac~="auto"and ac~="max"and not ac:match("^%d+%s*[x×]%s*%d+$")then E("Usage: screen res <auto|max|WxH>",d.error)return end;if aa and aa.set then aa.set("screenRes",ac)
+if aa.save then aa.save()end end
+Z.setPolicy(Z.specFromConfig(aa))local ak,al,aj=Z.fitDisplay(a.displayIdx)
+local am,af=pcall(require,"shell.panels.state")
+if am and af and af.recomputeLayout then af.recomputeLayout(a)end;if c.drawAll then pcall(c.drawAll)end
+E(string.format("Resolution -> %dx%d (policy '%s')",
+ak or ad or 0,al or ae or 0,ac),d.highlight)if aj then E(aj,d.warning)end
+E("Applied now and saved for next boot.",d.dim)return end
+if H[1]=="list"or not H[1]then local aa=Z.list()if#aa==0 then
+E("No displays",d.dim)return end
+for ac,ab in ipairs(aa)do
+local ad=ab.active and" * "or"   "
+E(string.format("%s%d: %s (%dx%d %d-bit)",ad,ab.index,ab.label,ab.w,ab.h,ab.depth),d.fg)end elseif H[1]=="next"then Z.next()
+E("Switched to: "..Z.active().label,d.highlight)elseif tonumber(H[1])then
+if Z.setActive(tonumber(H[1]))then
+E("Switched to screen "..H[1],d.highlight)else E("Invalid screen index",d.error)end else
+E("Usage: screen [list|next|<index>|res [auto|max|WxH]]",d.dim)end end
+local function O(E)
 return
-end
-o(string.format(" %-16s %-7s %-7s %-8s %s", "name", "start", "end", "severity", "says"), T.title)
-for _, c in ipairs(cues) do
-o(string.format(" %-16s %-7d %-7d %-8s %s",
-c.name, c.start, c.stop, c.severity, c.text), T.fg)
-end
-elseif sub == "say" then
-local text = table.concat(rest, " ")
-if text == "" then
-o('Usage: intercom say "your announcement" [--severity warn] [--to <peer>]', T.dim)
-o("Severities: " .. table.concat(ic.SEVERITIES, " "), T.dim); return
-end
-local sev = type(flags.severity) == "string" and flags.severity or "info"
-if not ic.validSeverity(sev) then
-o("Unknown severity: " .. sev, T.error)
-o("Use one of: " .. table.concat(ic.SEVERITIES, " "), T.dim); return
-end
-o("Announcing (" .. sev .. "): " .. text, T.title)
-report(ic.announce({ text = text, severity = sev,
-to = type(flags.to) == "string" and flags.to or nil }))
-elseif sub == "play" or sub == "test" then
-local name = rest[1]
-if not name then
-o("Usage: intercom " .. sub .. " <cue>   (intercom cues to list them)", T.dim); return
-end
-local cue = ic.findCue(loadCues(), name)
-if not cue then o("No such cue: " .. name, T.error); return end
-if sub == "test" then
-o("Testing cue '" .. cue.name .. "' — playing locally, sending nothing.", T.title)
-o("  should say: " .. cue.text, T.dim)
-o("  tape " .. cue.start .. " -> " .. cue.stop, T.dim)
-else
-o("Announcing cue '" .. cue.name .. "' (" .. cue.severity .. ")", T.title)
-o("  " .. cue.text, T.fg)
-end
-report(ic.announce({ cue = cue, localOnly = (sub == "test"),
-driveAddr = type(flags.drive) == "string" and flags.drive or nil,
-to = type(flags.to) == "string" and flags.to or nil }))
-elseif sub == "log" then
-local spool = ic.loadSpool(fsMod)
-if #spool == 0 then o("Nothing heard yet.", T.dim); return end
-local n = tonumber(rest[1]) or 20
-for i = math.max(1, #spool - n + 1), #spool do
-local a = spool[i]
-local sev = a.severity or "info"
-o("  " .. ic.formatLine(a),
-(sev == "critical" or sev == "alert") and T.error
-or (sev == "warn") and T.warning or T.fg)
-end
-elseif sub == "set" then
-if not adminOnly(o) then return end
-local key, val = rest[1], rest[2]
-local cfg = ic.loadCfg(fsMod)
-if not key then
-o("Usage: intercom set <popuplevel|minlevel|cooldown|echotape> <value>", T.dim)
-o("  popuplevel <sev>   interrupt with a message box at this and above", T.dim)
-o("  minlevel   <sev>   ignore anything quieter than this", T.dim)
-o("  cooldown   <secs>  minimum quiet between message boxes", T.dim)
-o("  echotape   on|off  also play received cues on this box's tape", T.dim)
-return
-end
-key = key:lower()
-if key == "popuplevel" or key == "minlevel" then
-if not ic.validSeverity(val) then
-o("Severities: " .. table.concat(ic.SEVERITIES, " "), T.error); return
-end
-cfg[key == "popuplevel" and "popupLevel" or "minLevel"] = val
-elseif key == "cooldown" then
-local n = tonumber(val)
-if not n or n < 0 or n > 3600 then o("cooldown: 0-3600 seconds", T.error); return end
-cfg.popupCooldown = n
-elseif key == "echotape" then
-cfg.echoToTape = (val == "on" or val == "true" or val == "1")
-else
-o("Unknown setting: " .. key, T.error); return
-end
-local ok2, err = ic.saveCfg(cfg, fsMod)
-if ok2 then o("Saved.", T.highlight) else o("Save failed: " .. tostring(err), T.error) end
-else
-o("Usage: intercom [status|cues|say|play|test|log|set] ...", T.title)
-o("  intercom say \"text\" [--severity <lvl>]  announce text right now", T.dim)
-o("  intercom play <cue>                      play a tape cue AND announce it", T.dim)
-o("  intercom test <cue>                      play it here only, to check it", T.dim)
-o("  intercom cues                            what's catalogued on the tape", T.dim)
-o("  intercom log [N]                         what this box has heard", T.dim)
-o("  intercom set <key> <value>               receive policy (admin)", T.dim)
-end
-end
-C.mail = function(args, o)
-local okLib, mailLib = pcall(require, "mail")
-if not okLib or type(mailLib) ~= "table" or not mailLib.send then
-o("Mail is an add-on and isn't installed on this machine.", T.error)
-o("Install it from the Optional Utilities disk:  pkg install mail", T.dim)
-o("(then `service start mail` so this box can RECEIVE mail)", T.dim)
-return
-end
-if not mailLib.available() then
-o("Mail unavailable (no network hardware?)", T.error); return
-end
-mailLib.tick()
-local me = S.who or "user"
-local sub = args[1]
-if not sub or sub == "ui" or sub == "tui" then
-local okM, mailApp = pcall(require, "mailapp")
-if okM and mailApp and mailApp.open then
-mailApp.open(S)
-return
-end
-end
-if not mailLib.running() then
-o("Note: the mail service is stopped — this box won't RECEIVE mail.", T.warning)
-o("      Start it with:  service start mail", T.dim)
-end
-if sub == "send" then
-local rcpt = args[2]
-if not rcpt then o("Usage: mail send <peer|alias|user@peer|*> [subject] [body...]", T.dim); return end
-local toAddr, ruser = mailLib.resolveRecipient(rcpt,
-NM and NM.aliases and NM.aliases.resolve)
-local subject = args[3] or ""
-local body
-if args[4] then body = table.concat(args, " ", 4)
-elseif promptInput then body = promptInput("Body: ", 200) end
-if not body then o("Cancelled", T.dim); return end
-local id, sealed = mailLib.send({ to = toAddr, user = ruser, fromUser = me,
-subject = subject, body = body })
-if id then
-o("Queued " .. tostring(id):sub(1, 18) .. (sealed and "  (sealed)"
-or "  (PLAINTEXT bulletin)"),
-sealed and T.highlight or T.warning)
-else
-o("Send failed: " .. tostring(sealed), T.error)
-end
-elseif sub == "read" then
-local i = tonumber(args[2])
-local box = mailLib.inboxBox(me)
-local m = box and i and box:get(i)
-if not m then o("No message #" .. tostring(args[2]), T.error); return end
-box:markRead(i)
-o(string.rep("-", math.min(W, 50)), T.dim)
-o("From:    " .. (m.fromUser and (m.fromUser .. " @ ") or "") .. tostring(m.from):sub(1, 12), T.fg)
-o("Subject: " .. (m.subject ~= "" and m.subject or "(no subject)"), T.title)
-if not m.readable then o("[sealed - no shared secret to open this]", T.warning) end
-o(string.rep("-", math.min(W, 50)), T.dim)
-for line in (tostring(m.body) .. "\n"):gmatch("(.-)\n") do o(line, T.fg) end
-elseif sub == "delete" or sub == "rm" then
-local i = tonumber(args[2])
-local box = mailLib.inboxBox(me)
-if box and i and box:delete(i) then o("Deleted #" .. i, T.highlight)
-else o("No message #" .. tostring(args[2]), T.error) end
-else
-local box, boxErr = mailLib.inbox(me)
-if not box then o(tostring(boxErr), T.error); return end
-if #box == 0 then o("(inbox empty)", T.dim)
-else
-o("Inbox for " .. me .. ":", T.title)
-for i, m in ipairs(box) do
-o(mailLib.inboxRow(m, i, W - 1), m.read and T.dim or T.fg)
-end
-end
-local pend = mailLib.pending()
-if pend and pend > 0 then o(pend .. " outbound awaiting delivery", T.dim) end
-o("Commands: mail send <peer> [subj] [body] | read <n> | delete <n>", T.dim)
-end
-end
-C.rbmk = function(args, o)
-local okLib, rbmk = pcall(require, "rbmk-cmd")
-if not okLib or type(rbmk) ~= "table" or not rbmk.run then
-o("The RBMK controller add-on isn't installed on this machine.", T.error)
-o("Install it from the Optional Utilities disk:  pkg install rbmk-control", T.dim)
-o("Then:  rbmk survey   (identifies the console's real API)", T.dim)
-return
-end
---! The third argument is the shell context, and only the
---! full-screen subcommands (`rbmk skala`, `rbmk wall`) use it. The
---! line-based ones ignore it, so `rbmk status` keeps working from
---! a script or an rc shim where there is no screen to own.
-local okScr, scrMod = pcall(require, "kernel.screen")
-rbmk.run(args, o, {
-display = D, event = E,
-screen = okScr and scrMod or nil,
-})
-end
-C.robot = function(args, o)
-local ok2, rob = pcall(require, "peripheral.robot")
-if not ok2 then o("No robot module", T.error); return end
-if not rob.available() then o("Not a robot", T.error); return end
-local cmd = args[1]
-if cmd == "forward" or cmd == "fwd" then local ok3, r = rob.forward(); o(ok3 and "Moved forward" or tostring(r), ok3 and T.highlight or T.error)
-elseif cmd == "back" then local ok3, r = rob.back(); o(ok3 and "Moved back" or tostring(r), ok3 and T.highlight or T.error)
-elseif cmd == "up" then local ok3, r = rob.up(); o(ok3 and "Moved up" or tostring(r), ok3 and T.highlight or T.error)
-elseif cmd == "down" then local ok3, r = rob.down(); o(ok3 and "Moved down" or tostring(r), ok3 and T.highlight or T.error)
-elseif cmd == "left" then rob.turnLeft(); o("Turned left", T.highlight)
-elseif cmd == "right" then rob.turnRight(); o("Turned right", T.highlight)
-elseif cmd == "swing" then local ok3, r = rob.swing(args[2]); o(ok3 and "Swing!" or tostring(r), ok3 and T.highlight or T.error)
-elseif cmd == "use" then local ok3, r = rob.use(args[2]); o(ok3 and "Used!" or tostring(r), ok3 and T.highlight or T.error)
-elseif cmd == "detect" then local ok3, r = rob.detect(args[2]); o(ok3 and "Block: " .. tostring(r) or "Nothing", T.fg)
-elseif cmd == "inv" then
-local inv = rob.inventory()
-if inv then
-for _, slot in ipairs(inv) do
-if slot.count > 0 then
-o(string.format(" [%2d] %dx %s", slot.slot, slot.count, slot.name or "?"), T.fg)
-end
-end
-end
-else
-o("Usage: robot <forward|back|up|down|left|right|swing|use|detect|inv>", T.dim)
-end
-end
-C.inventory = function(args, o)
-local ok2, inv = pcall(require, "peripheral.inventory")
-if not ok2 then o("No inventory module", T.error); return end
-if not inv.available() then o("No inventory controller/transposer", T.error); return end
-local side = args[1] and (tonumber(args[1]) or args[1]) or nil
-local items = inv.list(side)
-if items then
-o(string.format(" %-4s %-24s %s", "Slot", "Item", "Count"), T.title)
-for _, item in ipairs(items) do
-if item.count > 0 then
-o(string.format(" %-4d %-24s %d", item.slot, (item.name or "?"):sub(1,24), item.count), T.fg)
-end
-end
-else
-o("Cannot read inventory", T.error)
-end
-end
-C.inv = C.inventory
-C.component = function(args, o)
-if not adminOnly(o) then return end
-if not args[1] then
-o("Usage: component <type> [method] [args...]", T.dim)
-o("  component list            List all component types", T.dim)
-o("  component gpu             Show GPU methods", T.dim)
-o("  component gpu getDepth    Call gpu.getDepth()", T.dim)
-o("  component reload-caps     Reload the cap configs (see below)", T.dim)
-return
-end
-if args[1] == "reload-caps" then
-local okS, sandbox = pcall(require, "kernel.sandbox")
-if not okS or not sandbox.reloadComponentConfig then
-o("Sandbox doesn't support reload-caps", T.error); return
-end
-local base, gated = sandbox.reloadComponentConfig()
-local nBase, nGated = 0, 0
-for _ in pairs(base or {}) do nBase = nBase + 1 end
-for _ in pairs(gated or {}) do nGated = nGated + 1 end
-o(string.format("Reloaded: %d extra base, %d extra gated types",
-nBase, nGated), T.highlight)
-local okP, pkgMod = pcall(require, "kernel.pkg")
-if okP and pkgMod and pkgMod.reloadCapConfig then
-local allow, deny = pkgMod.reloadCapConfig()
-local nAllow, nDeny = 0, 0
-for _ in pairs(allow or {}) do nAllow = nAllow + 1 end
-for pkgName, set in pairs(deny or {}) do
-for _ in pairs(set) do nDeny = nDeny + 1 end
-local _ = pkgName
-end
-o(string.format("Reloaded: %d extra package caps, %d denials",
-nAllow, nDeny), T.highlight)
-if nAllow > 0 or nDeny > 0 then
-o("Packages already loaded this boot keep their old caps.", T.dim)
-end
-end
-return
-end
-if args[1] == "list" then
-local seen = {}
-for addr, ctype in component.list() do
-if not seen[ctype] then
-seen[ctype] = 0
-end
-seen[ctype] = seen[ctype] + 1
-end
-for ctype, cnt in pairs(seen) do
-o(string.format("  %-20s x%d", ctype, cnt), T.fg)
-end
-return
-end
-if not rootOnly(o) then return end
-local ctype = args[1]
-local proxy = component.proxy(component.list(ctype)() or "")
-if not proxy then o("No component: " .. ctype, T.error); return end
-if not args[2] then
-local methods = {}
-for k, v in pairs(proxy) do
-local mt = type(v) == "table" and getmetatable(v)
-if type(v) == "function" or (type(mt) == "table" and mt.__call) then
-methods[#methods+1] = k
-end
-end
-table.sort(methods)
-for _, m in ipairs(methods) do o("  " .. m .. "()", T.fg) end
-else
-if ctype == "eeprom" and (args[2] == "set" or args[2] == "setData"
-or args[2] == "makeReadonly") then
-o("Denied: use the 'flash' command to write EEPROM", T.error)
-return
-end
-local method = proxy[args[2]]
-if not method then o("Unknown method: " .. args[2], T.error); return end
-local callArgs = {}
-for i = 3, #args do
-local v = args[i]
-if v == "true" then callArgs[#callArgs+1] = true
-elseif v == "false" then callArgs[#callArgs+1] = false
-elseif tonumber(v) then callArgs[#callArgs+1] = tonumber(v)
-else callArgs[#callArgs+1] = v end
-end
-local results = table.pack(pcall(method, table.unpack(callArgs)))
-if results[1] then
-for i = 2, results.n do o("  " .. tostring(results[i]), T.fg) end
-else
-o("Error: " .. tostring(results[2]), T.error)
-end
-end
-end
-C.internet = function(args, o)
-local okI, inet = pcall(require, "kernel.internet")
-if not okI or not inet then o("internet module unavailable", T.error); return end
-local sub = (args[1] or "status"):lower()
-if sub == "status" then
-local st = inet.status()
-if not st.present then
-o("No internet card installed.", T.warning)
-o("An Internet Card goes in a card slot; the machine needs no", T.dim)
-o("other change. TOS uses it for 'pkg fetch' and nothing else", T.dim)
-o("unless a package asks for the 'internet' capability.", T.dim)
-return
-end
-o("Internet card " .. tostring(st.addr), T.title)
-o("  HTTP:    " .. (st.http and "available" or "DISABLED by the server"),
-st.http and T.highlight or T.warning)
-o("  TCP:     " .. (st.tcp and "available" or "disabled by the server"),
-st.tcp and T.fg or T.dim)
-o("  Machine: " .. (st.enabled and "enabled" or "DISABLED (config: internet)"),
-st.enabled and T.highlight or T.warning)
-if st.reason then o("  -> " .. st.reason, T.warning) end
-if not st.http and st.present then
-o("", T.dim)
-o("HTTP is switched off in the SERVER's OpenComputers config,", T.dim)
-o("not in TOS. Only the server owner can change it.", T.dim)
-end
-elseif sub == "on" or sub == "off" then
-if not adminOnly(o) then return end
-local okC, cfg = pcall(require, "kernel.config")
-if not okC then o("config unavailable", T.error); return end
-cfg.set("internet", sub == "on")
-if cfg.save then pcall(cfg.save) end
-o("Internet access " .. (sub == "on" and "enabled" or "disabled")
-.. " on this machine.", T.highlight)
-elseif sub == "get" then
-if not args[2] then o("Usage: internet get <url>", T.dim); return end
-local body, err, meta = inet.get(args[2])
-if not body then o(tostring(err), T.error); return end
-o(string.format("%d bytes%s", #body,
-(meta and meta.status) and ("  (HTTP " .. tostring(meta.status) .. ")") or ""),
-T.dim)
-local shown = 0
-for line in body:gmatch("([^\n]*)\n?") do
-if shown >= 20 then o("... (truncated)", T.dim); break end
-o(line, T.fg); shown = shown + 1
-end
-else
-o("Usage: internet [status|get <url>|on|off]", T.dim)
-end
-end
-C.compat = function(args, o)
-local ok2, compatMod = pcall(require, "compat")
-if not ok2 then o("Compat layer not loaded", T.error); return end
-local mods = compatMod.list()
-o(" OpenOS Compatibility Layer", T.title)
-o(string.format(" %-16s %s", "Module", "Status"), T.dim)
-for _, m in ipairs(mods) do
-o(string.format(" %-16s %s", m.name, m.loaded and "loaded" or "not loaded"),
-m.loaded and T.highlight or T.dim)
-end
-end
-C.disk = function(args, o)
-local sub = args[1]
-if not sub or sub == "list" then
-local fsList = F.mounts and F.mounts() or nil
-if fsList and type(fsList) == "table" and #fsList > 0 then
-local removable = {}
-for _, m in ipairs(fsList) do
-if m.mountPoint ~= "/" then
-removable[#removable + 1] = m
-end
-end
-if #removable == 0 then
-o("No removable disks mounted", T.dim)
-else
-o(string.format(" %-16s %-10s %s", "Mount", "Label", "Status"), T.title)
-o(string.rep("-", 42), T.dim)
-for _, m in ipairs(removable) do
-local mnt = m.mountPoint
-local info = helpers.classifyDisk(F, mnt)
-local label = (m.label or ""):sub(1, 10)
-o(string.format(" %-16s %-10s %s", mnt:sub(1,16), label, info.desc),
-info.kind ~= "data" and T.highlight or T.fg)
-end
-end
-elseif F.exists("/mnt") then
-local entries = F.list("/mnt")
-if entries and #entries == 0 then
-o("No removable disks mounted", T.dim)
-elseif entries then
-o(string.format(" %-16s %-8s %s", "Mount", "Type", "Status"), T.title)
-o(string.rep("-", 42), T.dim)
-for _, name in ipairs(entries) do
-local mnt = "/mnt/" .. name:gsub("/$", "")
-local info = helpers.classifyDisk(F, mnt)
-o(string.format(" %-16s %-8s %s", mnt:sub(1,16), "disk", info.desc),
-info.kind ~= "data" and T.highlight or T.fg)
-end
-else
-o("No removable disks mounted", T.dim)
-end
-else
-o("No removable disks mounted", T.dim)
-end
---! Raw drives are NOT filesystems, so nothing above can list them:
---! `disk` and `mount` both walk MOUNTED filesystems, and an
---! unmanaged drive has none until it is formatted and mounted. That
---! is correct and completely opaque -- an operator with a raw drive
---! attached sees "No removable disks mounted", concludes the drive
---! is not being detected, and has no way to learn that `drive` is
---! the command that sees it. Say so, but only when there is
---! actually one attached, so the hint never becomes noise.
-do
-local raw = 0
-for _ in component.list("drive", true) do raw = raw + 1 end
-if raw > 0 then
-o("", T.dim)
-o(raw .. " unmanaged (raw) drive(s) attached — not filesystems, so", T.warning)
-o("they cannot appear above until formatted and mounted.", T.dim)
-o("  drive list          see them, with address and capacity", T.dim)
-o("  drive format <addr> make one a TBFS filesystem", T.dim)
-end
-end
-o("disk info <mnt> for details  ·  df for space  ·  jbod to pool disks", T.dim)
-elseif sub == "info" then
-if not args[2] then o("Usage: disk info <mount-point>", T.dim); return end
-local mnt = F.normalize(args[2])
-if not F.exists(mnt) or not F.isDirectory(mnt) then
-o("Not a valid mount point: " .. mnt, T.error); return
-end
-local total = F.spaceTotal(mnt)
-local free = F.spaceFree(mnt)
-o(" Mount: " .. mnt, T.title)
-if total and total > 0 then
-o(string.format(" Space: %dK free / %dK total",
-math.floor(free / 1024), math.floor(total / 1024)), T.fg)
-end
-local info = helpers.classifyDisk(F, mnt)
-o(" Contains: " .. info.desc, info.kind ~= "data" and T.highlight or T.dim)
-if info.hint then o("   -> " .. info.hint, T.dim) end
-elseif sub == "install" then
-o("'disk install' folded into the package manager:", T.warning)
-o("  pkg install              scan all mounts, confirm per package", T.dim)
-o("  pkg install <mnt>        install one specific directory", T.dim)
-elseif sub == "export" then
-o("'disk export' was removed with the legacy module system.", T.warning)
-o("To build an install disk for add-ons, use the Optional Utilities", T.dim)
-o("builder: TOS-Extras/build/build-disk.lua.", T.dim)
-o("For a full TOS image, use 'deploy <mount>' instead.", T.dim)
-elseif sub == "eject" then
-if not args[2] then o("Usage: disk eject <mount-point>", T.dim); return end
-local mnt = F.normalize(args[2])
-local ok3, err = F.unmount(mnt)
-if ok3 then o("Ejected: " .. mnt, T.highlight)
-else o("Eject failed: " .. tostring(err), T.error) end
-else
-o("Usage: disk [list|info <mnt>|eject <mnt>]", T.dim)
-o("  Removable disks + what's on them.  Install packages: 'pkg'.", T.dim)
-o("  Pool several disks into one: 'jbod'.   Free space per mount: 'df'.", T.dim)
-end
-end
-C.drive = function(args, o)
-local sub = args[1]
-local function bf()
-local ok, mod = pcall(require, "blockfs")
-return ok and mod or nil
-end
-local function proxyFor(prefix)
-local matches = {}
-for addr in component.list("drive", true) do
-if not prefix or addr:sub(1, #prefix) == prefix then matches[#matches + 1] = addr end
-end
-table.sort(matches)
-if #matches == 0 then return nil, "no unmanaged drive found" .. (prefix and (" for '" .. prefix .. "'") or "") end
-if prefix and #matches > 1 then return nil, "ambiguous prefix '" .. prefix .. "' (" .. #matches .. " drives)" end
-local addr = matches[1]
-local okP, px = pcall(component.proxy, addr)
-if not okP or not px then return nil, "cannot proxy drive" end
-return px, addr
-end
-if not sub or sub == "list" then
-o("Unmanaged drives (raw block devices):", T.title)
-local n, lib = 0, bf()
-for addr in component.list("drive", true) do
-local okP, px = pcall(component.proxy, addr)
-if okP and px then
-n = n + 1
-local ss = (px.getSectorSize and px.getSectorSize()) or 0
-local cap = (px.getCapacity and px.getCapacity()) or 0
-local pl = (px.getPlatterCount and px.getPlatterCount()) or 1
-local fsinfo = "unformatted"
-if lib then
-local s = lib.stats(px)
-if s then fsinfo = string.format('TBFS "%s"  %s used  %d%% frag',
-s.label, fmtSz(s.usedBlocks * s.sectorSize), math.floor(s.fragmentation * 100 + 0.5)) end
-end
-o(string.format("  %s  %s  %dB/sector  %d platter(s)  %s",
-addr:sub(1, 8) .. "...", fmtSz(cap), ss, pl, fsinfo), T.fg)
-end
-end
-if n == 0 then
-o("  (none attached)", T.dim)
-o("  Managed disks appear under 'disk' / 'df'; this is for raw drives.", T.dim)
-elseif not lib then
-o("  Install 'blockfs' to format/mount them:  pkg install blockfs", T.dim)
-else
-o("  format | mount | check [--repair] | defrag [--if-over N] | read | write", T.dim)
-end
-return
-end
-if sub == "info" then
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-o("Drive " .. addr:sub(1, 8) .. "...", T.title)
-o(string.format("  capacity   %s", fmtSz((px.getCapacity and px.getCapacity()) or 0)), T.fg)
-o(string.format("  sector     %d bytes", (px.getSectorSize and px.getSectorSize()) or 0), T.fg)
-o(string.format("  platters   %d", (px.getPlatterCount and px.getPlatterCount()) or 1), T.fg)
-local lib = bf()
-if lib then
-local s = lib.stats(px)
-if s then
-o("  TBFS volume:", T.highlight)
-o(string.format('    label "%s"   %s / %s used   %d file(s), %d dir(s)',
-s.label, fmtSz(s.usedBlocks * s.sectorSize), fmtSz(s.dataBlocks * s.sectorSize),
-s.files, s.dirs), T.fg)
-o(string.format("    fragmentation %d%%   %s",
-math.floor(s.fragmentation * 100 + 0.5), s.clean and "clean" or "DIRTY (mounted or unclean)"), T.fg)
-else o("  Not a TBFS volume. It holds " .. (driveHolds(px) or "something unreadable") .. ".", T.dim) end
-else
-o("  It holds " .. (driveHolds(px) or "something unreadable") .. ".", T.dim)
-o("  (install 'blockfs' to format or mount it)", T.dim)
-end
-return
-end
-local lib = bf()
-if not lib then o("The 'blockfs' package is required:  pkg install blockfs", T.error); return end
---! A mounted volume is being driven by ONE handle: the proxy F.mount
---! holds, with its own block cache, free count and open files. format,
---! check --repair and defrag open a SECOND handle on the same sectors
---! and rewrite the bitmap and inodes underneath the first, whose
---! cached copies then say things the drive no longer does -- the
---! next write through the mount allocates from a stale bitmap. That
---! is silent corruption.
---!
---! So the volume comes OUT for the duration. It does not need to be
---! the operator's problem: with nothing using the mount there is
---! nothing to decide, so the command unmounts, works, and remounts it
---! at the same path. It asks only when something would actually be
---! disturbed -- an open file handle, or a process sitting inside the
---! mount -- and then it says which. The remount runs on the way out
---! of a FAILED action too, so a drive is never left detached because
---! an fsck errored.
-local function mountedAt(addr)
-for _, m in ipairs(F.mounts and F.mounts() or {}) do
-if m.address == addr then return m.mountPoint, m end
-end
-return nil
-end
-local function mountUsers(mp)
-local reasons, unknown = {}, false
-for _, mm in ipairs(F.mounts and F.mounts() or {}) do
-if mm.mountPoint == mp then
-if mm.openFiles == nil then unknown = true
-elseif mm.openFiles > 0 then
-reasons[#reasons + 1] = string.format("%d open file handle(s)", mm.openFiles)
-end
-end
-end
-local guard = (mp:sub(-1) == "/") and mp or (mp .. "/")
-local okL, list = pcall(function() return P and P.list and P.list() or {} end)
-for _, pr in ipairs(okL and list or {}) do
-local cwd = pr.cwd
-if type(cwd) == "string" and (cwd == mp or cwd:sub(1, #guard) == guard) then
-reasons[#reasons + 1] = string.format("%s (pid %s) is in %s",
-tostring(pr.name or "?"), tostring(pr.pid or "?"), cwd)
-end
-end
-return reasons, unknown
-end
-local function withUnmounted(addr, px, verb, action)
-local mp = mountedAt(addr)
-if not mp then return action() end
-local reasons, unknown = mountUsers(mp)
-if #reasons > 0 or unknown then
-local detail = (#reasons > 0) and ("\n  " .. table.concat(reasons, "\n  "))
-or "\n  (the driver cannot say what is open)"
-local msg = string.format(
-"'%s' has to take %s out of the mount table while it works.\n"
-.. "Something is using it right now:%s\n\n"
-.. "Continuing will pull the volume out from under it. It is\n"
-.. "remounted at %s afterwards.", verb, mp, detail, mp)
-local go
-if confirmBox then
-go = confirmBox(msg, { title = "Unmount " .. mp .. "?",
-severity = "danger", yes = "Unmount and continue", no = "Cancel" })
-else
-o(msg, T.warning)
-local ans = promptInput and promptInput("Unmount " .. mp .. " and continue? [y/N]: ", 4) or "n"
-go = (ans or ""):lower() == "y"
-end
-if not go then o("Cancelled; the drive is still mounted.", T.dim); return false end
-else
-o(string.format("Nothing is using %s — unmounting for the %s.", mp, verb), T.dim)
-end
-local sess = helpers.sessionOf(S)
-local uok, uerr = F.unmount(mp, sess)
-if uok == false then
-o("Could not unmount " .. mp .. ": " .. tostring(uerr or "?"), T.error)
-return false
-end
-local aok, aerr = pcall(action)
-local nowfn = function() return math.floor(K.uptime and K.uptime() or 0) end
-local proxy, mErr = lib.mount(px, { now = nowfn })
-if proxy then
-local rok, rerr = F.mount(mp, proxy, sess)
-if rok == false then
-o("Remount FAILED at " .. mp .. ": " .. tostring(rerr or "?"), T.error)
-o("  Mount it by hand:  drive mount " .. addr:sub(1, 8) .. " " .. mp, T.dim)
-else
-o("Remounted at " .. mp .. ".", T.dim)
-pcall(refreshBrowser)
-end
-else
-o("Remount FAILED (" .. tostring(mErr) .. "); the drive is detached.", T.error)
-o("  Mount it by hand:  drive mount " .. addr:sub(1, 8) .. " " .. mp, T.dim)
-end
-if not aok then error(aerr, 0) end
-return aerr
-end
-if sub == "unmount" or sub == "umount" then
-if not adminOnly(o) then return end
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-local mp = mountedAt(addr)
-if not mp then o("Drive " .. addr:sub(1, 8) .. "... is not mounted.", T.dim); return end
-local sess = helpers.sessionOf(S)
-local uok, uerr = F.unmount(mp, sess)
-if uok == false then o(tostring(uerr or "unmount failed"), T.error); return end
-o("Unmounted " .. mp .. " (volume marked clean).", T.highlight)
-pcall(refreshBrowser)
-return
-end
-if sub == "format" then
-if not adminOnly(o) then return end
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-local label = args[3] or ("disk" .. addr:sub(1, 4))
-local holds = driveHolds(px, lib)
-local okFmt
-if confirmBox then
-okFmt = confirmBox(
-"Format drive " .. addr:sub(1, 8) .. "... as TBFS?" .. "\n\n" ..
-(holds and ("It holds " .. holds .. ".\n") or "") ..
-"Every file on it is destroyed. There is no undo and no\n" ..
-"recovery tool in TOS that can bring it back.",
-{ title = "Format drive", severity = "danger",
-yes = "Format", no = "Cancel" })
-else
-if holds then o("Drive " .. addr:sub(1, 8) .. "... holds " .. holds .. ".", T.warning) end
-local ans = promptInput and promptInput("FORMAT " .. addr:sub(1, 8) ..
-"... as TBFS? destroys all data [y/N]: ", 4) or "n"
-okFmt = (ans or ""):lower() == "y"
-end
-if not okFmt then o("Cancelled.", T.dim); return end
-withUnmounted(addr, px, "format", function()
-local ok2, err = lib.format(px, { label = label, now = function() return math.floor(K.uptime and K.uptime() or 0) end })
-if ok2 then o('Formatted as TBFS "' .. label .. '".', T.highlight)
-else o("Format failed: " .. tostring(err), T.error) end
-end)
-if not mountedAt(addr) then
-o("Mount it with: drive mount " .. addr:sub(1, 8), T.dim)
-end
-return
-end
-if sub == "mount" then
-if not adminOnly(o) then return end
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-local nowfn = function() return math.floor(K.uptime and K.uptime() or 0) end
-local proxy, fsOrErr = lib.mount(px, { now = nowfn })
-if not proxy then o("Mount failed: " .. tostring(fsOrErr), T.error); return end
-local label = helpers.safeMountName(proxy.getLabel and proxy.getLabel(), addr)
-local mnt = args[3] or ("/mnt/" .. label)
-if mnt:sub(1, 1) ~= "/" then mnt = "/mnt/" .. mnt end
-if not F.exists("/mnt") then pcall(F.makeDirectory, "/mnt") end
-if not F.exists(mnt) then pcall(F.makeDirectory, mnt) end
-local sess = helpers.sessionOf(S)
-local mok, merr = F.mount(mnt, proxy, sess)
-if mok == false then o(tostring(merr or "mount failed"), T.error); return end
-o("Mounted TBFS at " .. mnt, T.highlight)
-local s = lib.stats(px)
-if s and s.fragmentation > 0.30 then
-o(string.format("  Note: %d%% fragmented — 'drive defrag %s' to compact.",
-math.floor(s.fragmentation * 100 + 0.5), addr:sub(1, 8)), T.warning)
-end
-pcall(refreshBrowser)
-return
-end
-if sub == "check" or sub == "fsck" then
-if not adminOnly(o) then return end
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-local repair = args[3] == "--repair" or args[3] == "-r"
-local res
-if repair then
-local done = withUnmounted(addr, px, "check --repair", function()
-res = lib.check(px, { repair = true, yield = coopYield })
-end)
-if done == false then return end
-else
-res = lib.check(px, { repair = false, yield = coopYield })
-end
-if not res then o("Not a TBFS volume.", T.error); return end
-local mp = mountedAt(addr)
-if mp and not repair then
-local kept = {}
-for _, p in ipairs(res.problems) do
-if p ~= "volume was not cleanly unmounted" then kept[#kept + 1] = p end
-end
-res.problems = kept; res.ok = (#kept == 0)
-o("(mounted at " .. mp .. ": the dirty flag is expected and not counted)", T.dim)
-end
-if res.ok then o("TBFS clean: no problems.", T.highlight)
-else
-o((res.repaired and "Repaired. Findings:" or "Problems found:"), res.repaired and T.highlight or T.warning)
-for _, p in ipairs(res.problems) do o("  - " .. p, T.dim) end
-if not repair and not res.ok then o("  Run 'drive check " .. addr:sub(1, 8) .. " --repair' to fix.", T.dim) end
-end
-return
-end
-if sub == "defrag" then
-if not adminOnly(o) then return end
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-local threshold = nil
-for i = 3, #args do
-if args[i] == "--if-over" and args[i + 1] then threshold = tonumber(args[i + 1]) end
-end
-if threshold then
-local s = lib.stats(px)
-if s and (s.fragmentation * 100) < threshold then
-o(string.format("Fragmentation %d%% below %d%% — skipped.",
-math.floor(s.fragmentation * 100 + 0.5), threshold), T.dim)
-return
-end
-end
-o("Defragmenting...", T.title)
-withUnmounted(addr, px, "defrag", function()
-local dr, derr = lib.defrag(px, { now = function() return math.floor(K.uptime and K.uptime() or 0) end })
-if not dr then o("Defrag failed: " .. tostring(derr), T.error); return end
-o(string.format("Defragmented %d block(s): %d%% -> %d%% fragmented.",
-dr.moved, math.floor(dr.before * 100 + 0.5), math.floor(dr.after * 100 + 0.5)), T.highlight)
-end)
-return
-end
-if sub == "read" then
---! #SEC (pentest, Sep 2026) — admin, like every other subcommand past
---! `info`. A raw sector read goes under the filesystem, so it goes under
---! every ACL on it: on a TBFS volume -- a raw-drive boot disk included --
---! a plain user could page through /etc/users.dat and other homes.
-if not adminOnly(o) then return end
-local px, addr = proxyFor(args[2])
-if not px then o(tostring(addr), T.error); return end
-local sec = tonumber(args[3])
-if not sec then o("Usage: drive read <addr> <sector>", T.dim); return end
-local ok2, data = pcall(px.readSector, sec + 1)
-if not ok2 then o("Read failed: " .. tostring(data), T.error); return end
-local bytes = {}
-for i = 1, math.min(64, #(data or "")) do bytes[#bytes + 1] = string.format("%02X", (data):byte(i)) end
-o("Sector " .. sec .. " (first 64 bytes):", T.title)
-o("  " .. table.concat(bytes, " "), T.dim)
-return
-end
-if sub == "write" then
-if not adminOnly(o) then return end
-o("'drive write' is intentionally not exposed as a one-liner (a stray", T.warning)
-o("sector write corrupts a filesystem). Use the blockfs API from 'lua'", T.dim)
-o("for deliberate raw writes. Format/mount/defrag cover normal use.", T.dim)
-return
-end
-o("Usage: drive [list | info <addr> | format <addr> [label] | mount <addr> [path]", T.dim)
-o("             | unmount <addr> | check <addr> [--repair] | defrag <addr> [--if-over N]", T.dim)
-o("             | read <addr> <sec>]   (format/repair/defrag need the drive unmounted)", T.dim)
-end
-C.tape = function(args, o)
-local ok2, pkgMod = pcall(require, "kernel.pkg")
-if ok2 and pkgMod and pkgMod.getCommand then
-local fn = pkgMod.getCommand("tape")
-if fn then fn(args, o); return end
-if pkgMod.info and pkgMod.info("tape") then
-o("The tape package is installed but not enabled.", T.warning)
-o("Enable it with:  pkg enable tape", T.highlight)
-return
-end
-end
-o("Tape Storage", T.title)
-o("", T.fg)
-o("The 'tape' package isn't installed. To use Computronics tapes:", T.fg)
-o("", T.fg)
-o(" Install from the Optional Utilities disk:", T.highlight)
-o("    pkg install              (with the disk inserted)", T.dim)
-o("  or, if it's in a configured repo:", T.dim)
-o("    pkg install tape", T.dim)
-o("", T.fg)
-o(" Build your own: a /usr/modules/<name>/init.lua returning", T.dim)
-o("   { commands = { tape = function(args, o) ... end } }", T.dim)
-o(" plus a package.lua manifest (kind=\"command\"). See the TOS Manual.", T.dim)
-end
-C.deploy = function(args, o)
-if not rootOnly(o) then return end
-if args[1] == "drive" then
-local okBF, blockfs = pcall(require, "blockfs")
-if not okBF or not blockfs then
-o("Cannot deploy to a raw drive: TOS doesn't have the 'blockfs' package.", T.error)
-o("blockfs is the filesystem that makes a raw drive usable + bootable.", T.dim)
-o("Install it first, then retry:", T.dim)
-o("    pkg install blockfs", T.highlight)
-return
-end
-local blockfsSrc = F.exists("/usr/lib/blockfs.lua") and F.readFile("/usr/lib/blockfs.lua")
-if not blockfsSrc then
-o("blockfs is loadable but /usr/lib/blockfs.lua is missing — reinstall it:", T.error)
-o("    pkg install blockfs", T.highlight)
-return
-end
-local addrs = {}
-for a in component.list("drive", true) do
-if not args[2] or a:sub(1, #args[2]) == args[2] then addrs[#addrs + 1] = a end
-end
-table.sort(addrs)
-if #addrs == 0 then o("No unmanaged drive" .. (args[2] and (" matching '" .. args[2] .. "'") or "") .. " found.", T.error); return end
-if args[2] and #addrs > 1 then o("Ambiguous prefix '" .. args[2] .. "' (" .. #addrs .. " drives).", T.error); return end
-local addr = addrs[1]
-local okP, drive = pcall(component.proxy, addr)
-if not okP or not drive then o("Cannot proxy drive " .. addr:sub(1, 8), T.error); return end
-local blob = blockfs.bootBlob(blockfsSrc)
-local bootBytes = #blob + 4096
-local files = {}
-local okM, manifest = pcall(require, "system_manifest")
-if okM and type(manifest) == "table" then
-for _, e in ipairs(manifest) do
-if type(e) == "table" and type(e.path) == "string" then files[#files + 1] = e.path end
-end
-end
-if #files == 0 then o("system_manifest not loadable — aborting.", T.error); return end
---! PRE-FLIGHT, BEFORE THE ERASE.
---!
---! This used to format first and discover afterwards: a drive too small
---! for the OS was wiped, then filled until it ran out, printing one
---! "FAIL <path>" line per file that didn't make it. An outside review
---! (2026-09-10) flagged the inode half -- the default one-inode-per-4-KB
---! gives a 1 MB drive 256, shared between 152 files and their directory
---! chain. The byte half is the one that actually bites first today
---! (the OS is ~1.6 MB), and nothing checked it at all.
---!
---! Both are knowable before touching the drive: blockfs.plan is the
---! layout format() will write, blockfs.blocksFor what each file costs
---! including its indirect pointer blocks. Inodes are FIXABLE -- deploy
---! knows exactly how many it needs, so it sizes the table for that
---! instead of guessing -- and bytes are not, so those refuse.
-local inodeRatio = nil
-if blockfs.plan and blockfs.blocksFor then
-local plan, perr = blockfs.plan(drive, { bootBytes = bootBytes })
-if not plan then
-o("This drive cannot hold TOS: " .. tostring(perr) .. ". Nothing was erased.", T.error)
-return
-end
-local function footprint(ss)
-local blocks, inodes = 0, 1
-local dirBytes, seen = { ["/"] = 0 }, {}
-local function entry(parent, leaf)
-dirBytes[parent] = (dirBytes[parent] or 0) + 5 + #leaf
-end
-local function parentOf(p)
-local d = p:match("^(.*)/[^/]+$"); return (d == nil or d == "") and "/" or d
-end
-for _, path in ipairs(files) do
-local okS, sz = pcall(F.size, path)
-blocks = blocks + blockfs.blocksFor((okS and tonumber(sz)) or 0, ss)
-inodes = inodes + 1
-entry(parentOf(path), path:match("([^/]+)$"))
-local d = parentOf(path)
-while d ~= "/" and not seen[d] do
-seen[d] = true; inodes = inodes + 1
-entry(parentOf(d), d:match("([^/]+)$"))
-d = parentOf(d)
-end
-end
-for _, bytes in pairs(dirBytes) do blocks = blocks + blockfs.blocksFor(bytes, ss) end
-return blocks, inodes
-end
-local needBlocks, needInodes = footprint(plan.ss)
-if needInodes > plan.inodeCount then
-local want = math.ceil(needInodes * 1.25)
-inodeRatio = math.max(512, math.floor(plan.ss * plan.totalBlocks / want))
-local p2 = blockfs.plan(drive, { bootBytes = bootBytes, inodeRatio = inodeRatio })
-if not p2 or p2.inodeCount < needInodes then
-o(string.format("TOS needs %d inodes and this drive cannot hold that many. "
-.. "Nothing was erased.", needInodes), T.error)
-return
-end
-o(string.format("Sizing the inode table for this install: %d inodes (the default "
-.. "would give %d, and TOS needs %d).", p2.inodeCount, plan.inodeCount, needInodes), T.dim)
-plan = p2
-end
-if needBlocks > plan.dataBlocks then
-o(string.format("TOS will not fit on this drive: it needs %s, and the drive holds "
-.. "%s once the boot region and metadata are laid out.  [E-306 ERR_DRIVE_TOO_SMALL]",
-fmtSz(needBlocks * plan.ss), fmtSz(plan.dataBlocks * plan.ss)), T.error)
-o("Nothing was erased. Use a larger drive, or a managed disk: deploy <mount-point>", T.dim)
-return
-end
-local spare = (plan.dataBlocks - needBlocks) * plan.ss
-o(string.format("Fits: %s of %s, leaving %s spare; %d of %d inodes.",
-fmtSz(needBlocks * plan.ss), fmtSz(plan.dataBlocks * plan.ss), fmtSz(spare),
-needInodes, plan.inodeCount), T.dim)
-if spare < 64 * 1024 then
-o("Under 64 KB will be free after the install — logs, trash and swap fill that fast.",
-T.warning)
-end
-else
-o("(This blockfs cannot check capacity before erasing — 'pkg upgrade blockfs' adds it.)",
-T.warning)
-end
-local okInst
-local holds = driveHolds(drive, blockfs)
-if confirmBox then
-okInst = confirmBox(
-"Install TOS onto raw drive " .. addr:sub(1, 8) .. "...?" .. "\n\n" ..
-(holds and ("It holds " .. holds .. ".\n") or "") ..
-"The drive is erased and reformatted as bootable TBFS.\n" ..
-"Anything on it now is gone.",
-{ title = "Erase and install", severity = "danger",
-yes = "Erase", no = "Cancel" })
-else
-if holds then o("Drive " .. addr:sub(1, 8) .. "... holds " .. holds .. ".", T.warning) end
-local ans = promptInput and promptInput(
-"Install TOS onto raw drive " .. addr:sub(1, 8) .. "...? ERASES it [y/N]: ", 4) or "n"
-okInst = (ans or ""):lower() == "y"
-end
-if not okInst then o("Cancelled.", T.dim); return end
-local nowfn = function() return math.floor((K.uptime and K.uptime()) or 0) end
-o("Formatting " .. addr:sub(1, 8) .. "... as bootable TBFS...", T.title)
-local okF, ferr = blockfs.format(drive,
-{ label = "tos", bootBytes = bootBytes, now = nowfn, inodeRatio = inodeRatio })
-if not okF then o("Format failed: " .. tostring(ferr) .. " (drive too small?)", T.error); return end
-local proxy, mErr = blockfs.mount(drive, { now = nowfn })
-if not proxy then o("Mount failed: " .. tostring(mErr), T.error); return end
-local copied, failed = 0, 0
---! #MEM (pentest, Sep 2026) — streamed in 4 KB pieces, not read whole:
---! the largest OS files are 67-120 KB, more than a 192 KB machine has
---! free with the shell running. blockfs writes each piece at the
---! handle's position, and each piece is still all-or-nothing; the
---! capacity pre-flight above has already checked that everything fits.
-for _, path in ipairs(files) do
-coopYield()
-local src = F.open(path, "r")
-if src then
-local dir = path:match("^(.*)/[^/]+$")
-if dir and dir ~= "" then
-local acc = ""
-for seg in dir:gmatch("[^/]+") do
-acc = acc .. "/" .. seg
-if not proxy.exists(acc) then proxy.makeDirectory(acc) end
-end
-end
-local h = proxy.open(path, "w")
-local ok = h ~= nil
-while ok do
-local chunk = src:read(4096)
-if not chunk then break end
-ok = proxy.write(h, chunk) and true or false
-end
-pcall(src.close, src)
-if h then proxy.close(h) end
-if ok then copied = copied + 1
-else failed = failed + 1; o("  FAIL " .. path, T.error) end
-end
-end
-local wok, werr = blockfs.writeBoot(drive, blob)
-proxy.unmount()
-o("", T.fg)
-if wok and failed == 0 then
-o(string.format("TBFS install written: %d files + boot blob (%s).", copied, fmtSz(#blob)), T.highlight)
-o("The TOS BIOS boots TBFS drives directly. If this box runs an older", T.dim)
-o("EEPROM, reflash first: 'flash /bios.lua'.", T.dim)
-o("The disk also mounts like any volume: 'drive mount " .. addr:sub(1, 8) .. "'.", T.dim)
-else
-o(string.format("Wrote %d files, %d failed; boot blob: %s.", copied, failed,
-wok and "ok" or ("FAILED (" .. tostring(werr) .. ")")), T.error)
-end
-return
-end
-local target = args[1]
-if not target then
-o("Usage: deploy <mount-point>   |   deploy drive <addr>  (raw disk, needs blockfs)", T.dim)
-o("  Creates a TOS install disk on a floppy or drive.", T.dim)
-o("  e.g. deploy /mnt/floppy", T.dim)
-o("  Insert the disk on another OpenOS computer and run:", T.dim)
-o("    # /mnt/<disk>/install.lua", T.dim)
-return
-end
-target = F.normalize(target)
-if #target > 1 and target:sub(-1) == "/" then
-target = target:sub(1, -2)
-end
-local FORBIDDEN = { "/", "/tos", "/etc", "/var", "/usr", "/home", "/root", "/public" }
-for _, p in ipairs(FORBIDDEN) do
-if target == p or target:sub(1, #p + 1) == p .. "/" then
-o("Refusing to deploy onto '" .. target .. "' (would overwrite system).", T.error)
-o("Deploy only to an external mount such as /mnt/floppy.", T.dim)
-return
-end
-end
-if not F.exists(target) or not F.isDirectory(target) then
-o("Target does not exist or is not a directory: " .. target, T.error)
-return
-end
-o("Creating TOS install disk on " .. target .. " ...", T.title)
-local total = F.spaceTotal(target)
-local free = F.spaceFree(target)
-if total and total > 0 then
-o(string.format(" Target disk: %dK total, %dK free",
-math.floor(total / 1024), math.floor(free / 1024)), T.dim)
-end
-local dirs = {
-"/tos/", "/tos/kernel/", "/tos/kernel/net/", "/tos/shell/",
-"/tos/compat/", "/tos/peripheral/",
-}
-for _, d in ipairs(dirs) do
-F.makeDirectory(target .. d)
-end
-local files = {}
-do
-local ok1, manifest = pcall(require, "system_manifest")
-if ok1 and type(manifest) == "table" then
-for _, entry in ipairs(manifest) do
-if type(entry) == "table" and type(entry.path) == "string" then
-files[#files + 1] = entry.path
-end
-end
-end
-if #files == 0 then
-o("  WARN: system_manifest not loadable, using minimal file list", T.warning)
-files = {
-"/init.lua",
-"/tos/kernel/init.lua", "/tos/kernel/hal.lua",
-"/tos/kernel/event.lua", "/tos/kernel/process.lua",
-"/tos/kernel/fs.lua", "/tos/kernel/display.lua",
-"/tos/kernel/log.lua", "/tos/kernel/serialize.lua",
-"/tos/shell/init.lua",
-}
-end
-end
---! #MEM (pentest, Sep 2026) — copied, not read whole and written back:
---! F.copy streams 4 KB blocks (fs.copyFile). The largest files this
---! carries are 67-120 KB (extras, init, pkg, core, admin), and with the
---! panels shell running a 192 KB machine has less than that free.
-local copied, failed, skipped = 0, 0, 0
-for _, path in ipairs(files) do
-if F.exists(path) then
-local ok2, werr = F.copy(path, target .. path)
-if ok2 then copied = copied + 1
-else o("  FAIL " .. path .. ": " .. tostring(werr), T.error); failed = failed + 1 end
-else skipped = skipped + 1 end
-end
-if F.exists("/bios.lua") then
-if F.copy("/bios.lua", target .. "/bios.lua") then copied = copied + 1
-else failed = failed + 1 end
-end
-if F.exists("/install.lua") then
-do
-local ok3, werr = F.copy("/install.lua", target .. "/install.lua")
-if ok3 then
-copied = copied + 1
-o("  Copied install.lua (automated installer)", T.highlight)
-else
-o("  FAIL writing install.lua: " .. tostring(werr), T.error)
-failed = failed + 1
-end
-end
-else
-o("  WARNING: /install.lua not found on boot drive", T.error)
-o("  The install disk will not have an automated installer.", T.dim)
-end
-o("", T.fg)
-if failed == 0 then
-o("Install disk created: " .. copied .. " files", T.highlight)
-o("", T.fg)
-o("On the target machine (OpenOS), run:", T.dim)
-o("  # " .. target .. "/install.lua", T.fg)
-o("Or insert the disk and run: /mnt/<disk>/install.lua", T.dim)
-else
-o(copied .. " files copied, " .. failed .. " failed", T.error)
-end
-end
-C.chat = function(args, o)
-if not NM then o("No network available", T.error); return end
-local ok2, chatApp = pcall(require, "shell.panels.chatapp")
-if not ok2 then o("Chat unavailable: " .. tostring(chatApp), T.error); return end
-chatApp.open(S)
-end
-local function peerAddress(s)
-local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
-if type(s) == "string" and A and A.resolve then
-local addr = A.resolve(s)
-if addr then return addr end
-end
-return s
-end
-C.rsh = function(args, o)
-if not adminOnly(o) then return end
-if not args[1] or not args[2] then o("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)", T.dim); return end
-if not NM then o("No network available", T.error); return end
-local ok2, remoteMod = pcall(require, "kernel.net.remote")
-if not ok2 then o("Remote module unavailable", T.error); return end
-local addr = peerAddress(args[1])
-local cmd = table.concat(args, " ", 2)
-o("Executing on " .. addr:sub(1,8) .. "...", T.dim)
-local result, err = remoteMod.execute(addr, cmd)
-if result then o(result, T.fg)
-else o("Error: " .. tostring(err), T.error) end
-end
-C.scp = function(args, o)
-if not adminOnly(o) then return end
-if not args[1] or not args[2] then
-o("Usage: scp <peer>:<remote_path> <local_path>", T.dim)
-o("  Copies a file from a TRUSTED peer's /public.", T.dim)
-return
-end
-if not NM then o("No network available", T.error); return end
-local ok2, transferMod = pcall(require, "kernel.net.transfer")
-if not ok2 then o("Transfer module unavailable", T.error); return end
-local name, rpath = args[1]:match("^([^:]+):(.+)$")
-if name then
-local addr = peerAddress(name)
-local lpath = rp(args[2])
-o("Downloading " .. rpath .. " from " .. name
-.. (addr ~= name and (" (" .. addr:sub(1, 8) .. ")") or "") .. "...", T.dim)
-local ok3, err = transferMod.request(addr, rpath, lpath)
-if ok3 then
-refreshBrowser()
-o("Downloaded: " .. rpath .. " -> " .. lpath, T.highlight)
-else o("Transfer failed: " .. tostring(err), T.error) end
-else
-o("Usage: scp <peer>:<remote_path> <local_path>", T.dim)
-end
-end
-C.screen = function(args, o)
-local ok2, screenMod = pcall(require, "kernel.screen")
-if not ok2 then o("Screen module unavailable", T.error); return end
-if args[1] == "res" then
-local gpu = D.getGpu and D.getGpu()
-local curW, curH = D.getSize()
-local maxW, maxH = curW, curH
-if gpu then local okM, mw, mh = pcall(gpu.maxResolution); if okM and mw then maxW, maxH = mw, mh end end
-local cfg = K.getConfig and K.getConfig()
-local val = args[2]
-if not val then
-o("=== Screen Resolution ===", T.title)
-o(string.format("Current : %dx%d", curW or 0, curH or 0), T.fg)
-o(string.format("Maximum : %dx%d", maxW or 0, maxH or 0), T.dim)
-if gpu and gpu.getScreen then
-local okS, s = pcall(gpu.getScreen)
-if okS and type(s) == "string" then
-local okA, aw, ah = pcall(require("component").invoke, s, "getAspectRatio")
-if okA and aw then o(string.format("Blocks  : %dx%d (physical)", aw, ah), T.dim) end
-end
-end
-o("Policy  : " .. ((cfg and cfg.get and cfg.get("screenRes")) or "auto"), T.fg)
-o("Set: screen res <auto|max|WxH>   (e.g. screen res 80x25)", T.dim)
-return
-end
-if not adminOnly(o) then return end
-local vl = tostring(val):lower()
-if vl ~= "auto" and vl ~= "max" and not vl:match("^%d+%s*[x×]%s*%d+$") then
-o("Usage: screen res <auto|max|WxH>", T.error); return
-end
-if cfg and cfg.set then cfg.set("screenRes", vl); if cfg.save then cfg.save() end end
-screenMod.setPolicy(screenMod.specFromConfig(cfg))
-local w, h, note = screenMod.fitDisplay(S.displayIdx)
-local okSM, SM = pcall(require, "shell.panels.state")
-if okSM and SM and SM.recomputeLayout then SM.recomputeLayout(S) end
-if deps.drawAll then pcall(deps.drawAll) end
-o(string.format("Resolution -> %dx%d (policy '%s')", w or curW or 0, h or curH or 0, vl), T.highlight)
-if note then o(note, T.warning) end
-o("Applied now and saved for next boot.", T.dim)
-return
-end
-if args[1] == "list" or not args[1] then
-local screens = screenMod.list()
-if #screens == 0 then o("No displays", T.dim); return end
-for _, s in ipairs(screens) do
-local mark = s.active and " * " or "   "
-o(string.format("%s%d: %s (%dx%d %d-bit)", mark, s.index, s.label, s.w, s.h, s.depth), T.fg)
-end
-elseif args[1] == "next" then
-screenMod.next()
-o("Switched to: " .. screenMod.active().label, T.highlight)
-elseif tonumber(args[1]) then
-if screenMod.setActive(tonumber(args[1])) then
-o("Switched to screen " .. args[1], T.highlight)
-else o("Invalid screen index", T.error) end
-else
-o("Usage: screen [list|next|<index>|res [auto|max|WxH]]", T.dim)
-end
-end
-local function ext(name)
-return function(args, o)
-local ok2, m2 = pcall(require, "shell.ext")
-if ok2 and m2[name] then
-m2[name](args, { K=K, E=E, P=P, F=F, D=D, U=U, o=o, st=st,
-computer=computer, cwd=S.cwd })
-else
-if name == "logout" then E.push("tos_logout", S.displayIdx)
-else o("Extension unavailable (low RAM?)", T.error) end
-end
-end
-end
-for _, n in ipairs({ "net", "ping", "hostname", "config", "battery", "audio" }) do
-C[n] = ext(n)
-end
-end
+function(Z,H)local aa,_=pcall(require,"shell.ext")
+if aa and _[E]then
+_[E](Z,{K=g,E=G,P=o,F=e,D=m,U=M,o=H,st=f,computer=D,cwd=a.cwd})else if E=="logout"then G.push("tos_logout",a.displayIdx)else
+H("Extension unavailable (low RAM?)",d.error)end end end end;for H,E in
+ipairs({"net","ping","hostname","config","battery","audio"})do b[E]=O(E)end end

@@ -1,502 +1,170 @@
-local computer = require("computer")
-local function pull(timeout)
-if coroutine.isyieldable and coroutine.isyieldable() then
-return coroutine.yield()
-end
-return computer.pullSignal(timeout or 0.5)
-end
-local function sleep(sec)
-local dl = computer.uptime() + sec
-while computer.uptime() < dl do pull(dl - computer.uptime()) end
-end
---! ONE INSTANCE PER SEAT. Everything from here to the end of newLogin
---! reads the seat's display, W and H (and the modules) as upvalues that
---! login.run sets. As one shared module, a 2-seat boot ran login.run twice
---! into the SAME upvalues: whichever seat started last owned the screen
---! for both, so the other seat's login drew its box -- and the echo of
---! every key typed at it -- on the wrong screen, and that seat looked dead
---! (headless machine, 2026-10-10). The kernel takes login.new() per seat;
---! each call builds these closures afresh. Left unindented so the history
---! of the code inside stays readable. (test_login_per_seat.lua)
-local function newLogin()
-local login = {}
-local display, event, usermod, proc, log
-local W, H
-local i18nMod, ustrMod
+local p,q,o,n,t="username","password","key_down","string","kernel.fs"
+local l=require("computer")
+local function m(a)if coroutine.isyieldable and coroutine.isyieldable()then return
+coroutine.yield()end;return
+l.pullSignal(a or 0.5)end;local function k(a)local b=l.uptime()+a
+while l.uptime()<b do m(b-l.uptime())end end
+local function r()local x={}local a,B,b,C,h;local c,f;local u,i
 do
-local ok, m = pcall(require, "kernel.i18n"); if ok then i18nMod = m end
-local ok2, m2 = pcall(require, "kernel.ustr"); if ok2 then ustrMod = m2 end
-end
-local function t(key, default, ...)
-if i18nMod and i18nMod.t then return i18nMod.t(key, default, ...) end
-if select("#", ...) > 0 then
-local ok, s = pcall(string.format, default, ...)
-if ok then return s end
-end
-return default
-end
-local function uw(s)
-if ustrMod then return ustrMod.width(s) end
-return #tostring(s or "")
-end
-local function ufit(s, cols)
-if ustrMod then return ustrMod.fit(s, cols) end
-return tostring(s or ""):sub(1, cols)
-end
-local function fieldGeom(boxX, boxW)
-local uLbl = t("login.username", "Username:")
-local pLbl = t("login.password", "Password:")
-local lblW = math.max(uw(uLbl), uw(pLbl))
-local maxLblW = boxW - 13
-if lblW > maxLblW then lblW = maxLblW end
-local inputX = boxX + 2 + lblW + 1
-local inputW = boxW - (2 + lblW + 1) - 2
-return uLbl, pLbl, lblW, inputX, inputW
-end
-local function drawLoginScreen(message, isError)
-local theme = display.getTheme()
-local bgColor = theme.bg
-local fgColor = theme.fg
-local borderColor = theme.border
-local titleColor = theme.title
-local dimColor = theme.dim
-display.clear(bgColor)
-local bannerY = 2
-local ver = display.fit((_G._TOS and _G._TOS.version) or "?", 9)
-local okLogo, logo = pcall(require, "kernel.logo")
-if okLogo and logo and logo.MARK and H >= 20 and W >= (logo.MARK_W + 2) then
-local mx = math.floor((W - logo.MARK_W) / 2) + 1
-for i, ln in ipairs(logo.MARK) do
-display.set(mx, bannerY + i - 1, ln, titleColor, bgColor)
-end
-bannerY = bannerY + #logo.MARK
-local tag = logo.TAGLINE .. "  v" .. ver
-display.set(math.floor((W - #tag) / 2) + 1, bannerY, tag, dimColor, bgColor)
-bannerY = bannerY + 2
-elseif H >= 20 then
-display.set(math.floor(W / 2) - 12, bannerY, "========================", borderColor, bgColor)
-display.set(math.floor(W / 2) - 12, bannerY + 1, "    T O S  Login        ", titleColor, bgColor)
-display.set(math.floor(W / 2) - 12, bannerY + 2, "  Terminal OS v" .. ver, dimColor, bgColor)
-display.set(math.floor(W / 2) - 12, bannerY + 3, "========================", borderColor, bgColor)
-bannerY = bannerY + 5
-else
-display.set(math.floor(W / 2) - 8, bannerY, "=== TOS Login ===", borderColor, bgColor)
-bannerY = bannerY + 2
-end
-local boxW = math.min(40, W - 4)
-local boxH = 8
-local boxX = math.floor((W - boxW) / 2) + 1
-local boxY = bannerY + 1
-local boxBg = theme.panel_bg
-display.dbox(boxX, boxY, boxW, boxH, t("login.title", "Authentication"), {
-bg = boxBg,
-border = borderColor,
-title = titleColor,
-})
-local uLbl, pLbl, lblW = fieldGeom(boxX, boxW)
-display.set(boxX + 2, boxY + 2, ufit(uLbl, lblW), dimColor, boxBg)
-display.set(boxX + 2, boxY + 4, ufit(pLbl, lblW), dimColor, boxBg)
-if message then
-local msgColor = isError and theme.error or theme.highlight
-local msgX = math.floor((W - uw(message)) / 2)
-display.set(math.max(1, msgX), boxY + boxH + 1, ufit(message, W - 2), msgColor, bgColor)
-end
+local E,F=pcall(require,"kernel.i18n")if E then u=F end;local G,H=pcall(require,"kernel.ustr")if G then i=H end end
+local function d(F,E,...)if u and u.t then return u.t(F,E,...)end;if select("#",...)>0 then
+local G,H=pcall(string.format,E,...)if G then return H end end;return E end
+local function g(E)if i then return i.width(E)end;return#tostring(E or"")end;local function v(E,F)if i then return i.fit(E,F)end
+return tostring(E or""):sub(1,F)end
+local function y(F,E)
+local H=d("login.username","Username:")local I=d("login.password","Password:")
+local G=math.max(g(H),g(I))local J=E-13;if G>J then G=J end;local K=F+2+G+1;local L=E- (2+G+1)-2
+return H,I,G,K,L end
+local function e(E,F)local I=a.getTheme()local H=I.bg;local Y=I.fg;local N=I.border;local P=I.title;local L=I.dim
+a.clear(H)local G=2
+local S=a.fit((_G._TOS and _G._TOS.version)or"?",9)local V,J=pcall(require,"kernel.logo")
+if
+V and J and J.MARK and f>=20 and c>= (J.MARK_W+2)then local _=
+math.floor((c-J.MARK_W)/2)+1;for aa,ab in ipairs(J.MARK)do
+a.set(_,G+aa-1,ab,P,H)end;G=G+#J.MARK
+local Z=J.TAGLINE.."  v"..S
+a.set(math.floor((c-#Z)/2)+1,G,Z,L,H)G=G+2 elseif f>=20 then
+a.set(math.floor(c/2)-12,G,"========================",N,H)
+a.set(math.floor(c/2)-12,G+1,"    T O S  Login        ",P,H)
+a.set(math.floor(c/2)-12,G+2,"  Terminal OS v"..S,L,H)
+a.set(math.floor(c/2)-12,G+3,"========================",N,H)G=G+5 else
+a.set(math.floor(c/2)-8,G,"=== TOS Login ===",N,H)G=G+2 end;local O=math.min(40,c-4)local Q=8
+local M=math.floor((c-O)/2)+1;local K=G+1;local R=I.panel_bg
+a.dbox(M,K,O,Q,d("login.title","Authentication"),{bg=R,border=N,title=P})local W,X,T=y(M,O)a.set(M+2,K+2,v(W,T),L,R)
+a.set(M+2,K+4,v(X,T),L,R)
+if E then local Z=F and I.error or I.highlight
+local _=math.floor((c-g(E))/2)a.set(math.max(1,_),K+Q+1,v(E,c-2),Z,H)end
 if _G._TOS and _G._TOS.unsafeShutdown then
-local warn = ufit(t("login.unsafe",
-"! Last shutdown was unsafe (power loss) - data verified"), W - 2)
-local wColor = theme.warning or theme.error
-local wX = math.floor((W - uw(warn)) / 2)
-display.set(math.max(1, wX), boxY + boxH + 2, warn, wColor, bgColor)
-end
-local hint = t("login.hint", "Enter credentials (Ctrl+Q to cancel)")
-display.set(math.max(1, math.floor((W - uw(hint)) / 2)), H - 1, hint, dimColor, bgColor)
-return boxX, boxY, boxW
-end
-local function drawInput(boxX, boxY, boxW, field, value, active)
-local theme = display.getTheme()
-local fieldY = (field == "username") and (boxY + 2) or (boxY + 4)
-local _, _, _, inputX, inputW = fieldGeom(boxX, boxW)
-local bg = active and theme.input_bg or theme.panel_bg
-local fg = active and theme.input_fg or theme.dim
-display.fill(inputX, fieldY, inputW, 1, " ", fg, bg)
-local shown = value
-if field == "password" then
-shown = string.rep("*", #value)
-end
-shown = display.fit(shown, inputW - 1)
-display.set(inputX, fieldY, shown, fg, bg)
-if active then
-local cursorPos = inputX + math.min(#value, inputW - 1)
-display.set(cursorPos, fieldY, "_", theme.highlight, bg)
-end
-end
-local function readInput(boxX, boxY, boxW, field, maxLen)
-maxLen = maxLen or 20
-local value = ""
-while true do
-drawInput(boxX, boxY, boxW, field, value, true)
-local sig, _, char, code = pull(0.5)
-if sig == "key_down" then
-if code == 28 then
-return value
-elseif code == 14 then
-if #value > 0 then
-value = value:sub(1, -2)
-end
-elseif char == 17 then
-return nil
-elseif char and char >= 32 and char < 127 and #value < maxLen then
-value = value .. string.char(char)
-end
-elseif sig == "clipboard" then
-local pastedText = char
-if type(pastedText) == "string" then
-value = value .. pastedText:sub(1, maxLen - #value)
-end
-end
-end
-end
-local function firstBootSetup(username, oldPassword)
-username = (type(username) == "string" and username ~= "") and username or "root"
-oldPassword = type(oldPassword) == "string" and oldPassword or ""
-local theme = display.getTheme()
-local bgColor = theme.bg
-local boxBg = theme.panel_bg
-display.clear(bgColor)
-local boxW = math.min(50, W - 4)
-local boxH = 12
-local boxX = math.floor((W - boxW) / 2) + 1
-local boxY = math.floor((H - boxH) / 2) + 1
-display.dbox(boxX, boxY, boxW, boxH, "First Boot Setup", {
-bg = boxBg,
-border = theme.title,
-title = theme.title,
-})
-display.set(boxX + 2, boxY + 2, "Welcome to TOS!", theme.highlight, boxBg)
-display.set(boxX + 2, boxY + 3, "Please set a new password for " .. username .. ".", theme.dim, boxBg)
-display.set(boxX + 2, boxY + 5, "New password:", theme.dim, boxBg)
-display.set(boxX + 2, boxY + 7, "Confirm:", theme.dim, boxBg)
-local inputX = boxX + 16
-local inputW = boxW - 18
-local pass1, pass2
---! Every seat opens this box on a fresh install, and the first to answer
---! sets the password. That answer stands: the other seats leave for the
---! ordinary login. They used to stay and retry a change whose "current
---! password" was no longer the default, refused forever as "Current
---! password is incorrect" -- a password nobody at that seat was ever
---! asked for (2-seat headless machine, 2026-10-10). Checked about once a
---! second while waiting, so an idle seat does not sit on a stale box,
---! and once more right before the change. (test_login_per_seat.lua)
-local nextCheck = 0
-local function setElsewhere(now)
-local t0 = computer.uptime()
-if not now and t0 < nextCheck then return false end
-nextCheck = t0 + 1
-local u = usermod.getUser and usermod.getUser(username)
-return u ~= nil and not u.firstBoot
-end
-local function leave()
-display.fill(boxX + 2, boxY + 9, boxW - 4, 2, " ", theme.dim, boxBg)
-display.set(boxX + 2, boxY + 9, ("Set at another screen. Log in with it."):sub(1, boxW - 4),
-theme.highlight, boxBg)
-sleep(2)
-return false
-end
-while true do
-display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, theme.input_bg)
-display.set(inputX, boxY + 5, "_", theme.highlight, theme.input_bg)
-pass1 = ""
-while true do
-display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, theme.input_bg)
-display.set(inputX, boxY + 5, string.rep("*", #pass1), theme.input_fg, theme.input_bg)
-display.set(inputX + #pass1, boxY + 5, "_", theme.highlight, theme.input_bg)
-local sig, _, char, code = pull(0.5)
-if setElsewhere() then return leave() end
-if sig == "key_down" then
-if code == 28 then break
-elseif code == 14 then
-if #pass1 > 0 then pass1 = pass1:sub(1, -2) end
-elseif char and char >= 32 and char < 127 and #pass1 < 30 then
-pass1 = pass1 .. string.char(char)
-end
-end
-end
-pass2 = ""
-while true do
-display.fill(inputX, boxY + 7, inputW, 1, " ", theme.input_fg, theme.input_bg)
-display.set(inputX, boxY + 7, string.rep("*", #pass2), theme.input_fg, theme.input_bg)
-display.set(inputX + #pass2, boxY + 7, "_", theme.highlight, theme.input_bg)
-local sig, _, char, code = pull(0.5)
-if setElsewhere() then return leave() end
-if sig == "key_down" then
-if code == 28 then break
-elseif code == 14 then
-if #pass2 > 0 then pass2 = pass2:sub(1, -2) end
-elseif char and char >= 32 and char < 127 and #pass2 < 30 then
-pass2 = pass2 .. string.char(char)
-end
-end
-end
-local msgW = boxW - 4
-local function say(text, color)
-local rows, line = {}, ""
-for word in tostring(text):gmatch("%S+") do
-local cand = (line == "") and word or (line .. " " .. word)
-if #cand <= msgW then line = cand
-else
-if line ~= "" then rows[#rows + 1] = line end
-line = (#word <= msgW) and word or word:sub(1, msgW)
-end
-end
-if line ~= "" then rows[#rows + 1] = line end
-for i = 0, 1 do
-display.fill(boxX + 2, boxY + 9 + i, msgW, 1, " ", theme.dim, boxBg)
-if rows[i + 1] then
-display.set(boxX + 2, boxY + 9 + i, rows[i + 1], color, boxBg)
-end
-end
-end
-if #pass1 < 6 then
-say("Password must be 6+ characters!", theme.error)
-elseif pass1 ~= pass2 then
-say("Passwords don't match! Try again.", theme.error)
-elseif setElsewhere(true) then
-return leave()
-else
-local ok, err = usermod.changePassword(username, username, oldPassword, pass1)
-if ok then
-say("Password set! Starting TOS...", theme.highlight)
-sleep(1.5)
-return true
-else
-local msg = tostring(err)
-if msg:lower():find("read%-only") or _G._TOS_ROOT_READONLY then
-say("Disk is READ-ONLY — install to a writable drive (install.lua).",
-theme.error)
-sleep(4)
-else
-say("Error: " .. msg, theme.error)
-end
-end
-end
-display.fill(inputX, boxY + 5, inputW, 1, " ", theme.input_fg, boxBg)
-display.fill(inputX, boxY + 7, inputW, 1, " ", theme.input_fg, boxBg)
-sleep(1.5)
-end
-end
-local function showGuestOption(boxX, boxY, boxW)
-local theme = display.getTheme()
-local hint = t("login.guest", "F2: Guest access")
-local hx = boxX + math.floor((boxW - uw(hint)) / 2)
-display.set(math.max(1, hx), boxY + 9, hint, theme.dim, theme.bg)
-end
-local function tryTutorial(token)
-local fs = (_G._TOS and _G._TOS.securefs) or nil
-if not fs then
-pcall(function() fs = require("kernel.fs") end)
-end
-if not fs then return end
-local session = nil
-if usermod and usermod.getSession and token then
-session = usermod.getSession(token)
-end
-local ok2, tut = pcall(require, "shell.tutorial")
-if ok2 and tut.shouldShow(fs, session) then
-tut.run({
-D = display,
-F = fs,
-U = usermod,
-st = token,
-W = W,
-H = H,
-})
-end
-end
-function login.run(modules)
-display = modules.display
-event = modules.event
-usermod = modules.users
-proc = modules.proc
-log = modules.log
-W, H = display.getSize()
-local rootUser = usermod.getUser("root")
-if rootUser and rootUser.firstBoot then
-local token = usermod.login("root", "root", { setCurrent = false })
-if token then
-local ok = firstBootSetup("root", "root")
-if ok then
-if usermod.promoteAfterFirstBoot then
-local okP, errP = usermod.promoteAfterFirstBoot(token)
-if not okP and log then
-log.warn("auth", "First-boot promotion refused: " .. tostring(errP))
-end
-else
-local s = usermod.getSession(token)
-if s then s.firstBoot = nil end
-end
-tryTutorial(token)
-return token
-end
-if usermod.logout then pcall(usermod.logout, token) end
-end
-end
-local guestOk = usermod.guestEnabled and usermod.guestEnabled() or false
-local BACKOFF_SCHEDULE = { 2, 5, 15, 60 }
-local BACKOFF_PATH = "/var/lib/login_backoff.dat"
-local failsByUser = {}
-local lastFailTs = {}
+local Z=v(d("login.unsafe","! Last shutdown was unsafe (power loss) - data verified"),
+c-2)local _=I.warning or I.error
+local aa=math.floor((c-g(Z))/2)a.set(math.max(1,aa),K+Q+2,Z,_,H)end
+local U=d("login.hint","Enter credentials (Ctrl+Q to cancel)")
+a.set(math.max(1,math.floor((c-g(U))/2)),f-1,U,L,H)return M,K,O end
+local function j(I,G,J,H,E,F)local K=a.getTheme()local M=(H==p)and(G+2)or(G+4)
+local R,R,R,N,O=y(I,J)local P=F and K.input_bg or K.panel_bg
+local Q=F and K.input_fg or K.dim;a.fill(N,M,O,1," ",Q,P)local L=E
+if H==q then L=string.rep("*",#E)end;L=a.fit(L,O-1)a.set(N,M,L,Q,P)if F then
+local S=N+math.min(#E,O-1)a.set(S,M,"_",K.highlight,P)end end
+local function z(F,G,H,I,E)E=E or 20;local J=""
+while true do j(F,G,H,I,J,true)local L,N,K,M=m(0.5)
+if L==o then
+if M==28 then return J elseif M==14 then if#J>0 then J=J:sub(1,
+-2)end elseif K==17 then return nil elseif
+K and K>=32 and K<127 and#J<E then J=J..string.char(K)end elseif L=="clipboard"then local O=K
+if type(O)==n then J=J..O:sub(1,E-#J)end end end end
+local function A(E,F)
+E=(type(E)==n and E~="")and E or"root"F=type(F)==n and F or""local G=a.getTheme()local T=G.bg
+local J=G.panel_bg;a.clear(T)local N=math.min(50,c-4)local R=12;local K=
+math.floor((c-N)/2)+1
+local H=math.floor((f-R)/2)+1
+a.dbox(K,H,N,R,"First Boot Setup",{bg=J,border=G.title,title=G.title})a.set(K+2,H+2,"Welcome to TOS!",G.highlight,J)
+a.set(K+2,H+
+3,"Please set a new password for "..E..".",G.dim,J)a.set(K+2,H+5,"New password:",G.dim,J)
+a.set(K+2,H+7,"Confirm:",G.dim,J)local L=K+16;local O=N-18;local I,M;local S=0
+local function P(U)local V=l.uptime()
+if not U and V<S then return false end;S=V+1;local W=b.getUser and b.getUser(E)return
+W~=nil and not W.firstBoot end
+local function Q()a.fill(K+2,H+9,N-4,2," ",G.dim,J)
+a.set(K+2,H+9,("Set at another screen. Log in with it."):sub(1,
+N-4),G.highlight,J)k(2)return false end
+while true do a.fill(L,H+5,O,1," ",G.input_fg,G.input_bg)
+a.set(L,H+5,"_",G.highlight,G.input_bg)I=""
+while true do a.fill(L,H+5,O,1," ",G.input_fg,G.input_bg)
+a.set(L,H+5,string.rep("*",
+#I),G.input_fg,G.input_bg)a.set(L+#I,H+5,"_",G.highlight,G.input_bg)
+local Y,Z,W,X=m(0.5)if P()then return Q()end;if Y==o then
+if X==28 then break elseif X==14 then if#I>0 then I=I:sub(1,-2)end elseif
+W and W>=32 and W<127 and#I<30 then I=I..string.char(W)end end end;M=""
+while true do a.fill(L,H+7,O,1," ",G.input_fg,G.input_bg)
+a.set(L,H+7,string.rep("*",
+#M),G.input_fg,G.input_bg)a.set(L+#M,H+7,"_",G.highlight,G.input_bg)
+local Y,Z,W,X=m(0.5)if P()then return Q()end;if Y==o then
+if X==28 then break elseif X==14 then if#M>0 then M=M:sub(1,-2)end elseif
+W and W>=32 and W<127 and#M<30 then M=M..string.char(W)end end end;local V=N-4
+local function U(W,X)local Z,Y={},""
+for _ in tostring(W):gmatch("%S+")do local aa=(Y=="")and _ or
+(Y.." ".._)
+if#aa<=V then Y=aa else if Y~=""then Z[#Z+1]=Y end;Y=
+(#_<=V)and _ or _:sub(1,V)end end;if Y~=""then Z[#Z+1]=Y end
+for _=0,1 do
+a.fill(K+2,H+9+_,V,1," ",G.dim,J)if Z[_+1]then a.set(K+2,H+9+_,Z[_+1],X,J)end end end
+if#I<6 then U("Password must be 6+ characters!",G.error)elseif I~=M then
+U("Passwords don't match! Try again.",G.error)elseif P(true)then return Q()else local W,X=b.changePassword(E,E,F,I)
+if W then
+U("Password set! Starting TOS...",G.highlight)k(1.5)return true else local Y=tostring(X)
+if Y:lower():find("read%-only")or
+_G._TOS_ROOT_READONLY then
+U("Disk is READ-ONLY — install to a writable drive (install.lua).",G.error)k(4)else U("Error: "..Y,G.error)end end end;a.fill(L,H+5,O,1," ",G.input_fg,J)
+a.fill(L,H+7,O,1," ",G.input_fg,J)k(1.5)end end
+local function D(E,F,G)local H=a.getTheme()
+local I=d("login.guest","F2: Guest access")local J=E+math.floor((G-g(I))/2)a.set(math.max(1,J),
+F+9,I,H.dim,H.bg)end
+local function w(E)
+local F=(_G._TOS and _G._TOS.securefs)or nil
+if not F then pcall(function()F=require(t)end)end;if not F then return end;local G=nil;if b and b.getSession and E then
+G=b.getSession(E)end
+local I,H=pcall(require,"shell.tutorial")if I and H.shouldShow(F,G)then
+H.run({D=a,F=F,U=b,st=E,W=c,H=f})end end
+function x.run(E)a=E.display;B=E.event;b=E.users;C=E.proc;h=E.log;c,f=a.getSize()
+local J=b.getUser("root")
+if J and J.firstBoot then
+local N=b.login("root","root",{setCurrent=false})
+if N then local O=A("root","root")
+if O then
+if b.promoteAfterFirstBoot then
+local P,Q=b.promoteAfterFirstBoot(N)if not P and h then
+h.warn("auth","First-boot promotion refused: "..tostring(Q))end else local P=b.getSession(N)if P then
+P.firstBoot=nil end end;w(N)return N end;if b.logout then pcall(b.logout,N)end end end
+local K=b.guestEnabled and b.guestEnabled()or false;local G={2,5,15,60}local I="/var/lib/login_backoff.dat"local F={}local H={}
 do
-local okF, fs = pcall(require, "kernel.fs")
-local okS, ser = pcall(require, "kernel.serialize")
-if okF and okS and fs.exists(BACKOFF_PATH) then
-local raw = fs.readFile(BACKOFF_PATH)
-if raw then
-local ok2, data = pcall(ser.decode, raw, { maxBytes = 8192 })
-if ok2 and type(data) == "table" and type(data.fails) == "table" then
-for u, n in pairs(data.fails) do
-if type(u) == "string" and type(n) == "number" and n >= 0 then
-failsByUser[u] = math.floor(n)
-end
-end
-if type(data.lastFailTs) == "table" then
-for u, t in pairs(data.lastFailTs) do
-if type(u) == "string" and type(t) == "number" then lastFailTs[u] = t end
-end
-end
-end
-end
-end
-end
-local function persistBackoff()
-local okF, fs = pcall(require, "kernel.fs")
-local okS, ser = pcall(require, "kernel.serialize")
-if not (okF and okS) then return end
-if not fs.exists("/var/lib") then pcall(fs.makeDirectory, "/var/lib") end
-pcall(fs.writeFile, BACKOFF_PATH,
-ser.encode({ fails = failsByUser, lastFailTs = lastFailTs }))
-end
-local function backoffSeconds(user)
-local n = failsByUser[user] or 0
-return BACKOFF_SCHEDULE[math.min(n, #BACKOFF_SCHEDULE)] or BACKOFF_SCHEDULE[#BACKOFF_SCHEDULE]
-end
-while true do
-local boxX, boxY, boxW = drawLoginScreen()
-if guestOk then showGuestOption(boxX, boxY, boxW) end
-drawInput(boxX, boxY, boxW, "password", "", false)
-local username = nil
-local guestRequested = false
-local cancelRequested = false
-local value = ""
-while true do
-drawInput(boxX, boxY, boxW, "username", value, true)
-local sig, _, char, code = pull(0.5)
-if sig == "key_down" then
-if code == 28 then
-username = value
-break
-elseif code == 14 then
-if #value > 0 then value = value:sub(1, -2) end
-elseif char == 17 then
-cancelRequested = true
-break
-elseif code == 60 and guestOk then
-guestRequested = true
-break
-elseif char and char >= 32 and char < 127 and #value < 20 then
-value = value .. string.char(char)
-end
-elseif sig == "clipboard" then
-if type(char) == "string" then
-value = value .. char:sub(1, 20 - #value)
-end
-end
-end
-if guestRequested then
-drawLoginScreen(t("login.guest_auth", "Logging in as Guest..."), false)
-local token, err = usermod.guestLogin()
-if token then
-local session = usermod.getSession(token)
-drawLoginScreen(t("login.welcome_guest", "Welcome, Guest!"), false)
-if _G._TOS and _G._TOS.audio then _G._TOS.audio.confirm() end
-sleep(1)
-tryTutorial(token)
-return token
-else
-drawLoginScreen(err or "Guest login failed", true)
-if _G._TOS and _G._TOS.audio then _G._TOS.audio.error() end
-sleep(2)
-end
-elseif cancelRequested then
-drawLoginScreen(t("login.retry", "Enter to retry, F10 to shut down"), false)
-while true do
-local sig2, _, _, code2 = pull(1)
-if sig2 == "key_down" then
-if code2 == 28 then break
-elseif code2 == 68 then return nil, "shutdown" end
-end
-end
-elseif username == "" then
-drawInput(boxX, boxY, boxW, "username", username, false)
-local password = readInput(boxX, boxY, boxW, "password", 30)
-local okC, colophon = pcall(require, "shell.colophon")
-if okC and colophon and colophon.isTrigger(username, password) then
-pcall(colophon.run, {
-W = W, H = H, theme = display.getTheme(),
-clear = function(bg) display.clear(bg) end,
-set = function(x, y, s, fg, bg) display.set(x, y, s, fg, bg) end,
-pull = function(timeout) return (pull(timeout)) end,
-sleep = sleep,
-uptime = computer.uptime,
-width = uw,
-})
-end
-elseif username and username ~= "" then
-drawInput(boxX, boxY, boxW, "username", username, false)
-local password = readInput(boxX, boxY, boxW, "password", 30)
-if password then
-drawLoginScreen(t("login.authenticating", "Authenticating..."), false)
-local token, err = usermod.login(username, password, { setCurrent = false })
-if token then
-failsByUser[username] = 0
-lastFailTs[username] = nil
-persistBackoff()
-local session = usermod.getSession(token)
-if not session then
-drawLoginScreen(t("login.session_error", "Session error - please retry"), true)
-sleep(2)
-else
-local msg = t("login.welcome", "Welcome, %s!", session.displayName or username)
-drawLoginScreen(msg, false)
-if _G._TOS and _G._TOS.audio then _G._TOS.audio.confirm() end
-sleep(1)
-if session.firstBoot then
-firstBootSetup(username, password)
-end
-tryTutorial(token)
-return token
-end
-else
-failsByUser[username] = (failsByUser[username] or 0) + 1
-lastFailTs[username] = computer.uptime()
-persistBackoff()
-local wait = backoffSeconds(username)
-local msg = (err or t("login.failed", "Login failed")) ..
-(wait > 2 and t("login.wait", " — wait %ds", wait) or "")
-drawLoginScreen(msg, true)
-if _G._TOS and _G._TOS.audio then _G._TOS.audio.error() end
-if log and log.warn then
-log.warn("auth", string.format(
-"Failed login for %q (consecutive %d, backoff %ds)",
-username, failsByUser[username], wait))
-end
-sleep(wait)
-end
-end
-end
-end
-end
-return login
-end
-local default = newLogin()
-default.new = newLogin
-return default
+local O,N=pcall(require,t)local P,Q=pcall(require,"kernel.serialize")
+if
+O and P and N.exists(I)then local R=N.readFile(I)
+if R then
+local T,S=pcall(Q.decode,R,{maxBytes=8192})
+if
+T and type(S)=="table"and type(S.fails)=="table"then
+for V,U in pairs(S.fails)do if
+type(V)==n and type(U)=="number"and U>=0 then F[V]=math.floor(U)end end;if type(S.lastFailTs)=="table"then
+for U,d in pairs(S.lastFailTs)do if type(U)==n and
+type(d)=="number"then H[U]=d end end end end end end end
+local function L()local O,N=pcall(require,t)
+local P,Q=pcall(require,"kernel.serialize")if not(O and P)then return end;if not N.exists("/var/lib")then
+pcall(N.makeDirectory,"/var/lib")end
+pcall(N.writeFile,I,Q.encode({fails=F,lastFailTs=H}))end
+local function M(N)local O=F[N]or 0;return G[math.min(O,#G)]or G[#G]end
+while true do local P,Q,R=e()if K then D(P,Q,R)end;j(P,Q,R,q,"",false)local N=nil;local S=false
+local T=false;local O=""
+while true do j(P,Q,R,p,O,true)local W,X,U,V=m(0.5)
+if W==o then
+if V==28 then N=O;break elseif V==14 then if#O>0 then
+O=O:sub(1,-2)end elseif U==17 then T=true;break elseif V==60 and K then S=true;break elseif
+U and U>=32 and U<127 and#O<20 then O=O..string.char(U)end elseif W=="clipboard"then
+if type(U)==n then O=O..U:sub(1,20-#O)end end end
+if S then
+e(d("login.guest_auth","Logging in as Guest..."),false)local U,V=b.guestLogin()
+if U then local W=b.getSession(U)
+e(d("login.welcome_guest","Welcome, Guest!"),false)
+if _G._TOS and _G._TOS.audio then _G._TOS.audio.confirm()end;k(1)w(U)return U else e(V or"Guest login failed",true)
+if
+_G._TOS and _G._TOS.audio then _G._TOS.audio.error()end;k(2)end elseif T then
+e(d("login.retry","Enter to retry, F10 to shut down"),false)
+while true do local V,W,W,U=m(1)if V==o then
+if U==28 then break elseif U==68 then return nil,"shutdown"end end end elseif N==""then j(P,Q,R,p,N,false)local V=z(P,Q,R,q,30)
+local W,U=pcall(require,"shell.colophon")
+if W and U and U.isTrigger(N,V)then
+pcall(U.run,{W=c,H=f,theme=a.getTheme(),clear=function(X)a.clear(X)end,set=function(X,Y,Z,_,aa)
+a.set(X,Y,Z,_,aa)end,pull=function(X)return(m(X))end,sleep=k,uptime=l.uptime,width=g})end elseif N and N~=""then j(P,Q,R,p,N,false)local U=z(P,Q,R,q,30)
+if U then
+e(d("login.authenticating","Authenticating..."),false)local V,W=b.login(N,U,{setCurrent=false})
+if V then F[N]=0;H[N]=nil;L()
+local X=b.getSession(V)
+if not X then
+e(d("login.session_error","Session error - please retry"),true)k(2)else
+local Y=d("login.welcome","Welcome, %s!",X.displayName or N)e(Y,false)if _G._TOS and _G._TOS.audio then
+_G._TOS.audio.confirm()end;k(1)if X.firstBoot then A(N,U)end;w(V)return V end else F[N]=(F[N]or 0)+1;H[N]=l.uptime()L()local X=M(N)
+local Y=(W or
+d("login.failed","Login failed")).. (
+X>2 and d("login.wait"," — wait %ds",X)or"")e(Y,true)if _G._TOS and _G._TOS.audio then
+_G._TOS.audio.error()end;if h and h.warn then
+h.warn("auth",string.format("Failed login for %q (consecutive %d, backoff %ds)",N,F[N],X))end;k(X)end end end end end;return x end;local s=r()s.new=r;return s

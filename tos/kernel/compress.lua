@@ -1,133 +1,54 @@
-local component = require("component")
-local compress = {}
-local MAGIC = "TCZ1"
-local F_COMPRESSED = 1
-local CHUNK = 4096
-local MIN_COMPRESS = 256
-local dataCard = nil
-local avail = false
-local log = nil
-local function u32(n)
-return string.char((n >> 24) & 0xFF, (n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF)
-end
-local function u16(n) return string.char((n >> 8) & 0xFF, n & 0xFF) end
-local function ru32(s, i)
-local a, b, c, d = s:byte(i, i + 3)
-return ((a << 24) | (b << 16) | (c << 8) | d) & 0xFFFFFFFF
-end
-local function ru16(s, i)
-local a, b = s:byte(i, i + 1)
-return (a << 8) | b
-end
-function compress.init(modules)
-modules = modules or {}
-log = modules.log or log
-dataCard, avail = nil, false
-local info
+local F,z="compress","string"local A=require("component")local s={}local v="TCZ1"
+local B=1;local C=4096;local G=256;local w=nil;local t=false;local u=nil;local function y(a)
+return string.char((a>>24)&0xFF,(a>>16)&0xFF,(
+a>>8)&0xFF,a&0xFF)end;local function H(a)return
+string.char((a>>8)&0xFF,a&0xFF)end;local function D(b,a)
+local e,f,g,h=b:byte(a,a+3)return
+((e<<24)| (f<<16)| (g<<8)|h)&0xFFFFFFFF end;local function I(b,a)local c,d=b:byte(a,
+a+1)return(c<<8)|d end
+function s.init(a)a=a or
+{}u=a.log or u;w,t=nil,false;local b
 do
-local okD, dc = pcall(require, "kernel.datacard")
-if okD and dc and dc.detect then info = dc.detect() end
-end
-if not info then
-info = { present = false, caps = {}, name = nil }
+local d,c=pcall(require,"kernel.datacard")if d and c and c.detect then b=c.detect()end end
+if not b then b={present=false,caps={},name=nil}
 pcall(function()
-for addr in component.list("data") do
-local p = component.proxy(addr)
-if p then
-info.present = true
-info.caps = { deflate = p.deflate ~= nil and p.inflate ~= nil }
-info.proxy = p
-info.name = info.caps.deflate and "data card" or "data card (no deflate)"
-return
-end
-end
-end)
-end
-if info and info.present and info.caps.deflate then
-dataCard, avail = info.proxy, true
-end
-if log and log.info then
-if avail then
-log.info("compress", "Data card present (" .. (info.name or "?")
-.. ") — deflate/inflate available")
-elseif info and info.present then
-log.info("compress", "Data card present (" .. (info.name or "?")
-.. ") but no deflate/inflate — compression store-only")
-else
-log.info("compress", "No data card — compression disabled (store-only)")
-end
-end
-return avail
-end
-function compress.available() return avail end
-function compress.isPacked(blob)
-return type(blob) == "string" and #blob >= 9 and blob:sub(1, 4) == MAGIC
-end
-local function packStored(data)
-return MAGIC .. string.char(0) .. u32(#data) .. data
-end
-local coopProc = nil
-local function coopYield()
-if coopProc == nil then
-local okP, m = pcall(require, "kernel.process")
-coopProc = (okP and m and m.yieldCooperative) and m or false
-end
-if coopProc then coopProc.yieldCooperative() end
-end
-function compress.pack(data)
-if type(data) ~= "string" then return nil, "data must be a string" end
-local orig = #data
-if avail and orig >= MIN_COMPRESS then
-local chunks, total, ok = {}, 0, true
-for i = 1, orig, CHUNK do
-coopYield()
-local piece = data:sub(i, i + CHUNK - 1)
-local dok, def = pcall(dataCard.deflate, piece)
-if not dok or type(def) ~= "string" then ok = false; break end
-chunks[#chunks + 1] = def
-total = total + #def
-end
-local overhead = 11 + 4 * #chunks
-if ok and (total + overhead) < orig then
-local out = { MAGIC, string.char(F_COMPRESSED), u32(orig), u16(#chunks) }
-for _, c in ipairs(chunks) do
-out[#out + 1] = u32(#c)
-out[#out + 1] = c
-end
-local blob = table.concat(out)
-return blob, "deflate", orig, #blob
-end
-end
-local blob = packStored(data)
-return blob, "stored", orig, #blob
-end
-function compress.unpack(blob)
-if not compress.isPacked(blob) then return nil, "not a TCZ blob" end
-local flags = blob:byte(5)
-local origLen = ru32(blob, 6)
-if (flags & F_COMPRESSED) == 0 then
-local data = blob:sub(10)
-if #data ~= origLen then return nil, "stored length mismatch" end
-return data
-end
-if not avail then return nil, "data card required to decompress" end
-if #blob < 11 then return nil, "truncated blob" end
-local off = 10
-local nChunks = ru16(blob, off); off = off + 2
-local out = {}
-for _ = 1, nChunks do
-coopYield()
-if off + 3 > #blob then return nil, "truncated blob" end
-local cLen = ru32(blob, off); off = off + 4
-local cData = blob:sub(off, off + cLen - 1); off = off + cLen
-if #cData ~= cLen then return nil, "truncated chunk" end
-local iok, inf = pcall(dataCard.inflate, cData)
-if not iok or type(inf) ~= "string" then return nil, "inflate failed" end
-out[#out + 1] = inf
-end
-local data = table.concat(out)
-if #data ~= origLen then return nil, "length mismatch after inflate" end
-return data
-end
-compress.MAGIC = MAGIC
-return compress
+for c in A.list("data")do
+local d=A.proxy(c)
+if d then b.present=true
+b.caps={deflate=d.deflate~=nil and d.inflate~=nil}b.proxy=d
+b.name=b.caps.deflate and"data card"or"data card (no deflate)"return end end end)end
+if b and b.present and b.caps.deflate then w,t=b.proxy,true end
+if u and u.info then
+if t then
+u.info(F,"Data card present ("..
+(b.name or"?")..") — deflate/inflate available")elseif b and b.present then
+u.info(F,"Data card present ("..
+(b.name or"?")..") but no deflate/inflate — compression store-only")else
+u.info(F,"No data card — compression disabled (store-only)")end end;return t end;function s.available()return t end;function s.isPacked(a)return
+type(a)==z and#a>=9 and a:sub(1,4)==v end
+local function J(a)return v..string.char(0)..
+y(#a)..a end;local x=nil
+local function E()if x==nil then local b,a=pcall(require,"kernel.process")
+x=(b and a and
+a.yieldCooperative)and a or false end;if x then
+x.yieldCooperative()end end
+function s.pack(a)if type(a)~=z then return nil,"data must be a string"end
+local b=#a
+if t and b>=G then local d,e,f={},0,true;for h=1,b,C do E()local j=a:sub(h,h+C-1)
+local k,i=pcall(w.deflate,j)if not k or type(i)~=z then f=false;break end;d[#d+1]=i
+e=e+#i end
+local g=11+4*#d
+if f and(e+g)<b then local h={v,string.char(B),y(b),H(#d)}for k,j in
+ipairs(d)do h[#h+1]=y(#j)h[#h+1]=j end
+local i=table.concat(h)return i,"deflate",b,#i end end;local c=J(a)return c,"stored",b,#c end
+function s.unpack(a)
+if not s.isPacked(a)then return nil,"not a TCZ blob"end;local f=a:byte(5)local d=D(a,6)
+if(f&B)==0 then local h=a:sub(10)if#h~=d then
+return nil,"stored length mismatch"end;return h end;if not t then return nil,"data card required to decompress"end;if#
+a<11 then return nil,"truncated blob"end;local b=10;local g=I(a,b)b=b+2
+local c={}
+for h=1,g do E()if b+3 >#a then return nil,"truncated blob"end;local i=D(a,b)b=b+4;local j=a:sub(b,
+b+i-1)b=b+i
+if#j~=i then return nil,"truncated chunk"end;local l,k=pcall(w.inflate,j)if not l or type(k)~=z then
+return nil,"inflate failed"end;c[#c+1]=k end;local e=table.concat(c)
+if#e~=d then return nil,"length mismatch after inflate"end;return e end;s.MAGIC=v;return s

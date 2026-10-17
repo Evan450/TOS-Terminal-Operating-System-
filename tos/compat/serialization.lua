@@ -1,20 +1,7 @@
-local ser = require("kernel.serialize")
-local serialization = {}
-function serialization.serialize(value, pretty)
-if pretty then
-local s = ser.encode(value)
-if s:sub(1, 7) == "return " then
-s = s:sub(8)
-end
-return s
-else
-return ser.compact(value)
-end
-end
-function serialization.unserialize(str)
-if type(str) ~= "string" then return nil, "unserialize: expected string" end
-local ok, v, err = pcall(ser.decode, str)
-if not ok then return nil, tostring(v) end
-return v, err
-end
-return serialization
+local c=require("kernel.serialize")local d={}
+function d.serialize(a,b)if b then
+local e=c.encode(a)if e:sub(1,7)=="return "then e=e:sub(8)end;return e else
+return c.compact(a)end end
+function d.unserialize(a)
+if type(a)~="string"then return nil,"unserialize: expected string"end;local e,b,f=pcall(c.decode,a)
+if not e then return nil,tostring(b)end;return b,f end;return d
