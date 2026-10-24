@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in TOS did not do what it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. A bot does a first pass on every issue (it checks the fields below,
+        looks for duplicates and known issues, and labels it); it never closes anything, and a
+        person reads whatever it cannot settle.
+
+        **Security problem?** Do not file it here. Use the **Security** tab, then
+        **Report a vulnerability**.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: textarea
+    id: about
+    attributes:
+      label: Output of `about`
+      description: Run `about` on the machine and paste the result. It names the exact version and build.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Output of `why`, or the error code
+      description: |
+        Run `why` right after the failure, before anything else. It explains the last refusal or
+        error with its code (`E-401`). If the screen looks wrong, `screendump` saves it as text
+        (attach the file). If TOS crashed, `crash` (admin) shows the post-mortem.
+      render: text
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is TOS installed?
+      options:
+        - From a release (the main branch)
+        - From a clone of dev
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: OpenComputers and Minecraft versions
+      description: Also memory, CPU tier, and architecture (Lua 5.3 or 5.4) if you know them.
