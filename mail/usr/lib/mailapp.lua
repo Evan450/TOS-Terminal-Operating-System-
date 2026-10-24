@@ -94,6 +94,7 @@ local function openMessage(S, tab, idx)
     { "From:    " .. mailLib.senderName(m)
       .. (m.from and ("  (" .. tostring(m.from):sub(1, 12) .. ")") or ""), T.fg },
     { "Subject: " .. (m.subject ~= "" and m.subject or "(no subject)"), T.title },
+    { "Sent:    " .. mailLib.formatTs(m.ts) .. " (sender's uptime)", T.dim },
   }
   if not m.readable then
     tab.bodyLines[#tab.bodyLines + 1] =

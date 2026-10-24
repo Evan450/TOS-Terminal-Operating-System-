@@ -32,7 +32,7 @@ return {
   hashes = {
     ["/etc/rc.d/intercom.lua"] = "eb1dcf60a1453aff269d91280d36c1e02dad810ae5f68cf3fcdebe9614b4c530",
     ["/usr/lib/intercom.lua"] = "1f6a18fbf7f226f651814fcd468fa9586a0e7fcbc4f50ea8e4db7e1bcdf3cdbe",
-    ["/usr/lib/intercomapp.lua"] = "7d460a9784a068f8ef99e9e4562ef767fd9ec7436472d756584c9c2a4c2e32d0",
+    ["/usr/lib/intercomapp.lua"] = "b87c1b49d207fcced6821228a02c5033729f962eb2ec12cd9275b6b415857c91",
   },
   name        = "intercom",
   version     = "1.0.1",

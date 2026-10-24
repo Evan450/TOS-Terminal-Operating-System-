@@ -61,11 +61,28 @@ end
 
 
 
+
+
+
+
+
+function M.formatTs(ts)
+  if type(ts) ~= "number" then return "--:--:--" end
+  ts = math.max(0, ts)
+  local h = math.floor(ts / 3600)
+  local m = math.floor((ts % 3600) / 60)
+  local s = math.floor(ts % 60)
+  return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+
+
 function M.inboxRow(m, idx, width)
   local rd   = (type(m) == "table" and m.read) and " " or "*"
   local who  = M.senderName(m):sub(1, 12)
   local subj = (type(m) == "table" and m.subject ~= "" and m.subject) or "(no subject)"
-  local line = string.format(" %s %2d  %-12s  %s", rd, idx, who, subj)
+  local when = M.formatTs(type(m) == "table" and m.ts or nil)
+  local line = string.format(" %s %2d %s %-12s  %s", rd, idx, when, who, subj)
   width = width or 60
   if #line > width then line = line:sub(1, width - 1) .. "~" end
   return line

@@ -24,10 +24,11 @@
 
 
 
+
 local fmt = require("printerfmt")
 
 local doc = {}
-doc._VERSION = "1.0.0"
+doc._VERSION = "1.1.0"
 
 doc.MAX_LINES = fmt.MAX_LINES
 doc.MAX_WIDTH = fmt.MAX_WIDTH
@@ -43,6 +44,11 @@ doc.MAX_WIDTH = fmt.MAX_WIDTH
 function doc.parse(text)
   local out = { title = nil, blocks = {}, warnings = {} }
   local align, color = "left", nil
+  
+  
+  
+  
+  local nofill = false
 
   local function warn(n, msg)
     out.warnings[#out.warnings + 1] = { line = n, text = msg }
@@ -57,7 +63,7 @@ function doc.parse(text)
     if raw:sub(1, 2) == ".." then
       
       out.blocks[#out.blocks + 1] =
-        { text = raw:sub(2), align = align, color = color, srcLine = n }
+        { text = raw:sub(2), align = align, color = color, srcLine = n, nofill = nofill }
     elseif raw:sub(1, 1) == "." then
       local cmd, rest = raw:match("^%.(%a+)%s*(.*)$")
       cmd = cmd and cmd:lower() or nil
@@ -69,6 +75,10 @@ function doc.parse(text)
         align = "left"
       elseif cmd == "page" then
         out.blocks[#out.blocks + 1] = { page = true, srcLine = n }
+      elseif cmd == "nf" then
+        nofill = true
+      elseif cmd == "fi" then
+        nofill = false
       elseif cmd == "color" or cmd == "colour" then
         if rest == "" or rest:lower() == "off" then
           color = nil
@@ -83,11 +93,11 @@ function doc.parse(text)
       else
         warn(n, "unknown command '" .. raw:match("^(%S+)") .. "'")
         out.blocks[#out.blocks + 1] =
-          { text = raw, align = align, color = color, srcLine = n }
+          { text = raw, align = align, color = color, srcLine = n, nofill = nofill }
       end
     else
       out.blocks[#out.blocks + 1] =
-        { text = raw, align = align, color = color, srcLine = n }
+        { text = raw, align = align, color = color, srcLine = n, nofill = nofill }
     end
   end
   return out
@@ -125,7 +135,15 @@ function doc.layout(parsed, opts)
       flush()
     else
       local clean = fmt.sanitize(b.text or "")
-      for _, piece in ipairs(fmt.wrap(clean, maxWidth, measure)) do
+      
+      
+      local pieces
+      if b.nofill and measure((clean:gsub("%s+$", ""))) <= maxWidth then
+        pieces = { (clean:gsub("%s+$", "")) }
+      else
+        pieces = fmt.wrap(clean, maxWidth, measure)
+      end
+      for _, piece in ipairs(pieces) do
         emit({ text = piece, align = b.align or "left",
                color = b.color, src = b.srcLine })
       end

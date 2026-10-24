@@ -28,12 +28,24 @@ function M.label() return "Intercom" end
 
 
 
+
+
+function M.fitLine(s, width)
+  s = tostring(s or "")
+  width = width or 40
+  if #s > width then return s:sub(1, math.max(1, width - 1)) .. "~" end
+  return s
+end
+
+
+
+
+
 function M.cueRow(cue, width)
   width = width or 40
   local tag = (cue.severity or "info"):sub(1, 4):upper()
   local line = string.format(" %-4s %-14s %s", tag, cue.name:sub(1, 14), cue.text)
-  if #line > width then line = line:sub(1, width - 1) .. "~" end
-  return line
+  return M.fitLine(line, width)
 end
 
 
@@ -117,7 +129,7 @@ function M.draw(S, tab)
       local sev = a.severity or "info"
       local color = (sev == "critical" or sev == "alert") and T.error
         or (sev == "warn") and T.warning or T.dim
-      D.set(split + 2, top + 1 + i, ic.formatLine(a):sub(1, W - split - 2), color, T.bg)
+      D.set(split + 2, top + 1 + i, M.fitLine(ic.formatLine(a), W - split - 2), color, T.bg)
     end
   end
 
