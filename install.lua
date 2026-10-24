@@ -1,5 +1,5 @@
 
-local aP,aB,aG,aH,aQ,aR,aD="filesystem","string","/tos/kernel/init.lua","^(.+)/[^/]+$","/init.lua","tablet","Cancelled."local ap=require("component")local an=require("computer")
+local aP,aG,aB,aH,aQ,aR,aD="filesystem","/tos/kernel/init.lua","string","^(.+)/[^/]+$","/init.lua","tablet","Cancelled."local ap=require("component")local an=require("computer")
 local aC=require("term")local ai=nil
 pcall(function()ai=require(aP)end)local az=ap.gpu;local function ah(a)
 if az and az.setForeground then pcall(az.setForeground,a)end end;local function ak(a)ah(0x00FF00)

@@ -1,5 +1,5 @@
 
-local ac,ad,T,ae,N,U,O,R,P,Q,S,V,W,af,ag,ah,K,ai,aj,M,ak,al,X,Y,am,Z,_,aa,an,ab,ao="computer","version"," %-16s %s","From repos nobody configured: ","Refused: ","remove","Aborted.","kernel.pkgsign","--allow-unverified","--allow-unsigned","--force","--dry-run","--dryrun","  %-20s %s -> %s","(--dry-run: nothing was changed)","install","string","floppy","Error: ","status","repair","shell.panels.tabs","number","kernel.log","Cannot read: ","danger","Cancel","No user system","setTier unavailable","filesystem","Mount failed"local L=require(ac)local J=require("component")
+local ac,ad,T,ae,N,U,O,R,P,Q,S,V,W,af,ag,K,ah,ai,aj,M,ak,al,X,Y,am,Z,_,aa,an,ab,ao="computer","version"," %-16s %s","From repos nobody configured: ","Refused: ","remove","Aborted.","kernel.pkgsign","--allow-unverified","--allow-unsigned","--force","--dry-run","--dryrun","  %-20s %s -> %s","(--dry-run: nothing was changed)","string","floppy","install","Error: ","status","repair","shell.panels.tabs","number","kernel.log","Cannot read: ","danger","Cancel","No user system","setTier unavailable","filesystem","Mount failed"local L=require(ac)local J=require("component")
 local I=require("shell.panels.helpers")
 return
 function(b,a,c)local h,G,t,e,j,g=a.K,a.E,a.P,a.F,a.D,a.U;local H,m,n=a.SC,a.NM,a.st;local d=a.T;local ap=a.tier
@@ -366,7 +366,7 @@ local aC=
 az._sigKey:sub(1,16)E("              key "..aC,d.dim)end
 E(string.format(" integrity:   %s",
 az._unverified and"NOT verified (installed with --allow-unverified)"or"all files matched their declared hashes"),
-az._unverified and d.warning or d.dim)end elseif aw==ah or aw=="install-dir"or aw=="from-floppy"or aw==
+az._unverified and d.warning or d.dim)end elseif aw==ai or aw=="install-dir"or aw=="from-floppy"or aw==
 "fromfloppy"then
 if
 ax({[P]=true,[Q]=true,[S]=true,["--all"]=true,["--yes"]=true,[V]=true,[W]=true,["--key"]="value",["--prompts"]=true,["--classic"]=true},
@@ -378,8 +378,8 @@ aL=="--yes"or aL=="-y"then aI=true elseif aL==V or aL==W then aE=true elseif aL=
 aL:sub(1,2)~="--"then aF[#aF+1]=aL end end;local aD=aF[1]local function aJ(aK)return
 type(aK)==K and aK:find("/",1,true)~=nil end;local az
 if aH then az="all"elseif aw==
-"install-dir"then az="dir"elseif aw=="from-floppy"or aw=="fromfloppy"then az=ai elseif not aD then
-az=ai elseif aJ(aD)then az="dir"elseif#aF>1 then az="many"else az="name"end
+"install-dir"then az="dir"elseif aw=="from-floppy"or aw=="fromfloppy"then az=ah elseif not aD then
+az=ah elseif aJ(aD)then az="dir"elseif#aF>1 then az="many"else az="name"end
 local function aG(aK)
 if#aK==0 then E("Nothing to install.",d.dim)return end
 if aE then
@@ -410,7 +410,7 @@ table.concat(aP.skipped,", ")..")")or""),d.highlight)else aL=aL+1
 E(string.format("  %-20s FAILED: %s",aN,tostring(aP)),d.error)end end
 E(string.format("%d installed, %d failed.",aM,aL),aL>0 and d.warning or d.highlight)end
 if aE and(az=="name"or az=="dir")then aG({aD})return elseif aE and
-az==ai then local aK={}for aM,aL in ipairs(av.listAllAvailable()or{})do
+az==ah then local aK={}for aM,aL in ipairs(av.listAllAvailable()or{})do
 if not(av.info and
 av.info(aL.name))then aK[#aK+1]=aL.name end end
 table.sort(aK)
@@ -446,7 +446,7 @@ E("Menu installer unavailable ("..tostring(aO)..
 ") — using prompts.",d.dim)end end;if aM then return end
 local aN,aK=av.installFromFloppy({session=I.sessionOf(a),allowUnverified=aB,allowUnsigned=aC,force=aA,confirm=function(aR,aQ,aP,aO)
 if q then
-local aV={title="Install from media",severity=ah,yes="Install",no="Skip",progress=
+local aV={title="Install from media",severity=ai,yes="Install",no="Skip",progress=
 (aP and aO and aO>1)and{index=aP,total=aO}or nil}if aP and aO and aP<aO then aV.redraw=false end;return
 q("Install  "..aR.."?".."\n\n".."From:"..
 "\n  "..aQ,aV)end;if not i then return false end
@@ -497,7 +497,7 @@ E("           | enable <name> | disable <name> | commands | make-disk <mnt>]",d.
 E("  install: a name installs by name; a path installs that dir; no arg",d.dim)
 E("           scans mounted media. Shortcuts: 'install <name>', 'uninstall <name>'.",d.dim)
 E("  signing: trust [list|add|remove|require|key] · verify-sig <dir> · sign <dir>",d.dim)end end
-b.install=function(E,au)local av={ah}for aw=1,# (E or{})do av[#av+1]=E[aw]end;return
+b.install=function(E,au)local av={ai}for aw=1,# (E or{})do av[#av+1]=E[aw]end;return
 b.pkg(av,au)end
 b.uninstall=function(E,au)local av={"uninstall"}
 for aw=1,# (E or{})do av[#av+1]=E[aw]end;return b.pkg(av,au)end

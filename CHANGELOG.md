@@ -65,7 +65,9 @@ Checked on a real OpenOS 1.8.9 machine (`build/headless-session.py --os openos -
 
 ### Strata Systems is branding, not a copyright holder
 
-"Strata Systems LLC" is the in-world vendor TOS shows on its splash, `about` and installer, and it is fictional. The README's licence section nevertheless said "Copyright © 2026 Strata Systems LLC", a copyright claim by an entity that does not exist. It now reads Discover! Interactive, as every other file in the repository does, and says in one paragraph that Strata is a fictional vendor, not the licensor. `kernel/logo.lua`, where the name lives, carries the same warning. What the player sees inside TOS stays: the splash, `about`, the installer banners, the System Configuration title, the kiosk example, and the test fixtures that check them. What is outside TOS moves: the `author` field of the 21 add-on manifests now reads Discover! Interactive, and the manual, the changelog and two code comments that used Strata as the example of a publisher being impersonated now say Discover! Interactive or "the publisher". The history of the original rebrand in `docs/CHANGELOG-ARCHIVE.md` is left as it was. The `author` change only reaches machines with a new pack: the copies in `TOS-Extras/dist/` are build output whose signatures cover those exact bytes, so they were not edited, and `python tos.py pack --sign` (which only the maintainer can run) regenerates them.
+"Strata Systems LLC" is the fictional, in-universe creator of TOS, the Optional Utilities and their documentation, and appears wherever those do: the splash, `about`, the installer, the System Configuration title, every add-on's `author` field, and the manual. The README's licence section nevertheless said "Copyright © 2026 Strata Systems LLC", which is a real-world legal claim made by an entity that does not exist. It now reads Discover! Interactive, the real (planned) entity named in every other copyright line in the repository, and a paragraph says the vendor shown on the splash is fictional and is not the licensor. `kernel/logo.lua` carries the same warning beside the vendor string. Nothing else about Strata changed.
+
+One round-trip is worth recording. The `author` field of the 21 add-on manifests, and the examples in the manual, the changelog and two code comments, were briefly changed to Discover! Interactive (and a re-signed pack published with that), on a reading of the request that turned out to be wrong: Strata is the creator of the add-ons and the documentation, and Discover! Interactive is the name for what is not TOS. They were put back. Because the published pack carries the interim author field, the 21 packages are listed in `test_build_disk.lua`'s `PENDING_RESIGN` until the pack is re-signed and republished.
 
 ### The published branch is tested the way a contributor gets it
 
@@ -1664,7 +1666,7 @@ mismatch rather than handing a partly-suspect tree to the installer. The
 comments state plainly what that does and does not prove — the manifest and the
 files come from the same host over the same connection, so this establishes
 "these are the bytes that repository is serving", not "these are the bytes
-the publisher released". Closing that gap needs a signature checked against a key
+Strata published". Closing that gap needs a signature checked against a key
 pinned in `bootstrap.lua` itself, which is written down and not done.
 
 ### Contributors can build and sign an add-on now
@@ -2909,7 +2911,7 @@ plan; the fourth is the one that matters and it wasn't named there:
 Two forgeries the design refuses by construction. A signature file may carry
 a `signer` name — it is display-only, shown in quotes as the disk's own word,
 and **never** matched against the trust store, so a floppy calling itself
-"Discover! Interactive" is not trusted for saying so. And a manifest cannot declare
+"Strata Systems" is not trusted for saying so. And a manifest cannot declare
 itself trusted: `_sigState`/`_sigKey`/`_sigLabel` are stripped from every
 on-disk manifest form, the way `_srcBase` already was.
 
