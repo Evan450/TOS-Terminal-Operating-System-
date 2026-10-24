@@ -23,7 +23,7 @@ return {
   kind        = "command",
   category    = "security",
   description = "Tape keycard + encrypted personal log: HMAC identity for access control, private notes you can edit any time.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/modules/tape-authenticator/init.lua",
   },

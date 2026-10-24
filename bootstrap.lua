@@ -487,7 +487,7 @@ print()
 --! come from the same place over the same connection: whoever can rewrite
 --! one can rewrite the other. Verifying downloads against it means "these
 --! are the bytes that repository is serving", not "these are the bytes
---! the publisher released". Closing that gap needs a signature checked against
+--! Strata published". Closing that gap needs a signature checked against
 --! a key pinned HERE, in this file, rather than fetched alongside the
 --! thing it vouches for -- tracked, not done.
 --!

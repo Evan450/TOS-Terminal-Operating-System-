@@ -24,7 +24,7 @@ return {
   kind        = "service",
   category    = "network",
   description = "Mesh email: store-and-forward mailbox, end-to-end sealed, with an inbox tab + CLI TUI.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/mail.lua",      -- service lib: mailbox, send, delivery handler
     "/usr/lib/mailui.lua",    -- CLI-shell full-screen TUI

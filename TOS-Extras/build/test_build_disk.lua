@@ -435,10 +435,37 @@ do
     --! difference in any package NOT named still fails, and an entry whose
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
+    -- 2026-10-24: the pack signed and published that day carries `author =
+    -- "Discover! Interactive"`, which was a mistake (Strata Systems is the
+    -- in-universe author of the add-ons). The source says Strata again, so the
+    -- fresh build differs from that pack until it is re-signed.
+    local AUTHOR_FIELD = "published pack has author Discover! Interactive; source is Strata Systems again; "
+      .. "waits for `python tos.py pack --sign`"
     local PENDING_RESIGN = {
       -- The operator signed and published the pack on 2026-10-23, including
       -- rbmk-control 1.0.0 and cluster-storage 1.0.0. Name a package here
       -- when a fix to it lands ahead of the next signing.
+      ["blockfs"] = AUTHOR_FIELD,
+      ["calc"] = AUTHOR_FIELD,
+      ["cluster-manager"] = AUTHOR_FIELD,
+      ["cluster-master"] = AUTHOR_FIELD,
+      ["cluster-storage"] = AUTHOR_FIELD,
+      ["intercom"] = AUTHOR_FIELD,
+      ["mail"] = AUTHOR_FIELD,
+      ["mouse"] = AUTHOR_FIELD,
+      ["printer"] = AUTHOR_FIELD,
+      ["rbmk-control"] = AUTHOR_FIELD,
+      ["rc-pilot"] = AUTHOR_FIELD,
+      ["selftest"] = AUTHOR_FIELD,
+      ["snake"] = AUTHOR_FIELD,
+      ["stock"] = AUTHOR_FIELD,
+      ["tape"] = AUTHOR_FIELD,
+      ["tape-authenticator"] = AUTHOR_FIELD,
+      ["tetris"] = AUTHOR_FIELD,
+      ["ttt"] = AUTHOR_FIELD,
+      ["warhead"] = AUTHOR_FIELD,
+      ["web"] = AUTHOR_FIELD,
+      ["write"] = AUTHOR_FIELD,
     }
 
     if nShipped == 0 then

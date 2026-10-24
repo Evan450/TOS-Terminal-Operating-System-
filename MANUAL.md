@@ -1515,7 +1515,7 @@ pkg trust add strata 1f576b3a7c556a6f6701c2b0bd03ed07f290447726342d490173ac6ae64
 The name is **yours**. It has nothing to do with whatever name the disk
 claims — a signature file may carry a `signer` label, and TOS shows it in
 quotes as the disk's own word, never matches it against your store. A floppy
-calling itself "Discover! Interactive" is not Discover! Interactive for saying so.
+calling itself "Strata Systems" is not Strata Systems for saying so.
 
 Verify the fingerprint (`pkg trust list`) with the publisher over a channel
 that is **not the disk it came on**. A key that arrives with the package it
@@ -3171,7 +3171,7 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   download against the release manifest's digests before writing it, and
   refuses the whole install on any mismatch. But the manifest and the files come
   from the same host over the same connection, so this proves "these are the
-  bytes that repository serves", not "these are the bytes the publisher released".
+  bytes that repository serves", not "these are the bytes Strata published".
   A signature checked against a key pinned in `bootstrap.lua` would close the
   gap; it is not done. Installing from a disk you made yourself avoids the
   dependency.

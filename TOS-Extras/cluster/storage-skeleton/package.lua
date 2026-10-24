@@ -25,7 +25,7 @@ return {
   kind        = "service",
   category    = "network",
   description = "Cluster Storage Node: scratch store for oversized task lists, writes on 2101, reads on 2100.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/cluster/store.lua",
     "/usr/lib/cluster-storaged.lua",

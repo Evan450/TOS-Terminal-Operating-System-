@@ -9,7 +9,7 @@ return {
   kind        = "command",
   category    = "control",
   description = "WASD remote-control host for OC robots/drones running the rc-pilot EEPROM.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/modules/rc-pilot/init.lua",
     -- The robot side: flash it onto the chip the robot will carry. Built

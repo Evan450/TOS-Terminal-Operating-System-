@@ -18,7 +18,7 @@ return {
   kind        = "command",
   category    = "games",
   description = "Classic snake with per-user high scores. Requires a T2+ screen.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/modules/snake/init.lua",
     "/usr/modules/snake/logic.lua",

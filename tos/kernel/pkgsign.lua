@@ -106,8 +106,8 @@ end
 -- is a string a stranger typed; the KEY is what is actually being
 -- trusted, and the label is only how the operator refers to it locally.
 -- Everything user-facing says the label the OPERATOR chose, never the
--- one the disk supplied — otherwise a floppy calling itself "Discover!
--- Interactive" is trusted by reading.
+-- one the disk supplied — otherwise a floppy calling itself "Strata
+-- Systems" is trusted by reading.
 local _trust, _trustLoaded = nil, false
 
 --! `discovered`: what a fetch may take from a repo nobody configured.
