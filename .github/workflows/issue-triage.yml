@@ -1,0 +1,78 @@
+name: Issue triage
+
+# First pass over every issue: validate it, look for duplicates and known
+# issues, label it, leave one comment. It NEVER closes or rejects anything;
+# build/issue_triage.py has no code path that can. Docs: docs/ISSUE-TRIAGE.md.
+#
+# Issue text is untrusted. It reaches the script only through the event
+# payload file, never through a ${{ }} expression inside `run:`, and this
+# workflow has no pull_request trigger, so no fork code and no secrets are
+# involved. Workflows for issue events run from the default branch (dev).
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: 'Issue number to re-triage (blank: only run the daily sweep)'
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    # Comments only re-run triage when the REPORTER wrote them (they answered a
+    # question); a maintainer's comment must not re-label their own decisions.
+    if: >-
+      github.event_name == 'issues' ||
+      (github.event_name == 'issue_comment' &&
+       !github.event.issue.pull_request &&
+       github.event.comment.user.login == github.event.issue.user.login)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Triage
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 build/issue_triage.py triage --event "$GITHUB_EVENT_PATH" --apply
+
+  sweep:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Create or refresh labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 build/issue_triage.py labels --apply
+      - name: Move silent needs-info issues to the maintainer queue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 build/issue_triage.py stale --apply
+      - name: Re-triage the requested issue
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.issue != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.inputs.issue }}
+        run: python3 build/issue_triage.py triage --issue "$ISSUE_NUMBER" --apply

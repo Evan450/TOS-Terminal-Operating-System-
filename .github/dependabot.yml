@@ -1,0 +1,13 @@
+# TOS has no package-manager dependencies: it is Lua with no rocks, and the
+# Python tools use only the standard library plus pytest. The one thing that
+# does go stale is the pinned versions of the actions the workflows use, so
+# that is all this watches. Updates arrive as pull requests; CI runs on them.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

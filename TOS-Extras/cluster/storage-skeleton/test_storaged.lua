@@ -22,7 +22,11 @@ local function eq(name, expected, actual)
 end
 
 local ROOT = "cluster/storage-skeleton/"
-local DEV  = "../TOS-Dev/"
+local DEV  = "../TOS-Dev/"            -- the monorepo: TOS-Dev is a sibling
+do                                    -- the published dev branch nests us inside it
+  local f = io.open(DEV .. "tos/kernel/serialize.lua", "rb")
+  if f then f:close() else DEV = "../" end
+end
 
 local function fsStub()
   local files, dirs = {}, {}

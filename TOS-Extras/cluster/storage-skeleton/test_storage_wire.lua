@@ -33,7 +33,11 @@ end
 local function has(s, sub) return type(s) == "string" and s:find(sub, 1, true) ~= nil end
 
 local ROOT = "cluster/storage-skeleton/"
-local DEV  = "../TOS-Dev/"
+local DEV  = "../TOS-Dev/"            -- the monorepo: TOS-Dev is a sibling
+do                                    -- the published dev branch nests us inside it
+  local f = io.open(DEV .. "tos/kernel/serialize.lua", "rb")
+  if f then f:close() else DEV = "../" end
+end
 local LISTEN = 42     -- kernel.net's listenPort default
 
 local serialize = assert(loadfile(DEV .. "tos/kernel/serialize.lua"))()

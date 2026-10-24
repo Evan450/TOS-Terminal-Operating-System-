@@ -21,7 +21,9 @@ local function eq(name, expected, actual)
 end
 
 local ROOT = "cluster/storage-skeleton/"
-local serialize = assert(loadfile("../TOS-Dev/tos/kernel/serialize.lua"))()
+-- TOS-Dev is a sibling in the monorepo; the published dev branch nests us inside it.
+local serialize = assert(loadfile("../TOS-Dev/tos/kernel/serialize.lua")
+                         or loadfile("../tos/kernel/serialize.lua"))()
 
 -- In-memory filesystem: the same shape kernel.fs offers, pared to what
 -- store.lua actually calls.

@@ -70,8 +70,11 @@ function F.mounts()
 end
 
 -- ── The real kernel runner ─────────────────────────────────────────
+-- The last two are the nested layout of the published dev branch, where
+-- TOS-Extras sits INSIDE TOS-Dev and there is no TOS-Dev sibling.
 local selftest = loadFirst({ base .. "../../../TOS-Dev/tos/kernel/selftest.lua",
-  "../TOS-Dev/tos/kernel/selftest.lua", "TOS-Dev/tos/kernel/selftest.lua" })()
+  "../TOS-Dev/tos/kernel/selftest.lua", "TOS-Dev/tos/kernel/selftest.lua",
+  base .. "../../../tos/kernel/selftest.lua", "../tos/kernel/selftest.lua" })()
 local clock = 0
 local comp = { uptime = function() clock = clock + 0.1; return clock end,
                freeMemory = function() return 123456 end }

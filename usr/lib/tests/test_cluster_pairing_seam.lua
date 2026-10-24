@@ -39,7 +39,11 @@ local uptime = 1000
 package.loaded["computer"] = { uptime = function() return uptime end }
 package.loaded["cluster.net"] = {}
 
-local apiSrc = readFirst({ "../TOS-Extras/cluster/master-skeleton/lib/cluster/api.lua" })
+-- Sibling layout (the monorepo) first, then the nested one on the published
+-- dev branch. The sibling form only ever resolved there on Windows, which
+-- normalises "TOS-Dev/../TOS-Extras" without TOS-Dev existing; Linux does not.
+local apiSrc = readFirst({ "../TOS-Extras/cluster/master-skeleton/lib/cluster/api.lua",
+                           "TOS-Extras/cluster/master-skeleton/lib/cluster/api.lua" })
 local wizSrc = readFirst({ "tos/shell/clustersetup.lua" })
 if not (apiSrc and wizSrc) then
   print("  FAIL: could not read cluster/api.lua (TOS-Extras) or tos/shell/clustersetup.lua")

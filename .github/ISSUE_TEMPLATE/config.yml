@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Evan450/TOS-Terminal-Operating-System-/security/advisories/new
+    about: Please do not file vulnerabilities as public issues. See SECURITY.md.

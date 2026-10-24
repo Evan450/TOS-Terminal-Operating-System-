@@ -1,0 +1,3 @@
+# Asks the maintainer for review on every pull request. Add finer rules above
+# the catch-all if other maintainers join (the last matching pattern wins).
+*  @Evan450
