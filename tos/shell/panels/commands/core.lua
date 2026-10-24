@@ -1,5 +1,5 @@
 
-local Q,X,Y,J,L,Z,_,K,aa,ab,I,ac,ad,ae,af,ag,R,S,T,ah,U,ai,aj,ak="kernel.process","shell.keys","  Examples:","  Subcommands:","shell.panels.commands","function"," %-24s %8s","Cannot read: ","[^/]+$","Cancelled.","encrypt","decrypt","Write failed: ","Keychain is locked.","profile module unavailable","save failed","kernel.pkg","--system","timezone","Save failed"," (needs admin for /etc).","Save failed.","rename","Language: "local M=require("computer")local N=require("component")
+local Q,X,Y,J,L,Z,_,K,aa,ab,ac,I,ad,ae,af,ag,R,S,T,ah,U,ai,aj,ak="kernel.process","shell.keys","  Examples:","  Subcommands:","shell.panels.commands","function"," %-24s %8s","Cannot read: ","[^/]+$","Cancelled.","decrypt","encrypt","Write failed: ","Keychain is locked.","profile module unavailable","save failed","kernel.pkg","--system","timezone","Save failed"," (needs admin for /etc).","Save failed.","rename","Language: "local M=require("computer")local N=require("component")
 local H=require("shell.panels.helpers")local O=function()end
 do local b,a=pcall(require,Q)if b and a and a.yieldCooperative then
 O=a.yieldCooperative end end;local function P()local a,b=pcall(require,"shell.panels.home")

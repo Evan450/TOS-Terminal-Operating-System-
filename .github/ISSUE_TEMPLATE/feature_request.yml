@@ -1,0 +1,27 @@
+name: Feature request
+description: Something TOS could do that it does not
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [ROADMAP.md](https://github.com/Evan450/TOS-Terminal-Operating-System-/blob/dev/ROADMAP.md)
+        first: it lists what is planned and what was deliberately not done, with the reasons. A bot
+        checks your request against it and against open issues; it never closes anything.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve
+      description: A use case helps more than a design.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like TOS to do
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

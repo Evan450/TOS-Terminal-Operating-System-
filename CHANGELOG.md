@@ -9,8 +9,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 37 rounds of work:
+Everything since v1.5.0, in 39 rounds of work:
 
+- [The published branch is tested the way a contributor gets it](#the-published-branch-is-tested-the-way-a-contributor-gets-it)
+- [Issues get a first pass, and nothing is turned away](#issues-get-a-first-pass-and-nothing-is-turned-away)
 - [The floor check failed on machines that were behaving](#the-floor-check-failed-on-machines-that-were-behaving)
 - [The Storage Node was a node nothing could reach](#the-storage-node-was-a-node-nothing-could-reach)
 - [The RBMK console was never what the package thought it was](#the-rbmk-console-was-never-what-the-package-thought-it-was)
@@ -48,6 +50,22 @@ Everything since v1.5.0, in 37 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The published branch is tested the way a contributor gets it
+
+CONTRIBUTING.md promises that a fresh clone of `dev` runs `python run_tests.py` with `FAIL=0`. Nothing had ever checked it: the suite runs in the monorepo, where `TOS-Dev` and `TOS-Extras` are siblings, and the published branch nests one inside the other. Running the staged tree for the first time gave 4 failures on Windows and 5 on Linux. Four tests (`test_store`, `test_storaged`, `test_storage_wire`, `test_selftest_cmd`) loaded `../TOS-Dev/...` unconditionally. The fifth, `test_cluster_pairing_seam`, passed on Windows for the wrong reason: Windows resolves `TOS-Dev/../TOS-Extras` without `TOS-Dev` existing, and Linux does not. All five now find the nested layout; the staged tree gives 391 passed, 0 failed, 2 skipped on Linux (Lua 5.3.6, Python 3.12) and the monorepo gives 394.
+
+That run is now a GitHub Action, so it is not a one-off. `ci.yml` installs Lua 5.3 and runs the suite on every push to `dev` and every pull request; a pull request aimed at `main` (a generated branch, overwritten by the next release) fails a second check that says to change its base to `dev`. Dependabot watches the pinned versions of the actions the workflows use, since TOS has no package dependencies of its own, and `CODEOWNERS` asks the maintainer to review every pull request. `test_github_workflows.py` lints all the workflows as YAML and refuses `pull_request_target`, unpinned actions, a missing `permissions` block, a missing timeout, and issue text reaching a `run:` step. It caught a missing timeout on the first run.
+
+### Issues get a first pass, and nothing is turned away
+
+The public repository had no issues yet and no way to cope with them: one Markdown bug template, no labels, and every report waiting on a person to notice it. `build/issue_triage.py` now runs on each new issue from a GitHub Action and does what a maintainer would do first. It reads the form, parses the `about` output (version, build, variant, RAM), resolves any `E-nnn` or `ERR_*` code against `tos/kernel/errors.lua`, checks that stack-trace paths exist in the source, and looks for the same report among issues, CHANGELOG entries, ROADMAP items and MANUAL sections. The result is one label (`triage:ready`, `triage:needs-info` or `triage:needs-human`), area labels from the error code and the trace, and one comment that is edited in place, never repeated.
+
+**It never declines.** The class that holds every GitHub call the bot may make has no close, lock, delete or hide method, and a test fails if one appears. A report it cannot judge (a public security report, a version newer than the source) goes to `triage:needs-human`; a report waiting on the reporter moves there too after 14 days, still open. An issue with no `triage:` label is one the bot never saw, and `queue` lists those separately so a broken bot cannot hide work.
+
+Matching was tuned on the real documents rather than invented ones. Cosine similarity alone scored a true match (a storage-node report against its CHANGELOG entry) at 0.18 and gave junk hits such as MANUAL sections named `U` and `R`, which were `#` comments inside code fences. Scoring by how much of a document's title the issue covers separated real matches (0.38 to 1.00) from unrelated text (0.00); the manual parser now skips fenced blocks. A paraphrased duplicate is listed as a suggestion but only a near-verbatim one earns the `possible-duplicate` label.
+
+The bug template is now an issue form (`about`, `why`, install source) so the fields arrive as parseable sections, plus a feature-request form and a link to private vulnerability reporting; blank issues stay enabled as the fallback. `test_issue_triage.py` lints the forms and the workflow as YAML, which caught an unquoted colon in the workflow's first draft, and checks that no `run:` step interpolates issue text. See `docs/ISSUE-TRIAGE.md`. Takes effect on the next `publish.ps1 -Dev -Push`.
 
 ### The floor check failed on machines that were behaving
 

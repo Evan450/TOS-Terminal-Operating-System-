@@ -35,6 +35,10 @@ Entries marked *idea / far future* are not commitments — discuss before buildi
 
 The roadmap also records work deliberately **not** done, with reasons. Reading the relevant entry before proposing a change will usually tell you whether it has already been considered and rejected, and why.
 
+## Reporting a problem
+
+Use the issue forms. A bug report asks for the output of `about` (the exact version and build) and, if you have it, `why` or an error code like `E-401`; those are what make a report reproducible. A bot does a first pass on every issue: it checks the fields, resolves error codes, suggests related issues and roadmap items, and labels it `triage:ready`, `triage:needs-info` or `triage:needs-human`. **It never closes or rejects an issue**; a person reads everything it cannot settle. Security problems go to the private Security tab instead. How it works: [`docs/ISSUE-TRIAGE.md`](docs/ISSUE-TRIAGE.md).
+
 ## Getting set up
 
 You need a `lua` interpreter (5.3 or 5.4) and Python 3 for the test runner. The Python build tests (`build/test_*.py`) need **pytest** — `pip install pytest`. Without it those fail; everything else runs.
@@ -68,7 +72,9 @@ python run_tests.py
 
 The suite is a couple of hundred files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
 
-One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. **`FAIL=0` is the contract, not any particular pass count** — the runner prints its own totals, and a number written down here only tells you how long ago someone edited this file. If it is red before you have changed anything, that is a bug in the tree and worth reporting on its own.
+One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. CI runs this same command on Linux (Lua 5.3, Ubuntu) for every push to `dev` and every pull request, so a green run locally and a green check on your PR should agree; if they do not, that is worth reporting. A pull request aimed at `main` fails a separate check that tells you to change its base to `dev`. Two tests that need the maintainer's vendored `Reference/` tree report as skipped, not failed.
+
+**`FAIL=0` is the contract, not any particular pass count** — the runner prints its own totals, and a number written down here only tells you how long ago someone edited this file. If it is red before you have changed anything, that is a bug in the tree and worth reporting on its own.
 
 ### Testing on a real machine
 
