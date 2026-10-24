@@ -49,6 +49,8 @@ mesh.MAX_TTL          = 16       -- hop-budget ceiling
 mesh.RELAY_HOLD_MAX   = 8        -- relayed copies held at once
 mesh.RELAY_HOLD_BYTES = 4096     -- largest copy held when no memory probe says more
 mesh.MAX_RESEND       = 1000000  -- ceiling on an envelope's resend counter
+mesh.ROUTE_MAX        = 64       -- destinations remembered for opportunistic routing
+mesh.ROUTE_TTL        = 300      -- seconds a learned route is trusted before re-discovery
 
 -- ============================================================
 -- Envelopes
@@ -213,6 +215,76 @@ function mesh.route(env, selfAddr, isForMe, seen)
     res.out = copyForward(env, selfAddr)
   end
   return res
+end
+
+-- ============================================================
+-- Opportunistic route learning (destination -> next hop)
+-- ============================================================
+-- Nobody is ever handed a routing table -- flooding alone still finds
+-- every destination, with or without this. But every envelope that
+-- reaches us already proves a working path: its `path` lists every node
+-- it crossed, in order, so the LAST entry is whichever neighbour just
+-- handed it to us -- a live, direct link toward env.from. Caching that
+-- lets a later send to the same node try ONE neighbour first instead of
+-- flooding everyone who can hear us. A hop with no cached route still
+-- floods exactly as it always has, so this can only cut traffic, never
+-- lose a message a flood would have found (net/init.lua's unicast
+-- attempt falls back to mesh/net.broadcast on any failure).
+
+function mesh.newRouteCache(max)
+  return { map = {}, order = {}, max = max or mesh.ROUTE_MAX }
+end
+
+--- Learn from an arriving envelope's path. `now` (optional) stamps the
+--- entry for staleness; the pure tests may omit it and get an ageless
+--- entry. A shorter path always wins over a cached one; an equal-or-
+--- longer path only replaces it once the cached entry has gone stale, so
+--- a neighbour that moved one hop farther away doesn't get preferred
+--- over a route that is merely old but was never wrong.
+-- Called on every arriving envelope regardless of whether mesh.route()
+-- judged it well-formed enough to route -- so it bounds the same fields
+-- wellFormed() does (see the #SEC/#MEM note above mesh.MAX_ID) rather
+-- than trusting that check ran first.
+function mesh.learnRoute(cache, env, selfAddr, now)
+  if not (cache and env and env.from and env.from ~= selfAddr) then return end
+  if type(env.from) ~= "string" or #env.from > mesh.MAX_ID then return end
+  local path = env.path
+  if type(path) ~= "table" or #path == 0 or #path > mesh.MAX_TTL * 2 then return end
+  local nextHop = path[#path]
+  if type(nextHop) ~= "string" or #nextHop > mesh.MAX_ID then return end
+  if nextHop == selfAddr then return end
+  local hops = #path
+  local existing = cache.map[env.from]
+  if existing then
+    local stale = now ~= nil and existing.at ~= nil and (now - existing.at) > mesh.ROUTE_TTL
+    if not stale and hops >= existing.hops then return end
+    existing.nextHop, existing.hops, existing.at = nextHop, hops, now
+    return
+  end
+  cache.map[env.from] = { nextHop = nextHop, hops = hops, at = now }
+  cache.order[#cache.order + 1] = env.from
+  if #cache.order > cache.max then
+    local old = table.remove(cache.order, 1)
+    if old ~= nil and old ~= env.from then cache.map[old] = nil end
+  end
+end
+
+--- The next hop cached toward `dest`, or nil if none or gone stale.
+--- Returns nextHop, hopCount.
+function mesh.routeFor(cache, dest, now)
+  local r = cache and cache.map[dest]
+  if not r then return nil end
+  if now ~= nil and r.at ~= nil and (now - r.at) > mesh.ROUTE_TTL then
+    cache.map[dest] = nil
+    return nil
+  end
+  return r.nextHop, r.hops
+end
+
+--- Forget a cached route -- call when a send via the learned next hop
+--- didn't pan out, so the next attempt re-discovers by flooding.
+function mesh.invalidateRoute(cache, dest)
+  if cache then cache.map[dest] = nil end
 end
 
 -- ============================================================

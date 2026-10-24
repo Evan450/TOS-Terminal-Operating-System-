@@ -1659,6 +1659,123 @@ return function(C, S, deps)
     end
   end
 
+  -- `open`: run a file in the program that suits it, chosen by
+  -- shell/open.lua's ranking (the operator's choice, then the machine's,
+  -- then what the packages declare, then edit for text) — never by which
+  -- package happened to be installed first.
+  local function canRun(name)
+    local cmdsMod = require("shell.panels.commands")
+    if cmdsMod.entry and cmdsMod.entry(name) then return true end
+    if helpers.mayHavePackages() then
+      local okP, pkgMod = pcall(require, "kernel.pkg")
+      if okP and pkgMod and pkgMod.ownerOfCommand and pkgMod.ownerOfCommand(name) then return true end
+    end
+    return helpers.resolveProgram(F, name) ~= nil
+  end
+  C.open = function(args, o)
+    local OP = require("shell.open")
+    local sess = helpers.sessionOf(S)
+    local home = sess and sess.home
+    local sub = args[1]
+    local function usage()
+      o("Usage: open <file>                    in the program that suits it", T.dim)
+      o("       open with <file> [program]     every program that could, and why", T.dim)
+      o("       open set .<ext> <program> [--system]   choose (--system: every user)", T.dim)
+      o("       open unset .<ext> [--system]   forget the choice", T.dim)
+      o("       open list                      the choices and what packages declare", T.dim)
+      o("       open hints on|off              edit's suggestions", T.dim)
+    end
+    if not sub then usage(); return end
+    local function cfgFile(system)
+      if system then return OP.SYSTEM_FILE end
+      return home and (home .. "/" .. OP.USER_FILE) or nil
+    end
+    local function readCfg(file)
+      local okE, there = pcall(F.exists, file)
+      return OP.parseDefaults(okE and there and F.readFile(file) or nil)
+    end
+    local function writeCfg(file, t)
+      local okW, werr = F.writeFile(file, OP.serializeDefaults(t))
+      if not okW then o("Not saved: " .. tostring(werr or file), T.error) end
+      return okW
+    end
+    local function run(cmd, path)
+      if not S.execOne then o("open: the executor is unavailable", T.error); return end
+      local buf = S.execOne(cmd .. " " .. OP.quote(path), nil, true)
+      for _, e in ipairs(buf or {}) do o(e[1], e[2]) end
+    end
+
+    if sub == "set" or sub == "unset" then
+      local system = args[#args] == "--system"
+      local ext = (args[2] or ""):gsub("^%.", ""):lower()
+      if ext == "" or not ext:match("^[%w]+$") or #ext > 8 then usage(); return end
+      if system and not adminOnly(o) then return end
+      local file = cfgFile(system)
+      if not file then o("There is no home directory to keep your choice in.", T.error); return end
+      local t = readCfg(file)
+      if sub == "set" then
+        local cmd = args[3] and args[3]:lower()
+        if not cmd or cmd == "--system" then usage(); return end
+        if not canRun(cmd) then o("'" .. cmd .. "' is not a command this machine has ('which " .. cmd .. "').", T.error); return end
+        t.ext[ext] = cmd
+        if writeCfg(file, t) then o("." .. ext .. " files now open in " .. cmd .. (system and " for every user." or " for you."), T.highlight) end
+      else
+        t.ext[ext] = nil
+        if writeCfg(file, t) then o("." .. ext .. ": back to the ranking.", T.highlight) end
+      end
+    elseif sub == "hints" then
+      local file = cfgFile(false)
+      if not file or (args[2] ~= "on" and args[2] ~= "off") then usage(); return end
+      local t = readCfg(file)
+      t.hints = (args[2] == "on")
+      if writeCfg(file, t) then o("edit's suggestions are " .. args[2] .. ".", T.highlight) end
+    elseif sub == "list" then
+      local info = OP.gather(F, home, nil, "")
+      local function show(label, t)
+        local keys = {}
+        for e in pairs(t.ext) do keys[#keys + 1] = e end
+        table.sort(keys)
+        o(label .. (#keys == 0 and "  (none)" or ""), T.title)
+        for _, e in ipairs(keys) do o(string.format("  .%-8s %s", e, t.ext[e]), T.fg) end
+      end
+      show("Your choices (~/" .. OP.USER_FILE .. "):", info.user)
+      show("This machine's (" .. OP.SYSTEM_FILE .. "):", info.system)
+      o("What installed packages open:" .. (#info.decls == 0 and "  (none)" or ""), T.title)
+      for _, d in ipairs(info.decls) do
+        local exts = {}
+        for e in pairs(d.exts) do exts[#exts + 1] = "." .. e end
+        table.sort(exts)
+        local how = d.markers and ("when a line starts " .. table.concat(d.markers, " "))
+          or (d.as == "native" and "its own format" or "can open")
+        o(string.format("  %-8s %s  %s", d.cmd, table.concat(exts, " "), how), T.fg)
+      end
+      if info.user.hints == false then o("edit's suggestions are off ('open hints on').", T.dim) end
+    else
+      local withMode = sub == "with"
+      local target = withMode and args[2] or sub
+      if not target then usage(); return end
+      local path = rp(target)
+      local okE, there = pcall(F.exists, path)
+      if not okE or not there then o("open: no such file: " .. path, T.error); return end
+      if F.isDirectory and F.isDirectory(path) then o("open: " .. path .. " is a directory ('cd' into it).", T.error); return end
+      local ranked = OP.rank(path, OP.gather(F, home, path))
+      if withMode and not args[3] then
+        if #ranked == 0 then o("Nothing here opens " .. path .. ".", T.warning); return end
+        o("Programs that could open " .. path .. ", best first:", T.title)
+        for i, c in ipairs(ranked) do
+          o(string.format("  %-8s %3d  %s", c.cmd, c.score, c.why), i == 1 and T.highlight or T.fg)
+        end
+        o("'open with " .. target .. " <program>' uses another; 'open set ." .. (OP.ext(path) or "ext")
+          .. " <program>' makes it yours.", T.dim)
+        return
+      end
+      local cmd = withMode and args[3]:lower() or (ranked[1] and ranked[1].cmd)
+      if not cmd then o("Nothing here opens " .. path .. " ('open with' lists what could).", T.warning); return end
+      if not withMode then o("Opening in " .. cmd .. ": " .. ranked[1].why .. ".", T.dim) end
+      run(cmd, path)
+    end
+  end
+
   -- Per-user command aliases, stored in ~/.profile.cfg. `alias` with no
   -- arguments lists; `alias <name> <command...>` defines; `unalias` removes.
   C.alias = function(args, o)

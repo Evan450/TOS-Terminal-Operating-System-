@@ -39,6 +39,7 @@ end
 
 package.loaded["kernel.sha512"] = tryload("tos/kernel/sha512.lua")()
 package.loaded["kernel.sha256"] = tryload("tos/kernel/sha256.lua")()
+package.loaded["kernel.curve25519field"] = tryload("tos/kernel/curve25519field.lua")()
 local ed = tryload("tos/kernel/ed25519.lua")()
 package.loaded["kernel.ed25519"] = ed
 

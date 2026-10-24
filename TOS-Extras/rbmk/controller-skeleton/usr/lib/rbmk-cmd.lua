@@ -1,9 +1,9 @@
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  `rbmk` — operator command for the RBMK controller           ║
 -- ║                                                              ║
--- ║    rbmk survey            enumerate candidate components +   ║
--- ║                           their ACTUAL method surface, and   ║
--- ║                           report how the profile binds       ║
+-- ║    rbmk survey            find the console, prove it is      ║
+-- ║                           linked, scan the core once, and    ║
+-- ║                           report how the driver binds        ║
 -- ║    rbmk status            live reading + safety evaluation   ║
 -- ║    rbmk limits            show the active limits             ║
 -- ║    rbmk scram             manual shutdown (admin)            ║
@@ -11,11 +11,11 @@
 -- ║                           (--net to watch a remote reactor)  ║
 -- ║    rbmk wall              what each screen would show        ║
 -- ║                                                              ║
--- ║  `survey` is the important one and the reason this add-on    ║
--- ║  exists in this shape: HBM's OC method names are Plan.md's   ║
--- ║  open question #1. Rather than hard-code a guess, the        ║
--- ║  controller reads them from /etc/rbmk.cfg and this command   ║
--- ║  tells the operator exactly what to put there.               ║
+-- ║  `survey` is the first thing to run: the driver (core.NTM)   ║
+-- ║  was read off the mod's bytecode, never run in a world, and  ║
+-- ║  this is where "the methods exist" becomes "the console is   ║
+-- ║  linked and the core scans". A getter-style console (the     ║
+-- ║  "hbm-generic" profile) still binds from /etc/rbmk.cfg.      ║
 -- ║                                                              ║
 -- ║  Full-priv library (loaded by the base shell / rc via the    ║
 -- ║  real require), so kernel.* is available here.               ║
@@ -57,8 +57,8 @@ local function activeProfile(cfg)
   -- An operator-supplied profile (post-survey) always wins over the
   -- shipped candidates.
   if type(cfg.profile) == "table" then return cfg.profile end
-  return core.PROFILES[cfg.profileName or "hbm-generic"]
-    or core.PROFILES["hbm-generic"]
+  return core.PROFILES[cfg.profileName or "hbm-ntm"]
+    or core.PROFILES["hbm-ntm"]
 end
 M.activeProfile = activeProfile
 
@@ -123,7 +123,18 @@ M.methodsOf = methodsOf
 --- that vanishes mid-poll must produce a MISSING reading (which the
 --- safety rules treat as a scram condition), never an unhandled error
 --- inside the control loop.
+---
+--- Returns (snap, cols). `cols` is the per-channel array when the binding
+--- is the NTM console driver -- its one scan yields both the scalars and
+--- the map, so the caller must not scan a second time for the picture --
+--- and nil for a getter-style binding.
 function M.read(proxy, binding)
+  if binding and binding.driver == "ntm-console" then
+    local get = proxy and proxy[binding.columns]
+    if not get then return core.normalize({}), {} end
+    local snap, cols = core.scanCore(function(x, y) return get(x, y) end)
+    return core.normalize(snap), cols
+  end
   local raw = {}
   if binding.bulk then
     local ok, t = pcall(proxy[binding.bulk])
@@ -164,8 +175,16 @@ function M.scram(proxy, binding, cfg)
   if binding and binding.bound and binding.bound.scram and proxy then
     local m = proxy[binding.bound.scram]
     if m then
-      local ok = pcall(m, true)
-      if ok then fired = true; how[#how + 1] = "console." .. binding.bound.scram end
+      --! pressAZ5 does not raise when it finds nothing to drive: it
+      --! RETURNS the string "No control rods found". A call that "worked"
+      --! and moved no rod is not a SCRAM, so any non-nil first result is
+      --! a failure and the redstone line below still gets its turn.
+      local ok, res = pcall(m, true)
+      if ok and res == nil then
+        fired = true; how[#how + 1] = "console." .. binding.bound.scram
+      elseif ok then
+        how[#how + 1] = "console." .. binding.bound.scram .. " refused (" .. tostring(res) .. ")"
+      end
     end
   end
   local side = cfg and tonumber(cfg.az5RedstoneSide)
@@ -301,13 +320,56 @@ function M.run(args, o, ctx)
         o("    columns: (none) -- the panel will show reactor-wide", 0xAAAAAA)
         o("             readings only, no per-channel core map", 0xAAAAAA)
       end
+      --! The NTM driver can be PROVEN rather than just matched: ask the
+      --! console where its core is and read the whole thing once. This is
+      --! the half of the survey the old name-matching could never do --
+      --! "the methods exist" says nothing about "the console is linked to
+      --! a reactor and the reactor has channels".
+      if binding.driver and binding.columns then
+        local okPx, px = pcall(component.proxy, c.address)
+        if okPx and px then
+          local posFn = binding.pos and px[binding.pos]
+          local okPos, pos = false, nil
+          if posFn then okPos, pos = pcall(posFn) end
+          if okPos and type(pos) == "table" then
+            o(string.format("    core:    linked, centre %s, %s, %s",
+              tostring(pos.rbmkCenterX), tostring(pos.rbmkCenterY),
+              tostring(pos.rbmkCenterZ)), 0x00FF00)
+          else
+            o("    core:    NOT LINKED -- the console reports no reactor", 0xFF6600)
+          end
+          local snap, cols = M.read(px, binding)
+          local counts, kinds = {}, {}
+          for _, col in ipairs(cols or {}) do
+            local k = col.kind or "?"
+            if not counts[k] then kinds[#kinds + 1] = k end
+            counts[k] = (counts[k] or 0) + 1
+          end
+          table.sort(kinds)
+          local parts = {}
+          for _, k in ipairs(kinds) do parts[#parts + 1] = counts[k] .. " " .. k end
+          o(string.format("    scan:    %d channel%s%s", #(cols or {}),
+            #(cols or {}) == 1 and "" or "s",
+            #parts > 0 and (" (" .. table.concat(parts, ", ") .. ")") or ""),
+            #(cols or {}) > 0 and 0xFFFFFF or 0xFF6600)
+          if snap.temp then
+            o(string.format("    hottest: hull %.0f C%s", snap.temp,
+              snap.melt and string.format(", fuel at %.0f%% of melting point", snap.melt) or ""),
+              0xAAAAAA)
+          end
+          if snap.unread and snap.unread > 0 then
+            o("    unread:  " .. snap.unread .. " channel(s) raised an error", 0xFFAA00)
+          end
+        end
+      end
       local usable, why = core.bindingUsable(binding, cfg.az5RedstoneSide ~= nil)
       o("    usable:  " .. (usable and "YES" or ("NO — " .. tostring(why))),
         usable and 0x00FF00 or 0xFF0000)
       o("")
     end
-    o("If a reading is missing, add the real method name to " .. CFG_PATH, 0xAAAAAA)
-    o("under profile = { temp = { \"theRealName\" }, ... } and re-run.", 0xAAAAAA)
+    o("Default profile is hbm-ntm (the mod's real rbmk_console API). A console", 0xAAAAAA)
+    o("with per-reading getters instead: profileName = \"hbm-generic\", or add", 0xAAAAAA)
+    o("profile = { temp = { \"theRealName\" }, ... } to " .. CFG_PATH .. " and re-run.", 0xAAAAAA)
     return
   end
 
@@ -360,6 +422,7 @@ function M.run(args, o, ctx)
     else o(string.format("  %-10s %s%s", label, tostring(v), unit or ""), 0xFFFFFF) end
   end
   row("core", snap.temp, " C")
+  row("melt", snap.melt and string.format("%.0f", snap.melt), " % of fuel melting point")
   row("flux", snap.flux)
   row("rods", snap.rodDepth)
   row("steam", snap.steam)

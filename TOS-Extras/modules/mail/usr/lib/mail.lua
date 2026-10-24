@@ -59,13 +59,30 @@ function M.senderName(m)
   return (tostring(m.from or "?")):sub(1, 8)
 end
 
---- One inbox row: unread marker, index, sender, subject — fit to `width`.
---- Unread mail is marked "*". Pure.
+--- HH:MM:SS from a message's `ts` (the SENDER's uptime-seconds at send
+--- time — mesh has no wall clock to share across machines; see
+--- net/mesh.lua's own comment on the field). Unknown/missing timestamps
+--- (older stored mail predates this, or a sealed message never opened)
+--- fall back to a same-width placeholder so the inbox columns don't
+--- shift between rows. Same formula chat already uses, for one
+--- convention across both. Pure.
+function M.formatTs(ts)
+  if type(ts) ~= "number" then return "--:--:--" end
+  ts = math.max(0, ts)
+  local h = math.floor(ts / 3600)
+  local m = math.floor((ts % 3600) / 60)
+  local s = math.floor(ts % 60)
+  return string.format("%02d:%02d:%02d", h, m, s)
+end
+
+--- One inbox row: unread marker, index, time sent, sender, subject — fit
+--- to `width`. Unread mail is marked "*". Pure.
 function M.inboxRow(m, idx, width)
   local rd   = (type(m) == "table" and m.read) and " " or "*"
   local who  = M.senderName(m):sub(1, 12)
   local subj = (type(m) == "table" and m.subject ~= "" and m.subject) or "(no subject)"
-  local line = string.format(" %s %2d  %-12s  %s", rd, idx, who, subj)
+  local when = M.formatTs(type(m) == "table" and m.ts or nil)
+  local line = string.format(" %s %2d %s %-12s  %s", rd, idx, when, who, subj)
   width = width or 60
   if #line > width then line = line:sub(1, width - 1) .. "~" end
   return line

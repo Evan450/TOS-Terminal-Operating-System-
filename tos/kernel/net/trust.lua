@@ -124,9 +124,22 @@ local PERMISSIONS = {
                        nfs_res       = true },
 }
 
--- Peer database: address -> { level, hostname, lastSeen, firstSeen, sharedSecret, notes }
+-- Peer database: address -> { level, hostname, lastSeen, firstSeen, sharedSecret, dhPub, notes }
 local peers = {}
 local DB_PATH = "/etc/trust.dat"
+
+-- Our own long-term Diffie-Hellman identity (kernel.x25519, RFC 7748):
+-- { priv, pub }, both 32 bytes. Generated once, lazily, and persisted
+-- alongside the peer DB -- see ensureMyDh/saveDB/loadDB below. nil until
+-- first needed, and nil forever on a box with no usable randomness
+-- source (ensureMyDh degrades to "no automatic secrets", never a crash).
+local myDh = nil
+
+-- Forward declaration: trust.setLevel (defined well before the DH
+-- section below) calls this the moment a peer becomes TRUSTED, so the
+-- real definition is bound to this local rather than left to resolve
+-- as an undefined global.
+local tryAutoSecret
 -- Cap on UNKNOWN-level peers so a scan/flood can't fill memory.
 -- KNOWN and TRUSTED peers are always kept regardless of this limit.
 local MAX_UNKNOWN_PEERS = 64
@@ -157,13 +170,18 @@ local function saveDB()
       firstSeen   = peer.firstSeen,
       lastSeen    = peer.lastSeen,
       sharedSecret = peer.sharedSecret,
+      dhPub       = peer.dhPub,
       notes       = peer.notes,
     }
   end
+  -- Wrapped since the DH identity was added (loadDB tells this apart
+  -- from the old bare-peer-map format: a real peer address is a UUID
+  -- and can never collide with the "peers"/"dh" keys).
+  local blob = { peers = saveData, dh = myDh }
   -- Atomic write when available so a power cut can't truncate the trust
   -- DB into an unparseable file (which would silently drop every peer's
   -- trust level + shared secret back to UNKNOWN on the next boot).
-  return (fs.writeFileAtomic or fs.writeFile)(DB_PATH, serialize.encode(saveData))
+  return (fs.writeFileAtomic or fs.writeFile)(DB_PATH, serialize.encode(blob))
 end
 
 --! A peer's hostname is its own claim about itself. net.lua cleans it on
@@ -189,7 +207,20 @@ local function loadDB()
   if not data then return end
   local db = serialize.decode(data)
   if type(db) ~= "table" then return end
-  peers = db
+  -- Old format: the file IS the peer map directly. Current format
+  -- (since the DH identity was added): { peers = <peer map>, dh = our
+  -- own identity or nil }. A real peer address is a UUID, so it can
+  -- never collide with either wrapper key -- the check is unambiguous.
+  if db.peers ~= nil or db.dh ~= nil then
+    peers = db.peers or {}
+    myDh = db.dh
+    if not (type(myDh) == "table" and type(myDh.priv) == "string" and #myDh.priv == 32
+        and type(myDh.pub) == "string" and #myDh.pub == 32) then
+      myDh = nil   -- corrupt/foreign data: regenerate on next use rather than use it
+    end
+  else
+    peers = db
+  end
   -- Ensure all peers have required fields and clamp trust levels
   for addr, peer in pairs(peers) do
     if not VALID_LEVELS[peer.level] then
@@ -198,6 +229,9 @@ local function loadDB()
     peer.hostname = cleanHostname(peer.hostname)
     peer.firstSeen = peer.firstSeen or 0
     peer.lastSeen = peer.lastSeen or 0
+    if type(peer.dhPub) ~= "string" or #peer.dhPub ~= 32 then
+      peer.dhPub = nil
+    end
   end
 end
 
@@ -372,6 +406,15 @@ function trust.setLevel(actor, address, level, actorTier)
   local oldLevel = peers[address].level or LEVEL.UNKNOWN
   peers[address].level = level
 
+  -- Newly TRUSTED, and we already have their DH public key cached from
+  -- an earlier hello (or they said hello before this elevation and
+  -- we're only now catching up): try to establish a secret with no
+  -- further operator action. See the "Automatic Diffie-Hellman" section
+  -- below for the full picture; this is the other of its two triggers.
+  if level == LEVEL.TRUSTED and oldLevel ~= LEVEL.TRUSTED then
+    tryAutoSecret(address)
+  end
+
   saveDB()
 
   if log then
@@ -503,6 +546,9 @@ function trust.getSecret(actor, address, actorTier)
 end
 
 --- Generate and set a new shared secret (both sides need to do this).
+--- Manual fallback for when automatic Diffie-Hellman (below) can't run
+--- on one or both ends -- still requires the operator to transcribe the
+--- result to the other side, or to use `net pair` (chatpair.lua) instead.
 --- @tier admin
 function trust.generateSecret(actor, address, actorTier)
   local ok, err = requireAdminActor(actor, actorTier, "generate peer secret")
@@ -512,6 +558,119 @@ function trust.generateSecret(actor, address, actorTier)
   local okS, sErr = trust.setSecret(actor, address, secret, actorTier)
   if not okS then return nil, sErr end
   return secret
+end
+
+-- ============================================================
+-- Automatic Diffie-Hellman (kernel.x25519, RFC 7748)
+-- ============================================================
+-- The user-visible goal: two TOS peers that talk to each other get a
+-- shared secret with NO operator action beyond the trust decision they
+-- already have to make (elevating a peer to TRUSTED). No code to type,
+-- no "net trust gen" + manual transcription, no chatpair ritual -- those
+-- all remain available as explicit fallbacks, but stop being the normal
+-- path.
+--
+-- How it fits the existing model, unchanged:
+--   * Trust elevation stays 100% manual. This module only ever derives
+--     and installs a secret for a peer that is ALREADY TRUSTED -- it
+--     cannot elevate anyone, and an automation flaw here has nothing to
+--     trick an operator into trusting.
+--   * A DH public key is public data: HELLO/HELLO_ACK already exchange
+--     hostnames at KNOWN+ level (net/init.lua), so a dhPub field rides
+--     along for free, cached via noteDhPublicKey regardless of trust
+--     level (storing someone's public key needs no trust in them).
+--   * The actual secret is only ever derived and installed once the
+--     peer reaches TRUSTED and has no secret yet (tryAutoSecret, called
+--     from trust.setLevel and from noteDhPublicKey) -- "first contact"
+--     from the secret's point of view is whichever of those two events
+--     happens second.
+--   * It NEVER overwrites an existing secret: an operator's pairing or
+--     manually-generated secret is authoritative. Rotation stays an
+--     explicit action (trust.generateSecret / net pair), same as today.
+--   * Any failure -- no randomness source, no cached dhPub yet (an
+--     older peer that predates this, or one we simply haven't said
+--     hello to), a malformed peer key -- just leaves the peer exactly
+--     where it already was: TRUSTED with no secret, which net.send's
+--     existing refusal (#47, "no shared secret... run net trust gen")
+--     IS the graceful fallback the user asked for. Nothing here raises;
+--     every entry point is defensive about its own inputs.
+
+-- kernel.x25519 is lazily required: trust.lua must still load fine on a
+-- stripped-down image or during the off-box signer, same posture as
+-- crypto/log/config already have here.
+local x25519mod = nil
+local function getX25519()
+  if x25519mod then return x25519mod end
+  local ok, mod = pcall(require, "kernel.x25519")
+  if ok then x25519mod = mod end
+  return x25519mod
+end
+
+--- Our own DH keypair, generating one on first call if none exists yet.
+--- Returns nil if there is no randomness source to generate one from
+--- (crypto unavailable) or kernel.x25519 failed to load -- callers treat
+--- that exactly like "DH isn't available right now", not an error.
+local function ensureMyDh()
+  if myDh then return myDh end
+  local xm = getX25519()
+  if not (xm and crypto and crypto.salt) then return nil end
+  local okP, priv = pcall(xm.generatePrivateKey, crypto.salt)
+  if not (okP and priv) then return nil end
+  local okK, pub = pcall(xm.publicKey, priv)
+  if not (okK and pub) then return nil end
+  myDh = { priv = priv, pub = pub }
+  saveDB()
+  return myDh
+end
+
+--- Our DH public key. Safe to hand to anyone -- it is public by
+--- definition -- and this is the only part of our DH identity any
+--- caller outside this file ever sees; the private half never leaves
+--- ensureMyDh. nil if DH isn't available on this box (see ensureMyDh).
+function trust.getMyDhPublicKey()
+  local dh = ensureMyDh()
+  return dh and dh.pub or nil
+end
+
+--- If `address` is TRUSTED, has no shared secret yet, and we have a
+--- cached DH public key for them, derive one via X25519 and install it.
+--- Idempotent and silent on every "not yet, not now" case; logs once on
+--- success or on an actual derivation failure (as opposed to simply not
+--- being ready yet, which is the common case right after a hello).
+function tryAutoSecret(address)
+  local peer = peers[address]
+  if not peer or peer.sharedSecret or not peer.dhPub then return end
+  if (peer.level or 0) < LEVEL.TRUSTED then return end
+  local dh = ensureMyDh()
+  local xm = getX25519()
+  if not (dh and xm) then return end
+  local okC, secret, derr = pcall(xm.sharedSecret, dh.priv, peer.dhPub)
+  if okC and secret then
+    peer.sharedSecret = secret
+    saveDB()
+    if log then
+      log.info("trust", "Diffie-Hellman secret established automatically with "
+        .. address:sub(1, 8) .. "...")
+    end
+  elseif log then
+    log.warn("trust", "DH with " .. address:sub(1, 8)
+      .. "... did not produce a secret (falling back to manual pairing): "
+      .. tostring(okC and derr or secret))
+  end
+end
+
+--- Record a peer's advertised DH public key (from a HELLO/HELLO_ACK)
+--- and opportunistically derive+install a shared secret if they are
+--- already TRUSTED and don't have one. Safe to call for a peer at any
+--- trust level -- caching their public key needs no trust in them, only
+--- actually USING it for a secret does, and tryAutoSecret enforces that.
+function trust.noteDhPublicKey(address, dhPub)
+  if type(dhPub) ~= "string" or #dhPub ~= 32 then return end
+  address = resolveAddress(address)
+  local peer = address and peers[address]
+  if not peer then return end
+  peer.dhPub = dhPub
+  tryAutoSecret(address)
 end
 
 -- #SEC H22 — closure-isolated secret access. Previously this function

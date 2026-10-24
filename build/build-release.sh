@@ -11,6 +11,8 @@
 #   /.claude/          editor/agent settings
 #   /docs/             the README's screenshots: they live on the dev branch only
 #   /.pytest_cache/, /.github/, /.gitignore   tool residue and repo metadata
+#   /__pycache__/      Python's bytecode cache: running anything that
+#                      imports tos.py leaves one at the root
 #   /.git/             a contributor's clone of `dev` (CONTRIBUTING's setup);
 #                      without it the whole object store shipped, EOL-mangled
 #
@@ -82,6 +84,7 @@ lua "$LUA_DEV/build/strip.lua" "$LUA_DEV" "$LUA_REL" --minify-vars \
     --exclude /tos.py \
     --exclude /.claude/ \
     --exclude /.pytest_cache/ \
+    --exclude /__pycache__/ \
     --exclude /.git/ \
     --exclude /.github/ \
     --exclude /.gitignore \

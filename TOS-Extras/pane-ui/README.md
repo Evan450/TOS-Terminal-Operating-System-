@@ -25,7 +25,7 @@ The file browser:
 | F8 | delete it, after asking |
 | F9 | drop to the OpenOS shell; `exit` comes back |
 | F1 | help |
-| F2 | the next tab |
+| Tab or F2 | the next tab (same key TOS itself now uses; F2 still works too) |
 | F10 or Ctrl+Q | quit to OpenOS |
 
 The command line under the browser is always live: type a command and press Enter, and its output opens in a viewer tab. Up and Down recall earlier commands once you have started typing. `cd`, `clear` and `exit` are handled by PaneUI itself, and `themes` and `theme <name>` choose a theme.
@@ -48,3 +48,4 @@ From `TOS-Extras/`:
 - `lua pane-ui/test_paneui_themes.lua`: its nine themes are TOS's nine themes
 - `lua pane-ui/test_paneui_syntax_utf8.lua`: the highlighter never splits a multi-byte character
 - `lua pane-ui/test_paneui_move.lua`: Move reports what actually happened
+- `lua pane-ui/test_paneui_keys_wrap.lua`: confirmDialog wraps a long message instead of cutting it to one row, Tab cycles tabs everywhere F2 already did (except the editor, where it indents), and ^Q cancels a prompt the same as Esc

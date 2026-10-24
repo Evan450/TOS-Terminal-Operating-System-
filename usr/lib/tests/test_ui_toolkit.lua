@@ -218,6 +218,33 @@ test("tile: bottom border drawn", rowStr(5):find("└", 1, true) ~= nil)
 test("tile: glyph inside", rowStr(3):find("≡", 1, true) ~= nil)
 test("tile: label centred inside", rowStr(4):find("Files", 1, true) ~= nil)
 
+-- ── drawSettingRow: an over-long row stays inside its column budget ──
+-- (Area 5 sweep). Every branch used to cut with a raw :sub(w-1), which
+-- can split a multi-byte UTF-8 character on a real translated label;
+-- they now go through the same ufit() drawBar already uses above
+-- (kernel.ustr's unicode-aware path is what actually guards against a
+-- split character on real OC hardware -- test_ustr.lua covers ustr.fit
+-- itself). What's checked here is that routing through ufit didn't
+-- also widen the row past its allotted columns.
+do
+  local long = string.rep("z", 60)
+  local x0, w0 = 3, 11
+  for _, kind in ipairs({ "header", "info", "toggle", "button", "choice" }) do
+    for y = 1, Hd do for x = 1, Wd do buf[y][x] = " " end end
+    local row = kind == "info" and { kind = kind, text = long }
+      or kind == "choice" and { kind = kind, label = long, value = "v" }
+      or { kind = kind, label = long }
+    ui.drawSettingRow(D, th, 6, x0, w0, row, false)
+    -- Column-indexed (buf is one cell per column), not a byte-offset
+    -- slice of the concatenated row string -- "« »" in the choice
+    -- branch's value is multi-byte, which would throw a byte-vs-column
+    -- check off by exactly the bytes those two glyphs add.
+    local spilled = false
+    for x = x0 + w0 + 1, Wd do if buf[6][x] == "z" then spilled = true end end
+    test("drawSettingRow (" .. kind .. ") stays within its column budget", not spilled)
+  end
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

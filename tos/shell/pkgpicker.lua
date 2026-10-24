@@ -161,10 +161,12 @@ function M.run(opts)
   end)
 
   -- Human labels for the category headers the picker draws.
+  -- An acronym does not survive the capitalise-the-first-letter fallback
+  -- ("hbm" -> "Hbm"), so the mod-specific bucket is named here.
   local CAT_LABEL = {
     games = "Games", productivity = "Productivity", network = "Network",
     storage = "Storage", security = "Security", drivers = "Drivers",
-    control = "Control", misc = "Other",
+    control = "Control", hbm = "HBM Nuclear Tech", misc = "Other",
   }
   local function catLabel(c)
     return CAT_LABEL[c or "misc"] or ((c or "misc"):gsub("^%l", string.upper))

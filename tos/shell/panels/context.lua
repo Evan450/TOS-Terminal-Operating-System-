@@ -9,11 +9,33 @@ local editor = require("shell.panels.editor")
 
 local M = {}
 
-function M.buildItems(f, path)
-  local items = {
-    { label = "View",   action = "ctx_view",  key = "F3" },
-    { label = "Edit",   action = "ctx_edit" },
-  }
+--- The programs other than edit that could open `path`, best first, as
+--- shell/open.lua ranks them. Only where a package could be installed:
+--- with none there is nothing to offer beyond View and Edit, and asking
+--- must not cost a machine at its memory floor anything.
+function M.openChoices(S, path)
+  if not helpers.mayHavePackages() then return {} end
+  local okO, OP = pcall(require, "shell.open")
+  if not okO then return {} end
+  local sess = helpers.sessionOf(S)
+  local okR, ranked = pcall(OP.rank, path, OP.gather(S.F, sess and sess.home, path))
+  if not okR then return {} end
+  local out = {}
+  for _, c in ipairs(ranked) do
+    if c.cmd ~= OP.EDITOR then out[#out + 1] = c end
+  end
+  return out
+end
+
+function M.buildItems(f, path, opens)
+  local items = {}
+  -- Every program that could open it, the best first: Enter then Enter
+  -- opens a spreadsheet in the spreadsheet.
+  for _, c in ipairs(opens or {}) do
+    items[#items + 1] = { label = "Open in " .. c.cmd, action = "ctx_open:" .. c.cmd }
+  end
+  items[#items + 1] = { label = "View",   action = "ctx_view",  key = "F3" }
+  items[#items + 1] = { label = "Edit",   action = "ctx_edit" }
   if path:match("%.lua$") then
     items[#items + 1] = { label = "Run", action = "ctx_run" }
   end
@@ -30,7 +52,7 @@ end
 function M.open(S)
   local path, f = helpers.selPath(S)
   if not path or not f then return end
-  S.ctxItems = M.buildItems(f, path)
+  S.ctxItems = M.buildItems(f, path, (not f.dir) and M.openChoices(S, path) or nil)
   S.ctxPath = path
   S.ctxFile = f
   S.ctxSel = 1
@@ -49,10 +71,19 @@ function M.nextItem(S, dir)
   end
 end
 
-function M.execute(S, action, makeProgramEnv)
+function M.execute(S, action, makeProgramEnv, exec)
   local T = S.T
   local F = S.F
   S.ctxOpen = false
+
+  local openCmd = action:match("^ctx_open:(.+)$")
+  if openCmd then
+    -- The same road a typed command takes, so a full-screen program gets
+    -- the seat exactly as `calc file` at the prompt would give it.
+    local okO, OP = pcall(require, "shell.open")
+    if exec and okO then exec(openCmd .. " " .. OP.quote(S.ctxPath)) end
+    return
+  end
 
   if action == "ctx_view" then
     if not helpers.canRead(S, S.ctxPath) then return end

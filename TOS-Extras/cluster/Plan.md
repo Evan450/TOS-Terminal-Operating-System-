@@ -120,7 +120,8 @@ every file it names has a real implementation.
   and no Storage Node module exists in the repo yet (see the protocol
   spec's storage section for the "NOT YET IMPLEMENTED" note).
   **Now designed and largely built.** The Storage Node ships in
-  `storage-skeleton/`, and the Master uses it: `lib/cluster/store_client.lua`
+  `storage-skeleton/` (the `cluster-storage` package, 1.0.0 — one node
+  over its own disk), and the Master uses it: `lib/cluster/store_client.lua`
   speaks `STORE_PUT`/`STORE_RELEASE`, `jobs.lua` spills oversized task
   slices to `job-<id>/tasks/assignment-<n>` and sends a pointer, and
   `finalizeJob` releases those keys — which is also the job-completion

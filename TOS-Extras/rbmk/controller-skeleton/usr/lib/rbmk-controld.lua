@@ -16,10 +16,10 @@
 -- ║      missing or stale is itself a SCRAM condition.           ║
 -- ║   4. Limits live in /etc/rbmk.cfg, admin-edited only.        ║
 -- ║                                                              ║
--- ║  UNVERIFIED AGAINST THE REAL MOD: the console binding comes  ║
--- ║  from a survey-driven profile (Plan.md open question #1). If ║
--- ║  the binding is unusable the service REFUSES TO START rather ║
--- ║  than idling next to an unsupervised reactor.                ║
+-- ║  The console binding is the NTM driver (core.NTM): the API   ║
+-- ║  was read off the mod's bytecode, not yet exercised in-world.║
+-- ║  If the binding is unusable the service REFUSES TO START     ║
+-- ║  rather than idling next to an unsupervised reactor.         ║
 -- ╚══════════════════════════════════════════════════════════════╝
 
 local core  = require("rbmk.core")
@@ -116,7 +116,7 @@ end
 local function tick()
   if not _running then return end
   local now = computer and computer.uptime() or 0
-  local snap = cmd.read(_proxy, _binding)
+  local snap, scanned = cmd.read(_proxy, _binding)
   local age
   if snap.temp ~= nil then
     _lastGood = now
@@ -136,7 +136,9 @@ local function tick()
   --! every tick regardless, and evaluate() runs on `snap` alone.
   if now >= (_nextMap or 0) then
     _nextMap = now + (tonumber(_cfg.mapInterval) or 1)
-    local cols = cmd.readColumns(_proxy, _binding, _grid)
+    --! The NTM driver's single scan already produced the channels; only
+    --! a getter-style console needs a second pass for the picture.
+    local cols = scanned or cmd.readColumns(_proxy, _binding, _grid)
     _packedCols = (#cols > 0) and core.packColumns(cols, _grid, skala.PARAMS) or nil
   end
 

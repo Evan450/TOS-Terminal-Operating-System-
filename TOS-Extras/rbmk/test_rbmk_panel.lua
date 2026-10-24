@@ -142,6 +142,9 @@ local CFG_SRC = [[
 return {
   name = "rbmk-test", pollInterval = 1, mapInterval = 1,
   telemetryPort = 2200,
+  -- This file drives a getter-per-reading fake console; the real-console
+  -- driver is exercised in test_rbmk_ntm.lua.
+  profileName = "hbm-generic",
   grid = { w = 15, h = 15, shape = "square" },
   limits = { tempWarn = 800, tempScram = 1000, waterMin = 10 },
 }

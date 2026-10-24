@@ -1,6 +1,10 @@
--- Optional Utilities — calc: a spreadsheet for TOS.
+-- Optional Utilities — calc: a spreadsheet for TOS, the Lotus 1-2-3 way.
 --
--- Grid + formulas + save/load + CSV export, in the TOS visual grammar.
+-- A keyboard program of the DOS era: the three-line control panel, the
+-- MODE indicator, every command a / and a few letters away, pointing at
+-- cells with the arrows while typing a formula. 1-2-3's syntax
+-- (@SUM(A1..A9), $A$1, label prefixes) beside calc 1's (=SUM(A1:A9)),
+-- and calc 1's files open unchanged in meaning.
 --
 -- The formula engine is a hand-written TOKENIZER + RECURSIVE-DESCENT
 -- PARSER, deliberately NOT `load()`-based. The usual shortcut is to
@@ -15,18 +19,32 @@
 -- session-bound `fs` — so a sheet is always saved with the calling
 -- user's permissions.
 --
--- The model + engine (calc/sheet.lua) are pure and unit-tested off-box
--- by modules/calc/test_calc.lua.
+-- OPTIONAL COMPANIONS, never required. With the printer driver
+-- installed, /Print offers Printer; with write, it offers Document (the
+-- range laid out as pages and handed to write, unsaved). Both are found
+-- by their files and loaded only when used, so neither costs a byte of
+-- memory until then — and printing is why this manifest now declares
+-- peripheral.printer: the driver checks the CALLER's capability, and
+-- paper and ink are the operator's to spend, so `pkg info calc` says so.
+-- Every print asks first, with the cost.
+--
+-- The model + engine (sheet.lua, ops.lua) and the layouts (print.lua,
+-- graph.lua) are pure and unit-tested off-box; test_calc_ui.lua drives
+-- the real screen.
 return {
   name        = "calc",
-  version     = "1.0.0",
+  version     = "2.0.0",
   kind        = "command",
   category    = "productivity",
-  description = "Spreadsheet: cells, formulas (SUM/IF/ranges…), save/load, CSV export.",
+  description = "Spreadsheet, the Lotus 1-2-3 way: / menus, pointing, @functions, formats, copy/move, sort, graphs, print.",
   author      = "Strata Systems",
   files       = {
     "/usr/modules/calc/init.lua",
     "/usr/modules/calc/sheet.lua",
+    "/usr/modules/calc/ops.lua",      -- Copy/Move/Insert/Delete/Sort: formula rewriting
+    "/usr/modules/calc/menu.lua",     -- the / menu tree, as data
+    "/usr/modules/calc/print.lua",    -- page layout: printer, file, write
+    "/usr/modules/calc/graph.lua",    -- /Graph, in characters
   },
   -- Full-screen program: the shell hands it the seat as its own
   -- process, so Ctrl+B can push it to the background and Ctrl+T
@@ -36,12 +54,18 @@ return {
   background  = "drowsy",
 
   commands     = { calc = "/usr/modules/calc/init.lua" },
+  -- What `open` (and Enter in the file browser) hands to calc: its own
+  -- .calc, and CSV, which it imports into a new worksheet.
+  handles      = {
+    { ext = { "calc" }, as = "native" },
+    { ext = { "csv" } },
+  },
   -- No `load` cap on purpose (see above). fs for sheets, component for
-  -- the GPU. Nothing else.
-  capabilities = { "fs.read", "fs.write", "component" },
+  -- the GPU, peripheral.printer for /Print Printer. Nothing else.
+  capabilities = { "fs.read", "fs.write", "component", "peripheral.printer" },
   requires    = {},
-  -- Soft suggestion, never installed behind your back: calc has real
-  -- mouse support (click a cell, drag a selection), which the panels
-  -- shell only enables when the mouse driver is present.
-  recommends  = { "mouse" },
+  -- Soft suggestions, never installed behind your back: the mouse makes
+  -- cells and menu items clickable; printer and write each add a /Print
+  -- destination.
+  recommends  = { "mouse", "printer", "write" },
 }

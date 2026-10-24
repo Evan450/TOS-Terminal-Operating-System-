@@ -505,6 +505,52 @@ local function validateManifest(m)
       end
     end
   end
+  -- `handles`: the files this package opens, which shell/open.lua ranks
+  -- (its own format, files it can open, files whose content is its). A
+  -- marker is a plain line prefix the shell compares outside any sandbox,
+  -- so it is short and has no control characters; `cmd` must be one of
+  -- the package's own commands, or the package must have exactly one.
+  if m.handles ~= nil then
+    if type(m.handles) ~= "table" or #m.handles > 8 then
+      return false, "handles must be an array of at most 8 entries if present"
+    end
+    local nCmds = 0
+    for _ in pairs(type(m.commands) == "table" and m.commands or {}) do nCmds = nCmds + 1 end
+    for i, h in ipairs(m.handles) do
+      local where = "handles[" .. i .. "]"
+      if type(h) ~= "table" or type(h.ext) ~= "table" or #h.ext == 0 or #h.ext > 8 then
+        return false, where .. ".ext must list 1 to 8 extensions"
+      end
+      for _, e in ipairs(h.ext) do
+        if type(e) ~= "string" or not e:match("^[%w]+$") or #e > 8 then
+          return false, where .. " names an extension that is not 1-8 letters or digits"
+        end
+      end
+      if h.as ~= nil and h.as ~= "native" and h.as ~= "open" then
+        return false, where .. '.as must be "native" or "open"'
+      end
+      if h.markers ~= nil then
+        if type(h.markers) ~= "table" or #h.markers == 0 or #h.markers > 8 then
+          return false, where .. ".markers must list 1 to 8 line prefixes"
+        end
+        if h.as == "native" then
+          return false, where .. " has markers, so it is not the package's own format"
+        end
+        for _, mk in ipairs(h.markers) do
+          if type(mk) ~= "string" or #mk < 2 or #mk > 24 or mk:find("[%c]") then
+            return false, where .. " has a marker that is not 2-24 plain characters"
+          end
+        end
+      end
+      if h.cmd ~= nil then
+        if type(h.cmd) ~= "string" or type(m.commands) ~= "table" or not m.commands[h.cmd] then
+          return false, where .. ".cmd is not one of the package's commands"
+        end
+      elseif nCmds ~= 1 then
+        return false, where .. " names no cmd, and the package has " .. nCmds .. " commands"
+      end
+    end
+  end
   if m.capabilities ~= nil and type(m.capabilities) ~= "table" then
     return false, "capabilities must be an array if present"
   end

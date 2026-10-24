@@ -18,7 +18,7 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 
 | Add-on | Command | What it is |
 |---|---|---|
-| [calc](modules/calc/README.md) | `calc` | A spreadsheet: formulas, ranges, CSV export, and nothing in a cell can ever run as code. |
+| [calc](modules/calc/README.md) | `calc` | A spreadsheet the Lotus 1-2-3 way: the control panel, / menus, pointing at cells, formats, copy and move, sort, graphs. Prints through `printer` and into `write` when they are installed; nothing in a cell can ever run as code. |
 | [write](modules/write/README.md) | `write` | A word processor that shows where the printed page breaks as you type, and what it will cost in paper and ink. Brings `printer` with it. |
 
 **Games**
@@ -56,6 +56,7 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 | [mail](modules/mail/README.md) | `mail` | Store-and-forward email between TOS machines, sealed end to end, with no server. Root. |
 | [intercom](modules/intercom/README.md) | `intercom` | Facility announcements: a recorded message plays from tape, and the same words go out over the network. Root. |
 | [cluster](cluster/README.md) | `cluster-setup` | Spreads jobs across machines: one Master, any number of Managers, and optional OpenOS workers. Root. Its `cluster` command does not start at present; see its README. |
+| [web](web/browser/README.md) | `web` | A text-mode browser: headings, paragraphs, lists, links and `<pre>`, read with this machine's own internet card. No fetch proxy yet — see its README. |
 
 **Control and automation**
 
@@ -63,6 +64,12 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 |---|---|---|
 | [rc-pilot](modules/rc-pilot/README.md) | `rc` | Fly a robot or drone from the keyboard, with every keystroke signed. The robot cannot yet tell you its address; see its README. |
 | [stock](modules/stock/README.md) | `stock` | Totals every item in the chests around a transposer, and warns when something runs low. |
+
+**HBM Nuclear Tech**
+
+| Add-on | Command | What it is |
+|---|---|---|
+| [warhead](modules/warhead/README.md) | `warhead` | Designs the best custom nuke for the blast you want, and simulates any of the mod's warheads first: crater, blast, radiation, fallout, and how thick a shelter must be. Reads a real bomb through a transposer. |
 
 **Development**
 
@@ -74,11 +81,11 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 
 | Path | What it is |
 |---|---|
-| [rbmk/](rbmk/README.md) | `rbmk-control` 0.2.0, a safety supervisor and operator panel for HBM's RBMK reactors. Held back until its component names are checked against the mod in game. |
-| [cluster/storage-skeleton/](cluster/README.md) | `cluster-storage` 0.1.0, an early storage node for the cluster. Held back while its spec is a draft. |
+| [rbmk/](rbmk/README.md) | `rbmk-control` 1.0.0, a safety supervisor and operator panel for HBM's RBMK reactors, bound to the mod's real `rbmk_console` (read from its jar). Not yet run against a world: `rbmk survey` first. |
+| [cluster/storage-skeleton/](cluster/storage-skeleton/README.md) | `cluster-storage` 1.0.0, a single Storage Node: the scratch tier the cluster Master spills oversized task lists into. Not the distributed pool its spec also describes. |
 | [pane-ui/](pane-ui/README.md) | PaneUI, the TOS look and file manager for OpenOS machines. One file, copied by hand rather than installed with `pkg`. |
 | [robot/](robot/README.md) | The program on the robot's own chip for `rc-pilot`. The rc-pilot package ships it ready to burn. |
-| [web/](web/README.md) | A text-mode web browser and a fetch proxy between TOS machines. Design only, no code yet. |
+| [web/](web/README.md) | The fetch proxy, shared page cache and cluster back end for `web` (above) — steps 3-5 of its design. Design only; blocked on trust decisions (proxy discovery, cache-read defaults), not code. |
 
 A package below version 1.0.0 is not finished, so it stays off the pack: the builder keeps a list of them and prints each one it skips, and why.
 
@@ -95,6 +102,8 @@ Every add-on's tests run with the OS's own: `python run_tests.py` in the TOS sou
 Each top-level entry under `TOS-Extras/` should be a self-contained installable unit, so the picker can offer it as a separate checkbox. Don't introduce cross-Extras dependencies without flagging it: the user should be able to install any subset without surprise. This is why the games ship as **three standalone packages** (`snake`, `ttt`, `tetris`) rather than one bundle: you can take Snake without Tic-Tac-Toe.
 
 **Flagged cross-Extras dependency: `write` → `printer`.** The only hard one in the set, and it is here rather than merged because the two are genuinely separable in use: plenty of machines want the driver and the `printer` command with no word processor anywhere near them. The reverse is not true — the word processor's whole point is the page, the page model lives in the driver's `printerfmt.lua`, and a `write` that shipped its own copy would be two definitions of "how tall is a page" drifting apart. The picker auto-selects `printer` alongside it, marks it `[+]`, and counts it in the install set, so nothing installs behind your back. `requires` also means the packer keeps them on the same floppy.
+
+**Optional integration is not a dependency.** A package may use another when it is installed and work fully without it: calc's `/Print` offers Printer only with the `printer` driver and Document only with `write`, finds them by their files, and loads them only when used. The manifest says so with `recommends`, and declares any capability the integration needs (calc's `peripheral.printer`), so `pkg info` stays the record of what a package can touch. A package that opens files says which in `handles` (TOS manual, §7.3), and TOS ranks the candidates by rule rather than by which was installed first.
 
 **Categories.** A manifest may declare `category = "..."` (games, productivity, network, storage, security, drivers, control, or your own). The installer groups the pick-list by category — so related packages browse together while each stays independently installable. Uncategorised packages fall into "misc" / Other. Keep a package's *scope* to one program; use the category to relate it to its neighbours.
 

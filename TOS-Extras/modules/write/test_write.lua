@@ -269,6 +269,48 @@ do
 end
 
 do
+  -- .nf / .fi: a table lined up with spaces must reach the page as typed.
+  -- Filled text squeezes runs of spaces (right for prose), and calc's
+  -- /Print Document hands write exactly such a table.
+  local src = "Item     Qty\nfilled   text\n.nf\nBolts      12\nNuts        8\n" ..
+              string.rep("x ", 30) .. "\n.fi\nback   to fill"
+  local p = D.parse(src)
+  test(".nf and .fi make no blocks of their own, and no warning", 0, #p.warnings)
+  local pages = D.layout(p, { measure = one, maxWidth = 40 })
+  local lines = {}
+  for _, e in ipairs(pages[1]) do lines[#lines + 1] = e.text end
+  test("filled text squeezes its spaces, as before", "Item Qty", lines[1])
+  test("a no-fill line keeps its spacing", "Bolts      12", lines[3])
+  test("...every one of them", "Nuts        8", lines[4])
+  test("a no-fill line too wide for the page still wraps", true, #lines[5] <= 40)
+  test(".fi fills again", "back to fill", lines[#lines])
+  test("a no-fill line still knows its source line", 4, pages[1][3].src)
+end
+
+do
+  -- write's entry point for other packages (calc's /Print Document).
+  -- Loaded with no GPU: it must refuse a relative path, and accept a
+  -- full one (then stop at "No GPU found", with nothing written).
+  package.loaded["component"] = { list = function() return function() return nil end end }
+  package.loaded["computer"] = { pullSignal = function() return nil end }
+  package.loaded["write.doc"] = D
+  local said = {}
+  local chunk = findChunk("init.lua", { base, "modules/write/", "TOS-Extras/modules/write/" })
+  local okW, W = pcall(chunk)
+  test("write's module loads off-box", true, okW and type(W) == "table")
+  local api = okW and W.api
+  test("it exports api.open", "function", api and type(api.open))
+  test("api says which version it is", "1.1.0", api and api.VERSION)
+  if api then
+    test("a relative path is refused", false,
+      api.open("report.txt", "x", function(t) said[#said + 1] = t end))
+    test("a full path is accepted", true,
+      api.open("/home/a/report.txt", "x", function(t) said[#said + 1] = t end))
+    test("and with no GPU it says so rather than drawing", "No GPU found.", said[#said])
+  end
+end
+
+do
   -- The page constants come from the printer package, not a second copy
   -- here. Two definitions of "how tall is a page" is one too many.
   test("page height comes from printerfmt", fmt.MAX_LINES, D.MAX_LINES)

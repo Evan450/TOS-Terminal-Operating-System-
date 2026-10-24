@@ -165,20 +165,29 @@ end
 -- ══════════════════════════════════════════════════════════════════════
 -- The word processor
 -- ══════════════════════════════════════════════════════════════════════
-local function run(path, o)
+--- `composed`, when given, is the document's text from another program
+--- (calc's /Print Document): it opens as unsaved work at `path`, and
+--- nothing reaches the disk unless the operator saves it.
+local function run(path, o, composed)
   local Dv = screen(o, 46, 12)
   if not Dv then return end
   local T, W, H = Dv.T, Dv.W, Dv.H
 
-  local raw, lErr = loadFile(path)
-  if lErr then o("Cannot open " .. path .. ": " .. lErr, 0xFF5555); return end
+  local raw, lErr
+  if composed then
+    raw = tostring(composed)
+  else
+    raw, lErr = loadFile(path)
+    if lErr then o("Cannot open " .. path .. ": " .. lErr, 0xFF5555); return end
+  end
   local isNew = (raw == nil)
 
   local buf     = D_.toBuffer(raw or "")
   local cy, cx  = 1, 1        -- cursor line, column (1 = before first char)
   local top     = 1           -- first visible buffer line
-  local dirty   = false
+  local dirty   = composed ~= nil
   local status  = isNew and ("New document: " .. path) or nil
+  if composed then status = "Not saved yet: F2 saves it as " .. path end
   local pageView = false
   local pvPage  = 1
 
@@ -378,6 +387,7 @@ local function run(path, o)
       "  .center / .left      alignment, from here on",
       "  .color 0xFF0000      colour, from here on (.color off)",
       "  .page                start a new sheet",
+      "  .nf / .fi            lines as typed (a table) / filled",
       "  ..text               a literal line starting with a dot",
       "",
       "Colour costs one unit of COLOUR ink per line — the rail",
@@ -641,4 +651,23 @@ local function writeCmd(args, o)
   run(path, o)
 end
 
-return { commands = { write = writeCmd } }
+-- For other packages. calc's /Print Document lays a range out as pages
+-- and hands them here, in its own process, so the operator lands in a
+-- word processor holding the document — and decides whether it is ever
+-- saved. A caller checks for `api` before using it: an older write has
+-- none.
+local api = {
+  VERSION = "1.1.0",
+  --- Open `text` as an unsaved document that F2 would save at `path`.
+  open = function(path, text, o)
+    o = o or print
+    if type(path) ~= "string" or path:sub(1, 1) ~= "/" then
+      o("write: a document needs a full path to be saved at.", 0xFF5555)
+      return false
+    end
+    run(path, o, text or "")
+    return true
+  end,
+}
+
+return { commands = { write = writeCmd }, api = api }

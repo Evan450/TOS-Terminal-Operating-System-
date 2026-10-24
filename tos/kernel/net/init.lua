@@ -301,9 +301,26 @@ function net.init(modules)
       -- what a reset must not lose is kept on disk (meshStore, above).
       freeMemory = computer.freeMemory,
       store  = meshStore(modules and modules.fs or (_G._TOS and _G._TOS.fs)),
+      -- Opportunistic routing (TODO.txt's deferred mesh item): if a past
+      -- envelope's path taught us a direct neighbour toward env.to, aim
+      -- the radio at just them first instead of flooding everyone who can
+      -- hear us. "*" (mesh.BROADCAST) has no single neighbour to aim at
+      -- and always floods. Any failure -- the send itself, or no learned
+      -- route at all -- falls straight back to the flood that ran here
+      -- unconditionally before, so this can only ever reduce traffic.
       broadcast = function(env)
         local t = (env.kind == "ack") and protocol.TYPE.MESH_ACK or protocol.TYPE.MESH
-        net.broadcast(protocol.makePacket(t, env))
+        local packet = protocol.makePacket(t, env)
+        local dest = env.to
+        if dest and dest ~= "*" then
+          local nextHop = net._meshctl:routeFor(dest)
+          if nextHop and nextHop ~= myAddr then
+            local ok = net.sendToAddress(nextHop, packet)
+            if ok then return end
+            net._meshctl:invalidateRoute(dest)
+          end
+        end
+        net.broadcast(packet)
       end,
       secretFor = function(addr)
         return trustMgr._internalGetSecret
@@ -593,6 +610,33 @@ function net.broadcast(packet, port)
     anyOk = anyOk or ok2
   end
   if not anyOk then return false, "Broadcast failed on all NICs" end
+  return true
+end
+
+--- Aim a packet at exactly one address instead of flooding every neighbour.
+--- Same shape as net.broadcast (no transport-level encryption/MAC: the
+--- mesh already seals its own payload end-to-end) -- this is net.broadcast
+--- with the radio call narrowed to one recipient, nothing else. Used only
+--- for the mesh's opportunistic routing optimism (net._meshctl:routeFor);
+--- callers must still fall back to net.broadcast on failure, since a
+--- learned neighbour may have moved out of range since we last heard it.
+function net.sendToAddress(address, packet, port)
+  if not modem and not tunnel then return false, "No modem" end
+  port = port or broadcastPort or listenPort
+
+  packet.from = myAddr
+  local data = protocol.serialize(packet)
+  local anyOk = false
+  for _, m in ipairs(modems) do
+    local ok2 = pcall(m.proxy.send, address, port, data)
+    anyOk = anyOk or ok2
+  end
+  -- A linked card has exactly one possible destination; aiming is moot.
+  if tunnel then
+    local ok2 = pcall(tunnel.send, data)
+    anyOk = anyOk or ok2
+  end
+  if not anyOk then return false, "Send failed on all NICs" end
   return true
 end
 
@@ -892,8 +936,13 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
     local peer = trustMgr.getPeer(remoteAddr)
     if peer and type(packet.payload) == "table" then
       peer.hostname = cleanClaim(packet.payload.hostname)
+      -- Automatic Diffie-Hellman (trust.lua): cache their public key now
+      -- (needs no trust, it's public) and establish a secret right away
+      -- if they're already TRUSTED. pcall: this is best-effort, never a
+      -- reason for a hello to fail.
+      pcall(trustMgr.noteDhPublicKey, remoteAddr, packet.payload.dhPub)
     end
-    local ack = protocol.helloAck(hostname, _G._TOS.version)
+    local ack = protocol.helloAck(hostname, _G._TOS.version, trustMgr.getMyDhPublicKey())
     net.send(remoteAddr, ack)
     -- Fall through to listeners too
   end
@@ -903,6 +952,7 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
     local peer = trustMgr.getPeer(remoteAddr)
     if peer and type(packet.payload) == "table" then
       peer.hostname = cleanClaim(packet.payload.hostname)
+      pcall(trustMgr.noteDhPublicKey, remoteAddr, packet.payload.dhPub)
     end
   end
 
@@ -1353,7 +1403,7 @@ function net.hello(address)
   if level < trustMgr.LEVEL.KNOWN then
     return false, "Peer must be KNOWN to exchange hellos"
   end
-  local pkt = protocol.hello(hostname, _G._TOS.version)
+  local pkt = protocol.hello(hostname, _G._TOS.version, trustMgr.getMyDhPublicKey())
   return net.send(address, pkt)
 end
 

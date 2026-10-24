@@ -186,12 +186,14 @@ def discover() -> list[tuple[Path, Path]]:
         extras += sorted(EXTRAS_DIR.glob("modules/*/test_*.lua"))
         extras += sorted(EXTRAS_DIR.glob("build/test_*.lua"))
         extras += sorted(EXTRAS_DIR.glob("pane-ui/test_*.lua"))
-        # Add-ons that don't live under modules/ still ship tests. These two
+        # Add-ons that don't live under modules/ still ship tests. These
         # were written and then silently never run for want of a glob —
         # rbmk/test_rbmk.lua alone is 72 assertions the suite was reporting
-        # nothing about. Keep this list in step with run_tests.sh.
+        # nothing about, and web/browser/test_web*.lua (2026-10-23) would
+        # have gone the same way. Keep this list in step with run_tests.sh.
         extras += sorted(EXTRAS_DIR.glob("rbmk/test_*.lua"))
         extras += sorted(EXTRAS_DIR.glob("cluster/*/test_*.lua"))
+        extras += sorted(EXTRAS_DIR.glob("web/*/test_*.lua"))
         found += [(t, EXTRAS_DIR) for t in extras]
 
     return found

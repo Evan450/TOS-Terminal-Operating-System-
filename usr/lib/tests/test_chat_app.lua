@@ -284,6 +284,30 @@ do
     lines(mark):find("not sent to m2: TRUSTED peer has no shared secret", 1, true) ~= nil, lines(mark))
 end
 
+-- ── draw: a long message wraps, it does not truncate (Area 3 sweep) ──
+-- A message wider than the pane used to be cut to one row with a
+-- trailing "~"; it now wraps across rows the same way mail's body
+-- viewer does (shell.chat.wrapLine, shared with the standalone chat TUI).
+do
+  local Sw = newS()
+  local tabw = chatApp.open(Sw)
+  tabw.messages = { { text = string.rep("x", 150), color = Sw.T.fg, time = 0 } }
+  local rowsSet = {}
+  Sw.D = { fill = function() end,
+    set = function(x, y, text, fg, bg) rowsSet[y] = (rowsSet[y] or "") .. text end }
+  chatApp.draw(Sw, tabw)
+  local xCount, hasTilde, rowsWithX = 0, false, 0
+  for _, line in pairs(rowsSet) do
+    local _, n = line:gsub("x", "")
+    if n > 0 then xCount = xCount + n; rowsWithX = rowsWithX + 1 end
+    if line:find("~", 1, true) then hasTilde = true end
+  end
+  test("no row was truncated with a trailing ~", not hasTilde)
+  test("the full 150-char message reached the screen, none lost to truncation",
+    xCount == 150)
+  test("the message actually spans more than one row", rowsWithX > 1)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

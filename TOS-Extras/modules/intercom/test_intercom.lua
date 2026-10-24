@@ -584,6 +584,12 @@ if app then
     app.cueRow({ name = "x", text = "y", severity = "critical" }, 40)
       :find("CRIT", 1, true) ~= nil)
 
+  -- fitLine: the shared truncation the Heard log now uses too (Area 5
+  -- sweep -- that line previously had no marker at all).
+  eq("fitLine leaves a short line alone", "hi", app.fitLine("hi", 10))
+  eq("fitLine marks a cut line", "hell~", app.fitLine("hello world", 5))
+  test("fitLine never exceeds the width", #app.fitLine(string.rep("z", 200), 30) <= 30)
+
   local calls = { fill = {}, set = {} }
   local T = setmetatable({}, { __index = function(_, k) return "color:" .. k end })
   local S = {
@@ -639,6 +645,20 @@ if app then
   test("the catalog error is drawn", painted:find("bad line", 1, true) ~= nil)
   test("the heard log is drawn", painted:find("Reactor offline.", 1, true) ~= nil)
   test("the key hints are drawn", painted:find("test", 1, true) ~= nil)
+
+  -- A Heard entry too long for its half of the split used to be cut with
+  -- no marker at all, so a full-looking line could actually be missing
+  -- its tail (Area 5 sweep).
+  calls.set = {}
+  local longTab = { type = "intercom", sel = 1, scroll = 0, cues = {}, errors = {},
+    log = { { severity = "info", from = "reactor",
+              text = string.rep("word ", 40) } } }
+  pcall(app.draw, S, longTab)
+  local longPaint = {}
+  for _, c in ipairs(calls.set) do longPaint[#longPaint + 1] = tostring(c.text) end
+  longPaint = table.concat(longPaint, "\n")
+  test("an over-long Heard entry is marked as cut, not silently truncated",
+    longPaint:find("~", 1, true) ~= nil)
 
   -- An empty catalog must explain itself, in the operator's own notation.
   calls.set = {}

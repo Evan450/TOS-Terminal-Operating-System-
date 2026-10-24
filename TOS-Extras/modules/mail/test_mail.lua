@@ -106,6 +106,20 @@ do
   test("inboxRow truncates to width", #long <= 40)
 end
 
+-- ── formatTs: the timestamp was data all along, never displayed ────
+eq("formatTs renders HH:MM:SS", "01:01:01", mail.formatTs(3661))
+eq("formatTs floors a fractional second", "00:00:01", mail.formatTs(1.9))
+eq("formatTs treats a missing ts as a same-width placeholder",
+  "--:--:--", mail.formatTs(nil))
+eq("formatTs never goes negative", "00:00:00", mail.formatTs(-5))
+do
+  local row = mail.inboxRow({ fromUser = "bob", subject = "hi", ts = 3661 }, 3, 60)
+  test("inboxRow now shows when the message was sent", row:find("01:01:01", 1, true) ~= nil)
+  local noTs = mail.inboxRow({ fromUser = "bob", subject = "hi" }, 3, 60)
+  test("inboxRow without a ts shows the placeholder, not a crash",
+    noTs:find("%-%-:%-%-:%-%-") ~= nil)
+end
+
 do
   local addr, user = mail.resolveRecipient("carol@node7", function(h)
     return h == "node7" and "ADDR7" or nil end)

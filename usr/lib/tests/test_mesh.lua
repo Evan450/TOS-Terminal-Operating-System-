@@ -104,6 +104,58 @@ do
   test("self in path -> no forward", not r.forward)
 end
 
+-- ── Route cache: learn from path, lookup, staleness, eviction ──────
+do
+  local rc = mesh.newRouteCache(2)
+  test("empty cache has no route", mesh.routeFor(rc, "A") == nil)
+
+  -- No path -> nothing to learn (direct neighbour, or no hops yet).
+  mesh.learnRoute(rc, mesh.newEnvelope("A", "B", { id = "r0" }), "B", 0)
+  test("empty path teaches nothing", mesh.routeFor(rc, "A") == nil)
+
+  -- A 2-hop path: the LAST entry is the neighbour that handed it to us.
+  local e1 = mesh.newEnvelope("A", "D", { id = "r1", path = { "X", "Y" } })
+  mesh.learnRoute(rc, e1, "D", 0)
+  local nh, hops = mesh.routeFor(rc, "A", 0)
+  eq("learned next hop is the last path entry", "Y", nh)
+  eq("learned hop count", 2, hops)
+
+  -- A shorter path to the same origin replaces it.
+  mesh.learnRoute(rc, mesh.newEnvelope("A", "D", { id = "r2", path = { "Z" } }), "D", 0)
+  eq("shorter route replaces the longer one", "Z", (mesh.routeFor(rc, "A", 0)))
+
+  -- A longer, still-fresh path does NOT replace a better one.
+  mesh.learnRoute(rc, mesh.newEnvelope("A", "D", { id = "r3", path = { "X", "Y" } }), "D", 0)
+  eq("a worse fresh route is ignored", "Z", (mesh.routeFor(rc, "A", 0)))
+
+  -- Staleness: past ROUTE_TTL, even a worse route is accepted again.
+  mesh.learnRoute(rc, mesh.newEnvelope("A", "D", { id = "r4", path = { "X", "Y" } }),
+    "D", mesh.ROUTE_TTL + 1)
+  eq("a stale route is replaced even by a worse one", "Y",
+    (mesh.routeFor(rc, "A", mesh.ROUTE_TTL + 1)))
+
+  -- Lookup itself expires a stale entry (reads it as gone).
+  eq("lookup far enough later sees it as stale", nil,
+    mesh.routeFor(rc, "A", mesh.ROUTE_TTL * 3))
+
+  -- Self-loop guard: never learn a route back to ourselves.
+  mesh.learnRoute(rc, mesh.newEnvelope("B", "D", { id = "r5", path = { "D" } }), "D", 0)
+  test("never learns a route via ourselves", mesh.routeFor(rc, "B") == nil)
+
+  -- Bounded eviction, same shape as the seen cache.
+  local rc2 = mesh.newRouteCache(2)
+  mesh.learnRoute(rc2, mesh.newEnvelope("P", "Z", { id = "e1", path = { "n1" } }), "Z", 0)
+  mesh.learnRoute(rc2, mesh.newEnvelope("Q", "Z", { id = "e2", path = { "n2" } }), "Z", 0)
+  mesh.learnRoute(rc2, mesh.newEnvelope("R", "Z", { id = "e3", path = { "n3" } }), "Z", 0)
+  test("cache stays bounded", #rc2.order <= 2)
+  test("oldest destination evicted", mesh.routeFor(rc2, "P") == nil)
+  eq("newest destination kept", "n3", (mesh.routeFor(rc2, "R")))
+
+  -- Invalidate: an explicit failure forgets the route outright.
+  mesh.invalidateRoute(rc2, "R")
+  test("invalidated route is gone", mesh.routeFor(rc2, "R") == nil)
+end
+
 -- ── Outbox: enqueue / due / ack / deadline / relay hold ────────────
 do
   local ob = mesh.newOutbox()

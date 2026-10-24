@@ -1,37 +1,27 @@
--- ╔══════════════════════════════════════╗
--- ║  Cluster Storage Node service        ║
--- ╚══════════════════════════════════════╝
+-- ╔══════════════════════════════════════════════════════════════╗
+-- ║  /etc/rc.d/cluster-storaged.lua — TOS service shim           ║
+-- ╚══════════════════════════════════════════════════════════════╝
 -- Serves the Public storage tier: writes on 2101 (TRUSTED, namespace
 -- checked) and reads on 2100 (open, per §2.2). Stopping the service
--- stops both and flushes the index, so the node comes back knowing
--- what it holds.
+-- closes both ports and flushes the index, so the node comes back
+-- knowing what it holds.
+--
+-- The shim is deliberately bare, like clusterd's. It used to claim the
+-- kernel-tier user and declare a caps table: rc honours that claim only
+-- for four hard-coded services (so this one was demoted, with a warning,
+-- on every boot) and the daemon needs nothing from the caps, because
+-- a service's own /usr/lib library loads through the kernel loader with
+-- the authority of the service. `needs = "net"` leaves the script
+-- unloaded on a machine with no network card.
+--
+-- No pcall around the require: a daemon that fails to load must say so
+-- when rc registers it, not start "successfully" and do nothing.
 
-local running = false
-
-local function start()
-  local ok, d = pcall(require, "cluster-storaged")
-  if not ok or not d then return end
-  local sok, serr = d.start()
-  if not sok then
-    if _G._TOS and _G._TOS.log then
-      _G._TOS.log("cluster-storaged", "failed to start: " .. tostring(serr))
-    end
-    return
-  end
-  running = true
-end
-
-local function stop()
-  local ok, d = pcall(require, "cluster-storaged")
-  if ok and d and d.stop then d.stop() end
-  running = false
-end
+local storaged = require("cluster-storaged")
 
 return {
-  start   = start,
-  stop    = stop,
-  deps    = {},
+  start   = storaged.start,
+  stop    = storaged.stop,
   restart = true,
-  caps    = { ["fs.read"] = true, ["fs.write"] = true, net = true },
-  user    = "_kernel_",
+  needs   = "net",
 }

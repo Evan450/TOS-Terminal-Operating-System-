@@ -14,9 +14,16 @@
 -- unit tests for development, not part of a deployed install.
 --
 -- After the Dev/Release/Extras split (see ../../README.md): the
--- master-skeleton, OpenOS-side cluster worker, and PaneUI now live
--- under ../../TOS-Extras/ rather than inside the source tree, and
--- ship via the Optional Utilities installer instead of /tos/deploy.
+-- master-skeleton and the OpenOS-side cluster worker now live under
+-- ../../TOS-Extras/ rather than inside the source tree, and ship via
+-- the Optional Utilities installer instead of /tos/deploy.
+-- PaneUI (../../TOS-Extras/pane-ui/) lives there too but ships NEITHER
+-- way: it targets OpenOS, not TOS, so it is not a `pkg` package and is
+-- not on the Optional Utilities disk -- its own README says so, and
+-- TOS-Extras/README.md links it as a by-hand copy. This comment used
+-- to claim otherwise (Area 4 audit, 2026-10-23); nothing on the
+-- Optional Utilities side actually packages it, so the claim was just
+-- wrong, not a description of a real, unused shipping path.
 -- The bundled-modules entries (tape-storage, tetris) remain listed
 -- here for now because the Dev manifest is intentionally inclusive;
 -- the Release build's strip pass auto-prunes any entry whose target
@@ -81,7 +88,9 @@ return {
   -- in, and ed25519.lua is precisely the file an attacker would want to
   -- edit: make verify() return true and every other gate opens.
   { path = "/tos/kernel/sha512.lua",          critical = false },
+  { path = "/tos/kernel/curve25519field.lua", critical = false },
   { path = "/tos/kernel/ed25519.lua",         critical = false },
+  { path = "/tos/kernel/x25519.lua",          critical = false },
   { path = "/tos/kernel/pkgsign.lua",         critical = false },
   { path = "/tos/kernel/backup.lua",          critical = false },
   { path = "/tos/kernel/diag.lua",            critical = false },
@@ -125,6 +134,7 @@ return {
   -- machine that lost it falls back to the coded defaults rather than
   -- to no keys at all — see the module.
   { path = "/tos/shell/keys.lua",             critical = false },
+  { path = "/tos/shell/open.lua",             critical = false },
   { path = "/tos/shell/ext.lua",              critical = false },
   { path = "/tos/shell/login.lua",            critical = false },
   { path = "/tos/shell/colophon.lua",         critical = false },
@@ -221,6 +231,7 @@ return {
   { path = "/usr/man/compress.man",           critical = false },
   { path = "/usr/man/decompress.man",         critical = false },
   { path = "/usr/man/edit.man",               critical = false },
+  { path = "/usr/man/open.man",               critical = false },
   { path = "/usr/man/filesystem.man",         critical = false },
   { path = "/usr/man/intercom.man",           critical = false },
   { path = "/usr/man/jbod.man",               critical = false },

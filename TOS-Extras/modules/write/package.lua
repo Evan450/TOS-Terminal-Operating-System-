@@ -30,7 +30,7 @@
 -- modules/write/test_write.lua.
 return {
   name        = "write",
-  version     = "1.0.0",
+  version     = "1.1.0",
   kind        = "command",
   category    = "productivity",
   description = "Word processor: live page breaks, ink/paper cost, dot-command formatting, prints via the printer driver.",
@@ -51,6 +51,15 @@ return {
   background  = "freeze",
 
   commands     = { write = "/usr/modules/write/init.lua" },
+  -- What `open` hands to write: .wri, its own (Windows Write's old
+  -- extension), and a text file only when it IS a write document -- a
+  -- line starting with one of its dot commands. Any other .txt stays
+  -- edit's: plain text is the editor's, not the word processor's.
+  handles      = {
+    { ext = { "wri" }, as = "native" },
+    { ext = { "txt", "doc", "text" },
+      markers = { ".title ", ".page", ".center", ".left", ".color ", ".nf" } },
+  },
   -- fs for documents, component for the GPU, peripheral.printer to
   -- actually print. No `load` (a document is never executed), no `net`,
   -- no `internet` — this writes files and paper, it has nobody to tell.

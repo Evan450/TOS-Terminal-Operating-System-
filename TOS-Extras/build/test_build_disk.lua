@@ -64,7 +64,8 @@ rmrf(OUT); rmrf(OUT2)
 local EXPECTED = { "tetris", "tape", "rc-pilot", "mouse",
                    "tape-authenticator", "cluster-manager", "cluster-master",
                    "blockfs", "mail", "calc", "snake", "ttt",
-                   "stock", "printer", "write", "intercom", "selftest" }
+                   "stock", "printer", "write", "intercom", "selftest", "warhead",
+                   "web", "rbmk-control", "cluster-storage" }
 
 -- The other half of the same guarantee. build-disk.lua's SKIP table holds
 -- packages below 1.0.0 back off the public pack, and an exclusion is only
@@ -72,7 +73,7 @@ local EXPECTED = { "tetris", "tape", "rc-pilot", "mouse",
 -- half-finished package rejoining the disk would ship silently and an
 -- operator would tick it in the picker and get a skeleton.
 -- Move a name from here to EXPECTED when it reaches 1.0.0.
-local NOT_SHIPPED = { "cluster-storage", "rbmk-control" }
+local NOT_SHIPPED = {}
 
 -- The pure SHA-256 the build uses; loaded from the sibling TOS-Dev tree so
 -- the test can independently recompute each hash.
@@ -300,6 +301,30 @@ test("--install copied the set manifest", true, exists(OUT2 .. "/optutil-set.lua
 test("--install copied a package file", true,
   exists(OUT2 .. "/mouse/usr/lib/mouse.lua"))
 
+-- ── --sign actually runs, end to end ─────────────────────────
+-- Nothing exercised the signing path, so it broke unseen: ed25519.lua grew a
+-- require of kernel.curve25519field (the field math, shared with x25519) and
+-- both signers preloaded kernel.sha512 for it but not that, so the operator's
+-- first `tos.py pack --sign` died with "kernel/ed25519.lua not found" -- a
+-- pcall in loadKernelModule swallowing the real failure. A throwaway key, a
+-- scratch directory, never dist/: this proves the loader wiring, not a pack.
+do
+  local OUT3 = root .. "/dist/.test-sign"
+  rmrf(OUT3)
+  local env = WINDOWS
+    and 'set "TOS_SIGNING_PASSPHRASE=throwaway test passphrase, not a real key" && set "TOS_SIGNING_NAME=testsuite" && '
+    or  "TOS_SIGNING_PASSPHRASE='throwaway test passphrase, not a real key' TOS_SIGNING_NAME=testsuite "
+  local cmd = string.format('%slua "%s/build-disk.lua" "%s" "%s" --limit 0 --sign%s',
+    env, buildDir, root, OUT3, WINDOWS and " >nul 2>nul" or " >/dev/null 2>&1")
+  local ok = os.execute(cmd)
+  test("a --sign build with a throwaway key succeeds", true, ok == true or ok == 0)
+  test("...and leaves a signature beside a package's manifest", true,
+    exists(OUT3 .. "/mouse/package.sig"))
+  test("...including the browser (web joined the pack unsigned-until-now)", true,
+    exists(OUT3 .. "/web/package.sig"))
+  rmrf(OUT3)
+end
+
 -- ── The DEFAULT build now needs more than one floppy ─────────
 -- The add-on set outgrew a 512K floppy once calc/games/mail/rbmk-control
 -- joined. That's expected — but it must SPLIT, never silently truncate,
@@ -411,11 +436,11 @@ do
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
     local PENDING_RESIGN = {
-      -- The operator signed the pack on 2026-10-16 (stock 1.0.1 and
-      -- intercom 1.0.1 included). Name a package here when a fix to it
+      -- The operator signed the pack again on 2026-10-23 (everything up to
+      -- and including web 1.0.0). Name a package here when a fix to it
       -- lands ahead of the next signing.
-      ttt = "ttt 1.0.1: Up moves the cursor up its column (2026-10-16)",
-      tetris = "tetris 1.1.2: the quit footer fits the side panel (2026-10-16)",
+      ["rbmk-control"] = "rbmk-control 1.0.0: bound to HBM's real rbmk_console (getColumnData/pressAZ5) (2026-10-23)",
+      ["cluster-storage"] = "cluster-storage 1.0.0: the daemon opens its ports and serves reads; bare rc shim (2026-10-23)",
     }
 
     if nShipped == 0 then

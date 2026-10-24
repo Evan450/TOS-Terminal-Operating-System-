@@ -5,15 +5,16 @@
 -- ║  unit-tested off-box (test_rbmk.lua):                        ║
 -- ║                                                              ║
 -- ║   1. DRIVER BINDING. HBM's Nuclear Tech Mod exposes its RBMK ║
--- ║      console through an OC component whose type name and     ║
--- ║      method surface we do NOT know for certain — Plan.md's   ║
--- ║      open question #1, answerable only by an in-game survey. ║
--- ║      So method names are DATA (a "profile"), not literals    ║
--- ║      baked into the controller. `rbmk survey` prints what a  ║
--- ║      real component actually offers; bind() then reports     ║
--- ║      exactly which profile entries resolved and which are    ║
--- ║      missing, so a wrong guess is a legible diagnostic       ║
--- ║      instead of a nil-index crash next to a reactor.         ║
+-- ║      console as the OC component `rbmk_console`, read with   ║
+-- ║      getColumnData(x, y) one channel at a time and shut down ║
+-- ║      with pressAZ5() (Plan.md open question #1, answered     ║
+-- ║      from the mod's own bytecode). That is the "hbm-ntm"     ║
+-- ║      driver: scanCore() folds the 225 per-channel tables     ║
+-- ║      into the scalar snapshot the safety rules run on. The   ║
+-- ║      older "profile" mechanism — method names as DATA — is   ║
+-- ║      kept for consoles that really are getter-per-reading,   ║
+-- ║      and bind() still reports exactly which entries resolved ║
+-- ║      so a wrong name is a legible diagnostic, not a crash.   ║
 -- ║                                                              ║
 -- ║   2. SAFETY RULES. Given a telemetry snapshot and limits,    ║
 -- ║      decide: ok / warn / SCRAM. This is the safety-critical  ║
@@ -29,7 +30,7 @@
 
 local C = {}
 
-C.VERSION = "0.2.0"
+C.VERSION = "1.0.0"
 
 -- Telemetry wire version. v1 was scalars only; v2 adds the packed core
 -- map and the reason strings behind the level. Both are accepted, so a
@@ -50,13 +51,29 @@ C.MAX_REASONS = 8
 -- the mod actually calls them. Every field is optional: a console that
 -- can't report flux still gets temperature protection.
 --
--- The shipped profiles are CANDIDATES, not confirmed API. Run
--- `rbmk survey` against a real console and correct /etc/rbmk.cfg —
--- that survey is the whole point of this indirection.
+-- "hbm-ntm" is the REAL surface of HBM's Nuclear Tech Mod (1.12), read
+-- off its TileEntityRBMKConsole with javap rather than guessed:
+--
+--   getColumnData(x, y)   x,y in 0..14, the console's own frame (the
+--                         mod rotates it to the world). Returns a table
+--                         for a channel, nil where there is none.
+--   pressAZ5()            sets every MANUAL control rod's target to 0
+--                         within 7 blocks of the core centre. Returns
+--                         "No control rods found" if there were none.
+--   getRBMKPos()          the linked core's centre, nil if unlinked.
+--
+-- "hbm-generic" is the old candidate-name profile. It stays because a
+-- fork or a future build might expose per-reading getters, and because
+-- the binding tests drive it; it is no longer the default.
 
 C.PROFILES = {
+  ["hbm-ntm"] = {
+    driver = "ntm-console",
+    componentTypes = { "rbmk_console" },
+  },
   -- Best-guess names, ordered most→least likely. The controller tries
   -- each candidate in turn and uses the first that exists on the proxy.
+  -- NONE of these exist on the real HBM console (see hbm-ntm above).
   ["hbm-generic"] = {
     componentTypes = { "rbmk_console", "rbmk_control", "ntm_rbmk_console" },
     temp     = { "getTemp", "getTemperature", "getCoreTemp" },
@@ -73,6 +90,19 @@ C.PROFILES = {
     -- see bind(): a console without this is still fully supervisable.
     columns  = { "getColumnData", "getColumns", "getFluxData", "getRodData" },
   },
+}
+
+--- The NTM console's fixed facts. `size` is the console's own coordinate
+--- space and is NOT the display grid: safety scans all of it whatever the
+--- operator draws. The rest are constants compiled into the mod
+--- (TileEntityRBMKBase.maxHeat() = 1500; TileEntityRBMKBoiler's feed
+--- tank is 10000 mB of water and its steam tank 1000000 mB) that
+--- getColumnData reports a fill for but not a capacity.
+C.NTM = {
+  columns = "getColumnData", scram = "pressAZ5", pos = "getRBMKPos",
+  size = 15,
+  hullMax = 1500,
+  boilerWater = 10000, boilerSteam = 1000000,
 }
 
 -- Default core footprint. HBM's RBMK tops out at a 15x15 grid of
@@ -107,6 +137,26 @@ function C.bind(profile, methods)
       if type(k) == "string" then have[k] = true          -- set form
       elseif type(v) == "string" then have[v] = true end  -- array form
     end
+  end
+  if profile.driver == "ntm-console" then
+    --! The two methods the driver cannot work without. Every logical
+    --! reading is DERIVED from getColumnData by scanCore(), so they all
+    --! bind to it -- which keeps bindingUsable and `rbmk survey` honest
+    --! (lose getColumnData and every reading goes missing at once).
+    local D = C.NTM
+    local bound, missing = {}, {}
+    if have[D.columns] then
+      for _, logical in ipairs({ "temp", "flux", "rodDepth", "steam", "water", "fuel" }) do
+        bound[logical] = D.columns
+      end
+    else
+      missing[#missing + 1] = D.columns
+    end
+    if have[D.scram] then bound.scram = D.scram
+    else missing[#missing + 1] = D.scram end
+    return { bound = bound, missing = missing, driver = profile.driver,
+             columns = have[D.columns] and D.columns or nil,
+             pos = have[D.pos] and D.pos or nil }
   end
   local bound, missing = {}, {}
   local LOGICAL = { "temp", "flux", "rodDepth", "steam", "water", "fuel", "scram" }
@@ -172,6 +222,8 @@ function C.normalize(raw)
   t.steam    = num(raw.steam)
   t.water    = num(raw.water)
   t.fuel     = num(raw.fuel)
+  t.melt     = num(raw.melt)
+  t.unread   = num(raw.unread)
   return t
 end
 
@@ -180,9 +232,11 @@ end
 -- ============================================================
 
 C.DEFAULT_LIMITS = {
-  tempWarn   = 800,     -- °C — advisory
+  tempWarn   = 800,     -- °C — advisory (hottest column; the mod melts one at 1500)
   tempScram  = 1000,    -- °C — automatic shutdown
-  fluxWarn   = 8000,
+  meltWarn   = 80,      -- % of the fuel's melting point, hottest rod
+  meltScram  = 90,
+  fluxWarn   = 8000,    -- UNCALIBRATED: total of every rod's flux this tick
   fluxScram  = 10000,
   waterMin   = 10,      -- % — starving the loop is a shutdown condition
   staleAfter = 5,       -- s without a fresh reading = lost the console
@@ -223,6 +277,27 @@ function C.evaluate(snap, limits, age)
       raise("warn", string.format("core %.0f >= warn limit %.0f",
         snap.temp, limits.tempWarn))
     end
+  end
+
+  --! The fuel's own melting point is a different hazard from the column
+  --! hull's, and the one that actually ends a run: it differs per fuel,
+  --! so it is a PERCENTAGE of that rod's limit, not a temperature.
+  if snap.melt ~= nil then
+    if limits.meltScram and snap.melt >= limits.meltScram then
+      raise("scram", string.format("fuel at %.0f%% of melting point >= scram limit %.0f%%",
+        snap.melt, limits.meltScram))
+    elseif limits.meltWarn and snap.melt >= limits.meltWarn then
+      raise("warn", string.format("fuel at %.0f%% of melting point >= warn limit %.0f%%",
+        snap.melt, limits.meltWarn))
+    end
+  end
+
+  --! Channels the scan could not read. The rest were read and judged, so
+  --! this is a warning, not a scram -- but it can never be silent, because
+  --! an unread channel might be the hot one.
+  if snap.unread ~= nil and snap.unread > 0 then
+    raise("warn", string.format("%d channel%s could not be read",
+      snap.unread, snap.unread == 1 and "" or "s"))
   end
 
   if snap.flux ~= nil then
@@ -347,6 +422,102 @@ function C.normalizeColumns(raw, grid)
     add(t, ((i - 1) % gw) + 1, math.floor((i - 1) / gw) + 1)
   end
   return out
+end
+
+-- ColumnType names, as getColumnData reports them in its `type` field.
+local NTM_KIND = {
+  BLANK = "blank", FUEL = "fuel", FUEL_SIM = "fuel", BREEDER = "breeder",
+  CONTROL = "control", CONTROL_AUTO = "control", BOILER = "boiler",
+  MODERATOR = "moderator", ABSORBER = "absorber", REFLECTOR = "reflector",
+  OUTGASSER = "outgasser", STORAGE = "storage", COOLER = "cooler",
+  HEATEX = "heatex",
+}
+
+--- Scan the whole core through an NTM console and fold it into the two
+--- things the add-on needs: the SCALAR snapshot the safety rules run on,
+--- and the per-channel array the SKALA map draws.
+---
+--- `getColumn(x, y)` is the console's getColumnData with x,y in
+--- 0..NTM.size-1; it may raise (a console that vanished mid-scan) and may
+--- return nil (no channel there). Pure otherwise, so the whole aggregation
+--- is tested off-box against tables shaped like the mod's real reply.
+---
+--- Returns (snap, cols, stats). The scan is ALWAYS the full 15x15 whatever
+--- footprint the operator draws: a display setting must never shrink what
+--- safety looks at. Readings come from what exists --
+---   temp     hottest hull of ANY column, °C
+---   melt     hottest rod as a % of ITS fuel's melting point
+---   flux     sum of every rod's flux this tick
+---   rodDepth mean insertion of the control rods, % (level 0 = fully in:
+---            that is the target pressAZ5 sets)
+---   water    LOWEST boiler feed tank, %      steam  mean boiler steam, %
+---   fuel     mean enrichment of the loaded rods, %
+--- and a reading with nothing to read from is NIL, never zero: a core
+--- with no boilers has no coolant figure, which is not a dry loop.
+function C.scanCore(getColumn)
+  local N = C.NTM.size
+  local function num(v)
+    if type(v) == "number" and v == v and v > -math.huge and v < math.huge then
+      return v
+    end
+  end
+  local cols, unread, read = {}, 0, 0
+  local temp, melt
+  local flux
+  local lvlSum, lvlN = 0, 0
+  local water, steamSum, boilers = nil, 0, 0
+  local enrSum, rods = 0, 0
+  for y = 0, N - 1 do
+    for x = 0, N - 1 do
+      local ok, t = pcall(getColumn, x, y)
+      if not ok then
+        unread = unread + 1
+      elseif type(t) == "table" then
+        read = read + 1
+        local c = { x = x + 1, y = y + 1, kind = NTM_KIND[tostring(t.type)] }
+        local hull = num(t.hullTemp)
+        if hull then
+          c.temp = hull
+          if not temp or hull > temp then temp = hull end
+        end
+        local core, coreMax = num(t.coreTemp), num(t.coreMaxTemp)
+        if core and coreMax and coreMax > 0 then
+          c.melt = core / coreMax * 100
+          if not melt or c.melt > melt then melt = c.melt end
+        end
+        local enr = num(t.enrichment)
+        if enr then enrSum = enrSum + enr; rods = rods + 1 end
+        local fq = num(t.fluxQuantity)
+        if fq then c.flux = fq; flux = (flux or 0) + fq end
+        local level = num(t.level)
+        if level then
+          if level < 0 then level = 0 elseif level > 1 then level = 1 end
+          c.rodDepth = (1 - level) * 100
+          lvlSum = lvlSum + level; lvlN = lvlN + 1
+        end
+        if c.kind == "boiler" then
+          local w, s = num(t.water), num(t.steam)
+          if w then
+            c.water = w / C.NTM.boilerWater * 100
+            if not water or c.water < water then water = c.water end
+          end
+          if s then
+            c.steam = s / C.NTM.boilerSteam * 100
+            steamSum = steamSum + c.steam; boilers = boilers + 1
+          end
+        end
+        cols[#cols + 1] = c
+      end
+    end
+  end
+  local snap = {
+    temp = temp, melt = melt, flux = flux, water = water,
+    rodDepth = (lvlN > 0) and ((1 - lvlSum / lvlN) * 100) or nil,
+    steam = (boilers > 0) and (steamSum / boilers) or nil,
+    fuel = (rods > 0) and (enrSum / rods * 100) or nil,
+    unread = unread,
+  }
+  return snap, cols, { read = read, unread = unread }
 end
 
 --- Index a column array by "x,y" for O(1) lookup by the renderer.
@@ -489,6 +660,7 @@ function C.frame(snap, level, seq, uptime, name, cols, reasons)
     temp = snap and snap.temp, flux = snap and snap.flux,
     rodDepth = snap and snap.rodDepth, steam = snap and snap.steam,
     water = snap and snap.water, fuel = snap and snap.fuel,
+    melt = snap and snap.melt,
     cols = (type(cols) == "string" and #cols > 0) and cols or nil,
     --! The reasons the level is what it is. A wall that shows ALARM
     --! without saying which limit tripped makes the operator walk to
@@ -561,7 +733,7 @@ C.WIRE_ARGS = 9
 
 local function encScalars(f)
   local t = {}
-  for _, k in ipairs({ "temp", "flux", "rodDepth", "steam", "water", "fuel" }) do
+  for _, k in ipairs({ "temp", "flux", "rodDepth", "steam", "water", "fuel", "melt" }) do
     if type(f[k]) == "number" then
       t[#t + 1] = k .. "=" .. string.format("%.4g", f[k])
     end
@@ -612,7 +784,7 @@ function C.decodeWire(...)
       --! into a table the renderer indexes -- which is how a read-only
       --! display grows a control surface by accident.
       if n and (k == "temp" or k == "flux" or k == "rodDepth"
-             or k == "steam" or k == "water" or k == "fuel") then
+             or k == "steam" or k == "water" or k == "fuel" or k == "melt") then
         f[k] = n
       end
     end

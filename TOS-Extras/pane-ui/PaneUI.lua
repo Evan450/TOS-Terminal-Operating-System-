@@ -354,6 +354,40 @@ local function fit(s, n)
   return s .. PAD_W:sub(1, n - len)
 end
 
+-- Word-aware wrap to `w` columns: break at spaces where possible, hard-
+-- break a single token too long to fit on its own. Mirrors the house
+-- convention in tos/shell/panels/dialogs.lua's wrapText -- PaneUI keeps
+-- its own copy rather than requiring it, since it requires no kernel.*
+-- module by design (see the README). Used where a message must not be
+-- silently ellipsized into one row (confirmDialog).
+local function wrapText(s, w)
+  s = s or ""
+  w = math.max(1, w)
+  local out = {}
+  for rawLine in (s .. "\n"):gmatch("(.-)\n") do
+    if rawLine == "" then
+      out[#out + 1] = ""
+    else
+      local line = ""
+      for word in rawLine:gmatch("%S+") do
+        local candidate = (line == "") and word or (line .. " " .. word)
+        if unicode.len(candidate) <= w then
+          line = candidate
+        else
+          if line ~= "" then out[#out + 1] = line end
+          line = word
+          while unicode.len(line) > w do
+            out[#out + 1] = unicode.sub(line, 1, w)
+            line = unicode.sub(line, w + 1)
+          end
+        end
+      end
+      out[#out + 1] = line
+    end
+  end
+  return out
+end
+
 -- ============================================================
 -- Filesystem helpers
 -- ============================================================
@@ -1240,8 +1274,22 @@ end
 -- interior use of a ramp: it's an edge, not content). Panes and
 -- dividers keep the single-line BOX.
 local function confirmDialog(prompt)
-  local boxW = math.min(W - 4, math.max(40, #prompt + 6))
-  local boxH = 7
+  -- A long prompt used to be ellipsized into this one row (fit()); it
+  -- now wraps, so the box grows a stable width (not one that scales with
+  -- the prompt's length -- that only postponed wrapping on wide screens)
+  -- and as many rows as the message needs, capped so it can't exceed the
+  -- screen.
+  local boxW = math.min(W - 4, math.max(40, math.min(#prompt + 6, 60)))
+  local textW = boxW - 6
+  local maxLines = math.max(1, H - 10)
+  local lines = wrapText(prompt, textW)
+  if #lines > maxLines then
+    local capped = {}
+    for i = 1, maxLines do capped[i] = lines[i] end
+    capped[maxLines] = fit(capped[maxLines], textW)
+    lines = capped
+  end
+  local boxH = 6 + #lines
   local x = math.floor((W - boxW) / 2) + 1
   local y = math.floor((H - boxH) / 2) + 1
 
@@ -1267,13 +1315,17 @@ local function confirmDialog(prompt)
 
   local bg = c("panel_bg")
   setText(x + 2, y, " Confirm ", c("accent"), bg)
-  setText(x + 3, y + 2, fit(prompt, boxW - 6), c("fg"), bg)
-  setText(x + 3, y + 4, "[Y]es   [N]o", c("dim"), bg)
+  for i, ln in ipairs(lines) do
+    setText(x + 3, y + 1 + i, fit(ln, textW), c("fg"), bg)
+  end
+  setText(x + 3, y + #lines + 3, "[Y]es   [N]o", c("dim"), bg)
 
   while true do
     local _, _, ch = event.pull("key_down")
     if ch == 89 or ch == 121 then return true end
-    if ch == 78 or ch == 110 or ch == 27 then return false end
+    -- Esc is tolerated (harmless here) but ^Q is the documented, reliable
+    -- cancel (keymap.lua's convention for a prompt/dialog) -- see B5.
+    if ch == 78 or ch == 110 or ch == 27 or ch == 17 then return false end
   end
 end
 
@@ -1299,7 +1351,10 @@ local function promptInput(prompt, prefill)
   while true do
     local _, _, ch, code = event.pull("key_down")
     if code == 28 then return buf
-    elseif code == 1 then return nil
+    -- Esc (code 1) is tolerated but was the ONLY cancel; ^Q is the
+    -- documented, reliable one (keymap.lua's convention for a prompt),
+    -- same as confirmDialog above -- see B5.
+    elseif code == 1 or ch == 17 then return nil
     elseif code == 14 then
       if #buf > 0 then buf = buf:sub(1, -2); redraw() end
     elseif ch and ch >= 32 and ch < 127 then
@@ -1719,7 +1774,13 @@ local function handleBrowserKey(ch, code)
     State.quitting = true; return
   elseif code == SCANCODE.f1 then
     openHelp(); return
-  elseif code == SCANCODE.f2 then
+  -- Tab cycles tabs here, same as everywhere else in TOS now (keymap.lua:
+  -- "Tab cycles tabs only when the command line is empty -- otherwise it
+  -- completes the word/path"; PaneUI has no completion, so an empty
+  -- cmdline is the only case Tab need do anything in). F2 still works
+  -- too -- it is what this file's own README has documented so far, and
+  -- nothing is lost by a key doing the same thing twice.
+  elseif code == SCANCODE.f2 or (code == SCANCODE.tab and cl == "") then
     tabCycle(1); return
   elseif code == SCANCODE.f9 then
     dropToShell(); return
@@ -1827,7 +1888,7 @@ local function handleViewerKey(ch, code, tab)
     tabClose()
   elseif code == SCANCODE.f1 then
     openHelp()
-  elseif code == SCANCODE.f2 then
+  elseif code == SCANCODE.f2 or code == SCANCODE.tab then
     tabCycle(1)
   elseif code == SCANCODE.up then
     tab.scroll = math.max(0, (tab.scroll or 0) - 1)
@@ -2003,7 +2064,7 @@ end
 local function handleHelpKey(ch, code)
   -- Any key dismisses help (but F10 still quits the program).
   if code == SCANCODE.f10 then State.quitting = true; return end
-  if code == SCANCODE.f2 then tabCycle(1); return end
+  if code == SCANCODE.f2 or code == SCANCODE.tab then tabCycle(1); return end
   if code == SCANCODE.f1 then return end  -- F1 on help is a no-op (already open)
   tabClose()
 end

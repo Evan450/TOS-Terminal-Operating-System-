@@ -34,8 +34,13 @@ end
 --! prints absolute paths, which is fine here because every use below
 --! only needs a path it can open.
 local WINDOWS = package.config:sub(1, 1) == "\\"
+-- Same roots build-disk.lua's DISCOVERY_ROOTS scans (kept as an
+-- independent list rather than requiring the builder, so this lint
+-- doesn't depend on build-disk.lua loading cleanly to run at all).
+-- "rbmk" and "web" were missing here -- rbmk-control (a real, shipped
+-- package) went unlinted, and web's new browser package would have too.
 local manifests = {}
-for _, root in ipairs({ "modules", "cluster" }) do
+for _, root in ipairs({ "modules", "cluster", "rbmk", "web" }) do
   local cmd = WINDOWS
     and ('dir /b /s "' .. root .. '\\package.lua" 2>nul')
     or  ('find "' .. root .. '" -name package.lua 2>/dev/null')

@@ -36,6 +36,12 @@ end
 
 local sha512 = tryload("tos/kernel/sha512.lua")()
 package.loaded["kernel.sha512"] = sha512
+-- The field arithmetic (bignum + GF(2^255-19)) was extracted out of
+-- ed25519.lua into its own module, shared with X25519 -- preload it the
+-- same manual way as sha512, since this harness never touches
+-- package.path.
+local field = tryload("tos/kernel/curve25519field.lua")()
+package.loaded["kernel.curve25519field"] = field
 -- kernel.process is deliberately absent: ed25519 must load and run
 -- without it (early boot, and the off-box signer under plain Lua), with
 -- the cooperative yield degrading to a no-op.

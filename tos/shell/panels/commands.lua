@@ -148,6 +148,9 @@ local REGISTRY = {
   -- (built-in vs package command vs /usr/bin program). Sibling to `why`,
   -- which answers "and why was I refused?".
   which    = { category = "core", tier = 0, help = "Show what a command name resolves to (built-in, package, or program)" },
+  -- `open` is which's sibling for FILES: which program suits this one,
+  -- ranked by rule (shell/open.lua), and the operator's say over it.
+  open     = { category = "core", tier = 0, help = "Open a file in the program that suits it ('open with' says why)" },
   alias    = { category = "core", tier = 0, help = "Per-user command aliases: 'alias' lists, 'alias ll ls -l' defines" },
   unalias  = { category = "core", tier = 0, help = "Remove a command alias" },
   env      = { category = "core", tier = 0, help = "Show environment variables" },

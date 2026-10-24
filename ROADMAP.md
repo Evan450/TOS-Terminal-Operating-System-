@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**65 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**64 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
 | Planned | 42 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 20 | Idea, no commitment. Discuss before building. |
+| Idea / far future | 19 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (7) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -370,14 +370,6 @@ version of that; whether it should be louder is the call.
 *Planned* · from the round *From the Cynosure 2 survey (2026-08-10)*
 
 MINITEL: DECIDE, DON'T DEFAULT. Cynosure ships Minitel in the KERNEL beside TCP and HTTP (NET\_MTEL), and the partition table options name MTPT as "the Minitel partition table used by PsychOS". It is the ecosystem's de-facto interop protocol. Our mesh is bespoke and SHOULD stay bespoke — you cannot get replay-resistant MACs and trust tiers out of someone else's protocol. But "TOS machines can only talk to TOS machines" should be a position we hold on purpose, not one we backed into. If we ever want it, a Minitel bridge is an Extras package, not a kernel change.
-
-### Mesh: the route information is already in the packets
-
-*Idea / far future* · from the round *Second pass: the compat number (2026-09-20)*
-
-MESH: THE ROUTE INFORMATION IS ALREADY IN THE PACKETS. Plan9k does real networking -- IPv4, subnets, RIP v2 in `routed`, address autoconfiguration in ohcp that installs routes on lease. We deliberately do not: no routing table, neighbours only, controlled flooding with DEFAULT\_TTL 8, MAX\_TTL 16, a 512-id dedup cache and store-and-forward retries. That is the right trade for OC-sized networks and the module is already hardened against flood amplification. NOT A GAP.
-
-The one thing worth writing down: flooding costs scale with network size, and our own packets already carry the fix. Every mesh message has a `path` field -- the node addresses it has traversed -- so a node that relays a message ALREADY KNOWS a working route back to the origin, for free, with no protocol change. If a base ever gets big enough that flooding hurts, opportunistic route learning from `path` (try the learned next hop, fall back to flooding) is available without adopting anyone's routing protocol. Not now; recorded so it is not re-derived under pressure.
 
 ### Operator idea (raised 2026-08-04, deferred)
 

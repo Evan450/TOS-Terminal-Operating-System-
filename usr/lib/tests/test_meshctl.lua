@@ -265,6 +265,15 @@ do
   eq("subject survived too", "Hello C", cm and cm.payload.subject)
   eq("recipient username carried", "carol", cm and cm.user)
   eq("ACK cleared A's outbox", 0, ctl.A:pending())
+
+  -- Route learning: the forwarded msg's path (["B"]) taught C a way back
+  -- to A, and the forwarded ack's path taught A a way to C -- both via the
+  -- relay they actually traversed. B never learns anything here: it is
+  -- already A's and C's direct neighbour, so there is no shortcut to find.
+  eq("C learned a route to A via B", "B", ctl.C:routeFor("A"))
+  eq("A learned a route to C via B", "B", ctl.A:routeFor("C"))
+  test("B has no route to A (already adjacent)", ctl.B:routeFor("A") == nil)
+  test("B has no route to C (already adjacent)", ctl.B:routeFor("C") == nil)
 end
 
 -- Blind relay: B must not be able to read what it forwards.

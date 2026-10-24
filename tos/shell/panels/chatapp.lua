@@ -177,23 +177,37 @@ function M.draw(S, tab)
     { text = "peers:" .. peers },
   }, { labelFg = T.title or T.fg })
 
-  -- Messages: the tail, backed off by tab.scroll lines (PgUp/PgDn).
+  -- Messages: the tail, backed off by tab.scroll lines (PgUp/PgDn). Each
+  -- message is wrapped to its own rows first (overflow fix, Area 3 sweep),
+  -- the same chat.wrapLine scheme the standalone chat TUI uses, so the
+  -- scroll/anchor math below works in display rows, not raw messages --
+  -- otherwise one long wrapped message would jump the scrollback by more
+  -- than one screen's worth of lines. Continuation rows repeat the blank-
+  -- padded prefix width so wrapped text lines up under the first row's
+  -- text, not under its timestamp.
   local msgTop, msgBot = 3, H - 2
   local msgH = msgBot - msgTop + 1
-  local msgs = tab.messages or {}
-  local maxScroll = math.max(0, #msgs - msgH)
+  local prefixW = #(fmtTime(0) .. " ")
+  local textW = math.max(1, W - prefixW)
+  local rows = {}
+  for _, m in ipairs(tab.messages or {}) do
+    local prefix = fmtTime(m.time) .. " "
+    for i, line in ipairs(chatCore.wrapLine(m.text, textW)) do
+      rows[#rows + 1] = {
+        prefix = (i == 1) and prefix or string.rep(" ", prefixW),
+        text = line, color = m.color,
+      }
+    end
+  end
+  local maxScroll = math.max(0, #rows - msgH)
   if (tab.scroll or 0) > maxScroll then tab.scroll = maxScroll end
-  local startIdx = math.max(1, #msgs - msgH + 1 - (tab.scroll or 0))
+  local startIdx = math.max(1, #rows - msgH + 1 - (tab.scroll or 0))
   for row = 0, msgH - 1 do
-    local m = msgs[startIdx + row]
-    if m then
+    local r = rows[startIdx + row]
+    if r then
       local y = msgTop + row
-      local prefix = fmtTime(m.time) .. " "
-      D.set(1, y, prefix, T.dim, T.bg)
-      local textW = W - #prefix
-      local line = m.text
-      if #line > textW then line = line:sub(1, math.max(1, textW - 1)) .. "~" end
-      D.set(#prefix + 1, y, line, m.color or T.fg, T.bg)
+      D.set(1, y, r.prefix, T.dim, T.bg)
+      D.set(#r.prefix + 1, y, r.text, r.color or T.fg, T.bg)
     end
   end
 

@@ -236,6 +236,26 @@ do
   end
 end
 
+-- ── wrapLine: the overflow fix (Area 3 sweep) ──────────────────────
+-- A long line used to be cut to one row with a trailing "~"; it now
+-- wraps, the same scheme mail's wrapBody uses.
+do
+  eq("short line is its own single row", 1, #chat.wrapLine("hi", 10))
+  eq("short line is unchanged", "hi", chat.wrapLine("hi", 10)[1])
+  local rows = chat.wrapLine("abcdefghij", 4)
+  eq("exact-multiple length wraps to ceil(len/w) rows", 3, #rows)
+  eq("row 1 is the first w chars", "abcd", rows[1])
+  eq("row 2 continues", "efgh", rows[2])
+  eq("row 3 holds the remainder", "ij", rows[3])
+  eq("empty text is one blank row, not zero", 1, #chat.wrapLine("", 10))
+  eq("...and that row is empty", "", chat.wrapLine("", 10)[1])
+  local nl = chat.wrapLine("ab\ncd", 10)
+  eq("an explicit newline starts a new row", 2, #nl)
+  eq("...first half kept whole", "ab", nl[1])
+  eq("...second half kept whole", "cd", nl[2])
+  test("width is never less than 1 even if asked for less", #chat.wrapLine("x", 0) >= 1)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

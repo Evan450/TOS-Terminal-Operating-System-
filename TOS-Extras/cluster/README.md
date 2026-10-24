@@ -12,7 +12,7 @@ One **Master** machine accepts jobs and schedules them. Any number of **Manager*
 |---|---|
 | `master-skeleton/` | the `cluster-master` package: the `clusterd` service for the one control machine, and the `cluster` command |
 | `manager-skeleton/` | the `cluster-manager` package: the service for each compute machine, and the `cluster-manager` command |
-| `storage-skeleton/` | `cluster-storage` 0.1.0, an early storage node. Not on the published pack: the pack leaves out anything below 1.0.0, and its spec is still a draft. |
+| `storage-skeleton/` | the `cluster-storage` package (1.0.0): one Storage Node over its own disk, the scratch tier the Master spills oversized task lists into. The distributed pool in its spec is not built. See its [README](storage-skeleton/README.md). |
 | `openos/` | the OpenOS worker, `cluster-worker.lua`, and its setup wizard, `cluster-worker-setup.lua`. These are copied onto OpenOS machines by hand, since TOS's package manager does not reach OpenOS. |
 | `installer/` | the setup guide. `cluster-install.lua` and `cluster-make-floppy.lua` there are older tools, superseded by `cluster-setup`; the guide says what each still does. |
 
@@ -32,3 +32,5 @@ Both packages are services, so installing either needs root.
 ## Tests
 
 The OpenOS side is tested from `TOS-Extras/`: `lua cluster/openos/test_cluster_worker_frames.lua` (the Manager's side of the worker bridge and the worker agree on every authenticated frame) and `lua cluster/openos/test_worker_setup.lua` (the setup wizard). The Master and Manager are tested in the base OS's suite, where they run against the real kernel modules; `python run_tests.py` in the TOS source runs all of them.
+
+`storage-skeleton/` has its own: `lua cluster/storage-skeleton/test_store.lua` (the on-disk key store: leases, TTL, eviction, index persistence — 67 checks, run against an in-memory filesystem and a controllable clock), `lua cluster/storage-skeleton/test_storaged.lua` (the daemon's wiring: the §4.6 namespace authorization gate, the write-plane handlers and the unauthenticated read plane, run against the REAL `kernel.net.protocol` and `cluster.protocol` rather than a duplicate fake of either — 36 checks) and `lua cluster/storage-skeleton/test_storage_wire.lua` (the Master's real client against the real daemon over a modelled radio that drops anything sent to a port the destination has not opened — 34 checks).

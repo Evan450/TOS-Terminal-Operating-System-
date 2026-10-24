@@ -8,7 +8,7 @@ machine, tick the add-ons you want, and it installs the selected set.
 
 | File | Role |
 |------|------|
-| `build-disk.lua` | **Assembler.** Auto-discovers every add-on with a `package.lua` under `modules/`, `cluster/`, and `rbmk/`, assembles them into one or more `pkg` repos laid out the way `kernel.pkg.install` expects, and writes a `README.txt` and the set manifest onto each. Splits across multiple disks when the set exceeds `--limit`. Runs anywhere: dev box with LuaFileSystem, plain Lua (shell fallbacks), or under OpenOS. |
+| `build-disk.lua` | **Assembler.** Auto-discovers every add-on with a `package.lua` under `modules/`, `cluster/`, `rbmk/`, and `web/` (`DISCOVERY_ROOTS` is the authoritative list), assembles them into one or more `pkg` repos laid out the way `kernel.pkg.install` expects, and writes a `README.txt` and the set manifest onto each. Splits across multiple disks when the set exceeds `--limit`. Runs anywhere: dev box with LuaFileSystem, plain Lua (shell fallbacks), or under OpenOS. |
 | `build-disk.ps1` / `build-disk.cmd` / `build-disk.sh` | **One-command wrappers** (PowerShell / cmd.exe / POSIX). Build with defaults; forward extra flags like `--install`. **Use the one matching your shell** — invoking the `.cmd` *from PowerShell* emits harmless stray `'M' is not recognized` lines before the correct output, which the `.ps1` avoids by calling `lua` directly. Install **LuaFileSystem** (`luarocks install luafilesystem`) for a subprocess-free build: the assembler prefers it for every mkdir/rmdir/listing and only shells out without it, and shell-outs are where cross-shell quoting gremlins come from. |
 | `optutil-set.lua` (generated) | **Set manifest**, written onto every disk. Describes the WHOLE set — each package's version, category, description, `requires`, `recommends`, and which disk it is on. The picker reads it so a machine with one floppy in the drive still lists everything and can ask for the right disk; the media detector uses it to tell an Optional Utilities disk from a loose pile of packages. There is **no installer on the disk**: the picker lives in the TOS base image at `tos/shell/pkgpicker.lua` and is reached with `pkg install`. |
 | `test_build_disk.lua` | Off-box regression test for the assembler (`lua build/test_build_disk.lua` from the Extras root). |
@@ -90,14 +90,15 @@ which "burns" the freshly built disk straight into an OpenComputers
 filesystem folder.
 
 Packages are **auto-discovered** — any directory under `modules/`,
-`cluster/`, or `rbmk/` containing a `package.lua` is assembled (no builder
-edit needed). Each manifest `files[]` target is resolved in order: **mirror**
+`cluster/`, `rbmk/`, or `web/` containing a `package.lua` is assembled (no
+builder edit needed). Each manifest `files[]` target is resolved in order: **mirror**
 (source laid out at its install path, like `modules/mouse/usr/lib/mouse.lua`),
 **flat** (single-file modules keeping `init.lua` at their root, like
 `modules/tetris/`), then an explicit **legacy** map for pre-convention
 layouts (`cluster/master-skeleton`'s `lib/cluster/*`). Deliberate exclusions
 go in the `SKIP` table with a reason that prints at build time (empty right
-now — `tape-authenticator` rejoined the disk with its 1.0.0 rebuild).
+now — `cluster-storage` and `rbmk-control` left it at 1.0.0, and
+`tape-authenticator` before them).
 
 ### Multi-floppy splitting
 
@@ -177,8 +178,8 @@ The installer is only a front-end; all the real work is `kernel.pkg`:
 
 ## Adding a new add-on to the disk
 
-1. Give it a directory under `modules/` (or `cluster/`) with a `package.lua`
-   at its root: valid `kind` (`command`/`app`/`lib`/`service`/…) and an
+1. Give it a directory under `modules/` (or `cluster/`, `rbmk/`, `web/`) with
+   a `package.lua` at its root: valid `kind` (`command`/`app`/`lib`/`service`/…) and an
    absolute `files[]` list under `/usr` (or, for services, the two allowed
    `/etc` targets).
 2. Lay out the sources either **flat** (a single `init.lua` at the package

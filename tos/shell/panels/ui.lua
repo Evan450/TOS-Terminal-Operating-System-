@@ -393,15 +393,21 @@ function ui.drawSettingRow(D, th, y, x, w, row, selected)
   local bg = selected and (th.sel_bg or th.highlight) or th.bg
   local fg = selected and (th.sel_fg or th.bg) or th.fg
   D.fill(x, y, w, 1, " ", fg, bg)
+  -- Width-fit (ufit), not a byte slice, everywhere a row's text might be
+  -- translated UTF-8 -- same reason drawBar above already uses it. A raw
+  -- :sub(1, n) can land mid-character and corrupt the display; it was
+  -- also silently losing whatever didn't fit with no indicator at all,
+  -- worse than this toolkit's own ufit/ustr.fit convention of a clean,
+  -- width-aware cut (general UI sweep, Area 5).
   if row.kind == "header" then
-    D.set(x, y, tostring(row.label or ""):sub(1, w), th.title or th.fg, th.bg)
+    D.set(x, y, ufit(tostring(row.label or ""), w), th.title or th.fg, th.bg)
   elseif row.kind == "info" then
-    D.set(x + 1, y, tostring(row.text or ""):sub(1, w - 1), th.dim or th.fg, th.bg)
+    D.set(x + 1, y, ufit(tostring(row.text or ""), w - 1), th.dim or th.fg, th.bg)
   elseif row.kind == "toggle" then
     local mark = row.value and "[x] " or "[ ] "
-    D.set(x + 1, y, (mark .. tostring(row.label or "")):sub(1, w - 1), fg, bg)
+    D.set(x + 1, y, ufit(mark .. tostring(row.label or ""), w - 1), fg, bg)
   elseif row.kind == "choice" then
-    D.set(x + 1, y, tostring(row.label or ""):sub(1, w - 1), fg, bg)
+    D.set(x + 1, y, ufit(tostring(row.label or ""), w - 1), fg, bg)
     -- « » are 2-byte UTF-8; byte-count positioning only ever lands the
     -- run FURTHER from the right edge, never past it.
     local val = "« " .. tostring(row.value or "") .. " »"
@@ -410,7 +416,7 @@ function ui.drawSettingRow(D, th, y, x, w, row, selected)
       D.set(vx, y, val, selected and fg or (th.highlight or th.fg), bg)
     end
   elseif row.kind == "button" then
-    D.set(x + 1, y, ("[ " .. tostring(row.label or "") .. " ]"):sub(1, w - 1), fg, bg)
+    D.set(x + 1, y, ufit("[ " .. tostring(row.label or "") .. " ]", w - 1), fg, bg)
   end
 end
 

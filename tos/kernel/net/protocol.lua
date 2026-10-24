@@ -275,17 +275,24 @@ function protocol.pong()
   })
 end
 
-function protocol.hello(hostname, version)
+-- `dhPub` (optional) rides along so two peers bootstrap a Diffie-Hellman
+-- secret from the handshake they already do at KNOWN+ level, with no
+-- separate exchange -- see kernel/net/trust.lua's "Automatic
+-- Diffie-Hellman" section. It is public data (an X25519 public key),
+-- so there is no trust gate on including it.
+function protocol.hello(hostname, version, dhPub)
   return protocol.makePacket(protocol.TYPE.HELLO, {
     hostname = hostname,
     version  = version,
+    dhPub    = dhPub,
   })
 end
 
-function protocol.helloAck(hostname, version)
+function protocol.helloAck(hostname, version, dhPub)
   return protocol.makePacket(protocol.TYPE.HELLO_ACK, {
     hostname = hostname,
     version  = version,
+    dhPub    = dhPub,
   })
 end
 

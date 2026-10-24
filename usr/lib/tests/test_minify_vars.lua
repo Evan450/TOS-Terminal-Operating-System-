@@ -243,15 +243,17 @@ do
   -- already pins the original against RFC 8032 -- duplicating a vector
   -- from memory here risks exactly the kind of transcription slip that
   -- would make this test cry wolf about a perfectly correct minifier.
-  -- ed25519.lua requires kernel.sha512 at load time; neither this test
-  -- nor the minified chunk ships one, so both need it preloaded the
-  -- same way to load at all.
-  local sha512Src = findUp("tos/kernel/sha512.lua")
-  if sha512Src then
-    local chunk = load(sha512Src, "=sha512", "t")
-    if chunk then
-      local ok, mod = pcall(chunk)
-      if ok then package.loaded["kernel.sha512"] = mod end
+  -- ed25519.lua requires kernel.sha512 and kernel.curve25519field at
+  -- load time; neither this test nor the minified chunk ships one, so
+  -- both need them preloaded the same way to load at all.
+  for _, dep in ipairs({ "tos/kernel/sha512.lua", "tos/kernel/curve25519field.lua" }) do
+    local depSrc = findUp(dep)
+    if depSrc then
+      local chunk = load(depSrc, "=" .. dep, "t")
+      if chunk then
+        local ok, mod = pcall(chunk)
+        if ok then package.loaded["kernel." .. dep:match("([^/]+)%.lua$")] = mod end
+      end
     end
   end
 

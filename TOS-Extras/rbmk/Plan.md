@@ -1,4 +1,4 @@
-# RBMK Controller — plan (v0.2.0 shipped; the in-world survey is still the blocker)
+# RBMK Controller — plan (v1.0.0: bound to the real console; in-world verification still to do)
 
 A reactor control + display add-on for HBM's Nuclear Tech Mod RBMK
 multiblocks, structured like the cluster add-on: the **safety-critical
@@ -25,9 +25,10 @@ OpenOS** satellites.
 
 ## Hardware / capability notes
 
-- HBM exposes RBMK control via OC component(s) (console/logic-adapter
-  block). Exact component type names + method surface need an in-game
-  survey first — **open question #1**.
+- HBM exposes RBMK control via the OC component `rbmk_console`.
+  `getColumnData(x, y)` reads a channel, `pressAZ5()` shuts the reactor
+  down, `getRBMKPos()` reports the linked core. Answered from the mod's
+  bytecode in 1.0.0 — see **open question #1** below.
 - Third-party component types are NOT on the sandbox's base allowlist;
   the package documents an `/etc/component_caps.cfg` entry (FEAT-5)
   gating the RBMK component behind a `peripheral.reactor`-style cap,
@@ -68,13 +69,14 @@ per tick or needs delta frames.
 
 ## Status
 
+**v1.0.0 (2026-10-23) — bound to the real console.**
 **v0.2.0 (2026-09-05) — the SKALA panel and the display wall.**
 **v0.1.0 (2026-07-19) — controller half, survey-first.**
 
 `controller-skeleton/` is the `rbmk-control` package (`kind="service"`,
-installed DISABLED). It is still held off the Optional Utilities disk by
-`build/build-disk.lua`'s SKIP list, and correctly so: that rule is "below
-1.0.0 is not finished", and open question #1 is still open.
+installed DISABLED). It left `build/build-disk.lua`'s SKIP list at 1.0.0:
+that rule is "below 1.0.0 is not finished", and the reason it was below
+1.0.0 — a console binding that was a guess — is gone.
 
 What landed in 0.1.0, and why it's shaped this way: open question #1
 (HBM's OC component names + methods) can only be answered in-world, so
@@ -147,13 +149,43 @@ unauthenticated channel to attack. Still strictly one-way: the
 controller never opens the port, so the machine that owns SCRAM still
 has no inbound network path.
 
+### 1.0.0 — the binding stops being a guess
+
+Everything above shipped against *candidate* method names (`getTemp`,
+`getFlux`, `setAZ5`, ...) that nobody had checked. Opening the mod's jar
+showed the shipped profile could not have bound beyond the component
+type: **there is no `getTemp`, `getFlux`, `getWater` or `setAZ5`**. The
+real console exposes exactly seven callbacks — `getColumnData`,
+`getRBMKPos`, `setLevel`, `setColumnLevel`, `setColorLevel`, `setColor`,
+`pressAZ5` — all `direct`, and everything a supervisor wants has to be
+derived from per-channel reads.
+
+What changed, and why each piece is the way it is:
+
+- **`core.scanCore`** aggregates the 225 positions into the readings the
+  rules need (README has the table). Pure, so it is tested against
+  tables shaped exactly like the mod's reply.
+- **A `melt` reading and `meltWarn`/`meltScram` limits** (80/90 % of the
+  fuel's own melting point). Fuel melting is the hazard that ends a run
+  and it differs per fuel, so it is a percentage of each rod's own
+  `coreMaxTemp`, not an absolute temperature. The hull limit stays: one
+  column past 1500 melts regardless.
+- **SCRAM result handling.** `pressAZ5` returns `"No control rods found"`
+  rather than raising. A call that moved no rod is not a SCRAM; the
+  redstone line still gets its turn. Pinned by test.
+- **One scan per poll**, shared by the safety rules and the core map.
+- **`rbmk survey` proves the link**: it asks `getRBMKPos`, scans once,
+  and prints the channel count by kind and the hottest hull and rod.
+- The old name-matching profile stays as `hbm-generic` for a fork that
+  really has getters, and is no longer the default.
+
 ### Open questions, updated
 
-1. **HBM RBMK OC component names + methods — STILL OPEN.** Unchanged,
-   and still the blocker. `profile.columns` was added for the core map
-   and `rbmk survey` reports it separately from the readings, because a
-   console with no column accessor is still fully supervisable — it just
-   gets a panel with no per-channel map.
+1. **HBM RBMK OC component names + methods — ANSWERED (1.0.0), from the
+   jar.** What remains is verification in a world: that a console linked
+   to a built core returns the shapes `test_rbmk_ntm.lua` assumes, and
+   that the scan's per-tick cost is acceptable on a real CPU tier.
+   `profile.columns` is retained for the generic profile only.
 2. **Telemetry frame size — ANSWERED.** A full 15x15 core map of five
    parameters is ~3.6 KB packed, and the whole wire frame ~3.8 KB,
    against `protocol.MAX_SIZE` of 8192. As plain Lua tables the same
@@ -165,10 +197,12 @@ has no inbound network path.
 4. Answered in v1 (read-only + SCRAM).
 
 ### Next
-1. **The in-game survey** — run `rbmk survey` against a real console,
-   put the true method names in `/etc/rbmk.cfg`, confirm `usable: YES`.
-   Everything else is still blocked on this, including whether a core
-   map is available at all.
+1. **The in-game survey** — run `rbmk survey` against a console linked
+   to a real core. Expect `usable: YES`, `core: linked`, and a channel
+   count that matches what was built. Then look at `rbmk status` on a
+   healthy run at full power and set `fluxWarn`/`fluxScram` above it:
+   those two limits are the only numbers here that are still a first
+   guess (the summed rod flux has no published scale).
 2. Then verify the panel in-world: cell alignment at 15x15 on a tier-3
    screen, the satellite's GPU time-slicing across more screens than
    GPUs, and whether `mapInterval` needs raising on a real console.

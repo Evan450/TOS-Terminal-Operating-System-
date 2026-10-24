@@ -892,8 +892,15 @@ function M.editTab(S, tab)
   -- Status bar. Col is the column the operator SEES (cells), not bytes.
   local mod = tab.modified and " [+]" or ""
   local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
-  local stat = string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find [^Q]Close",
-    tab.label, mod, tab.curRow, curCell, searchInfo)
+  local stat = string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find%s [^Q]Close",
+    tab.label, mod, tab.curRow, curCell, searchInfo,
+    tab.suggest and (" [^O]" .. tab.suggest.cmd) or "")
+  -- A better-suited program is announced in full until the first key
+  -- (shell/open.lua chose it); a one-key note replaces the line likewise.
+  if tab.flash then stat = tab.flash
+  elseif tab.suggest and not tab.hintSeen then
+    stat = string.format("%s suits this file: %s.  [^O] opens it there", tab.suggest.cmd, tab.suggest.why)
+  end
   ui.drawRampBar(D, T, H, W, stat, nil, T.bar_fg, T.bar_bg)
 end
 

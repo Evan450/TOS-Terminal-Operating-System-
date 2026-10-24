@@ -252,7 +252,9 @@ do
   S.set(sh, 1, 2, "hello world")
   S.set(sh, 27, 5, "far cell")           -- AA5
   local text = S.serialize(sh)
-  test("serialize emits the header", text:sub(1, 8) == "TOSCALC1")
+  -- TOSCALC2 since calc 2.0 (formats, widths and names); a TOSCALC1 file
+  -- still loads, pinned in test_calc_lotus.lua.
+  test("serialize emits the header", text:sub(1, 8) == "TOSCALC2")
   test("cells appear by name", text:find("B1\t=A1*2", 1, true) ~= nil)
 
   local back = S.deserialize(text)

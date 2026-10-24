@@ -43,6 +43,7 @@ lua "%DEV_DIR%\build\strip.lua" "%DEV_DIR%" "%RELEASE_DIR%" --minify-vars ^
     --exclude /tos.py ^
     --exclude /.claude/ ^
     --exclude /.pytest_cache/ ^
+    --exclude /__pycache__/ ^
     --exclude /.git/ ^
     --exclude /.github/ ^
     --exclude /.gitignore ^

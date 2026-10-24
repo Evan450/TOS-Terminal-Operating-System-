@@ -14,6 +14,7 @@ KEYS
     Ctrl+F   Find              Ctrl+H   Find / replace
     Ctrl+Z   Undo              Ctrl+G   Go to line
     Ctrl+C   Copy line         Ctrl+X   Cut line        Ctrl+V   Paste
+    Ctrl+O   Open it in the program the status line suggests (see man open)
 
 EXAMPLES
     edit /home/me/notes.txt

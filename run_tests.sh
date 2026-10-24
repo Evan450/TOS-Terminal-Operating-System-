@@ -79,10 +79,11 @@ if [ -d "$EXTRAS" ]; then
   cd "$EXTRAS" || exit 1
   # Add-ons that don't live under modules/ still ship tests. rbmk/ and
   # cluster/ were written and then silently never run for want of a glob
-  # (rbmk/test_rbmk.lua alone is 72 assertions). Keep in step with
-  # run_tests.py, which mirrors these rules.
+  # (rbmk/test_rbmk.lua alone is 72 assertions); web/ (2026-10-23) would
+  # have gone the same way. Keep in step with run_tests.py, which mirrors
+  # these rules.
   for t in modules/*/test_*.lua build/test_*.lua pane-ui/test_*.lua \
-           rbmk/test_*.lua cluster/*/test_*.lua; do
+           rbmk/test_*.lua cluster/*/test_*.lua web/*/test_*.lua; do
     [ -f "$t" ] && run_one "$t"
   done
   cd "$DEV_DIR" || exit 1

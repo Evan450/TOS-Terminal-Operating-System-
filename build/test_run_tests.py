@@ -25,9 +25,9 @@ HERE = Path(__file__).resolve().parent
 
 def _load_module():
     # No bytecode: importing run_tests.py would otherwise leave a
-    # __pycache__/ at the repo ROOT, which the release scripts do not
-    # exclude -- test_release_excludes.lua fails on it, rightly, because a
-    # release built from that tree would ship it.
+    # __pycache__/ at the repo ROOT. The release scripts exclude it now
+    # (something importing tos.py left one there on 2026-10-17 and the
+    # release shipped it), but a dev tree is no place for a stray cache.
     before = sys.dont_write_bytecode
     sys.dont_write_bytecode = True
     try:

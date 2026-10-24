@@ -39,6 +39,7 @@ local function readSrc(rel)
 end
 
 package.loaded["kernel.sha512"] = loadMod("sha512.lua")
+package.loaded["kernel.curve25519field"] = loadMod("curve25519field.lua")
 local sha256 = loadMod("sha256.lua")
 package.loaded["kernel.sha256"] = sha256
 local ed = loadMod("ed25519.lua")

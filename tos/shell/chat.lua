@@ -136,6 +136,21 @@ function chat.saveGroups(fs, serialize, groups, path)
   return serialize.saveFile(fs, path, chat.normalizeGroups(groups))
 end
 
+--- Char-wrap `text` to `w` columns, honoring real newlines. The same
+--- scheme the mail package's wrapBody uses, so a long line in either app
+--- scrolls the pane instead of losing text past the edge. Pure.
+function chat.wrapLine(text, w)
+  local out = {}
+  w = math.max(1, w or 1)
+  for raw in (tostring(text or "") .. "\n"):gmatch("(.-)\n") do
+    if raw == "" then out[#out + 1] = ""
+    else
+      while #raw > 0 do out[#out + 1] = raw:sub(1, w); raw = raw:sub(w + 1) end
+    end
+  end
+  return out
+end
+
 --- Find a peer's address by alias, address-prefix or exact hostname,
 --- considering only peers at or above `minLevel`. Pure given its
 --- arguments; returns the address or nil.
@@ -232,6 +247,7 @@ function chat.run(kernel, sessionToken)
     return string.format("%02d:%02d:%02d", h, m, s)
   end
 
+
   local function addMessage(text, color)
     messages[#messages + 1] = {
       text  = text,
@@ -268,8 +284,26 @@ function chat.run(kernel, sessionToken)
   end
 
   local function drawMessages()
-    -- Determine which messages to show (last MSG_H)
-    local startIdx = math.max(1, #messages - MSG_H + 1)
+    -- Flatten messages into wrapped display rows first, so a line too
+    -- long for one row scrolls the pane like mail's body viewer instead
+    -- of truncating with a trailing "~" (overflow fix). Continuation rows
+    -- repeat the blank-padded prefix width so wrapped text still lines up
+    -- under the first row's text, not under its timestamp.
+    local prefixW = #(formatTime(0) .. " ")
+    local textW = math.max(1, W - prefixW)
+    local rows = {}
+    for _, msg in ipairs(messages) do
+      local prefix = formatTime(msg.time) .. " "
+      for i, line in ipairs(chat.wrapLine(msg.text, textW)) do
+        rows[#rows + 1] = {
+          prefix = (i == 1) and prefix or string.rep(" ", prefixW),
+          text = line, color = msg.color,
+        }
+      end
+    end
+
+    -- Show the last MSG_H rows (bottom-anchored, same as before).
+    local startIdx = math.max(1, #rows - MSG_H + 1)
 
     for row = 0, MSG_H - 1 do
       local y = MSG_TOP + row
@@ -277,17 +311,10 @@ function chat.run(kernel, sessionToken)
 
       D.fill(1, y, W, 1, " ", T.fg, T.bg)
 
-      if idx >= 1 and idx <= #messages then
-        local msg = messages[idx]
-        local timeStr = formatTime(msg.time)
-        local prefix = timeStr .. " "
-        local textW = W - #prefix
-        local line = msg.text
-        if #line > textW then
-          line = line:sub(1, textW - 1) .. "~"
-        end
-        D.set(1, y, prefix, T.dim, T.bg)
-        D.set(#prefix + 1, y, line, msg.color, T.bg)
+      if idx >= 1 and idx <= #rows then
+        local r = rows[idx]
+        D.set(1, y, r.prefix, T.dim, T.bg)
+        D.set(#r.prefix + 1, y, r.text, r.color, T.bg)
       end
     end
   end

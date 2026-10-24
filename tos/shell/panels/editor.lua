@@ -91,7 +91,7 @@ function M.openEditTab(S, path)
     if lines[#lines] == "" and #lines > 1 then lines[#lines] = nil end
   end
   local fname = (path and path:match("[^/]+$")) or "new file"
-  tabs.create(S, "edit", fname, {
+  local tab = tabs.create(S, "edit", fname, {
     path       = path,
     lines      = lines,
     curRow     = 1,
@@ -106,6 +106,21 @@ function M.openEditTab(S, path)
     undoStack  = {},
     undoMax    = 32,
   })
+  -- Does another program suit this file better? write for a document
+  -- full of its dot commands, calc for a .calc. Only where a package
+  -- could be installed (helpers.mayHavePackages): asking must cost a
+  -- machine with none nothing at all.
+  if tab and path and helpers.mayHavePackages() then
+    local okO, OP = pcall(require, "shell.open")
+    if okO then
+      local head = table.concat(lines, "\n", 1, math.min(#lines, 200)):sub(1, OP.HEAD_BYTES)
+      local sess = helpers.sessionOf(S)
+      local okS, sug = pcall(function()
+        return OP.suggestion(path, OP.gather(S.F, sess and sess.home, path, head))
+      end)
+      if okS and sug then tab.suggest = { cmd = sug.cmd, why = sug.why } end
+    end
+  end
 end
 
 return M

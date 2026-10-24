@@ -16,6 +16,8 @@ write /home/report.txt
 
 opens the document, creating it if it doesn't exist. Give a full path.
 
+write tells TOS that `.wri` is its own format, and that a `.txt`, `.doc` or `.text` file is a write document when one of its lines starts with a dot command (`.title`, `.page`, `.center`, `.left`, `.color`, `.nf`). So `open report.txt` and Enter in the file browser bring such a file here, any other text file stays the editor's, and `edit` on a write document says so on its status line, with Ctrl+O to switch (`man open`).
+
 | Key | Does |
 |---|---|
 | F1 | help |
@@ -41,10 +43,17 @@ Formatting rides on dot commands at the start of a line, the roff way:
 .center               centre from here on (.left goes back)
 .color 0xFF0000       colour from here on (.color off stops)
 .page                 start a new page
+.nf                   no fill: lines print as typed, spaces and all (.fi fills again)
 ..                    a line that really does start with a dot
 ```
 
+Ordinary text is filled: each line is re-flowed to the page, which squeezes a run of spaces to one, the right thing for prose. Between `.nf` and `.fi` a line keeps its spacing whenever it fits, so a table lined up with spaces stays lined up on paper; one too wide for the page still wraps rather than being clipped.
+
 So a document can be read with `cat`, searched with `grep`, fixed in `edit` and sent by `mail`, and it is never executable. Colour costs a unit of colour ink for every line printed in it, which is why it is something you turn on rather than a default.
+
+## Opening a document from another program
+
+`write` exports `api.open(path, text, o)` for other packages. It opens `text` as an unsaved document that F2 would save at `path`, so nothing reaches the disk unless the operator decides it should. calc's `/Print Document` uses it to hand over a range laid out as pages, inside calc's own process. A caller checks that `api` exists before using it: write 1.0.0 has none.
 
 ## Why it depends on `printer`
 

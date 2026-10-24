@@ -36,6 +36,7 @@ local function firstRequire(...)
 end
 local fs        = firstRequire("kernel.fs", "filesystem")
 local event     = firstRequire("kernel.event", "event")
+local component = firstRequire("component")
 local serialize = require("kernel.serialize")
 local log       = firstRequire("kernel.log", "log")
   or { info = function() end, warn = function() end, error = function() end }
@@ -44,6 +45,8 @@ local LOG_TAG = "cluster.storaged"
 local net, protocol, cproto
 local _cfg, _timers, _handlers = nil, {}, {}
 local _running = false
+-- What start() was handed (tests inject all three) or found on its own.
+local _event, _modems, _rawSend, _pubListener = nil, {}, nil, nil
 
 local DEFAULTS = {
   root            = "/var/cluster-store",
@@ -112,9 +115,15 @@ end
 -- Write plane (port 2101, TOS protocol, TRUSTED)
 -- ============================================================
 
+--! Replies go out on the node's DEFAULT port, not write_port. A request
+--! is sent to write_port and so needs that port open HERE; the requester
+--! (the Master) opens nothing but its own listen port, so a reply sent to
+--! write_port would be addressed to a port nobody is listening on and
+--! never arrive. kernel.net ignores the port on inbound TOS traffic, so
+--! the type-keyed handlers hear the reply wherever it lands.
 local function reply(to, kind, payload)
   if not (net and protocol) then return end
-  net.send(to, protocol.makePacket(kind, payload, { to = to }), _cfg.write_port)
+  net.send(to, protocol.makePacket(kind, payload, { to = to }))
 end
 
 local function storeError(to, key, reason)
@@ -188,17 +197,18 @@ end
 -- well-formed PUB request is dropped in silence -- this port is open to
 -- untrusted callers, so it must not be usable as an error oracle.
 
-function storaged._onPubMessage(fromAddr, rawData)
+function storaged._onPubMessage(fromAddr, rawData, viaAddr)
   if type(rawData) ~= "string" or #rawData > 8192 then return end
   local ok, msg = pcall(serialize.decode, rawData, { maxBytes = 8192 })
   if not ok or type(msg) ~= "table" then return end
   local valid = cproto.validatePubRequest(msg)
   if not valid then return end
 
+  --! Answered on the modem that heard the request, as a bare serialized
+  --! table: there is no TOS packet to build (the asker may be an OpenOS
+  --! Worker with no TOS stack), and kernel.net has no raw-send to borrow.
   local function send(t)
-    local blob = serialize.encode(t)
-    if net and net.sendRaw then net.sendRaw(fromAddr, _cfg.read_port, blob)
-    elseif net and net.send then net.send(fromAddr, blob, _cfg.read_port) end
+    if _rawSend then _rawSend(viaAddr, fromAddr, _cfg.read_port, serialize.encode(t)) end
   end
 
   if msg.op == "GET" then
@@ -234,8 +244,23 @@ end
 -- Lifecycle
 -- ============================================================
 
+--- Every modem we can see, as proxies. Each is opened on both ports and
+--- each can answer on the port it heard the question on.
+local function collectModems(opts)
+  if opts.modems then return opts.modems end
+  local out = {}
+  if component and component.list then
+    for addr in component.list("modem") do
+      local ok, px = pcall(component.proxy, addr)
+      if ok and px then out[#out + 1] = { address = addr, proxy = px } end
+    end
+  end
+  return out
+end
+
 function storaged.start(opts)
   opts = opts or {}
+  if _running then return true end
   net      = opts.net or firstRequire("kernel.net")
   cproto   = opts.cproto or require("cluster.protocol")
   protocol = opts.protocol or (net and net.getProtocol and net.getProtocol())
@@ -251,6 +276,42 @@ function storaged.start(opts)
   })
   if not sok then return false, serr end
 
+  _event = opts.event or event
+  _modems = collectModems(opts)
+  _rawSend = opts.rawSend or function(via, to, port, blob)
+    for _, m in ipairs(_modems) do
+      if m.address == via and m.proxy and m.proxy.send then
+        return pcall(m.proxy.send, to, port, blob)
+      end
+    end
+  end
+
+  --! The ports have to be OPENED. kernel.net opens exactly one (its
+  --! listenPort) and a modem silently discards anything on a port it
+  --! does not hold, so without this the Master's writes (sent to
+  --! write_port) and every Worker's read (sent to read_port) go nowhere
+  --! and nothing says so. A Tier-1 wireless card holds only one open
+  --! port, so opening ours would evict TOS's own: that is a warning to
+  --! put the node on a wired or Tier-2 modem, not something to hide.
+  local opened = 0
+  for _, m in ipairs(_modems) do
+    local a = m.proxy and pcall(m.proxy.open, _cfg.write_port)
+    local b = m.proxy and pcall(m.proxy.open, _cfg.read_port)
+    if a and b then opened = opened + 1
+    else log.warn(LOG_TAG, "modem " .. tostring(m.address):sub(1, 8)
+      .. " could not open ports " .. tostring(_cfg.write_port) .. "/"
+      .. tostring(_cfg.read_port) .. " (a Tier-1 wireless card holds only one)") end
+  end
+  if opened == 0 then
+    log.error(LOG_TAG, "no modem has the storage ports open: nothing can reach this node")
+  end
+
+  if _event and _event.on then
+    _pubListener = _event.on("modem_message", function(_, localAddr, remoteAddr, port, _, data)
+      if port == _cfg.read_port then storaged._onPubMessage(remoteAddr, data, localAddr) end
+    end, "cluster-storaged")
+  end
+
   local T = protocol.TYPE
   local bind = {
     [T.STORE_PUT]          = storaged._onPut,
@@ -264,8 +325,8 @@ function storaged.start(opts)
 
   -- The sweep is the only reason expiry happens at all (§5: best-effort,
   -- every 60 s). Without it a lease is advisory and the disk fills.
-  if event and event.interval then
-    _timers[#_timers + 1] = event.interval(_cfg.sweep_interval or 60, function()
+  if _event and _event.interval then
+    _timers[#_timers + 1] = _event.interval(_cfg.sweep_interval or 60, function()
       local n = store.sweep()
       if n > 0 then log.info(LOG_TAG, "swept " .. n .. " expired key(s)") end
     end)
@@ -281,10 +342,23 @@ function storaged.stop()
   for _, h in ipairs(_handlers) do pcall(net.off, h.kind, h.id) end
   _handlers = {}
   for _, t in ipairs(_timers) do
-    if event and event.cancel then pcall(event.cancel, t)
-    elseif event and event.cancelTimer then pcall(event.cancelTimer, t) end
+    if _event and _event.cancel then pcall(_event.cancel, t)
+    elseif _event and _event.cancelTimer then pcall(_event.cancelTimer, t) end
   end
   _timers = {}
+  if _pubListener and _event and _event.off then
+    pcall(_event.off, "modem_message", _pubListener)
+  end
+  _pubListener = nil
+  if _cfg then
+    for _, m in ipairs(_modems) do
+      if m.proxy then
+        pcall(m.proxy.close, _cfg.write_port)
+        pcall(m.proxy.close, _cfg.read_port)
+      end
+    end
+  end
+  _modems = {}
   _running = false
   store.saveIndex()
   return true

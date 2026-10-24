@@ -101,8 +101,12 @@ local sha512 = loadKernelModule("sha512.lua")
 local serial = loadKernelModule("serialize.lua")
 if sha256 then package.loaded["kernel.sha256"] = sha256 end
 if sha512 then package.loaded["kernel.sha512"] = sha512 end
+-- ed25519.lua also requires kernel.curve25519field at load time (shared
+-- field arithmetic, extracted for x25519); same ordering rule as sha512.
+local field = loadKernelModule("curve25519field.lua")
+if field then package.loaded["kernel.curve25519field"] = field end
 local ed = loadKernelModule("ed25519.lua")
-if not (sha256 and sha512 and ed and serial) then
+if not (sha256 and sha512 and field and ed and serial) then
   io.stderr:write("error: could not load the kernel crypto modules from the TOS tree.\n" ..
                   "       Run this from inside TOS-Extras, with the OS tree beside\n" ..
                   "       it (../TOS-Dev/) or above it (../tos/).\n")

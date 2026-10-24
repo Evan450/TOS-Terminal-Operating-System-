@@ -326,6 +326,9 @@ local WRITE_PROTECTED_EXEMPT = {
   -- keyboard behaves, which is an operator decision. ~/.keys.cfg is
   -- the personal one and needs no gate.
   ["/etc/keys.cfg"]            = true,
+  -- Machine-wide default programs (`open set --system`). Admin, for the
+  -- same reason as keys.cfg; ~/.open.cfg is the personal one.
+  ["/etc/open.cfg"]            = true,
   ["/etc/chat-groups.cfg"]     = true,  -- multi-operator chat groups
   ["/etc/intercom.cues"]       = true,  -- announcement catalog (intercom pkg)
   ["/etc/intercom.cfg"]        = true,  -- announcement receive policy

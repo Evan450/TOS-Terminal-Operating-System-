@@ -6,14 +6,21 @@
 -- safety-critical controller runs on TOS; dashboards are cheap OpenOS
 -- machines whose failure must never matter.
 --
--- ── STATUS: the hardware binding is UNVERIFIED ─────────────────────
--- HBM's OC component type names and method surface are Plan.md's open
--- question #1 and can only be answered in-world. Rather than hard-code
--- a guess, method names are DATA in /etc/rbmk.cfg, and `rbmk survey`
--- prints what a real console actually exposes so the operator can fill
--- them in. The SAFETY LOGIC (limits, stale-reading handling, SCRAM
--- latching, frame validation) is pure and fully unit-tested off-box —
--- what needs in-world verification is only the binding.
+-- ── 1.0.0: bound to the real console ───────────────────────────────
+-- HBM's console is the OC component `rbmk_console`: getColumnData(x, y)
+-- per channel, pressAZ5() to shut down, getRBMKPos() for the link. That
+-- surface was read off the mod's own bytecode (Plan.md open question
+-- #1), and the "hbm-ntm" driver in rbmk.core folds the 225 channels
+-- into the readings the safety rules run on. It has NOT been exercised
+-- in a world: `rbmk survey` is the first thing to run, and proves the
+-- console is linked and the core scans before anything is started.
+-- The SAFETY LOGIC (limits, stale-reading handling, SCRAM latching,
+-- frame validation) is pure and fully unit-tested off-box.
+--
+-- Know before relying on it: pressAZ5 drives only the MANUAL control
+-- rods within 7 blocks of the core centre, and the rods only move while
+-- they have power (the mod's control rod needs 5000 HE to step). Fit
+-- the redstone AZ-5 backup (`az5RedstoneSide`) if the rods can lose power.
 --
 -- v1 is READ-ONLY + SCRAM (Plan.md open question #4): the single write
 -- this package will ever perform is the shutdown. Nothing arriving over
@@ -39,10 +46,10 @@
 -- Survey, configure, then `service start rbmk-controld`.
 return {
   name        = "rbmk-control",
-  version     = "0.2.0",
+  version     = "1.0.0",
   kind        = "service",
   category    = "control",
-  description = "RBMK reactor supervisor: SKALA panel, display wall, safety limits, SCRAM. Survey the console first.",
+  description = "RBMK reactor supervisor for HBM's rbmk_console: SKALA panel, display wall, safety limits, SCRAM. Survey first.",
   author      = "Strata Systems",
   files       = {
     "/usr/lib/rbmk/core.lua",        -- pure: binding + safety rules + wire

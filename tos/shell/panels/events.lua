@@ -271,7 +271,7 @@ function M.run(S, deps)
       return menusMod.execute(S, item.action, {
         exec = exec, drawAll = drawAll, widgetDefs = widgetDefs })
     end,
-    ctxExecute = function(action) return ctxMod.execute(S, action, makeProgramEnv) end,
+    ctxExecute = function(action) return ctxMod.execute(S, action, makeProgramEnv, exec) end,
     openContextMenu = openContextMenu,
     viewFile        = viewSelected,   -- left-click quick action (open/view)
     navigateUp      = navigateUp,
@@ -430,7 +430,7 @@ function M.run(S, deps)
         elseif co == 208 then ctxMod.nextItem(S, 1)
         elseif co == 28 then
           local item = S.ctxItems[S.ctxSel]
-          if item and not item.sep then ctxMod.execute(S, item.action, makeProgramEnv) end
+          if item and not item.sep then ctxMod.execute(S, item.action, makeProgramEnv, exec) end
         elseif ch == 17 then S.ctxOpen = false end
         draw = 3
       elseif S.menuOpen then
@@ -877,6 +877,12 @@ function M.run(S, deps)
               tab.undoStack[#tab.undoStack + 1] = { lines = snap, row = tab.curRow, col = tab.curCol }
               if #tab.undoStack > (tab.undoMax or 32) then table.remove(tab.undoStack, 1) end
             end
+            -- A program that suits this file better (shell/open.lua) has
+            -- its full reason on the status line until the first key;
+            -- after that only its name, beside ^O. A one-line note lasts
+            -- one key too.
+            if tab.suggest and ch ~= 15 then tab.hintSeen = true end
+            tab.flash = nil
 
             -- ── Clipboard, BEFORE the movement chain ───────────
             -- Order matters and this is why: Shift+Delete is `cut`, and
@@ -1027,6 +1033,20 @@ function M.run(S, deps)
                   else draw = 1 end
                 end
               else closeTab(); draw = 3 end
+            elseif ch == 15 and tab.suggest then
+              -- ^O: hand the file to the suggested program, through the
+              -- same road a typed command takes. Unsaved work stays put:
+              -- the other program reads the DISK, and would not see it.
+              if tab.modified then
+                tab.flash = "Save first (^S): " .. tab.suggest.cmd .. " reads the file from disk."
+                draw = 1
+              elseif tab.path then
+                local p, cmd = tab.path, tab.suggest.cmd
+                closeTab()
+                local okO, OP = pcall(require, "shell.open")
+                if okO then exec(cmd .. " " .. OP.quote(p)) end
+                draw = 3
+              end
             elseif ch == 19 then
               -- #SEC H8 — re-normalize + re-check write access AT save
               -- time. Between `edit /home/alice/x` being typed and the

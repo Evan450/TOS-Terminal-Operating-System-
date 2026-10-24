@@ -99,14 +99,14 @@ function M.localSource(cfg)
       end
     end
     seq = seq + 1
-    local snap = cmd.read(proxy, binding)
+    local snap, scanned = cmd.read(proxy, binding)
     local age
     if snap.temp ~= nil then lastGood, age = now, 0
     else age = lastGood and (now - lastGood) or (limits.staleAfter + 1) end
     local level, why = core.evaluate(snap, limits, age)
     return {
       name = src.name, level = level, why = why, snap = snap,
-      cols = cmd.readColumns(proxy, binding, grid), grid = grid,
+      cols = scanned or cmd.readColumns(proxy, binding, grid), grid = grid,
       limits = limits, seq = seq, at = now,
       stale = (age > (limits.staleAfter or 5)),
       binding = binding,

@@ -10,9 +10,10 @@
 -- ║    <out>/<pkgname>/<install target>    (each file, mirrored ║
 -- ║                                         at its real path)   ║
 -- ║                                                            ║
--- ║  Packages are AUTO-DISCOVERED: any directory under          ║
--- ║  modules/ or cluster/ that contains a package.lua is        ║
--- ║  assembled, no builder edit needed. Each manifest files[]   ║
+-- ║  Packages are AUTO-DISCOVERED: any directory under modules/, ║
+-- ║  cluster/, rbmk/ or web/ that contains a package.lua is      ║
+-- ║  assembled, no builder edit needed (see DISCOVERY_ROOTS      ║
+-- ║  below for the authoritative list). Each manifest files[]   ║
 -- ║  target is resolved in order:                               ║
 -- ║    1. mirror — <srcdir><target> (source laid out at its     ║
 -- ║       install path, e.g. modules/mouse/usr/lib/mouse.lua)   ║
@@ -387,6 +388,14 @@ local function setupSigning()
   if not sha512 then io.write("error: kernel/sha512.lua not found.\n"); os.exit(1) end
   package.loaded["kernel.sha512"] = sha512
   package.loaded["kernel.sha256"] = sha256
+  --! ed25519.lua requires kernel.curve25519field at load time (the field
+  --! arithmetic was extracted out of it, shared with x25519), so it has to
+  --! be registered before ed25519 loads -- same ordering rule as sha512.
+  --! Missing it makes loadKernelModule's pcall swallow the failure and the
+  --! error below misreports ed25519.lua as "not found".
+  local field = loadKernelModule("curve25519field.lua")
+  if not field then io.write("error: kernel/curve25519field.lua not found.\n"); os.exit(1) end
+  package.loaded["kernel.curve25519field"] = field
   local ed = loadKernelModule("ed25519.lua")
   if not ed then io.write("error: kernel/ed25519.lua not found.\n"); os.exit(1) end
   package.loaded["kernel.ed25519"] = ed
@@ -438,10 +447,12 @@ local function injectHashes(src, hashes)
 end
 
 -- ── Discovery configuration ────────────────────────────────────────
--- Roots scanned for <root>/<dir>/package.lua. (rbmk/ holds only a
--- Plan.md today; listing it here means its packages ship the moment
--- they grow manifests.)
-local DISCOVERY_ROOTS = { "modules", "cluster", "rbmk" }
+-- Roots scanned for <root>/<dir>/package.lua. (rbmk/ held only a Plan.md
+-- when it was first listed here; web/ is the same shape now -- its
+-- browser-spec-draft.md's steps 3-5, the fetch proxy and cache, are
+-- still design only. Listing a root means its packages ship the moment
+-- they grow manifests, with no builder edit when that happens.)
+local DISCOVERY_ROOTS = { "modules", "cluster", "rbmk", "web" }
 
 -- Packages excluded from the disk, keyed by MANIFEST name, with the
 -- reason printed at build time (so an exclusion is a visible decision,
@@ -449,14 +460,13 @@ local DISCOVERY_ROOTS = { "modules", "cluster", "rbmk" }
 --
 -- The rule is the version, not an opinion: a package below 1.0.0 is not
 -- finished, and shipping it on a public pack means an operator ticks it
--- in the picker and gets a skeleton. Both entries below are under
--- 1.0.0 and both still have an open spec draft beside them (cluster/
--- storage-spec-draft.md, rbmk/Plan.md). Delete the entry when the
--- package reaches 1.0.0 — nothing else needs changing, the assembler
--- discovers it again on the next build.
+-- in the picker and gets a skeleton. Delete an entry when its package
+-- reaches 1.0.0 — nothing else needs changing, the assembler discovers
+-- it again on the next build. (rbmk-control and cluster-storage both
+-- left on 2026-10-23: the first once its console binding was read off
+-- the mod instead of guessed, the second once its daemon actually opened
+-- the ports it was addressed on.) Empty now.
 local SKIP = {
-  ["cluster-storage"] = "0.1.0 — storage-spec-draft.md still open",
-  ["rbmk-control"]    = "0.2.0 — component names in Plan.md still a guess",
 }
 
 -- Explicit target→source maps for layouts that predate the mirror/flat

@@ -174,8 +174,12 @@ end
 --                          it to `ackTo` (unicast only) once handled
 --   deliver + kind=="ack" / "probe" / "want"  a reply about one of our
 --                          messages, or a question about one we received
-function meshctl.ingest(env, selfAddr, isForMe, seen, secretFor)
+-- `routes`/`now` are optional: when given, every arriving envelope's path
+-- teaches a route back toward whoever sent it (mesh.learnRoute) before the
+-- dup/deliver decision is made, so even a relay-only hop gets the benefit.
+function meshctl.ingest(env, selfAddr, isForMe, seen, secretFor, routes, now)
   local r = mesh.route(env, selfAddr, isForMe, seen)
+  if routes then mesh.learnRoute(routes, env, selfAddr, now) end
   local act = { dup = r.dup, forward = r.forward, out = r.out, deliver = false }
   if r.dup or not r.deliver then return act end
 
@@ -246,6 +250,7 @@ function meshctl.new(deps)
   self.store      = deps.store
   self.seen       = mesh.newSeen()
   self.outbox     = mesh.newOutbox()
+  self.routes     = mesh.newRouteCache()
   self.delivered  = { set = {}, order = {} }
   self._handlers  = {}          -- svc name -> fn(message, env) -> handled
   self._seq       = 0
@@ -385,7 +390,11 @@ end
 
 -- Our message, again, in full: a new resend counter so relays that saw the
 -- earlier flood carry it (mesh.seenKey), same id so the receiver dedups it.
+-- Reaching this point means repeated probes went unanswered -- real
+-- evidence that whatever route we'd learned toward it.env.to is no longer
+-- working, so forget it and let the resend's flood re-discover one.
 function meshctl:_resend(it)
+  mesh.invalidateRoute(self.routes, it.env.to)
   it.rs = (it.rs or 0) + 1
   it.probes = 0
   it.lastSent = self.clock()
@@ -502,7 +511,8 @@ end
 --- action table.
 function meshctl:onPacket(env)
   local unicast = type(env) == "table" and env.to ~= mesh.BROADCAST and env.to ~= nil
-  local act = meshctl.ingest(env, self.myAddr, self.isForMe, self.seen, self.secretFor)
+  local act = meshctl.ingest(env, self.myAddr, self.isForMe, self.seen, self.secretFor,
+    self.routes, self.clock())
 
   -- Snoop ACKs that pass through us: a relay copy of what they acknowledge
   -- need not be re-flooded. Our OWN copies wait for an ACK we can verify.
@@ -591,6 +601,19 @@ function meshctl:tick(now)
     end
   end
   if dropped > 0 then self:_save() end
+end
+
+--- The neighbour address learned as the next hop toward `dest`, or nil if
+--- none is cached (or it has gone stale). For the injected `broadcast` to
+--- try before it floods -- see net/init.lua's mesh wiring.
+function meshctl:routeFor(dest)
+  return mesh.routeFor(self.routes, dest, self.clock())
+end
+
+--- Forget a learned route -- call when a targeted send to its next hop
+--- itself failed (not merely unanswered; that's `tick`'s job via _resend).
+function meshctl:invalidateRoute(dest)
+  mesh.invalidateRoute(self.routes, dest)
 end
 
 --- How many of our own sent messages are still unacknowledged (relay copies
