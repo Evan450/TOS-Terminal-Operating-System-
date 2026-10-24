@@ -1,16 +1,16 @@
--- ╔══════════════════════════════════════════════════════════════╗
+-- ╔══════════════════════════════════════════════════════════════════╗
 -- ║  Regression Test: installing TOS keeps the /init.lua it replaces ║
--- ║                                                                ║
--- ║  install.lua replaced /init.lua and nothing put the old one     ║
--- ║  back, so a shared disk that had OpenOS on it did not become    ║
--- ║  bootable again by deleting /tos. The displaced loader is kept  ║
--- ║  as /init.lua.pre-tos -- once, never over TOS's own loader, and ║
--- ║  removed again by a clean install that takes OpenOS's /lib.     ║
--- ║                                                                ║
--- ║  The installer's functions are LIFTED from install.lua and run  ║
--- ║  against a fake disk: the file is a whole interactive program,  ║
--- ║  and these are the parts with a decision in them.               ║
--- ╚══════════════════════════════════════════════════════════════╝
+-- ║                                                                  ║
+-- ║  install.lua replaced /init.lua and nothing put the old one      ║
+-- ║  back, so a shared disk that had OpenOS on it did not become     ║
+-- ║  bootable again by deleting /tos. The displaced loader is kept   ║
+-- ║  as /init.lua.pre-tos -- once, never over TOS's own loader, and  ║
+-- ║  removed again by a clean install that takes OpenOS's /lib.      ║
+-- ║                                                                  ║
+-- ║  The installer's functions are LIFTED from install.lua and run   ║
+-- ║  against a fake disk: the file is a whole interactive program,   ║
+-- ║  and these are the parts with a decision in them.                ║
+-- ╚══════════════════════════════════════════════════════════════════╝
 -- Run: lua usr/lib/tests/test_install_preinit.lua   (from TOS-Dev)
 
 local passed, failed = 0, 0

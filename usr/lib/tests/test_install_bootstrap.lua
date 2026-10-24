@@ -54,7 +54,7 @@ if install then
   test("Method 1 now checks any containing directory, not just /mnt/",
     install:find('"^(.*)/[^/]+$"', 1, true) ~= nil)
   test("the main flow forwards its first CLI arg into findInstallDisk",
-    install:find("findInstallDisk(args[1])", 1, true) ~= nil)
+    install:find("findInstallDisk(parsed.positional[1])", 1, true) ~= nil)
   test("Method 2's filesystem probes are pcall-guarded",
     install:find("local okE1, hasKernel = pcall(", 1, true) ~= nil)
 end

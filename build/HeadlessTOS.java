@@ -71,6 +71,7 @@ import totoro.ocelot.brain.workspace.Workspace;
  *   --boot-tier N   the boot drive's tier, 1-3 (default 3: 4 MB; 2 is 2 MB)
  *   --disk-address U  the second disk's address, so an OS that mounts by
  *                   address (OpenOS: /mnt/<first 3>) puts it somewhere known
+ *   --disk2 DIR     a third disk (--disk2-address U, --disk2-tier N: 1-3, default 2)
  *   --internet      add an internet card
  *   --tape          a Computronics tape drive beside the (first) computer,
  *                   with a blank iron tape in it
@@ -209,6 +210,10 @@ public class HeadlessTOS {
   static Path bootPath;   // the boot disk's host directory, for `hostmv`
   // The disk drive and the floppies a script can swap through it, by name.
   static FloppyDiskDrive floppyDrive;
+  // A THIRD disk (--disk2), so an installer run from OpenOS can have a boot
+  // drive, an install source and somewhere else to put TOS.
+  static Path disk2Dir;
+  static String disk2Address, disk2Tier = "2";
   static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
 
   /**
@@ -283,6 +288,13 @@ public class HeadlessTOS {
       testHdd.customRealPath_$eq(Option.apply(diskDir));
       pc.inventory().apply(6).put(testHdd);
       System.out.println("[headless] second disk " + testHdd.address().get());
+    }
+    if (disk2Dir != null) {
+      HDDManaged hdd2 = new HDDManaged(tier(disk2Tier));
+      hdd2.address_$eq(Option.apply(disk2Address != null ? disk2Address : UUID.randomUUID().toString()));
+      hdd2.customRealPath_$eq(Option.apply(disk2Dir));
+      pc.inventory().apply(7).put(hdd2);
+      System.out.println("[headless] third disk " + hdd2.address().get());
     }
     if (t1) {
       pc.inventory().apply(1).put(new GraphicsCard(Tier.One()));
@@ -816,6 +828,11 @@ public class HeadlessTOS {
     }
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
     withTape = flag(args, "--tape");
+    if (opt(args, "--disk2", null) != null) {
+      disk2Dir = Paths.get(opt(args, "--disk2", null)).toAbsolutePath();
+      disk2Address = opt(args, "--disk2-address", null);
+      disk2Tier = opt(args, "--disk2-tier", "2");
+    }
     if (opt(args, "--peer-disk", null) != null)
       peerDiskDir = Paths.get(opt(args, "--peer-disk", null)).toAbsolutePath();
     if (seats != 1 && seats != 2) {

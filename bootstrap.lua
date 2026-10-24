@@ -18,6 +18,10 @@
 --   # bootstrap.lua <owner>/<repo>            (install from a fork)
 --   # bootstrap.lua <owner>/<repo> <branch>
 --   # bootstrap.lua <owner>/<repo> <branch> <subdir>
+--   # bootstrap.lua --help                    (usage, in game)
+--
+-- Which drive TOS ends up on is install.lua's question, asked after the
+-- download: the boot drive is only the default.
 --
 -- Requires an Internet Card. No card, no physical disk yet either? Craft
 -- one (tier 1 is enough) or borrow one temporarily — nothing else here
@@ -276,11 +280,71 @@ local function parseManifest(source)
 end
 
 -- ============================================================
+-- Arguments
+-- ============================================================
+--! "-h" and "--help" used to be read as an owner/repo, rejected as
+--! malformed, and then the script carried on to ask whether to download --
+--! so the obvious thing to type in game, with no wiki to hand, produced a
+--! warning about a repository nobody named. Anything that starts with "-" is
+--! an option, never a repository: help is answered, anything else is refused.
+local function classifyArgs(args)   --[[TEST-EXTRACT]]
+  local out = { positional = {} }
+  for _, a in ipairs(args) do
+    if a == "-h" or a == "--help" or a == "-?" or a == "/?" then
+      out.help = true
+    elseif type(a) == "string" and a:sub(1, 1) == "-" then
+      out.unknown = out.unknown or a
+    else
+      out.positional[#out.positional + 1] = a
+    end
+  end
+  return out
+end                                 --[[/TEST-EXTRACT]]
+
+-- Kept to 50 columns so a Tier 1 screen shows it unwrapped.
+local function printHelp()
+  print("Downloads TOS over the internet and installs it.")
+  print()
+  print("Usage:")
+  print("  bootstrap.lua [owner/repo [branch [subdir]]]")
+  print("  bootstrap.lua --help")
+  print()
+  print("With no arguments it uses the official repo")
+  print("(" .. DEFAULT_OWNER .. "/" .. DEFAULT_REPO .. ").")
+  print("A fork or another branch can be named instead.")
+  print()
+  print("You need:")
+  print("  - an Internet Card in this computer")
+  print("  - about 1.4 MB free for the download (it picks")
+  print("    the drive with the most room)")
+  print()
+  print("It checks every file against the release's")
+  print("digests, then runs the installer. The installer")
+  print("asks which drive TOS goes on (the boot drive is")
+  print("only the default), asks a few setup questions,")
+  print("and offers to flash the TOS BIOS. Nothing is")
+  print("installed until you confirm.")
+  print()
+  print("Run it by its full path, e.g. /bootstrap.lua.")
+end
+
+-- ============================================================
 -- Main
 -- ============================================================
 
+local parsed = classifyArgs({...})
+
 term.clear()
 header()
+
+if parsed.help or parsed.unknown then
+  if parsed.unknown and not parsed.help then
+    fail("Unknown option: " .. tostring(parsed.unknown))
+    print()
+  end
+  printHelp()
+  return
+end
 
 if not fs then
   fail("OpenOS filesystem library unavailable — cannot stage a download.")
@@ -299,7 +363,7 @@ ok("Internet Card found")
 print()
 
 -- CLI overrides: bootstrap.lua [owner/repo] [branch] [subdir]
-local cliArgs = {...}
+local cliArgs = parsed.positional
 local owner, repoName = DEFAULT_OWNER, DEFAULT_REPO
 if cliArgs[1] then
   local o, r = cliArgs[1]:match("^([^/]+)/(.+)$")
@@ -323,7 +387,7 @@ end
 ok("Repository: " .. owner .. "/" .. repoName)
 print()
 
-if not confirm("Download TOS from the internet and install it here?") then
+if not confirm("Download TOS from the internet and run the installer?") then
   print("Cancelled.")
   return
 end
@@ -423,7 +487,7 @@ print()
 --! come from the same place over the same connection: whoever can rewrite
 --! one can rewrite the other. Verifying downloads against it means "these
 --! are the bytes that repository is serving", not "these are the bytes
---! Strata published". Closing that gap needs a signature checked against
+--! the publisher released". Closing that gap needs a signature checked against
 --! a key pinned HERE, in this file, rather than fetched alongside the
 --! thing it vouches for -- tracked, not done.
 --!

@@ -15,6 +15,11 @@
 -- Run from OpenOS:
 --   # /mnt/<disk>/install.lua   (install disk mode)
 --   # install.lua               (standalone mode)
+--   # install.lua --help        (what it does, and how to choose a drive)
+--
+-- In install-disk mode, when the machine has more than one writable drive
+-- (or the boot drive is too small), it asks which drive TOS goes on instead
+-- of assuming the one OpenOS is running from.
 
 local component = require("component")
 local computer = require("computer")
@@ -176,9 +181,15 @@ local function findInstallDisk(explicitSrc)
         if fs.mounts then
           local okM, mounts = pcall(fs.mounts)
           if okM and mounts then
-            for mnt, proxy in mounts do
-              if proxy.address == addr then
-                return tostring(mnt)
+            --! OpenOS's fs.mounts() yields (proxy, path). This read the pair
+            --! as (path, proxy), so `proxy.address` indexed a string and the
+            --! whole scan matched nothing -- it has never found a disk. Take
+            --! either order.
+            for a, b in mounts do
+              local proxy, path = a, b
+              if type(a) == "string" then proxy, path = b, a end
+              if type(proxy) == "table" and proxy.address == addr then
+                return tostring(path)
               end
             end
           end
@@ -325,10 +336,11 @@ end
 -- the password from inside the BIOS chain-load path, but we CAN refuse
 -- to silently overwrite a populated /etc/users.dat — the operator must
 -- type FORCE-WIPE to acknowledge.
-local function preInstallSafetyCheck(forceWipe)
+local function preInstallSafetyCheck(forceWipe, root)
   if forceWipe then return true end
-  if fs.exists("/etc/users.dat") then
-    local h = io.open("/etc/users.dat", "r")
+  root = root or ""
+  if fs.exists(root .. "/etc/users.dat") then
+    local h = io.open(root .. "/etc/users.dat", "r")
     if h then
       local content = h:read("*a"); h:close()
       if content and #content > 0 then
@@ -372,14 +384,15 @@ end
 -- write (out-of-space, partial buffer) makes the file present but
 -- short; without this check, the BIOS flash would proceed onto a
 -- silently broken install and brick the box on next boot.
-local function verifyCopy(srcDisk, manifest)
+local function verifyCopy(srcDisk, manifest, root)
+  root = root or ""
   local missing, sized = {}, {}
   for _, entry in ipairs(manifest) do
-    local target = entry.path
+    local target = root .. entry.path
     if not fs.exists(target) then
       missing[#missing + 1] = target
     else
-      local srcSize = fs.size(srcDisk .. target) or 0
+      local srcSize = fs.size(srcDisk .. entry.path) or 0
       local dstSize = fs.size(target) or 0
       if srcSize ~= dstSize then
         sized[#sized + 1] = string.format("%s (src=%d dst=%d)", target, srcSize, dstSize)
@@ -400,27 +413,31 @@ end
 -- common one -- copied until the drive filled and stopped halfway, which
 -- the README warned about and nothing on screen did.
 local FILE_COST = 512
-local function spaceNeeded(srcDisk, manifest, size, exists)   --[[TEST-EXTRACT]]
+-- `root` is the mount point of the drive being installed onto ("" for the
+-- drive OpenOS booted from, whose root is "/"), so the same arithmetic prices
+-- any candidate drive before anything is written to it.
+local function spaceNeeded(srcDisk, manifest, size, exists, root)   --[[TEST-EXTRACT]]
+  root = root or ""
   local need, dirs = 0, {}
   for _, entry in ipairs(manifest) do
     local bytes = size(srcDisk .. entry.path) or 0
-    if exists(entry.path) then
-      need = need + math.max(0, bytes - (size(entry.path) or 0))
+    if exists(root .. entry.path) then
+      need = need + math.max(0, bytes - (size(root .. entry.path) or 0))
     else
       need = need + bytes + FILE_COST
     end
     local dir = entry.path:match("^(.+)/[^/]+$")
     while dir and dir ~= "" and not dirs[dir] do
       dirs[dir] = true
-      if not exists(dir) then need = need + FILE_COST end
+      if not exists(root .. dir) then need = need + FILE_COST end
       dir = dir:match("^(.+)/[^/]+$")
     end
   end
   return need
 end                                                           --[[/TEST-EXTRACT]]
 
-local function freeOnTarget()
-  local okG, proxy = pcall(fs.get, "/")
+local function freeOnTarget(root)
+  local okG, proxy = pcall(fs.get, (root == nil or root == "") and "/" or root)
   if not okG or not proxy then return nil end
   local okT, total = pcall(proxy.spaceTotal)
   local okU, used = pcall(proxy.spaceUsed)
@@ -428,17 +445,208 @@ local function freeOnTarget()
   return total - used
 end
 
-local function copyFromDisk(srcDisk)
-  -- Load manifest first — installer is useless without it.
-  local manifest, mErr = loadManifest(srcDisk)
+-- ============================================================
+-- Which drive does TOS go on?
+-- ============================================================
+-- The installer used to write to "/" and nothing else: the drive OpenOS
+-- booted from. That is the wrong drive whenever the machine has a second
+-- one the player means to use (a bigger drive, a fresh one, the one in the
+-- rack), and a dead end when the boot drive is too small, because the only
+-- option on offer was to stop. Every candidate drive is priced with the same
+-- spaceNeeded() the copy uses, so what is offered here is what will fit.
+
+--- Which candidate is the default, and which of them have room. `cands` is a
+--- list of { isBoot, free, need }; an unknown `free` is let through, the way
+--- freeOnTarget() returning nil already is. The boot drive stays the default
+--- when it fits, so a machine with one drive behaves exactly as before.
+local function rankTargets(cands)   --[[TEST-EXTRACT]]
+  local fits, default = {}, nil
+  for i, c in ipairs(cands) do
+    fits[i] = (c.free == nil) or (c.free >= c.need)
+  end
+  for i, c in ipairs(cands) do
+    if c.isBoot and fits[i] then default = i; break end
+  end
+  if not default then
+    for i = 1, #cands do
+      if fits[i] then default = i; break end
+    end
+  end
+  return default, fits
+end                                  --[[/TEST-EXTRACT]]
+
+--- Split the arguments into help requests, unknown options and positionals.
+--- "-h" and "--help" used to be taken as a source directory (here) or a
+--- malformed owner/repo (bootstrap.lua), so a player who typed the obvious
+--- thing got a confusing warning instead of help.
+local function classifyArgs(args)   --[[TEST-EXTRACT]]
+  local out = { positional = {} }
+  for _, a in ipairs(args) do
+    if a == "-h" or a == "--help" or a == "-?" or a == "/?" then
+      out.help = true
+    elseif type(a) == "string" and a:sub(1, 1) == "-" then
+      out.unknown = out.unknown or a
+    else
+      out.positional[#out.positional + 1] = a
+    end
+  end
+  return out
+end                                 --[[/TEST-EXTRACT]]
+
+-- Every path the mounted drives are reachable at, by component address.
+-- OpenOS's fs.mounts() yields (proxy, path); findInstallDisk below read the
+-- pair the other way round for as long as it has existed, so tolerate both.
+local function mountPaths()
+  local byAddr = {}
+  if not (fs and fs.mounts) then return byAddr end
+  local okM, it = pcall(fs.mounts)
+  if not okM or type(it) ~= "function" then return byAddr end
+  for a, b in it do
+    local proxy, path = a, b
+    if type(a) == "string" then proxy, path = b, a end
+    local addr = type(proxy) == "table" and proxy.address or nil
+    if addr and type(path) == "string" then
+      byAddr[addr] = byAddr[addr] or {}
+      byAddr[addr][#byAddr[addr] + 1] = path
+    end
+  end
+  return byAddr
+end
+
+local function bestMount(paths)
+  for _, p in ipairs(paths) do if p:sub(1, 5) == "/mnt/" then return p end end
+  for _, p in ipairs(paths) do if p ~= "/" then return p end end
+  return nil
+end
+
+local function kbText(n)
+  if n >= 1024 * 1024 then return string.format("%.1f MB", n / 1024 / 1024) end
+  return string.format("%d KB", math.floor(n / 1024))
+end
+
+-- Writable drives TOS could go on. Left out: the scratch tmpfs, anything
+-- read-only, and the install disk itself (installing a disk onto itself is
+-- never the intent). Boot drive first, then by mount point.
+local function listTargets(srcDisk, manifest)
+  local mounts = mountPaths()
+  local bootAddr = computer.getBootAddress()
+  local tmpAddr = computer.tmpAddress and computer.tmpAddress() or nil
+  local src = srcDisk:sub(-1) == "/" and srcDisk:sub(1, -2) or srcDisk
+  local cands, unmounted = {}, 0
+  for addr in component.list("filesystem") do
+    local okP, px = pcall(component.proxy, addr)
+    local okR, ro = false, true
+    if okP and px then okR, ro = pcall(px.isReadOnly) end
+    if addr ~= tmpAddr and okP and px and okR and not ro then
+      local paths = mounts[addr] or {}
+      local isBoot = addr == bootAddr
+      local prefix = isBoot and "" or bestMount(paths)
+      local isSource = false
+      for _, p in ipairs(paths) do if p == src then isSource = true end end
+      if isSource then
+        -- the install disk
+      elseif not prefix then
+        unmounted = unmounted + 1
+      else
+        local c = { address = addr, prefix = prefix, isBoot = isBoot }
+        local okL, label = pcall(px.getLabel)
+        c.label = okL and label or nil
+        local okT, total = pcall(px.spaceTotal)
+        local okU, used = pcall(px.spaceUsed)
+        if okT and okU and type(total) == "number" and total > 0 then
+          c.total, c.free = total, total - used
+        end
+        local okI, hasInit = pcall(px.exists, "/init.lua")
+        local okK, hasTos = pcall(px.exists, "/tos/kernel/init.lua")
+        c.hasInit = okI and hasInit or false
+        c.hasTos = okK and hasTos or false
+        c.need = manifest and spaceNeeded(srcDisk, manifest, fs.size, fs.exists, prefix) or 0
+        cands[#cands + 1] = c
+      end
+    end
+  end
+  table.sort(cands, function(a, b)
+    if a.isBoot ~= b.isBoot then return a.isBoot end
+    return a.prefix < b.prefix
+  end)
+  return cands, unmounted
+end
+
+local function describeTarget(c)
+  local name = c.isBoot and "the boot drive" or ("the drive at " .. c.prefix)
+  if c.label and c.label ~= "" then name = name .. ' "' .. c.label .. '"' end
+  return name
+end
+
+--- Ask which drive. Returns the chosen candidate, or nil when none has room
+--- (with "space" as the second value, so the caller does not call it a
+--- cancellation) or the player cancels. With a single drive that fits nothing is asked, so
+--- the common one-drive machine sees no change.
+local function chooseTarget(srcDisk, manifest)
+  local cands, unmounted = listTargets(srcDisk, manifest)
+  if #cands == 0 then return { address = computer.getBootAddress(), prefix = "", isBoot = true, need = 0 } end
+  local default, fits = rankTargets(cands)
+  if #cands == 1 and default == 1 then return cands[1] end
+
+  color(0x00AAFF); print("--- Where should TOS go? ---"); color(0xFFFFFF)
+  for _, c in ipairs(cands) do
+    if c.isBoot and c.free and c.free < c.need then
+      warn(string.format("The boot drive has %s free; TOS needs %s.",
+        kbText(c.free), kbText(c.need)))
+    end
+  end
+  for i, c in ipairs(cands) do
+    local head = string.format("  %d. %s%s", i, c.isBoot and "Boot drive" or c.prefix,
+      (c.label and c.label ~= "") and ('  "' .. c.label .. '"') or "")
+    if fits[i] then color(0xFFFFFF) else color(0x888888) end
+    print(head .. (i == default and "   <- default" or ""))
+    local size = c.total and string.format("%s, %s free", kbText(c.total), kbText(c.free)) or "size unknown"
+    local note = {}
+    if c.hasTos then note[#note + 1] = "has TOS" elseif c.hasInit then note[#note + 1] = "has an OS" else note[#note + 1] = "empty" end
+    if not fits[i] then note[#note + 1] = "too small: needs " .. kbText(c.need) end
+    color(0xAAAAAA)
+    print("     " .. size .. "; " .. table.concat(note, ", "))
+  end
+  color(0xFFFFFF)
+  if unmounted > 0 then
+    warn(unmounted .. " more drive(s) are not mounted, so they are not listed.")
+  end
+  if not default then
+    print()
+    fail("None of these drives has room for TOS.")
+    warn("Install onto a bigger drive: a Tier 3 drive (4 MB) holds OpenOS and")
+    warn("TOS together; a Tier 2 drive (2 MB) only holds TOS on its own.")
+    return nil, "space"
+  end
+  print()
+  while true do
+    local pick = ask("Install on which drive? (0 = cancel)", nil, tostring(default))
+    local n = tonumber(pick)
+    if n == 0 then return nil end
+    if n and cands[n] then
+      if fits[n] then return cands[n] end
+      warn("That drive is too small: TOS needs " .. kbText(cands[n].need) .. ".")
+    else
+      warn("Type a number from the list.")
+    end
+  end
+end
+
+local function copyFromDisk(srcDisk, root, preloaded)
+  root = root or ""
+  -- Load manifest first — installer is useless without it. (The drive
+  -- picker already read it to price each drive; reuse that rather than
+  -- repeating its warnings.)
+  local manifest, mErr = preloaded, nil
+  if not manifest then manifest, mErr = loadManifest(srcDisk) end
   if not manifest then
     fail("Cannot load install manifest: " .. tostring(mErr))
     return false
   end
   ok("Manifest loaded: " .. #manifest .. " files declared")
 
-  local need = spaceNeeded(srcDisk, manifest, fs.size, fs.exists)
-  local free = freeOnTarget()
+  local need = spaceNeeded(srcDisk, manifest, fs.size, fs.exists, root)
+  local free = freeOnTarget(root)
   if free and need > free then
     print()
     fail(string.format("Not enough space: TOS needs %d KB on this drive, and %d KB is free.",
@@ -464,14 +672,14 @@ local function copyFromDisk(srcDisk)
     local dir = entry.path:match("^(.+)/[^/]+$")
     while dir and dir ~= "" and not dirSeen[dir] do
       dirSeen[dir] = true
-      if not fs.isDirectory(dir) then fs.makeDirectory(dir) end
+      if not fs.isDirectory(root .. dir) then fs.makeDirectory(root .. dir) end
       dir = dir:match("^(.+)/[^/]+$")
     end
   end
   -- Plus the runtime directories TOS expects to find at boot. Single
   -- source instead of duplicating across install-disk + standalone.
   for _, d in ipairs(RUNTIME_DIRS) do
-    if not fs.isDirectory(d) then fs.makeDirectory(d) end
+    if not fs.isDirectory(root .. d) then fs.makeDirectory(root .. d) end
   end
   ok("Directory structure created")
   print()
@@ -483,7 +691,7 @@ local function copyFromDisk(srcDisk)
   local errs = {}
   for _, entry in ipairs(manifest) do
     local src = srcDisk .. entry.path
-    local dst = entry.path
+    local dst = root .. entry.path
     if not fs.exists(src) then
       failed = failed + 1
       errs[#errs + 1] = "missing on disk: " .. entry.path
@@ -508,7 +716,7 @@ local function copyFromDisk(srcDisk)
   -- copyFileChunked thought succeeded.
   if failed == 0 then
     color(0x00AAFF); print("--- Verifying copy ---"); color(0xFFFFFF)
-    local missing, sized = verifyCopy(srcDisk, manifest)
+    local missing, sized = verifyCopy(srcDisk, manifest, root)
     if #missing == 0 and #sized == 0 then
       ok("All " .. #manifest .. " files verified")
     else
@@ -569,40 +777,46 @@ local OPENOS_ONLY_TREES = { "/bin", "/boot", "/lib" }
 --! replace the real backup with a copy of TOS. It is a NEW file, never an
 --! overwrite. (test_install_preinit.lua)
 local PRE_TOS = "/init.lua.pre-tos"
-local function preserveForeignInit()
-  if not fs or not fs.exists("/init.lua") or fs.exists(PRE_TOS) then return false end
-  local h = io.open("/init.lua", "r")
+--! `root` is the mount point of the drive TOS went onto ("" = the boot
+--! drive). These three act on THAT drive: with a second drive chosen, "/bin"
+--! must mean its /bin, never the boot drive's.
+local function preserveForeignInit(root)
+  root = root or ""
+  if not fs or not fs.exists(root .. "/init.lua") or fs.exists(root .. PRE_TOS) then return false end
+  local h = io.open(root .. "/init.lua", "r")
   if not h then return false end
   local body = h:read("*a"); h:close()
   if not body or body == "" or body:find("_TOS", 1, true) then return false end
-  local w = io.open(PRE_TOS, "w")
+  local w = io.open(root .. PRE_TOS, "w")
   if not w then return false end
   w:write(body); w:close()
-  return fs.exists(PRE_TOS)
+  return fs.exists(root .. PRE_TOS)
 end
 
-local function hasOpenOsLeftovers()
+local function hasOpenOsLeftovers(root)
+  root = root or ""
   if not fs then return false end
   for _, d in ipairs(OPENOS_ONLY_TREES) do
-    if fs.exists(d) then return true end
+    if fs.exists(root .. d) then return true end
   end
   return false
 end
-local function cleanOpenOsLeftovers()
+local function cleanOpenOsLeftovers(root)
+  root = root or ""
   local removed = {}
   if not fs then return removed end
   for _, d in ipairs(OPENOS_ONLY_TREES) do
-    if fs.exists(d) then
+    if fs.exists(root .. d) then
       -- OpenOS filesystem.remove deletes directories recursively.
-      local okR = pcall(fs.remove, d)
-      if okR and not fs.exists(d) then removed[#removed + 1] = d end
+      local okR = pcall(fs.remove, root .. d)
+      if okR and not fs.exists(root .. d) then removed[#removed + 1] = d end
     end
   end
   -- Without its /lib the old loader boots nothing; keeping it would only
   -- suggest it still could.
-  if #removed > 0 and fs.exists(PRE_TOS) then
-    pcall(fs.remove, PRE_TOS)
-    if not fs.exists(PRE_TOS) then removed[#removed + 1] = PRE_TOS end
+  if #removed > 0 and fs.exists(root .. PRE_TOS) then
+    pcall(fs.remove, root .. PRE_TOS)
+    if not fs.exists(root .. PRE_TOS) then removed[#removed + 1] = PRE_TOS end
   end
   return removed
 end
@@ -773,7 +987,7 @@ end
 -- Write config
 -- ============================================================
 
-local function writeConfig(cfg)
+local function writeConfig(cfg, root)
   local lines = { "return {" }
   local keys = {}
   for k in pairs(cfg) do keys[#keys + 1] = k end
@@ -787,7 +1001,7 @@ local function writeConfig(cfg)
     end
   end
   lines[#lines + 1] = "}"
-  local f = io.open("/etc/tos.cfg", "w")
+  local f = io.open((root or "") .. "/etc/tos.cfg", "w")
   if f then f:write(table.concat(lines, "\n")); f:close(); return true end
   return false
 end
@@ -796,20 +1010,56 @@ end
 -- Main
 -- ============================================================
 
+-- The first positional argument, when given, is an explicit source directory
+-- override (see findInstallDisk's Method 0) — bootstrap.lua uses this to
+-- hand off a network-staged directory that has no reason to sit under /mnt
+-- or bear any fixed relation to this script's own path. A leading "-" is an
+-- option, not a directory: --help explains, anything else is refused rather
+-- than being treated as a path that does not exist.
+local parsed = classifyArgs({...})
+
 term.clear()
 header()
+
+if parsed.help or parsed.unknown then
+  if parsed.unknown and not parsed.help then
+    fail("Unknown option: " .. tostring(parsed.unknown))
+    print()
+  end
+  print("Copies TOS onto a drive, asks a few setup questions, and")
+  print("offers to flash the TOS BIOS.")
+  print()
+  print("Usage:")
+  print("  install.lua [source-dir]")
+  print("  install.lua --help")
+  print()
+  print("Run it from an install disk (/mnt/<disk>/install.lua), or")
+  print("let bootstrap.lua stage a download for it.")
+  print()
+  print("With more than one writable drive it asks which one TOS")
+  print("goes on; the boot drive is only the default. If the boot")
+  print("drive is too small it offers the others. TOS can then be")
+  print("made the boot drive at the end.")
+  print()
+  print("source-dir  a directory holding a TOS release, for")
+  print("            scripted installs. Normally found by itself.")
+  print()
+  print("With no install disk it only changes the settings of a")
+  print("TOS that is already installed.")
+  return
+end
 
 local hw = surveyHardware()
 printHardwareReport(hw)
 
--- Detect install disk. The first positional argument, when given, is an
--- explicit source directory override (see findInstallDisk's Method 0) —
--- bootstrap.lua uses this to hand off a network-staged directory that
--- has no reason to sit under /mnt or bear any fixed relation to this
--- script's own path.
-local args = {...}
-local srcDisk = findInstallDisk(args[1])
+-- Detect install disk.
+local srcDisk = findInstallDisk(parsed.positional[1])
 local diskMode = srcDisk ~= nil
+
+-- The drive TOS goes on: "" is the drive OpenOS booted from (root "/"),
+-- anything else is the mount point of another drive (set in disk mode).
+local TARGET, targetDrive = "", nil
+local preloadedManifest
 
 -- A copy-success flag carried through the whole install.
 -- Set true only when the file copy AND the post-copy size verification
@@ -823,10 +1073,31 @@ local cleanInstall = false
 if diskMode then
   ok("Install disk found at: " .. srcDisk)
   print()
+
+  -- Which drive? Asked only when there is a choice to make (see
+  -- chooseTarget); a one-drive machine goes straight on as before.
+  preloadedManifest = loadManifest(srcDisk)
+  local chooseWhy
+  targetDrive, chooseWhy = chooseTarget(srcDisk, preloadedManifest)
+  if not targetDrive then
+    print()
+    if chooseWhy ~= "space" then print("Cancelled.") end
+    return
+  end
+  TARGET = targetDrive.prefix
+  print()
+
   color(0xFFFF00)
-  print("TOS will be installed on the current boot drive.")
-  print("Your /init.lua will be replaced (the current one is kept as")
-  print("/init.lua.pre-tos; rename it back to boot the old system).")
+  if targetDrive.isBoot then
+    print("TOS will be installed on the current boot drive.")
+    print("Your /init.lua will be replaced (the current one is kept as")
+    print("/init.lua.pre-tos; rename it back to boot the old system).")
+  else
+    print("TOS will be installed on " .. describeTarget(targetDrive) .. ".")
+    print("Its /init.lua will be replaced (the current one, if any, is kept")
+    print("there as /init.lua.pre-tos). The drive this machine boots from")
+    print("is not changed unless you choose that at the end.")
+  end
   color(0xFFFFFF)
   print()
   if not confirm("Continue?") then print("Cancelled."); return end
@@ -835,16 +1106,16 @@ if diskMode then
   -- #SEC H3 — refuse to overwrite an existing install without typed
   -- confirmation. --force-wipe on the command line bypasses (for
   -- scripted installs); without it the operator must type FORCE-WIPE.
-  if not preInstallSafetyCheck(_G._FORCE_WIPE or false) then return end
+  if not preInstallSafetyCheck(_G._FORCE_WIPE or false, TARGET) then return end
 
-  if preserveForeignInit() then ok("Kept the previous /init.lua as " .. PRE_TOS) end
+  if preserveForeignInit(TARGET) then ok("Kept the previous /init.lua as " .. TARGET .. PRE_TOS) end
 
   -- Copy system files from install disk. On failure we still allow
   -- the user to proceed to the questionnaire (so config can be saved
   -- against whatever copied successfully), but the BIOS flash gate
   -- below refuses unconditionally.
   local copyWhy
-  copyOk, copyWhy = copyFromDisk(srcDisk)
+  copyOk, copyWhy = copyFromDisk(srcDisk, TARGET, preloadedManifest)
   if copyWhy == "space" then print(); return end
   if not copyOk then
     fail("Install file copy/verify did NOT fully succeed.")
@@ -856,7 +1127,7 @@ if diskMode then
 
   -- Clean install: offer to shed OpenOS leftovers, but only when TOS is
   -- safely in place (copyOk) and there's actually something to remove.
-  if copyOk and hasOpenOsLeftovers() then
+  if copyOk and hasOpenOsLeftovers(TARGET) then
     color(0x00AAFF); print("--- Clean install ---"); color(0xFFFFFF)
     color(0xAAAAAA)
     print("OpenOS's own files (/bin, /boot, /lib) are still on this drive.")
@@ -917,12 +1188,12 @@ print()
 color(0x00AAFF); print("--- Applying configuration ---"); color(0xFFFFFF)
 if fs then
   for _, d in ipairs(RUNTIME_DIRS) do
-    if not fs.isDirectory(d) then fs.makeDirectory(d) end
+    if not fs.isDirectory(TARGET .. d) then fs.makeDirectory(TARGET .. d) end
   end
 end
 
-if writeConfig(cfg) then
-  ok("Configuration saved to /etc/tos.cfg")
+if writeConfig(cfg, TARGET) then
+  ok("Configuration saved to " .. TARGET .. "/etc/tos.cfg")
 else
   warn("Could not save config (defaults will be used)")
 end
@@ -944,13 +1215,38 @@ if diskMode then
   end
 end
 
+-- TOS went onto a drive the machine does not boot from, so it would come
+-- up in OpenOS again. The boot address lives on the EEPROM and both the
+-- stock Lua BIOS and the TOS BIOS honour it; setting it is the normal way
+-- to move the boot, and it needs no flash.
+local switchedBoot = false
+if diskMode and copyOk and targetDrive and not targetDrive.isBoot then
+  color(0x00AAFF); print("--- Boot drive ---"); color(0xFFFFFF)
+  print("TOS is on " .. describeTarget(targetDrive) .. ", but this machine")
+  print("boots from a different drive, so it would start that system.")
+  if confirm("Boot from the TOS drive from now on?") then
+    local okB, errB = pcall(computer.setBootAddress, targetDrive.address)
+    if okB then
+      switchedBoot = true
+      ok("Boot drive set to " .. targetDrive.address:sub(1, 8))
+    else
+      warn("Could not set the boot drive: " .. tostring(errB))
+    end
+  end
+  if not switchedBoot then
+    warn("The boot drive is unchanged. To switch later, run `lua` and type:")
+    print("  require('computer').setBootAddress('" .. targetDrive.address .. "')")
+  end
+  print()
+end
+
 -- Clean install (the VERY last filesystem action before reboot). Gated on
 -- a verified copy so we never strip OpenOS's runtime out from under a
 -- half-installed box. Run here — after every other write — because the
 -- still-running OpenOS lazy-loads from /lib until the moment we reboot.
 if diskMode and copyOk and cleanInstall then
   color(0x00AAFF); print("--- Cleaning OpenOS leftovers ---"); color(0xFFFFFF)
-  local removed = cleanOpenOsLeftovers()
+  local removed = cleanOpenOsLeftovers(TARGET)
   if #removed > 0 then
     ok("Removed: " .. table.concat(removed, ", "))
     warn("OpenOS is no longer bootable on this drive — reboot into TOS.")
@@ -965,7 +1261,11 @@ color(0x00AAFF); print("--- Installation Complete ---"); color(0xFFFFFF)
 print()
 color(0x00FF00)
 if diskMode and copyOk then
-  print("TOS is installed! Reboot to start.")
+  if targetDrive and not targetDrive.isBoot and not switchedBoot then
+    print("TOS is installed, but this machine still boots from another drive.")
+  else
+    print("TOS is installed! Reboot to start.")
+  end
 elseif diskMode then
   print("Partial install — re-run from the install disk to retry.")
 else

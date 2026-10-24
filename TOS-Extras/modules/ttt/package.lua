@@ -24,7 +24,7 @@ return {
   kind        = "command",
   category    = "games",
   description = "Tic-tac-toe vs an unbeatable AI, or 2-player. Requires a T2+ screen.",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/modules/ttt/init.lua",
     "/usr/modules/ttt/logic.lua",

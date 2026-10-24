@@ -12,6 +12,7 @@ answers off the real screen.
     python TOS-Dev/build/headless-session.py SCRIPT [--profile t3|t1]
         [--ram KB[,KB]] [--disk DIR] [--put PATH=TEXT] [--timeout SECS]
         [--os tos|openos] [--install-disk] [--boot-tier N]
+        [--extra-disk DIR] [--extra-disk-tier N]
         [--floppy NAME=DIR]... [--floppy-in NAME]
         [--trace] [--keep] [--internet]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
@@ -43,6 +44,11 @@ floppy labelled NAME over a copy of DIR; TOS mounts a labelled disk at
 /mnt/NAME. --floppy-in NAME is the one in the drive at power-on, and a
 script swaps them with `eject` and `insert NAME` -- the multi-floppy
 install flows, which a fixed second disk cannot reach.
+
+--extra-disk DIR adds a THIRD disk (a copy of DIR; --extra-disk-tier 1-3, default
+2 = 2 MB; 1 is too small for TOS), which OpenOS mounts at /mnt/e7a. With
+--install-disk that is a machine with a boot drive, an install source and
+somewhere else to put TOS: the installer's drive picker.
 
 --os openos boots OpenOS instead -- the copy inside Ocelot's jar, with
 OpenComputers' own Lua BIOS -- which is where a player installs TOS from.
@@ -91,6 +97,8 @@ hs = _load_selftest_driver()
 DEFAULT_PASSWORD = "headless1"
 # OpenOS mounts a disk at /mnt/<first three characters of its address>.
 INSTALL_DISK_ADDRESS = "d15c0000-0000-4000-8000-000000000000"
+# The --extra-disk: OpenOS mounts it at /mnt/e7a.
+EXTRA_DISK_ADDRESS = "e7a00000-0000-4000-8000-000000000000"
 # TOS mounts an unlabelled disk at /mnt/disk_<first four characters of its
 # address> (kernel/init.lua sanitizeLabel). A random address would put
 # --disk somewhere a script cannot name.
@@ -250,6 +258,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--install-disk", action="store_true",
                     help="insert a copy of TOS-Release as the second disk, mounted by "
                          "OpenOS at /mnt/d15")
+    ap.add_argument("--extra-disk", help="a folder to insert as a THIRD disk (copied first); with "
+                    "--os openos it mounts at /mnt/e7a")
+    ap.add_argument("--extra-disk-tier", choices=["1", "2", "3"], default="2",
+                    help="the third disk's tier (1 = 1 MB, too small for TOS; 2 = 2 MB; 3 = 4 MB)")
     ap.add_argument("--boot-tier", choices=["1", "2", "3"], default="3",
                     help="the boot drive's tier (3 = 4 MB, 2 = 2 MB)")
     ap.add_argument("--put", action="append", metavar="PATH=TEXT",
@@ -342,6 +354,11 @@ def main(argv: list[str] | None = None) -> int:
            "--boot", str(boot), "--bios", str(bios), "--work", str(work),
            "--timeout", str(args.timeout), "--profile", args.profile,
            "--script", str(work / "script.txt"), "--boot-tier", args.boot_tier]
+    if args.extra_disk:
+        extra = run / "disk3"
+        shutil.copytree(args.extra_disk, extra)
+        cmd += ["--disk2", str(extra), "--disk2-address", EXTRA_DISK_ADDRESS,
+                "--disk2-tier", args.extra_disk_tier]
     if disk is not None:
         cmd += ["--disk", str(disk)]
     if args.install_disk:

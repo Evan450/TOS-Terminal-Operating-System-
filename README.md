@@ -32,7 +32,7 @@ wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-
 > [!IMPORTANT]
 > Keep the leading slash in `/bootstrap.lua`. `wget` saves the file at the root of the drive, and the root is not on OpenOS's search path, so plain `bootstrap.lua` answers "command not found".
 
-The installer asks a few questions — what kind of machine this is, how strict logins should be, whether to encrypt network traffic — and then offers to write the TOS BIOS: type `flash` to accept. No Internet Card, or want to know what each question does? [MANUAL §1.2](MANUAL.md#12-installing-tos) covers installing from a disk and every question.
+The installer asks which drive TOS goes on when the machine has more than one (`/bootstrap.lua --help` explains it in the game), then a few questions — what kind of machine this is, how strict logins should be, whether to encrypt network traffic — and then offers to write the TOS BIOS: type `flash` to accept. No Internet Card, or want to know what each question does? [MANUAL §1.2](MANUAL.md#12-installing-tos) covers installing from a disk and every question.
 
 ## Your first ten minutes
 
@@ -116,4 +116,6 @@ Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. 
 
 TOS is licensed under the **GNU General Public License v3.0** — see [`LICENSE.txt`](LICENSE.txt) for the full text.
 
-Copyright © 2026 Strata Systems LLC. This program is free software: you may redistribute it and/or modify it under the terms of the GPLv3. It comes with ABSOLUTELY NO WARRANTY (see sections 15–16 of the license).
+Copyright © 2026 Discover! Interactive. This program is free software: you may redistribute it and/or modify it under the terms of the GPLv3. It comes with ABSOLUTELY NO WARRANTY (see sections 15–16 of the license).
+
+The name "Strata Systems LLC" that TOS shows on its splash screen, `about` and installer is in-world branding for a fictional vendor, like the vendor in a game. It is not a company, it holds no copyright, and it is not the licensor.

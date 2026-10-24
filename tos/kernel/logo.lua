@@ -39,6 +39,8 @@ logo.MARK_ASCII = {
 logo.MARK_ASCII_W = 23
 
 logo.TAGLINE = "Terminal Operating System"
+-- Strata Systems LLC is a FICTIONAL in-world vendor: branding only. It is not a
+-- legal entity and never goes in a copyright line (that is Discover! Interactive).
 logo.VENDOR  = "Strata Systems LLC"   -- vendor line (splash/POST/login)
 logo.MOTTO   = "Firmware with a will of its own."   -- Skynet wink
 
