@@ -113,11 +113,16 @@ def expand(lines: list[str]) -> list[str]:
                 "wait 120 New password:",
                 f"type {pw}\\n",
                 f"type {pw}\\n",
-                "wait 60 Welcome to TOS v",
-                "key ctrl+q",
-                r"wait 15 Skip tutorial\?",
-                "type y",
+                # The tour is NOT always there: a machine too small to load
+                # it (768 KB, where the command line starts by itself) goes
+                # straight to the prompt, and waiting only for the tour
+                # timed out on exactly the machines floorcheck measures.
                 # root@tos:/$ in the panels shell, root:/$ in the CLI.
+                r"wait 60 root(@\S+)?:\S*\$|Welcome to TOS v",
+                "maybe 1 Welcome to TOS v",
+                "key ctrl+q",
+                r"maybe 5 Skip tutorial\?",
+                "type y",
                 r"wait 30 root(@\S+)?:\S*\$",
             ]
         elif word == "login":

@@ -436,11 +436,9 @@ do
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
     local PENDING_RESIGN = {
-      -- The operator signed the pack again on 2026-10-23 (everything up to
-      -- and including web 1.0.0). Name a package here when a fix to it
-      -- lands ahead of the next signing.
-      ["rbmk-control"] = "rbmk-control 1.0.0: bound to HBM's real rbmk_console (getColumnData/pressAZ5) (2026-10-23)",
-      ["cluster-storage"] = "cluster-storage 1.0.0: the daemon opens its ports and serves reads; bare rc shim (2026-10-23)",
+      -- The operator signed and published the pack on 2026-10-23, including
+      -- rbmk-control 1.0.0 and cluster-storage 1.0.0. Name a package here
+      -- when a fix to it lands ahead of the next signing.
     }
 
     if nShipped == 0 then

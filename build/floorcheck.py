@@ -59,6 +59,11 @@ class Case:
     # machine down instead of being refused: both prove the claim, once the
     # step matching this has passed (the command line DID start).
     down_after: str | None = None
+    # Where the claim IS that the machine cannot start, the machine itself
+    # running out of memory (Error.OutOfMemory) proves it as well as the
+    # BIOS's own message does; which one you get depends on where in boot
+    # the last byte went. There is no shell to have started first.
+    down_is_proof: bool = False
 
     @property
     def name(self) -> str:
@@ -83,7 +88,7 @@ NO_COMMAND = ("firstboot", "wait 30 TOS CLI", "sleep 3", "type mem", "key enter"
 CASES: tuple[Case, ...] = (
     Case(384, "384", "the kernel does not fit",
          ("at 384 KB or less the kernel itself does not fit",),
-         ("wait 120 ERR_OUT_OF_MEMORY", "snap stop")),
+         ("wait 120 ERR_OUT_OF_MEMORY", "snap stop"), down_is_proof=True),
     Case(768, "768", "the command line starts; no command loads",
          ("At 768 KB the command line starts, but its commands do not load",),
          NO_COMMAND, down_after="TOS CLI"),
@@ -192,6 +197,8 @@ def run_case(case: Case, keep: bool, timeout: int) -> Result:
         # "Error.OutOfMemory" from the machine itself.
         if started and re.search(r"went down: (not enough memory|Error\.OutOfMemory)", out):
             r.holds = r.went_down = True
+    if not r.holds and case.down_is_proof and re.search(r"went down: Error\.OutOfMemory", out):
+        r.holds = r.went_down = True
     m = re.search(r"^release: build (\S+)", out, re.M)
     r.stamp = m.group(1) if m else None
     r.free = free_kb(snaps.get("mem", ""))

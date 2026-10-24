@@ -80,7 +80,9 @@ end
 -- Held back by build-disk.lua's SKIP: pre-1.0 packages must not be
 -- reachable by `pkg fetch` either. The disk and the network are two doors
 -- to the same set; locking one is not locking the set.
-for _, name in ipairs({ "cluster-storage", "rbmk-control" }) do
+-- (Empty since 2026-10-23: cluster-storage and rbmk-control reached 1.0.0
+-- and were published. List a name here when build-disk.lua's SKIP does.)
+for _, name in ipairs({}) do
   test("held-back package is not fetchable: " .. name, index[name] == nil)
 end
 

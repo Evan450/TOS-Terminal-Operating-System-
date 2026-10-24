@@ -137,6 +137,20 @@ def test_the_machine_s_own_out_of_memory_counts_too(monkeypatch):
     assert r.holds and r.went_down
 
 
+def test_the_kernel_not_fitting_is_proved_by_the_machine_going_down(monkeypatch):
+    # 384 KB: the BIOS sometimes prints ERR_OUT_OF_MEMORY and sometimes the
+    # machine runs out first. Either way the kernel did not fit.
+    case = next(c for c in fc.CASES if c.kb == 384)
+    r = _run(case, monkeypatch, 5, "[step]   1 FAILED: the machine went down: Error.OutOfMemory\n")
+    assert r.holds and r.went_down
+
+
+def test_a_machine_that_simply_booted_does_not_prove_384_either(monkeypatch):
+    case = next(c for c in fc.CASES if c.kb == 384)
+    r = _run(case, monkeypatch, 5, "[step]   1 FAILED: wait timed out after 120s: ERR_OUT_OF_MEMORY\n")
+    assert not r.holds
+
+
 def test_going_down_before_the_shell_started_does_not(monkeypatch):
     case = next(c for c in fc.CASES if c.kb == 768)
     r = _run(case, monkeypatch, 5, "[step]   1 FAILED: the machine went down: not enough memory\n")
