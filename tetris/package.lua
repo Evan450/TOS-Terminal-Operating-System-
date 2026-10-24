@@ -23,7 +23,7 @@ return {
   kind        = "command",
   category    = "games",
   description = "Classic Tetris with per-user high scores. Requires a T2+ screen.",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/modules/tetris/init.lua",
   },

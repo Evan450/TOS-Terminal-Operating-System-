@@ -31,7 +31,7 @@ return {
   kind        = "service",
   category    = "network",
   description = "Cluster control-plane Master: registers Managers, schedules jobs, owns persistent state.",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/lib/clusterd.lua",
     "/usr/lib/cluster/state.lua",

@@ -29,7 +29,7 @@ return {
   kind        = "command",
   category    = "storage",
   description = "General Computronics tape control: data archive/restore + audio playback + raw I/O + device state.",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/modules/tape/init.lua",
   },

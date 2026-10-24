@@ -40,7 +40,7 @@ return {
   kind        = "command",
   category    = "drivers",
   description = "Printer driver for OpenPrinter: require(\"printer\") + a `printer` command (status, print, preview, scan, tags).",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/lib/printerfmt.lua",            -- pure layout
     "/usr/lib/printer.lua",               -- driver + job + cap check

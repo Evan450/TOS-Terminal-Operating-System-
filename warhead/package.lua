@@ -33,7 +33,7 @@ return {
   kind        = "command",
   category    = "hbm",
   description = "HBM Nuclear Tech nuke designer + simulator: best custom nuke, blast/fallout/radiation, shelters.",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/modules/warhead/init.lua",
     "/usr/modules/warhead/data.lua",

@@ -38,7 +38,7 @@ return {
   kind        = "command",
   category    = "automation",
   description = "Inventory monitor: totals every adjacent chest, warns on low stock.",
-  author      = "Strata Systems",
+  author      = "Discover! Interactive",
   files       = {
     "/usr/modules/stock/init.lua",
     "/usr/modules/stock/stock.lua",

@@ -1,8 +1,8 @@
 return {
   ["key"] = "dcdafa5342333048be0ad519911a6bd1ecffefcffde73879a4e246fc20d7fd8b",
-  ["v"] = 1,
   ["signer"] = "discover",
+  ["v"] = 1,
+  ["covers"] = "package.lua",
   ["alg"] = "ed25519",
-  ["sig"] = "971cb9329f61ebfee2e5b9febd43208182866d18176b5302c0ae42b68345214b24b924f6f81bdfc5ef8d01850f2e346767339953196130afb25f2be1badee408",
-  ["covers"] = "package.lua"
+  ["sig"] = "397ec2d1b93c6e0935156f7c58a9f5b5bf9eb4ed09b53073aeaf957a1281edca846e1238d9fb4b7fbda380a907da2d03d202dce2e5d2a2b9462cfe3873c52b09"
 }
