@@ -20,7 +20,7 @@ return {
   kind        = "command",
   category    = "drivers",
   description = "Mouse driver: require(\"mouse\") for events + clickable TOS shell UI + `mousetest` demo.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/mouse.lua",                 -- the driver library
     "/usr/modules/mouse/init.lua",        -- the `mousetest` demo command

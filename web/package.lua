@@ -34,7 +34,7 @@ return {
   kind        = "command",
   category    = "network",
   description = "Text-mode browser: headings, paragraphs, lists, links and <pre>, read with this machine's own internet card.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/modules/web/init.lua",
     "/usr/modules/web/render.lua",

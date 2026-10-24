@@ -39,7 +39,7 @@ return {
   kind        = "service",
   category    = "network",
   description = "Announcement system: plays cataloged tape messages and broadcasts the same words to the network.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/intercom.lua",     -- catalog, tape playback, mesh send/receive
     "/usr/lib/intercomapp.lua",  -- panels tab (the app registry picks it up)

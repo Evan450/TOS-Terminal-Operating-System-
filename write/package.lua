@@ -39,7 +39,7 @@ return {
   kind        = "command",
   category    = "productivity",
   description = "Word processor: live page breaks, ink/paper cost, dot-command formatting, prints via the printer driver.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/modules/write/init.lua",
     "/usr/modules/write/doc.lua",

@@ -28,7 +28,7 @@ return {
   kind        = "service",
   category    = "network",
   description = "Cluster Manager: registers with Master, accepts assignments, dispatches to workers.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/cluster-manager.lua",
     "/usr/bin/cluster-manager.lua",

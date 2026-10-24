@@ -46,7 +46,7 @@ return {
   kind        = "command",
   category    = "productivity",
   description = "Spreadsheet, the Lotus 1-2-3 way: / menus, pointing, @functions, formats, copy/move, sort, graphs, print.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/modules/calc/init.lua",
     "/usr/modules/calc/sheet.lua",

@@ -61,7 +61,7 @@ return {
   kind        = "service",
   category    = "control",
   description = "RBMK reactor supervisor for HBM's rbmk_console: SKALA panel, display wall, safety limits, SCRAM. Survey first.",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/rbmk/core.lua",        -- pure: binding + safety rules + wire
     "/usr/lib/rbmk/skala.lua",       -- pure: the SKALA panel's model

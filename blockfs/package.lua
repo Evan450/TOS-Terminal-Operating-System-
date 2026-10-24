@@ -24,7 +24,7 @@ return {
   kind        = "lib",
   category    = "storage",
   description = "TBFS: a real hierarchical filesystem for unmanaged drives (format/mount/fsck/defrag via the base `drive` command).",
-  author      = "Discover! Interactive",
+  author      = "Strata Systems",
   files       = {
     "/usr/lib/blockfs.lua",
   },
