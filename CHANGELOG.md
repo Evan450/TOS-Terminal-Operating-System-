@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 36 rounds of work:
+Everything since v1.5.0, in 37 rounds of work:
 
+- [The floor check failed on machines that were behaving](#the-floor-check-failed-on-machines-that-were-behaving)
 - [The Storage Node was a node nothing could reach](#the-storage-node-was-a-node-nothing-could-reach)
 - [The RBMK console was never what the package thought it was](#the-rbmk-console-was-never-what-the-package-thought-it-was)
 - [A text-mode browser, and what the other unfinished packages were actually waiting on](#a-text-mode-browser-and-what-the-other-unfinished-packages-were-actually-waiting-on)
@@ -47,6 +48,16 @@ Everything since v1.5.0, in 36 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The floor check failed on machines that were behaving
+
+`tos.py floorcheck` reported two README memory claims broken after the last pack was published. Neither was: both were the check's own assumptions about what a healthy machine does, and the 768 KB one is not new.
+
+**768 KB.** The `firstboot` macro in `headless-session.py` waited for the first-boot tutorial ("Welcome to TOS v") before skipping it. At 768 KB the command line starts by itself with about 97 KB free and the tutorial module does not load, so the machine goes straight to the prompt and the wait timed out at 60 s on the one machine class the README says starts without it. This was not caused by the DH/mesh/storage work: the same script fails identically, with the same 42 KB free at the end of boot, on the commit before that work began (`4135741`, built in a scratch worktree), three runs each. `firstboot` now behaves as `login` already did: wait for the prompt or the tour, skip the tour only if it appeared. The 768 K row holds.
+
+**384 KB.** The case waited for the BIOS's `ERR_OUT_OF_MEMORY`, and failed on a run where the machine itself ran out first and was reported as `Error.OutOfMemory`; which one you get depends on where in boot the last byte goes. Both prove "the kernel does not fit", and the other no-load rows already accepted either, but only after the command line had started. A case can now say `down_is_proof`, which accepts the machine-level form where there is no shell to have started; a machine that simply booted still fails it. The full run, with the check unchanged otherwise, then reported every row holding.
+
+Also removed: the two `PENDING_RESIGN` entries and the held-back fetch check for `rbmk-control` and `cluster-storage`, which the published pack now covers (the stale-entry guard asked for it). `test_floorcheck.py` gains two cases (the machine going down at 384 KB proves it; a machine that merely booted does not).
 
 ### The Storage Node was a node nothing could reach
 
