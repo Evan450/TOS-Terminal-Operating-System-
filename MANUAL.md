@@ -936,10 +936,11 @@ jbod on`; see Chapter 5 and `man jbod`.)
 `alias` / `unalias` (per-user command shorthand)
 
 ### 6.8 Working out what a name means
-`which` (what a command resolves to) `why` (why you were refused) `help` `man`
+`which` (what a command resolves to) `open` (which program a file opens in) `why` (why you were refused) `help` `man`
 
 Three things can answer to one name — a built-in, an installed package's command,
-and a program on the search path. `which` says which one wins.
+and a program on the search path. `which` says which one wins. `open` asks the
+same of a file: which program suits it, by a fixed ranking (§7.3, `handles`).
 
 ### 6.9 Peripherals (see Chapter 11)
 `redstone` (= `rs`) `robot` `inventory` (= `inv`) `component` `tape`
@@ -1267,6 +1268,25 @@ a conflict is symmetric in fact even when only one author wrote it down. TOS
 also refuses an install that would **overwrite another package's files**,
 which needs no declaration at all: two authors picking the same install path
 is enough. `--force` overrides either, loudly.
+
+One optional field says which **files** a package opens, for `open` and the file
+browser:
+
+```lua
+  handles = {
+    { ext = { "calc" }, as = "native" },   -- its own format
+    { ext = { "csv" } },                   -- it can open these
+    { ext = { "txt" }, markers = { ".title ", ".page" } },  -- it suits a file
+  },                                       -- where a line starts like this
+```
+
+An entry may name `cmd`, one of the package's commands; a package with exactly one
+needs none. Markers are plain line prefixes of 2 to 24 characters, never patterns:
+the shell compares them against a user's file outside any sandbox, and a prefix
+compare cannot be made to run long. How the declarations are ranked against each
+other and against the operator's own choices is under `open` in Chapter 14; the
+short version is that a declaration earns a place by rule, never by being
+installed first.
 
 Two optional fields say what a package needs to **run**:
 
@@ -2723,6 +2743,20 @@ With no argument, reports what's pending and the current limits. *See also:*
 
 ### O
 
+**open** — `open <file>` · `open with <file> [program]` · `open set .<ext> <program> [--system]` · `open unset .<ext>` · `open list` · `open hints on|off`
+Run a file in the program that suits it. Packages declare what they open
+(`handles`, §7.3) and TOS ranks every program that could by a fixed rule, never
+by install order: your choice (`open set`, kept in `~/.open.cfg`), then the
+machine's (`--system`, admin, `/etc/open.cfg`), then a package whose content
+markers start a line of the file (write for a `.txt` full of its dot commands),
+then a package's own format (`.calc`), then `edit` for plain-text types (`.txt`
+`.lua` `.cfg` ...), then a package that can open the type (`.csv` in calc), then
+`edit` for any other text. A package that merely *can* open `.txt` does not take
+text files from the editor. `open with` shows the ranking and why. The file
+browser's Enter menu offers the same programs ("Open in calc"), and when `edit`
+opens a file another program suits better its status line says so; Ctrl+O hands
+the file over. *See also:* `which`, `edit`, `man open`.
+
 **optimize** — `optimize [show | power <off|balanced|save> | buffer <on|off|auto> | swap …]` **(set: admin)**
 Show or toggle TOS's three optimizations. `optimize show` reports each one's state
 and the display buffer's session hit rate (cell-draws skipped).
@@ -3163,6 +3197,8 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 | `/etc/cluster-manager.cfg` | Cluster Manager: which Master, worker count (only with `cluster-manager`) |
 | `/etc/jbod.cfg` | JBOD pool table (only when `advanced.jbod` is enabled) |
 | `~/.theme.cfg` | Per-user saved theme |
+| `/etc/open.cfg` | Which program opens each file type, for every user (`open set --system`, admin) |
+| `~/.open.cfg` | Your own choices, and `hints off` (`open set`, `open hints`) |
 | `/var/run/pwrstate` | Clean/unsafe-shutdown dirty bit |
 | `/var/swap/` | Disk-swap scratch (volatile) |
 

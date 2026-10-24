@@ -42,7 +42,7 @@ local ak,al=Q(ai.category),Q(aj.category)if ak~=al then return ak<al end;if(ai.c
 (aj.category or"")then return
 (ai.category or"")< (aj.category or"")end;return
 (ai.name or"")< (aj.name or"")end)
-local _={games="Games",productivity="Productivity",network="Network",storage="Storage",security="Security",drivers="Drivers",control="Control",misc="Other"}
+local _={games="Games",productivity="Productivity",network="Network",storage="Storage",security="Security",drivers="Drivers",control="Control",hbm="HBM Nuclear Tech",misc="Other"}
 local function y(ai)return _[ai or"misc"]or
 ((ai or"misc"):gsub("^%l",string.upper))end;local e={}local n=""
 local function aa(aj,ai)if ai==""then return true end;ai=ai:lower()

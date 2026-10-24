@@ -29,6 +29,10 @@ local h,i=pcall(c.decode,g,{maxBytes=16*1024})if not h then return{}end;return d
 function d.saveGroups(b,c,g,a)a=a or d.GROUPS_PATH;if not(b and c)then
 return false,"fs/serialize unavailable"end
 return c.saveFile(b,a,d.normalizeGroups(g))end
+function d.wrapLine(b,a)local c={}a=math.max(1,a or 1)
+for g in
+(tostring(b or"").."\n"):gmatch("(.-)\n")do if g==""then c[#c+1]=""else
+while#g>0 do c[#c+1]=g:sub(1,a)g=g:sub(a+1)end end end;return c end
 function d.resolveTarget(c,a,b,g)if not a or a==""then return nil end;b=b or 0;if g then local i,h=pcall(g,a)
 if i and
 type(h)==f then for k,j in ipairs(c or{})do if
@@ -46,9 +50,9 @@ h.set(2,2,"Chat unavailable: no network module",I.error,I.bg)h.set(2,4,"Press an
 e.uptime()+10
 while e.uptime()<J do
 local M=e.pullSignal(J-e.uptime())if M=="key_down"or not M then break end end end;return end;local p=i.getProtocol()local j=i.getTrust()local m,x=h.getSize()
-local c=h.getTheme()local q=i.getHostname()or"local"local s=1;local y=2;local C=x-1;local r=x
-local z=C-y+1;local A=128;local l={}local k=""local t=nil
-local function D(I)local J=math.floor(I/3600)local K=math.floor(
+local c=h.getTheme()local q=i.getHostname()or"local"local s=1;local y=2;local D=x-1;local r=x
+local z=D-y+1;local A=128;local l={}local k=""local t=nil
+local function B(I)local J=math.floor(I/3600)local K=math.floor(
 (I%3600)/60)local L=math.floor(I%60)return
 string.format("%02d:%02d:%02d",J,K,L)end;local function g(I,J)l[#l+1]={text=I,color=J or c.fg,time=e.uptime()}
 if#l>A then
@@ -59,21 +63,24 @@ local function F()
 h.fill(1,s,m,1," ",c.menubar_fg,c.menubar_bg)local J=" TOS Chat - "..q.." "
 local I=" peers:"..E().."  /help  ^Q=Exit "h.set(1,s,J,c.menubar_fg,c.menubar_bg)
 h.set(m-#I+1,s,I,c.dim,c.menubar_bg)end
-local function B()local I=math.max(1,#l-z+1)
-for J=0,z-1 do local K=y+J;local L=I+J
-h.fill(1,K,m,1," ",c.fg,c.bg)
-if L>=1 and L<=#l then local N=l[L]local Q=D(N.time)local O=Q.." "local P=m-#O;local M=N.text;if
-#M>P then M=M:sub(1,P-1).."~"end
-h.set(1,K,O,c.dim,c.bg)h.set(#O+1,K,M,N.color,c.bg)end end end
+local function C()local J=# (B(0).." ")local K=math.max(1,m-J)local I={}
+for N,M in ipairs(l)do local O=
+B(M.time).." "for P,Q in ipairs(d.wrapLine(M.text,K))do
+I[#I+1]={prefix=
+(P==1)and O or string.rep(" ",J),text=Q,color=M.color}end end;local L=math.max(1,#I-z+1)
+for M=0,z-1 do local N=y+M;local O=L+M
+h.fill(1,N,m,1," ",c.fg,c.bg)
+if O>=1 and O<=#I then local P=I[O]h.set(1,N,P.prefix,c.dim,c.bg)h.set(
+#P.prefix+1,N,P.text,P.color,c.bg)end end end
 local function n()h.fill(1,r,m,1," ",c.fg,c.bg)
 h.set(1,r,"> ",c.highlight,c.bg)local J=m-3;local I=k;if#I>J then I=I:sub(#I-J+1)end
 h.set(3,r,I,c.fg,c.bg)local K=3+math.min(#k,J)if K<=m then
-h.set(K,r,"_",c.highlight,c.bg)end end;local function u()h.clear(c.bg)F()B()n()end
+h.set(K,r,"_",c.highlight,c.bg)end end;local function u()h.clear(c.bg)F()C()n()end
 local function G(J,I)local M=
 (j.getLevel and j.getLevel(I))or 0
 if M<j.LEVEL.TRUSTED then return end;local K=J.payload or{}
 local N=type(K.text)==f and K.text or""local L=j.getPeer(I)
-local O=(L and L.hostname)or I:sub(1,8)g("["..O.."] "..N,c.border)B()n()if
+local O=(L and L.hostname)or I:sub(1,8)g("["..O.."] "..N,c.border)C()n()if
 _G._TOS and _G._TOS.audio then _G._TOS.audio.chat()end
 local P=p.makePacket(p.TYPE.MSG_ACK,{ref=J.seq},{to=I})i.send(I,P)end;if o then t=i.on(p.TYPE.MSG,G)end
 g("Chat started. Send messages to TRUSTED peers.",c.title)

@@ -25,18 +25,19 @@ m.hmac(a,table.concat({tostring(b),tostring(c),tostring(d),tostring(e)},"\0"))en
 function k.compose(a)a=a or{}
 local b=l.newEnvelope(a.from,a.to,{id=a.id,seq=a.seq,ttl=a.ttl,fromUser=a.fromUser,user=a.user,ts=a.ts or q(),kind="msg"})b.svc=a.svc;b.payload=a.payload or{}
 return k.sealEnv(b,a.secret)end
-function k.ingest(a,c,d,e,b)local g=l.route(a,c,d,e)
-local f={dup=g.dup,forward=g.forward,out=g.out,deliver=false}if g.dup or not g.deliver then return f end
-if a.kind=="ack"or
-a.kind=="probe"or a.kind=="want"then f.deliver=true
-f.kind=a.kind;f.ackId=a.ackId;return f end;local j=b and b(a.from)or nil;local h,i=k.openEnv(a,j)
-f.deliver=true;f.kind="msg"f.svc=a.svc
-f.message={id=a.id,from=a.from,fromUser=a.fromUser,to=a.to,user=a.user,payload=h,ts=a.ts,sealed=(a.sealed~=nil),readable=(h~=nil),how=i}
-if not h and p then
+function k.ingest(a,b,e,f,c,d,g)local i=l.route(a,b,e,f)
+if d then l.learnRoute(d,a,b,g)end;local h={dup=i.dup,forward=i.forward,out=i.out,deliver=false}if i.dup or not
+i.deliver then return h end;if
+a.kind=="ack"or a.kind=="probe"or a.kind=="want"then h.deliver=true;h.kind=a.kind
+h.ackId=a.ackId;return h end;local v=
+c and c(a.from)or nil;local j,u=k.openEnv(a,v)h.deliver=true
+h.kind="msg"h.svc=a.svc
+h.message={id=a.id,from=a.from,fromUser=a.fromUser,to=a.to,user=a.user,payload=j,ts=a.ts,sealed=(a.sealed~=nil),readable=(j~=nil),how=u}
+if not j and p then
 p.warn("mesh","Delivered sealed '"..tostring(a.svc)..
 "' from "..
-tostring(a.from):sub(1,8).." could not be opened: "..tostring(i))end
-if a.to~=l.BROADCAST and a.to~=nil then f.ackTo=a.from end;return f end
+tostring(a.from):sub(1,8).." could not be opened: "..tostring(u))end
+if a.to~=l.BROADCAST and a.to~=nil then h.ackTo=a.from end;return h end
 local function t()local a=m and m.salt and m.salt(4)
 if type(a)==n and#a>=4 then return
 (a:sub(1,4):gsub(".",function(b)return
@@ -48,8 +49,8 @@ function()end
 b.secretFor=a.secretFor or function()return nil end;b.clock=a.clock or function()return 0 end;b.log=a.log
 b.isForMe=
 a.isForMe or function(c)return c.to==b.myAddr end;b.freeMemory=a.freeMemory;b.store=a.store;b.seen=l.newSeen()
-b.outbox=l.newOutbox()b.delivered={set={},order={}}b._handlers={}b._seq=0;b._epoch=t()b._relayWindow,b._relayCount=
--1,0;b:_load()return b end;function k:on(a,b)self._handlers[a]=b end;function k:off(a)
+b.outbox=l.newOutbox()b.routes=l.newRouteCache()b.delivered={set={},order={}}
+b._handlers={}b._seq=0;b._epoch=t()b._relayWindow,b._relayCount=-1,0;b:_load()return b end;function k:on(a,b)self._handlers[a]=b end;function k:off(a)
 self._handlers[a]=nil end
 function k:hasHandler(a)return self._handlers[a]~=nil end
 function k:_nextId(a)self._seq=self._seq+1;return
@@ -96,8 +97,9 @@ return true end
 local d=r(self.secretFor(b.env.to),c,b.env.id,a.from,a.to)
 local e=(m and m.ctEquals)or function(f,g)return f==g end
 return d~=nil and type(a.mac)==n and e(d,a.mac)end
-function k:_resend(a)a.rs=(a.rs or 0)+1;a.probes=0
-a.lastSent=self.clock()local b={}for c,d in pairs(a.env)do b[c]=d end;b.rs=a.rs;b.path={}
+function k:_resend(a)l.invalidateRoute(self.routes,a.env.to)a.rs=
+(a.rs or 0)+1;a.probes=0;a.lastSent=self.clock()local b={}for c,d in pairs(a.env)do
+b[c]=d end;b.rs=a.rs;b.path={}
 l.sawBefore(self.seen,l.seenKey(b))self.broadcast(b)end
 function k:_probe(a)
 local b=l.newEnvelope(self.myAddr,a.env.to,{id=self:_nextId("p"),kind="probe",ts=self.clock()})b.probeId=a.env.id;l.sawBefore(self.seen,b.id)
@@ -134,7 +136,7 @@ g.lastSent=f end;self:_save()end;l.sawBefore(self.seen,c)self.broadcast(e)
 return c, (d~=nil)end
 function k:onPacket(a)
 local c=type(a)=="table"and a.to~=l.BROADCAST and a.to~=nil
-local b=k.ingest(a,self.myAddr,self.isForMe,self.seen,self.secretFor)
+local b=k.ingest(a,self.myAddr,self.isForMe,self.seen,self.secretFor,self.routes,self.clock())
 if
 type(a)=="table"and a.kind=="ack"and type(a.ackId)==n then l.ackRelay(self.outbox,a.ackId)end
 if b.forward and b.out then
@@ -165,5 +167,7 @@ l.shedRelays(self.outbox,0)end;local b,c=l.dueItems(self.outbox,a)
 for e,d in
 ipairs(b)do if d.relay then self.broadcast(d.env)else
 d.probes=(d.probes or 0)+1
-if d.probes>=k.FULL_EVERY then self:_resend(d)else self:_probe(d)end end end;if c>0 then self:_save()end end;function k:pending()local a=0
+if d.probes>=k.FULL_EVERY then self:_resend(d)else self:_probe(d)end end end;if c>0 then self:_save()end end
+function k:routeFor(a)return l.routeFor(self.routes,a,self.clock())end
+function k:invalidateRoute(a)l.invalidateRoute(self.routes,a)end;function k:pending()local a=0
 for c,b in pairs(self.outbox.items)do if not b.relay then a=a+1 end end;return a end;return k

@@ -1,0 +1,59 @@
+NAME
+    open - open a file in the program that suits it
+
+SYNOPSIS
+    open <file>
+    open with <file> [program]
+    open set .<ext> <program> [--system]
+    open unset .<ext> [--system]
+    open list
+    open hints on|off
+
+DESCRIPTION
+    open runs <file> in the program best suited to it. Installed packages
+    say what they open (the `handles` field of their manifest), and TOS
+    ranks every program that could open the file by a fixed rule -- never
+    by which package happened to be installed first:
+
+      100  your choice                 (open set, kept in ~/.open.cfg)
+       90  this machine's choice       (open set --system, /etc/open.cfg)
+       60  the file's content is the package's    (a .txt with a line
+                                         starting ".title" -> write)
+       50  the file is the package's own format   (.calc -> calc)
+       40  edit, for plain-text types   (.txt .lua .cfg .md .log ...)
+       20  the package can open files of that type (.csv -> calc)
+       10  edit, for any other text file
+
+    So a package that merely can open .txt does not take every text file
+    away from the editor; you decide that, with open set.
+
+    A tie goes to the package that claims fewer file types, then to the
+    name. `open with <file>` shows the whole ranking and the reason for
+    each place, and runs another program when you name it.
+
+    The file browser offers the same: Enter on a file lists "Open in ..."
+    for every program that could open it, the best first. When edit opens
+    a file another program suits better, its status line says so, and
+    Ctrl+O opens it there (save first; the other program reads the disk).
+    `open hints off` stops those suggestions.
+
+EXAMPLES
+    open /home/me/budget.calc     calc (its own format)
+    open with report.txt          write, if the file uses write's dot
+                                  commands; edit otherwise
+    open set .csv edit            CSV files in the editor, for you
+    open set .csv calc --system   ...in calc, for everyone (admin)
+
+FOR PACKAGE AUTHORS
+    handles = {
+      { ext = { "calc" }, as = "native" },   -- your own format
+      { ext = { "csv" } },                   -- you can open it
+      { ext = { "txt" }, markers = { ".title ", ".page" } },
+    }                                        -- you suit it when a line
+                                             -- starts with a marker
+    Each entry may name `cmd`, one of the package's commands; a package
+    with one command needs none. Markers are plain line prefixes, 2-24
+    characters, never patterns.
+
+SEE ALSO
+    man edit, man packages, which, MANUAL.md (Section 7.3)

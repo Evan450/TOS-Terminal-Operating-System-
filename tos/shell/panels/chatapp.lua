@@ -1,11 +1,11 @@
-local y="No such group: @"local r=require("computer")
+local z="No such group: @"local r=require("computer")
 local u=require("shell.panels.ui")local s=require("shell.panels.tabs")
 local q=require("shell.chat")local p={}local v=128;function p.label(a)
 if(a or 0)>0 then return"Chat("..a..")"end;return"Chat"end
 function p.addMessage(a,b,c)local d=a.messages
 d[#d+1]={text=b,color=c,time=
 r.uptime and r.uptime()or 0}
-if#d>v then local e={}for f=#d-v+1,#d do e[#e+1]=d[f]end;a.messages=e end end;local function z(a)a=math.floor(a or 0)
+if#d>v then local e={}for f=#d-v+1,#d do e[#e+1]=d[f]end;a.messages=e end end;local function w(a)a=math.floor(a or 0)
 return string.format("%02d:%02d:%02d",math.floor(a/3600),math.floor((
 a%3600)/60),a%60)end
 local function t(a)local b={}
@@ -13,8 +13,8 @@ for d,c in
 ipairs((a and
 a.listPeers and a.listPeers())or{})do if(c.level or 0)>=
 ((a.LEVEL and a.LEVEL.TRUSTED)or 2)then b[#b+1]=c end end;return b end
-local function w()local a,b=pcall(require,"kernel.fs")
-local c,d=pcall(require,"kernel.serialize")if a and c then return b,d end end;local function x()local a,b=w()return q.loadGroups(a,b)end;local function A(a)local b,c=w()if
+local function x()local a,b=pcall(require,"kernel.fs")
+local c,d=pcall(require,"kernel.serialize")if a and c then return b,d end end;local function y()local a,b=x()return q.loadGroups(a,b)end;local function A(a)local b,c=x()if
 not b then return false,"filesystem unavailable"end;return
 q.saveGroups(b,c,a)end
 function p.open(a)
@@ -50,23 +50,24 @@ pcall(c.off,d.TYPE.MSG,a._listenerId)end;a._listenerId=nil end
 if a._ackListenerId and c and c.off and c.getProtocol then
 local d=c.getProtocol()
 if d then pcall(c.off,d.TYPE.MSG_ACK,a._ackListenerId)end;a._ackListenerId=nil end end
-function p.draw(a,b)local d,c,e,f=a.D,a.T,a.W,a.H;d.fill(1,2,e,f-1," ",c.fg,c.bg)local m=
+function p.draw(a,b)local d,c,e,f=a.D,a.T,a.W,a.H;d.fill(1,2,e,f-1," ",c.fg,c.bg)local n=
 (a.NM and
 a.NM.getHostname and a.NM.getHostname())or"local"
-local n=#t(a.NM and
+local o=#t(a.NM and
 a.NM.getTrust and a.NM.getTrust())
-u.drawRail(d,c,2,e,{{label="§ Chat — "..m},{text="peers:"..n}},{labelFg=
-c.title or c.fg})local j,o=3,f-2;local h=o-j+1;local i=b.messages or{}
-local k=math.max(0,#i-h)if(b.scroll or 0)>k then b.scroll=k end;local E=math.max(1,#i-h+1- (
-b.scroll or 0))
-for F=0,h-1 do
-local G=i[E+F]
-if G then local J=j+F;local I=z(G.time).." "d.set(1,J,I,c.dim,c.bg)
-local K=e-#I;local H=G.text;if#H>K then
-H=H:sub(1,math.max(1,K-1)).."~"end
-d.set(#I+1,J,H,G.color or c.fg,c.bg)end end;d.set(1,f-1,"> ",c.highlight,c.bg)local l=e-3
-local g=b.input or""if#g>l then g=g:sub(#g-l+1)end
-d.set(3,f-1,g.."_",c.fg,c.bg)
+u.drawRail(d,c,2,e,{{label="§ Chat — "..n},{text="peers:"..o}},{labelFg=
+c.title or c.fg})local j,E=3,f-2;local i=E-j+1;local k=# (w(0).." ")
+local F=math.max(1,e-k)local g={}
+for I,H in ipairs(b.messages or{})do local J=w(H.time).." "for K,L in
+ipairs(q.wrapLine(H.text,F))do
+g[#g+1]={prefix=(K==1)and J or string.rep(" ",k),text=L,color=H.color}end end;local l=math.max(0,#g-i)
+if(b.scroll or 0)>l then b.scroll=l end
+local G=math.max(1,#g-i+1- (b.scroll or 0))
+for H=0,i-1 do local I=g[G+H]if I then local J=j+H;d.set(1,J,I.prefix,c.dim,c.bg)
+d.set(#
+I.prefix+1,J,I.text,I.color or c.fg,c.bg)end end;d.set(1,f-1,"> ",c.highlight,c.bg)local m=e-3
+local h=b.input or""if#h>m then h=h:sub(#h-m+1)end
+d.set(3,f-1,h.."_",c.fg,c.bg)
 u.drawRampBar(d,c,f,e,"Enter Send · peer:msg Direct · /help · PgUp/Dn Scroll · ^Q Close",nil,c.statusbar_fg or c.bar_fg,
 c.statusbar_bg or c.bar_bg)b.unread=0;b.label=p.label(0)b._dirty=false end
 local function B(b,a)local c,e=b.T,b.NM;local h=a.input or""a.input=""local d=q.parseInput(h)if d.kind==
@@ -85,7 +86,7 @@ p.addMessage(a,"  /who              list trusted peers",c.dim)
 p.addMessage(a,"  /group            list groups (new/add/rm/del to edit)",c.dim)
 p.addMessage(a,"  /mail peer text   send a store-and-forward mesh mail",c.dim)
 p.addMessage(a,"  /clear  /help  ^Q closes the tab",c.dim)elseif i=="group"then local k,E=j:match("^(%S*)%s*(.*)$")
-k=(k or""):lower()local l,F=E:match("^(%S*)%s*(.*)$")local m=x()
+k=(k or""):lower()local l,F=E:match("^(%S*)%s*(.*)$")local m=y()
 local function o()local G={}for H in
 (F or""):gmatch("%S+")do G[#G+1]=H end;return G end
 local function n(G)local H,I=A(m)if H then p.addMessage(a,G,c.title)else
@@ -103,7 +104,7 @@ p.addMessage(a,"@"..l:lower().." already exists.",c.warning)else m[l:lower()]=o(
 n("Created @"..l:lower()..".")end elseif k=="add"or k==
 "rm"or k=="remove"then local G=m[l:lower()]
 if not G then p.addMessage(a,
-y..l:lower(),c.error)else local H=o()
+z..l:lower(),c.error)else local H=o()
 if#H==0 then
 p.addMessage(a,
 "Usage: /group "..k.." <name> <peer...>",c.warning)else local I=0
@@ -112,7 +113,7 @@ if k=="add"then local L=false
 for K,M in ipairs(G)do if M==J then L=true end end;if not L then G[#G+1]=J;I=I+1 end else for L=#G,1,-1 do if G[L]==J then table.remove(G,L)I=
 I+1 end end end end
 n(string.format("@%s: %d member(s) %s.",l:lower(),I,k=="add"and"added"or"removed"))end end elseif k=="del"or k=="delete"then if not m[l:lower()]then
-p.addMessage(a,y..l:lower(),c.error)else m[l:lower()]=nil
+p.addMessage(a,z..l:lower(),c.error)else m[l:lower()]=nil
 n("Deleted @"..l:lower()..".")end else
 p.addMessage(a,"Usage: /group [list|new|add|rm|del] ...",c.warning)end elseif i=="who"then local k=t(f)for m,l in ipairs(k)do
 p.addMessage(a,"  "..
@@ -129,11 +130,11 @@ p.addMessage(a,"Mail add-on not installed (pkg install mail).",c.error)else
 local F,E=l.send({to=n,fromUser=g,subject="(via chat)",body=m})if F then
 p.addMessage(a,"Mail queued to "..k.. (E and""or" (plaintext)"),c.title)else
 p.addMessage(a,"Mail failed: "..tostring(E),c.error)end end else
-p.addMessage(a,"Unknown command: /"..i.."  (try /help)",c.warning)end elseif d.kind=="group"then local l=x()
+p.addMessage(a,"Unknown command: /"..i.."  (try /help)",c.warning)end elseif d.kind=="group"then local l=y()
 local i,j,k=q.resolveGroup(l,d.group,(f and f.listPeers())or{},
 f and f.LEVEL.TRUSTED or 2,e and e.aliases and e.aliases.resolve)
 if not i then
-p.addMessage(a,y..d.group.."  (/group to list)",c.error)elseif#i==0 then
+p.addMessage(a,z..d.group.."  (/group to list)",c.error)elseif#i==0 then
 p.addMessage(a,"@"..d.group.." has nobody reachable right now.",c.warning)for o,n in ipairs(j)do
 p.addMessage(a,"  unreachable: "..n,c.dim)end else local m={}
 p.addMessage(a,"["..g.." -> @"..

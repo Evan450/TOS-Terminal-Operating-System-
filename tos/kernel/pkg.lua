@@ -158,6 +158,35 @@ for e,d in ipairs(a.conflicts)do
 if type(d)~=al or d==""then return false,"conflicts["..
 e.."] is not a package name"end;if d==a.name then
 return false,"conflicts["..e.."] lists the package itself"end end end
+if a.handles~=nil then
+if
+type(a.handles)~="table"or#a.handles>8 then return false,"handles must be an array of at most 8 entries if present"end;local c=0;for d in
+pairs(type(a.commands)=="table"and a.commands or{})do c=c+1 end
+for e,d in ipairs(a.handles)do
+local f="handles["..e.."]"
+if
+type(d)~="table"or type(d.ext)~="table"or#d.ext==0 or#d.ext>8 then return false,
+f..".ext must list 1 to 8 extensions"end
+for h,g in ipairs(d.ext)do
+if type(g)~=al or not g:match("^[%w]+$")or
+#g>8 then return false,
+f.." names an extension that is not 1-8 letters or digits"end end
+if d.as~=nil and d.as~="native"and d.as~="open"then return false,f..
+'.as must be "native" or "open"'end
+if d.markers~=nil then
+if
+type(d.markers)~="table"or#d.markers==0 or#d.markers>8 then return false,
+f..".markers must list 1 to 8 line prefixes"end;if d.as=="native"then
+return false,f.." has markers, so it is not the package's own format"end
+for h,g in ipairs(d.markers)do
+if
+type(g)~=al or#g<2 or#g>24 or g:find("[%c]")then return false,f..
+" has a marker that is not 2-24 plain characters"end end end
+if d.cmd~=nil then
+if
+type(d.cmd)~=al or type(a.commands)~="table"or not a.commands[d.cmd]then return false,f..
+".cmd is not one of the package's commands"end elseif c~=1 then return false,
+f.." names no cmd, and the package has "..c.." commands"end end end
 if
 a.capabilities~=nil and type(a.capabilities)~="table"then return false,"capabilities must be an array if present"end
 if a.screen~=nil then if type(a.screen)~="table"then

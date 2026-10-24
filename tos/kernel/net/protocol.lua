@@ -23,12 +23,13 @@ if a.ver~=nil then if type(a.ver)~="number"then
 return false,"Invalid protocol version field"end;if a.ver>e.VERSION then
 return false,"Unsupported protocol version"end end;return true end
 function e.ping()return e.makePacket(e.TYPE.PING,{})end
-function e.pong()return e.makePacket(e.TYPE.PONG,{tos=true})end;function e.hello(a,b)
-return e.makePacket(e.TYPE.HELLO,{hostname=a,version=b})end;function e.helloAck(a,b)return
-e.makePacket(e.TYPE.HELLO_ACK,{hostname=a,version=b})end;function e.deny(a)
-return e.makePacket(e.TYPE.DENY,{reason=
-a or"Access denied"})end;function e.error(a)return
-e.makePacket(e.TYPE.ERROR,{message=a or"Unknown error"})end;function e.message(a,b)return
+function e.pong()return e.makePacket(e.TYPE.PONG,{tos=true})end;function e.hello(a,b,c)
+return e.makePacket(e.TYPE.HELLO,{hostname=a,version=b,dhPub=c})end
+function e.helloAck(a,b,c)return
+e.makePacket(e.TYPE.HELLO_ACK,{hostname=a,version=b,dhPub=c})end;function e.deny(a)return
+e.makePacket(e.TYPE.DENY,{reason=a or"Access denied"})end;function e.error(a)
+return e.makePacket(e.TYPE.ERROR,{message=
+a or"Unknown error"})end;function e.message(a,b)return
 e.makePacket(e.TYPE.MSG,{text=a},{encrypted=b})end;function e.challenge(a)return
 e.makePacket(e.TYPE.CHALLENGE,{nonce=a})end
 function e.challengeResponse(a,b)return
