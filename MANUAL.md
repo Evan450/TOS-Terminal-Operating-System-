@@ -216,7 +216,9 @@ most room (`/tmp`, `/home` or `/`; it needs about 1.4 MB), checks every file
 against the digests the release lists, and then starts the installer as if the
 folder were an install disk. It refuses an incomplete or mismatched download
 rather than install part of TOS. `bootstrap.lua <owner>/<repo> [branch]`
-installs from a fork instead.
+installs from a fork instead, and `bootstrap.lua --help` prints this usage in
+the game, so you do not need to look anything up first. The installer then
+asks which drive TOS goes on (§1.2.1).
 
 **From an install disk.** On a machine already running TOS, as root, put a
 spare hard drive in and run `deploy /mnt/<drive>`, which writes the whole system
@@ -229,8 +231,9 @@ onto it. Move that drive to the OpenOS machine and run
 | Step | What happens |
 |---|---|
 | **Hardware** | It lists memory, GPU, drive, network and crypto (a data card, or software). Below 1 MB of memory, or 1.25 MB with a network card or linked card, it warns that TOS's commands will not load; below 1.5 MB, that TOS will start at the command line. |
+| **Which drive** | The installer used to write to the drive OpenOS booted from and nothing else. It now lists every writable drive (not the scratch `/tmp`, a read-only drive, or the install disk itself) with its size, its free space and whether it holds TOS or another system, and asks which one. Pressing Enter takes the boot drive. A drive that is too small is shown greyed with what TOS needs, and cannot be picked. If the boot drive is too small, the first drive with room becomes the default instead of the install ending. With a single drive that fits, nothing is asked. |
 | **Existing install** | If the drive already has TOS accounts, you must type `FORCE-WIPE` to go on. Users, configuration and the system files are replaced; `/home` and `/tmp` are kept. The old `/init.lua` is kept as `/init.lua.pre-tos`. |
-| **Space** | It adds up what TOS needs on this drive and compares it with what is free. If it does not fit, nothing is copied and the install ends. |
+| **Space** | It adds up what TOS needs on the chosen drive and compares it with what is free, before anything is written. If no drive has room, nothing is copied and the install ends. |
 | **Copy** | Every file is copied and then checked. If any fails, the BIOS is not flashed later, so nothing is left half-bootable; run the installer again. |
 | **Clean install** | Offered when OpenOS's `/bin`, `/boot` and `/lib` are still on the drive. Saying yes removes them at the very end, so OpenOS will no longer boot from this drive. Your files and configuration stay. Say no and you can still do it later with `reclaim` (§7.6). |
 | **Device type** | Computer, Tablet or Server (below). |
@@ -241,6 +244,7 @@ onto it. Move that drive to the OpenOS machine and run
 | **Verbose boot** | Whether boot shows its debug messages. |
 | **Summary** | Everything you chose. Yes saves it to `/etc/tos.cfg`. |
 | **BIOS** | It shows the TOS BIOS's size and SHA-256. Type `flash` to write it to the EEPROM; anything else skips it. |
+| **Boot drive** | Only when TOS went onto a drive other than the one this machine boots from, which would otherwise start OpenOS again. Yes sets the boot drive to the TOS drive (the EEPROM's boot address, which the stock BIOS and the TOS BIOS both honour; no flash is needed). No leaves it as it is and prints the one line that switches it later. |
 | **Reboot** | TOS starts. The first boot asks you to set root's password, then offers a short tour. |
 
 **Device type.**
@@ -259,7 +263,7 @@ You can change all of these later: `bootsettings`, `config` and Chapter 3.
 
 #### 1.2.2 If it goes wrong
 
-- **"Not enough space."** Use a Tier 3 drive, or install onto an empty Tier 2 drive from an install disk.
+- **"Not enough space."** If the machine has another drive with room, the installer offers it. Otherwise use a Tier 3 drive, or install onto an empty Tier 2 drive from an install disk.
 - **The copy failed.** The BIOS was not flashed and the old system still boots. Run the installer again; partly copied files do no harm.
 - **The download was refused.** If a release was published in the last few minutes, the host may still be serving old copies: wait five minutes and try again. If it keeps happening, install from a disk.
 - **You want OpenOS back.** If you did not choose the clean install, rename `/init.lua.pre-tos` to `/init.lua`.
@@ -1511,7 +1515,7 @@ pkg trust add strata 1f576b3a7c556a6f6701c2b0bd03ed07f290447726342d490173ac6ae64
 The name is **yours**. It has nothing to do with whatever name the disk
 claims — a signature file may carry a `signer` label, and TOS shows it in
 quotes as the disk's own word, never matches it against your store. A floppy
-calling itself "Strata Systems" is not Strata Systems for saying so.
+calling itself "Discover! Interactive" is not Discover! Interactive for saying so.
 
 Verify the fingerprint (`pkg trust list`) with the publisher over a channel
 that is **not the disk it came on**. A key that arrives with the package it
@@ -3167,7 +3171,7 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   download against the release manifest's digests before writing it, and
   refuses the whole install on any mismatch. But the manifest and the files come
   from the same host over the same connection, so this proves "these are the
-  bytes that repository serves", not "these are the bytes Strata published".
+  bytes that repository serves", not "these are the bytes the publisher released".
   A signature checked against a key pinned in `bootstrap.lua` would close the
   gap; it is not done. Installing from a disk you made yourself avoids the
   dependency.

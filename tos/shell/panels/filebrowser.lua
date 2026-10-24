@@ -1,4 +1,4 @@
-local k,n,o="Cancelled","Overwrite '","delete"
+local n,k,o="Overwrite '","Cancelled","delete"
 local i=require("shell.panels.helpers")local l=require("shell.panels.dialogs")local j={}
 local function p()
 if coroutine.isyieldable and

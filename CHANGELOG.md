@@ -9,8 +9,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 39 rounds of work:
+Everything since v1.5.0, in 41 rounds of work:
 
+- [The installer asks which drive, and the bootstrap answers --help](#the-installer-asks-which-drive-and-the-bootstrap-answers---help)
+- [Strata Systems is branding, not a copyright holder](#strata-systems-is-branding-not-a-copyright-holder)
 - [The published branch is tested the way a contributor gets it](#the-published-branch-is-tested-the-way-a-contributor-gets-it)
 - [Issues get a first pass, and nothing is turned away](#issues-get-a-first-pass-and-nothing-is-turned-away)
 - [The floor check failed on machines that were behaving](#the-floor-check-failed-on-machines-that-were-behaving)
@@ -50,6 +52,20 @@ Everything since v1.5.0, in 39 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The installer asks which drive, and the bootstrap answers --help
+
+`install.lua` wrote to `/`, the drive OpenOS booted from, and nothing else. That is the wrong drive whenever the machine has another one the player means to use, and a dead end when the boot drive is too small, where the only choice was to stop. It now lists every writable drive (not the scratch `/tmp`, a read-only drive, or the install disk itself), prices each with the same `spaceNeeded()` the copy uses, and asks. Enter takes the boot drive. A drive that is too small is shown with what TOS needs and cannot be picked; if the boot drive is too small the first drive with room becomes the default. A one-drive machine is asked nothing. Everything the installer writes (files, directories, `/etc/tos.cfg`, the `/init.lua.pre-tos` backup, the OpenOS clean-up) now goes to the chosen drive, and when that is not the boot drive it offers to set the EEPROM's boot address to it, which both the stock BIOS and the TOS BIOS honour, so the next boot is TOS rather than OpenOS.
+
+`bootstrap.lua -h` and `--help` were read as a malformed `owner/repo`, then the script carried on to ask about downloading. Both scripts now answer `-h`, `--help`, `-?` and `/?` with usage that fits a 50-column screen, and refuse any other option instead of treating it as a path or a repository; `bootstrap.lua --help` works without an Internet Card.
+
+While reading the old disk scan, one more bug: `findInstallDisk`'s second method looped `fs.mounts()` as `(path, proxy)`. OpenOS yields `(proxy, path)` (checked on OpenOS 1.8.9), so `proxy.address` indexed a string and the scan has never matched a disk; only the script's own path ever worked. Both orders are accepted now.
+
+Checked on a real OpenOS 1.8.9 machine (`build/headless-session.py --os openos --install-disk --extra-disk`, which this round adds: a third disk, so one session has a boot drive, an install source and somewhere else to put TOS), not only on lifted functions: with two drives the list appears and 2 installs onto the second (165 files copied and verified; the boot drive has no `/tos`), setting the boot drive and power-cycling boots TOS; a 1 MB boot drive (550 KB free, TOS needs 1.3 MB) warns and defaults to the 2 MB drive; one drive asks nothing; two 1 MB drives end with "None of these drives has room". `test_install_target.lua` (48 checks) covers the same decisions off-box. Not covered: the standalone configure-only mode still assumes the boot drive, and no run went through `bootstrap.lua` end to end, since that needs an Internet Card and the network.
+
+### Strata Systems is branding, not a copyright holder
+
+"Strata Systems LLC" is the in-world vendor TOS shows on its splash, `about` and installer, and it is fictional. The README's licence section nevertheless said "Copyright © 2026 Strata Systems LLC", a copyright claim by an entity that does not exist. It now reads Discover! Interactive, as every other file in the repository does, and says in one paragraph that Strata is a fictional vendor, not the licensor. `kernel/logo.lua`, where the name lives, carries the same warning. What the player sees inside TOS stays: the splash, `about`, the installer banners, the System Configuration title, the kiosk example, and the test fixtures that check them. What is outside TOS moves: the `author` field of the 21 add-on manifests now reads Discover! Interactive, and the manual, the changelog and two code comments that used Strata as the example of a publisher being impersonated now say Discover! Interactive or "the publisher". The history of the original rebrand in `docs/CHANGELOG-ARCHIVE.md` is left as it was. The `author` change only reaches machines with a new pack: the copies in `TOS-Extras/dist/` are build output whose signatures cover those exact bytes, so they were not edited, and `python tos.py pack --sign` (which only the maintainer can run) regenerates them.
 
 ### The published branch is tested the way a contributor gets it
 
@@ -1648,7 +1664,7 @@ mismatch rather than handing a partly-suspect tree to the installer. The
 comments state plainly what that does and does not prove — the manifest and the
 files come from the same host over the same connection, so this establishes
 "these are the bytes that repository is serving", not "these are the bytes
-Strata published". Closing that gap needs a signature checked against a key
+the publisher released". Closing that gap needs a signature checked against a key
 pinned in `bootstrap.lua` itself, which is written down and not done.
 
 ### Contributors can build and sign an add-on now
@@ -2893,7 +2909,7 @@ plan; the fourth is the one that matters and it wasn't named there:
 Two forgeries the design refuses by construction. A signature file may carry
 a `signer` name — it is display-only, shown in quotes as the disk's own word,
 and **never** matched against the trust store, so a floppy calling itself
-"Strata Systems" is not trusted for saying so. And a manifest cannot declare
+"Discover! Interactive" is not trusted for saying so. And a manifest cannot declare
 itself trusted: `_sigState`/`_sigKey`/`_sigLabel` are stripped from every
 on-disk manifest form, the way `_srcBase` already was.
 
