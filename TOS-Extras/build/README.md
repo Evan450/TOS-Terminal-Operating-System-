@@ -65,17 +65,36 @@ signed on-box with `pkg sign` cannot disagree about what a signature is.
 
 ### What a package ships
 
-Every `.lua` file goes through the base OS's `build/strip.lua` on its way into the
-pack, as the release tree does: comments are removed, `--!` lines are kept,
-and line numbers do not move, so a traceback still points at the source line.
-Write comments freely; they cost a machine nothing. A file that parses as
-written and not once stripped stops the build. The add-ons ship about 35%
-smaller this way (blockfs.lua: 53 KB to 37 KB).
+Every `.lua` file goes through the same pass as the release tree on its way
+into the pack: the base OS's `build/strip.lua` takes out comments and
+whitespace, then `build/minify_vars.lua` renames locals to the shortest names
+free and hoists any string used three or more times into one local. Write
+comments and long names freely; they cost a machine nothing. The 81 shipped
+`.lua` files come to 526,217 bytes, against 821,640 comment-stripped and
+1,210,759 as written, and the whole pack from 913,911 bytes to 572,166.
+blockfs.lua went from 53 KB as written to 37 KB stripped to 20 KB, and the
+TBFS boot blob that embeds it shrank with it. Line numbers no longer match
+the source, the trade the release made too.
+
+Exceptions and gates:
+
+- **rc.d scripts** (`/etc/rc.d/*.lua`) get the whitespace pass only. The
+  kernel reads a service's caps, user and restart policy from its source
+  before running it, and renaming can hide those from it
+  (`strip.kernelReadsSource`, shared with the release build).
+- **Manifests** get the whitespace pass: their comments go (`--!` lines
+  stay), and the result must still decode with the kernel's
+  `serialize.decode`, the way `pkg` reads it. `pkg` re-saves a manifest when
+  it installs one, so comments never reached an installed copy anyway.
+- A file that does not compile as written stops the build, and so does one
+  that compiles as written and not once minified. `minify_vars` also parses
+  its own output back and refuses a file whose syntax tree changed shape,
+  which is what catches a minifier bug that still compiles.
 
 One file is built rather than copied: rc-pilot's robot EEPROM image,
 `/usr/share/rc-pilot/eeprom-rc-pilot.lua`, minified from
 `robot/eeprom-rc-pilot.lua` (`MINIFIED` in the builder). The build fails if
-the image is over the chip's 4096 bytes.
+the image is over the chip's 4096 bytes; it is 3,576.
 Defaults: `extras-root` = the parent of `build/`, `out-dir` =
 `<extras-root>/dist/optional-utilities`. The output directory is a build
 artifact (wiped and regenerated every run — never hand-edit it) — copy its

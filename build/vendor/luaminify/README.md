@@ -85,6 +85,58 @@ All changes are marked `-- TOS PATCH` in place, in both files.
   `out = "goto " .. statement.Label`, matching every other branch in this
   function.
 
+**`FormatMini.lua` — tokens that change meaning once they touch**
+- The formatter drops every space it can, and three pairs of tokens are
+  a different token without one. `-` then `-` is a comment: `a - -b`
+  came out as `a--b`, which still compiles and returns `a`, and `- -x`
+  as `--x`, which returns nothing. `..` then `.5` or `...` runs into a
+  longer token (`s...5`, `s.....`), a load error. A long string as an
+  index or a constructor key opens with `[`, so `t[ [[k]] ]` came out
+  as `t[[[k]]]` (a load error) and `t[ [=[k]=] ]` as `t[[=[k]=]]`,
+  which compiles as a call of `t`. `joinStatementsSafe` now keeps one
+  space between `-` and `-` and between `.` and `.`, and a new
+  `spaceLongBracket` keeps one between `[` and a long string. Found
+  before the add-on pack was put through this pass, by running cases
+  both ways and comparing values; no file in the release or the pack
+  used any of these, which is why the release built byte for byte the
+  same before and after (`test_minify_vars.lua`, "token joins").
+
+**`FormatMini.lua` — a statement that opens with `(`**
+- A statement such as `;(proc.signalKernel or proc.signal)(pid, "x")`
+  reads as a call of whatever ends the statement before it unless a `;`
+  separates them, and the formatter could drop that `;` two ways. Its
+  line break every ~150 characters replaced the separator with `\n`,
+  which has not ended a statement since Lua 5.2; and after an
+  identifier (`x = s .. y; (f)()`) or `end` it joined the two with
+  nothing at all, because the `elseif bb == '('` branch meant to stop
+  that sits under a test that already takes `(`. The release shipped
+  the first: from 2026-10-17 six focus switches in `kernel/init.lua`,
+  `shell/panels/apps.lua` and `shell/panels/executor.lua` were one call
+  chain, `setForeground(...)(signalKernel or signal)(pid, "tos_focus")`,
+  which calls setForeground's `true` and stops with "attempt to call a
+  boolean value". `joinStatementsSafe` now puts a `;` before any
+  statement that opens with `(`, ahead of the line-break check.
+
+**`../../minify_vars.lua` — the output must be the same program**
+- Every bug above compiled, so `load()` was never going to catch one.
+  `minify()` now parses its own output back and compares how many of
+  each kind of node the two programs have (`CallStatement`,
+  `BinopExpr:-`, `MemberExpr::`, ...), and returns nil on any
+  difference, naming it. With the original formatter swapped back in it
+  refuses `init.lua` as "CallExpr 1183->1187, CallStatement 475->471",
+  and the joins found so far each fail it the same way. One more parse
+  per file; the release still builds in about 7 seconds.
+
+**`DedupStrings.lua` — the same bytes on every build**
+- Hoisted strings used to be declared in the order the AST walk first
+  met them. The walk uses `pairs()`, and Lua 5.4 seeds its string hash
+  per process, so that order changed from run to run; `MinifyLocals`
+  breaks a use-count tie by declaration order, so two strings used
+  equally often swapped names. The release built twice from the same
+  source differed in 6 of 144 files. They are now declared in sorted
+  order before the walk, and three processes produce the same bytes
+  (`test_minify_vars.lua`).
+
 **`Scope.lua` — naming strategy, not a correctness patch**
 - Upstream's `ObfuscateLocals` (what `FormatMini` calls, via
   `ObfuscateVariables`) generates RANDOM names 1-8 characters long. That

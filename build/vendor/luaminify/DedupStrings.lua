@@ -91,22 +91,30 @@ local function dedupStrings(ast)
   end
   if not next(qualifies) then return 0, 0 end
 
-  -- Pass 2: replace. One shared Variable per qualifying string, created
-  -- on first sight (so the walk order doesn't matter) and reused after.
+  -- Pass 2: replace. One shared Variable per qualifying string, all of
+  -- them created up front in SORTED order, and only looked up during the
+  -- walk. They used to be created on first sight, which sounds ordered
+  -- and is not: walk() recurses with pairs(), and Lua 5.4 seeds its
+  -- string hash per process, so first sight changed from run to run.
+  -- Creation order is declaration order, and Scope.lua's MinifyLocals
+  -- breaks a tie in use count by declaration order, so two strings used
+  -- equally often swapped names between builds: the release came out
+  -- different on two runs over the same source (6 of 144 files), and no
+  -- built file could be compared against an earlier one byte for byte.
   local vars = {}        -- text -> Variable
-  local declOrder = {}   -- text, in first-seen order (deterministic output)
+  local declOrder = {}   -- text, sorted
+  for text in pairs(qualifies) do declOrder[#declOrder + 1] = text end
+  table.sort(declOrder)
+  for i, text in ipairs(declOrder) do
+    local var = ast.Scope:CreateLocal("_tos_dedup_" .. tostring(i))
+    var.References = counts[text]
+    vars[text] = var
+  end
   local replaced = 0
   walk(ast, function(node)
     if node.AstType ~= "StringExpr" then return nil end
-    local text = node.Value.Data
-    if not qualifies[text] then return nil end
-    local var = vars[text]
-    if not var then
-      var = ast.Scope:CreateLocal("_tos_dedup_" .. tostring(#declOrder + 1))
-      var.References = counts[text]
-      vars[text] = var
-      declOrder[#declOrder + 1] = text
-    end
+    local var = vars[node.Value.Data]
+    if not var then return nil end
     replaced = replaced + 1
     return { AstType = "VarExpr", Name = var.Name, Variable = var }
   end)

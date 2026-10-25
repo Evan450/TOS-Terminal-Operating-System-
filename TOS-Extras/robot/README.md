@@ -4,14 +4,14 @@
 
 ## Burn the minified file, not this one
 
-An EEPROM holds 4096 bytes, and `flash` refuses anything larger. This source, with its comments, is about 6 KB; minified it is 3,683 bytes. So the program is written for its minified size, short names and all, and the comments here never reach the chip.
+An EEPROM holds 4096 bytes, and `flash` refuses anything larger. This source, with its comments, is about 6 KB; minified it is 3,576 bytes. So the program is written for its minified size, short names and all, and the comments here never reach the chip.
 
-You do not usually need to minify it yourself. Since rc-pilot 1.2.0 the Optional Utilities build does it and ships the result inside the package, as `/usr/share/rc-pilot/eeprom-rc-pilot.lua`, hashed and signed with the rest of the package. The build refuses to produce a pack if the image is over 4096 bytes or does not load as Lua.
+You do not usually need to minify it yourself. Since rc-pilot 1.2.0 the Optional Utilities build does it and ships the result inside the package, as `/usr/share/rc-pilot/eeprom-rc-pilot.lua`, hashed and signed with the rest of the package. It gets the same pass as every file in the pack: comments and whitespace out, locals renamed. The build refuses to produce a pack if the image is over 4096 bytes or does not load as Lua.
 
 To minify it by hand, from `TOS-Extras/` in a clone of the dev branch:
 
 ```
-lua ../build/strip.lua robot <out-dir> --minify
+lua ../build/strip.lua robot <out-dir> --minify-vars
 ```
 
 ## Tests

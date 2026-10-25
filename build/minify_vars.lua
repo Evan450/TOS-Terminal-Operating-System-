@@ -68,6 +68,33 @@ local function ensureLoaded()
   return parserMod and formatMod and dedupMod, parserErr or formatErr or dedupErr
 end
 
+--- How many of each kind of node a parsed program has: `BinopExpr:-`,
+--- `CallStatement`, `MemberExpr::` and so on, as one sorted string. Two
+--- programs with the same shape give the same string whatever their
+--- local names are. Scope and Variable links are not syntax and are not
+--- followed; a seen-set keeps any other back-reference from looping.
+local function shapeOf(ast)
+  local counts, seen = {}, {}
+  local SKIP = { Scope = true, Variable = true, Tokens = true, Parent = true }
+  local function visit(t)
+    if seen[t] then return end
+    seen[t] = true
+    if t.AstType then
+      local key = t.AstType .. (t.Op and (":" .. t.Op) or "")
+        .. (t.Indexer and (":" .. t.Indexer) or "")
+      counts[key] = (counts[key] or 0) + 1
+    end
+    for k, v in pairs(t) do
+      if type(v) == "table" and not SKIP[k] then visit(v) end
+    end
+  end
+  visit(ast)
+  local keys = {}
+  for k, n in pairs(counts) do keys[#keys + 1] = k .. "=" .. n end
+  table.sort(keys)
+  return table.concat(keys, " "), counts
+end
+
 --- Minify the local-variable names in `src`, and hoist any string literal
 --- repeated often enough in this one file into a shared local (see
 --- DedupStrings.lua for exactly why that's always safe). Returns the
@@ -91,12 +118,41 @@ function M.minify(src, chunkname)
     return nil, "string-dedup error in " .. tostring(chunkname) .. ": " .. tostring(dErr)
   end
 
+  local before, beforeCounts = shapeOf(ast)
   local fOk, out = pcall(formatMod, ast)
   if not fOk then
     return nil, "format error in " .. tostring(chunkname) .. ": " .. tostring(out)
   end
   if type(out) ~= "string" or out == "" then
     return nil, "formatter produced no output for " .. tostring(chunkname)
+  end
+
+  --! ROUND TRIP: the output must parse back to a program of the same
+  --! shape. load() cannot be the only gate, because the formatter's
+  --! mistakes compile: it joined `f()` and `;(g)()` into `f()(g)()`, a
+  --! call on f's result, and every release from 2026-10-17 shipped six of
+  --! those in the kernel's and the shell's focus switching ("attempt to
+  --! call a boolean value"); it made `a - -b` into `a--b`, a comment; it
+  --! made `t[ [=[k]=] ]` into a call. Each of those changes how many of
+  --! some kind of node the program has -- a statement fewer, a call more
+  --! -- so counting them on both sides catches the whole class, including
+  --! the joins nobody has found yet. One more parse per file.
+  local rOk, ast2 = parserMod.ParseLua(out)
+  if not rOk then
+    return nil, "minified output of " .. tostring(chunkname) .. " does not parse: " .. tostring(ast2)
+  end
+  local after, afterCounts = shapeOf(ast2)
+  if after ~= before then
+    local diffs = {}
+    for k, n in pairs(beforeCounts) do
+      if (afterCounts[k] or 0) ~= n then diffs[#diffs + 1] = k .. " " .. n .. "->" .. (afterCounts[k] or 0) end
+    end
+    for k, n in pairs(afterCounts) do
+      if beforeCounts[k] == nil then diffs[#diffs + 1] = k .. " 0->" .. n end
+    end
+    table.sort(diffs)
+    return nil, "minified output of " .. tostring(chunkname) .. " is a different program ("
+      .. table.concat(diffs, ", ") .. ")"
   end
   return out
 end

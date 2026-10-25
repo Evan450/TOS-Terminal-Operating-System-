@@ -199,6 +199,191 @@ return a, b, c, t.abcdefgh12
     test("evaluates the same", a1 == a2 and b1 == b2 and c1 == c2 and d1 == d2)
   end
 end
+do
+  -- Hoisted in SORTED order, so the output does not depend on the order
+  -- pairs() happened to walk the tree in. It did: Lua 5.4 seeds its
+  -- string hash per process, and the same release built twice differed
+  -- in 6 of 144 files, every difference two hoisted strings that had
+  -- swapped names. Six strings used equally often, so the name each one
+  -- gets falls entirely to the order they were declared in.
+  local names = { "zulu-string", "alpha-string", "mike-string",
+                  "echo-string", "kilo-string", "bravo-string" }
+  local lines = {}
+  for _ = 1, 3 do
+    for _, n in ipairs(names) do lines[#lines + 1] = ("print(%q)"):format(n) end
+  end
+  local src = table.concat(lines, "\n")
+  local out = mv.minify(src, "order")
+  test("minifies", out ~= nil)
+  if out then
+    local decl = out:match("^%s*local [%w_,]+=(.-)print")
+    local seen = {}
+    for s in (decl or ""):gmatch('"([^"]+)"') do seen[#seen + 1] = s end
+    local sorted = { table.unpack(names) }
+    table.sort(sorted)
+    eq("all six are hoisted into one declaration", 6, #seen)
+    eq("...in sorted order", table.concat(sorted, ","), table.concat(seen, ","))
+
+    -- And across processes, which is where the seed actually changes. The
+    -- interpreter running this test is the one asked; a missing one skips.
+    local interp = arg and arg[-1]
+    local mvPath = prefix .. "build/minify_vars.lua"
+    local tmp = os.tmpname()
+    local h = io.open(tmp, "wb")
+    if interp and h then
+      h:write(src); h:close()
+      local cmd = ('"%s" "%s" "%s"'):format(interp, mvPath, tmp)
+      if package.config:sub(1, 1) == "\\" then cmd = '"' .. cmd .. '"' end
+      local runs = {}
+      for i = 1, 3 do
+        local p = io.popen(cmd)
+        runs[i] = p and p:read("*a") or ""
+        if p then p:close() end
+      end
+      test("three separate processes produce the same bytes",
+        runs[1] ~= "" and runs[1] == runs[2] and runs[2] == runs[3])
+      eq("...and the same bytes as this one", out, runs[1])
+    else
+      print("  SKIP: no interpreter path to run a second process with")
+    end
+    os.remove(tmp)
+  end
+end
+
+-- ── Tokens that lex as something else once they touch ──────────────
+-- FormatMini drops every space it can, and some pairs of tokens are a
+-- different token without one: `-` `-` is a comment, `.` `.` runs into
+-- `...`, and `[` before a long string opens a long bracket. The comment
+-- cases compiled and returned the wrong answer (`a - -b` gave a), and
+-- `t[ [=[k]=] ]` compiled as a call. Every case runs both ways and the
+-- values are compared.
+print()
+print("-- token joins that would change meaning --")
+local JOIN_CASES = {
+  "local a, b = 5, 2 return a - -b",
+  "local a = 5 return - -a",
+  "local a = 2 return a - - - a",
+  "local a = 2 return a - -1e1, 1 - -1",
+  "local s = 'abc' return #s - -#s",
+  "local t = { 4 } return - -t[1]",
+  "local t = { k = 1 } return t[ [[k]] ]",
+  "local t = { k = 1 } return t[ [=[k]=] ]",
+  "local t = { [ [[k]] ] = 7 } return t.k",
+  "local s = 'x' return s .. .5",
+  "local function f(...) local s = 'x' return s .. ... end return f('y')",
+  "local a = 3 return a .. 1 .. 2",
+  -- A statement that opens with `(` reads as a call of whatever ends the
+  -- one before it, unless a `;` is kept between them.
+  "local n = 0 local function f() n = n + 1 end local y = 'q' local x = 'a' .. y;(f)() return n",
+  "local n = 0 local function f() n = n + 1 end local g = function() return 5 end;(f)() return n, g()",
+  "local n = 0 local function f() n = n + 1 end local x = 1;(f)() return n, x",
+  "local n = 0 local function f() n = n + 1 end local t = {} t.k = f;(t.k)() return n",
+  "local s = ('x'):rep(3) local t = {};('y'):rep(2) return s",
+}
+do
+  -- And the same where the formatter breaks its line, which it does every
+  -- 150 or so characters: a line break is no separator either.
+  local n = 0
+  for len = 100, 400 do
+    local src = 'local hits = 0 local function f() hits = hits + 1 end '
+      .. 'local function g() return true end g("' .. string.rep("a", len) .. '");(f)() return hits'
+    local out = mv.minify(src, "break")
+    local chunk = out and load(out, "=break", "t")
+    local ok, hits = false, nil
+    if chunk then ok, hits = pcall(chunk) end
+    if not (ok and hits == 1) then n = n + 1 end
+  end
+  eq("a `;(` survives wherever the line break falls (301 lengths, failures)", 0, n)
+end
+for _, src in ipairs(JOIN_CASES) do
+  local out, err = mv.minify(src, "join")
+  local function results(code)
+    local chunk, lerr = load(code, "=join", "t")
+    if not chunk then return "load error: " .. tostring(lerr) end
+    local ok, r = pcall(function() return table.pack(chunk()) end)
+    if not ok then return "run error: " .. tostring(r) end
+    local parts = {}
+    for i = 1, r.n do parts[i] = tostring(r[i]) end
+    return r.n .. ":" .. table.concat(parts, ",")
+  end
+  if out then
+    eq(src, results(src), results(out))
+  else
+    test(src .. " (minify failed: " .. tostring(err) .. ")", false)
+  end
+end
+
+-- ── The focus switches that shipped as calls on a boolean ──────────
+-- Every release from 2026-10-17 to 2026-10-24 minified
+--   proc.setForeground(pid, seat, { kernel = true })
+--   ;(proc.signalKernel or proc.signal)(pid, "tos_focus")
+-- into `setForeground(...)\n(proc.signalKernel or ...)(...)`: one call
+-- chain, which calls setForeground's `true` and stops with "attempt to
+-- call a boolean value" before the process is told to repaint. Four in
+-- kernel/init.lua, one each in the shell's apps.lua and executor.lua.
+print()
+print("-- the real focus switches keep their `;(` --")
+do
+  local strip = dofile(prefix .. "build/strip.lua")
+  for _, f in ipairs({ { "tos/kernel/init.lua", 4 }, { "tos/shell/panels/apps.lua", 1 },
+                       { "tos/shell/panels/executor.lua", 1 } }) do
+    local src = readAll(prefix .. f[1])
+    if src then
+      local out, err = mv.minify(strip.strip(src:gsub("\r\n", "\n"), { minify = true }), f[1])
+      test(f[1] .. " minifies (" .. tostring(err) .. ")", out ~= nil)
+      if out then
+        local _, joined = out:gsub("%)\n%(%w+%.signalKernel", "")
+        local _, kept = out:gsub("%);%(%w+%.signalKernel", "")
+        eq(f[1] .. ": no signal call chained onto setForeground", 0, joined)
+        eq("...and every one kept as its own statement", f[2], kept)
+      end
+    else
+      test(f[1] .. " readable", false)
+    end
+  end
+end
+
+-- ── The round trip refuses a formatter that changes the program ─────
+-- minify() parses its own output back and compares how many of each
+-- kind of node it has. Proved here on a formatter broken on purpose: a
+-- copy of the vendor tree with the `;(` patch switched off, driven
+-- through a copy of minify_vars.lua beside it. Needs LuaFileSystem for
+-- the scratch directory.
+print()
+print("-- a formatter that changes the program is refused --")
+do
+  local okLfs, lfs = pcall(require, "lfs")
+  local fmt = readAll(prefix .. "build/vendor/luaminify/FormatMini.lua")
+  local guard = "if sep == ';' and b:sub(1, 1) == '(' then"
+  if not okLfs then
+    print("  SKIP: LuaFileSystem is not installed")
+  elseif not (fmt and fmt:find(guard, 1, true)) then
+    test("FormatMini.lua carries the `;(` patch this test switches off", false)
+  else
+    local tmp = (os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"):gsub("\\", "/")
+    local base = tmp .. "/tos_mv_roundtrip_" .. tostring(os.time()) .. "_" .. tostring(math.random(1e6))
+    lfs.mkdir(base); lfs.mkdir(base .. "/vendor"); lfs.mkdir(base .. "/vendor/luaminify")
+    local function put(p, s) local h = assert(io.open(p, "wb")); h:write(s); h:close() end
+    for _, n in ipairs({ "ParseLua", "Scope", "Util", "DedupStrings" }) do
+      put(base .. "/vendor/luaminify/" .. n .. ".lua", readAll(prefix .. "build/vendor/luaminify/" .. n .. ".lua"))
+    end
+    put(base .. "/vendor/luaminify/FormatMini.lua", (fmt:gsub(guard:gsub("%p", "%%%0"), "if false then", 1)))
+    put(base .. "/minify_vars.lua", mvSrc)
+    local broken = assert(loadfile(base .. "/minify_vars.lua"))()
+    local out, err = broken.minify(
+      "local function f() end local t = { g = function() return true end }\n"
+      .. "t.g()\n;(f)()\n", "broken-formatter")
+    test("the broken formatter's output is refused, not returned", out == nil)
+    test("...as a different program, naming what changed",
+      type(err) == "string" and err:find("different program", 1, true) ~= nil
+      and err:find("CallStatement", 1, true) ~= nil)
+    for _, n in ipairs({ "ParseLua", "Scope", "Util", "DedupStrings", "FormatMini" }) do
+      os.remove(base .. "/vendor/luaminify/" .. n .. ".lua")
+    end
+    os.remove(base .. "/minify_vars.lua")
+    lfs.rmdir(base .. "/vendor/luaminify"); lfs.rmdir(base .. "/vendor"); lfs.rmdir(base)
+  end
+end
 
 -- ── A file that does not compile is reported, not silently passed ──
 print()

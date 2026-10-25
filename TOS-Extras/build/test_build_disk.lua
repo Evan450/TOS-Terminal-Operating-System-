@@ -171,46 +171,102 @@ do
     and #img < #src and not img:find("^%-%-") and not img:find("\n%s*%-%-"))
 end
 
--- Every .lua the pack ships is stripped the way the release tree is:
--- comments out, `--!` lines kept, line numbers where the source has them.
+-- Every .lua the pack ships is minified the way the release tree is:
+-- comments and whitespace out, then locals renamed and repeated strings
+-- hoisted (TOS-Dev/build/minify_vars.lua). rc.d scripts stop after the
+-- whitespace, because the kernel reads them as text before it runs them.
 -- The pack used to ship source as written (blockfs.lua: 53 KB to require,
--- all of it embedded in the TBFS boot blob).
+-- all of it embedded in the TBFS boot blob), then comment-stripped only.
 do
-  local strip
+  local strip, mv
   for _, cand in ipairs({ root .. "/../TOS-Dev/build/strip.lua", root .. "/../build/strip.lua",
       "../TOS-Dev/build/strip.lua", "build/strip.lua" }) do
     local c = loadfile(cand)
     if c then
       local ok, mod = pcall(c)
-      if ok and type(mod) == "table" and type(mod.strip) == "function" then strip = mod break end
+      if ok and type(mod) == "table" and type(mod.strip) == "function" then
+        strip = mod
+        local mc = loadfile((cand:gsub("strip%.lua$", "minify_vars.lua")))
+        if mc then local okM, m2 = pcall(mc); if okM then mv = m2 end end
+        break
+      end
     end
   end
-  test("strip.lua reachable (for the stripping checks)", true, strip ~= nil)
-  local function lines(x) return select(2, x:gsub("\n", "")) end
-  for _, f in ipairs({
-      { pkg = "blockfs", src = "/modules/blockfs/usr/lib/blockfs.lua", target = "/usr/lib/blockfs.lua" },
-      { pkg = "tape", src = "/modules/tape/init.lua", target = "/usr/modules/tape/init.lua" } }) do
-    local src = readAll(root .. f.src)
-    local shipped = readAll(OUT .. "/" .. f.pkg .. f.target)
-    if strip and src and shipped then
-      src = src:gsub("\r\n", "\n")
-      test(f.pkg .. ": ships its .lua stripped", true, shipped == strip.strip(src))
-      test("...smaller than the source", true, #shipped < #src)
-      test("...every line where the source has it", lines(src), lines(shipped))
+  test("strip.lua reachable (for the minifying checks)", true, strip ~= nil)
+  test("minify_vars.lua reachable beside it", true, mv ~= nil)
+  -- Comments left in a file; `unmarkedOnly` skips `--!`, which the
+  -- whitespace pass keeps on purpose (the marker means "ship this").
+  local function comments(x, unmarkedOnly)
+    local n = 0
+    for _, tok in ipairs(strip.tokenize(x)) do
+      if (tok.type == "line_comment" or tok.type == "block_comment")
+          and not (unmarkedOnly and tok.marked) then n = n + 1 end
+    end
+    return n
+  end
+  if strip and mv then
+    for _, f in ipairs({
+        { pkg = "blockfs", src = "/modules/blockfs/usr/lib/blockfs.lua", target = "/usr/lib/blockfs.lua" },
+        { pkg = "tape", src = "/modules/tape/init.lua", target = "/usr/modules/tape/init.lua" },
+        { pkg = "selftest", src = "/modules/selftest/usr/lib/selftest/92-term.lua",
+          target = "/usr/lib/selftest/92-term.lua" } }) do
+      local src = readAll(root .. f.src)
+      local shipped = readAll(OUT .. "/" .. f.pkg .. f.target)
+      if src and shipped then
+        src = src:gsub("\r\n", "\n")
+        local spaced = strip.strip(src, { minify = true })
+        test(f.pkg .. ": ships " .. f.target .. " fully minified", true,
+          shipped == mv.minify(spaced, f.target))
+        test("...smaller than with whitespace alone", true, #shipped < #spaced)
+        test("...no comment left in it", 0, comments(shipped))
+      else
+        test(f.pkg .. ": " .. f.target .. " found in the source and the pack", true, false)
+      end
+    end
+
+    -- rc.d keeps its names and its strings: the peek reads them.
+    local svcSrc = readAll(root .. "/cluster/storage-skeleton/etc/rc.d/cluster-storaged.lua")
+    local svc = readAll(OUT .. "/cluster-storage/etc/rc.d/cluster-storaged.lua")
+    test("cluster-storage's rc.d script ships", true, svcSrc ~= nil and svc ~= nil)
+    if svcSrc and svc then
+      test("...with the whitespace pass only, names and strings as written", true,
+        svc == strip.strip(svcSrc:gsub("\r\n", "\n"), { minify = true }))
+      test("...so `needs = \"net\"` reads as the peek expects", true,
+        svc:find('needs = "net"', 1, true) ~= nil)
     end
   end
-  local broken
+
+  local broken, commented, manifestComment, manifestUndecodable
+  local serialize
+  for _, cand in ipairs({ root .. "/../TOS-Dev/tos/kernel/serialize.lua",
+      "../TOS-Dev/tos/kernel/serialize.lua", "../tos/kernel/serialize.lua" }) do
+    local c = loadfile(cand)
+    if c then local ok, m = pcall(c); if ok and type(m) == "table" then serialize = m break end end
+  end
   for _, name in ipairs(EXPECTED) do
-    local chunk = loadfile(OUT .. "/" .. name .. "/package.lua")
+    local mSrc = readAll(OUT .. "/" .. name .. "/package.lua") or ""
+    local chunk = load(mSrc, "=manifest", "t", {})
     local m = chunk and chunk() or {}
+    -- The manifest ships minified too; pkg reads it with serialize.decode.
+    if strip and comments(mSrc, true) > 0 then manifestComment = manifestComment or name end
+    if serialize and type(serialize.decode(mSrc, { maxBytes = 64 * 1024 })) ~= "table" then
+      manifestUndecodable = manifestUndecodable or name
+    end
     for _, target in ipairs(m.files or {}) do
       if target:match("%.lua$") then
         local d = readAll(OUT .. "/" .. name .. target)
         if d and not load(d, "=" .. target, "t", {}) then broken = broken or (name .. target) end
+        if d and strip and mv and not strip.kernelReadsSource(target) and comments(d) > 0 then
+          commented = commented or (name .. target)
+        end
       end
     end
   end
   test("every .lua in the pack parses", nil, broken)
+  test("no fully minified .lua holds a comment", nil, commented)
+  test("no manifest ships its ordinary comments", nil, manifestComment)
+  test("kernel/serialize.lua reachable (for the decode check)", true, serialize ~= nil)
+  test("every manifest decodes the way pkg reads it", nil, manifestUndecodable)
 end
 
 -- And a build whose image would not fit the chip is refused, not shipped.
@@ -228,9 +284,14 @@ do
   for _, f in ipairs({ "package.lua", "init.lua" }) do
     put(big .. "/modules/rc-pilot/" .. f, readAll(root .. "/modules/rc-pilot/" .. f) or "")
   end
-  -- Code, not comment, so minifying cannot save it: ~2.4 KB more.
+  -- A string literal, which no minifying pass shortens: ~2.4 KB more. (It
+  -- was 200 `local x = 1` lines, which only failed for the right reason
+  -- while size was checked before anything else: that is past Lua's 200
+  -- locals per function, and the build now refuses a file that does not
+  -- compile as written before it measures it.)
   put(big .. "/robot/eeprom-rc-pilot.lua",
-    (readAll(root .. "/robot/eeprom-rc-pilot.lua") or "") .. string.rep("local x = 1\n", 200))
+    (readAll(root .. "/robot/eeprom-rc-pilot.lua") or "")
+    .. '\nlocal padding = "' .. string.rep("x", 2400) .. '"\n')
   local log = big .. "/build.log"
   local cmd = string.format('lua "%s/build-disk.lua" "%s" "%s/out" --limit 0 >"%s" 2>&1',
     buildDir, big, big, log)
@@ -435,37 +496,10 @@ do
     --! difference in any package NOT named still fails, and an entry whose
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
-    -- 2026-10-24: the pack signed and published that day carries `author =
-    -- "Discover! Interactive"`, which was a mistake (Strata Systems is the
-    -- in-universe author of the add-ons). The source says Strata again, so the
-    -- fresh build differs from that pack until it is re-signed.
-    local AUTHOR_FIELD = "published pack has author Discover! Interactive; source is Strata Systems again; "
-      .. "waits for `python tos.py pack --sign`"
     local PENDING_RESIGN = {
-      -- The operator signed and published the pack on 2026-10-23, including
-      -- rbmk-control 1.0.0 and cluster-storage 1.0.0. Name a package here
-      -- when a fix to it lands ahead of the next signing.
-      ["blockfs"] = AUTHOR_FIELD,
-      ["calc"] = AUTHOR_FIELD,
-      ["cluster-manager"] = AUTHOR_FIELD,
-      ["cluster-master"] = AUTHOR_FIELD,
-      ["cluster-storage"] = AUTHOR_FIELD,
-      ["intercom"] = AUTHOR_FIELD,
-      ["mail"] = AUTHOR_FIELD,
-      ["mouse"] = AUTHOR_FIELD,
-      ["printer"] = AUTHOR_FIELD,
-      ["rbmk-control"] = AUTHOR_FIELD,
-      ["rc-pilot"] = AUTHOR_FIELD,
-      ["selftest"] = AUTHOR_FIELD,
-      ["snake"] = AUTHOR_FIELD,
-      ["stock"] = AUTHOR_FIELD,
-      ["tape"] = AUTHOR_FIELD,
-      ["tape-authenticator"] = AUTHOR_FIELD,
-      ["tetris"] = AUTHOR_FIELD,
-      ["ttt"] = AUTHOR_FIELD,
-      ["warhead"] = AUTHOR_FIELD,
-      ["web"] = AUTHOR_FIELD,
-      ["write"] = AUTHOR_FIELD,
+      -- The operator re-signed the pack on 2026-10-24 at 23:01, minified the
+      -- way the release is. Name a package here when a fix to it lands ahead
+      -- of the next signing.
     }
 
     if nShipped == 0 then

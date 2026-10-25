@@ -27,12 +27,38 @@ local function Format_Mini(ast)
 	--
 	local function joinStatementsSafe(a, b, sep)
 	--print(a, b)
+		-- TOS PATCH: a STATEMENT that opens with `(` always gets a `;`
+		-- before it. Whatever ends the statement before it, a `(` right
+		-- after reads as a call of it: `local x = s .. y; (f)()` came out
+		-- as `local x=s..y(f)()`, `local g = function() end; (f)()` as a
+		-- call of the new function, and the line break below (`g()\n(f)()`)
+		-- is no separator either, since Lua 5.2. The `elseif bb == '('`
+		-- branch below was meant to catch the first of these and never
+		-- runs: `(` is not a letter, so the test above it takes it. `sep`
+		-- is ';' only for a statement list (formatStatlist), and a `;` is
+		-- a valid statement separator after anything. Checked before the
+		-- line break so neither can be chosen instead of it; the break
+		-- just lands on the next join.
+		if sep == ';' and b:sub(1, 1) == '(' then
+			if a == '' then return b end
+			return a..';'..b
+		end
 		if count > 150 then
 			count = 0
 			return a.."\n"..b
 		end
 		sep = sep or ' '
 		local aa, bb = a:sub(-1,-1), b:sub(1,1)
+		-- TOS PATCH: two pairs of symbols lex as something else once they
+		-- touch. `-` `-` is a COMMENT: `a - -b` came out as `a--b`, which
+		-- still compiles and returns `a`, and `- -x` as `--x`, which returns
+		-- nothing. `.` `.` runs into a longer token: `s .. .5` came out as
+		-- `s...5` and `s .. ...` as `s.....`, both load errors. The space
+		-- goes in whatever `sep` the caller asked for, because a space is
+		-- the only separator that is valid inside an expression.
+		if (aa == '-' and bb == '-') or (aa == '.' and bb == '.') then
+			return a..' '..b
+		end
 		if UpperChars[aa] or LowerChars[aa] or aa == '_' then
 			if not (UpperChars[bb] or LowerChars[bb] or bb == '_' or Digits[bb]) then
 				--bb is a symbol, can join without sep
@@ -64,6 +90,16 @@ local function Format_Mini(ast)
 				return a..b
 			end
 		end
+	end
+
+	-- TOS PATCH: an index or a constructor key that is a long string opens
+	-- with `[`, and the `[` before it turned the pair into a long bracket:
+	-- `t[ [[k]] ]` came out as `t[[[k]]]` (a load error) and `t[ [=[k]=] ]`
+	-- as `t[[=[k]=]]`, which compiles as a CALL of t with the string
+	-- "=[k]=". One space keeps the two brackets apart.
+	local function spaceLongBracket(s)
+		if s:sub(1, 1) == '[' then return ' '..s end
+		return s
 	end
 
 	formatExpr = function(expr, precedence)
@@ -132,7 +168,7 @@ local function Format_Mini(ast)
 			out = out..expr.Arguments[1].Data
 
 		elseif expr.AstType == 'IndexExpr' then
-			out = out..formatExpr(expr.Base).."["..formatExpr(expr.Index).."]"
+			out = out..formatExpr(expr.Base).."["..spaceLongBracket(formatExpr(expr.Index)).."]"
 
 		elseif expr.AstType == 'MemberExpr' then
 			out = out..formatExpr(expr.Base)..expr.Indexer..expr.Ident.Data
@@ -161,7 +197,7 @@ local function Format_Mini(ast)
 			for i = 1, #expr.EntryList do
 				local entry = expr.EntryList[i]
 				if entry.Type == 'Key' then
-					out = out.."["..formatExpr(entry.Key).."]="..formatExpr(entry.Value)
+					out = out.."["..spaceLongBracket(formatExpr(entry.Key)).."]="..formatExpr(entry.Value)
 				elseif entry.Type == 'Value' then
 					out = out..formatExpr(entry.Value)
 				elseif entry.Type == 'KeyString' then

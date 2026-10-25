@@ -263,6 +263,23 @@ function M.strip(src, opts)
   return M.emit(M.tokenize(src), opts)
 end
 
+--! Files the kernel reads as TEXT before it runs them, by install path
+--! (`/etc/rc.d/x.lua`). These get the whitespace pass and never
+--! --minify-vars. rc.lua decides a service's caps, user, restart and
+--! needs by pattern-matching its source (peekServiceMeta), never by
+--! running it at root to ask. Renaming locals breaks that for a service
+--! that writes `local caps = { "net" }` and returns `{ caps = caps }`, and
+--! string dedup breaks it for one whose cap or user name (6+ characters)
+--! appears three times: `user = "_kernel_"` becomes `user = d`, the peek
+--! finds no user, and the service quietly runs at the wrong tier or
+--! without its network. No service did either when this was written (the
+--! peek read every one the same before and after); this makes it true by
+--! construction rather than by luck, for 2.2 KB in the release and 204
+--! bytes across the add-ons. Shared with TOS-Extras/build/build-disk.lua.
+function M.kernelReadsSource(installPath)
+  return installPath:match("^/etc/rc%.d/") ~= nil
+end
+
 -- ============================================================
 -- File-tree driver (only runs when invoked as a script, not when
 -- required as a library)
@@ -517,7 +534,9 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
         --! hashed instead of every real one. No benefit to weigh against
         --! that, so this file skips the pass entirely rather than teach
         --! the manifest reader to tolerate it.
-        if minifyVarsMod and srcPath ~= src .. "/tos/system_manifest.lua" then
+        --! /etc/rc.d/ is excluded too: see M.kernelReadsSource.
+        if minifyVarsMod and srcPath ~= src .. "/tos/system_manifest.lua"
+            and not M.kernelReadsSource(srcPath:sub(#src + 1)) then
           --! Runs AFTER stampInit, never before: string literals (which
           --! is all the build/variant stamp ever touches) are never
           --! renamed by this pass regardless of order, but running it
