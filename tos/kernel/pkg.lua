@@ -1,11 +1,11 @@
 
-local aB,al,bc,aC,aN,bd,be,aO,bf="number","string","service","files[","requires[","^%s*(.-)%s*$","^[%w%.]+$","function","drowsy"local ak={}local aP,ay,au,aD;local ap="/var/pkg/installed"local aE="/etc/critical.bak"local an=nil
+local bc,bd,be,aB,aN,aC,aO,bf,al="^%s*(.-)%s*$","^[%w%.]+$","drowsy","files[","function","number","requires[","service","string"local ak={}local aP,ay,au,aD;local ap="/var/pkg/installed"local aE="/etc/critical.bak"local an=nil
 local am=nil;local av=nil;local ar=nil;local ao={}local bg=2;local bh=3
 local function aF(a)if not ar then return true end
 local b=(
 type(a)=="table"and a.session)or nil
 if not b and ar.currentSession then b=ar.currentSession()end
-if not b then return false,"Insufficient privileges: admin required"end;if b.isKernel or b.isLogin then return true end;if type(b.tier)==aB and
+if not b then return false,"Insufficient privileges: admin required"end;if b.isKernel or b.isLogin then return true end;if type(b.tier)==aC and
 b.tier>=bg then return true end;return false,
 "Insufficient privileges: admin required"end;local aQ="/usr/lib/selftest/"
 local function bi(a)if
@@ -13,12 +13,12 @@ type(a)~="table"or type(a.files)~="table"then return false end;for c,b in ipairs
 if type(b)==al and b:lower():sub(1,
 #aQ)==aQ then return true end end;return false end
 local function aR(a,b)local d=bi(a)if
-type(a)~="table"or(a.kind~=bc and not d)then return true end;if not ar then return true end
+type(a)~="table"or(a.kind~=bf and not d)then return true end;if not ar then return true end
 local c=(
 type(b)=="table"and b.session)or nil
-if not c and ar.currentSession then c=ar.currentSession()end;if c and c.isKernel then return true end;if c and type(c.tier)==aB and
+if not c and ar.currentSession then c=ar.currentSession()end;if c and c.isKernel then return true end;if c and type(c.tier)==aC and
 c.tier>=bh then return true end
-if a.kind~=bc then return false,
+if a.kind~=bf then return false,
 
 "this package installs a boot self-test check, which runs inside the ".."kernel when the battery is armed; only root may install one"end
 return false,
@@ -73,20 +73,20 @@ return false,"invalid kind: "..tostring(a.kind)end;if type(a.files)~="table"then
 "missing files array"end
 for d,c in ipairs(a.files)do if
 type(c)~=al or c:sub(1,1)~="/"then return false,
-aC..d.."] is not an absolute path"end;if aH(c)then
+aB..d.."] is not an absolute path"end;if aH(c)then
 return false,
-aC..d.."] contains an unsafe path segment"end
+aB..d.."] contains an unsafe path segment"end
 if not bj(c)then return false,
-aC..d..
+aB..d..
 "] must use only letters, digits and _ . + - "..
 "with no empty segment or trailing dot (got "..c..")"end
 if aT(c)then
-return false,aC..
+return false,aB..
 d.."] is the package manager's own space ("..
 c.."): installed manifests, package secrets and remote staging are not a package's to write"end
-if not aU(c)and not(a.kind==bc and aV(c))then
+if not aU(c)and not(a.kind==bf and aV(c))then
 return
-false,aC..
+false,aB..
 d.."] must be under "..
 table.concat(aI," or ").." (service packages may also write /etc/rc.d/<f>.lua and /etc/<name>.cfg) (got "..c..
 ")"end end
@@ -128,13 +128,13 @@ if type(c)=="table"and
 c.key~=nil then
 if type(c.key)~=al or#c.key~=64 or
 c.key:find("[^%x]")then return false,
-aN..d.."].key is not a 64-hex public key"end
-if type(c.name)~=al or c.name==""then return false,aN..
+aO..d.."].key is not a 64-hex public key"end
+if type(c.name)~=al or c.name==""then return false,aO..
 d.."] pins a key but names no package"end end end end
 local function b(c,d)if c==nil then return true end;if type(c)~="table"then return false,
 d.." must be an array of repo URLs"end;local e=0
 for f,g in pairs(c)do e=
-e+1;if type(f)~=aB or not aX(g)then
+e+1;if type(f)~=aC or not aX(g)then
 return false,d.."["..
 tostring(f).."] is not an http(s) repo URL"end end;if e>aW then
 return false,d.." names more than "..aW.." repos"end;return true end
@@ -144,8 +144,8 @@ ipairs(
 type(a.requires)=="table"and a.requires or{})do
 if type(e)=="table"and e.repos~=nil then if
 type(e.name)~=al or e.name==""then
-return false,aN..f.."] names repos but no package"end
-local g,h=b(e.repos,aN..f.."].repos")if not g then return false,h end end end end
+return false,aO..f.."] names repos but no package"end
+local g,h=b(e.repos,aO..f.."].repos")if not g then return false,h end end end end
 if a.recommends~=nil then
 if type(a.recommends)~="table"then return false,
 "recommends must be an array of package names if present"end;for d,c in ipairs(a.recommends)do
@@ -191,8 +191,8 @@ if
 a.capabilities~=nil and type(a.capabilities)~="table"then return false,"capabilities must be an array if present"end
 if a.screen~=nil then if type(a.screen)~="table"then
 return false,"screen must be a table { width=, height= } if present"end
-local c,d=a.screen.width,a.screen.height;if type(c)~=aB or c<1 or c~=math.floor(c)or
-type(d)~=aB or d<1 or
+local c,d=a.screen.width,a.screen.height;if type(c)~=aC or c<1 or c~=math.floor(c)or
+type(d)~=aC or d<1 or
 d~=math.floor(d)then
 return false,"screen.width/height must be positive integers"end;if
 a.screen.mode~=nil and a.screen.mode~="exact"and
@@ -213,10 +213,10 @@ ipairs(a.license.keys)do
 if type(c)~=al or#c~=64 or c:find("[^%x]")then return false,"license.keys["..d..
 "] is not a 64-hex digest"end end end end;return true end
 function ak.parseCap(a)if type(a)~=al then return nil,"not a string"end
-a=a:match(bd)if a==""then return nil,"empty"end;local c=a:find(":",1,true)
+a=a:match(bc)if a==""then return nil,"empty"end;local c=a:find(":",1,true)
 if not c then if
-a:match(be)then return{facet=a}end;return nil,"invalid facet: "..a end;local b=a:sub(1,c-1)local d=a:sub(c+1)if b==""then
-return nil,"empty facet before ':'"end;if not b:match(be)then
+a:match(bd)then return{facet=a}end;return nil,"invalid facet: "..a end;local b=a:sub(1,c-1)local d=a:sub(c+1)if b==""then
+return nil,"empty facet before ':'"end;if not b:match(bd)then
 return nil,"invalid facet: "..b end
 if d==""then return nil,"empty scope after ':'"end;return{facet=b,scope=d}end
 function ak.init(a)an=a.fs;am=a.log;ar=a.users;av=require("kernel.serialize")if ay then
@@ -262,7 +262,7 @@ type(c.commands)=="table"and type(c.commands[a])==al and
 ak.isEnabled(b)then return b end end;return nil end;local as={}local bo=2;local bp=48*1024;local at,aw={},0;local function bq()
 local b,a=pcall(require,"computer")
 return
-b and type(a)=="table"and type(a.freeMemory)==aO and a.freeMemory()<bp end
+b and type(a)=="table"and type(a.freeMemory)==aN and a.freeMemory()<bp end
 local function br(a)local b={}for c in
 pairs(as)do b[#b+1]=c end;if#b<=a then return end
 table.sort(b,function(c,d)return(at[c]or 0)> (
@@ -276,7 +276,7 @@ am.warn("pkg","pkg_caps.cfg unreadable or oversized — overrides NOT in force")
 local e,a=pcall(d.decode,b,{maxBytes=8192})
 if not e or type(a)~="table"then if am then
 am.warn("pkg","pkg_caps.cfg did not decode — overrides NOT in force")end;return end;local function c(g)
-return type(g)==al and#g<=64 and g:match(be)~=nil end;if type(a.allow)=="table"then
+return type(g)==al and#g<=64 and g:match(bd)~=nil end;if type(a.allow)=="table"then
 for h,g in
 ipairs(a.allow)do if c(g)and g~="legacy"then aA[g]=true end end end
 if
@@ -324,7 +324,7 @@ if not m or type(d)~="table"then if am then
 am.warn("pkg","entry failed in "..a..": "..
 tostring(d))end;return nil end;local i={}
 for o,n in pairs(d.commands or{})do
-if type(n)==aO then
+if type(n)==aN then
 i[o]=function(...)
 local s,r=pcall(require,"kernel.process")
 local p=(s and r and r.current)and r.current()or nil;if not p then return n(...)end;local t=p.caps;p.caps=g
@@ -338,7 +338,7 @@ if type(b.commands)=="table"then
 local d=b.commands[a]
 if type(d)==al and ak.isEnabled(c)then local e=bs(c,b,d)if
 e and type(e.commands)==
-"table"and type(e.commands[a])==aO then return e.commands[a]end end end end;return nil end
+"table"and type(e.commands[a])==aN then return e.commands[a]end end end end;return nil end
 function ak.getCommandScreen(a)if type(a)~=al then return nil end
 for c,b in pairs(ao)do
 if
@@ -351,11 +351,11 @@ if
 type(b.commands)==
 "table"and b.commands[a]~=nil and ak.isEnabled(c)then return b.fullscreen==true end end;return false end;local bt={drowsy=true,always=true,freeze=true}
 function ak.getCommandBackground(a)if type(a)~=al then
-return bf end
+return be end
 for c,b in pairs(ao)do
 if type(b.commands)=="table"and
 b.commands[a]~=nil and ak.isEnabled(c)then
-local d=b.background;if type(d)==al and bt[d]then return d end;return bf end end;return bf end
+local d=b.background;if type(d)==al and bt[d]then return d end;return be end end;return be end
 function ak.flushCommandCache(a)if a then as[a]=nil;at[a]=nil else as={}at={}end end
 function ak.capabilities(a)local b=ao[a]if
 not b or type(b.capabilities)~="table"then return{}end;local c={}
@@ -371,11 +371,11 @@ f)for h=1,g do local i,j=e[h]or 0,f[h]or 0;if i<j then return-1 end;if i>j then
 return 1 end end;if a==""and b==""then
 return 0 end;if a==""then return 1 end;if b==""then return-1 end
 if a<b then return-1 end;if a>b then return 1 end;return 0 end
-function ak.satisfiesConstraint(b,a)if not a or a==""then return true end;a=a:match(bd)
+function ak.satisfiesConstraint(b,a)if not a or a==""then return true end;a=a:match(bc)
 local c,d=a:match("^(>=?)(.+)$")if not c then c,d=a:match("^(<=?)(.+)$")end;if not c then
 c,d=a:match("^(==?)(.+)$")end
 if not c then c,d=a:match("^(%^)(.+)$")end;if not c then c,d=a:match("^(~)(.+)$")end
-if not c then c="=="d=a end;d=d:match(bd)local e=ak.compareVersion(b,d)
+if not c then c="=="d=a end;d=d:match(bc)local e=ak.compareVersion(b,d)
 if c==">"then return e>0 end;if c==">="then return e>=0 end;if c=="<"then return e<0 end
 if c=="<="then return e<=0 end;if c=="="or c=="=="then return e==0 end
 if c=="^"then
@@ -448,7 +448,7 @@ local bb=
 function aP()local b,a=pcall(require,"kernel.pkgops")
 if not b and bb and
 tostring(a):find("not found",1,true)then
-local d=loadfile(bb.."pkgops.lua")if d then b,a=pcall(d)end end;if not b or type(a)~=aO then
+local d=loadfile(bb.."pkgops.lua")if d then b,a=pcall(d)end end;if not b or type(a)~=aN then
 error(tostring(a or"kernel.pkgops did not load"),0)end;local c={}for d in pairs(au)do
 c[d]=rawget(ak,d)end
 a(ak,{PKG_ROOT=ap,adminGate=aF,findProvider=aM,serviceInstallGate=aR,targetKey=az,validRepoHint=aX,validateManifest=aJ,fs=an,log=am,serialize=av,installed=ao})aD={}for d in pairs(au)do

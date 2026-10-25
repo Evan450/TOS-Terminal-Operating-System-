@@ -1,4 +1,4 @@
-local y,A,v,B,E,F="header","choice","button","kernel.theme","kernel.profile","string"
+local v,A,y,E,B,F="button","choice","header","kernel.profile","kernel.theme","string"
 local u=require("shell.panels.ui")local z=require("shell.panels.tabs")local t={}
 function t.buildPages(a)a=a or{}local b={}
 local g={{kind=y,label="Appearance"},{kind=A,id="theme",label="Theme preset",values=

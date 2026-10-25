@@ -1,14 +1,14 @@
 
-local N,J,O,P,Q,R,S="component","string","function","_kernel_","%.lua$",".disabled","Unknown service: "local F={}local H="/etc/rc.d"local G={}local E=nil;local D=nil;local T=nil
-local U={["fs.read"]=true,["fs.write"]=true,[N]=true,["net"]=true}
-local V={["fs.read"]=true,["fs.write"]=true,[N]=true,["compat.io"]=true,["load"]=true,["net"]=true}
-local K={["computer"]=true,[N]=true,["kernel.event"]=true,["kernel.log"]=true,["kernel.serialize"]=true,["kernel.config"]=true}
+local N,O,P,Q,R,S,J="%.lua$",".disabled","Unknown service: ","_kernel_","component","function","string"local F={}local H="/etc/rc.d"local G={}local E=nil;local D=nil;local T=nil
+local U={["fs.read"]=true,["fs.write"]=true,[R]=true,["net"]=true}
+local V={["fs.read"]=true,["fs.write"]=true,[R]=true,["compat.io"]=true,["load"]=true,["net"]=true}
+local K={["computer"]=true,[R]=true,["kernel.event"]=true,["kernel.log"]=true,["kernel.serialize"]=true,["kernel.config"]=true}
 local function L(a)if type(a)~=J then
 error("require: module name must be a string",2)end;if K[a]then return require(a)end
 error(
 "rc.d kernel service denied require('"..a.."') (#SEC CR-6)",2)end;local W=600;local function I()local b,a=pcall(require,"computer")
 return(
-b and type(a)=="table"and type(a.uptime)==O)and
+b and type(a)=="table"and type(a.uptime)==S)and
 a.uptime()or 0 end
 local function X(a)
 if
@@ -20,7 +20,7 @@ local function Y(a)local c,b=pcall(require,"kernel.users")if not c or not b then
 return nil,"users module unavailable"end
 if not a then if _G._TOS and _G._TOS.bootSession then return
 _G._TOS.bootSession end;if b.kernelSession then
-return b.kernelSession()end;return nil,"no session available"end;if a==P then if b.kernelSession then return b.kernelSession()end;return nil,
+return b.kernelSession()end;return nil,"no session available"end;if a==Q then if b.kernelSession then return b.kernelSession()end;return nil,
 "kernelSession unavailable"end
 if
 b.sessionFor then local d=b.sessionFor(a)if d then return d end end
@@ -49,7 +49,7 @@ if h and type(g)=="table"then b.caps=g else
 b.caps={}
 for j in d:gmatch('"([%w%._]+)"')do b.caps[#b.caps+1]=j end
 for j in d:gmatch("'([%w%._]+)'")do b.caps[#b.caps+1]=j end end end
-b.user=a:match('user%s*=%s*"([%w_-]+)"')or a:match("user%s*=%s*'([%w_-]+)'")if b.user==P then b._kernelClaimed=true end
+b.user=a:match('user%s*=%s*"([%w_-]+)"')or a:match("user%s*=%s*'([%w_-]+)'")if b.user==Q then b._kernelClaimed=true end
 b.restart=
 c:match("restart%s*=%s*true")and true or false
 b.needs=c:match('needs%s*=%s*"([%w_]+)"')or c:match("needs%s*=%s*'([%w_]+)'")local e=c:match("maxRestart%s*=%s*(%d+)")if e then
@@ -71,7 +71,7 @@ local a={assert=assert,error=error,pcall=pcall,xpcall=xpcall,type=type,tostring=
 if _G._TOS then local b=_G._TOS
 a._TOS=setmetatable({},{__index=b,__newindex=function(d,c)
 error("_TOS is read-only from rc.d services (key="..tostring(c)..")",2)end,__metatable=false})end;a._G=a;return a end
-local function M(a)local f,b;local d=H.."/"..a;local c=a:gsub(Q,"")if D then
+local function M(a)local f,b;local d=H.."/"..a;local c=a:gsub(N,"")if D then
 D.info("rc","Loading: "..a)end;local e=E.readFile(d)
 if e then local g=aa(e)
 if g._kernelClaimed then
@@ -82,16 +82,16 @@ not ad(e)then if D then
 D.warn("rc","Refusing kernel-tier service '"..a.."': _kernel_ token only appears in comments")end;g.user="root"end end;local i=X(g.caps)local h=g.needs and ab[g.needs]
 if
 h and not h.met()then
-G[c]={running=false,unavailable=h.reason,hint=h.hint,disabledAtBoot=E.exists(H.."/"..c..R),path=d,deps={},restart=false,caps=i,user=g.user,restartCount=0,maxRestart=0}if D then
+G[c]={running=false,unavailable=h.reason,hint=h.hint,disabledAtBoot=E.exists(H.."/"..c..O),path=d,deps={},restart=false,caps=i,user=g.user,restartCount=0,maxRestart=0}if D then
 D.info("rc","Not loading "..a..": "..h.reason)end;return G[c]end;local j,k=Y(g.user)
 if not j then
-b="Skipping '"..a.."': "..tostring(k)if D then D.warn("rc",b)end else local l;if g.user==P then l=ae()else
+b="Skipping '"..a.."': "..tostring(k)if D then D.warn("rc",b)end else local l;if g.user==Q then l=ae()else
 l=require("kernel.sandbox").build({caps=i,session=j,allowUserLibs=true})end
 local m,n=load(e,"="..d,"t",l)
 if m then local p,o=pcall(m)
 if p then
 if type(o)=="table"and o.start then
-local q=E.exists(H.."/"..c..R)
+local q=E.exists(H.."/"..c..O)
 G[c]={start=o.start,stop=o.stop,running=false,disabledAtBoot=q,path=d,deps=o.deps or{},restart=g.restart or(o.restart and true)or false,caps=i,user=g.user,restartCount=0,maxRestart=
 g.maxRestart or o.maxRestart or 5}f=G[c]end else b="Error in "..a..": "..tostring(o)if D then
 D.warn("rc",b)end end else
@@ -99,8 +99,8 @@ b="Syntax error in "..a..": "..tostring(n)if D then D.warn("rc",b)end end end en
 function F.runAll()if not E then return end
 if not E.exists(H)then E.makeDirectory(H)return end;local b=E.list(H)if not b then return end;local a={}
 if type(b)=="table"then for e,d in ipairs(b)do if
-d:match(Q)then a[#a+1]=d end end elseif type(b)==O then for d in b do if
-d:match(Q)then a[#a+1]=d end end end;table.sort(a)for e,d in ipairs(a)do M(d)end;local c=Z(G)
+d:match(N)then a[#a+1]=d end end elseif type(b)==S then for d in b do if
+d:match(N)then a[#a+1]=d end end end;table.sort(a)for e,d in ipairs(a)do M(d)end;local c=Z(G)
 for e,d in ipairs(c)do local f=G[d]
 if
 f and f.unavailable then elseif f and f.disabledAtBoot and not f.running then
@@ -121,17 +121,17 @@ D.warn("rc",
 function F.start(a)local b=G[a]
 if b and b.running then return false,"Already running"end;if
 type(a)~=J or not a:match("^[%w_][%w_.%-]*$")or a:find("..",1,true)then
-return false,S..tostring(a)end
+return false,P..tostring(a)end
 if E and
 E.exists(H.."/"..a..".lua")then local e,f=M(a..".lua")if not e then return false,f or
 ("Not a service: "..a)end;b=e;if b.unavailable then return false,
 a..
 " "..b.unavailable.." ("..b.hint..")"end elseif b then
-G[a]=nil;b=nil end;if not b then return false,S..a end;local c,d=pcall(b.start)
+G[a]=nil;b=nil end;if not b then return false,P..a end;local c,d=pcall(b.start)
 if c then b.running=true
 b.startedAt=I()b.restartCount=0;if b.disabledAtBoot and E then
-pcall(E.remove,H.."/"..a..R)b.disabledAtBoot=false end;return true end;return false,tostring(d)end
-function F.stop(a)local b=G[a]if not b then return false,S..a end;if not b.running then
+pcall(E.remove,H.."/"..a..O)b.disabledAtBoot=false end;return true end;return false,tostring(d)end
+function F.stop(a)local b=G[a]if not b then return false,P..a end;if not b.running then
 return false,"Not running"end
 if not b.stop then return false,"No stop handler"end;local c,d=pcall(b.stop)if c then b.running=false;return true end;return false,
 tostring(d)end
@@ -152,7 +152,7 @@ D.warn("rc","Restart failed: "..a..": "..
 tostring(d))end;return false end
 function F.supervise()
 for b,a in pairs(G)do
-if a.running and type(a.check)==O then
+if a.running and type(a.check)==S then
 local c,d=pcall(a.check)if not c or not d then a.running=false
 a.lastError=(not c)and tostring(d)or"check returned false"end end;if a.restart and not a.running and not a.disabledAtBoot then
 F.tryRestart(b)end end end;function F.enable(a,b)if not E then return false end;if not E.exists(H)then

@@ -1,4 +1,4 @@
-local r,v,n="key_down","Message","number"local m={}local w=5;local p
+local v,r,n="Message","key_down","number"local m={}local w=5;local p
 local function o()
 if coroutine.isyieldable and
 coroutine.isyieldable()then return coroutine.yield()end;p=p or require("computer")return p.pullSignal(w)end

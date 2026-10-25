@@ -1,4 +1,4 @@
-local f,h="string","native"local e={}
+local h,f="native","string"local e={}
 e.SCORE={user=100,system=90,suits=60,native=50,plain=40,opens=20,text=10}
 e.PLAIN={txt=true,text=true,lua=true,cfg=true,conf=true,ini=true,log=true,md=true,man=true,json=true,xml=true,sh=true}e.EDITOR="edit"e.SYSTEM_FILE="/etc/open.cfg"e.USER_FILE=".open.cfg"
 e.HEAD_BYTES=4096

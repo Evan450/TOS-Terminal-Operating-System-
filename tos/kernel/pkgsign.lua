@@ -1,4 +1,4 @@
-local F,L,Z,J="string","pkgsign","ed25519","invalid"local B={}local N="/etc/pkg_trust.cfg"
+local Z,J,L,F="ed25519","invalid","pkgsign","string"local B={}local N="/etc/pkg_trust.cfg"
 local T=4096;local U=8192;local V=64*1024;local C,H,D;function B.init(a)a=a or{}C=a.fs;H=a.serialize;D=a.log;return C~=nil and
 H~=nil end;local function I(a,b)
 return type(a)==F and#a==

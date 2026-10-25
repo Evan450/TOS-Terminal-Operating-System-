@@ -1,4 +1,4 @@
-local r,m,s="content","_swapKey","_swapLines"local l={}local t=120;local u=25;local o=0;local p=nil
+local m,s,r="_swapKey","_swapLines","content"local l={}local t=120;local u=25;local o=0;local p=nil
 local function v()if p==nil then
 local b,a=pcall(require,"computer")
 p=(b and type(a)=="table")and a or false end;return p or nil end

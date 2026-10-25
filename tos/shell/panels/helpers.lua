@@ -1,4 +1,4 @@
-local s,p,t="function","string","pkg install"local u=require("computer")
+local s,t,p="function","pkg install","string"local u=require("computer")
 local o={}
 function o.resolvePath(b,a)if not a or a==""then return b.cwd end
 if a:sub(1,1)=="/"then return a end;if a=="~"or a:sub(1,2)=="~/"then local c="/home/"..b.who;return

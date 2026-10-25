@@ -1,4 +1,4 @@
-local q,r="invalid path","No filesystem"local z=require("component")local n={}
+local r,q="No filesystem","invalid path"local z=require("component")local n={}
 local p={}local v=nil;function n.init(a)v=a;p["/"]=v end
 function n.normalize(a)
 if a==nil or a==""then return"/"end;if type(a)~="string"then return nil end

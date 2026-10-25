@@ -1,7 +1,7 @@
 
-local aA,aL,al,aM,ak,aB,aN,aO,aC,aP,aQ,aR,an,aS,aT,aU="component","computer","string","kernel.process","function","number","peripheral.inventory","internet","kernel.fs","access denied","compat.term","compat.process","compat.io","compat.filesystem","legacy","fs.write"local am={}local aD="kernel."local aV={"compat.","peripheral."}
+local aL,aM,an,aN,aO,aA,aP,aQ,ak,aR,aB,aS,aT,aC,aU,al="access denied","compat.filesystem","compat.io","compat.process","compat.term","component","computer","fs.write","function","internet","kernel.fs","kernel.process","legacy","number","peripheral.inventory","string"local am={}local aD="kernel."local aV={"compat.","peripheral."}
 local aW={compat=true,["shell.keys"]=true}
-local aX={["debug"]=true,["package"]=true,["os"]=true,["io"]=true,[aA]=true,[aL]=true,["filesystem"]=true,["shell.init"]=true,["shell.ext"]=true,["shell.panels.init"]=true,["shell.panels.commands"]=true,["shell.panels.events"]=true,["shell.panels.executor"]=true,["shell.panels.state"]=true,["shell.panels.draw"]=true,["shell.panels.helpers"]=true,["shell.panels.filebrowser"]=true,["shell.panels.editor"]=true,["shell.panels.menus"]=true,["shell.panels.dialogs"]=true,["shell.panels.context"]=true,["shell.panels.keymap"]=true,["shell.panels.tabs"]=true,["shell.panels.widgets"]=true,["shell.panels.mouse"]=true,["shell.panels.ui"]=true,["shell.panels.desktop"]=true,["shell.panels.settingsapp"]=true,["shell.panels.apps"]=true,["shell.panels.monitorapp"]=true,["shell.panels.chatapp"]=true,["mail"]=true,["mailui"]=true,["mailapp"]=true,["rbmk-cmd"]=true,["rbmk-controld"]=true,["rbmk.core"]=true,["rbmk-skala"]=true,["rbmk.skala"]=true,["rbmk.wall"]=true,["shell.panels.takeover"]=true,["shell.login"]=true,["shell.chat"]=true,["shell.tutorial"]=true,["shell.syntax"]=true,["shell.panels"]=true,["shell"]=true,["bios"]=true,["init"]=true,["install"]=true,["system_manifest"]=true}
+local aX={["debug"]=true,["package"]=true,["os"]=true,["io"]=true,[aA]=true,[aP]=true,["filesystem"]=true,["shell.init"]=true,["shell.ext"]=true,["shell.panels.init"]=true,["shell.panels.commands"]=true,["shell.panels.events"]=true,["shell.panels.executor"]=true,["shell.panels.state"]=true,["shell.panels.draw"]=true,["shell.panels.helpers"]=true,["shell.panels.filebrowser"]=true,["shell.panels.editor"]=true,["shell.panels.menus"]=true,["shell.panels.dialogs"]=true,["shell.panels.context"]=true,["shell.panels.keymap"]=true,["shell.panels.tabs"]=true,["shell.panels.widgets"]=true,["shell.panels.mouse"]=true,["shell.panels.ui"]=true,["shell.panels.desktop"]=true,["shell.panels.settingsapp"]=true,["shell.panels.apps"]=true,["shell.panels.monitorapp"]=true,["shell.panels.chatapp"]=true,["mail"]=true,["mailui"]=true,["mailapp"]=true,["rbmk-cmd"]=true,["rbmk-controld"]=true,["rbmk.core"]=true,["rbmk-skala"]=true,["rbmk.skala"]=true,["rbmk.wall"]=true,["shell.panels.takeover"]=true,["shell.login"]=true,["shell.chat"]=true,["shell.tutorial"]=true,["shell.syntax"]=true,["shell.panels"]=true,["shell"]=true,["bios"]=true,["init"]=true,["install"]=true,["system_manifest"]=true}
 local function aY(a)return type(a)==al and a:sub(1,#aD)==aD end;local function aZ(a)
 for c,b in ipairs(aV)do if a:sub(1,#b)==b then return true end end;return false end;local function a_(a)if
 a:find("[^%w_.-]")then return false end
@@ -16,7 +16,7 @@ local bb={__tostring=function(a)return"exit "..
 tostring(rawget(a,"code"))end,__metatable=false}
 local function bc()
 return
-{time=os.time,date=os.date,clock=os.clock,difftime=os.difftime,sleep=function(a)local c,b=pcall(require,aM)if
+{time=os.time,date=os.date,clock=os.clock,difftime=os.difftime,sleep=function(a)local c,b=pcall(require,aS)if
 c and type(b)=="table"and type(b.sleep)==ak then return
 b.sleep(tonumber(a)or 0)end
 error("os.sleep: the process scheduler is unavailable",2)end,exit=function(a)
@@ -28,28 +28,28 @@ b.reservedSignal)or
 false end;if
 not ar then return true end;return ar(a)end
 local aF={modem_message=true,tos_shutdown=true,tos_logout=true,tos_login_complete=true,tos_seat_changed=true,tos_shell_exited=true}
-local function be()local a=package.loaded[aM]if
+local function be()local a=package.loaded[aS]if
 a and type(a.inProcess)==ak then return a.inProcess()end;return
 (coroutine.isyieldable and
 coroutine.isyieldable())and true or false end
-local function aG(a)local b=require(aL)local c;if
-type(a)==aB and a>=0 and a~=math.huge then c=b.uptime()+a end
+local function aG(a)local b=require(aP)local c;if
+type(a)==aC and a>=0 and a~=math.huge then c=b.uptime()+a end
 if be()then
 while true do
 local f=table.pack(coroutine.yield())local g=f[1]
 if g~=nil and not aF[g]then return table.unpack(f,1,f.n)end;if c and b.uptime()>=c then return nil end end end;local d=3
 local e=b.uptime()+ (
-(type(a)==aB and a>=0 and a<d)and a or d)
+(type(a)==aC and a>=0 and a<d)and a or d)
 while true do local g=e-b.uptime()if g<0 then return nil end
 local f=table.pack(b.pullSignal(g))local h=f[1]if h==nil then return nil end;if not aF[h]then
 return table.unpack(f,1,f.n)end end end
-local function bf()local a=require(aL)
+local function bf()local a=require(aP)
 return
 {uptime=a.uptime,freeMemory=a.freeMemory,totalMemory=a.totalMemory,address=a.address,pullSignal=aG,pushSignal=function(b,...)if bd(b)then return end;return
 a.pushSignal(b,...)end,energy=a.energy,maxEnergy=a.maxEnergy}end;am._safePullSignal=aG
 local aH={gpu=true,screen=true,keyboard=true,crafting=true,navigation=true,geolyzer=true,note_block=true,sign=true}
-local bg={modem="peripheral.modem",tunnel="peripheral.modem",redstone="peripheral.redstone",robot="peripheral.robot",inventory_controller=aN,transposer=aN,tank_controller=aN,tape_drive="peripheral.tape",internet=aO,tractor_beam="peripheral.tractor",piston="peripheral.piston",hologram="peripheral.hologram",openprinter="peripheral.printer"}local as={}local at={}local ax=false
-local function aI()if ax then return end;ax=true;local e,c=pcall(require,aC)
+local bg={modem="peripheral.modem",tunnel="peripheral.modem",redstone="peripheral.redstone",robot="peripheral.robot",inventory_controller=aU,transposer=aU,tank_controller=aU,tape_drive="peripheral.tape",internet=aR,tractor_beam="peripheral.tractor",piston="peripheral.piston",hologram="peripheral.hologram",openprinter="peripheral.printer"}local as={}local at={}local ax=false
+local function aI()if ax then return end;ax=true;local e,c=pcall(require,aB)
 local f,g=pcall(require,"kernel.serialize")if not(e and f)then return end;local d="/etc/component_caps.cfg"if
 not c.exists(d)then return end;local b=c.readFile(d)if not b or#b==0 or#b>8192 then
 return end
@@ -83,17 +83,17 @@ return
 function()while true do local i,j=h()if i==nil then return nil end;local k=
 g and ay[j]and not g[i]
 if ap(j,a)and not k then return i,j end end end end
-function c.proxy(e)local f=b.type(e)if not ap(f,a)then return nil,aP end;if d(e,f)then
+function c.proxy(e)local f=b.type(e)if not ap(f,a)then return nil,aL end;if d(e,f)then
 return nil,"not your seat"end;return b.proxy(e)end;function c.type(e)return b.type(e)end
 function c.slot(e)return b.slot(e)end;function c.get(e,f)local g=b.get(e,f)
-if g then local h=b.type(g)if ap(h,a)then return g end end;return nil,aP end
+if g then local h=b.type(g)if ap(h,a)then return g end end;return nil,aL end
 function c.invoke(e,f,...)
 local g=b.type(e)if not ap(g,a)then
 error("sandbox: access denied to "..tostring(g))end;if d(e,g)then
 error("sandbox: "..
 tostring(g).." belongs to another seat")end;return b.invoke(e,f,...)end
 function c.isAvailable(e)if not ap(e,a)then return false end;return b.isAvailable(e)end
-function c.getPrimary(e)if not ap(e,a)then return nil,aP end;if ay[e]then local f=bh(e)if f then
+function c.getPrimary(e)if not ap(e,a)then return nil,aL end;if ay[e]then local f=bh(e)if f then
 return b.proxy(f)end end;return b.getPrimary(e)end;return c end
 local function bj(a)
 local function b(c)local f,d=pcall(a.getPrimary,c)if f and d then return d end
@@ -106,7 +106,7 @@ c,d=next(a,c)return c,d end end,__newindex=function()
 error("component view is read-only",2)end,__metatable=false})end;local bk={"/usr/lib","/usr/modules"}
 local function bl(a)local b=a:gsub("%.","/")return{b..".lua",
 b.."/init.lua"}end
-local function aJ(a)local b=nil;local c,d=pcall(require,aC)if c then b=d end;if not b then return nil end;for f,e in
+local function aJ(a)local b=nil;local c,d=pcall(require,aB)if c then b=d end;if not b then return nil end;for f,e in
 ipairs(bk)do
 for f,g in ipairs(bl(a))do local h=e.."/"..g;if b.exists(h)then return h end end end;return nil end
 local function aq(a,b)if type(a)~="table"then return a end;local c=a
@@ -116,7 +116,7 @@ return
 setmetatable({},{__index=c,__len=function()return#a end,__pairs=function()local d
 return function()local e;repeat d,e=next(a,d)until
 d==nil or not(b and b[d])return d,e end end,__call=function(d,...)return a(...)end,__metatable=false})end
-local bm={[aQ]={_gpuForCaps=true},[aR]={_forProgram=true}}
+local bm={[aO]={_gpuForCaps=true},[aN]={_forProgram=true}}
 local bn={"send","broadcast","on","off","onceFrom","offAll","waitFor","sendMessage","requestTrust","discover","getAddress","getHostname","isAvailable","modemCount"}
 local function aK(a)if type(a)~="table"then return a end;return
 {addr=a.addr,lastSeen=a.lastSeen,hostname=a.hostname,device=a.device,trust=a.trust}end
@@ -169,8 +169,8 @@ aq(a.getProtocol())end end
 if type(a.status)==ak then
 b.status=function()local l,m=a.status(),{}
 for o,n in pairs(
-type(l)=="table"and l or{})do if type(n)~="table"then m[o]=n end end;return m end end;return b end;local bq={[an]=an,[aS]=an,["compat.shell_api"]=an}
-local br={sides="compat.sides",colors="compat.colors",keyboard="compat.keyboard",text="compat.text",serialization="compat.serialization",buffer="compat.buffer",term=aQ,event="compat.event",shell="compat.shell_api",filesystem=aS,io=an,internet="compat.internet",robot="compat.robot",process=aR,note="compat.note"}
+type(l)=="table"and l or{})do if type(n)~="table"then m[o]=n end end;return m end end;return b end;local bq={[an]=an,[aM]=an,["compat.shell_api"]=an}
+local br={sides="compat.sides",colors="compat.colors",keyboard="compat.keyboard",text="compat.text",serialization="compat.serialization",buffer="compat.buffer",term=aO,event="compat.event",shell="compat.shell_api",filesystem=aM,io=an,internet="compat.internet",robot="compat.robot",process=aN,note="compat.note"}
 local function bs(a,c,b)local d={}local e={}if c then for g,h in pairs(c)do d[g]=h end end;local f
 f=function(g)if type(g)~=
 al then
@@ -190,7 +190,7 @@ error("sandbox: require('"..g..
 "'): "..tostring(j):gsub("^sandbox: ",""),2)end;d[g]=j;return j end
 if g=="compat.component"then local i=c and c.component;if not i then
 error("sandbox: 'compat.component' needs the component capability",2)end;d[g]=i;return i end;if
-g=="compat.internet"and not(a.caps and a.caps[aO])then
+g=="compat.internet"and not(a.caps and a.caps[aR])then
 error("sandbox: 'compat.internet' needs the internet capability",2)end
 do local i=bq[g]if i and not
 (
@@ -205,10 +205,10 @@ not(a and a.allowUserLibs and aJ(g))then
 error("sandbox: module '"..g.."' is not available to sandboxed code",2)end end
 if aW[g]or aZ(g)then local i=require(g)local j=aq(i,bm[g])
 if
-g==aQ and type(i)=="table"and type(i._gpuForCaps)==ak then
+g==aO and type(i)=="table"and type(i._gpuForCaps)==ak then
 local k=a and a.caps;j.gpu=function()return i._gpuForCaps(k)end end
 if
-g==aR and type(i)=="table"and type(i._forProgram)==ak then local k=i._forProgram(a and a.name,b and b.env)if type(k)==
+g==aN and type(i)=="table"and type(i._forProgram)==ak then local k=i._forProgram(a and a.name,b and b.env)if type(k)==
 "table"then j.info=k.info;j.running=k.running end end;d[g]=j;return j end
 if a_(g)then local i=aJ(g)
 if i then local k=_G._TOS and _G._TOS.users
@@ -218,7 +218,7 @@ error(
 "sandbox: access denied loading user lib '"..g.."'",2)end end;if a.allowUserLibs then local s=require(g)d[g]=s;return s end
 local m=b and b.env;if type(m)~="table"then
 error("sandbox: no environment to load user lib '"..g.."' into",2)end;if e[g]then
-error("sandbox: circular require of '"..g.."'",2)end;local p,l=pcall(require,aC)
+error("sandbox: circular require of '"..g.."'",2)end;local p,l=pcall(require,aB)
 local n=p and
 type(l)=="table"and l.readFile and l.readFile(i)if type(n)~=al then
 error("sandbox: cannot read user lib '"..g.."'",2)end;local o,q=load(n,"="..i,"t",m)if not o then
@@ -229,7 +229,7 @@ error("sandbox: user lib '"..g.."' failed: "..tostring(j),2)end;if j==nil then j
 error("sandbox: module '"..g.."' is not on the allowed list",2)end;return f end
 function am.build(a)a=a or{}local c=a.caps or{}local m=a.session
 local e=_G._TOS and _G._TOS.securefs
-if not e then local t,u=pcall(require,"kernel.securefs")if t then e=u end end;local d=nil;if e and(c["fs.read"]or c[aU])then
+if not e then local t,u=pcall(require,"kernel.securefs")if t then e=u end end;local d=nil;if e and(c["fs.read"]or c[aQ])then
 d=e.forSession(m)end
 local function n(t)
 local v={"exists","isDirectory","list","readFile","size","lastModified","normalize","split","join","spaceTotal","spaceUsed","spaceFree","mounts","home","resolve"}local u={}
@@ -257,9 +257,9 @@ error("setmetatable: metatable referencing protected library denied",2)end end;r
 k.component=g end;if h then k.computer=h end;local l={}
 local b={assert=assert,error=error,pcall=pcall,xpcall=xpcall,type=type,tostring=tostring,tonumber=tonumber,pairs=pairs,ipairs=ipairs,next=next,select=select,unpack=table.unpack,rawequal=rawequal,rawlen=rawlen,setmetatable=r,getmetatable=q,math=ao(math),string=s,table=ao(table),utf8=
 utf8 and ao(utf8)or nil,coroutine=ao(coroutine),unicode=av and ao(av)or nil,checkArg=ba,print=o,require=bs(a,k,l)}l.env=b;b._G=b;b._ENV=b;b._VERSION=_VERSION;if d then
-if c[aU]then b.fs=d else b.fs=n(d)end end
+if c[aQ]then b.fs=d else b.fs=n(d)end end
 if c[an]then local t,u=pcall(require,an)
-if t then b.io=aq(u)end;b.os=bc()local v,w=pcall(require,aS)if v then b.filesystem=aq(w)end end
+if t then b.io=aq(u)end;b.os=bc()local v,w=pcall(require,aM)if v then b.filesystem=aq(w)end end
 if c[aT]then b.os=os;b.io=io;local u,t=pcall(require,"kernel.log")if
 u and t and t.warn then
 t.warn("sandbox","Built env with legacy cap — full os/io exposed")end end
@@ -297,10 +297,10 @@ y:match("^[%w][%w%-]*$"))and y or"package"local z,A=t.post(x)if z~=nil then v[z]
 not v[w]then return nil end;return t.result(w)end}end end
 if c["net"]then local u,t=pcall(require,"kernel.net")if u then b.net=
 a.allowUserLibs and aq(t)or bp(t)end end
-if c[aO]then local u,t=pcall(require,"kernel.internet")
+if c[aR]then local u,t=pcall(require,"kernel.internet")
 if u and t then
 b.internet={get=function(v,w)
-return t.get(v,w)end,download=function(w,x,v)if not(c[aU]and d)then
+return t.get(v,w)end,download=function(w,x,v)if not(c[aQ]and d)then
 return false,"internet.download needs the fs.write capability"end;local y={}
 if type(v)=="table"then for A,z in
 ipairs({"maxBytes","timeout","headers","method","body"})do y[z]=v[z]end end;y.fs=d;return t.download(w,x,y)end,socket=function(v,w)return
@@ -321,14 +321,14 @@ b.crypto={hash=function(w)return t.hash(w)end,hmac=function(w,x)return t.hmac(w,
 t.ctEquals(w,x)end,random=function(w)return t.salt(w)end}local v=a.pkgName
 if type(v)==al and v:match("^[%w][%w%-]*$")then
 b.crypto.secret=function()local w=
-nil;local C,y=pcall(require,aM)if C and y and y.currentSession then
+nil;local C,y=pcall(require,aS)if C and y and y.currentSession then
 w=y.currentSession()end
 if not w then
 local H=_G._TOS and _G._TOS.users
 if not H then local I,J=pcall(require,"kernel.users")if I then H=J end end;if H and H.currentSession then w=H.currentSession()end end
 local D=w and(w.isKernel or w.isLogin or
-(type(w.tier)==aB and w.tier>=2))
-if not D then return nil,"crypto.secret requires an admin session"end;local E,x=pcall(require,aC)
+(type(w.tier)==aC and w.tier>=2))
+if not D then return nil,"crypto.secret requires an admin session"end;local E,x=pcall(require,aB)
 if not E or not x then return nil,"fs unavailable"end;local z="/var/pkg/secrets"local A=z.."/"..v
 if x.exists(A)then local H=x.readFile(A)if H and
 #H>=16 then return H end;return nil,"secret unreadable"end;if not x.exists(z)then x.makeDirectory(z)end
@@ -341,7 +341,7 @@ function am.exitStatus(a)
 if type(a)=="table"and rawget(a,aE)==true then
 local b=rawget(a,"code")if b==nil then return true end;return b end;return nil end
 function am.describeEnd(b,a)
-if b then local d=type(a)if d==al or d==aB or d=="boolean"then return tostring(a),
+if b then local d=type(a)if d==al or d==aC or d=="boolean"then return tostring(a),
 false end;return nil end;local c=am.exitStatus(a)
 if c==nil then return tostring(a),true end;if c==true or c==0 then return nil end;return
 "exited with status "..tostring(c),false end;return am

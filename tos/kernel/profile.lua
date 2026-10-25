@@ -1,4 +1,4 @@
-local q,C="string","^[%w_%-]+$"local u={}local t=nil;local s=nil;local z=nil;local w=nil;local v=nil;local x=nil
+local C,q="^[%w_%-]+$","string"local u={}local t=nil;local s=nil;local z=nil;local w=nil;local v=nil;local x=nil
 local D=".profile.cfg"local y=8192;local E=16;local F=48
 function u.init(a)t=a.securefs;s=a.users;z=a.theme;w=a.env;v=a.log;x=a.serialize or
 require("kernel.serialize")end

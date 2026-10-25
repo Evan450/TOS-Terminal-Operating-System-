@@ -1,4 +1,4 @@
-local J,I,Q,R="invalid_export: ","string","invalid_path","no_such_handle"local z={}
+local J,Q,R,I="invalid_export: ","invalid_path","no_such_handle","string"local z={}
 local G=4096;local S=10;local T=30;local O=16;local P=120;local U=256;local N=256;local B,A,E,D,C,K
 function z.init(a)a=a or{}B=a.net;A=a.fs
 E=a.trust;D=a.log;K=a.computer or require("computer")

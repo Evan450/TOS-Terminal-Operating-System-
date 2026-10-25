@@ -1,5 +1,5 @@
 
-local n,r,o,s="string","no keycard tape data","this card has no personal menu","this card's menu is empty"local m={}local p=60;local t=200;local u=400;local v=64;local w=5
+local r,n,o,s="no keycard tape data","string","this card has no personal menu","this card's menu is empty"local m={}local p=60;local t=200;local u=400;local v=64;local w=5
 function m.normalizeMenu(a,b)b=b or 1
 local c={title="Menu",items={}}if type(a)~="table"then return c end
 if

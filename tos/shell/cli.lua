@@ -1,4 +1,4 @@
-local h,i,g="bar_fg","bar_bg","warning"local k=require("computer")local j={}
+local h,i,g="bar_bg","bar_fg","warning"local k=require("computer")local j={}
 local function l(a)
 local b={}b.K,b.E,b.P,b.F=a.K,a.E,a.P,a.F;b.D,b.U,b.SC,b.NM=a.D,a.U,a.SC,a.NM
 b.st=a.st
@@ -22,12 +22,12 @@ local function d(G,H)local I=(G==nil)and""or tostring(G)
 local J=m.wrapLine(I,e)for L,K in ipairs(J)do v()b.fill(1,f,e,1," ",b.c("fg"),b.c("bg"))
 if K~=
 ""then b.set(1,f,K,H or b.c("fg"),b.c("bg"))end;f=f+1 end end
-local function A()b.fill(1,1,e,1," ",b.c(h),b.c(i))
+local function A()b.fill(1,1,e,1," ",b.c(i),b.c(h))
 b.set(2,1,(" TOS CLI  ·  "..c.who..
 "  ·  type 'tui' for the full interface"):sub(1,
-e-2),b.c(h),b.c(i))b.fill(1,n,e,1," ",b.c(h),b.c(i))
+e-2),b.c(i),b.c(h))b.fill(1,n,e,1," ",b.c(i),b.c(h))
 b.set(2,n,(" [tui] TUI   [help] Commands   [exit] Log out"):sub(1,
-e-2),b.c(h),b.c(i))end;local function o()b.clear(b.c("bg"))A()f=3 end;local u
+e-2),b.c(i),b.c(h))end;local function o()b.clear(b.c("bg"))A()f=3 end;local u
 local function w()if
 coroutine.isyieldable and coroutine.isyieldable()then
 return coroutine.yield()end;return k.pullSignal(0.25)end

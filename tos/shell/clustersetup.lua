@@ -1,4 +1,4 @@
-local j,g="string","master"local f={}f.MASTER_PKG="cluster-master"
+local g,j="master","string"local f={}f.MASTER_PKG="cluster-master"
 f.MANAGER_PKG="cluster-manager"f.MASTER_SVC="clusterd"f.MANAGER_SVC="cluster-manager"
 f.MASTER_CFG="/etc/cluster-master.cfg"f.MANAGER_CFG="/etc/cluster-manager.cfg"
 function f.topology()

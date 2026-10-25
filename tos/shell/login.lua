@@ -1,4 +1,4 @@
-local p,q,o,n,t="username","password","key_down","string","kernel.fs"
+local t,o,p,n,q="kernel.fs","key_down","password","string","username"
 local l=require("computer")
 local function m(a)if coroutine.isyieldable and coroutine.isyieldable()then return
 coroutine.yield()end;return
@@ -40,10 +40,10 @@ c-2)local _=I.warning or I.error
 local aa=math.floor((c-g(Z))/2)a.set(math.max(1,aa),K+Q+2,Z,_,H)end
 local U=d("login.hint","Enter credentials (Ctrl+Q to cancel)")
 a.set(math.max(1,math.floor((c-g(U))/2)),f-1,U,L,H)return M,K,O end
-local function j(I,G,J,H,E,F)local K=a.getTheme()local M=(H==p)and(G+2)or(G+4)
+local function j(I,G,J,H,E,F)local K=a.getTheme()local M=(H==q)and(G+2)or(G+4)
 local R,R,R,N,O=y(I,J)local P=F and K.input_bg or K.panel_bg
 local Q=F and K.input_fg or K.dim;a.fill(N,M,O,1," ",Q,P)local L=E
-if H==q then L=string.rep("*",#E)end;L=a.fit(L,O-1)a.set(N,M,L,Q,P)if F then
+if H==p then L=string.rep("*",#E)end;L=a.fit(L,O-1)a.set(N,M,L,Q,P)if F then
 local S=N+math.min(#E,O-1)a.set(S,M,"_",K.highlight,P)end end
 local function z(F,G,H,I,E)E=E or 20;local J=""
 while true do j(F,G,H,I,J,true)local L,N,K,M=m(0.5)
@@ -133,9 +133,9 @@ local P,Q=pcall(require,"kernel.serialize")if not(O and P)then return end;if not
 pcall(N.makeDirectory,"/var/lib")end
 pcall(N.writeFile,I,Q.encode({fails=F,lastFailTs=H}))end
 local function M(N)local O=F[N]or 0;return G[math.min(O,#G)]or G[#G]end
-while true do local P,Q,R=e()if K then D(P,Q,R)end;j(P,Q,R,q,"",false)local N=nil;local S=false
+while true do local P,Q,R=e()if K then D(P,Q,R)end;j(P,Q,R,p,"",false)local N=nil;local S=false
 local T=false;local O=""
-while true do j(P,Q,R,p,O,true)local W,X,U,V=m(0.5)
+while true do j(P,Q,R,q,O,true)local W,X,U,V=m(0.5)
 if W==o then
 if V==28 then N=O;break elseif V==14 then if#O>0 then
 O=O:sub(1,-2)end elseif U==17 then T=true;break elseif V==60 and K then S=true;break elseif
@@ -150,11 +150,11 @@ if
 _G._TOS and _G._TOS.audio then _G._TOS.audio.error()end;k(2)end elseif T then
 e(d("login.retry","Enter to retry, F10 to shut down"),false)
 while true do local V,W,W,U=m(1)if V==o then
-if U==28 then break elseif U==68 then return nil,"shutdown"end end end elseif N==""then j(P,Q,R,p,N,false)local V=z(P,Q,R,q,30)
+if U==28 then break elseif U==68 then return nil,"shutdown"end end end elseif N==""then j(P,Q,R,q,N,false)local V=z(P,Q,R,p,30)
 local W,U=pcall(require,"shell.colophon")
 if W and U and U.isTrigger(N,V)then
 pcall(U.run,{W=c,H=f,theme=a.getTheme(),clear=function(X)a.clear(X)end,set=function(X,Y,Z,_,aa)
-a.set(X,Y,Z,_,aa)end,pull=function(X)return(m(X))end,sleep=k,uptime=l.uptime,width=g})end elseif N and N~=""then j(P,Q,R,p,N,false)local U=z(P,Q,R,q,30)
+a.set(X,Y,Z,_,aa)end,pull=function(X)return(m(X))end,sleep=k,uptime=l.uptime,width=g})end elseif N and N~=""then j(P,Q,R,q,N,false)local U=z(P,Q,R,p,30)
 if U then
 e(d("login.authenticating","Authenticating..."),false)local V,W=b.login(N,U,{setCurrent=false})
 if V then F[N]=0;H[N]=nil;L()

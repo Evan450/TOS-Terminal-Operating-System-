@@ -1,4 +1,4 @@
-local K,ae,af="string","kernel.log","crypto"local X=require("component")
+local ae,af,K="crypto","kernel.log","string"local X=require("component")
 local O=require("computer")local H={}local I=nil;local S=false;function H.init()
 local a,b=pcall(function()
 for c in X.list("data")do I=X.proxy(c)S=true;return end end)return S end
@@ -39,8 +39,8 @@ if P(ak(b,c,h),e)then return true,true end end;return false,false end
 if#a==64 then if P(aj(b,c,T),a)then return true,true end;if P(ai(b,c),a)then
 return true,true end;return false,false end
 if#a==16 then
-pcall(function()local h=require(ae)if h and h.warn then
-h.warn(af,"Refused legacy 16-hex hash; account must be reset")end end)return false,false end;return false,false end;local J=0;local N=0
+pcall(function()local h=require(af)if h and h.warn then
+h.warn(ae,"Refused legacy 16-hex hash; account must be reset")end end)return false,false end;return false,false end;local J=0;local N=0
 local function Q()N=N+1
 local b=table.concat({tostring(O.uptime()),tostring(O.freeMemory()),tostring(
 O.totalMemory and O.totalMemory()or 0),tostring(N),tostring(J),tostring({})},"|")local c=L(b)local a=0
@@ -61,8 +61,8 @@ function H.exportEntropy(a)a=
 0xFF)end
 return table.concat(b)end;local _=false
 local function al()if _ or I then return end;_=true
-pcall(function()local a=require(ae)if a and a.warn then
-a.warn(af,"No data card — session tokens/salts use the software RNG (degraded; not a CSPRNG)")end end)end
+pcall(function()local a=require(af)if a and a.warn then
+a.warn(ae,"No data card — session tokens/salts use the software RNG (degraded; not a CSPRNG)")end end)end
 function H.salt(a)a=a or 16
 local c="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"local b=#c;local function e(h)if h>=248 then return nil end
 return c:sub((h%b)+1,(h%b)+1)end;local f=0xFFFFFFFFFFFFFFF0;local function g()
@@ -92,8 +92,8 @@ function H.encrypt(a,b)
 if I then
 local e,d=pcall(function()local f=ac()local g=I.encrypt(a,ad(b),f)return f..g end)if e and d then return d,"aes"end end
 if not ab then ab=true
-pcall(function()local d=require(ae)if d then
-d.warn(af,"No data card — encryption falling back to XOR (not secure)")end end)end;local c=H.hash(b)return aa(a,c),"xor"end
+pcall(function()local d=require(af)if d then
+d.warn(ae,"No data card — encryption falling back to XOR (not secure)")end end)end;local c=H.hash(b)return aa(a,c),"xor"end
 function H.decrypt(a,b,c)if type(a)~=K or type(b)~=K then return nil end
 if
 c=="aes"then if not I then return nil end;if#a<17 then return nil end

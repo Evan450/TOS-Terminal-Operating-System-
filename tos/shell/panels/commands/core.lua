@@ -1,14 +1,14 @@
 
-local Q,X,Y,J,L,Z,_,K,aa,ab,ac,I,ad,ae,af,ag,R,S,T,ah,U,ai,aj,ak="kernel.process","shell.keys","  Examples:","  Subcommands:","shell.panels.commands","function"," %-24s %8s","Cannot read: ","[^/]+$","Cancelled.","decrypt","encrypt","Write failed: ","Keychain is locked.","profile module unavailable","save failed","kernel.pkg","--system","timezone","Save failed"," (needs admin for /etc).","Save failed.","rename","Language: "local M=require("computer")local N=require("component")
+local X,J,Y,Q,R,Z,K,_,aa,ab,ac,ad,ae,af,I,ag,S,T,ah,ai,aj,ak,L,U="  Examples:","  Subcommands:"," %-24s %8s"," (needs admin for /etc).","--system","Cancelled.","Cannot read: ","Keychain is locked.","Language: ","Save failed","Save failed.","Write failed: ","[^/]+$","decrypt","encrypt","function","kernel.pkg","kernel.process","profile module unavailable","rename","save failed","shell.keys","shell.panels.commands","timezone"local M=require("computer")local N=require("component")
 local H=require("shell.panels.helpers")local O=function()end
-do local b,a=pcall(require,Q)if b and a and a.yieldCooperative then
+do local b,a=pcall(require,T)if b and a and a.yieldCooperative then
 O=a.yieldCooperative end end;local function P()local a,b=pcall(require,"shell.panels.home")
 return(a and b)or nil end;local function V(a)local b=P()return
 b and b.cycleKeyLabel(a)or"F2"end
 local function al(a)
 local b=P()if b and b.enabled(a)then
 return b.viewKeyLabel(a).."  Tiles / files "end;return"F2  Next tab      "end
-local function W(a)local e=P()local d,b=pcall(require,X)if not(d and b)then
+local function W(a)local e=P()local d,b=pcall(require,ak)if not(d and b)then
 return"Copy Ctrl+Insert  Cut ^X  Paste ^V"end;local c=a and a.who or nil;return
 "Copy "..
 b.label("copy",c).."  Cut "..
@@ -25,15 +25,15 @@ b.help=function(au,E)
 local av=au and au[1]and au[1]:lower()
 if av=="cp"or av=="copy"then E("cp <source> <dest>",d.title)
 E("  Copy a file. Both paths are required.",d.fg)
-E("  Paths starting with / are absolute; others are relative to cwd.",d.fg)E(Y,d.dim)
+E("  Paths starting with / are absolute; others are relative to cwd.",d.fg)E(X,d.dim)
 E("    cp notes.txt /home/root/notes_bak.txt",d.dim)E("    cp /etc/cfg.conf /tmp/cfg.conf",d.dim)
 E("  Tip: Use F5 in the browser for clipboard-style copy.",d.highlight)elseif av=="mv"then E("mv <source> <dest>",d.title)
-E("  Move or rename a file.",d.fg)E(Y,d.dim)
+E("  Move or rename a file.",d.fg)E(X,d.dim)
 E("    mv old.txt new.txt           (rename in cwd)",d.dim)
 E("    mv /tmp/work.lua /home/root/ (move to dir)",d.dim)elseif av=="cd"then E("cd [dir]",d.title)
 E("  Change directory. With no argument, prints current directory.",d.fg)
 E("  Special paths:  ..  (parent)   ~  (home dir)",d.fg)elseif av=="find"then E("find [path] [-name pattern]",d.title)
-E("  Recursively search for files. Pattern uses Lua patterns.",d.fg)E(Y,d.dim)E("    find /tos -name *.lua",d.dim)
+E("  Recursively search for files. Pattern uses Lua patterns.",d.fg)E(X,d.dim)E("    find /tos -name *.lua",d.dim)
 E("    find /home",d.dim)elseif av=="grep"then E("grep <pattern> <file>",d.title)
 E("  Search file lines for pattern (plain text, not regex).",d.fg)
 E("  Example:  grep function /tos/shell/init.lua",d.dim)elseif av=="flash"then E("flash <file>",d.title)
@@ -339,7 +339,7 @@ local aD,ay=pcall(e.list,av)
 if not aD or not ay then E("Cannot list: "..av,d.error)return end;local aw,az={},0;local function aC(aF)
 if aB or aF:sub(1,1)~="."then aw[#aw+1]=aF else az=az+1 end end
 if type(ay)=="table"then for aG,aF in ipairs(ay)do
-aC(aF)end elseif type(ay)==Z then for aF in ay do aC(aF)end end
+aC(aF)end elseif type(ay)==ag then for aF in ay do aC(aF)end end
 table.sort(aw,function(aF,aG)local aH,aI=aF:sub(-1)=="/",aG:sub(-1)=="/"if aH~=aI then
 return aH end;return aF<aG end)
 local function aE(aF)if not e.lastModified then return"-"end
@@ -348,14 +348,14 @@ if not aH or type(aG)~="number"or aG<=0 then return"-"end
 local aI,aJ=pcall(os.date,"%Y-%m-%d %H:%M",math.floor(aG/1000))return aI and aJ or"-"end
 if aA then
 E(string.format(" %-24s %8s  %s","Name","Size","Modified"),d.title)E(string.rep("-",52),d.border)else
-E(string.format(_,"Name","Size"),d.title)E(string.rep("-",34),d.border)end
+E(string.format(Y,"Name","Size"),d.title)E(string.rep("-",34),d.border)end
 for aG,aF in ipairs(aw)do local aI,aH
 if aF:sub(-1)=="/"then
-aI=string.format(_,"["..aF:sub(1,-2).."]","<DIR>")aH=d.dir or d.highlight else local aJ=e.size(e.join(av,aF))
+aI=string.format(Y,"["..aF:sub(1,-2).."]","<DIR>")aH=d.dir or d.highlight else local aJ=e.size(e.join(av,aF))
 aH=d.fg
 if aF:match("%.lua$")then
 aH=d.file_lua or d.file_exec or d.highlight elseif aF:match("%.cfg$")or aF:match("%.conf$")then
-aH=d.file_cfg or d.warning elseif aF:match("%.log$")then aH=d.file_log or d.dim end;aI=string.format(_,aF:sub(1,24),m(aJ))end;if aA then aI=aI.."  "..aE(aF)end;E(aI,aH)end
+aH=d.file_cfg or d.warning elseif aF:match("%.log$")then aH=d.file_log or d.dim end;aI=string.format(Y,aF:sub(1,24),m(aJ))end;if aA then aI=aI.."  "..aE(aF)end;E(aI,aH)end
 if az>0 then
 E(#aw.." items ("..az.." hidden: ls -a shows them)",d.dim)else E(#aw.." items",d.dim)end end;b.dir=b.ls
 local function C(au,E)local av=f(au)if not l(av,E)then return true end;local aw,ax,ay=H.readLinesCapped(e,av,function(az)
@@ -369,7 +369,7 @@ if not E[1]then au("Usage: more <file>",d.dim)return end;local aw=f(E[1])if not 
 local av={{" "..aw,d.title}}
 local ax,ay,az=H.readLinesCapped(e,aw,function(aA)av[#av+1]={aA,d.fg}end)if not ax then au(K..E[1],d.error)return end;if az then
 av[#av+1]={string.format(H.VIEW_STOPPED,ay),d.warning}end
-s(av,E[1]:match(aa)or E[1])end
+s(av,E[1]:match(ae)or E[1])end
 local function D(E,av,au)local aw=f(E)local ax=aw:match("^(.*)/[^/]+/?$")or"/"if not
 o(ax,au)then return false end;if e.isDirectory and e.isDirectory(aw)then
 if
@@ -428,7 +428,7 @@ E(string.format("%s -> %s  (%s restored)",aw[1],(ax:gsub("^.*/","")),m(
 local function G(au,av,aw,E)local ax=f(au)
 if ax=="/"then E("Cannot remove root",d.error)return end;local ay=_G._TOS and _G._TOS.securefs
 if ay and
-type(ay.removeRefusal)==Z then
+type(ay.removeRefusal)==ag then
 local aC=ay.removeRefusal(ax,H.sessionOf(a))if aC then E(tostring(aC),d.error)return end end
 local aA={"^/$","^/init%.lua$","^/bios%.lua$","^/tos$","^/tos/","^/etc$","^/etc/","^/boot$","^/boot/"}
 for aD,aC in ipairs(aA)do
@@ -495,14 +495,14 @@ if aD~=nil and aD~="-"then
 E("Note: a typed passphrase stays in this seat's command history;",d.dim)
 E("leave it off, or use -, to be asked for it instead.",d.dim)return aD end;if not j then
 E("Cannot ask for a passphrase here: give it as the last argument.",d.error)return nil end
-local aF=j("Passphrase: ",256,true)if not aF or aF==""then E(ab,d.dim)return nil end
+local aF=j("Passphrase: ",256,true)if not aF or aF==""then E(Z,d.dim)return nil end
 if aE then
 local aG=j("Again, to confirm: ",256,true)if aG~=aF then
-E(aG and"The two did not match; nothing was changed."or ab,d.error)return nil end end;return aF end
-if av==I or av==ac then local aG,aI=au[2],au[3]if not aG or not aI then
+E(aG and"The two did not match; nothing was changed."or Z,d.error)return nil end end;return aF end
+if av==I or av==af then local aG,aI=au[2],au[3]if not aG or not aI then
 E("Usage: vault "..av..
 " <src> <dst> [passphrase | -]",d.dim)return end;local aD=ay(f(aG))if not aD then E(K..
-aG,d.error)return end;if av==ac and
+aG,d.error)return end;if av==af and
 not aw.isEncrypted(aD)then
 E("Source is not a TOS vault blob.",d.warning)return end
 local aH=az(au[4],av==I)if not aH then return end;local aE,aF;if av==I then aE,aF=aw.encrypt(aD,aH)else
@@ -532,7 +532,7 @@ E(string.format(" size:     %d bytes",#aE),d.fg)local aF=#aw.MAGIC+1
 local aG=aE:sub(aF,aF+3):gsub("\0+$","")
 E(string.format(" algo:     %s",aG),d.fg)
 E(string.format(" ctLen:    encrypted body inside this blob"),d.dim)
-E(" (decrypt with the right passphrase to access contents)",d.dim)elseif av=="tape"then local aD=au[2]if aD~=I and aD~=ac then
+E(" (decrypt with the right passphrase to access contents)",d.dim)elseif av=="tape"then local aD=au[2]if aD~=I and aD~=af then
 E("Usage: vault tape encrypt|decrypt [passphrase | -]",d.dim)return end;local aE=b.tape;if not aE then
 E("Tape module not installed (run `pkg install tape`).",d.warning)return end
 local aF=az(au[3],aD==I)if not aF then return end;aE({aD,aF},E)else
@@ -555,7 +555,7 @@ if#ay==0 then E("(empty — cancelled)",d.dim)return end;local az,aA=av.unlock(a
 E("Keychain unlocked.",d.highlight)else
 E("Unlock failed: "..tostring(aA),d.error)end elseif ax=="lock"then av.lock(aw)
 E("Keychain locked.",d.highlight)elseif ax=="list"then
-if not av.isUnlocked(aw)then E(ae,d.warning)return end;local ay=av.list(aw)
+if not av.isUnlocked(aw)then E(_,d.warning)return end;local ay=av.list(aw)
 if#ay==0 then E("(empty)",d.dim)return end;for aA,az in ipairs(ay)do E("  "..az,d.fg)end elseif ax=="set"then if not au[2]then
 E("Usage: keychain set <name>",d.dim)return end;if not av.isUnlocked(aw)then
 E("Keychain is locked. Run 'keychain unlock' first.",d.warning)return end;if not j then
@@ -566,17 +566,17 @@ E("Slot '"..
 au[2].."' saved.",d.highlight)else
 E("Save failed: "..tostring(aA),d.error)end elseif ax=="get"then if not au[2]then
 E("Usage: keychain get <name>",d.dim)return end;if not av.isUnlocked(aw)then
-E(ae,d.warning)return end;local ay,az=av.get(au[2],aw)if ay then
+E(_,d.warning)return end;local ay,az=av.get(au[2],aw)if ay then
 E(ay,d.fg)else
 E(tostring(az or"no such slot"),d.error)end elseif ax=="remove"or ax=="rm"then if not au[2]then
 E("Usage: keychain remove <name>",d.dim)return end;if not av.isUnlocked(aw)then
-E(ae,d.warning)return end;local ay,az=av.remove(au[2],aw)
+E(_,d.warning)return end;local ay,az=av.remove(au[2],aw)
 if ay then E("Removed '"..
 au[2].."'.",d.highlight)else E(
 "Remove failed: "..tostring(az),d.error)end else
 E("Usage: keychain [status|unlock|lock|list|set|get|remove] ...",d.dim)end end
 b.profile=function(au,E)local aw=_G._TOS and _G._TOS.profile;if not aw then
-E(af,d.error)return end;local av=H.sessionOf(a)local ax=au[1]or"show"
+E(ah,d.error)return end;local av=H.sessionOf(a)local ax=au[1]or"show"
 if ax==
 "show"then local ay,aA=aw.load(av)
 E(string.format(" name:    %s",ay.name),d.title)
@@ -597,7 +597,7 @@ aD and aD.preset and not aD.preset(az)then E("Unknown theme preset: "..az,d.erro
 E(
 "Available: "..table.concat(aD.list(),", "),d.dim)end;return end end;aA[ay]=az;local aB,aC=aw.save(aA,av)
 if aB then
-E("Profile updated. Re-login to apply.",d.highlight)else E(tostring(aC or ag),d.error)end else E("Unknown field: "..ay,d.error)end elseif ax=="env"then if not au[2]then
+E("Profile updated. Re-login to apply.",d.highlight)else E(tostring(aC or aj),d.error)end else E("Unknown field: "..ay,d.error)end elseif ax=="env"then if not au[2]then
 E("Usage: profile env <KEY> [VALUE]",d.dim)return end;local ay=aw.load(av)if au[3]then
 ay.env[au[2]]=au[3]E("env["..au[2].."] set",d.highlight)else ay.env[au[2]]=
 nil
@@ -616,12 +616,12 @@ E("Profile reset to defaults.",d.highlight)else
 E("Usage: profile [show|set|env|startup|reset]",d.dim)end end
 b.cp=function(E,au)
 if not E[2]then au("Usage: cp <src> <dst>",d.dim)return end;local aw,av=f(E[1]),f(E[2])if e.isDirectory(av)then
-av=e.join(av,aw:match(aa)or aw)end;local ax,ay=e.copy(aw,av)
+av=e.join(av,aw:match(ae)or aw)end;local ax,ay=e.copy(aw,av)
 if ax then k()
 au("Copied: "..E[2],d.highlight)else au(ay or"Failed",d.error)end end
 b.mv=function(au,E)
 if not au[2]then E("Usage: mv <src> <dst>",d.dim)return end;local av,aw=f(au[1]),f(au[2])if e.isDirectory(aw)then
-aw=e.join(aw,av:match(aa)or av)end;if not o(av,E)then return end
+aw=e.join(aw,av:match(ae)or av)end;if not o(av,E)then return end
 if not o(aw,E)then return end
 if e.rename(av,aw)then k()E("Moved: "..au[2],d.highlight)else
 local ax,ay=e.copy(av,aw)if ax and e.remove(av)then k()
@@ -638,7 +638,7 @@ local aF=H.sessionOf(a)local aG=g.canAccessAs(aF,aE,"r")return aG end
 local function aB(aE,aF)if aF>aC then return end;if#aw>=ay then return end;if not aD(aE)then return end
 local aI,aG=pcall(e.list,aE)if not aI or not aG then return end;local aH={}
 if type(aG)=="table"then aH=aG elseif
-type(aG)==Z then for aJ in aG do aH[#aH+1]=aJ end end
+type(aG)==ag then for aJ in aG do aH[#aH+1]=aJ end end
 for aK,aJ in ipairs(aH)do if#aw>=ay then break end;O()
 local aL=e.join(aE,aJ:gsub("/$",""))local aM=aJ:sub(-1)=="/"local aN=false;if ax then
 local aO,aP=pcall(string.match,aL,ax)local aQ,aR=pcall(string.match,aJ,ax)
@@ -697,7 +697,7 @@ E(av..
 ": built-in (".. (ax.category or"?")..", needs "..
 H.tierName(aF)..")",d.title)if ax.help then E("  "..ax.help,d.fg)end;if
 aF>H.liveTier(a)then
-E("  You do not have the tier to run it — 'why "..av.."'.",d.warning)end;aw=true end;local aD,az=pcall(require,R)
+E("  You do not have the tier to run it — 'why "..av.."'.",d.warning)end;aw=true end;local aD,az=pcall(require,S)
 local aB=aD and az and az.ownerOfCommand and
 az.ownerOfCommand(av)or nil
 if aB then
@@ -712,7 +712,7 @@ if not aw then E(av..": not found",d.error)
 E("  Not a built-in, an installed package's command, or a program on",d.dim)
 E("  /bin, /usr/bin or /tos/shell. 'help' lists what this box has.",d.dim)end end
 local function an(E)local au=require(L)
-if au.entry and au.entry(E)then return true end;if H.mayHavePackages()then local aw,av=pcall(require,R)
+if au.entry and au.entry(E)then return true end;if H.mayHavePackages()then local aw,av=pcall(require,S)
 if
 aw and av and av.ownerOfCommand and av.ownerOfCommand(E)then return true end end;return
 H.resolveProgram(e,E)~=nil end
@@ -737,13 +737,13 @@ local function aD(aE,aF)if not a.execOne then
 E("open: the executor is unavailable",d.error)return end;local aG=a.execOne(aE.." "..av.quote(aF),
 nil,true)for aI,aH in ipairs(aG or{})do
 E(aH[1],aH[2])end end
-if aw=="set"or aw=="unset"then local aH=au[#au]==S
+if aw=="set"or aw=="unset"then local aH=au[#au]==R
 local aE=(au[2]or""):gsub("^%.",""):lower()if
 aE==""or not aE:match("^[%w]+$")or#aE>8 then ax()return end;if aH and not r(E)then return end
 local aF=aB(aH)if not aF then
 E("There is no home directory to keep your choice in.",d.error)return end;local aG=aC(aF)
 if aw=="set"then local aI=au[3]and
-au[3]:lower()if not aI or aI==S then ax()return end;if
+au[3]:lower()if not aI or aI==R then ax()return end;if
 not an(aI)then
 E("'"..
 aI.."' is not a command this machine has ('which "..aI.."').",d.error)return end;aG.ext[aE]=aI;if
@@ -790,7 +790,7 @@ local aI=aG and au[3]:lower()or(aF[1]and aF[1].cmd)if not aI then
 E("Nothing here opens "..aE.." ('open with' lists what could).",d.warning)return end;if not aG then
 E("Opening in "..aI..": "..aF[1].why..
 ".",d.dim)end;aD(aI,aE)end end
-b.alias=function(au,E)local ax=_G._TOS and _G._TOS.profile;if not ax then E(af,d.error)
+b.alias=function(au,E)local ax=_G._TOS and _G._TOS.profile;if not ax then E(ah,d.error)
 return end;local ay=H.sessionOf(a)
 if not au[1]then local aE=ax.load(ay)
 local aD={}for aF in pairs(aE.aliases or{})do aD[#aD+1]=aF end
@@ -807,15 +807,15 @@ local aA=tostring(H.tokenizeSimple(az)[1]or""):lower()if aA==av then E("An alias
 E("To add default flags, alias to a different name.",d.dim)return end;aw.aliases=
 aw.aliases or{}aw.aliases[av]=az;local aB,aC=ax.save(aw,ay)
 if
-not aB then E(tostring(aC or ag),d.error)return end;H.invalidateAliases(a)
+not aB then E(tostring(aC or aj),d.error)return end;H.invalidateAliases(a)
 E("alias "..av.." -> "..az,d.highlight)end
 b.unalias=function(au,E)local ax=_G._TOS and _G._TOS.profile;if not ax then
-E(af,d.error)return end;if not au[1]then
+E(ah,d.error)return end;if not au[1]then
 E("Usage: unalias <name>",d.dim)return end;local ay=H.sessionOf(a)
 local av=au[1]:lower()local aw=ax.load(ay)
 if not aw.aliases or not aw.aliases[av]then E(
 av..": not aliased",d.dim)return end;aw.aliases[av]=nil;local az,aA=ax.save(aw,ay)if not az then
-E(tostring(aA or ag),d.error)return end;H.invalidateAliases(a)E("Removed alias '"..
+E(tostring(aA or aj),d.error)return end;H.invalidateAliases(a)E("Removed alias '"..
 av.."'.",d.highlight)end
 b.du=function(au,E)local av=f(au[1]or(a.cwd or"/"))
 if not l(av,E)then return end;local function ax(ay,az)return
@@ -934,7 +934,7 @@ ay:gmatch("%S+")do aC[#aC+1]=aK end;if#aC==0 then return aB end
 local aD=aC[1]:lower()local aF={}for aK=2,#aC do aF[#aF+1]=aC[aK]end
 local aG=H.tierRefusal(a,aD)if aG then aB[#aB+1]={aG,d.error}return aB end;local aE=b[aD]
 if
-not aE then local aL,aK=pcall(require,R)if aL and aK and aK.getCommand then
+not aE then local aL,aK=pcall(require,S)if aL and aK and aK.getCommand then
 aE=aK.getCommand(aD)end end;if not aE then
 aB[#aB+1]={"Unknown command: "..aD.."  [E-801 ERR_UNKNOWN_CMD]",d.error}return aB end
 local aH=function(aK,aL)aB[#aB+1]={tostring(aK),
@@ -1068,8 +1068,8 @@ b.uptime=function(au,E)local av=h.uptime()local aw=math.floor(av/3600)local ax=m
 E(string.format("Uptime: %dh %dm %ds (%.1fs total)",aw,ax,ay,av),d.fg)end
 b.date=function(au,E)
 local av=h.getConfig and h.getConfig()or nil
-if au[1]=="tz"or au[1]==T or au[1]=="set"then local aC=(av and av.get and
-av.get(T))or 0
+if au[1]=="tz"or au[1]==U or au[1]=="set"then local aC=(av and av.get and
+av.get(U))or 0
 local aB=tonumber(au[2])
 if not aB then E("Timezone offset: "..aC.."h",d.fg)
 E("Usage: date tz <hours>   e.g. 'date tz -5'",d.dim)
@@ -1077,17 +1077,17 @@ E("OpenComputers has no settable clock; this only shifts the",d.dim)
 E("DISPLAYED time relative to the world/host clock.",d.dim)return end;if aB<-23 or aB>23 then
 E("Offset must be between -23 and 23.",d.error)return end;if not r(E)then return end
 if not
-(av and av.set)then E("No writable config available.",d.error)return end;av.set(T,aB)if av.save then av.save()end
+(av and av.set)then E("No writable config available.",d.error)return end;av.set(U,aB)if av.save then av.save()end
 E("Timezone offset set to "..aB.."h. (was "..
 aC.."h)",d.highlight)return end;local ax=au[1]or"%Y-%m-%d %H:%M:%S"local ay=
-(av and av.get and av.get(T))or 0
+(av and av.get and av.get(U))or 0
 local az=os.time()+ (ay*3600)local aA,aw=pcall(os.date,ax,az)if aA and aw then
 E(tostring(aw),d.fg)else
 E(tostring(aw or"date error"),d.error)end end;b.time=b.date
-b.keys=function(au,E)local aD,av=pcall(require,X)if not aD or not av then
+b.keys=function(au,E)local aD,av=pcall(require,ak)if not aD or not av then
 E("Keybind module unavailable.",d.error)return end
 local aw=(au[1]or"list"):lower()local ax=false;for aF=2,#au do
-if au[aF]==S then ax=true;table.remove(au,aF)break end end
+if au[aF]==R then ax=true;table.remove(au,aF)break end end
 local aE=(a.who=="root")and"/root"or(
 "/home/".. (a.who or""))
 local az=ax and"/etc/keys.cfg"or(aE.."/.keys.cfg")local aB,ay=pcall(require,"kernel.serialize")
@@ -1121,11 +1121,11 @@ E(aK..
 if aA(aH)then
 E(aF..
 " is now "..table.concat(aG," ").. (ax and"  (machine-wide)"or
-""),d.highlight)else E(ah.. (ax and U or"."),d.error)end elseif aw=="reset"then local aF=au[2]local aG=aC()
+""),d.highlight)else E(ab.. (ax and Q or"."),d.error)end elseif aw=="reset"then local aF=au[2]local aG=aC()
 if aF then if not av.DEFAULTS[aF]then
 E("No such action: "..aF,d.error)return end;aG[aF]=nil;if aA(aG)then
-E(aF.." is back to the default.",d.highlight)else E(ai,d.error)end else if aA({})then
-E("All shortcuts back to the defaults.",d.highlight)else E(ai,d.error)end end else
+E(aF.." is back to the default.",d.highlight)else E(ac,d.error)end else if aA({})then
+E("All shortcuts back to the defaults.",d.highlight)else E(ac,d.error)end end else
 E("keys — TOS's standard keyboard shortcuts",d.title)
 E("  keys list                     Show them",d.fg)
 E("  keys set <action> <key>...    Rebind one",d.fg)
@@ -1133,7 +1133,7 @@ E("  keys reset [action]           Back to the default",d.fg)
 E("Add --system to change them for every user (/etc/keys.cfg, admin).",d.dim)end end
 b.menu=function(au,E)local av=(au[1]or"list"):lower()local ax=false
 for aF=2,#au do if
-au[aF]==S then ax=true;table.remove(au,aF)break end end;local aD=(a.who=="root")and"/root"or
+au[aF]==R then ax=true;table.remove(au,aF)break end end;local aD=(a.who=="root")and"/root"or
 ("/home/".. (a.who or""))local aw=
 ax and"/etc/menu.cfg"or(aD.."/.menu.cfg")
 local aE,aB=pcall(require,"kernel.serialize")
@@ -1169,22 +1169,22 @@ ipairs(aF.buildMenuDefs(a))do E(aH.label,d.title)
 for aI,aJ in ipairs(aH.items)do if aJ.sep then E("    ---",d.dim)else
 E(string.format("    %-20s %s",aJ.label,(
 aJ.action or""):match("^run:(.+)$")or(aJ.action or"")),d.fg)end end end
-E("Change it with: menu add|remove|rename|move  (add --system for everyone)",d.dim)elseif av==aj or av=="move"then local aG,aH=au[2],au[3]if not(aG and aH)then
+E("Change it with: menu add|remove|rename|move  (add --system for everyone)",d.dim)elseif av==ai or av=="move"then local aG,aH=au[2],au[3]if not(aG and aH)then
 E("Usage: menu "..av..
 
-" <name> <".. (av==aj and"new name"or"Menu")..">",d.dim)return end;local aF=ay()
+" <name> <".. (av==ai and"new name"or"Menu")..">",d.dim)return end;local aF=ay()
 aF[#aF+1]=(
-av==aj)and{rename=aG,to=aH}or{move=aG,menu=aH}
+av==ai)and{rename=aG,to=aH}or{move=aG,menu=aH}
 if az(aF)then aA()
-E("Saved. "..aC(aF[#aF]),d.highlight)else E(ah.. (ax and U or"."),d.error)end elseif av=="hide"then local aF=au[2]if not aF then
+E("Saved. "..aC(aF[#aF]),d.highlight)else E(ab.. (ax and Q or"."),d.error)end elseif av=="hide"then local aF=au[2]if not aF then
 E("Usage: menu hide <item or Menu name>",d.dim)
 E("Hides a built-in entry. 'menu reset' brings everything back.",d.dim)return end
 local aG=ay()
 aG[#aG+1]={remove=aF,menu=(au[3]=="menu")or nil}
-if az(aG)then aA()E("Hidden: "..aF,d.highlight)else E(ah..
-(ax and U or"."),d.error)end elseif av=="reset"then if az({})then aA()
+if az(aG)then aA()E("Hidden: "..aF,d.highlight)else E(ab..
+(ax and Q or"."),d.error)end elseif av=="reset"then if az({})then aA()
 E("Menu reset to the built-in bar ("..aw.." cleared).",d.highlight)else
-E("Reset failed".. (ax and U or"."),d.error)end elseif
+E("Reset failed".. (ax and Q or"."),d.error)end elseif
 av=="add"then local aG=au[2]
 if not aG or not au[3]then
 E("Usage: menu add <label> <command...> [in <Menu>]",d.dim)
@@ -1199,7 +1199,7 @@ E(string.format("Added '%s' -> %s  (menu: %s)",aG,aF,aH or"Tools"),d.highlight)e
 local aF=tonumber(au[2])local aG=ay()if not aF or not aG[aF]then
 E("Usage: menu remove <#>   (see 'menu list')",d.error)return end
 local aH=table.remove(aG,aF)if az(aG)then aA()
-E("Removed '".. (aH.label or"?").."'.",d.highlight)else E(ai,d.error)end else
+E("Removed '".. (aH.label or"?").."'.",d.highlight)else E(ac,d.error)end else
 E("menu — adjust the menu bar",d.title)
 E("  menu show                     The bar as it is right now",d.fg)
 E("  menu list                     Your edits to it",d.fg)E("  menu add <label> <cmd...> [in <Menu>]",d.fg)
@@ -1239,13 +1239,13 @@ if aA and aw then
 a.lastOut={"Password changed. "..tostring(aw),d.warning}elseif aA then a.lastOut={"Password changed.",d.highlight}else
 a.lastOut={tostring(aw),d.error}end end
 local function ao(E,au,av)local az=a.st
-local ax=g.registerSession and g.registerSession(E)or nil;local aA,ay=pcall(require,Q)
+local ax=g.registerSession and g.registerSession(E)or nil;local aA,ay=pcall(require,T)
 local aw=aA and ay.current and ay.current()local aB=aw and aw.principal;if ax then a.st=ax end
 if aw then aw.principal=E end;local aC,aD=pcall(au)a.st=az;if aw then aw.principal=aB end;if ax and g.logout then
 pcall(g.logout,ax)end;if not aC then
 av("sudo: "..tostring(aD),d.error)end end
 local function t()if not a._sudo then return false end;a.st=a._sudo.origSt
-local av,E=pcall(require,Q)local au=av and E.current and E.current()if au then
+local av,E=pcall(require,T)local au=av and E.current and E.current()if au then
 au.principal=a._sudo.origPrincipal end;if a._sudo.token and g.logout then
 pcall(g.logout,a._sudo.token)end;a._sudo=nil;return true end;a.sudoDrop=t
 b.sudo=function(au,E)
@@ -1273,7 +1273,7 @@ local aw,aA=g.elevate(ax,ay)if not aw then
 E("sudo: "..tostring(aA or"elevation failed"),d.error)return end
 if av=="-s"then t()
 local aD=g.registerSession and
-g.registerSession(aw)or nil;local aF,aE=pcall(require,Q)
+g.registerSession(aw)or nil;local aF,aE=pcall(require,T)
 local aC=aF and aE.current and aE.current()
 a._sudo={origSt=a.st,origPrincipal=aC and aC.principal,token=aD}if aD then a.st=aD end;if aC then aC.principal=aw end
 E("Elevated to "..
@@ -1310,7 +1310,7 @@ aJ:gmatch("%S+")do aL[#aL+1]=aT end;if#aL==0 then return aK end
 local aM=aL[1]local aO={}for aT=2,#aL do aO[#aO+1]=aL[aT]end
 local aP=H.tierRefusal(a,aM:lower())if aP then aK[#aK+1]={aP,d.error}return aK end;if not ax then
 ax=require(L).build(a,c)end;local aN=ax[aM]
-if not aN then local aU,aT=pcall(require,R)if aU and aT and
+if not aN then local aU,aT=pcall(require,S)if aU and aT and
 aT.getCommand then aN=aT.getCommand(aM)end end;if not aN then
 aK[#aK+1]={"Unknown command: "..aM,d.error}return aK end;local aQ=function(aT,aU)
 aK[#aK+1]={tostring(aT),aU or d.fg}end
@@ -1322,7 +1322,7 @@ local aE,aF=pcall(function()return av.isReady()end)
 if not aE or not aF then E("No tape inserted.",d.warning)return end
 local aG=(av.getSize and av.getSize())or 0
 if aG<=0 then E("Tape is empty.",d.warning)return end
-local ay=j and j("Tape menu passphrase: ",64,true)or nil;if not ay or ay==""then E(ab,d.dim)return end
+local ay=j and j("Tape menu passphrase: ",64,true)or nil;if not ay or ay==""then E(Z,d.dim)return end
 local aH,aA=pcall(require,"kernel.vault")
 if not aH or not aA then E("vault unavailable",d.error)return end;local aB,aI=aw.readTapeMenuFromDrive(av,ay,aA)if not aB then
 E(tostring(aI),d.error)return end
@@ -1338,7 +1338,7 @@ local aA=math.min(#az,10)for aB=1,aA do E("  "..az[aB],d.fg)end;if#az>aA then
 E("  ... "..
 (#az-aA).." more line(s)",d.dim)end end
 E("Usage: clip [set <text> | clear]   Copy: "..
-(function()local aB,aA=pcall(require,X)
+(function()local aB,aA=pcall(require,ak)
 return(aB and aA)and
 aA.label("copy",a.who)or"Ctrl+Insert"end)(),d.dim)return end;if ax=="clear"then av.clear(aw)
 E("Clipboard cleared.",d.highlight)return end
@@ -1359,7 +1359,7 @@ b.lang=function(au,E)local az,av=pcall(require,"kernel.i18n")if not az or not av
 E(
 "i18n unavailable: "..tostring(av),d.error)return end;local aw=au[1]
 if not aw then
-E(ak..av.language()..
+E(aa..av.language()..
 "  ("..av.languageName()..")",d.title)E("Installed catalogs:",d.fg)for aE,aD in ipairs(av.available())do
 local aF=(aD.code==
 av.language())and" * "or"   "
@@ -1394,7 +1394,7 @@ ax.save then local aD=ax.load(ay)
 aD.lang=
 (av.language()~="en")and av.language()or nil;local aE,aF=ax.save(aD,ay)
 if aE then
-E(ak..
+E(aa..
 av.language().."  (saved to your profile)",d.highlight)else
 E("Language set for this session (profile save failed: "..tostring(aF)..")",d.warning)end else
-E(ak..av.language().."  (this session)",d.highlight)end end end
+E(aa..av.language().."  (this session)",d.highlight)end end end

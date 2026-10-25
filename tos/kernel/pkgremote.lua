@@ -1,5 +1,5 @@
 
-local K,P,ah,X,O="string","pkgremote","internet module unavailable","could not write ","package '"local I=require("kernel.fs")
+local X,ah,O,P,K="could not write ","internet module unavailable","package '","pkgremote","string"local I=require("kernel.fs")
 local L=require("kernel.serialize")local H={}local J=nil;local N="/etc/pkg-repos.cfg"local M="/var/pkg/known-repos.cfg"local Y=32
 local ai=8;local Z="/var/pkg/remote"local R=128*1024;local aj=128*1024;local ab=512*1024;local ac=64;local S=function()return
 false end

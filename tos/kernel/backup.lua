@@ -1,4 +1,4 @@
-local C,L,M,G="backup","backup not initialized","no session","entry "local z={}
+local L,C,G,M="backup not initialized","backup","entry ","no session"local z={}
 local A="TOSBAK1\0"local H=256;local D=1024*1024;local E=4096
 local N={[".trash"]=true,["tmp"]=true}local w=nil;local I=nil;local x=nil;local y=nil
 function z.init(a)w=a.securefs;I=a.fs;x=a.crypto;y=a.log end;local function O(a)return string.char(a&0xFF)end

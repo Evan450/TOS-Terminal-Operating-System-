@@ -1,4 +1,4 @@
-local C,R,K,L,M="remote","string"," bytes)","/public","/public/"
+local K,L,M,C,R=" bytes)","/public","/public/","remote","string"
 local E=require("computer")local A={}local I="remote_exec"local F="remote_res"local S=30;local H=8192;local N=32*1024;local T=1e6
 local O=1e5;local z=nil;local B=nil;local G=nil;local y=nil;local U=nil;local J=false;function A.setEnabled(a)
 J=a and true or false end;function A.isEnabled()return J end;local function P()

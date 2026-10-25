@@ -1,4 +1,4 @@
-local V,K,W,X="Copied","key_down","scroll","clipboard"
+local V,W,K,X="Copied","clipboard","key_down","scroll"
 local C=require("computer")local D=require("shell.panels.helpers")
 local P=require("shell.panels.tabs")local Q=require("shell.panels.dialogs")
 local B=require("shell.panels.draw")local I=require("shell.panels.filebrowser")
@@ -92,7 +92,7 @@ local aI,aN,aH,aG,aO=O()local aF=0
 do
 local aR=
 
-aI==K or aI=="key_up"or aI=="touch"or aI=="drag"or aI=="drop"or aI==W or aI==X
+aI==K or aI=="key_up"or aI=="touch"or aI=="drag"or aI=="drop"or aI==X or aI==W
 if aR then a._lastInputAt=C.uptime()if a._blanked then a._blanked=nil;i()
 aI,aN,aH,aG,aO=nil,nil,nil,nil,nil end end end;local aP=false;if aI==K or aI=="key_up"then
 aP=S.trackMods(a.mods,aI,aH,aG,C.uptime())end;local aQ=a.outLines~=nil;local aL=a.browser and
@@ -101,7 +101,7 @@ local aM=a.browser and a.browser.scroll;local aE=a.tabs[a.activeTab]
 if a.suspendIdleDraw and
 (
 
-aI==K or aI=="touch"or aI=="drag"or aI=="drop"or aI==W or aI==X or aI=="tos_focus"or aI=="tos_monitor")then
+aI==K or aI=="touch"or aI=="drag"or aI=="drop"or aI==X or aI==W or aI=="tos_focus"or aI=="tos_monitor")then
 a.suspendIdleDraw=nil end
 if aI==K and not aP then
 if a.ctxOpen then
@@ -385,8 +385,8 @@ aS[aE.curRow]=aZ:sub(1,aE.curCol-1)..
 string.char(aH)..aZ:sub(aE.curCol)aE.curCol=aE.curCol+1;aE.modified=true;aF=1 end else H.ensureBuiltins()local aS=H.get(aE.type)
 if aS and aS.onKey then
 local aU,aT=aS.onKey(a,aE,{ch=aH,co=aG,exec=h})if aT then return aT end;aF=aU or 0 end end end end elseif
-aI=="touch"or aI=="drag"or aI=="drop"or aI==W then local aS,aR=Y.handle(a,aB,aI,aN,aH,aG,aO)if aR then return aR end
-aF=aS or 0 elseif aI==X and type(aH)=="string"then
+aI=="touch"or aI=="drag"or aI=="drop"or aI==X then local aS,aR=Y.handle(a,aB,aI,aN,aH,aG,aO)if aR then return aR end
+aF=aS or 0 elseif aI==W and type(aH)=="string"then
 if aE and aE.type=="shell"then
 local aS=aH:gsub("[\r\n]+"," ")
 local aR=a.cmdSel and p()or(a.cmdCursor or(#a.cmdline+1))

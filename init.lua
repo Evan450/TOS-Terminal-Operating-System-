@@ -1,8 +1,8 @@
 
-local aF,ap,aM,aG,aH,aN,ax="screen","key_down","filesystem","/tos/kernel/init.lua","/init.lua","splash","string"local ab=...local ah=component;local ac=computer
+local aF,aG,aM,ap,aH,aN,ax="/init.lua","/tos/kernel/init.lua","filesystem","key_down","screen","splash","string"local ab=...local ah=component;local ac=computer
 if not load("return 1<<1")then local a
 for c in
-ah.list("gpu")do local e,d=pcall(ah.proxy,c)if e and d then a=d;break end end;local b;for c in ah.list(aF)do b=c;break end
+ah.list("gpu")do local e,d=pcall(ah.proxy,c)if e and d then a=d;break end end;local b;for c in ah.list(aH)do b=c;break end
 if a and b then pcall(a.bind,b)
 pcall(a.setBackground,0x000000)pcall(a.setForeground,0xFFFFFF)
 pcall(a.fill,1,1,80,25," ")
@@ -22,10 +22,10 @@ type(a.isReadOnly)~="function"then return false end;local b,c=pcall(a.isReadOnly
 local function aI(a)
 for c,b in ipairs({true,false})do for d in ah.list(aM)do local f,e=pcall(ah.proxy,d)
 if
-f and e and e.exists and aO(e,a)then if not(b and ay(e))then return e end end end end end;if not ab then ab=aI(aG)end;if not ab then ab=aI(aH)end;if not ab then
+f and e and e.exists and aO(e,a)then if not(b and ay(e))then return e end end end end end;if not ab then ab=aI(aG)end;if not ab then ab=aI(aF)end;if not ab then
 error("FATAL: Cannot find boot filesystem!")end;_G._TOS_ROOT_READONLY=ay(ab)
 if _G._TOS_ROOT_READONLY then
-local a=ah.list("gpu")()local b=ah.list(aF)()
+local a=ah.list("gpu")()local b=ah.list(aH)()
 if a and b then local d,c=pcall(ah.proxy,a)
 if d and c then
 pcall(c.bind,b)pcall(c.setBackground,0x000000)
@@ -45,7 +45,7 @@ if f~=ab.address then
 local h,g=pcall(ah.proxy,f)if h and g and not ay(g)then local i=g.spaceTotal()
 if i and i>a and i>e then d=g;e=i end end end end
 if d then local f;for h in ah.list("gpu")do f=ah.proxy(h)break end;local g;for h in
-ah.list(aF)do g=h;break end
+ah.list(aH)do g=h;break end
 if f and g then pcall(f.bind,g)
 f.setBackground(0x000000)f.setForeground(0xFFFFFF)local i,j=f.getResolution()
 f.fill(1,1,i,j," ")local function h(m,n,o)f.setForeground(o or 0xFFFFFF)
@@ -91,7 +91,7 @@ if q then h(p,
 "Copy FAILED: "..q,0xFF0000)p=p+1
 h(p,"BIOS not updated. Remove disk to try again.",0xFFAA00)while true do local D=ac.pullSignal(1e9)
 if D==ap then ac.shutdown(true)end end end;h(p,"Copied "..r.." files",0x00FF00)p=p+1
-local w=d.exists(aH)local x=d.exists(aG)local y=w and d.size(aH)or 0;local z=
+local w=d.exists(aF)local x=d.exists(aG)local y=w and d.size(aF)or 0;local z=
 x and d.size(aG)or 0
 if
 not(w and x and y>0 and z>0)then
@@ -111,7 +111,7 @@ h(p,"TOS installed to hard drive!",0x00FF00)p=p+1;h(p,"Rebooting in 3 seconds...
 ac.pullSignal(3)ac.shutdown(true)else
 h(10,"install.lua not found on floppy!",0xFF0000)h(11,"Booting from floppy instead...",0xAAAAAA)
 ac.pullSignal(2)end;break elseif n==50 then break end elseif not m then break end end end end end end
-_G._TOS={version="1.5.0",codename="Aletheia",build="db3e505-dirty",variant="minified",bootFS=ab,bootAddr=ab and ab.address or nil,bootTime=ac.uptime(),startMem=ac.freeMemory(),totalMem=ac.totalMemory()}local am={}local az={}local aJ={}
+_G._TOS={version="1.5.0",codename="Aletheia",build="f4ab6d4-dirty",variant="minified",bootFS=ab,bootAddr=ab and ab.address or nil,bootTime=ac.uptime(),startMem=ac.freeMemory(),totalMem=ac.totalMemory()}local am={}local az={}local aJ={}
 local aP={"/tos/?.lua","/tos/?/init.lua","/usr/lib/?.lua","/usr/modules/?.lua","/usr/modules/?/init.lua"}_G.package={loaded=nil}
 local function aK(a)if not ab.exists(a)then return nil end
 local b=ab.open(a,"r")if not b then return nil end;local c={}while true do local d=ab.read(b,4096)if not d then break end;c[#
@@ -156,7 +156,7 @@ ab.exists(e)end,readFile=function(e)return aK(e)end})ak=c and d or nil end
 an=(aq and ak)and aq.verbosity(ak)or"text"_G._TOS.bootcfg=ak;_G._TOS.bootcfgMod=aq end;local aA
 if aq and aq.echoMinLevel then aA=aq.echoMinLevel(an)else aA=
 ({silent=4,splash=2,text=1,verbose=0})[an]or 1 end;local aB;for a in ah.list("gpu")do aB=a;break end;local aC
-for a in ah.list(aF)do aC=a;break end;local ae;if aB and aC then ae=ah.proxy(aB)
+for a in ah.list(aH)do aC=a;break end;local ae;if aB and aC then ae=ah.proxy(aB)
 if not _G._BIOS_CY then ae.bind(aC)end;_G._TOS.gpu=ae end;local af,ai=50,16;if ae then
 af,ai=ae.getResolution()end;local au=_G._BIOS_DEPTH or 1;if ae then
 local b,a=pcall(ae.getDepth)if b and a then au=a end end;local av=au<=1;local function ad(a)if av then
@@ -259,7 +259,7 @@ local n,m=pcall(l.getLabel)
 i[#i+1]={addr=k,label=(n and type(m)==ax)and m or""}end
 for k in b.list(aM)do if not c[k]then
 local m,l=pcall(b.proxy,k)
-if m and l then local n,o=pcall(l.exists,aH)if n and o then j(k,l)end end end end
+if m and l then local n,o=pcall(l.exists,aF)if n and o then j(k,l)end end end end
 for k in b.list("drive",true)do
 if not c[k]then local m,l=pcall(b.proxy,k)
 if

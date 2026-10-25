@@ -1,4 +1,4 @@
-local z,A="trash not initialized","no session"local s={}local p=nil;local B=nil;local q=nil;local r=nil
+local z,A="no session","trash not initialized"local s={}local p=nil;local B=nil;local q=nil;local r=nil
 local v=nil;local t=4*1024*1024;local x=256;local u=".trashmeta"
 function s.init(a)p=a.securefs;B=a.fs
 q=a.users;r=a.log
@@ -30,9 +30,9 @@ for i,h in ipairs(f)do if
 p.remove(h.path..u,a)p.remove(h.path,a)e=e-h.size;g=g-1;b=b-h.size;c=c-1;if r then
 r.info("trash",
 "Auto-purged: ".. (h.meta and h.meta.origin or h.name))end end end
-function s.put(b,a)if not p then return false,z end;a=a or
+function s.put(b,a)if not p then return false,A end;a=a or
 (q and q.currentSession())or nil
-if not a then return false,A end;local e=C(a)
+if not a then return false,z end;local e=C(a)
 if not e then return false,"no trash for this session"end;local c=p.normalize(b)if not p.exists(c,a)then
 return false,"source not found: "..c end;local function l(F)
 return F:match("([^/]+)/?$")or"unnamed"end;local m=l(c)local i=
@@ -47,8 +47,8 @@ local n={origin=c,deletedAt=i,deletedBy=a.user,size=f}local o,E=p.writeFile(d..u
 r.warn("trash",
 "Couldn't write metadata for "..d..": "..tostring(E))end;if r then
 r.info("trash","Trashed "..c.." -> "..d)end;return true,d end
-function s.list(a)if not p then return{},z end;a=
-a or(q and q.currentSession())or nil;if not a then return{},A end;local b=w(a)if not b or not
+function s.list(a)if not p then return{},A end;a=
+a or(q and q.currentSession())or nil;if not a then return{},z end;local b=w(a)if not b or not
 p.exists(b,a)then return{}end;local c=y(b,a)
 table.sort(c,function(e,f)local g=e.meta and
 e.meta.deletedAt or 0;local h=
@@ -56,9 +56,9 @@ f.meta and f.meta.deletedAt or 0;return g>h end)local d={}
 for g,f in ipairs(c)do
 d[g]={name=f.name,path=f.path,size=f.size,origin=f.meta and f.meta.origin or"?",deletedAt=f.meta and
 f.meta.deletedAt or 0,deletedBy=f.meta and f.meta.deletedBy or"?"}end;return d end
-function s.restore(a,b)if not p then return false,z end;b=b or{}local c=b.session or
+function s.restore(a,b)if not p then return false,A end;b=b or{}local c=b.session or
 (q and q.currentSession())or nil;if not c then return
-false,A end;local h=w(c)
+false,z end;local h=w(c)
 if not h then return false,"no trash for this session"end;local e=h.."/"..a;local f=e..u;if not p.exists(e,c)then return false,
 "no such trash entry: "..a end;local d=b.dest
 if not d then
@@ -74,9 +74,9 @@ if g then p.remove(e,c)else return false,
 "restore failed: "..tostring(i)end end;p.remove(f,c)
 if r then r.info("trash",
 "Restored "..a.." -> "..d)end;return true,d end
-function s.empty(a)if not p then return false,z end;a=a or
+function s.empty(a)if not p then return false,A end;a=a or
 (q and q.currentSession())or nil
-if not a then return false,A end;local c=w(a)
+if not a then return false,z end;local c=w(a)
 if not c or not p.exists(c,a)then return true,0 end;local d=y(c,a)local b=0;for g,f in ipairs(d)do p.remove(f.path..u,a)if
 p.remove(f.path,a)then b=b+1 end end
 if r then r.info("trash",

@@ -1,4 +1,4 @@
-local J,P,B,T="screen","string","number","kernel.display"
+local T,B,J,P="kernel.display","number","screen","string"
 local G=require("component")local N=require("computer")local z={}local A={}local U={}local E=1;local V=false;local L=nil
 local M={}local Q={}local R="auto"local I=0;local H,C=0,0;local function K()local a={}for b in pairs(A)do a[#a+1]=b end
 table.sort(a)return a end

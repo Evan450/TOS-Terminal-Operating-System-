@@ -1,5 +1,5 @@
 
-local v,w,B,x,C,J,D,K,y="override","detected","unknown","estimated","EEPROM","Graphics","Network","Storage","border"local t={}local z=nil
+local B,J,C,K,w,x,y,v,D="EEPROM","Graphics","Network","Storage","border","detected","estimated","override","unknown"local t={}local z=nil
 local function A()if z==nil then local a,b=pcall(require,"kernel.hal")
 z=(a and b)or false end;return z or nil end;function t.stickTier(a)local b=A()return
 b and b.stickTier and b.stickTier(a)or nil end
@@ -17,10 +17,10 @@ local function L(b,a,c)if a and tonumber(a.dataTier)then local g=tonumber(a.data
 ("T"..g),v end
 local f,e=pcall(require,"kernel.datacard")
 if f and e and e.capsOf then local g=e.tierOf(e.capsOf(b,c))if g>=1 then
-return g,u[g],w end;return 0,"present (unknown tier)",B end;local function d(g)return b[g]~=nil end
+return g,u[g],x end;return 0,"present (unknown tier)",D end;local function d(g)return b[g]~=nil end
 if
-d("generateKeyPair")or d("ecdsa")or d("ecdh")then return 3,u[3],w elseif
-d("sha256")or d("encrypt")then return 2,u[2],w elseif d("md5")or d("crc32")then return 1,u[1],w end;return 0,"present (unknown tier)",B end;t._memTier=E;t._gpuTier=F;t._screenTier=G;t._diskTier=H
+d("generateKeyPair")or d("ecdsa")or d("ecdh")then return 3,u[3],x elseif
+d("sha256")or d("encrypt")then return 2,u[2],x elseif d("md5")or d("crc32")then return 1,u[1],x end;return 0,"present (unknown tier)",D end;t._memTier=E;t._gpuTier=F;t._screenTier=G;t._diskTier=H
 local function I(c,b,a)if
 b and tonumber(b.cpuTier)then return tonumber(b.cpuTier),v end
 if
@@ -30,8 +30,8 @@ if type(e)=="table"then
 local d=tostring(e.class or""):lower()
 if d=="processor"then
 local h=((e.product or"").." ".. (e.description or"").." "..
-tostring(e.clock or"")):lower()local g=h:match("tier%s*(%d)")if g then return tonumber(g),w end end end end end;if type(a)=="number"and a>0 then
-if a>=768 then return 3,x elseif a>=256 then return 2,x else return 1,x end end;return nil,B end;t._detectCpuTier=I
+tostring(e.clock or"")):lower()local g=h:match("tier%s*(%d)")if g then return tonumber(g),x end end end end end;if type(a)=="number"and a>0 then
+if a>=768 then return 3,y elseif a>=256 then return 2,y else return 1,y end end;return nil,D end;t._detectCpuTier=I
 function t.benchmarkCallBudget(a)a=a or require("computer")
 local c=a.uptime()local b=0;while a.uptime()==c and b<1e7 do b=b+1 end
 local d=(b>2.5e5)and
@@ -103,7 +103,7 @@ d.dataCard={present=true,addr=h:sub(1,8),tier=O,name=P,tierSource=Q}end)break en
 for h in e.list("eeprom")do
 pcall(function()local N=e.proxy(h)
 d.eeprom={addr=h:sub(1,8),label=
-(N.getLabel and N.getLabel())or C,size=(N.getSize and N.getSize())or nil,bootAddr=
+(N.getLabel and N.getLabel())or B,size=(N.getSize and N.getSize())or nil,bootAddr=
 (
 f.getBootAddress and(f.getBootAddress()or""):sub(1,8))or nil}end)break end
 local M={gpu=true,screen=true,filesystem=true,modem=true,tunnel=true,data=true,eeprom=true,keyboard=true,internet=true}local o={}
@@ -115,7 +115,7 @@ local function b(e,f,g)c[#c+1]={label=e,value=f,role=g or"value"}end
 local function d(e)c[#c+1]={label="",value=e,role="section"}end;d("System")
 do local g=a.cpu.tierSource;local e,f
 if not a.cpu.tier then
-e,f="  [Tier ? - set in boot settings]","warn"elseif g==v then e,f="  [Tier "..a.cpu.tier.."*]","value"elseif g==x then
+e,f="  [Tier ? - set in boot settings]","warn"elseif g==v then e,f="  [Tier "..a.cpu.tier.."*]","value"elseif g==y then
 e,f="  [~Tier "..
 a.cpu.tier.." est - confirm in settings]","warn"else e,f="  [Tier "..a.cpu.tier.."]","value"end
 b("Processor",(a.cpu.arch or"?")..e,f)end
@@ -127,22 +127,22 @@ b(J,string.format("GPU T%d, %d-bit, max %dx%d%s",a.gpu.tier or 1,
 a.gpu.depth or 1,a.gpu.maxW or 0,a.gpu.maxH or 0,
 (a.gpu.count or 0)>1 and("  (x"..a.gpu.count..")")or""),"value")else b(J,"no GPU card","warn")end
 if a.dataCard.present then local e=a.dataCard.name or"data card"
-local f,g=a.dataCard.tierSource,"ok"if f==B then e,g=e.."  [tier ? - set in boot settings]","warn"elseif f==v then
+local f,g=a.dataCard.tierSource,"ok"if f==D then e,g=e.."  [tier ? - set in boot settings]","warn"elseif f==v then
 e=e.."*"end;b("Crypto",e,g)else
 b("Crypto","software fallback (no data card)","warn")end
 if#a.modems>0 then local e={}for g,f in ipairs(a.modems)do
 e[#e+1]=
 f.wireless and("wireless"..
 (f.strength and(" "..
-math.floor(f.strength))or""))or"wired"end;b(D,
+math.floor(f.strength))or""))or"wired"end;b(C,
 table.concat(e,", ").." card","value")elseif
-a.tunnel.present then b(D,"linked card (tunnel)","value")else b(D,"none","dim")end
+a.tunnel.present then b(C,"linked card (tunnel)","value")else b(C,"none","dim")end
 if a.internet and a.internet.present then local e={}
 if a.internet.http then e[#e+1]="HTTP"end;if a.internet.tcp then e[#e+1]="TCP"end;if#e>0 then
 b("Internet",
 table.concat(e," + ").." card","value")else
 b("Internet","card present, disabled by the server","warn")end end;if a.eeprom.addr then
-b(C,string.format("%s%s",a.eeprom.label or C,a.eeprom.bootAddr and("  boot:"..
+b(B,string.format("%s%s",a.eeprom.label or B,a.eeprom.bootAddr and("  boot:"..
 a.eeprom.bootAddr)or""),"dim")end;d(K)
 if#
 a.disks==0 then b("","(no drives)","dim")else
@@ -171,13 +171,13 @@ local f=b.color or function()return 0xFFFFFF end;local i=f("bg")
 local function e(_,aa,ab,ac)
 if not ab or aa<1 or aa>p or _>g then return end;local ad=g-_+1;if ad<1 then return end
 h(_,aa,tostring(ab):sub(1,ad),f(ac or"value"),i)end;local function M(_)
-e(2,_,string.rep("-",math.max(0,g-2)),y)end;local j=a.cpu or{}local k=a.memory or{}local d=a.gpu or
+e(2,_,string.rep("-",math.max(0,g-2)),w)end;local j=a.cpu or{}local k=a.memory or{}local d=a.gpu or
 {}local R=k.totalKB or 0;local S=k.freeKB or 0
 local function U()if not j.tier then return
 "Tier ?  (set in Boot Settings)"end;local _=j.tierSource
 return"Tier "..j.tier..
 (
-_==v and"  *"or(_==x and"  (est)"or""))end
+_==v and"  *"or(_==y and"  (est)"or""))end
 local function V()if(d.count or 0)==0 then return"none"end;return
 "GPU T".. (d.tier or 1)..
 
@@ -197,13 +197,13 @@ if a.tunnel and a.tunnel.present then return"Linked (tunnel)"end;return"none"end
 if(k.modules or 0)>0 then
 N,O="RAM Modules",k.summary or tostring(k.modules)else N,O="Memory Tier",(k.tier or"?").."  (est)"end;local l=g>=72;local q,T=2,g-1;local Y=T-q-1
 local function P(_,ab,ac,ad,aa)if _<1 or _>p then return end;h(q,_,ab..
-string.rep(ac,Y)..ad,f(y),i)
+string.rep(ac,Y)..ad,f(w),i)
 if aa then h(q+2,_,"╡ "..aa..
-" ╞",f("title"),i)end end;local function r(_)if _<1 or _>p then return end;h(q,_,"║",f(y),i)
-h(T,_,"║",f(y),i)end
+" ╞",f("title"),i)end end;local function r(_)if _<1 or _>p then return end;h(q,_,"║",f(w),i)
+h(T,_,"║",f(w),i)end
 local m={{"Processor",
 (j.arch or"Lua 5.3").. (
-(j.count or 0)>1 and("  (x"..j.count..")")or"")},{"CPU Tier",U()},{J,V()},{"Data Card",W()},{D,X()},{C,(
+(j.count or 0)>1 and("  (x"..j.count..")")or"")},{"CPU Tier",U()},{J,V()},{"Data Card",W()},{C,X()},{B,(
 a.eeprom and a.eeprom.label)or"Lua BIOS"}}
 local n={{"Total Memory",R.."KB"},{"Free Memory",S.."KB"},{N,O},{"Max Text Mode",
 (d.maxW or 0).."x".. (d.maxH or 0)},{"Screens",tostring(
@@ -219,7 +219,7 @@ if l then
 P(1,"╔","═","╗",b.title or"TOS System Configuration")c=2;local _=math.floor(g/2)+1
 for aa=1,math.max(#m,#n)do r(c)if m[aa]then
 s(4,c,m[aa][1],m[aa][2],13)end
-if n[aa]then s(_,c,n[aa][1],n[aa][2],13)end;h(_-2,c,"│",f(y),i)c=c+1 end;P(c,"╠","═","╣",K)c=c+1 else
+if n[aa]then s(_,c,n[aa][1],n[aa][2],13)end;h(_-2,c,"│",f(w),i)c=c+1 end;P(c,"╠","═","╣",K)c=c+1 else
 e(2,1,b.title or"TOS System Configuration","title")M(2)c=4
 for ab,aa in ipairs(m)do s(2,c,aa[1],aa[2],13)c=c+1 end;for ab,aa in ipairs(n)do s(2,c,aa[1],aa[2],13)c=c+1 end
 M(c)c=c+1;e(2,c,K,"title")c=c+1 end;if l then r(c)

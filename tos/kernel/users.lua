@@ -1,5 +1,5 @@
 
-local au,aB,aL,aM,as,aF,aG,aN="string","number","User '","/public","Insufficient privileges","Persist failed: ","User not found","Invalid username or password"local aq=require("computer")
+local aL,as,aM,aF,aN,aG,aB,au="/public","Insufficient privileges","Invalid username or password","Persist failed: ","User '","User not found","number","string"local aq=require("computer")
 local aC=require("kernel.serialize")local ak={}local aj={GUEST=0,USER=1,ADMIN=2,ROOT=3}local al={}local aH="/etc/users.dat"
 local bp="/var/run/session"local av="/etc/elevate.dat"local ap={}local ao=nil;local an=nil;local am=nil;local ai=nil;local ar=nil;local aO=5
 local aP=true;local aw=3600;local aQ=6;local function aI(a)
@@ -83,7 +83,7 @@ nil,nil;at()end;local j=math.max(
 c.tier or 0,e.cap)
 local l={user=c.user,tier=j,realTier=c.realTier or c.tier,home=c.home,displayName=c.displayName or
 c.user,loginTime=c.loginTime,lastActivity=aq.uptime(),elevated=true,elevatedFrom=c.tier or 0,elevatedCap=e.cap}if ai then
-ai.warn("auth",aL..tostring(c.user).."' elevated to tier "..j)end;return l end
+ai.warn("auth",aN..tostring(c.user).."' elevated to tier "..j)end;return l end
 function ak.registerSession(a)
 if type(a)~="table"or not a.user then return nil end;local b=am.token()ap[b]=a;return b end
 local function bf(b,a)
@@ -108,7 +108,7 @@ ai.warn("users","Could not load user DB: "..tostring(c))end;al={}end;if not al["
 if
 
 ar and ar.get and ar.get("guestAccess")and not al["guest"]then ak.createGuestAccount()end
-if not an.exists(aM)then an.makeDirectory(aM)end
+if not an.exists(aL)then an.makeDirectory(aL)end
 if not an.exists("/home")then an.makeDirectory("/home")end
 if ai then local d=0;for e in pairs(al)do d=d+1 end
 ai.info("users","User system initialized ("..d.." accounts)")
@@ -120,7 +120,7 @@ an.makeDirectory("/root")end;at()if ai then
 ai.warn("users","First boot: root account created with default password")
 ai.warn("users","CHANGE THE ROOT PASSWORD IMMEDIATELY!")end end
 function ak.createGuestAccount()
-al["guest"]={tier=aj.GUEST,salt="",hash="",created=az(),lastLogin=0,locked=false,failedAttempts=0,home=aM,displayName="Guest",isGuest=true}at()
+al["guest"]={tier=aj.GUEST,salt="",hash="",created=az(),lastLogin=0,locked=false,failedAttempts=0,home=aL,displayName="Guest",isGuest=true}at()
 if ai then ai.info("users","Guest account created")end end;function ak.guestEnabled()return
 ar and ar.get and ar.get("guestAccess")==true end
 function ak.guestLogin()
@@ -223,12 +223,12 @@ function ak.login(a,b,c)c=c or{}local e=c.setCurrent;if e==nil then e=true end;l
 if not d then
 local j=a_()if j and am and am.verifyPassword then
 am.verifyPassword(b or"",aK,j)end;if ai then
-ai.warn("auth","Login attempt for unknown user: "..tostring(a))end;return nil,aN end;local f=aU(d.failedAttempts)
+ai.warn("auth","Login attempt for unknown user: "..tostring(a))end;return nil,aM end;local f=aU(d.failedAttempts)
 if f>0 then local j=aX(d.lastFailedAt)
 if j<f then
 local k=a_()if k and am and am.verifyPassword then
 am.verifyPassword(b or"",aK,k)end;if ai then
-ai.warn("auth",string.format("Login throttled for '%s' (cooldown %ds)",a,f))end;return nil,aN end end;local h,i=am.verifyPassword(b,d.salt,d.hash)
+ai.warn("auth",string.format("Login throttled for '%s' (cooldown %ds)",a,f))end;return nil,aM end end;local h,i=am.verifyPassword(b,d.salt,d.hash)
 if not h then d.failedAttempts=(
 d.failedAttempts or 0)+1
 d.lastFailedAt=aW()if ai then
@@ -236,7 +236,7 @@ ai.warn("auth",string.format("Failed login for '%s' (attempt %d)",a,d.failedAtte
 if
 aP and d.failedAttempts>=aO and a~="root"then d.locked=true;at()
 if ai then ai.error("auth","Account '"..
-a.."' auto-locked!")end;return nil,aN end;at()return nil,aN end
+a.."' auto-locked!")end;return nil,aM end;at()return nil,aM end
 if d.locked then if ai then
 ai.warn("auth","Login on locked account (correct password): "..a)end
 return nil,"Account is locked. Contact an administrator."end;d.failedAttempts=0;d.lastFailedAt=nil;d.lastLogin=az()
@@ -247,9 +247,9 @@ ap[g]={user=a,tier=ax,realTier=d.tier,home=d.home,displayName=
 d.displayName or a,loginTime=aq.uptime(),lastActivity=aq.uptime(),firstBoot=d.firstBoot or false,passwordChangeOnly=d.firstBoot or false}if e~=false then ao=g end
 if ai then
 if d.firstBoot then
-ai.info("auth",aL..
+ai.info("auth",aN..
 a.."' authenticated (firstBoot — restricted token)")else
-ai.info("auth",aL..a.."' logged in (tier "..d.tier..")")end end;return g end
+ai.info("auth",aN..a.."' logged in (tier "..d.tier..")")end end;return g end
 function ak.promoteAfterFirstBoot(a)local b=ap[a]if not b then return false,"Unknown token"end
 if not
 b.passwordChangeOnly then return false,"Session is not first-boot"end;local c=al[b.user]if not c then return false,aG end;if c.firstBoot then return false,
@@ -258,7 +258,7 @@ b.tier=b.realTier or c.tier;b.passwordChangeOnly=nil;b.firstBoot=nil;return true
 function ak.logout(a)a=a or ao
 if a and ap[a]then local b=ap[a].user;ap[a]=nil;if a==ao then ao=nil end
 if
-ai then ai.info("auth",aL..b.."' logged out")end;return true end;return false end
+ai then ai.info("auth",aN..b.."' logged out")end;return true end;return false end
 function ak.currentSession()local b,a=pcall(require,"kernel.process")
 if
 b and a and a.currentSession then local c=a.currentSession()
@@ -320,7 +320,7 @@ if
 d~=f and a.tier<aj.ADMIN then return false,"Access denied: not your mailbox"end
 if c=="w"then return a.tier>=aj.ADMIN,"System path (admin required)"end;return true end;for i,h in ipairs(bo)do
 if aA(b,h)then if c=="w"then
-return a.tier>=aj.ADMIN,"System path (admin required)"end;return true end end;if aA(b,aM)then
+return a.tier>=aj.ADMIN,"System path (admin required)"end;return true end end;if aA(b,aL)then
 if
 c=="w"then return a.tier>=aj.USER,"Write requires user account"end;return true end;if aA(b,"/tmp")then
 return true end;local g=b:match("^/home/([^/]+)")if g then

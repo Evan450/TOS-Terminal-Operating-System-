@@ -1,12 +1,12 @@
-local s,n,t="peripheral.robot","no robot component","invalid tank"
+local s,n,t="invalid tank","no robot component","peripheral.robot"
 local u=require("kernel.hal")local v=require("compat.sides")local l={}local q
 do
 local b,a=pcall(require,"kernel.event")
 if b and a and a.on then local function c(e,f,d)if d=="robot"then q=nil end end
-a.on("component_removed",c,s)a.on("component_added",c,s)end end
+a.on("component_removed",c,t)a.on("component_added",c,t)end end
 local function m()local b,a=pcall(require,"kernel.process")if b and a and a.current then
 local c=a.current()
-if c and not(c.caps and c.caps[s])then return nil end end;if not q then
+if c and not(c.caps and c.caps[t])then return nil end end;if not q then
 q=u.proxy("robot")end;return q end
 local function o(a)if a==nil then return 3 end
 if type(a)=="string"then local b=v[a:lower()]if not b then return nil,
@@ -67,12 +67,12 @@ if a~=nil then local e=tonumber(a)
 if not e or e~=e or e<0 then return nil,"invalid count"end;return c.transferTo(d,math.floor(e))end;return c.transferTo(d)end
 function l.tankCount()local a=m()if not a then return nil,n end;return a.tankCount()end
 function l.selectTank(a)local b=m()if not b then return nil,n end;local c,d=p(a)
-if not c then return nil,t end;return b.selectTank(c)end
+if not c then return nil,s end;return b.selectTank(c)end
 function l.tankLevel(a)local b=m()if not b then return nil,n end;if a~=nil then local c=p(a)
-if not c then return nil,t end;return b.tankLevel(c)end;return
+if not c then return nil,s end;return b.tankLevel(c)end;return
 b.tankLevel()end
 function l.tankSpace(a)local b=m()if not b then return nil,n end;if a~=nil then local c=p(a)
-if not c then return nil,t end;return b.tankSpace(c)end;return
+if not c then return nil,s end;return b.tankSpace(c)end;return
 b.tankSpace()end
 function l.getLightColor()local a=m()if not a then return nil,n end;return a.getLightColor()end
 function l.setLightColor(a)local c=m()if not c then return nil,n end;local b=tonumber(a)if not b or b~=b then return nil,

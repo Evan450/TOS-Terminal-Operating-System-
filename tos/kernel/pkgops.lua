@@ -1,5 +1,5 @@
 
-local r,x,y,z,A,s,B,t,C,u,D,E,F,v,w,G,H="string","command","package.lua","cluster-manager","trusted","unknown","no signature","kernel.pkgsign","the installed ","refusing to upgrade '","/etc/rc.d/",".disabled","kernel.crypto","unsigned","refusing to install '","no manifest in ","function"
+local x,y,z,A,B,C,s,D,E,F,t,u,r,G,H,v,w=".disabled","/etc/rc.d/","cluster-manager","command","function","kernel.crypto","kernel.pkgsign","no manifest in ","no signature","package.lua","refusing to install '","refusing to upgrade '","string","the installed ","trusted","unknown","unsigned"
 return
 function(a,b)local R,f,K=b.PKG_ROOT,b.adminGate,b.findProvider
 local S,m=b.serviceInstallGate,b.targetKey;local aa,L=b.validRepoHint,b.validateManifest
@@ -17,7 +17,7 @@ al:sub(1,2)=="//"then return"/"..al:gsub("^/+","")end;return ab.."/"..al:gsub("^
 local function ad(am,al,an)
 if type(al)~=
 "table"then return nil,"programs.cfg entry is not a table"end
-local ao={name=am,version=al.version or"0.0.0",kind=al.kind or x,files={},fileMap={},requires=M(al.dependencies),commands=al.commands,capabilities=al.capabilities,description=al.description or
+local ao={name=am,version=al.version or"0.0.0",kind=al.kind or A,files={},fileMap={},requires=M(al.dependencies),commands=al.commands,capabilities=al.capabilities,description=al.description or
 al.note,author=al.author or al.authors,hashes=al.hashes,_srcBase=an}
 if type(al.files)~="table"then return nil,"programs.cfg entry '"..
 tostring(am).."' has no files table"end;local ap={}
@@ -55,7 +55,7 @@ if type(as)=="table"then local av,aw=ad(an,as,ap.root)
 if not av then return nil,aw end;return av,nil,ap.path,au end end end;return nil end
 local function j(al)
 local function an(au,av,aw,ax)if type(au)=="table"then au._srcBase=nil
-au._sigState,au._sigKey,au._sigLabel=nil,nil,nil end;return au,av,aw,ax end;local ao=c.join(al,y)if c.exists(ao)then local au,av,aw=p(ao)if au then
+au._sigState,au._sigKey,au._sigLabel=nil,nil,nil end;return au,av,aw,ax end;local ao=c.join(al,F)if c.exists(ao)then local au,av,aw=p(ao)if au then
 return an(au,"native",ao,aw)end
 return nil,"package.lua parse error: "..tostring(av)end
 local ap=c.join(al,"package.oppm.lua")
@@ -63,7 +63,7 @@ if c.exists(ap)then local aw,ax,ay=p(ap)if not aw then return nil,
 "package.oppm.lua parse error: "..tostring(ax)end
 local az,au=next(aw)if not au or type(au)~="table"then
 return nil,"OPPM manifest has no top-level package entry"end
-local av={name=az,version=au.version or"0.0.0",kind=au.kind or x,files={},requires={},commands=au.commands,capabilities=au.capabilities,description=au.description,author=au.author,critical=au.critical,hashes=au.hashes}
+local av={name=az,version=au.version or"0.0.0",kind=au.kind or A,files={},requires={},commands=au.commands,capabilities=au.capabilities,description=au.description,author=au.author,critical=au.critical,hashes=au.hashes}
 if type(au.files)=="table"then
 for aB,aA in pairs(au.files)do
 if type(aB)=="number"and
@@ -77,7 +77,7 @@ if aw[am]and
 type(aw[am])=="table"then av=aw[am]elseif not aw.files then local aC,aB=next(aw)if
 type(aB)=="table"then ay,av=aC,aB end end
 if type(av)~="table"then return nil,am..".cfg has no package table"end
-local ax={name=av.name or ay,version=av.version or"0.0.0",kind=av.kind or x,files={},requires={},commands=av.commands,capabilities=av.capabilities,description=av.description,author=av.author,hashes=av.hashes}
+local ax={name=av.name or ay,version=av.version or"0.0.0",kind=av.kind or A,files={},requires={},commands=av.commands,capabilities=av.capabilities,description=av.description,author=av.author,hashes=av.hashes}
 if type(av.files)=="table"then for aB,aC in pairs(av.files)do
 if type(aC)==r then
 ax.files[#ax.files+1]=aC elseif type(aB)==r then ax.files[#ax.files+1]=aB end end end;ax.requires=M(av.dependencies)return an(ax,"oppm",au,aA)end end;local aq,ar,as,at=af(al)if aq then return aq,"oppm",as,at end
@@ -129,9 +129,9 @@ return tostring(aq)..
 as:sub(1,5)=="/etc/"and not an[as]and c.exists(aq)then
 return tostring(aq).." already exists and no installed package owns it"end end;return nil end;a._protectedTargetRefusal=O
 local function n(al)if
-type(al)~="table"or type(al.key)~=r then return nil end;if al.state~=A and al.state~=s then
+type(al)~="table"or type(al.key)~=r then return nil end;if al.state~=H and al.state~=v then
 return nil end;return al.key:lower()end
-local function g(al,am)if type(al)~=r then return B end;local ao,an=pcall(require,t)local ap=(ao and an and
+local function g(al,am)if type(al)~=r then return E end;local ao,an=pcall(require,s)local ap=(ao and an and
 an.fingerprint)and an.fingerprint(al)or
 al:sub(1,16)if
 ao and an and an.labelForKey and not am then
@@ -145,7 +145,7 @@ al.key:find("[^%x]"))and
 al.key:lower()or nil
 return al.name,al.version,al.optional and true or false,am elseif type(al)==r then local am,an=al:match("^(%S+)%s+(.+)$")if am then
 return am,an,false,nil end;return al,nil,false,nil end;return nil end
-local function P(al)if type(al)~=r then return nil end;local ap,am=pcall(require,t)
+local function P(al)if type(al)~=r then return nil end;local ap,am=pcall(require,s)
 if not ap or
 type(am)~="table"or not am.readSig or
 not am.sigPathFor then return nil end
@@ -161,7 +161,7 @@ al.version or"0.0.0",as)then
 ar[#ar+1]={kind="version",name=aq,id="version|"..aq.."|"..as,text=string.format("%s requires '%s' %s, and %s is %s",an,aq,as,ao,tostring(al.version))}end
 if at and am~=at then
 ar[#ar+1]={kind="publisher",name=aq,id="publisher|"..aq.."|"..at,text=string.format("%s requires '%s' signed by %s, and %s has %s",an,aq,g(at),ao,
-am and g(am)or B)}end;return ar end
+am and g(am)or E)}end;return ar end
 local function V(al,am)local ao,an={},{}local ap={[al.name]=true}
 for ar,aq in ipairs(type(al.provides)=="table"and
 al.provides or{})do if not
@@ -172,7 +172,7 @@ if aq~=al.name and type(as.requires)=="table"then
 for ar,at in
 ipairs(as.requires)do local au=o(at)
 if au and ap[au]then for ar,av in
-ipairs(q(C..aq,at,al,am,"the "..
+ipairs(q(G..aq,at,al,am,"the "..
 tostring(al.name).." being put in"))do av.kind,av.id="breaks","breaks|"..aq.."|"..av.id
 ao[#ao+1]=av end end end end end;return ao end
 function a.outdated(al)al=al or{}local am={}
@@ -228,7 +228,7 @@ ipairs(type(aW.requires)=="table"and aW.requires or{})do local ba,a_,bb=o(aZ)
 if ba and ba~=al then local bc=K(ba)
 if bc then for a_,bd in
 ipairs(q(al..
-" "..tostring(aW.version),aZ,bc,Q(bc),C..tostring(bc.name)))do aY[#aY+1]=bd end elseif not bb then
+" "..tostring(aW.version),aZ,bc,Q(bc),G..tostring(bc.name)))do aY[#aY+1]=bd end elseif not bb then
 aY[
 #aY+1]={kind="missing",name=ba,id="missing|"..ba,text=string.format("%s %s requires '%s', which is not installed (install it first)",al,tostring(aW.version),ba)}end end end;for a_,aZ in ipairs(V(aW,aX))do aY[#aY+1]=aZ end;return aY end;local aV={}
 for aX,aW in ipairs(aU(an,Q(an)))do aV[aW.id]=true end;local aT={}for aX,aW in ipairs(aU(ao,n(av)))do
@@ -238,7 +238,7 @@ local aW=a.describeContradictions(aT)
 if not am.force then return false,u..al.."': "..aW end;if d then
 d.warn("pkg","Upgrading '"..al.."' past contradictions (--force): "..aW)end end end;local ay=a.isEnabled(al)local az={}
 for aU,aT in ipairs(an.files or{})do
-local aV=tostring(aT):match("^/etc/rc%.d/(.+)%.lua$")if aV then az[aV]=c.exists(D..aV..E)end end;local aA={}for aU,aT in ipairs(ao.files or{})do aA[aT]=true end
+local aV=tostring(aT):match("^/etc/rc%.d/(.+)%.lua$")if aV then az[aV]=c.exists(y..aV..x)end end;local aA={}for aU,aT in ipairs(ao.files or{})do aA[aT]=true end
 local ar={}
 for aU,aT in ipairs(an.files or{})do if not aA[aT]then ar[#ar+1]=aT end end
 local aO,aP=a.uninstall(al,{session=am.session,_internalUpgrade=true})if not aO then
@@ -248,7 +248,7 @@ if not aQ then return false,
 "upgrade FAILED after removing "..al..": "..
 tostring(aR).." — reinstall it from the disk"end;pcall(a.setEnabled,al,ay,{session=am.session})
 for aU,aT in
-pairs(az)do local aV=D..aU..E
+pairs(az)do local aV=y..aU..x
 if aT and not c.exists(aV)then
 pcall(c.writeFile,aV,"1")elseif not aT and c.exists(aV)then pcall(c.remove,aV)end end;if d then
 d.info("pkg",string.format("Upgraded %s %s -> %s (%d file(s) dropped)",al,tostring(an.version),tostring(ao.version),
@@ -266,33 +266,33 @@ am[#am+1]=string.format("%s is already installed by %s",an.path,an.other)else am
 function a.verifyLicenseKey(al,am)if
 type(al)~="table"or type(al.license)~="table"then return true end;if not al.license.requireKey then
 return true end;if type(am)~=r or am==""then
-return false,"license key required"end;local an;do local aq,ar=pcall(require,F)
+return false,"license key required"end;local an;do local aq,ar=pcall(require,C)
 if aq then an=ar end end
 if
 not an or not an.hash or not an.ctEquals then return false,"crypto unavailable for license verification"end;local ao=an.hash(al.name.."|"..am)
 local ap=al.license.keys or{}
 for ar,aq in ipairs(ap)do if an.ctEquals(ao,aq)then return true end end;return false,"license key rejected (no matching hash)"end
 local function W(al,am,an)
-if not al then return{state=v,reason="manifest path unknown"},nil end;local aq,ap=pcall(require,t)if not aq or not ap then return
-{state=v,reason="signature support unavailable"},nil end
+if not al then return{state=w,reason="manifest path unknown"},nil end;local aq,ap=pcall(require,s)if not aq or not ap then return
+{state=w,reason="signature support unavailable"},nil end
 ap.init({fs=c,serialize=k,log=d})local ao=ap.verifyManifest(al,an)
 if ao.state=="invalid"then
 return ao,
-w..
+t..
 tostring(al)..
 
 "': its signature does not verify ("..
 tostring(ao.reason).."). This is tampering or corruption, not a missing signature, and there is no override."..
 "  [E-609 ERR_PKG_SIGNATURE_INVALID]"end
 if ap.requiresSignature()and not am.allowUnsigned then
-if ao.state==v then
+if ao.state==w then
 return
 ao,
 "refusing to install an unsigned package: this machine is set to ".."require signatures (pkg trust require off, or --allow-unsigned for one install)."..
 "  [E-610 ERR_PKG_SIGNATURE_REQUIRED]"end
-if ao.state==s then
+if ao.state==v then
 return ao,
-w..
+t..
 tostring(al)..
 "': its signature is valid but the key is not trusted here, and this machine "..
 
@@ -317,7 +317,7 @@ aq..
 "). Re-run with --allow-unverified to override.".."  [E-607 ERR_PKG_UNVERIFIED]",false end
 function a.install(am,al)al=al or{}local ay,az=f(al)if not ay then return false,az end
 if type(am)~=r or am==
-""then return false,"invalid source directory"end;am=c.normalize(am)local an,at,aA,aB=j(am)if not an then return false,G..
+""then return false,"invalid source directory"end;am=c.normalize(am)local an,at,aA,aB=j(am)if not an then return false,D..
 am..": "..tostring(at)end
 if at=="oppm"then
 an.origin="openos"
@@ -343,7 +343,7 @@ if aL>0 then return false,
 string.format("%s %s is already installed and %s is newer — use `pkg upgrade %s`",an.name,tostring(aK),tostring(an.version),an.name)end
 return false,"already installed (uninstall first): "..an.name end
 do local aK=O(an,al._priorFiles)if aK then
-return false,w..
+return false,t..
 tostring(an.name).."': "..aK..
 "  [E-612 ERR_PKG_PROTECTED_TARGET]"end end
 local aq=a.findConflicts(an,al.upgrading and an.name or nil)if#aq>0 and not al.force then
@@ -367,18 +367,18 @@ string.format(
 "refusing to install '%s': it must be signed by %s, ".."and this copy has %s",tostring(an.name),g(al.expectKey),
 n(aK)and g(n(aK))or"no valid signature").."  [E-611 ERR_PKG_WRONG_PUBLISHER]"end;ap=aK
 if d then
-if aK.state==A then
+if aK.state==H then
 d.info("pkg","'"..
 tostring(an.name).."' signed by trusted publisher '"..
 tostring(aK.label)..
-"' ("..tostring(aK.fingerprint)..")")elseif aK.state==s then
+"' ("..tostring(aK.fingerprint)..")")elseif aK.state==v then
 d.warn("pkg","'"..
 tostring(an.name).."' is signed by an UNTRUSTED key "..
 
 tostring(aK.fingerprint).." — 'pkg trust add <name> "..tostring(aK.key).."'")else
 d.warn("pkg","'"..
 tostring(an.name).."' is UNSIGNED — installed on admin privilege alone")end end end;local ar=nil
-if type(an.hashes)=="table"then local aL,aK=pcall(require,F)
+if type(an.hashes)=="table"then local aL,aK=pcall(require,C)
 if
 not aL or not aK or not aK.hash or not aK.ctEquals then return false,
 "crypto unavailable; cannot verify install hashes"end;ar=aK end;local ao={}
@@ -414,15 +414,15 @@ do
 local aK=an.files or{}if type(an.hashes)=="table"then
 for aM,aL in ipairs(aK)do if
 type(an.hashes[aL])~=r then an._unverified=true;break end end end end;an._installedFrom=tostring(am)
-an._sigState=ap and ap.state or v;an._sigKey=ap and ap.key or nil
-an._sigLabel=ap and ap.label or nil;local aI,aJ=k.saveFile(c,c.join(as,y),an)if not aI then for aL,aK in ipairs(ao)do
+an._sigState=ap and ap.state or w;an._sigKey=ap and ap.key or nil
+an._sigLabel=ap and ap.label or nil;local aI,aJ=k.saveFile(c,c.join(as,F),an)if not aI then for aL,aK in ipairs(ao)do
 pcall(c.remove,aK)end
 return false,"manifest write failed: "..tostring(aJ)end;local au="e"
 if
 
 type(an.service)=="table"and an.service.defaultState=="disabled"then au="d"
 for aL,aK in ipairs(an.files)do
-local aM=tostring(aK):match("^/etc/rc%.d/(.+)%.lua$")if aM then pcall(c.writeFile,D..aM..E,"1")end end end;c.writeFile(c.join(as,"state"),au)
+local aM=tostring(aK):match("^/etc/rc%.d/(.+)%.lua$")if aM then pcall(c.writeFile,y..aM..x,"1")end end end;c.writeFile(c.join(as,"state"),au)
 e[an.name]=an;local av=a.repoHints(an)if#av>0 then local aK=i()if aK and aK.learn then
 pcall(aK.learn,av,an.name)end end
 a.syncCriticalBackup()if d then
@@ -482,7 +482,7 @@ if aD then
 return nil,
 string.format("%s requires '%s' signed by %s; no copy signed by that "..
 "key was found (the one in %s has %s)",tostring(aD.by),aE,g(aD.want),aD.dir,
-aD.have and g(aD.have)or B)end;return nil,"resolve failed: "..tostring(ay)end
+aD.have and g(aD.have)or E)end;return nil,"resolve failed: "..tostring(ay)end
 for aE,aD in ipairs(as)do local aF=ap[aD]if aF then local aG,aH=L(aF)
 if not aG then return nil,"invalid manifest for '"..aD..
 "': "..tostring(aH)end end end;local ao={order=as,dirs=aq,expectKey={},contradictions={}}local function az(aD,aE,aF)
@@ -497,7 +497,7 @@ if aH and aI then local aL=aA[aH]
 if not aL then aA[aH]={key=aI,by=aD}elseif aL.key~=aI then
 az("pins",aH,string.format("%s requires '%s' signed by %s, but %s requires it signed by %s",aL.by,aH,g(aL.key),aD,g(aI)))end end;local aJ=aH and K(aH)local aK={}
 if aJ then
-aK=q(aD,aG,aJ,Q(aJ),C..tostring(aJ.name))elseif aH and ap[aH]then local aL=P(ar[aH])
+aK=q(aD,aG,aJ,Q(aJ),G..tostring(aJ.name))elseif aH and ap[aH]then local aL=P(ar[aH])
 aK=q(aD,aG,ap[aH],aL,"the copy in "..tostring(aq[aH]))if aI and aL==aI and not ao.expectKey[aH]then
 ao.expectKey[aH]=aI end end;for aE,aL in ipairs(aK)do
 ao.contradictions[#ao.contradictions+1]=aL end end end
@@ -509,7 +509,7 @@ function a.installWithDeps(an,am,al)al=al or{}local ar,as=f(al)if not ar then re
 local ao,at=a.plan(an,am,al)if not ao then return false,at end
 if#ao.contradictions>0 then
 local au=a.describeContradictions(ao.contradictions)
-if not al.force then return false,w..am.."': "..au end;if d then
+if not al.force then return false,t..am.."': "..au end;if d then
 d.warn("pkg","Installing '"..am.."' past contradictions (force): "..au)end end;local ap,aq={},{}
 for av,au in ipairs(ao.order)do
 if e[au]then aq[#aq+1]=au else local ax=ao.dirs[au]or
@@ -598,7 +598,7 @@ local an,ao=X(am,al.extraRoots)if not an then return false,ao end;am=ao
 return
 a.installWithDeps(an,am,{licenseKey=al.licenseKey,licenseKeys=al.licenseKeys,session=al.session,allowUnverified=al.allowUnverified,allowUnsigned=al.allowUnsigned,extraRoots=al.extraRoots,force=al.force})end
 function a.computeLicenseHash(al,am)if type(al)~=r or type(am)~=r then
-return nil,"package name and key must be strings"end;local ao,an=pcall(require,F)
+return nil,"package name and key must be strings"end;local ao,an=pcall(require,C)
 if
 not ao or not an or not an.hash then return nil,"crypto unavailable"end;return an.hash(al.."|"..am)end
 function a.listAllAvailable(al)al=al or{}local an={}local am={}
@@ -610,7 +610,7 @@ al.includeRemote then
 for aq,ap in ipairs(a.listRemoteAvailable(al))do if not an[ap.name]then
 an[ap.name]=true;am[#am+1]=ap end end end;return am end
 function a.listRemoteAvailable(al)local am=i()
-if not am or type(am.search)~=H then return{}end;local ap,ao=pcall(am.search,al or{})if
+if not am or type(am.search)~=B then return{}end;local ap,ao=pcall(am.search,al or{})if
 not ap or type(ao)~="table"then return{}end;local an={}
 for ar,aq in ipairs(ao)do
 if type(aq)=="table"and
@@ -618,7 +618,7 @@ type(aq.name)==r then
 an[#an+1]={name=aq.name,version=aq.version,description=aq.description,category=aq.category or"remote",repo=aq.repo,remote=true}end end;return an end
 function a.installFromFloppy(al)al=al or{}local ap,aq=f(al)if not ap then return false,aq end
 local ar=(
-type(al.confirm)==H)and al.confirm or function()return false end;local ao={}local am={}local an={}
+type(al.confirm)==B)and al.confirm or function()return false end;local ao={}local am={}local an={}
 for au,at in ipairs(J())do for au,av in ipairs(a.listRepo(at))do
 an[#an+1]={name=av.name,dir=av.dir,mount=at}end end;local as=#an
 for au,at in ipairs(an)do
@@ -647,7 +647,7 @@ ipairs(am.only)do ao[av]=true end end;local ap,aq,an={},0,{}local ar={}for av in
 table.sort(ar)
 for aw,av in ipairs(ar)do local ax=e[av]
 if not Y[av]and(not ao or ao[av])then
-local ay=c.join(al,av)local az,aA=k.saveFile(c,c.join(ay,y),ax)
+local ay=c.join(al,av)local az,aA=k.saveFile(c,c.join(ay,F),ax)
 if not az then
 an[#an+1]=av..
 ": manifest write failed ("..tostring(aA)..")"else local aB=true
@@ -693,7 +693,7 @@ al.known()end
 function a.forgetRepo(al,am)
 local ao,ap=f(am)if not ao then return false,ap end;local an,aq=i()if not an then return false,aq end;return
 an.forget(al)end
-local function h()local am,al=pcall(require,t)if not am or not al then
+local function h()local am,al=pcall(require,s)if not am or not al then
 return nil,"signature support unavailable"end
 al.init({fs=c,serialize=k,log=d})return al end
 function a.trustList()local al=h()if not al then return{}end;return al.listKeys()end
@@ -712,12 +712,12 @@ return false,aq end;return an.setDiscoveredPolicy(al)end
 function a.checkSignature(al)
 if type(al)~=r or al==""then return nil,"invalid directory"end;local am,ao=h()if not am then return nil,ao end
 local an,ap,aq,ar=j(c.normalize(al))
-if not an then return nil,G..al..": "..tostring(ap)end;return am.verifyManifest(aq,ar),an end
+if not an then return nil,D..al..": "..tostring(ap)end;return am.verifyManifest(aq,ar),an end
 function a.signPackage(am,an,al)al=al or{}local aq,ar=f(al)if not aq then return nil,ar end;local ao,as=h()if not ao then return nil,
 as end;if type(am)~=r or am==""then
 return nil,"invalid directory"end;local at,au,av=j(c.normalize(am))
 if
-not at then return nil,G..am..": "..tostring(au)end;local ap,aw=ao.seedFromPassphrase(an,al.signer)
+not at then return nil,D..am..": "..tostring(au)end;local ap,aw=ao.seedFromPassphrase(an,al.signer)
 if not ap then return nil,aw end;return
 ao.signManifest(av,ap,{signer=ao.normalizeLabel(al.signer)})end
 function a.signingKey(al,am)local an,ar=h()if not an then return nil,ar end
@@ -746,11 +746,11 @@ local aN=h()local aL="'"..
 aE.."' is only in an unconfigured repo ("..tostring(aG)..")"if not aN then
 return
 false,aL..", and signatures cannot be checked here"..an end
-local aK=aN.verifyManifest(aH,aI)if aK.state==A then return true end
+local aK=aN.verifyManifest(aH,aI)if aK.state==H then return true end
 if aK.state=="invalid"then return false,
 aL..
 ", and its signature does not verify ("..tostring(aK.reason)..")"..an end
-if aK.state~=s then return false,
+if aK.state~=v then return false,
 aL..", and it is unsigned. An unsigned package installs only from a "..
 "repo an admin added (pkg repo add)"..an end;local aO="pkg trust add <name> "..tostring(aK.key)
 if
@@ -762,7 +762,7 @@ aF.kind..
 ", which runs outside the sandbox, and "..
 "its key ("..tostring(aK.fingerprint)..
 ") is not trusted here: trust it first, ".."with  "..aO..an end
-if aq~="tofu"or type(al.confirmKey)~=H then
+if aq~="tofu"or type(al.confirmKey)~=B then
 return false,
 aL..
 ", and its key ("..

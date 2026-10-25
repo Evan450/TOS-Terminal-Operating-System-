@@ -1,6 +1,6 @@
-local w,x="settings","logout"local s=require("shell.panels.ui")
+local w,x="logout","settings"local s=require("shell.panels.ui")
 local B=require("shell.panels.tabs")local r={}local D=24
-local E={{id="files",label="Files",glyph="≡",kind="tab",hint="File browser and command prompt"},{id="monitor",label="Monitor",glyph="▒",cmd="monitor",hint="Live processes, services, memory"},{id="chat",label="Chat",glyph="»",cmd="chat",hint="Network chat"},{id="mail",label="Mail",glyph="@",cmd="mail",hint="Mesh email inbox"},{id=w,label="Settings",glyph="§",kind=w,hint="Theme, status bar, desktop, system"},{id="tapemenu",label="Tape Menu",glyph="▓",cmd="tape-menu",hint="Personal command menu from your identity tape"},{id="help",label="Help",glyph="?",cmd="help",hint="Command reference"},{id="tutorial",label="Tutorial",glyph="¶",cmd="tutorial",hint="Replay the welcome walkthrough"},{id=x,label="Log Out",glyph="«",kind=x,hint="End this session"}}
+local E={{id="files",label="Files",glyph="≡",kind="tab",hint="File browser and command prompt"},{id="monitor",label="Monitor",glyph="▒",cmd="monitor",hint="Live processes, services, memory"},{id="chat",label="Chat",glyph="»",cmd="chat",hint="Network chat"},{id="mail",label="Mail",glyph="@",cmd="mail",hint="Mesh email inbox"},{id=x,label="Settings",glyph="§",kind=x,hint="Theme, status bar, desktop, system"},{id="tapemenu",label="Tape Menu",glyph="▓",cmd="tape-menu",hint="Personal command menu from your identity tape"},{id="help",label="Help",glyph="?",cmd="help",hint="Command reference"},{id="tutorial",label="Tutorial",glyph="¶",cmd="tutorial",hint="Replay the welcome walkthrough"},{id=w,label="Log Out",glyph="«",kind=w,hint="End this session"}}
 function r.buildApps(a)a=a or{}
 local g=a.entry or function()return nil end;local h=a.needMet or function()return true end
 local i=a.needs or{}local j=a.userTier or 0
@@ -20,7 +20,7 @@ if l<=D then
 b[#b+1]={id="pkg:"..k,label=k:sub(1,12),glyph="•",cmd=k,pkg=true,hint=c("desktop.pkg.hint","Installed package command")}else e=e+1 end end;return b,e end
 function r.resolveApp(a,b)local c=a and a[b]if not c then return{type="none"}end;if
 c.kind=="tab"then return{type="tab"}end
-if c.kind==w then return{type=w}end;if c.kind==x then return{type=x}end
+if c.kind==x then return{type=x}end;if c.kind==w then return{type=w}end
 if c.cmd then return{type="cmd",cmd=c.cmd}end;return{type="none"}end;local y=nil
 local function F()if y==nil then local a,b=pcall(require,"kernel.ustr")
 y=(a and b)or false end;return y or nil end;local function C(a,b)local c=F()if c and c.fit then return c.fit(a,b)end;return
@@ -103,9 +103,9 @@ s.drawTile(d,c,o,{glyph=m.glyph,label=m.label,selected=(
 n==g),dim=m.pkg})end end end;H(a,b)end
 local function A(a,c,d,b)local e=r.resolveApp(c.apps,d)
 if e.type=="tab"then a.activeTab=z(a)return 3 elseif
-e.type==w then local g,f=pcall(require,"shell.panels.settingsapp")if g and f then
+e.type==x then local g,f=pcall(require,"shell.panels.settingsapp")if g and f then
 f.open(a)else
-a.lastOut={"Settings unavailable: "..tostring(f),a.T.error}end;return 3 elseif e.type==x then
+a.lastOut={"Settings unavailable: "..tostring(f),a.T.error}end;return 3 elseif e.type==w then
 local g,f=pcall(require,"shell.panels.helpers")if g and f and f.logout then f.logout(a)else if a._sudo and a.sudoDrop then
 pcall(a.sudoDrop)end
 a.E.push("tos_logout",a.displayIdx)end

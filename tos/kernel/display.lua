@@ -1,4 +1,4 @@
-local R,S="number","highlight"local C={}local D=nil;local E,G=50,16
+local R,S="highlight","number"local C={}local D=nil;local E,G=50,16
 local B={bg=0x000000,fg=0xE6E6E6,border=0x2FB8C6,title=0xFFD75A,highlight=0x42D77D,selected_bg=0x0E5E70,selected_fg=0xFFFFFF,menubar_bg=0x262B33,menubar_fg=0xE6E6E6,menubar_hot=0xFFD75A,statusbar_bg=0x103C4E,statusbar_fg=0xBFE3EE,error=0xFF5C57,warning=0xFFA042,dim=0x909090,panel_bg=0x000000,input_bg=0x14181E,input_fg=0xFFFFFF,syn_keyword=0x61AFEF,syn_string=0x98C379,syn_comment=0x7A828E,syn_number=0xD19A66,syn_func=0xE5C07B,file_lua=0x56B6C2,dir_color=0x42D77D}
 local T={tl="┌",tr="┐",bl="└",br="┘",h="─",v="│",lt="├",rt="┤",tt="┬",bt="┴",cross="┼",DTL="╔",DTR="╗",DBL="╚",DBR="╝",DH="═",DV="║"}
 local U={tl="+",tr="+",bl="+",br="+",h="-",v="|",lt="+",rt="+",tt="+",bt="+",cross="+",DTL="+",DTR="+",DBL="+",DBR="+",DH="=",DV="|"}local F=T;local L=1;local J=1;local H,I=nil,nil;local K;local M=false
@@ -18,7 +18,7 @@ function C.init(a,b,c)M=false
 if a and not a._tosRawGpu then a=V(a)end;D=a
 if D then
 if
-type(b)==R and type(c)==R and b>0 and c>0 then pcall(D.setResolution,b,c)else
+type(b)==S and type(c)==S and b>0 and c>0 then pcall(D.setResolution,b,c)else
 local h,f,g=pcall(D.maxResolution)if h and f and g then pcall(D.setResolution,f,g)end end;E,G=D.getResolution()local e,d=pcall(D.getDepth)if e and d then L=d;if d<=1 then J=1 elseif d<=4 then
 J=2 else J=3 end end
 D.setBackground(0x000000)D.setForeground(0xFFFFFF)I,H=0x000000,0xFFFFFF;if not _G._BIOS_CY then
@@ -40,7 +40,7 @@ function C.isMonochrome()return L<=1 end;function C.getSize()return E,G end;func
 c and a and b then E,G=a,b end end
 return E,G end
 function C.getTheme()return B end
-local W={bar_fg="menubar_fg",bar_bg="menubar_bg",bar_accent="menubar_hot",statusbar_fg="statusbar_fg",statusbar_bg="statusbar_bg",prompt=S,title="title",dim="dim",border="border",dir="dir_color",file="fg",file_exec=S,file_cfg="warning",file_log="dim",file_lua="file_lua",success=S,warning="warning",error="error"}function C.c(a)local c=B[a]if c~=nil then return c end;local b=W[a]
+local W={bar_fg="menubar_fg",bar_bg="menubar_bg",bar_accent="menubar_hot",statusbar_fg="statusbar_fg",statusbar_bg="statusbar_bg",prompt=R,title="title",dim="dim",border="border",dir="dir_color",file="fg",file_exec=R,file_cfg="warning",file_log="dim",file_lua="file_lua",success=R,warning="warning",error="error"}function C.c(a)local c=B[a]if c~=nil then return c end;local b=W[a]
 if b and B[b]~=nil then return B[b]end;return B.fg end
 local function N(b,a,c)if b~=a then
 return b end;local d
@@ -53,7 +53,7 @@ B.file_log=B.dim;B.bar_fg=N(B.menubar_fg,B.menubar_bg,"menubar")
 B.bar_bg=B.menubar_bg;B.bar_accent=B.menubar_hot
 B.statusbar_fg=N(B.statusbar_fg,B.statusbar_bg,"statusbar")end;K()
 local X={bg=true,fg=true,border=true,title=true,highlight=true,dim=true,error=true,warning=true,panel_bg=true,input_bg=true,input_fg=true,selected_bg=true,selected_fg=true,menubar_bg=true,menubar_fg=true,menubar_hot=true,statusbar_bg=true,statusbar_fg=true,syn_keyword=true,syn_string=true,syn_comment=true,syn_number=true,syn_func=true,file_lua=true,dir_color=true}
-local function Y(a)return type(a)==R and a==math.floor(a)and a>=0 and a<=
+local function Y(a)return type(a)==S and a==math.floor(a)and a>=0 and a<=
 0xFFFFFF end
 local Z={0xFFFFFF,0xFFCC33,0xCC66CC,0x6699FF,0xFFFF33,0x33CC33,0xFF6699,0x333333,0xCCCCCC,0x336699,0x9933CC,0x333399,0x663300,0x336600,0xFF3333,0x000000}local _={0xFFFFFF,0xCCCCCC,0x333333,0x000000}
 local function O(a)

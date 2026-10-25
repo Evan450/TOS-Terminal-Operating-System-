@@ -1,4 +1,4 @@
-local q,r,s="kernel.screen","Error: ","output"
+local q,r,s="Error: ","kernel.screen","output"
 local k=require("shell.panels.helpers")local m=nil
 local function t()if m==nil then local a,b=pcall(require,"shell.panels.editor")m=a and b or
 false end;return m or nil end;local n=function()end
@@ -22,7 +22,7 @@ function l.build(a,b)local d=a.F;local c=a.T;local h=b.rp;local i=b.makeProgramE
 local function u(y,z,A,x,B)
 local L,C=pcall(require,"kernel.process")
 if not L or type(C)~="table"or not C.spawn then return false end;local E=a.displayIdx;if not E then return false end
-local J=C.current and C.current()local H=J and J.pid;if not H then return false end;local M,D=pcall(require,q)D=
+local J=C.current and C.current()local H=J and J.pid;if not H then return false end;local M,D=pcall(require,r)D=
 M and D or nil;local I=false
 if x and D and D.fitDisplay then
 local P=x.mode=="min"and(a.W or 0)>=
@@ -30,7 +30,7 @@ x.width and(a.H or 0)>=x.height;if not P then
 local Q=D.fitDisplay(E,{mode="size",w=x.width,h=x.height})I=Q~=nil end end;local G={}
 local function N(P,Q)G[#G+1]={tostring(P),Q or c.fg}end;local F
 F=C.spawn("prog:"..y.."@"..E,function()local R,S=pcall(z,A,N)if not R then
-G[#G+1]={r..tostring(S),c.error}end
+G[#G+1]={q..tostring(S),c.error}end
 if I and D and D.restore then pcall(D.restore,E)end
 if a._program and a._program.pid==F then a._program=nil end;local T,P=pcall(require,"shell.panels.tabs")if T and P then
 for V,U in
@@ -38,8 +38,8 @@ ipairs(a.tabs or{})do if U.type=="program"and U.pid==F then U.pid=nil;pcall(P.cl
 break end end end;if a.D and
 a.D.invalidate then pcall(a.D.invalidate)end;if#G>0 then
 a.outLines=k.expandBuf(a,G)end;local Q=C.get and C.get(H)if Q and
-Q.state~=C.STATE.DEAD then C.setForeground(H,E,{kernel=true})
-(C.signalKernel or
+Q.state~=C.STATE.DEAD then
+C.setForeground(H,E,{kernel=true});(C.signalKernel or
 C.signal)(H,"tos_focus")end end,{priority=3,source="user",principal=
 k.sessionOf and k.sessionOf(a)or nil,token=a.st,display=E,background=B})if not F then if I and D and D.restore then pcall(D.restore,E)end;return
 false end
@@ -88,11 +88,11 @@ if D then local L=false
 if F then
 local O=F.mode=="min"and(a.W or 0)>=F.width and
 (a.H or 0)>=F.height
-if not O then local Q,P=pcall(require,q)
+if not O then local Q,P=pcall(require,r)
 if Q and P and P.fitDisplay then
 local S,T,R=P.fitDisplay(a.displayIdx,{mode="size",w=F.width,h=F.height})if S then L=true end;if R then B(R,c.warning)end end end end;local M,N=pcall(D,E,B)
-if not M then B(r..tostring(N),c.error)end;if H then K()end
-if L then local Q,O=pcall(require,q)if Q and O and O.restore then
+if not M then B(q..tostring(N),c.error)end;if H then K()end
+if L then local Q,O=pcall(require,r)if Q and O and O.restore then
 pcall(O.restore,a.displayIdx)end
 local R,P=pcall(require,"shell.panels.state")
 if R and P and P.recomputeLayout then pcall(P.recomputeLayout,a)end end else local L=k.resolveProgram(d,A)
@@ -104,7 +104,7 @@ R,O=pcall(require,"kernel.pkg")end;if
 R and type(O)=="table"and O.capsForFile then P,Q=O.capsForFile(L)end
 local S=i{name=L,pkgName=Q,caps=P,stdout=function(V)
 B(V,c.fg)end}local T,U=load(N,"="..L,"t",S)if T then
-local V,W=pcall(T,table.unpack(E))k.reportProgramEnd(a,B,V,W,r,S)K()else
+local V,W=pcall(T,table.unpack(E))k.reportProgramEnd(a,B,V,W,q,S)K()else
 B("Compile error: "..tostring(U),c.error)end end else local N,M=pcall(require,"shell.panels.commands")local O=N and M.entry and
 M.entry(A)or nil
 if O then

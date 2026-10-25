@@ -1,4 +1,4 @@
-local p,q,r="unknown","Device","status"local n=require("computer")local l={}local function m(a)
+local q,r,p="Device","status","unknown"local n=require("computer")local l={}local function m(a)
 local b=a.U
 if b and a.st then local c=b.getSession(a.st)if c then return c.user,c.tier end end;return p,0 end
 function l.hostname(c,b)

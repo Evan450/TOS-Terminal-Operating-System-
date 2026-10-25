@@ -1,4 +1,4 @@
-local h,g,f="_kernel_","kernel","header"local e={}
+local h,f,g="_kernel_","header","kernel"local e={}
 function e.describe(a)
 local b=(a and a.name)or"?"local c=b:match("^login@(%d+)$")if c then
 return"Login broker — seat "..c end;local d,i=b:match("^shell:(.+)@(%d+)$")

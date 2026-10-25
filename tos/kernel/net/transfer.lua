@@ -1,4 +1,4 @@
-local w,D,B="transfer","string"," bytes)"local H=require("computer")local u={}
+local B,D,w=" bytes)","string","transfer"local H=require("computer")local u={}
 local x=6144;local E=30;local s=nil;local v=nil;local y=nil;local F=nil;local t=nil;local G=nil;local r=nil;local z=nil;local A=nil
 local C=false;function u.setEnabled(a)C=a and true or false end
 function u.isEnabled()return C end

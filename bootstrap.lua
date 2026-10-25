@@ -1,4 +1,4 @@
-local aM,bl,bm,bn="string","/install.lua","/bios.lua"," more)"
+local bl,bm,bn,aM=" more)","/bios.lua","/install.lua","string"
 local aX=require("component")local aC=require("computer")local aN=require("term")local at=nil;pcall(function()
 at=require("filesystem")end)
 local aY=aX.gpu;local function ar(a)
@@ -183,8 +183,8 @@ at.makeDirectory(as)then
 au("Cannot create staging directory: "..as)return end;local aA,aU={},{}for b,a in ipairs(aH)do
 if
 
-type(a)=="table"and type(a.path)==aM and not aU[a.path]then aU[a.path]=true;aA[#aA+1]=a.path end end;if not aU[bl]then aA[#
-aA+1]=bl end
+type(a)=="table"and type(a.path)==aM and not aU[a.path]then aU[a.path]=true;aA[#aA+1]=a.path end end;if not aU[bn]then aA[#
+aA+1]=bn end
 if not aU[bm]then aA[#aA+1]=bm end;ar(0x00AAFF)
 print("--- Downloading "..#aA.." files ---")ar(0xFFFFFF)local aV,aB=0,0;local av={}local bj=false
 for b,a in ipairs(aA)do
@@ -217,13 +217,13 @@ aq("    free space is enough -- it does not have to be the target.")aK(as)return
 if aB==0 then ax("Downloaded "..aV.." files")else au(aB..
 " file(s) failed to download:")for a=1,math.min(5,#av)do aq(
 "  "..av[a])end;if#av>5 then
-aq("  (+".. (#av-5)..bn)end end;print()
+aq("  (+".. (#av-5)..bl)end end;print()
 do local a={}
 for c,b in ipairs(av)do if not b:find("DIGEST MISMATCH",1,true)then a[#a+
 1]=b end end
 if#a>0 then
 au(#a.." file(s) never made it into the staging tree:")for b=1,math.min(8,#a)do aq("  "..a[b])end;if#a>8 then aq("  (+"..
-(#a-8)..bn)end;print()
+(#a-8)..bl)end;print()
 au("Refusing to install an incomplete release.")
 aq("Installing anyway would produce a machine that boots and is")
 aq("quietly missing pieces -- that is how a release once shipped")
@@ -235,7 +235,7 @@ if b:find("DIGEST MISMATCH",1,true)then a[#a+1]=b end end
 if#a>0 then
 au(#a..
 " file(s) did not match the digest the manifest declares:")for b=1,math.min(8,#a)do aq("  "..a[b])end;if#a>8 then aq("  (+"..
-(#a-8)..bn)end;print()
+(#a-8)..bl)end;print()
 au(
 "Refusing to install. Nothing was written outside "..as..".")
 aq("Most likely: a release was published in the last few minutes and")
@@ -244,7 +244,7 @@ aq("for a while after a push. Wait five minutes and retry; that fixes")
 aq("this on its own, and no wait is needed for a disk install.")print()
 aq("If it repeats after that, treat it as real: a mangling proxy or a")
 aq("truncated transfer looks the same as tampering from here, and so")
-aq("does a release that is not what it claims. Install from a disk.")return end end;local aW=as..bl
+aq("does a release that is not what it claims. Install from a disk.")return end end;local aW=as..bn
 local bB=at.exists(aW)and(at.size(aW)or 0)>0
 if not bB then
 au("install.lua did not download successfully — nothing to hand off to.")

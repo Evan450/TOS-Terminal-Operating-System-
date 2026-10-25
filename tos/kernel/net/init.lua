@@ -1,4 +1,4 @@
-local _,as="string","No modem"local ah=require("component")
+local as,_="No modem","string"local ah=require("component")
 local X=require("computer")local O={}local R=nil;local Q=nil;local S=nil;local at=8;local ao=256
 local function ap(a,d,b,c)if
 type(b)~=_ or type(c)~="number"then return true end;local e=a[d]

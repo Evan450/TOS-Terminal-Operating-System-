@@ -1,4 +1,4 @@
-local s,p,t="peripheral.redstone","no redstone component","bundled not supported"
+local t,p,s="bundled not supported","no redstone component","peripheral.redstone"
 local u=require("kernel.hal")local v=require("compat.sides")local l={}local q
 do
 local b,a=pcall(require,"kernel.event")

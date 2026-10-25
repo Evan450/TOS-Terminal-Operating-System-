@@ -1,4 +1,4 @@
-local M,K="tictactoe","launch"local C={}
+local K,M="launch","tictactoe"local C={}
 local R={{1,2,3},{4,5,6},{7,8,9},{1,4,7},{2,5,8},{3,6,9},{1,5,9},{3,5,7}}
 local function L(a)
 for c,b in ipairs(R)do local e,f,g=a[b[1]],a[b[2]],a[b[3]]if

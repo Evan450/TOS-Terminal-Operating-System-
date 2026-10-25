@@ -1,4 +1,4 @@
-local k,g,h,i,l="string","key_down","cancel","install","installed"local j={}
+local g,h,k,i,l="cancel","install","installed","key_down","string"local j={}
 function j.run(a)a=a or{}local H=io and
 io.read and io.write
 local function b(ai)if H then
@@ -21,7 +21,7 @@ local ai=
 for ak,aj in ipairs(ai)do local al=aj.."/optutil-set.lua"
 if I.exists(al)then
 local w=I.readFile(al)
-if type(w)==k then
+if type(w)==l then
 local an,am=pcall(N.decode,w:gsub("^%s*%-%-[^\n]*\n",""),{maxBytes=64*1024})if
 an and type(am)=="table"and type(am.packages)=="table"then return am end end end end end;local O=Y()local c=
 (f.listAllAvailable and f.listAllAvailable({includeRemote=true}))or{}
@@ -32,7 +32,7 @@ for aj,ai in pairs(O.packages)do
 if not P[aj]then
 c[#c+1]={name=aj,version=ai.version,description=ai.description,category=
 (
-type(ai.category)==k and ai.category~="")and ai.category or"misc",kind=ai.kind,requires=ai.requires,recommends=ai.recommends,disk=ai.disk,reachable=false}else
+type(ai.category)==l and ai.category~="")and ai.category or"misc",kind=ai.kind,requires=ai.requires,recommends=ai.recommends,disk=ai.disk,reachable=false}else
 for al,ak in ipairs(c)do if ak.name==aj then ak.disk=ai.disk end end end end end
 if#c==0 then b("No installable packages found.")
 b("Insert the Optional Utilities disk (it auto-mounts under /mnt) and re-run.")return false,"no installable packages found"end
@@ -54,7 +54,7 @@ for ak,aj in ipairs(c)do if aa(aj,n)then if aj.category~=ai then ai=aj.category
 e[#e+1]={header=y(aj.category),cat=aj.category}end
 e[#e+1]={ai=ak,cat=aj.category}end end end;C()local d={}local p={}
 local function o(ai)return f.info and f.info(ai)~=nil end
-local function J(ai)if type(ai)=="table"then return ai.name end;if type(ai)==k then return
+local function J(ai)if type(ai)=="table"then return ai.name end;if type(ai)==l then return
 (ai:match("^(%S+)"))end end;local D={}for ai,aj in ipairs(c)do D[aj.name]=ai end;local t={}
 for aj,ai in ipairs(c)do for aj,ak in ipairs(
 ai.recommends or{})do t[ak]=t[ak]or{}
@@ -230,12 +230,12 @@ while true do C()am=aF()ar=0;aP()
 aK()aL()ao(1,av,aj,1," ",ai.fg,ai.bg)
 ak(2,av,al("Filter: "..bc.."_",aj-22),ai.title,ai.bg)
 ak(math.max(2,aj-19),av,"Enter=keep Esc=undo",ai.dim,ai.bg)local bg,bh,be,bf=az.pullSignal()
-if bg==g then
+if bg==i then
 if bf==28 then n=bc;break elseif bf==1 then n=bd;break elseif bf==14 then
 bc=bc:sub(1,-2)n=bc elseif be and be>=32 and be<127 then bc=bc..string.char(be)
 n=bc end end end;C()am=aF()ar=0;aw()end;aw()
 while true do local be,bf,bc,bd=az.pullSignal()
-if be==g then
+if be==i then
 local function bg(bh)bh()aK()aL()aR()end
 if bd==200 then bg(function()am=aG(am,-1)end)elseif bd==208 then bg(function()
 am=aG(am,1)end)elseif bd==201 then bg(function()
@@ -255,8 +255,8 @@ for bi in pairs(d)do for bf,bj in
 ipairs(c[bi].recommends or{})do local bk=D[bj]
 if bk and not o(c[bk].name)then bh[bk]=true end end end;for bi in pairs(bh)do d[bi]=true end;q()aw()elseif
 (bd==1 or bc==17)and n~=""then n=""C()am=aF()ar=0;aw()elseif
-bc==113 or bc==81 or bc==17 or bd==1 then ao(1,1,aj,an," ",ai.fg,ai.bg)return h elseif bd==28 then local bi=0;local bh,bj={},0
-return i,
+bc==113 or bc==81 or bc==17 or bd==1 then ao(1,1,aj,an," ",ai.fg,ai.bg)return g elseif bd==28 then local bi=0;local bh,bj={},0
+return h,
 function(bl,bm,bk)
 local function bn(bp)bj=bp
 local bq=an-1;local br=math.max(10,aj-18)
@@ -273,7 +273,7 @@ ak(aj-16,bq,bp.mark,bp.color,ai.bg)end end;bn(bj)end
 if bm=="swap"then local br,bp=pcall(require,"shell.panels.dialogs")
 if
 br and bp and bp.dialog then local bt={W=aj,H=an,T=ai,D={set=ak,fill=ao}}
-local bs=bp.dialog(bt,{style=i,title="Next disk",message=
+local bs=bp.dialog(bt,{style=h,title="Next disk",message=
 tostring(bl)..
 "\n\nSwap the floppy, then choose Continue.".."\nStopping here keeps everything already installed.",buttons={"Continue","Stop (keep)","Undo all"},default=1,escIndex=2})bo()return
 (bs==3 and"undo")or(bs==2 and"abort")or"retry"end;local bq=math.max(2,an-6)ao(1,bq,aj,4," ",ai.fg,ai.bg)ak(2,bq,al(tostring(bl),
@@ -281,7 +281,7 @@ aj-4),ai.warn,ai.bg)
 ak(2,bq+1,al("Enter = continue   A = stop, keep what's installed   U = undo all",
 aj-4),ai.fg,ai.bg)
 while true do local bu,bf,bs,bt=az.pullSignal()
-if bu==g then
+if bu==i then
 local bv=
 
 (bt==28 and"retry")or((
@@ -290,18 +290,18 @@ ak(2,1,"Installing…",ai.title,ai.bg)bn(0)elseif bm=="row"then local bp=2+ (bk 
 ak(2,bp,al(bl,aj-20),ai.fg,ai.bg)bh[bp]={name=bl}end
 bn((bk or 1)-1)elseif bm=="ok"then local bp=2+ (bk or 0)
 if bp<an-2 then
-ak(aj-16,bp,l,ai.ok,ai.bg)if bh[bp]then bh[bp].mark,bh[bp].color=l,ai.ok end end;bn(bk or 0)elseif bm=="fail"then local bp=2+ (bk or 0)
+ak(aj-16,bp,k,ai.ok,ai.bg)if bh[bp]then bh[bp].mark,bh[bp].color=k,ai.ok end end;bn(bk or 0)elseif bm=="fail"then local bp=2+ (bk or 0)
 if bp<an-2 then
 local bq=al(tostring(bl),15)ak(aj-16,bp,bq,ai.err,ai.bg)if bh[bp]then
 bh[bp].mark,bh[bp].color=bq,ai.err end end;bn(bk or 0)elseif bm=="done"then bn(bi)
 ak(2,an,al(tostring(bl).."   Press any key…",
 aj-4),ai.fg,ai.bg)
-while true do local bp=az.pullSignal()if bp==g then break end end;ao(1,1,aj,an," ",ai.fg,ai.bg)end end end end end end
+while true do local bp=az.pullSignal()if bp==i then break end end;ao(1,1,aj,an," ",ai.fg,ai.bg)end end end end end end
 local function ae()
 if not H then
 b("No GPU for the menu and no interactive input here.")b("Install from the disk with:")
 b("  pkg from-floppy        installs the whole disk, with prompts")
-b("  pkg install <name>     one package, e.g.  pkg install tetris")return h end
+b("  pkg install <name>     one package, e.g.  pkg install tetris")return g end
 local function ai()b("")b("=== TOS Optional Utilities ===")
 b("  [*] already installed   [x] selected   [ ] available")local aj=nil
 for al,ak in ipairs(c)do
@@ -314,9 +314,9 @@ while true do ai()w("> ")local aj=io.read()
 if not aj then b("")
 b("No interactive input here (panels shell). Install from the disk with:")
 b("  pkg from-floppy        installs the whole disk, with prompts")
-b("  pkg install <name>     one package, e.g.  pkg install tetris")return h end;aj=aj:gsub("%s+","")
+b("  pkg install <name>     one package, e.g.  pkg install tetris")return g end;aj=aj:gsub("%s+","")
 if aj=="q"then
-b("Cancelled — nothing installed.")return h elseif aj=="i"then return i elseif aj=="a"then
+b("Cancelled — nothing installed.")return g elseif aj=="i"then return h elseif aj=="a"then
 for ak,al in ipairs(c)do if not o(al.name)then d[ak]=true end end;q()elseif aj=="n"then d={}q()else local ak=tonumber(aj)
 if ak and c[ak]then
 if o(c[ak].name)then
@@ -326,7 +326,7 @@ b("  ? unrecognised — enter a number, or a/n/i/q")end end end end
 local function S()local ak,ai=pcall(require,"kernel.display")if
 ak and ai and ai.invalidateColors then pcall(ai.invalidateColors)end
 local al,aj=pcall(require,"kernel.screen")
-if al and aj and aj.invalidateAll then pcall(aj.invalidateAll)end end;local K,m=ad()S()if K==nil then K=ae()end;if K~=i then return end;local u={}for ai,aj in ipairs(c)do if d[ai]or
+if al and aj and aj.invalidateAll then pcall(aj.invalidateAll)end end;local K,m=ad()S()if K==nil then K=ae()end;if K~=h then return end;local u={}for ai,aj in ipairs(c)do if d[ai]or
 p[ai]then u[#u+1]=aj end end
 if#u==0 then if m then
 m("Nothing selected.","done")else b("Nothing selected.")end;return end;if m then m(nil,"begin",#u)else b("")
@@ -341,7 +341,7 @@ local al={session=B,allowUnverified=a.allowUnverified==true,allowUnsigned=a.allo
 a.force==true}local ak,aj;if ai.remote then ak,aj=f.installRemote(ai.name,al)else
 ak,aj=f.installByName(ai.name,al)end
 if ak then E=E+1;F[#F+1]=ai.name;if m then
-m(ai.name,"ok",z)else b(l)end
+m(ai.name,"ok",z)else b(k)end
 for an,am in ipairs(ac(ai.name))do v[#v+1]=am end else L=L+1;if m then m(tostring(aj),"fail",z)else
 b("FAILED: "..tostring(aj))end end end
 local function ah()local ai,aj=0,{}

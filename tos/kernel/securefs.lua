@@ -1,5 +1,5 @@
 
-local S,M,U,V="securefs not initialized","securefs","Permission denied: ","  [E-401 ERR_PERM_DENIED]"local E={}local F=nil;local G=nil;local H=nil;local P=nil
+local U,V,S,M="  [E-401 ERR_PERM_DENIED]","Permission denied: ","securefs not initialized","securefs"local E={}local F=nil;local G=nil;local H=nil;local P=nil
 function E.init(a)F=a.fs;G=a.users;H=a.log;P=a.process end
 local function I(a)if a then return a end;if P and P.currentSession then local c=P.currentSession()
 if c then return c end end;if G and G.currentSession then
@@ -11,8 +11,8 @@ false,S end;a=F.normalize(a)
 if not a then return false,N end;local d=I(b)local e,c=G.canAccessAs(d,a,"r")
 if not e then if H then
 H.warn(M,"READ denied: "..a.." ("..
-(c or"?")..")")end;return false,U..
-(c or"access denied")..V,a end;return true,nil,a end;local Q;local L
+(c or"?")..")")end;return false,V..
+(c or"access denied")..U,a end;return true,nil,a end;local Q;local L
 local function J(a,b)if not F or not G then return false,S end;a=F.normalize(a)if
 not a then return false,N end;local c=I(b)
 if Q then local f=Q(a,c)
@@ -26,8 +26,8 @@ g=" — install add-ons with 'pkg install', not by copying files here"end;return
 false,L("writing to",f,c)..g,a end end;local e,d=G.canAccessAs(c,a,"w")
 if not e then if H then
 H.warn(M,"WRITE denied: "..a..
-" (".. (d or"?")..")")end;return false,U..
-(d or"access denied")..V,a end;return true,nil,a end
+" (".. (d or"?")..")")end;return false,V..
+(d or"access denied")..U,a end;return true,nil,a end
 function E.exists(a,b)local c,e,d=K(a,b)if not c then return false end;return F.exists(d)end
 function E.isDirectory(a,b)local c,e,d=K(a,b)if not c then return false end;return F.isDirectory(d)end
 function E.list(a,b)local g,h,e=K(a,b)if not g then return{},h end;a=e;local d=F.list(e)local c=I(b)local f=G.pathKey and
@@ -134,7 +134,7 @@ if not G or not G.TIER then return nil,"users module unavailable"end;local b=I(a
 function E.mount(a,b,c)if not F then return false,S end;local e,g=Z(c)
 if not e then if H then
 H.warn(M,"MOUNT denied: "..tostring(a).." ("..
-g..")")end;return false,U..g..V end;local d=F.normalize(a)if not d then return false,N end;local f=O(d,e)if f then if H then
+g..")")end;return false,V..g..U end;local d=F.normalize(a)if not d then return false,N end;local f=O(d,e)if f then if H then
 H.warn(M,
 "MOUNT denied (protected system path "..f.."): "..d)end
 return false,L("mounting over",f,e)end
@@ -142,7 +142,7 @@ return F.mount(d,b)end
 function E.unmount(a,b)if not F then return false,S end;local d,c=Z(b)
 if not d then if H then
 H.warn(M,"UNMOUNT denied: "..tostring(a).." ("..
-c..")")end;return false,U..c..V end;return F.unmount(a)end
+c..")")end;return false,V..c..U end;return F.unmount(a)end
 function E.home(a)local b=I(a)if b then return b.home end;return"/tmp"end
 function E.resolve(a,b)if a=="~"or a:sub(1,2)=="~/"then
 return E.home(b)..a:sub(2)end;return a end

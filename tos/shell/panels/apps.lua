@@ -26,10 +26,10 @@ local f,d=pcall(require,"shell.panels.tabs")
 if f and d and a and a.tabs then for g,h in ipairs(a.tabs)do
 if h==b then d.close(a,g)break end end end;return nil,nil end
 k={type=m,model="process",title=function(a)return a.prog or a.label or m end,draw=function(a,b)
+
 local c,e=o(a,b)if not e then return end;local d=b.seat or a.displayIdx;if not d then return end
 a.suspendIdleDraw=true
-if a.D and a.D.invalidate then pcall(a.D.invalidate)end;c.setForeground(b.pid,d,{kernel=true})
-(c.signalKernel or c.signal)(b.pid,"tos_focus")end,refresh=function(b,a)
+if a.D and a.D.invalidate then pcall(a.D.invalidate)end;c.setForeground(b.pid,d,{kernel=true});(c.signalKernel or c.signal)(b.pid,"tos_focus")end,refresh=function(b,a)
 local c,d=o(b,a)if not d then return end
 if c.bgState then local e,f=pcall(c.bgState,a.pid)a.live=
 e and f~="frozen"or false end end,onClose=function(b,a)

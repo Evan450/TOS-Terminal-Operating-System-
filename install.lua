@@ -1,7 +1,7 @@
 
-local aP,aG,aB,aH,aQ,aR,aD="filesystem","/tos/kernel/init.lua","string","^(.+)/[^/]+$","/init.lua","tablet","Cancelled."local ap=require("component")local an=require("computer")
+local aP,aG,aD,aH,aQ,aB,aR="/init.lua","/tos/kernel/init.lua","Cancelled.","^(.+)/[^/]+$","filesystem","string","tablet"local ap=require("component")local an=require("computer")
 local aC=require("term")local ai=nil
-pcall(function()ai=require(aP)end)local az=ap.gpu;local function ah(a)
+pcall(function()ai=require(aQ)end)local az=ap.gpu;local function ah(a)
 if az and az.setForeground then pcall(az.setForeground,a)end end;local function ak(a)ah(0x00FF00)
 print("  + "..a)ah(0xFFFFFF)end;local function aj(a)ah(0xFFFF00)
 print("  ! "..a)ah(0xFFFFFF)end;local function aq(a)ah(0xFF0000)
@@ -27,7 +27,7 @@ if ai.exists(d..aG)then return d end end;local b=
 os.getenv and os.getenv("_")or nil
 if b then
 local d=b:match("^(.*)/[^/]+$")if d and d~=""and ai.exists(d..aG)then return d end end;local c=an.getBootAddress()
-for d in ap.list(aP)do
+for d in ap.list(aQ)do
 if d~=c then
 local f,e=pcall(ap.proxy,d)if not f then e=nil end
 local g,h=pcall(function()return e and e.exists(aG)end)
@@ -141,7 +141,7 @@ string.format("%d KB",math.floor(a/1024))end
 local function bf(a,b)local e=bd()local f=an.getBootAddress()local g=
 an.tmpAddress and an.tmpAddress()or nil;local h=
 a:sub(-1)=="/"and a:sub(1,-2)or a;local c,d={},0
-for i in ap.list(aP)do
+for i in ap.list(aQ)do
 local k,j=pcall(ap.proxy,i)local l,m=false,true;if k and j then l,m=pcall(j.isReadOnly)end
 if
 i~=g and k and j and l and not m then local o=e[i]or{}local p=i==f
@@ -150,7 +150,7 @@ if q then elseif not n then d=d+1 else
 local r={address=i,prefix=n,isBoot=p}local t,u=pcall(j.getLabel)r.label=t and u or nil
 local v,s=pcall(j.spaceTotal)local w,x=pcall(j.spaceUsed)if
 v and w and type(s)=="number"and s>0 then r.total,r.free=s,s-x end
-local y,z=pcall(j.exists,aQ)local A,B=pcall(j.exists,aG)r.hasInit=y and z or false;r.hasTos=A and B or
+local y,z=pcall(j.exists,aP)local A,B=pcall(j.exists,aG)r.hasInit=y and z or false;r.hasTos=A and B or
 false
 r.need=b and aL(a,b,ai.size,ai.exists,n)or 0;c[#c+1]=r end end end
 table.sort(c,function(i,j)if i.isBoot~=j.isBoot then return i.isBoot end;return
@@ -225,8 +225,8 @@ if#m>0 then
 aq(#m.." files have WRONG SIZE after copy:")for n=1,math.min(5,#m)do aj("  "..m[n])end;d=d+#m end end;print()end;return d==0 end;local aN={"/bin","/boot","/lib"}local at="/init.lua.pre-tos"
 local function bi(a)a=a or""if
 not ai or not ai.exists(
-a..aQ)or ai.exists(a..at)then return false end
-local c=io.open(a..aQ,"r")if not c then return false end;local b=c:read("*a")c:close()if not b or b==""or
+a..aP)or ai.exists(a..at)then return false end
+local c=io.open(a..aP,"r")if not c then return false end;local b=c:read("*a")c:close()if not b or b==""or
 b:find("_TOS",1,true)then return false end
 local d=io.open(a..at,"w")if not d then return false end;d:write(b)d:close()
 return ai.exists(a..at)end

@@ -1,5 +1,5 @@
 
-local x,r,t,y,u,v,z,A,B,w,C="kernel.pkg","string","status","Status","No removable disks mounted","Drive ","danger","Cancel","/bios.lua","/install.lua","No network available"local D=require("computer")local p=require("component")
+local x,t,y,u,z,v,A,B,C,w,r="/bios.lua","/install.lua","Cancel","Drive ","No network available","No removable disks mounted","Status","danger","kernel.pkg","status","string"local D=require("computer")local p=require("component")
 local q=require("shell.panels.helpers")local s=function()end
 do local b,a=pcall(require,"kernel.process")if b and a and
 a.yieldCooperative then s=a.yieldCooperative end end
@@ -35,7 +35,7 @@ b["cluster-setup"]=function(H,E)if not J(E)then return end
 local ac,aa=pcall(require,"shell.clustersetup")if not ac or not aa then
 E("cluster setup module unavailable",d.error)return end
 local _=_G._TOS and _G._TOS.fs
-local function ab()local ag,ah=pcall(require,x)return ag and ah or nil end
+local function ab()local ag,ah=pcall(require,C)return ag and ah or nil end
 local ad={ok=d.highlight,warn=d.warning,err=d.error,title=d.title}local Z={}
 Z.say=function(ag,ah)E(ag or"",ad[ah or""]or d.fg)end
 Z.choose=function(ai,ag,ah)
@@ -110,8 +110,8 @@ E(string.format("Playing on the tape (%.1fs).",ag.seconds or 0),d.highlight)end
 if ag.sent then
 E("Broadcast to the network.",d.highlight)elseif not ag.localOnly then E("Nothing was broadcast.",d.warning)end end
 if _==""then local ah,ag=pcall(require,"intercomapp")if ah and ag and ag.open then
-ag.open(a)return end;_=t end
-if _==t then E("=== Intercom ===",d.title)local ag,ai=Z.findDrive()
+ag.open(a)return end;_=w end
+if _==w then E("=== Intercom ===",d.title)local ag,ai=Z.findDrive()
 if ag then
 local al=(
 ag.getSize and ag.getSize())or 0;local ak=(ag.isReady and ag.isReady())and"tape loaded"or
@@ -283,7 +283,7 @@ ad.reloadComponentConfig then
 E("Sandbox doesn't support reload-caps",d.error)return end
 local af,ag=ad.reloadComponentConfig()local aa,ab=0,0;for ai in pairs(af or{})do aa=aa+1 end
 for ai in pairs(ag or{})do ab=ab+1 end
-E(string.format("Reloaded: %d extra base, %d extra gated types",aa,ab),d.highlight)local ah,ac=pcall(require,x)
+E(string.format("Reloaded: %d extra base, %d extra gated types",aa,ab),d.highlight)local ah,ac=pcall(require,C)
 if ah and ac and ac.reloadCapConfig then
 local ak,al=ac.reloadCapConfig()local ai,aj=0,0;for am in pairs(ak or{})do ai=ai+1 end;for am,an in pairs(al or{})do for ap in pairs(an)do aj=
 aj+1 end;local ao=am end
@@ -313,8 +313,8 @@ if ab[1]then
 for ad=2,ab.n do E("  "..tostring(ab[ad]),d.fg)end else E("Error: "..tostring(ab[2]),d.error)end end end
 b.internet=function(H,E)local aa,_=pcall(require,"kernel.internet")if not aa or not _ then
 E("internet module unavailable",d.error)return end
-local Z=(H[1]or t):lower()
-if Z==t then local f=_.status()
+local Z=(H[1]or w):lower()
+if Z==w then local f=_.status()
 if not f.present then
 E("No internet card installed.",d.warning)
 E("An Internet Card goes in a card slot; the machine needs no",d.dim)
@@ -346,7 +346,7 @@ E("Usage: internet [status|get <url>|on|off]",d.dim)end end
 b.compat=function(H,E)local Z,_=pcall(require,"compat")if not Z then
 E("Compat layer not loaded",d.error)return end;local aa=_.list()
 E(" OpenOS Compatibility Layer",d.title)
-E(string.format(" %-16s %s","Module",y),d.dim)for ac,ab in ipairs(aa)do
+E(string.format(" %-16s %s","Module",A),d.dim)for ac,ab in ipairs(aa)do
 E(string.format(" %-16s %s",ab.name,ab.loaded and"loaded"or"not loaded"),
 ab.loaded and d.highlight or d.dim)end end
 b.disk=function(H,E)local Z=H[1]
@@ -355,19 +355,19 @@ local _=e.mounts and e.mounts()or nil
 if _ and type(_)=="table"and#_>0 then local aa={}for ac,ab in ipairs(_)do if
 ab.mountPoint~="/"then aa[#aa+1]=ab end end
 if#
-aa==0 then E(u,d.dim)else
-E(string.format(" %-16s %-10s %s","Mount","Label",y),d.title)E(string.rep("-",42),d.dim)
+aa==0 then E(v,d.dim)else
+E(string.format(" %-16s %-10s %s","Mount","Label",A),d.title)E(string.rep("-",42),d.dim)
 for ac,ab in ipairs(aa)do
 local ad=ab.mountPoint;local ae=q.classifyDisk(e,ad)
 local af=(ab.label or""):sub(1,10)
 E(string.format(" %-16s %-10s %s",ad:sub(1,16),af,ae.desc),
 ae.kind~="data"and d.highlight or d.fg)end end elseif e.exists("/mnt")then local aa=e.list("/mnt")
-if aa and#aa==0 then E(u,d.dim)elseif aa then
-E(string.format(" %-16s %-8s %s","Mount","Type",y),d.title)E(string.rep("-",42),d.dim)
+if aa and#aa==0 then E(v,d.dim)elseif aa then
+E(string.format(" %-16s %-8s %s","Mount","Type",A),d.title)E(string.rep("-",42),d.dim)
 for ac,ab in ipairs(aa)do local ad="/mnt/"..
 ab:gsub("/$","")local ae=q.classifyDisk(e,ad)
 E(string.format(" %-16s %-8s %s",ad:sub(1,16),"disk",ae.desc),
-ae.kind~="data"and d.highlight or d.fg)end else E(u,d.dim)end else E(u,d.dim)end
+ae.kind~="data"and d.highlight or d.fg)end else E(v,d.dim)end else E(v,d.dim)end
 do local aa=0;for ab in p.list("drive",true)do aa=aa+1 end
 if aa>0 then E("",d.dim)
 E(aa..
@@ -426,7 +426,7 @@ E("  Managed disks appear under 'disk' / 'df'; this is for raw drives.",d.dim)el
 E("  Install 'blockfs' to format/mount them:  pkg install blockfs",d.dim)else
 E("  format | mount | check [--repair] | defrag [--if-over N] | read | write",d.dim)end;return end
 if Z=="info"then local af,ag=aa(H[2])
-if not af then E(tostring(ag),d.error)return end;E(v..ag:sub(1,8).."...",d.title)
+if not af then E(tostring(ag),d.error)return end;E(u..ag:sub(1,8).."...",d.title)
 E(string.format("  capacity   %s",j((
 af.getCapacity and af.getCapacity())or 0)),d.fg)
 E(string.format("  sector     %d bytes",
@@ -469,7 +469,7 @@ local av=string.format("'%s' has to take %s out of the mount table while it work
 "Something is using it right now:%s\n\n"..
 "Continuing will pull the volume out from under it. It is\n".."remounted at %s afterwards.",ag,aj,aw,aj)local au
 if l then
-au=l(av,{title="Unmount "..aj.."?",severity=z,yes="Unmount and continue",no=A})else E(av,d.warning)
+au=l(av,{title="Unmount "..aj.."?",severity=B,yes="Unmount and continue",no=y})else E(av,d.warning)
 local ax=i and
 i("Unmount "..aj.." and continue? [y/N]: ",4)or"n"au=(ax or""):lower()=="y"end;if not au then
 E("Cancelled; the drive is still mounted.",d.dim)return false end else
@@ -489,7 +489,7 @@ E("  Mount it by hand:  drive mount "..af:sub(1,8).." "..aj,d.dim)end;if not ar 
 if Z=="unmount"or Z=="umount"then if not h(E)then return end;local ah,af=aa(H[2])if not
 ah then E(tostring(af),d.error)return end
 local ag=ab(af)if not ag then
-E(v..af:sub(1,8).."... is not mounted.",d.dim)return end;local ai=q.sessionOf(a)
+E(u..af:sub(1,8).."... is not mounted.",d.dim)return end;local ai=q.sessionOf(a)
 local aj,ak=e.unmount(ag,ai)if aj==false then
 E(tostring(ak or"unmount failed"),d.error)return end
 E("Unmounted "..ag.." (volume marked clean).",d.highlight)pcall(n)return end
@@ -503,8 +503,8 @@ af:sub(1,8)..
 "\n\n".. (ah and
 ("It holds "..ah..".\n")or"")..
 
-"Every file on it is destroyed. There is no undo and no\n".."recovery tool in TOS that can bring it back.",{title="Format drive",severity=z,yes="Format",no=A})else if ah then
-E(v..af:sub(1,8).."... holds "..ah..".",d.warning)end
+"Every file on it is destroyed. There is no undo and no\n".."recovery tool in TOS that can bring it back.",{title="Format drive",severity=B,yes="Format",no=y})else if ah then
+E(u..af:sub(1,8).."... holds "..ah..".",d.warning)end
 local ak=
 i and i("FORMAT "..
 af:sub(1,8).."... as TBFS? destroys all data [y/N]: ",4)or"n"ai=(ak or""):lower()=="y"end;if not ai then E("Cancelled.",d.dim)return end
@@ -578,7 +578,7 @@ E("for deliberate raw writes. Format/mount/defrag cover normal use.",d.dim)retur
 E("Usage: drive [list | info <addr> | format <addr> [label] | mount <addr> [path]",d.dim)
 E("             | unmount <addr> | check <addr> [--repair] | defrag <addr> [--if-over N]",d.dim)
 E("             | read <addr> <sec>]   (format/repair/defrag need the drive unmounted)",d.dim)end
-b.tape=function(H,E)local _,Z=pcall(require,x)
+b.tape=function(H,E)local _,Z=pcall(require,C)
 if _ and Z and Z.getCommand then
 local aa=Z.getCommand("tape")if aa then aa(H,E)return end
 if Z.info and Z.info("tape")then
@@ -651,8 +651,8 @@ aj:sub(1,8)..
 "...?".."\n\n"..
 (an and
 ("It holds "..an..".\n")or"")..
-"The drive is erased and reformatted as bootable TBFS.\n".."Anything on it now is gone.",{title="Erase and install",severity=z,yes="Erase",no=A})else if an then
-E(v..aj:sub(1,8).."... holds "..an..".",d.warning)end
+"The drive is erased and reformatted as bootable TBFS.\n".."Anything on it now is gone.",{title="Erase and install",severity=B,yes="Erase",no=y})else if an then
+E(u..aj:sub(1,8).."... holds "..an..".",d.warning)end
 local aF=
 i and i("Install TOS onto raw drive "..
 aj:sub(1,8).."...? ERASES it [y/N]: ",4)or"n"at=(aF or""):lower()=="y"end;if not at then E("Cancelled.",d.dim)return end;local aw=function()
@@ -711,9 +711,9 @@ for ai,ah in ipairs(ab)do
 if e.exists(ah)then local aj,ak=e.copy(ah,Z..ah)if aj then _=_+1 else
 E("  FAIL "..ah..
 ": "..tostring(ak),d.error)aa=aa+1 end else ad=ad+1 end end
-if e.exists(B)then if e.copy(B,Z..B)then _=_+1 else aa=aa+1 end end
-if e.exists(w)then
-do local ah,ai=e.copy(w,Z..w)
+if e.exists(x)then if e.copy(x,Z..x)then _=_+1 else aa=aa+1 end end
+if e.exists(t)then
+do local ah,ai=e.copy(t,Z..t)
 if ah then _=_+1
 E("  Copied install.lua (automated installer)",d.highlight)else
 E("  FAIL writing install.lua: "..tostring(ai),d.error)aa=aa+1 end end else
@@ -721,10 +721,10 @@ E("  WARNING: /install.lua not found on boot drive",d.error)
 E("  The install disk will not have an automated installer.",d.dim)end;E("",d.fg)
 if aa==0 then
 E("Install disk created: ".._.." files",d.highlight)E("",d.fg)
-E("On the target machine (OpenOS), run:",d.dim)E("  # "..Z..w,d.fg)
+E("On the target machine (OpenOS), run:",d.dim)E("  # "..Z..t,d.fg)
 E("Or insert the disk and run: /mnt/<disk>/install.lua",d.dim)else
 E(_.." files copied, "..aa.." failed",d.error)end end
-b.chat=function(H,E)if not k then E(C,d.error)return end
+b.chat=function(H,E)if not k then E(z,d.error)return end
 local _,Z=pcall(require,"shell.panels.chatapp")if not _ then
 E("Chat unavailable: "..tostring(Z),d.error)return end;Z.open(a)end
 local function L(E)
@@ -732,7 +732,7 @@ local H=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if type(E)==r and H and 
 if Z then return Z end end;return E end
 b.rsh=function(H,E)if not h(E)then return end;if not H[1]or not H[2]then
 E("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)",d.dim)return end
-if not k then E(C,d.error)return end;local aa,ab=pcall(require,"kernel.net.remote")if not aa then
+if not k then E(z,d.error)return end;local aa,ab=pcall(require,"kernel.net.remote")if not aa then
 E("Remote module unavailable",d.error)return end;local Z=L(H[1])
 local ac=table.concat(H," ",2)
 E("Executing on "..Z:sub(1,8).."...",d.dim)local _,ad=ab.execute(Z,ac)if _ then E(_,d.fg)else
@@ -740,7 +740,7 @@ E("Error: "..tostring(ad),d.error)end end
 b.scp=function(H,E)if not h(E)then return end
 if not H[1]or not H[2]then
 E("Usage: scp <peer>:<remote_path> <local_path>",d.dim)
-E("  Copies a file from a TRUSTED peer's /public.",d.dim)return end;if not k then E(C,d.error)return end
+E("  Copies a file from a TRUSTED peer's /public.",d.dim)return end;if not k then E(z,d.error)return end
 local aa,ab=pcall(require,"kernel.net.transfer")
 if not aa then E("Transfer module unavailable",d.error)return end;local Z,_=H[1]:match("^([^:]+):(.+)$")
 if Z then local ac=L(Z)local ad=N(H[2])

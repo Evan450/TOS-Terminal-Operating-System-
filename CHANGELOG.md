@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 41 rounds of work:
+Everything since v1.5.0, in 42 rounds of work:
 
+- [The add-ons ship minified, like the release](#the-add-ons-ship-minified-like-the-release)
 - [The installer asks which drive, and the bootstrap answers --help](#the-installer-asks-which-drive-and-the-bootstrap-answers---help)
 - [Strata Systems is branding, not a copyright holder](#strata-systems-is-branding-not-a-copyright-holder)
 - [The published branch is tested the way a contributor gets it](#the-published-branch-is-tested-the-way-a-contributor-gets-it)
@@ -52,6 +53,22 @@ Everything since v1.5.0, in 41 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The add-ons ship minified, like the release
+
+Before the Optional Utilities went through the release's minifier, the minifier was run against cases built to break it, both ways, comparing values. Three pairs of tokens change meaning once the formatter drops the space between them. `-` then `-` is a comment: `a - -b` came out as `a--b`, which still compiles and returns `a`, and `- -x` as `--x`, which returns nothing. `..` then `.5` or `...` runs into a longer token, a load error. A long string used as an index or a constructor key opens with `[`, so `t[ [=[k]=] ]` came out as `t[[=[k]=]]`, which compiles as a call. The formatter now keeps one space in each of those places. Nothing in the release used any of them: it built byte for byte the same before and after the fix.
+
+The same check turned up that the release was not reproducible. Built twice from the same source it differed in 6 of 144 files, each difference two hoisted strings that had swapped names: the string-dedup pass declared them in `pairs()` order, which Lua 5.4 changes from process to process. They are declared in sorted order now, and three builds produce the same bytes. A pack that has to match a fresh build file for file could not have been minified without this.
+
+`test_minify_vars.lua` gains 17 checks (92), and 12 of them fail on the old minifier.
+
+The release had one of these in it. A statement that opens with `(` is a call of whatever ends the line before unless a `;` keeps them apart, which is why the focus switches are written `;(proc.signalKernel or proc.signal)(pid, "tos_focus")`, and why `test_call_chain_lint.lua` exists. The minifier breaks its line every 150 or so characters, and where that landed on the `;` it wrote a newline instead, which has not ended a statement since Lua 5.2. Every release built since local renaming arrived on 2026-10-17 shipped six focus switches (four in `kernel/init.lua`, one each in the shell's `apps.lua` and `executor.lua`) as `setForeground(...)(signalKernel or signal)(pid, "tos_focus")`, which calls the `true` that `setForeground` returns and stops with "attempt to call a boolean value" after the process is brought to the front and before it is told to repaint. A second path dropped the separator entirely, after an identifier or `end`, though nothing hit it. Every statement that opens with `(` now gets its `;`.
+
+Three bugs of one kind, each of which compiled, were reason enough to stop relying on finding them by hand. The minifier now parses its own output back and requires the same number of each kind of syntax node as the program it was given; a merged statement, a minus turned into a comment, or an index turned into a call all change those counts, and the file is refused with what changed. With the old formatter swapped back in it refuses exactly the three files above, and the fixed release passes it byte for byte unchanged. `test_minify_vars.lua` is at 109 checks, including the three real files keeping their `;(` and the refusal itself, proved on a copy of the formatter broken on purpose.
+
+Service scripts in `/etc/rc.d/` now get the whitespace pass and never the renaming one. `rc.lua` decides a service's caps, user, restart and needs by reading its source before running anything, and the full pass can hide a field from that read: a service that keeps its caps in `local caps` and returns `caps = caps` loses the name the peek looks for, and one whose user name appears three times has it hoisted, so `user = "_kernel_"` becomes `user = d` and the service runs at the wrong tier. No service did either (the peek read every one the same before and after), so this is about the next one. It costs 2,242 bytes of the release (`test_strip_rcd_source.lua`).
+
+Then the add-ons. `TOS-Extras/build/build-disk.lua` used to strip comments and stop there; every `.lua` in the Optional Utilities, the `selftest` battery included, now gets the release's whole pass. The 81 files come to 526,217 bytes, from 821,640 comment-stripped and 1,210,759 as written, and the pack's two disks from 913,911 bytes to 572,166. It still takes two floppies, but the second holds 92 KB where it held 416 KB. blockfs.lua is 20 KB to require, and the TBFS boot blob that embeds it shrinks with it. rc.d scripts get the whitespace pass, by the same shared rule as the release; manifests lose their comments and must still decode the way `pkg` reads them; rc-pilot's robot EEPROM image is 3,576 of its chip's 4,096 bytes. The builder refuses a file that does not compile as written, one that does not compile once minified, and one with a comment left in it. Checked by running the add-ons' own suites against the shipped bytes: with every source file swapped for what the pack ships, 49 add-on test files passed, and the only failures were the four tests that read source text by design (`write`'s key bindings, ttt's documented rule, the cluster bridge lifting a function by name, and the call-chain lint tripping on a `--` inside a string). The minified selftest battery, booted on a headless machine against the fixed release, gave the same 115 passes, no failures and one skip, check for check, as the battery as written. The pack has to be re-signed before it can be published.
 
 ### The installer asks which drive, and the bootstrap answers --help
 

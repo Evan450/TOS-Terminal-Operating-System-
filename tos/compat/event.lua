@@ -1,4 +1,4 @@
-local p,q,r="string","function","signal '"local k=require("kernel.event")
+local q,r,p="function","signal '","string"local k=require("kernel.event")
 local o=require("computer")local l={}local m={}setmetatable(m,{__mode="k"})
 local s={modem_message=true,key_down=true,key_up=true,clipboard=true,tos_login_complete=true,tos_logout=true,tos_shutdown=true,tos_seat_changed=true,tos_shell_exited=true}
 local function n(a)return type(a)==p and s[a]==true end

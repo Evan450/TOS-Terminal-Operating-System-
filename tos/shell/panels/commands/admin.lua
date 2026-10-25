@@ -1,5 +1,5 @@
 
-local ac,ad,T,ae,N,U,O,R,P,Q,S,V,W,af,ag,K,ah,ai,aj,M,ak,al,X,Y,am,Z,_,aa,an,ab,ao="computer","version"," %-16s %s","From repos nobody configured: ","Refused: ","remove","Aborted.","kernel.pkgsign","--allow-unverified","--allow-unsigned","--force","--dry-run","--dryrun","  %-20s %s -> %s","(--dry-run: nothing was changed)","string","floppy","install","Error: ","status","repair","shell.panels.tabs","number","kernel.log","Cannot read: ","danger","Cancel","No user system","setTier unavailable","filesystem","Mount failed"local L=require(ac)local J=require("component")
+local ac,T,ad,N,O,U,V,R,P,W,ae,af,ag,ah,X,Q,ai,Y,Z,aj,ak,_,S,aa,ab,al,am,an,M,K,ao="  %-20s %s -> %s"," %-16s %s","(--dry-run: nothing was changed)","--allow-unsigned","--allow-unverified","--dry-run","--dryrun","--force","Aborted.","Cancel","Cannot read: ","Error: ","From repos nobody configured: ","Mount failed","No user system","Refused: ","computer","danger","filesystem","floppy","install","kernel.log","kernel.pkgsign","number","remove","repair","setTier unavailable","shell.panels.tabs","status","string","version"local L=require(ai)local J=require("component")
 local I=require("shell.panels.helpers")
 return
 function(b,a,c)local h,G,t,e,j,g=a.K,a.E,a.P,a.F,a.D,a.U;local H,m,n=a.SC,a.NM,a.st;local d=a.T;local ap=a.tier
@@ -66,7 +66,7 @@ aC:sub(1,2)=="--"and not az[aC]then
 E(string.format("pkg %s: unknown option '%s' -- nothing was done.",tostring(aw),aC),d.error)E("Options: "..aA,d.dim)return true end;aB=aB+1 end;return false end
 if not aw or aw=="list"then local az=av.list()if#az==0 then
 E("No packages installed.",d.dim)return end
-E(string.format(" %-24s %-10s %s","name",ad,"kind"),d.title)for aB,aA in ipairs(az)do
+E(string.format(" %-24s %-10s %s","name",ao,"kind"),d.title)for aB,aA in ipairs(az)do
 E(string.format(" %-24s %-10s %s",aA.name:sub(1,24),(aA.version or"?"):sub(1,10),
 aA.kind or"?"),d.fg)end elseif
 aw=="search"or aw=="available"then
@@ -83,7 +83,7 @@ table.sort(az,function(aB,aC)
 if
 (aB.category or"misc")~= (aC.category or"misc")then return
 (aB.category or"misc")< (aC.category or"misc")end;return(aB.name or"")< (aC.name or"")end)
-E(string.format(" %-20s %-10s %s","name",ad,"source"),d.title)local aA=nil
+E(string.format(" %-20s %-10s %s","name",ao,"source"),d.title)local aA=nil
 for aC,aB in ipairs(az)do local aD=aB.category or"misc"if aD~=aA then aA=aD
 E("  ["..aD.."]",d.dim)end
 local aE=aB.remote and
@@ -103,26 +103,26 @@ E("NOT the disk it came on. A key that arrives with the package it",d.dim)E("sig
 E(string.format("Unsigned packages are currently %s.",av.trustRequired()and"REFUSED"or
 "allowed (admin gate only)"),
 av.trustRequired()and d.highlight or d.dim)
-E(ae..p[av.discoveredPolicy()].."  (pkg trust discovered)",d.dim)elseif az=="discovered"then local aA=(au[3]or""):lower()if aA==""then E(ae..
+E(ag..p[av.discoveredPolicy()].."  (pkg trust discovered)",d.dim)elseif az=="discovered"then local aA=(au[3]or""):lower()if aA==""then E(ag..
 p[av.discoveredPolicy()],d.fg)
 E("Usage: pkg trust discovered tofu|trusted|off",d.dim)return end
 if not p[aA]then
 E("Usage: pkg trust discovered tofu|trusted|off",d.dim)E("  tofu     "..p.tofu,d.dim)
 E("  trusted  "..p.trusted,d.dim)E("  off      "..p.off,d.dim)return end
 local aB,aC=av.trustDiscovered(aA,{session=I.sessionOf(a)})
-if not aB then E(N..tostring(aC),d.error)return end;E(ae..p[aA],d.highlight)elseif az=="add"then
+if not aB then E(Q..tostring(aC),d.error)return end;E(ag..p[aA],d.highlight)elseif az=="add"then
 if
 not(au[3]and au[4])then
 E("Usage: pkg trust add <name> <64-hex-public-key>",d.dim)
 E("<name> is YOUR label for the publisher — it is how you will",d.dim)
 E("refer to them locally, and has nothing to do with whatever",d.dim)E("name their disk claims.",d.dim)return end
 local aA,aB=av.trustAdd(au[3],au[4],{session=I.sessionOf(a)})
-if not aA then E(N..tostring(aB),d.error)return end;E("Trusted '"..au[3].."'.",d.highlight)
+if not aA then E(Q..tostring(aB),d.error)return end;E("Trusted '"..au[3].."'.",d.highlight)
 E("Packages signed by this key will now install without a fresh",d.dim)
-E("judgement call. That is the point, and the cost.",d.dim)elseif az==U or az=="rm"then if not au[3]then
+E("judgement call. That is the point, and the cost.",d.dim)elseif az==ab or az=="rm"then if not au[3]then
 E("Usage: pkg trust remove <name>",d.dim)return end
 local aA,aB=av.trustRemove(au[3],{session=I.sessionOf(a)})
-if not aA then E(N..tostring(aB),d.error)return end
+if not aA then E(Q..tostring(aB),d.error)return end
 E("Removed '"..au[3].."'. Already-installed packages are",d.highlight)
 E("unaffected — this changes what will be accepted from now on.",d.dim)elseif az=="require"then local aA=(au[3]or""):lower()
 if
@@ -130,7 +130,7 @@ aA~="on"and aA~="off"then E("Usage: pkg trust require on|off",d.dim)
 E("`on` refuses unsigned packages outright. Consider what is on",d.dim)
 E("your Optional Utilities disks before turning it on.",d.dim)return end
 local aB,aC=av.trustRequire(aA=="on",{session=I.sessionOf(a)})
-if not aB then E(N..tostring(aC),d.error)return end
+if not aB then E(Q..tostring(aC),d.error)return end
 E("Unsigned packages are now "..
 (aA=="on"and"REFUSED."or"allowed."),d.highlight)elseif az=="key"then
 if not au[3]then
@@ -144,9 +144,9 @@ E("Too many arguments. Only the publisher label goes here — the",d.error)
 E("passphrase is asked for separately, and must never be typed",d.dim)
 E("on the command line where it is echoed and recalled.",d.dim)return end;if not i then
 E("This needs an interactive prompt for the passphrase.",d.error)return end
-local aA=i("Signing passphrase: ",96,true)if not aA or aA==""then E(O,d.dim)return end
+local aA=i("Signing passphrase: ",96,true)if not aA or aA==""then E(P,d.dim)return end
 local aB,aD=av.signingKey(aA,au[3])if not aB then E(tostring(aD),d.error)return end
-E(aB,d.highlight)local aE,aC=pcall(require,R)if aE and aC then
+E(aB,d.highlight)local aE,aC=pcall(require,S)if aE and aC then
 E("fingerprint "..aC.fingerprint(aB),d.dim)
 E("signing as '"..tostring(aC.normalizeLabel(au[3])).."'",d.dim)end else
 E("Usage: pkg trust [list|add|remove|require|key] ...",d.dim)end elseif aw=="verify-sig"or aw=="checksig"then if not au[2]then
@@ -154,7 +154,7 @@ E("Usage: pkg verify-sig <directory>",d.dim)
 E("Says who signed a package WITHOUT installing it.",d.dim)return end
 local az,aA=av.checkSignature(au[2])if not az then E(tostring(aA),d.error)return end
 E(
-"Package: "..tostring(aA and aA.name or"?"),d.title)local aC,aB=pcall(require,R)
+"Package: "..tostring(aA and aA.name or"?"),d.title)local aC,aB=pcall(require,S)
 if aC and aB then for aE,aD in ipairs(aB.describe(az))do
 E(aD,az.state==
 "trusted"and d.highlight or(az.state=="invalid"and d.error or
@@ -173,14 +173,14 @@ E("passphrase under a different label is a different identity.",d.dim)
 E("Use the same label every time — it is part of who you are.",d.dim)return end;if not i then
 E("Signing needs an interactive prompt for the passphrase.",d.error)return end
 local aA=i("Signing passphrase: ",96,true)
-if not aA or aA==""then local aG,aF=pcall(require,R)
+if not aA or aA==""then local aG,aF=pcall(require,S)
 E(string.format("Aborted. A signing passphrase is required (%d+ characters).",
 aG and aF and aF.KDF_MIN_PASS or 20),d.dim)
 E("It IS the private key — the same passphrase always produces the",d.dim)
 E("same key, on any machine, so make it long and keep it.",d.dim)return end
 local aB,aC=av.signPackage(au[2],aA,{session=I.sessionOf(a),signer=az})if not aB then
 E("Signing failed: "..tostring(aC),d.error)return end
-E("Signed. Wrote "..tostring(aC),d.highlight)E("public key "..aB,d.fg)local aE,aD=pcall(require,R)if
+E("Signed. Wrote "..tostring(aC),d.highlight)E("public key "..aB,d.fg)local aE,aD=pcall(require,S)if
 aE and aD then
 E("fingerprint "..aD.fingerprint(aB),d.dim)end elseif aw=="repo"or aw=="repos"then
 local az=(au[2]or"list"):lower()
@@ -209,7 +209,7 @@ local aB,aC=av.addRepo(au[3],au[4],aA,{session=I.sessionOf(a)})
 if aB then
 E("Repo '"..au[3].."' added.",d.highlight)
 E("It is now an accepted source of executable code for this",d.warning)
-E("machine. 'pkg repo remove "..au[3].."' undoes that.",d.warning)else E(tostring(aC),d.error)end elseif az==U or az=="rm"then if not au[3]then
+E("machine. 'pkg repo remove "..au[3].."' undoes that.",d.warning)else E(tostring(aC),d.error)end elseif az==ab or az=="rm"then if not au[3]then
 E("Usage: pkg repo remove <name>",d.dim)return end
 local aA,aB=av.removeRepo(au[3],{session=I.sessionOf(a)})
 if aA then
@@ -225,15 +225,15 @@ E(az.status().reason or"internet is not available",d.warning)E("'internet' shows
 local aA=av.searchRemote({refresh=
 au[2]=="--refresh"})if#aA==0 then
 E("Nothing available. Check 'pkg repo list'.",d.dim)return end
-E(string.format(" %-22s %-10s %s","name",ad,"repo"),d.title)
+E(string.format(" %-22s %-10s %s","name",ao,"repo"),d.title)
 for aC,aB in ipairs(aA)do
 E(string.format(" %-22s %-10s %s",(aB.name or"?"):sub(1,22),(
 aB.version or"-"):sub(1,10),tostring(aB.repo)),d.fg)if aB.description then
 E("   "..tostring(aB.description):sub(1,60),d.dim)end end;E("",d.dim)
-E("Install one with:  pkg fetch <name>",d.dim)elseif aw=="fetch"then if ax({[P]=true,[Q]=true},"--allow-unverified --allow-unsigned")then
+E("Install one with:  pkg fetch <name>",d.dim)elseif aw=="fetch"then if ax({[O]=true,[N]=true},"--allow-unverified --allow-unsigned")then
 return end;local aA,aB,aC=nil,false,false
 for aF=2,#au do
-local aG=tostring(au[aF])if aG==P then aB=true elseif aG==Q then aC=true elseif not aA then aA=aG end end
+local aG=tostring(au[aF])if aG==O then aB=true elseif aG==N then aC=true elseif not aA then aA=aG end end
 if not aA then
 E("Usage: pkg fetch <name> [--allow-unverified] [--allow-unsigned]",d.dim)
 E("Downloads from a configured repo, then installs it.",d.dim)return end;E("Fetching '"..aA.."'...",d.dim)
@@ -289,11 +289,11 @@ E(string.format(" %-20s %-10s %-10s %s",aA.name:sub(1,20),tostring(aA.from):sub(
 aA.root or"?")),d.fg)end;E("",d.dim)
 E("pkg upgrade <name>   or   pkg upgrade --all --yes",d.dim)elseif aw=="upgrade"then
 if
-ax({["--all"]=true,["--yes"]=true,[S]=true,[V]=true,[W]=true,[P]=true,[Q]=true},"--all --yes/-y --force --dry-run --allow-unverified --allow-unsigned")then return end;local aD,aE,aF,aG=false,false,false,false;local aH,aI=false,false;local aA={}
+ax({["--all"]=true,["--yes"]=true,[R]=true,[U]=true,[V]=true,[O]=true,[N]=true},"--all --yes/-y --force --dry-run --allow-unverified --allow-unsigned")then return end;local aD,aE,aF,aG=false,false,false,false;local aH,aI=false,false;local aA={}
 for aJ=2,#au do
 local aK=tostring(au[aJ])
-if aK=="--all"then aD=true elseif aK=="--yes"or aK=="-y"then aE=true elseif aK==S then aF=true elseif
-aK==V or aK==W then aG=true elseif aK==P then aH=true elseif aK==Q then aI=true elseif aK:sub(1,2)~="--"then aA[#aA+1]=aK end end;local az={}
+if aK=="--all"then aD=true elseif aK=="--yes"or aK=="-y"then aE=true elseif aK==R then aF=true elseif
+aK==U or aK==V then aG=true elseif aK==O then aH=true elseif aK==N then aI=true elseif aK:sub(1,2)~="--"then aA[#aA+1]=aK end end;local az={}
 if aD then
 for aK,aJ in ipairs(av.outdated())do az[#az+1]=aJ end elseif#aA>0 then local aJ={}
 for aL,aK in ipairs(av.outdated())do aJ[aK.name]=aK end;for aL,aK in ipairs(aA)do
@@ -304,15 +304,15 @@ E("       pkg outdated   shows what has a newer version available",d.dim)return 
 if#az==0 then E("Nothing to upgrade.",d.highlight)return end
 if aG then
 E(string.format("Would upgrade %d package(s):",#az),d.title)for aK,aJ in ipairs(az)do
-E(string.format(af,aJ.name,tostring(aJ.from),tostring(aJ.to)),d.fg)end;E(ag,d.dim)return end
+E(string.format(ac,aJ.name,tostring(aJ.from),tostring(aJ.to)),d.fg)end;E(ad,d.dim)return end
 if aD and not aE then
 E(string.format("--all would upgrade %d package(s):",#az),d.warning)for aK,aJ in ipairs(az)do
-E(string.format(af,aJ.name,tostring(aJ.from),tostring(aJ.to)),d.fg)end
+E(string.format(ac,aJ.name,tostring(aJ.from),tostring(aJ.to)),d.fg)end
 E("Add --yes to proceed.",d.dim)return end;local aB,aC=0,0
 for aK,aJ in ipairs(az)do
 local aM,aL=av.upgrade(aJ.name,{session=I.sessionOf(a),force=aF,allowUnverified=aH,allowUnsigned=aI})
 if aM then aB=aB+1
-E(string.format(af,aJ.name,tostring(aL.from),tostring(aL.to)),d.highlight)if aL.dropped and#aL.dropped>0 then
+E(string.format(ac,aJ.name,tostring(aL.from),tostring(aL.to)),d.highlight)if aL.dropped and#aL.dropped>0 then
 E(string.format("      %d file(s) no longer shipped, removed",#
 aL.dropped),d.dim)end
 if
@@ -360,26 +360,26 @@ do local n=az._sigState or"unsigned"
 if n=="trusted"then
 E(string.format(" signature:   signed by trusted publisher '%s'",tostring(az._sigLabel)),d.highlight)elseif n=="unknown"then
 E(" signature:   valid, but the key was not trusted at install time",d.warning)else E(" signature:   none (unsigned)",d.dim)end
-if az._sigKey then local aB,aA=pcall(require,R)
+if az._sigKey then local aB,aA=pcall(require,S)
 local aC=
 (aB and aA and aA.fingerprint)and aA.fingerprint(az._sigKey)or
 az._sigKey:sub(1,16)E("              key "..aC,d.dim)end
 E(string.format(" integrity:   %s",
 az._unverified and"NOT verified (installed with --allow-unverified)"or"all files matched their declared hashes"),
-az._unverified and d.warning or d.dim)end elseif aw==ai or aw=="install-dir"or aw=="from-floppy"or aw==
+az._unverified and d.warning or d.dim)end elseif aw==ak or aw=="install-dir"or aw=="from-floppy"or aw==
 "fromfloppy"then
 if
-ax({[P]=true,[Q]=true,[S]=true,["--all"]=true,["--yes"]=true,[V]=true,[W]=true,["--key"]="value",["--prompts"]=true,["--classic"]=true},
+ax({[O]=true,[N]=true,[R]=true,["--all"]=true,["--yes"]=true,[U]=true,[V]=true,["--key"]="value",["--prompts"]=true,["--classic"]=true},
 "--all --yes/-y --dry-run --force --allow-unverified --allow-unsigned ".."--key <key> --prompts")then return end;local aB,aH,aI,aE=false,false,false,false;local aC,aA=false,false;local aF={}
 for aK=2,#au do
 local aL=tostring(au[aK])
-if aL==P then aB=true elseif aL==Q then aC=true elseif aL==S then aA=true elseif aL=="--all"then aH=true elseif
-aL=="--yes"or aL=="-y"then aI=true elseif aL==V or aL==W then aE=true elseif aL=="--key"then elseif au[aK-1]=="--key"then elseif
+if aL==O then aB=true elseif aL==N then aC=true elseif aL==R then aA=true elseif aL=="--all"then aH=true elseif
+aL=="--yes"or aL=="-y"then aI=true elseif aL==U or aL==V then aE=true elseif aL=="--key"then elseif au[aK-1]=="--key"then elseif
 aL:sub(1,2)~="--"then aF[#aF+1]=aL end end;local aD=aF[1]local function aJ(aK)return
 type(aK)==K and aK:find("/",1,true)~=nil end;local az
 if aH then az="all"elseif aw==
-"install-dir"then az="dir"elseif aw=="from-floppy"or aw=="fromfloppy"then az=ah elseif not aD then
-az=ah elseif aJ(aD)then az="dir"elseif#aF>1 then az="many"else az="name"end
+"install-dir"then az="dir"elseif aw=="from-floppy"or aw=="fromfloppy"then az=aj elseif not aD then
+az=aj elseif aJ(aD)then az="dir"elseif#aF>1 then az="many"else az="name"end
 local function aG(aK)
 if#aK==0 then E("Nothing to install.",d.dim)return end
 if aE then
@@ -400,7 +400,7 @@ if aA then
 E("    --force: would install past "..
 #aQ.contradictions.." contradiction(s)",d.warning)else aN=aN+1
 E("    would be refused (--force overrides)",d.error)end end end end;if aN>0 then
-E(string.format("%d of %d would not install as things stand.",aN,#aK),d.warning)end;E(ag,d.dim)return end;local aM,aL=0,0
+E(string.format("%d of %d would not install as things stand.",aN,#aK),d.warning)end;E(ad,d.dim)return end;local aM,aL=0,0
 for aO,aN in ipairs(aK)do
 local aQ,aP=av.installByName(aN,{session=I.sessionOf(a),allowUnverified=aB,allowUnsigned=aC,force=aA})
 if aQ then aM=aM+1
@@ -410,12 +410,12 @@ table.concat(aP.skipped,", ")..")")or""),d.highlight)else aL=aL+1
 E(string.format("  %-20s FAILED: %s",aN,tostring(aP)),d.error)end end
 E(string.format("%d installed, %d failed.",aM,aL),aL>0 and d.warning or d.highlight)end
 if aE and(az=="name"or az=="dir")then aG({aD})return elseif aE and
-az==ah then local aK={}for aM,aL in ipairs(av.listAllAvailable()or{})do
+az==aj then local aK={}for aM,aL in ipairs(av.listAllAvailable()or{})do
 if not(av.info and
 av.info(aL.name))then aK[#aK+1]=aL.name end end
 table.sort(aK)
 if#aK==0 then E("Nothing to install.",d.dim)return end
-E(string.format("Would offer %d package(s) to choose from:",#aK),d.title)for aM,aL in ipairs(aK)do E("  "..aL,d.fg)end;E(ag,d.dim)
+E(string.format("Would offer %d package(s) to choose from:",#aK),d.title)for aM,aL in ipairs(aK)do E("  "..aL,d.fg)end;E(ad,d.dim)
 return end
 if az=="all"then
 if not(aI or aE)then
@@ -446,7 +446,7 @@ E("Menu installer unavailable ("..tostring(aO)..
 ") — using prompts.",d.dim)end end;if aM then return end
 local aN,aK=av.installFromFloppy({session=I.sessionOf(a),allowUnverified=aB,allowUnsigned=aC,force=aA,confirm=function(aR,aQ,aP,aO)
 if q then
-local aV={title="Install from media",severity=ai,yes="Install",no="Skip",progress=
+local aV={title="Install from media",severity=ak,yes="Install",no="Skip",progress=
 (aP and aO and aO>1)and{index=aP,total=aO}or nil}if aP and aO and aP<aO then aV.redraw=false end;return
 q("Install  "..aR.."?".."\n\n".."From:"..
 "\n  "..aQ,aV)end;if not i then return false end
@@ -464,7 +464,7 @@ E("No packages found on mounted media. Insert a package disk and retry.",d.dim)e
 tostring(aK),d.error)end end elseif aw=="license-hash"then if not au[2]or not au[3]then
 E("Usage: pkg license-hash <package-name> <license-key>",d.dim)return end
 local az,aA=av.computeLicenseHash(au[2],au[3])
-if az then E(az,d.fg)else E(aj..tostring(aA),d.error)end elseif aw=="uninstall"or aw==U then if not au[2]then
+if az then E(az,d.fg)else E(af..tostring(aA),d.error)end elseif aw=="uninstall"or aw==ab then if not au[2]then
 E("Usage: pkg uninstall <name>",d.dim)return end
 local az,aA=av.uninstall(au[2],{session=I.sessionOf(a)})if az then E("Uninstalled: "..au[2],d.highlight)else
 E(
@@ -497,7 +497,7 @@ E("           | enable <name> | disable <name> | commands | make-disk <mnt>]",d.
 E("  install: a name installs by name; a path installs that dir; no arg",d.dim)
 E("           scans mounted media. Shortcuts: 'install <name>', 'uninstall <name>'.",d.dim)
 E("  signing: trust [list|add|remove|require|key] · verify-sig <dir> · sign <dir>",d.dim)end end
-b.install=function(E,au)local av={ai}for aw=1,# (E or{})do av[#av+1]=E[aw]end;return
+b.install=function(E,au)local av={ak}for aw=1,# (E or{})do av[#av+1]=E[aw]end;return
 b.pkg(av,au)end
 b.uninstall=function(E,au)local av={"uninstall"}
 for aw=1,# (E or{})do av[#av+1]=E[aw]end;return b.pkg(av,au)end
@@ -523,7 +523,7 @@ E(string.format(" metaHash: %s...",ay.metaHash:sub(1,24)),d.fg)
 E(string.format(" size:     %d bytes",ay.size),d.fg)elseif aw=="restore"then if not au[2]then
 E("Usage: backup restore <file.bak> [destRoot] [--force]",d.dim)return end;local az,aA=nil,false
 for aC=3,#au do if
-au[aC]==S or au[aC]=="-f"then aA=true else az=au[aC]end end
+au[aC]==R or au[aC]=="-f"then aA=true else az=au[aC]end end
 local aB,ay=av.restore(au[2],{session=ax,destRoot=az,force=aA})
 if aB then
 E(string.format("Restore OK: %d/%d files -> %s",ay.restored,ay.entries,ay.destRoot),d.highlight)D()else
@@ -589,7 +589,7 @@ for aH,aG in ipairs(aD.missing)do E(
 "  MISSING at capture time: "..aG,d.warning)end elseif ax=="restore"then if not f(E)then return end
 E("=== SRM restore ===",d.title)
 aA(ay(aw.restore(nil,{source=type(av.source)==K and av.source or nil,unverified=
-av.unverified and true or false,paths=#aB>0 and aB or nil})))elseif ax==ak and av.online then if not f(E)then return end
+av.unverified and true or false,paths=#aB>0 and aB or nil})))elseif ax==al and av.online then if not f(E)then return end
 if av.apply and not o(E)then return end;if av.ref==true then
 E("--ref needs a value, e.g. --ref=build-2603a5b or --ref=main",d.error)return end
 local aF,aE=pcall(require,"kernel.netrepair")if not aF or not aE then
@@ -599,7 +599,7 @@ local aD=aE.run(nil,{apply=av.apply and true or false,unanchored=av.unanchored a
 type(av.ref)==K and av.ref or nil})
 for aH,aG in ipairs(aD.lines)do E(aG.text,az[aG.sev]or d.fg)end;if av.apply then E("",d.dim)
 E(string.format("%d repaired, %d rejected.",aD.fixed,aD.rejected),
-aD.ok and az.ok or az.warn)end elseif ax==ak then if not f(E)then
+aD.ok and az.ok or az.warn)end elseif ax==al then if not f(E)then
 return end;E("=== SRM repair ===",d.title)
 if not av.restore then
 E("Fixing what is mechanically safe (interrupted writes, stale state,",d.dim)
@@ -690,7 +690,7 @@ E("datatier: auto | 1 | 2 | 3",d.error)return end elseif ax=="ui"or ax=="interfa
 if
 aw=="panels"or aw=="tui"or aw=="home"then av.ui="home"ay=true elseif aw=="cli"or aw=="split"then av.ui=aw;ay=true elseif aw=="auto"then av.ui=
 nil;ay=true else
-E("ui: auto (by memory) | panels | split | cli",d.error)return end elseif ax==ak then
+E("ui: auto (by memory) | panels | split | cli",d.error)return end elseif ax==al then
 if aw=="on"or aw=="once"or aw=="1"then av.repair=true;ay=true elseif aw==
 "off"or aw=="0"then av.repair=false;ay=true else
 E("repair: on (runs once next boot, then clears) | off",d.error)return end elseif ax=="ramgate"or ax=="ram"then
@@ -712,7 +712,7 @@ local function A()local av,E=pcall(require,"kernel.bootcfg")
 local au=_G._TOS and _G._TOS.fs;if av and E and au then return E,au end end
 local function B(au,E)local av=h.getSwap and h.getSwap()
 if au=="now"then
-local aC,aB=pcall(require,al)if not aC or not aB.sweepCold then
+local aC,aB=pcall(require,an)if not aC or not aB.sweepCold then
 E("tab paging unavailable",d.error)return end;if not av then
 E("Swap not available",d.error)return end;local aD=aB.sweepCold(a,true)
 local aE,aF=aB.pagedStats(a)
@@ -722,7 +722,7 @@ E("They page back transparently the next time you open them.",d.dim)return end
 if au==""or au==M or au=="keys"or au=="clear"then if not av then
 E("Swap not available",d.error)return end
 if au=="clear"then if not f(E)then return end
-local aE,aD=pcall(require,al)
+local aE,aD=pcall(require,an)
 if aE and aD.isPaged then for aG,aF in ipairs(a.tabs or{})do
 if aD.isPaged(aF)then local aG=aF.content end end end;av.clear()E("Swap cleared.",d.highlight)return end;local aB=av.usage()
 local aC=(aB.max and aB.max>0)and math.floor(aB.bytes*100/
@@ -733,7 +733,7 @@ E(string.format("Entries: %d",aB.count),d.dim)if au=="keys"and av.keys then loca
 if#aD==0 then
 E("(no keys)",d.dim)else for aF,aE in ipairs(aD)do E("  "..aE,d.dim)end end end
 do
-local aG,aE=pcall(require,al)if aG and aE.pagedStats then local aH,aI=aE.pagedStats(a)
+local aG,aE=pcall(require,an)if aG and aE.pagedStats then local aH,aI=aE.pagedStats(a)
 E(string.format("View tabs paged: %d (%d lines)",aH,aI),
 aH>0 and d.highlight or d.dim)end;local aF,aD=25,(
 h.getConfig and h.getConfig())if
@@ -760,7 +760,7 @@ local az=h.getConfig and h.getConfig()
 if au==""or au=="show"or au==M then local aH=aw.profile()
 E("=== Power ===",d.title)local aI,aE,aF=pcall(aw.energy)
 if
-aI and type(aE)==X and type(aF)==X and aF>0 then
+aI and type(aE)==aa and type(aF)==aa and aF>0 then
 local aN=math.floor(aE*100/aF+0.5)
 E(string.format("  Stored     %d / %d  (%d%%)",math.floor(aE),math.floor(aF),aN),
 aN<25 and d.warning or d.fg)local aL=a._pwrSample
@@ -878,7 +878,7 @@ ay[#ay+1]={
 " /var/log/kernel.log  ("..#ax.." lines)",d.title}
 for aD=aB,#ax do local aE=ax[aD]local aF=d.fg
 if
-aE:find("%[FTL%]")or aE:find("%[ERR%]")then aF=d.error elseif aE:find("%[WRN%]")then aF=d.warning elseif aE:find("%[DBG%]")then aF=d.dim end;ay[#ay+1]={aE,aF}end;y(ay,Y)return end
+aE:find("%[FTL%]")or aE:find("%[ERR%]")then aF=d.error elseif aE:find("%[WRN%]")then aF=d.warning elseif aE:find("%[DBG%]")then aF=d.dim end;ay[#ay+1]={aE,aF}end;y(ay,_)return end
 if au[1]=="filter"then local ax,ay=au[2],au[3]
 if not ax then
 local aA={[0]="DEBUG","INFO","WARN","ERROR"}local az=0;for aC,aB in pairs(av.getSourceLevels())do az=az+1
@@ -910,7 +910,7 @@ au("Usage: bg <script.lua> [args...]",d.dim)
 au("  Runs a Lua script in a background tab.",d.dim)return end
 local aC=u(E[1])local aD=I.safeModeRefusal(aC)
 if aD then au(aD,d.error)return end;local aw=e.readFile(aC)
-if not aw then au(am..E[1],d.error)return end;local aF,aG=load(aw,"="..E[1],"t",v{name=E[1]})if not aF then au(
+if not aw then au(ae..E[1],d.error)return end;local aF,aG=load(aw,"="..E[1],"t",v{name=E[1]})if not aF then au(
 "Compile error: "..tostring(aG),d.error)
 return end;local aA={}
 for aK=2,#E do aA[#aA+1]=E[aK]end;local ax=E[1]:match("[^/]+$")or E[1]
@@ -928,7 +928,7 @@ if av.offset>=#av.content-aL-2 then av.offset=math.max(0,
 local az=t.spawn("bg:"..ax,function()local aK=v{name=E[1],stdout=aB}
 local aL=load(aw,"="..E[1],"t",aK)aw=nil
 if aL then local aM,aN=pcall(aL,table.unpack(aA))I.reportProgramEnd(a,function(aO)
-aB(aO)end,aM,aN,aj,aK)end;aB("","--- Task finished ---")end,{priority=8,source="user",tsr=true})av.pid=az;av.content[2]="PID: "..az
+aB(aO)end,aM,aN,af,aK)end;aB("","--- Task finished ---")end,{priority=8,source="user",tsr=true})av.pid=az;av.content[2]="PID: "..az
 au("Started background task: "..ax..
 " (PID "..az..")",d.highlight)local aH,aE=pcall(require,"shell.panels.home")local aI=(aH and aE)and
 aE.cycleKeyLabel(a)or"F2"
@@ -936,14 +936,14 @@ au(
 "Switch to its tab with "..aI..", or use 'kill "..az.."' to stop.",d.dim)end
 b.run=function(E,au)if not f(au)then return end;if not E[1]then
 au("Usage: run <file.lua>",d.dim)return end;local aw=u(E[1])
-local ax=I.safeModeRefusal(aw)if ax then au(ax,d.error)return end;local ay=e.readFile(aw)if not ay then au(am..
+local ax=I.safeModeRefusal(aw)if ax then au(ax,d.error)return end;local ay=e.readFile(aw)if not ay then au(ae..
 E[1],d.error)return end
 local az=v{name=E[1],stdout=function(aE)au(aE,d.fg)end}local aA,aB=load(ay,"="..E[1],"t",az)if not aA then
 au("Compile error: "..tostring(aB),d.error)return end;local av={}
 for aE=2,#E do av[#av+1]=E[aE]end;local aC,aD=pcall(aA,table.unpack(av))
 I.reportProgramEnd(a,au,aC,aD,"Runtime error: ",az)end
 b.lua=function(au,E)if not o(E)then return end
-pcall(function()local aB=require(Y)if aB and aB.info then
+pcall(function()local aB=require(_)if aB and aB.info then
 aB.info("repl",
 "REPL session opened by "..tostring(a.who or"?"))end end)local az=L.uptime()j.fill(1,1,l,k," ",d.fg,d.bg)
 j.fill(1,1,l,1," ",d.bar_fg,d.bar_bg)
@@ -975,7 +975,7 @@ ax[#ax+1]=aB;local aG=table.concat(ax,"\n")
 local aI,aJ=load("return "..aG,"=repl","t")if not aI then aI,aJ=load(aG,"=repl","t")end;if
 not aI and aA(aJ)then goto repl_continue end;ax={}aw[#aw+1]=aG
 pcall(function()
-local aM=require(Y)if aM and aM.info then
+local aM=require(_)if aM and aM.info then
 aM.info("repl","["..tostring(a.who or"?").."] "..
 aG:gsub("\n"," ; "):sub(1,120))end end)
 local aK=v{name="repl",caps={["fs.read"]=true,["fs.write"]=true,["compat.io"]=true,["component"]=true,["load"]=true,["net"]=true,["peripheral.modem"]=true,["peripheral.redstone"]=true,["peripheral.robot"]=true,["peripheral.inventory"]=true,["peripheral.tape"]=true},stdout=function(aM)
@@ -983,8 +983,8 @@ ay(aM,d.fg)end}local aH,aL=load("return "..aG,"=repl","t",aK)if not aH then
 aH,aL=load(aG,"=repl","t",aK)end
 if aH then local aN,aM=pcall(aH)
 if aN then if aM~=nil then
-ay(tostring(aM),d.highlight)end else ay(tostring(aM),d.error)end else ay(aj..tostring(aL),d.error)end end::repl_continue::end
-pcall(function()local aB=require(Y)if aB and aB.info then
+ay(tostring(aM),d.highlight)end else ay(tostring(aM),d.error)end else ay(af..tostring(aL),d.error)end end::repl_continue::end
+pcall(function()local aB=require(_)if aB and aB.info then
 aB.info("repl",string.format("REPL session closed by %s (%.1fs, %d cmds)",tostring(
 a.who or"?"),L.uptime()-az,#aw))end end)end
 b.edit=function(E,au)if not f(au)then return end;if not E[1]then
@@ -1010,14 +1010,14 @@ E("  protect off    stand the guards down for this session",d.dim)E("  protect o
 if ay=="off"then if ax then
 E("Already stood down for this session.",d.dim)return end
 local aA,aB=av.setOperatorOverride(aw,true)
-if not aA then E(N..tostring(aB),d.error)return end
+if not aA then E(Q..tostring(aB),d.error)return end
 E("Protected-path guards STOOD DOWN for this session.",d.warning)
 E("You can now write and remove under /tos, /etc, /usr and /var.",d.dim)
 E("Every path allowed this way is written to the kernel log.",d.dim)
 E("Deleting the wrong thing here is how a machine stops booting —",d.dim)E("`protect on` when you are done.",d.dim)elseif ay=="on"then if not ax then
 E("Guards are already active.",d.dim)return end
 local aA,aB=av.setOperatorOverride(aw,false)
-if not aA then E(N..tostring(aB),d.error)return end
+if not aA then E(Q..tostring(aB),d.error)return end
 E("Protected-path guards active again.",d.highlight)else E("Usage: protect [status|off|on]",d.dim)end end
 b.reclaim=function(au,E)if not o(E)then return end;local aE=false;for aJ,aI in ipairs(au or{})do
 if aI=="--apply"then aE=true end end
@@ -1063,7 +1063,7 @@ if q then
 local aI=q(string.format(
 "Permanently delete %d OpenOS file(s), ~%d KB?\n\n"..
 "%s\n\nTOS keeps working; this drive stops being able to boot ".."OpenOS. Your recovery path becomes an OpenOS floppy.",
-#aw.files,aG,table.concat(ay,"  ")),{title="Remove OpenOS leftovers",severity=Z,yes="Delete",no=_})if not aI then E("Cancelled. Nothing was removed.",d.highlight)
+#aw.files,aG,table.concat(ay,"  ")),{title="Remove OpenOS leftovers",severity=Y,yes="Delete",no=W})if not aI then E("Cancelled. Nothing was removed.",d.highlight)
 return end end;E("",d.dim)E("Removing...",d.warning)local aC,aA,aD=0,0,0;for aJ,aI in
 ipairs(aw.files)do local aK=av.size(aI)or 0
 if av.remove(aI)then aC=aC+1;aD=aD+aK else aA=aA+1 end end;for aJ,aI in ipairs(aw.dirs)do
@@ -1082,12 +1082,12 @@ if not aw then
 E("No EEPROM detected. Insert EEPROM, or press Ctrl+C to abort...",d.warning)local aM=L.uptime()+60
 while not aw and L.uptime()<aM do
 local aN,aO,aP=c.pullSignal(1)if aN=="component_added"and aP=="eeprom"then aw=aO elseif aN=="interrupted"then
-E(O,d.dim)return end end
+E(P,d.dim)return end end
 if not aw then E("Timed out waiting for EEPROM.",d.error)return end;E("EEPROM detected.",d.highlight)end;local ax=J.proxy(aw)local aB=ax.getSize()
-local aC=e.size and e.size(aA)if type(aC)==X and aC>aB then
+local aC=e.size and e.size(aA)if type(aC)==aa and aC>aB then
 E(string.format("File too large: %d bytes (EEPROM max: %d)",aC,aB),d.error)return end
 local av,aI=e.readFile(aA)
-if not av then E(am..tostring(aI),d.error)return end;if#av>aB then
+if not av then E(ae..tostring(aI),d.error)return end;if#av>aB then
 E(string.format("File too large: %d bytes (EEPROM max: %d)",#av,aB),d.error)return end
 local aJ,aK=load(av,"=flash-verify","t",{})
 if not aJ then
@@ -1104,7 +1104,7 @@ aM=r("This file does not look like a BIOS."..
 "Flashing it will very likely leave a machine that cannot boot, "..
 "and fixing that means physically replacing the EEPROM."..
 "\n\n".."If this chip is going into a robot or a drone, that is expected: "..
-"put this computer's own EEPROM back before it restarts.","force",{title="Not a BIOS",severity=Z,yes="Flash anyway",no=_})else
+"put this computer's own EEPROM back before it restarts.","force",{title="Not a BIOS",severity=Y,yes="Flash anyway",no=W})else
 aM=
 (i and i("Doesn't look like a BIOS — type 'force' to flash anyway: ",16))=="force"end
 if not aM then E("Aborted (safety check).",d.dim)return end end;local ay=nil
@@ -1114,8 +1114,8 @@ E("Refusing --data: this file looks like a BIOS, and a BIOS keeps its",d.error)
 E("boot address in the data field. --data is for a chip that is going",d.dim)E("into a robot or a drone.",d.dim)return end
 if not i then E("--data needs a screen to ask on.",d.error)return end;local aN=256
 do
-local aQ,aP=pcall(function()return ax.getDataSize()end)if aQ and type(aP)==X and aP>0 then aN=aP end end;local aM=i("Data for the chip (not shown): ",aN,true)if aM==nil or
-aM==""then E(O,d.dim)return end
+local aQ,aP=pcall(function()return ax.getDataSize()end)if aQ and type(aP)==aa and aP>0 then aN=aP end end;local aM=i("Data for the chip (not shown): ",aN,true)if aM==nil or
+aM==""then E(P,d.dim)return end
 local aO=i("The same again, to confirm: ",aN,true)if aO~=aM then
 E("The two did not match. Nothing was written.",d.error)return end;ay=aM end
 local aL=ax.getLabel and ax.getLabel()or"(no label)"local aH="(unknown)"
@@ -1136,7 +1136,7 @@ aF=r("Overwrite this machine's EEPROM with "..
 tostring(aA or
 "this image").."?"..
 "\n\n".."The EEPROM is what starts the computer. If the image is wrong, "..
-"the machine will not boot and no software fix will reach it.","flash",{title="Flash EEPROM",severity=Z,yes="Flash",no=_})else aF=(i and i('Type "flash" to confirm: ',16))==
+"the machine will not boot and no software fix will reach it.","flash",{title="Flash EEPROM",severity=Y,yes="Flash",no=W})else aF=(i and i('Type "flash" to confirm: ',16))==
 "flash"end
 if aF then local aM,aN=pcall(ax.set,av)
 if not aM then
@@ -1146,8 +1146,8 @@ if ay then local aO,aP=pcall(ax.setData,ay)if aO then
 E("Data field set: "..#ay.." bytes.",d.highlight)else
 E("The code was written, but the data field was NOT: "..tostring(aP),d.error)end end
 if aD then E("Reboot for changes to take effect.",d.dim)else
-E("This chip is not a BIOS: put this computer's own EEPROM back",d.dim)E("before it restarts.",d.dim)end end else E(O,d.dim)end end
-b.users=function(au,E)if not f(E)then return end;if not g then E(aa,d.error)return end
+E("This chip is not a BIOS: put this computer's own EEPROM back",d.dim)E("before it restarts.",d.dim)end end else E(P,d.dim)end end
+b.users=function(au,E)if not f(E)then return end;if not g then E(X,d.error)return end
 E(string.format(" %-12s %-8s %s","User","Tier","Status"),d.title)E(string.rep("-",34),d.border)
 local av=g.list and g.list()or
 g.listUsers and g.listUsers()or{}
@@ -1157,25 +1157,25 @@ aw.username or aw.user or"?",tostring(aw.tier or aw.accessLevel or"?"),ay),
 aw.locked and d.error or d.dim)end end;local function x()if not g then return"root"end;local E=g.getSession(n)return
 (E and E.user)or"root"end
 b.useradd=function(au,E)if
-not o(E)then return end;if not g then E(aa,d.error)return end;local av=au[1]if not av then
+not o(E)then return end;if not g then E(X,d.error)return end;local av=au[1]if not av then
 E("Usage: useradd <username>",d.dim)return end
-local aw=i("Password for "..av..": ",64,true)if not aw or aw==""then E(O,d.dim)return end
+local aw=i("Password for "..av..": ",64,true)if not aw or aw==""then E(P,d.dim)return end
 local ax=i("Confirm password: ",64,true)
 if ax~=aw then E("Passwords do not match.",d.error)return end;local ay,az=g.create(x(),av,aw,1)
 if ay then
 a.lastOut={"User '"..av.."' created.",d.highlight}else a.lastOut={tostring(az),d.error}end end
-b.userdel=function(au,E)if not o(E)then return end;if not g then E(aa,d.error)return end
+b.userdel=function(au,E)if not o(E)then return end;if not g then E(X,d.error)return end
 local av=au[1]
 if not av then E("Usage: userdel <username>",d.dim)return end;local aw
 if q then
 aw=q("Delete the account '"..
 av.."'?\n\n"..
-"Their home directory and files are NOT removed, but the account ".."cannot be recovered from here.",{title="Delete user",severity=Z,yes="Delete",no=_})else
-local az=i("Delete '"..av.."'? [y/N]: ",1,false)aw=(az=="y"or az=="Y")end;if not aw then E(O,d.dim)return end;local ax,ay=g.delete(x(),av)
+"Their home directory and files are NOT removed, but the account ".."cannot be recovered from here.",{title="Delete user",severity=Y,yes="Delete",no=W})else
+local az=i("Delete '"..av.."'? [y/N]: ",1,false)aw=(az=="y"or az=="Y")end;if not aw then E(P,d.dim)return end;local ax,ay=g.delete(x(),av)
 if ax then
 a.lastOut={
 "User '"..av.."' deleted.",d.highlight}else a.lastOut={tostring(ay),d.error}end end
-b.usermod=function(au,E)if not o(E)then return end;if not g then E(aa,d.error)return end
+b.usermod=function(au,E)if not o(E)then return end;if not g then E(X,d.error)return end
 local ax,ay=au[1],au[2]if not ax or not ay then
 E("Usage: usermod <username> lock|unlock|admin|user|root",d.dim)return end;local az=x()local av,aw
 if ay=="lock"then
@@ -1185,13 +1185,13 @@ if av then
 a.lastOut={"'"..ax.."' locked.",d.highlight}else a.lastOut={tostring(aw),d.error}end elseif ay=="unlock"then if g.setLocked then av,aw=g.setLocked(az,ax,false)else
 av,aw=false,"setLocked unavailable"end
 if av then
-a.lastOut={"'"..ax.."' unlocked.",d.highlight}else a.lastOut={tostring(aw),d.error}end elseif ay=="admin"then if ax:lower()==ac then
+a.lastOut={"'"..ax.."' unlocked.",d.highlight}else a.lastOut={tostring(aw),d.error}end elseif ay=="admin"then if ax:lower()==ai then
 E("Failure. Did you mean 'usermod computer root'?",d.error)return end;if g.setTier then
-av,aw=g.setTier(az,ax,2)else av,aw=false,an end;if av then a.lastOut={"'"..
+av,aw=g.setTier(az,ax,2)else av,aw=false,am end;if av then a.lastOut={"'"..
 ax.."' promoted to admin.",d.highlight}else
 a.lastOut={tostring(aw),d.error}end elseif ay=="root"then
 if
-ax:lower()==ac and a.D and
+ax:lower()==ai and a.D and
 not(_G._TOS and _G._TOS._takeoverFired)then _G._TOS=_G._TOS or{}
 _G._TOS._takeoverFired=true;local aB,aA=pcall(require,"shell.panels.takeover")
 if
@@ -1200,17 +1200,17 @@ if a.D.invalidate then pcall(a.D.invalidate)end
 pcall(function()
 _G._TOS.logObj.info("kernel","The computer briefly reconsidered its priorities ("..
 tostring(aC and aD or"?")..")")end)a.lastOut={"Access control updated.",d.dim}return end end
-if g.setTier then av,aw=g.setTier(az,ax,3)else av,aw=false,an end
+if g.setTier then av,aw=g.setTier(az,ax,3)else av,aw=false,am end
 if av then
 a.lastOut={"'"..ax.."' promoted to root.",d.highlight}else a.lastOut={tostring(aw),d.error}end elseif ay=="user"then
-if g.setTier then av,aw=g.setTier(az,ax,1)else av,aw=false,an end
+if g.setTier then av,aw=g.setTier(az,ax,1)else av,aw=false,am end
 if av then
 a.lastOut={"'"..ax.."' set to user.",d.highlight}else a.lastOut={tostring(aw),d.error}end else E("Unknown action: "..ay,d.error)
 E("Valid: lock, unlock, admin, user",d.dim)end end
 b.lsdev=function(au,E)
 E(string.format(" %-16s %-10s %s","Type","Address","Info"),d.title)E(string.rep("-",46),d.dim)local av=0
 for aw,ax in J.list()do local ay=""
-if ax==ab then
+if ax==Z then
 local aA,az=pcall(J.proxy,aw)
 if aA and az then
 local aB=az.getLabel and az.getLabel()or""local aC=
@@ -1234,7 +1234,7 @@ if av==0 then E("  (no peripherals detected)",d.dim)end end;b.devices=b.lsdev
 b.mount=function(au,E)
 if au[1]and au[2]then if not f(E)then return end
 local ax,aA=au[1],au[2]local aw={}local av={}
-for aG in J.list(ab)do
+for aG in J.list(Z)do
 if aG:sub(1,#ax)==ax then av[#av+1]=aG else
 local aI,aH=pcall(J.proxy,aG)if aI and aH and aH.getLabel and aH.getLabel()==ax then aw[#aw+
 1]=aG end end end;local ay=nil
@@ -1250,7 +1250,7 @@ local az=aA:sub(1,1)=="/"and aA or("/"..aA)local aB,aC=pcall(J.proxy,ay)if not a
 E("Cannot proxy device",d.error)return end;if not e.exists(az)then
 pcall(e.makeDirectory,az)end;local aD=I.sessionOf(a)
 local aE,aF=e.mount(az,aC,aD)
-if aE==false then E(tostring(aF or ao),d.error)return end;a.lastOut={"Mounted at "..az,d.highlight}else
+if aE==false then E(tostring(aF or ah),d.error)return end;a.lastOut={"Mounted at "..az,d.highlight}else
 local aw=e.mounts()
 E(string.format(" %-18s %-14s %s","Mount","Label","Space"),d.title)E(string.rep("-",46),d.dim)
 for ay,ax in ipairs(aw)do
@@ -1277,7 +1277,7 @@ E("JBOD is disabled. Enable it with: bootsettings jbod on  (then reboot)",d.warn
 E("It pools several disks into one mount. See 'man jbod'.",d.dim)return end;local aw=(au[1]or"list"):lower()
 local function ax(ay)local az,aA={},{}
 for aB in
-J.list(ab)do
+J.list(Z)do
 if aB:sub(1,#ay)==ay then az[#az+1]=aB else local aD,aC=pcall(J.proxy,aB)if
 aD and aC and aC.getLabel and aC.getLabel()==ay then
 aA[#aA+1]=aB end end end;table.sort(az)table.sort(aA)
@@ -1290,7 +1290,7 @@ local az=av.loadConfig(e)or{pools={}}local ay=az.pools or{}if#ay==0 then
 E("No JBOD pools configured.",d.dim)end
 for aB,aA in ipairs(ay)do local aC=0
 for aB,aD in ipairs(aA.members or{})do for aE in
-J.list(ab)do if aE==aD then aC=aC+1;break end end end
+J.list(Z)do if aE==aD then aC=aC+1;break end end end
 E(string.format(" %-16s %d member(s), %d present",aA.mount,# (aA.members or{}),aC),d.fg)end
 E("Free space: df  ·  individual disks: disk  ·  manage: jbod create|destroy",d.dim)elseif aw=="create"then if not f(E)then return end;local ay=au[2]
 if not ay or not au[3]then
@@ -1310,12 +1310,12 @@ E("Cannot open disk: "..au[aH],d.error)return end;aB[#aB+1]=aJ
 aA[#aA+1]=aI end;pcall(e.makeDirectory,"/mnt")
 pcall(e.makeDirectory,ay)local aD=av.makePool(aB)local aE=I.sessionOf(a)
 local aF,aG=e.mount(ay,aD,aE)
-if not aF then E(tostring(aG or ao),d.error)return end;local az=av.loadConfig(e)or{pools={}}
+if not aF then E(tostring(aG or ah),d.error)return end;local az=av.loadConfig(e)or{pools={}}
 az.pools=az.pools or{}for aH=#az.pools,1,-1 do if az.pools[aH].mount==ay then
 table.remove(az.pools,aH)end end;az.pools[
 #az.pools+1]={mount=ay,members=aA}
 av.saveConfig(e,az)
-a.lastOut={string.format("JBOD pool at %s (%d disks)",ay,#aA),d.highlight}elseif aw=="destroy"or aw==U then if not f(E)then return end;local ay=au[2]if not ay then
+a.lastOut={string.format("JBOD pool at %s (%d disks)",ay,#aA),d.highlight}elseif aw=="destroy"or aw==ab then if not f(E)then return end;local ay=au[2]if not ay then
 E("Usage: jbod destroy <mountpoint>",d.dim)return end
 if ay:sub(1,1)~="/"then ay="/"..ay end;local aB=I.sessionOf(a)e.unmount(ay,aB)
 local az=av.loadConfig(e)or{pools={}}local aA=false
@@ -1386,7 +1386,7 @@ E("Cannot reach share '"..aB.."' on "..
 tostring(aA):sub(1,8)..".",d.error)
 E("Check the export name, and that netfsd runs there and allows this machine.",d.dim)return end;pcall(e.makeDirectory,"/mnt")
 pcall(e.makeDirectory,az)local aG=I.sessionOf(a)local aH,aI=e.mount(az,aC,aG)if not aH then
-E(tostring(aI or ao),d.error)return end
+E(tostring(aI or ah),d.error)return end
 E("Mounted "..aB.." from "..tostring(aA):sub(1,8)..
 " at "..az,d.highlight)
 E("This mount is only usable while that machine is online.",d.dim)elseif aw=="umount"then if not f(E)then return end;local az=au[2]if not az then

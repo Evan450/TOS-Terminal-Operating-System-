@@ -1,4 +1,4 @@
-local f,g,h="Starting networking","Starting background services","number"local e={}
+local g,f,h="Starting background services","Starting networking","number"local e={}
 e.STAGES={{"Scanning hardware","Scanning hardware"},{"Initializing filesystem","Mounting filesystems"},{"Boot disk","Mounting filesystems"},{"Loading configuration","Loading configuration"},{"Starting event","Starting event system"},{"Starting process","Starting process manager"},{"Initializing display","Initializing display"},{"Crypto","Initializing cryptography"},{"User system","Loading users and security"},{"Security","Loading users and security"},{"Theme manager","Loading themes"},{"Trust manager",f},{"Network",f},{"transfer",f},{"Remote shell",f},{"Loading:",g},{"Service started",g},{"Startup services",g},{"Cron","Starting scheduler"},{"Package manager","Loading package manager"},{"OpenOS compat","Loading OpenOS compatibility layer"},{"Audio feedback","Enabling audio feedback"},{"Boot complete","Boot complete"}}
 do local b,a={},0;for d,c in ipairs(e.STAGES)do
 if not b[c[2]]then b[c[2]]=true;a=a+1 end end;e.STAGE_COUNT=a end
