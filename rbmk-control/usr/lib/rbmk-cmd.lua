@@ -1,437 +1,157 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local core = require("rbmk.core")
-
-local M = {}
-
-local function firstRequire(...)
-  for i = 1, select("#", ...) do
-    local ok, mod = pcall(require, (select(i, ...)))
-    if ok and mod then return mod end
-  end
-end
-local component = firstRequire("component")
-local fs        = firstRequire("kernel.fs", "filesystem")
-
-local CFG_PATH = "/etc/rbmk.cfg"
-
-
-
-
-local function loadCfg()
-  local cfg = {}
-  if fs and fs.exists and fs.exists(CFG_PATH) and fs.readFile then
-    local src = fs.readFile(CFG_PATH)
-    local chunk = src and load(src, "=" .. CFG_PATH, "t", {})
-    if chunk then
-      local ok, res = pcall(chunk)
-      if ok and type(res) == "table" then cfg = res end
-    end
-  end
-  return cfg
-end
-M.loadCfg = loadCfg
-
-local function activeProfile(cfg)
-  
-  
-  if type(cfg.profile) == "table" then return cfg.profile end
-  return core.PROFILES[cfg.profileName or "hbm-ntm"]
-    or core.PROFILES["hbm-ntm"]
-end
-M.activeProfile = activeProfile
-
-
-
-
-
-local function candidates(profile)
-  local out = {}
-  if not (component and component.list) then return out end
-  local want = {}
-  for _, t in ipairs((profile and profile.componentTypes) or {}) do
-    want[t:lower()] = true
-  end
-  for addr, ctype in component.list() do
-    local lc = tostring(ctype):lower()
-    local hit = want[lc]
-    if not hit then
-      
-      hit = lc:find("rbmk", 1, true) or lc:find("reactor", 1, true)
-        or lc:find("nuclear", 1, true) or lc:find("ntm", 1, true)
-    end
-    if hit then out[#out + 1] = { address = addr, type = ctype } end
-  end
-  return out
-end
-M.candidates = candidates
-
-
-
-
-
-
-local function methodsOf(addr)
-  local names = {}
-  if component and component.methods then
-    local ok, m = pcall(component.methods, addr)
-    if ok and type(m) == "table" then
-      for k, v in pairs(m) do
-        if type(k) == "string" then names[#names + 1] = k
-        elseif type(v) == "string" then names[#names + 1] = v end
-      end
-    end
-  end
-  if #names == 0 and component and component.proxy then
-    local ok, px = pcall(component.proxy, addr)
-    if ok and type(px) == "table" then
-      for k, v in pairs(px) do
-        if type(v) == "function" and type(k) == "string" then
-          names[#names + 1] = k
-        end
-      end
-    end
-  end
-  table.sort(names)
-  return names
-end
-M.methodsOf = methodsOf
-
-
-
-
-
-
-
-
-
-
-
-function M.read(proxy, binding)
-  if binding and binding.driver == "ntm-console" then
-    local get = proxy and proxy[binding.columns]
-    if not get then return core.normalize({}), {} end
-    local snap, cols = core.scanCore(function(x, y) return get(x, y) end)
-    return core.normalize(snap), cols
-  end
-  local raw = {}
-  if binding.bulk then
-    local ok, t = pcall(proxy[binding.bulk])
-    if ok and type(t) == "table" then
-      for k, v in pairs(t) do raw[k] = v end
-    end
-  end
-  for logical, method in pairs(binding.bound or {}) do
-    if logical ~= "scram" and proxy[method] then
-      local ok, v = pcall(proxy[method])
-      if ok and v ~= nil then raw[logical] = v end
-    end
-  end
-  return core.normalize(raw)
-end
-
-
-
-
-
-
-
-
-function M.readColumns(proxy, binding, grid)
-  if not (proxy and binding and binding.columns) then return {} end
-  local m = proxy[binding.columns]
-  if not m then return {} end
-  local ok, raw = pcall(m)
-  if not ok or type(raw) ~= "table" then return {} end
-  return core.normalizeColumns(raw, grid)
-end
-
-
-
-
-function M.scram(proxy, binding, cfg)
-  local fired, how = false, {}
-  if binding and binding.bound and binding.bound.scram and proxy then
-    local m = proxy[binding.bound.scram]
-    if m then
-      --! pressAZ5 does not raise when it finds nothing to drive: it
-      --! RETURNS the string "No control rods found". A call that "worked"
-      --! and moved no rod is not a SCRAM, so any non-nil first result is
-      --! a failure and the redstone line below still gets its turn.
-      local ok, res = pcall(m, true)
-      if ok and res == nil then
-        fired = true; how[#how + 1] = "console." .. binding.bound.scram
-      elseif ok then
-        how[#how + 1] = "console." .. binding.bound.scram .. " refused (" .. tostring(res) .. ")"
-      end
-    end
-  end
-  local side = cfg and tonumber(cfg.az5RedstoneSide)
-  if side and component and component.list then
-    local rsAddr = component.list("redstone")()
-    if rsAddr then
-      local okP, rs = pcall(component.proxy, rsAddr)
-      if okP and rs and rs.setOutput then
-        local ok = pcall(rs.setOutput, side, 15)
-        if ok then fired = true; how[#how + 1] = "redstone side " .. side end
-      end
-    end
-  end
-  return fired, table.concat(how, " + ")
-end
-
-
-
-
-
-
-
-
-function M.run(args, o, ctx)
-  o = o or print
-  args = args or {}
-  ctx = ctx or {}
-  local sub = (args[1] or "status"):lower()
-  local cfg = loadCfg()
-  local profile = activeProfile(cfg)
-
-  
-  if sub == "skala" or sub == "panel" then
-    if not ctx.display then
-      o("The panel needs a screen; run `rbmk skala` from the shell.", 0xFF6600)
-      return
-    end
-    local okUI, ui = pcall(require, "rbmk-skala")
-    if not okUI or type(ui) ~= "table" or not ui.run then
-      o("The panel renderer is missing: " .. tostring(ui), 0xFF0000)
-      return
-    end
-    local mode, wallMode = "auto", false
-    for i = 2, #args do
-      local a = tostring(args[i]):lower()
-      if a == "--wall" or a == "wall" then wallMode = true
-      elseif a == "--net" or a == "net" then mode = "net"
-      elseif a == "--local" or a == "local" then mode = "local" end
-    end
-    ui.run({ display = ctx.display, event = ctx.event, cfg = cfg,
-             mode = mode, wallMode = wallMode, o = o })
-    return
-  end
-
-  
-  if sub == "wall" then
-    local okW, wallMod = pcall(require, "rbmk.wall")
-    local okS, skalaMod = pcall(require, "rbmk.skala")
-    if not (okW and okS) then o("The panel libraries are missing.", 0xFF0000); return end
-    local seats = 1
-    if ctx.screen and ctx.screen.list then seats = #ctx.screen.list() end
-    local panes = wallMod.plan(seats, cfg.wall,
-      function(k) return skalaMod.param(k) ~= nil end)
-    o("Display wall on this machine (" .. seats .. " screen"
-      .. (seats == 1 and "" or "s") .. "):", 0x00AAFF)
-    for _, p in ipairs(panes) do
-      local page = wallMod.page(p.page)
-      o(string.format("  seat %d  %-9s %s%s%s", p.seat,
-        page and page.label or p.page,
-        (p.page == "map" or p.page == "trend") and ("[" .. p.param .. "] ") or "",
-        p.pinned and "pinned " or "",
-        p.rejected and "(config rejected -- using the default)" or ""),
-        p.rejected and 0xFFAA00 or 0xFFFFFF)
-    end
-    o("")
-    o("Run `rbmk skala --wall` to drive them all; plain `rbmk skala`", 0xAAAAAA)
-    o("uses only the seat you are sitting at, so other operators keep", 0xAAAAAA)
-    o("their screens. Set `wall = { [2] = { page = \"trend\" } }` in", 0xAAAAAA)
-    o(CFG_PATH .. " to change the assignment.", 0xAAAAAA)
-    o("")
-    --! Stated because it is the obvious question and the answer is a
-    --! deliberate safety choice, not a missing feature.
-    o("Satellites are NOT listed: displays never register with the", 0xAAAAAA)
-    o("controller. Each one picks its own page from its own config,", 0xAAAAAA)
-    o("so the machine that owns SCRAM has no inbound network path.", 0xAAAAAA)
-    return
-  end
-
-  if sub == "survey" then
-    o("RBMK component survey", 0x00AAFF)
-    o("")
-    local cands = candidates(profile)
-    if #cands == 0 then
-      o("No candidate components found.", 0xFF6600)
-      o("Looked for the profile's types plus anything matching", 0xAAAAAA)
-      o("rbmk / reactor / nuclear / ntm. Is the console adapter linked?", 0xAAAAAA)
-      return
-    end
-    for _, c in ipairs(cands) do
-      o(string.format("%s  %s", tostring(c.address):sub(1, 8), tostring(c.type)), 0xFFFFFF)
-      local names = methodsOf(c.address)
-      if #names == 0 then
-        o("    (no methods visible)", 0xAAAAAA)
-      else
-        
-        local line = "    "
-        for _, n in ipairs(names) do
-          if #line + #n + 2 > 76 then o(line, 0xAAAAAA); line = "    " end
-          line = line .. n .. "  "
-        end
-        if #line > 4 then o(line, 0xAAAAAA) end
-      end
-      local binding = core.bind(profile, names)
-      local boundList = {}
-      for logical, method in pairs(binding.bound) do
-        boundList[#boundList + 1] = logical .. "=" .. method
-      end
-      table.sort(boundList)
-      o("    bound:   " .. (#boundList > 0 and table.concat(boundList, "  ") or "(nothing)"),
-        #boundList > 0 and 0x00FF00 or 0xFF6600)
-      if #binding.missing > 0 then
-        o("    missing: " .. table.concat(binding.missing, "  "), 0xFFAA00)
-      end
-      if binding.bulk then o("    bulk:    " .. binding.bulk, 0x00FF00) end
-      --! The core map's accessor, reported separately from `missing`
-      --! because its absence is not a fault: it costs the SKALA panel
-      --! its per-channel grid and nothing else. Saying so here is the
-      --! difference between an operator knowing the map is unavailable
-      --! and an operator thinking their reactor has no channels.
-      if binding.columns then
-        o("    columns: " .. binding.columns .. "  (SKALA core map available)", 0x00FF00)
-      else
-        o("    columns: (none) -- the panel will show reactor-wide", 0xAAAAAA)
-        o("             readings only, no per-channel core map", 0xAAAAAA)
-      end
-      --! The NTM driver can be PROVEN rather than just matched: ask the
-      --! console where its core is and read the whole thing once. This is
-      --! the half of the survey the old name-matching could never do --
-      --! "the methods exist" says nothing about "the console is linked to
-      --! a reactor and the reactor has channels".
-      if binding.driver and binding.columns then
-        local okPx, px = pcall(component.proxy, c.address)
-        if okPx and px then
-          local posFn = binding.pos and px[binding.pos]
-          local okPos, pos = false, nil
-          if posFn then okPos, pos = pcall(posFn) end
-          if okPos and type(pos) == "table" then
-            o(string.format("    core:    linked, centre %s, %s, %s",
-              tostring(pos.rbmkCenterX), tostring(pos.rbmkCenterY),
-              tostring(pos.rbmkCenterZ)), 0x00FF00)
-          else
-            o("    core:    NOT LINKED -- the console reports no reactor", 0xFF6600)
-          end
-          local snap, cols = M.read(px, binding)
-          local counts, kinds = {}, {}
-          for _, col in ipairs(cols or {}) do
-            local k = col.kind or "?"
-            if not counts[k] then kinds[#kinds + 1] = k end
-            counts[k] = (counts[k] or 0) + 1
-          end
-          table.sort(kinds)
-          local parts = {}
-          for _, k in ipairs(kinds) do parts[#parts + 1] = counts[k] .. " " .. k end
-          o(string.format("    scan:    %d channel%s%s", #(cols or {}),
-            #(cols or {}) == 1 and "" or "s",
-            #parts > 0 and (" (" .. table.concat(parts, ", ") .. ")") or ""),
-            #(cols or {}) > 0 and 0xFFFFFF or 0xFF6600)
-          if snap.temp then
-            o(string.format("    hottest: hull %.0f C%s", snap.temp,
-              snap.melt and string.format(", fuel at %.0f%% of melting point", snap.melt) or ""),
-              0xAAAAAA)
-          end
-          if snap.unread and snap.unread > 0 then
-            o("    unread:  " .. snap.unread .. " channel(s) raised an error", 0xFFAA00)
-          end
-        end
-      end
-      local usable, why = core.bindingUsable(binding, cfg.az5RedstoneSide ~= nil)
-      o("    usable:  " .. (usable and "YES" or ("NO — " .. tostring(why))),
-        usable and 0x00FF00 or 0xFF0000)
-      o("")
-    end
-    o("Default profile is hbm-ntm (the mod's real rbmk_console API). A console", 0xAAAAAA)
-    o("with per-reading getters instead: profileName = \"hbm-generic\", or add", 0xAAAAAA)
-    o("profile = { temp = { \"theRealName\" }, ... } to " .. CFG_PATH .. " and re-run.", 0xAAAAAA)
-    return
-  end
-
-  if sub == "limits" then
-    local lim = core.mergeLimits(cfg.limits)
-    o("Active safety limits:", 0x00AAFF)
-    local keys = {}
-    for k in pairs(lim) do keys[#keys + 1] = k end
-    table.sort(keys)
-    for _, k in ipairs(keys) do
-      o(string.format("  %-12s %s", k, tostring(lim[k])), 0xFFFFFF)
-    end
-    o("Edit " .. CFG_PATH .. " (admin) to change them.", 0xAAAAAA)
-    return
-  end
-
-  
-  local cands = candidates(profile)
-  if #cands == 0 then
-    o("No RBMK console found — run `rbmk survey`.", 0xFF6600); return
-  end
-  local target = cands[1]
-  if cfg.address then
-    for _, c in ipairs(cands) do
-      if tostring(c.address):sub(1, #cfg.address) == cfg.address then target = c end
-    end
-  end
-  local names = methodsOf(target.address)
-  local binding = core.bind(profile, names)
-  local okP, proxy = pcall(component.proxy, target.address)
-  if not okP or not proxy then o("Cannot open the console proxy.", 0xFF0000); return end
-
-  if sub == "scram" then
-    
-    
-    
-    local fired, how = M.scram(proxy, binding, cfg)
-    if fired then o("SCRAM fired (" .. how .. ")", 0xFF0000)
-    else o("SCRAM FAILED — no console method and no redstone AZ-5 line.", 0xFF0000) end
-    return
-  end
-
-  local snap = M.read(proxy, binding)
-  local lim = core.mergeLimits(cfg.limits)
-  local level, reasons = core.evaluate(snap, lim, 0)
-  o("RBMK " .. tostring(target.type) .. "  " .. tostring(target.address):sub(1, 8),
-    0x00AAFF)
-  local function row(label, v, unit)
-    if v == nil then o(string.format("  %-10s (not reported)", label), 0xAAAAAA)
-    else o(string.format("  %-10s %s%s", label, tostring(v), unit or ""), 0xFFFFFF) end
-  end
-  row("core", snap.temp, " C")
-  row("melt", snap.melt and string.format("%.0f", snap.melt), " % of fuel melting point")
-  row("flux", snap.flux)
-  row("rods", snap.rodDepth)
-  row("steam", snap.steam)
-  row("water", snap.water, " %")
-  row("fuel", snap.fuel)
-  local col = (level == "scram") and 0xFF0000
-    or (level == "warn") and 0xFFAA00 or 0x00FF00
-  o("  state      " .. level:upper(), col)
-  for _, r in ipairs(reasons) do o("    - " .. r, col) end
-end
-
-return M
+local v="string"local m=require("rbmk.core")local n={}
+local function s(...)for a=1,select("#",...)do
+local c,b=pcall(require,(select(a,...)))if c and b then return b end end end;local l=s("component")local p=s("kernel.fs","filesystem")
+local o="/etc/rbmk.cfg"
+local function t()local a={}
+if p and p.exists and p.exists(o)and p.readFile then
+local b=p.readFile(o)local c=b and load(b,"="..o,"t",{})
+if c then local e,d=pcall(c)if e and type(d)==
+"table"then a=d end end end;return a end;n.loadCfg=t
+local function u(a)
+if type(a.profile)=="table"then return a.profile end;return
+m.PROFILES[a.profileName or"hbm-ntm"]or m.PROFILES["hbm-ntm"]end;n.activeProfile=u
+local function q(a)local b={}if not(l and l.list)then return b end
+local c={}for e,d in ipairs((a and a.componentTypes)or{})do
+c[d:lower()]=true end
+for e,d in l.list()do
+local f=tostring(d):lower()local g=c[f]if not g then
+g=
+f:find("rbmk",1,true)or f:find("reactor",1,true)or f:find("nuclear",1,true)or
+f:find("ntm",1,true)end;if g then
+b[#b+1]={address=e,type=d}end end;return b end;n.candidates=q
+local function r(a)local b={}
+if l and l.methods then local d,c=pcall(l.methods,a)
+if d and
+type(c)=="table"then for e,f in pairs(c)do
+if type(e)==v then b[#b+1]=e elseif type(f)==v then b[#b+1]=f end end end end
+if#b==0 and l and l.proxy then local d,c=pcall(l.proxy,a)
+if
+d and type(c)=="table"then for e,f in pairs(c)do
+if type(f)=="function"and type(e)==v then b[#b+1]=e end end end end;table.sort(b)return b end;n.methodsOf=r
+function n.read(b,a)
+if a and a.driver=="ntm-console"then
+local d=b and b[a.columns]if not d then return m.normalize({}),{}end
+local e,f=m.scanCore(function(g,h)return d(g,h)end)return m.normalize(e),f end;local c={}
+if a.bulk then local e,d=pcall(b[a.bulk])if e and type(d)=="table"then for f,g in
+pairs(d)do c[f]=g end end end
+for d,e in pairs(a.bound or{})do if d~="scram"and b[e]then local g,f=pcall(b[e])if
+g and f~=nil then c[d]=f end end end;return m.normalize(c)end
+function n.readColumns(b,a,c)
+if not(b and a and a.columns)then return{}end;local d=b[a.columns]if not d then return{}end;local f,e=pcall(d)if not f or
+type(e)~="table"then return{}end
+return m.normalizeColumns(e,c)end
+function n.scram(b,a,c)local e,d=false,{}
+if a and a.bound and a.bound.scram and b then
+local g=b[a.bound.scram]
+if g then local h,i=pcall(g,true)
+if h and i==nil then e=true
+d[#d+1]="console."..a.bound.scram elseif h then d[#d+1]="console."..
+a.bound.scram.." refused ("..tostring(i)..")"end end end;local f=c and tonumber(c.az5RedstoneSide)
+if
+f and l and l.list then local g=l.list("redstone")()
+if g then local i,h=pcall(l.proxy,g)
+if i and h and
+h.setOutput then local j=pcall(h.setOutput,f,15)if j then e=true
+d[#d+1]="redstone side "..f end end end end;return e,table.concat(d," + ")end
+function n.run(c,a,b)a=a or print;c=c or{}b=b or{}
+local g=(c[1]or"status"):lower()local d=t()local i=u(d)
+if g=="skala"or g=="panel"then if not b.display then
+a("The panel needs a screen; run `rbmk skala` from the shell.",0xFF6600)return end
+local G,D=pcall(require,"rbmk-skala")if not G or type(D)~="table"or not D.run then
+a(
+"The panel renderer is missing: "..tostring(D),0xFF0000)return end
+local E,F="auto",false
+for H=2,#c do local I=tostring(c[H]):lower()if
+I=="--wall"or I=="wall"then F=true elseif I=="--net"or I=="net"then E="net"elseif I=="--local"or I=="local"then
+E="local"end end
+D.run({display=b.display,event=b.event,cfg=d,mode=E,wallMode=F,o=a})return end
+if g=="wall"then local F,E=pcall(require,"rbmk.wall")
+local G,H=pcall(require,"rbmk.skala")if not(F and G)then
+a("The panel libraries are missing.",0xFF0000)return end;local D=1;if b.screen and b.screen.list then D=#
+b.screen.list()end
+local I=E.plan(D,d.wall,function(J)
+return H.param(J)~=nil end)
+a("Display wall on this machine ("..D..
+" screen".. (D==1 and""or"s").."):",0x00AAFF)
+for K,J in ipairs(I)do local L=E.page(J.page)
+a(string.format("  seat %d  %-9s %s%s%s",J.seat,L and L.label or J.page,(
+J.page=="map"or J.page=="trend")and
+("["..J.param.."] ")or"",
+J.pinned and"pinned "or"",J.rejected and"(config rejected -- using the default)"or""),
+J.rejected and 0xFFAA00 or 0xFFFFFF)end;a("")
+a("Run `rbmk skala --wall` to drive them all; plain `rbmk skala`",0xAAAAAA)
+a("uses only the seat you are sitting at, so other operators keep",0xAAAAAA)
+a("their screens. Set `wall = { [2] = { page = \"trend\" } }` in",0xAAAAAA)
+a(o.." to change the assignment.",0xAAAAAA)a("")
+a("Satellites are NOT listed: displays never register with the",0xAAAAAA)
+a("controller. Each one picks its own page from its own config,",0xAAAAAA)
+a("so the machine that owns SCRAM has no inbound network path.",0xAAAAAA)return end
+if g=="survey"then a("RBMK component survey",0x00AAFF)a("")
+local D=q(i)
+if#D==0 then a("No candidate components found.",0xFF6600)
+a("Looked for the profile's types plus anything matching",0xAAAAAA)
+a("rbmk / reactor / nuclear / ntm. Is the console adapter linked?",0xAAAAAA)return end
+for F,E in ipairs(D)do
+a(string.format("%s  %s",tostring(E.address):sub(1,8),tostring(E.type)),0xFFFFFF)local I=r(E.address)
+if#I==0 then
+a("    (no methods visible)",0xAAAAAA)else local L="    "for F,M in ipairs(I)do
+if#L+#M+2 >76 then a(L,0xAAAAAA)L="    "end;L=L..M.."  "end;if#L>4 then
+a(L,0xAAAAAA)end end;local G=m.bind(i,I)local H={}
+for L,M in pairs(G.bound)do H[#H+1]=L.."="..M end;table.sort(H)
+a("    bound:   "..
+(#H>0 and table.concat(H,"  ")or"(nothing)"),#H>0 and 0x00FF00 or 0xFF6600)if#G.missing>0 then
+a("    missing: "..table.concat(G.missing,"  "),0xFFAA00)end;if G.bulk then
+a("    bulk:    "..G.bulk,0x00FF00)end
+if G.columns then
+a("    columns: "..
+G.columns.."  (SKALA core map available)",0x00FF00)else
+a("    columns: (none) -- the panel will show reactor-wide",0xAAAAAA)
+a("             readings only, no per-channel core map",0xAAAAAA)end
+if G.driver and G.columns then local M,L=pcall(l.proxy,E.address)
+if M and L then local T=G.pos and
+L[G.pos]local U,O=false,nil;if T then U,O=pcall(T)end
+if U and
+type(O)=="table"then
+a(string.format("    core:    linked, centre %s, %s, %s",tostring(O.rbmkCenterX),tostring(O.rbmkCenterY),tostring(O.rbmkCenterZ)),0x00FF00)else
+a("    core:    NOT LINKED -- the console reports no reactor",0xFF6600)end;local N,P=n.read(L,G)local Q,R={},{}
+for F,V in ipairs(P or{})do local W=V.kind or"?"if not Q[W]then
+R[#R+1]=W end;Q[W]=(Q[W]or 0)+1 end;table.sort(R)local S={}
+for F,V in ipairs(R)do S[#S+1]=Q[V].." "..V end
+a(string.format("    scan:    %d channel%s%s",# (P or{}),# (P or{})==1 and""or"s",
+
+#S>0 and(" ("..table.concat(S,", ")..")")or""),
+# (P or{})>0 and 0xFFFFFF or 0xFF6600)
+if N.temp then
+a(string.format("    hottest: hull %.0f C%s",N.temp,N.melt and
+string.format(", fuel at %.0f%% of melting point",N.melt)or""),0xAAAAAA)end;if N.unread and N.unread>0 then
+a("    unread:  "..N.unread.." channel(s) raised an error",0xFFAA00)end end end
+local J,K=m.bindingUsable(G,d.az5RedstoneSide~=nil)
+a("    usable:  "..
+(J and"YES"or("NO — "..tostring(K))),J and 0x00FF00 or 0xFF0000)a("")end
+a("Default profile is hbm-ntm (the mod's real rbmk_console API). A console",0xAAAAAA)
+a("with per-reading getters instead: profileName = \"hbm-generic\", or add",0xAAAAAA)
+a("profile = { temp = { \"theRealName\" }, ... } to "..o.." and re-run.",0xAAAAAA)return end
+if g=="limits"then local E=m.mergeLimits(d.limits)
+a("Active safety limits:",0x00AAFF)local D={}for F in pairs(E)do D[#D+1]=F end;table.sort(D)for G,F in ipairs(D)do
+a(string.format("  %-12s %s",F,tostring(E[F])),0xFFFFFF)end
+a("Edit "..o.." (admin) to change them.",0xAAAAAA)return end;local j=q(i)if#j==0 then
+a("No RBMK console found — run `rbmk survey`.",0xFF6600)return end;local h=j[1]
+if d.address then for E,D in ipairs(j)do
+if tostring(D.address):sub(1,
+#d.address)==d.address then h=D end end end;local z=r(h.address)local x=m.bind(i,z)
+local A,k=pcall(l.proxy,h.address)if not A or not k then
+a("Cannot open the console proxy.",0xFF0000)return end
+if g=="scram"then local D,E=n.scram(k,x,d)if
+D then a("SCRAM fired ("..E..")",0xFF0000)else
+a("SCRAM FAILED — no console method and no redstone AZ-5 line.",0xFF0000)end;return end;local e=n.read(k,x)local B=m.mergeLimits(d.limits)
+local w,C=m.evaluate(e,B,0)
+a("RBMK "..tostring(h.type)..
+"  "..tostring(h.address):sub(1,8),0x00AAFF)
+local function f(D,E,F)if E==nil then
+a(string.format("  %-10s (not reported)",D),0xAAAAAA)else
+a(string.format("  %-10s %s%s",D,tostring(E),F or""),0xFFFFFF)end end;f("core",e.temp," C")
+f("melt",e.melt and string.format("%.0f",e.melt)," % of fuel melting point")f("flux",e.flux)f("rods",e.rodDepth)
+f("steam",e.steam)f("water",e.water," %")f("fuel",e.fuel)
+local y=
+(w=="scram")and 0xFF0000 or(w=="warn")and 0xFFAA00 or 0x00FF00;a("  state      "..w:upper(),y)for E,D in ipairs(C)do
+a("    - "..D,y)end end;return n

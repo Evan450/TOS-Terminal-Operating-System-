@@ -1,810 +1,183 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local C = {}
-
-C.VERSION = "1.0.0"
-
-
-
-
-
-C.FRAME_V = 2
-C.FRAME_VERSIONS = { [1] = true, [2] = true }
-
-
-
-
-C.MAX_REASONS = 8
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-C.PROFILES = {
-  ["hbm-ntm"] = {
-    driver = "ntm-console",
-    componentTypes = { "rbmk_console" },
-  },
-  
-  
-  
-  ["hbm-generic"] = {
-    componentTypes = { "rbmk_console", "rbmk_control", "ntm_rbmk_console" },
-    temp     = { "getTemp", "getTemperature", "getCoreTemp" },
-    flux     = { "getFlux", "getNeutronFlux" },
-    rodDepth = { "getRodDepth", "getControlRodLevel", "getRods" },
-    steam    = { "getSteam", "getSteamProduction" },
-    water    = { "getWater", "getWaterLevel" },
-    fuel     = { "getFuel", "getFuelLevel", "getCoreFuel" },
-    
-    scram    = { "setAZ5", "scram", "az5", "shutdown" },
-    
-    bulk     = { "getInfo", "getStats", "getData" },
-    
-    
-    columns  = { "getColumnData", "getColumns", "getFluxData", "getRodData" },
-  },
-}
-
-
-
-
-
-
-
-C.NTM = {
-  columns = "getColumnData", scram = "pressAZ5", pos = "getRBMKPos",
-  size = 15,
-  hullMax = 1500,
-  boilerWater = 10000, boilerSteam = 1000000,
-}
-
-
-
-
-
-C.DEFAULT_GRID = { w = 15, h = 15, shape = "square" }
-
-
-
-
-function C.mergeGrid(cfg)
-  local g = { w = C.DEFAULT_GRID.w, h = C.DEFAULT_GRID.h,
-              shape = C.DEFAULT_GRID.shape }
-  if type(cfg) ~= "table" then return g end
-  local w, h = tonumber(cfg.w), tonumber(cfg.h)
-  if w and w >= 1 and w <= 64 and math.floor(w) == w then g.w = w end
-  if h and h >= 1 and h <= 64 and math.floor(h) == h then g.h = h end
-  if cfg.shape == "circle" or cfg.shape == "square" then g.shape = cfg.shape end
-  if type(cfg.mask) == "table" then g.mask = cfg.mask end
-  return g
-end
-
-
-
-
-
-function C.bind(profile, methods)
-  local have = {}
-  if type(methods) == "table" then
-    for k, v in pairs(methods) do
-      if type(k) == "string" then have[k] = true          
-      elseif type(v) == "string" then have[v] = true end  
-    end
-  end
-  if profile.driver == "ntm-console" then
-    --! The two methods the driver cannot work without. Every logical
-    --! reading is DERIVED from getColumnData by scanCore(), so they all
-    --! bind to it -- which keeps bindingUsable and `rbmk survey` honest
-    --! (lose getColumnData and every reading goes missing at once).
-    local D = C.NTM
-    local bound, missing = {}, {}
-    if have[D.columns] then
-      for _, logical in ipairs({ "temp", "flux", "rodDepth", "steam", "water", "fuel" }) do
-        bound[logical] = D.columns
-      end
-    else
-      missing[#missing + 1] = D.columns
-    end
-    if have[D.scram] then bound.scram = D.scram
-    else missing[#missing + 1] = D.scram end
-    return { bound = bound, missing = missing, driver = profile.driver,
-             columns = have[D.columns] and D.columns or nil,
-             pos = have[D.pos] and D.pos or nil }
-  end
-  local bound, missing = {}, {}
-  local LOGICAL = { "temp", "flux", "rodDepth", "steam", "water", "fuel", "scram" }
-  for _, logical in ipairs(LOGICAL) do
-    local candidates = profile[logical] or {}
-    local found
-    for _, name in ipairs(candidates) do
-      if have[name] then found = name; break end
-    end
-    if found then bound[logical] = found else missing[#missing + 1] = logical end
-  end
-  local bulk
-  for _, name in ipairs(profile.bulk or {}) do
-    if have[name] then bulk = name; break end
-  end
-  --! `columns` is resolved like `bulk` and deliberately NOT part of
-  --! LOGICAL: it feeds the SKALA core map, which is a display feature.
-  --! A console that cannot enumerate its channels is still perfectly
-  --! supervisable, so its absence must not show up in `missing` and
-  --! must never make a binding unusable.
-  local columns
-  for _, name in ipairs(profile.columns or {}) do
-    if have[name] then columns = name; break end
-  end
-  return { bound = bound, missing = missing, bulk = bulk, columns = columns }
-end
-
-
-
-
-
-
-function C.bindingUsable(binding, hasRedstoneScram)
-  if not binding or not binding.bound then return false, "no binding" end
-  if not (binding.bound.temp or binding.bulk) then
-    return false, "no temperature reading — refusing to supervise blind"
-  end
-  if not (binding.bound.scram or hasRedstoneScram) then
-    return false, "no SCRAM path (no console method and no redstone AZ-5)"
-  end
-  return true
-end
-
-
-
-
-
-
-
-
-
-function C.normalize(raw)
-  local t = {}
-  local function num(v)
-    if type(v) == "number" then return v end
-    if type(v) == "string" then return tonumber(v) end
-    return nil
-  end
-  raw = raw or {}
-  t.temp     = num(raw.temp)
-  t.flux     = num(raw.flux)
-  t.rodDepth = num(raw.rodDepth)
-  t.steam    = num(raw.steam)
-  t.water    = num(raw.water)
-  t.fuel     = num(raw.fuel)
-  t.melt     = num(raw.melt)
-  t.unread   = num(raw.unread)
-  return t
-end
-
-
-
-
-
-C.DEFAULT_LIMITS = {
-  tempWarn   = 800,     
-  tempScram  = 1000,    
-  meltWarn   = 80,      
-  meltScram  = 90,
-  fluxWarn   = 8000,    
-  fluxScram  = 10000,
-  waterMin   = 10,      
-  staleAfter = 5,       
-}
-
-
-
-
-
-
-
-
-
-
-function C.evaluate(snap, limits, age)
-  limits = limits or C.DEFAULT_LIMITS
-  local reasons = {}
-  local level = "ok"
-  local function raise(to, why)
-    reasons[#reasons + 1] = why
-    if to == "scram" then level = "scram"
-    elseif level ~= "scram" then level = "warn" end
-  end
-
-  if age ~= nil and limits.staleAfter and age > limits.staleAfter then
-    raise("scram", string.format("telemetry stale (%.1fs > %.1fs)",
-      age, limits.staleAfter))
-  end
-
-  snap = snap or {}
-  if snap.temp == nil then
-    raise("scram", "no temperature reading")
-  else
-    if limits.tempScram and snap.temp >= limits.tempScram then
-      raise("scram", string.format("core %.0f >= scram limit %.0f",
-        snap.temp, limits.tempScram))
-    elseif limits.tempWarn and snap.temp >= limits.tempWarn then
-      raise("warn", string.format("core %.0f >= warn limit %.0f",
-        snap.temp, limits.tempWarn))
-    end
-  end
-
-  --! The fuel's own melting point is a different hazard from the column
-  --! hull's, and the one that actually ends a run: it differs per fuel,
-  --! so it is a PERCENTAGE of that rod's limit, not a temperature.
-  if snap.melt ~= nil then
-    if limits.meltScram and snap.melt >= limits.meltScram then
-      raise("scram", string.format("fuel at %.0f%% of melting point >= scram limit %.0f%%",
-        snap.melt, limits.meltScram))
-    elseif limits.meltWarn and snap.melt >= limits.meltWarn then
-      raise("warn", string.format("fuel at %.0f%% of melting point >= warn limit %.0f%%",
-        snap.melt, limits.meltWarn))
-    end
-  end
-
-  --! Channels the scan could not read. The rest were read and judged, so
-  --! this is a warning, not a scram -- but it can never be silent, because
-  --! an unread channel might be the hot one.
-  if snap.unread ~= nil and snap.unread > 0 then
-    raise("warn", string.format("%d channel%s could not be read",
-      snap.unread, snap.unread == 1 and "" or "s"))
-  end
-
-  if snap.flux ~= nil then
-    if limits.fluxScram and snap.flux >= limits.fluxScram then
-      raise("scram", string.format("flux %.0f >= scram limit %.0f",
-        snap.flux, limits.fluxScram))
-    elseif limits.fluxWarn and snap.flux >= limits.fluxWarn then
-      raise("warn", string.format("flux %.0f >= warn limit %.0f",
-        snap.flux, limits.fluxWarn))
-    end
-  end
-
-  if snap.water ~= nil and limits.waterMin and snap.water < limits.waterMin then
-    raise("scram", string.format("coolant %.0f%% < minimum %.0f%%",
-      snap.water, limits.waterMin))
-  end
-
-  return level, reasons
-end
-
-
-
-
-function C.mergeLimits(cfg)
-  local out = {}
-  for k, v in pairs(C.DEFAULT_LIMITS) do out[k] = v end
-  if type(cfg) ~= "table" then return out end
-  for k, v in pairs(cfg) do
-    if C.DEFAULT_LIMITS[k] ~= nil then
-      local n = tonumber(v)
-      if n and n > 0 then out[k] = n end
-    end
-  end
-  return out
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-C.KINDS = {
-  blank = "_", fuel = "F", control = "C", moderator = "M",
-  reflector = "R", absorber = "A", coolant = "W", boiler = "B",
-  outgasser = "O", breeder = "D", storage = "S", heatex = "H",
-  cooler = "K",
-}
-C.KIND_UNKNOWN = "?"     
-C.KIND_ABSENT  = "."     
-
-local B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
-local B36_MAX = 36 * 36 * 36 - 1        
-
-local function toB36(n)
-  local s = ""
-  for _ = 1, 3 do
-    s = B36:sub((n % 36) + 1, (n % 36) + 1) .. s
-    n = math.floor(n / 36)
-  end
-  return s
-end
-
-local function fromB36(s)
-  local n = 0
-  for i = 1, #s do
-    local c = B36:find(s:sub(i, i), 1, true)
-    if not c then return nil end
-    n = n * 36 + (c - 1)
-  end
-  return n
-end
-
-
-
-
-
-function C.normalizeColumns(raw, grid)
-  local out = {}
-  if type(raw) ~= "table" then return out end
-  grid = grid or {}
-  local gw = grid.w or 15
-  local function num(v)
-    if type(v) == "number" then return v end
-    if type(v) == "string" then return tonumber(v) end
-    return nil
-  end
-  local function add(t, x, y)
-    if type(t) ~= "table" then return end
-    local kind = t.kind or t.type or t.name
-    out[#out + 1] = {
-      x = num(t.x) or x, y = num(t.y) or y,
-      kind = (type(kind) == "string") and kind:lower() or nil,
-      temp = num(t.temp or t.heat or t.temperature),
-      flux = num(t.flux or t.power or t.neutronFlux),
-      steam = num(t.steam), water = num(t.water or t.coolant),
-      rodDepth = num(t.rodDepth or t.depth or t.level),
-    }
-  end
-  
-  if type(raw[1]) == "table" and raw[1][1] ~= nil and type(raw[1][1]) == "table" then
-    for y, row in ipairs(raw) do
-      for x, cell in ipairs(row) do add(cell, x, y) end
-    end
-    return out
-  end
-  for i, t in ipairs(raw) do
-    
-    
-    
-    add(t, ((i - 1) % gw) + 1, math.floor((i - 1) / gw) + 1)
-  end
-  return out
-end
-
-
-local NTM_KIND = {
-  BLANK = "blank", FUEL = "fuel", FUEL_SIM = "fuel", BREEDER = "breeder",
-  CONTROL = "control", CONTROL_AUTO = "control", BOILER = "boiler",
-  MODERATOR = "moderator", ABSORBER = "absorber", REFLECTOR = "reflector",
-  OUTGASSER = "outgasser", STORAGE = "storage", COOLER = "cooler",
-  HEATEX = "heatex",
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function C.scanCore(getColumn)
-  local N = C.NTM.size
-  local function num(v)
-    if type(v) == "number" and v == v and v > -math.huge and v < math.huge then
-      return v
-    end
-  end
-  local cols, unread, read = {}, 0, 0
-  local temp, melt
-  local flux
-  local lvlSum, lvlN = 0, 0
-  local water, steamSum, boilers = nil, 0, 0
-  local enrSum, rods = 0, 0
-  for y = 0, N - 1 do
-    for x = 0, N - 1 do
-      local ok, t = pcall(getColumn, x, y)
-      if not ok then
-        unread = unread + 1
-      elseif type(t) == "table" then
-        read = read + 1
-        local c = { x = x + 1, y = y + 1, kind = NTM_KIND[tostring(t.type)] }
-        local hull = num(t.hullTemp)
-        if hull then
-          c.temp = hull
-          if not temp or hull > temp then temp = hull end
-        end
-        local core, coreMax = num(t.coreTemp), num(t.coreMaxTemp)
-        if core and coreMax and coreMax > 0 then
-          c.melt = core / coreMax * 100
-          if not melt or c.melt > melt then melt = c.melt end
-        end
-        local enr = num(t.enrichment)
-        if enr then enrSum = enrSum + enr; rods = rods + 1 end
-        local fq = num(t.fluxQuantity)
-        if fq then c.flux = fq; flux = (flux or 0) + fq end
-        local level = num(t.level)
-        if level then
-          if level < 0 then level = 0 elseif level > 1 then level = 1 end
-          c.rodDepth = (1 - level) * 100
-          lvlSum = lvlSum + level; lvlN = lvlN + 1
-        end
-        if c.kind == "boiler" then
-          local w, s = num(t.water), num(t.steam)
-          if w then
-            c.water = w / C.NTM.boilerWater * 100
-            if not water or c.water < water then water = c.water end
-          end
-          if s then
-            c.steam = s / C.NTM.boilerSteam * 100
-            steamSum = steamSum + c.steam; boilers = boilers + 1
-          end
-        end
-        cols[#cols + 1] = c
-      end
-    end
-  end
-  local snap = {
-    temp = temp, melt = melt, flux = flux, water = water,
-    rodDepth = (lvlN > 0) and ((1 - lvlSum / lvlN) * 100) or nil,
-    steam = (boilers > 0) and (steamSum / boilers) or nil,
-    fuel = (rods > 0) and (enrSum / rods * 100) or nil,
-    unread = unread,
-  }
-  return snap, cols, { read = read, unread = unread }
-end
-
-
-function C.columnIndex(cols)
-  local ix = {}
-  for _, c in ipairs(cols or {}) do
-    if c.x and c.y then ix[c.x .. "," .. c.y] = c end
-  end
-  return ix
-end
-
-
-
-
-
-
-
-
-
-
-function C.packColumns(cols, grid, params)
-  grid = grid or {}
-  local gw, gh = grid.w or 15, grid.h or 15
-  local ix = C.columnIndex(cols)
-  local kinds, present = {}, {}
-  for y = 1, gh do
-    for x = 1, gw do
-      local c = ix[x .. "," .. y]
-      if not c then
-        kinds[#kinds + 1] = C.KIND_ABSENT
-      else
-        kinds[#kinds + 1] = (c.kind and C.KINDS[c.kind]) or C.KIND_UNKNOWN
-        present[#present + 1] = c
-      end
-    end
-  end
-  local parts = { "2", gw .. "," .. gh, table.concat(kinds) }
-  for _, p in ipairs(params or {}) do
-    local seg = { p.key }
-    for _, c in ipairs(present) do
-      local v = c[p.field]
-      if type(v) ~= "number" or v ~= v then
-        seg[#seg + 1] = "---"
-      else
-        local n = math.floor(v / (p.step or 1) + 0.5)
-        if n < 0 then n = 0 elseif n > B36_MAX then n = B36_MAX end
-        seg[#seg + 1] = toB36(n)
-      end
-    end
-    parts[#parts + 1] = table.concat(seg)
-  end
-  return table.concat(parts, ";")
-end
-
-
-
-
-
-function C.unpackColumns(s, params)
-  if type(s) ~= "string" then return nil, "not a string" end
-  local parts = {}
-  for seg in (s .. ";"):gmatch("([^;]*);") do parts[#parts + 1] = seg end
-  if parts[1] ~= "2" then return nil, "unsupported column format" end
-  --! NOT `parts[2] and parts[2]:match(...)`: in a multiple assignment
-  --! an `and` expression is truncated to ONE value, so the second
-  --! capture silently vanishes and every frame reads as "bad grid
-  --! size". Guard first, match on its own line.
-  if type(parts[2]) ~= "string" then return nil, "bad grid size" end
-  local gw, gh = parts[2]:match("^(%d+),(%d+)$")
-  gw, gh = tonumber(gw), tonumber(gh)
-  if not (gw and gh) or gw < 1 or gh < 1 or gw > 64 or gh > 64 then
-    return nil, "bad grid size"
-  end
-  local kinds = parts[3] or ""
-  if #kinds ~= gw * gh then return nil, "kind map is the wrong length" end
-  local byChar = {}
-  for name, ch in pairs(C.KINDS) do byChar[ch] = name end
-
-  local cols, order = {}, {}
-  for y = 1, gh do
-    for x = 1, gw do
-      local ch = kinds:sub((y - 1) * gw + x, (y - 1) * gw + x)
-      if ch ~= C.KIND_ABSENT then
-        local c = { x = x, y = y, kind = byChar[ch] }
-        cols[#cols + 1] = c
-        order[#order + 1] = c
-      end
-    end
-  end
-
-  for i = 4, #parts do
-    local seg = parts[i]
-    local key = seg:sub(1, 1)
-    local body = seg:sub(2)
-    local p
-    for _, q in ipairs(params or {}) do if q.key == key then p = q end end
-    if p then
-      if #body ~= #order * 3 then return nil, "value run for " .. key .. " is the wrong length" end
-      for j, c in ipairs(order) do
-        local t = body:sub((j - 1) * 3 + 1, j * 3)
-        if t ~= "---" then
-          local n = fromB36(t)
-          if n then c[p.field] = n * (p.step or 1) end
-        end
-      end
-    end
-  end
-  return cols, { w = gw, h = gh }
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-function C.frame(snap, level, seq, uptime, name, cols, reasons)
-  --! Built here rather than passed through, so a frame can never carry
-  --! more than MAX_REASONS strings however long the reason list got.
-  --! An unbounded list is an unbounded packet, and the packet has a
-  --! hard 8 KB ceiling that the core map is already spending.
-  local why
-  if type(reasons) == "table" and #reasons > 0 then
-    why = {}
-    for i = 1, math.min(#reasons, C.MAX_REASONS) do
-      why[i] = tostring(reasons[i]):sub(1, 120)
-    end
-  end
-  return {
-    magic = "RBMK", v = C.FRAME_V,
-    name = name or "rbmk",
-    seq = seq or 0, uptime = uptime or 0,
-    level = level or "ok",
-    temp = snap and snap.temp, flux = snap and snap.flux,
-    rodDepth = snap and snap.rodDepth, steam = snap and snap.steam,
-    water = snap and snap.water, fuel = snap and snap.fuel,
-    melt = snap and snap.melt,
-    cols = (type(cols) == "string" and #cols > 0) and cols or nil,
-    --! The reasons the level is what it is. A wall that shows ALARM
-    --! without saying which limit tripped makes the operator walk to
-    --! the console to find out, which is the walk the wall existed to
-    --! save. Strings only, and capped — see MAX_REASONS.
-    why = why,
-  }
-end
-
-
-
-
-
-
-
-function C.validateFrame(f)
-  if type(f) ~= "table" then return false, "not a table" end
-  if f.magic ~= "RBMK" then return false, "bad magic" end
-  if not C.FRAME_VERSIONS[f.v] then
-    return false, "unsupported version " .. tostring(f.v)
-  end
-  if type(f.seq) ~= "number" then return false, "no sequence" end
-  --! `cols` and `why` are the only v2 additions and both are rendered,
-  --! so both are type-checked here rather than trusted at the draw
-  --! site. A broadcast is unauthenticated: anything that reaches a
-  --! renderer has to have been shaped on the way in.
-  if f.cols ~= nil and type(f.cols) ~= "string" then
-    return false, "cols is not a packed string"
-  end
-  if f.why ~= nil then
-    if type(f.why) ~= "table" then return false, "why is not a list" end
-    for _, r in ipairs(f.why) do
-      if type(r) ~= "string" then return false, "why holds a non-string" end
-    end
-  end
-  for _, forbidden in ipairs({ "cmd", "command", "setRod", "rod", "scram", "exec" }) do
-    if f[forbidden] ~= nil then
-      return false, "frame carries a control field (" .. forbidden .. ") — refused"
-    end
-  end
-  return true
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-C.TELEMETRY_PORT = 2200   
-C.WIRE_ARGS = 9
-
-local function encScalars(f)
-  local t = {}
-  for _, k in ipairs({ "temp", "flux", "rodDepth", "steam", "water", "fuel", "melt" }) do
-    if type(f[k]) == "number" then
-      t[#t + 1] = k .. "=" .. string.format("%.4g", f[k])
-    end
-  end
-  return table.concat(t, ",")
-end
-
-
-
-function C.encodeWire(f)
-  return {
-    "RBMK",
-    f.v or C.FRAME_V,
-    tostring(f.name or "rbmk"),
-    tonumber(f.seq) or 0,
-    tonumber(f.uptime) or 0,
-    tostring(f.level or "ok"),
-    encScalars(f),
-    tostring(f.cols or ""),
-    (type(f.why) == "table") and table.concat(f.why, "|") or "",
-  }
-end
-
-
-
-
-
-
-
-
-function C.decodeWire(...)
-  local a = table.pack(...)
-  if a.n < C.WIRE_ARGS then return nil, "short frame" end
-  if a[1] ~= "RBMK" then return nil, "not ours" end
-  local f = {
-    magic = "RBMK",
-    v = tonumber(a[2]),
-    name = tostring(a[3]):sub(1, 32),
-    seq = tonumber(a[4]),
-    uptime = tonumber(a[5]) or 0,
-    level = tostring(a[6]),
-  }
-  if type(a[7]) == "string" then
-    for k, v in a[7]:gmatch("([%a]+)=([%-%d%.eE+]+)") do
-      local n = tonumber(v)
-      --! Only keys the frame is allowed to have. Without this filter an
-      --! attacker on the port could introduce arbitrary field names
-      --! into a table the renderer indexes -- which is how a read-only
-      --! display grows a control surface by accident.
-      if n and (k == "temp" or k == "flux" or k == "rodDepth"
-             or k == "steam" or k == "water" or k == "fuel" or k == "melt") then
-        f[k] = n
-      end
-    end
-  end
-  if type(a[8]) == "string" and #a[8] > 0 then f.cols = a[8] end
-  if type(a[9]) == "string" and #a[9] > 0 then
-    f.why = {}
-    for r in a[9]:gmatch("[^|]+") do
-      if #f.why < C.MAX_REASONS then f.why[#f.why + 1] = r:sub(1, 120) end
-    end
-  end
-  local ok, err = C.validateFrame(f)
-  if not ok then return nil, err end
-  return f
-end
-
-
-function C.frameStale(lastSeq, lastAt, now, staleAfter)
-  if lastSeq == nil or lastAt == nil then return true end
-  return (now - lastAt) > (staleAfter or C.DEFAULT_LIMITS.staleAfter)
-end
-
-return C
+local m,n,l="number","rodDepth","string"local k={}k.VERSION="1.0.0"k.FRAME_V=2
+k.FRAME_VERSIONS={[1]=true,[2]=true}k.MAX_REASONS=8
+k.PROFILES={["hbm-ntm"]={driver="ntm-console",componentTypes={"rbmk_console"}},["hbm-generic"]={componentTypes={"rbmk_console","rbmk_control","ntm_rbmk_console"},temp={"getTemp","getTemperature","getCoreTemp"},flux={"getFlux","getNeutronFlux"},rodDepth={"getRodDepth","getControlRodLevel","getRods"},steam={"getSteam","getSteamProduction"},water={"getWater","getWaterLevel"},fuel={"getFuel","getFuelLevel","getCoreFuel"},scram={"setAZ5","scram","az5","shutdown"},bulk={"getInfo","getStats","getData"},columns={"getColumnData","getColumns","getFluxData","getRodData"}}}
+k.NTM={columns="getColumnData",scram="pressAZ5",pos="getRBMKPos",size=15,hullMax=1500,boilerWater=10000,boilerSteam=1000000}k.DEFAULT_GRID={w=15,h=15,shape="square"}
+function k.mergeGrid(a)
+local b={w=k.DEFAULT_GRID.w,h=k.DEFAULT_GRID.h,shape=k.DEFAULT_GRID.shape}if type(a)~="table"then return b end
+local c,d=tonumber(a.w),tonumber(a.h)
+if c and c>=1 and c<=64 and math.floor(c)==c then b.w=c end
+if d and d>=1 and d<=64 and math.floor(d)==d then b.h=d end
+if a.shape=="circle"or a.shape=="square"then b.shape=a.shape end;if type(a.mask)=="table"then b.mask=a.mask end;return b end
+function k.bind(a,b)local c={}if type(b)=="table"then
+for i,j in pairs(b)do if type(i)==l then c[i]=true elseif type(j)==l then
+c[j]=true end end end
+if
+a.driver=="ntm-console"then local i=k.NTM;local u,j={},{}if c[i.columns]then for w,v in
+ipairs({"temp","flux",n,"steam","water","fuel"})do u[v]=i.columns end else
+j[#j+1]=i.columns end;if c[i.scram]then
+u.scram=i.scram else j[#j+1]=i.scram end;return
+{bound=u,missing=j,driver=a.driver,columns=
+c[i.columns]and i.columns or nil,pos=c[i.pos]and i.pos or nil}end;local e,d={},{}
+local h={"temp","flux",n,"steam","water","fuel","scram"}
+for j,i in ipairs(h)do local v=a[i]or{}local u
+for j,w in ipairs(v)do if c[w]then u=w;break end end;if u then e[i]=u else d[#d+1]=i end end;local f
+for j,i in ipairs(a.bulk or{})do if c[i]then f=i;break end end;local g
+for j,i in ipairs(a.columns or{})do if c[i]then g=i;break end end;return{bound=e,missing=d,bulk=f,columns=g}end
+function k.bindingUsable(a,b)
+if not a or not a.bound then return false,"no binding"end
+if not(a.bound.temp or a.bulk)then return false,
+"no temperature reading — refusing to supervise blind"end;if not(a.bound.scram or b)then
+return false,"no SCRAM path (no console method and no redstone AZ-5)"end;return true end
+function k.normalize(a)local b={}local function c(d)if type(d)==m then return d end
+if type(d)==l then return tonumber(d)end;return nil end;a=a or{}
+b.temp=c(a.temp)b.flux=c(a.flux)b.rodDepth=c(a.rodDepth)b.steam=c(a.steam)
+b.water=c(a.water)b.fuel=c(a.fuel)b.melt=c(a.melt)b.unread=c(a.unread)return b end
+k.DEFAULT_LIMITS={tempWarn=800,tempScram=1000,meltWarn=80,meltScram=90,fluxWarn=8000,fluxScram=10000,waterMin=10,staleAfter=5}
+function k.evaluate(b,a,c)a=a or k.DEFAULT_LIMITS;local f={}local e="ok"
+local function d(g,h)f[#f+1]=h;if g=="scram"then
+e="scram"elseif e~="scram"then e="warn"end end;if c~=nil and a.staleAfter and c>a.staleAfter then
+d("scram",string.format("telemetry stale (%.1fs > %.1fs)",c,a.staleAfter))end;b=b or{}
+if
+b.temp==nil then d("scram","no temperature reading")else
+if a.tempScram and
+b.temp>=a.tempScram then
+d("scram",string.format("core %.0f >= scram limit %.0f",b.temp,a.tempScram))elseif a.tempWarn and b.temp>=a.tempWarn then
+d("warn",string.format("core %.0f >= warn limit %.0f",b.temp,a.tempWarn))end end
+if b.melt~=nil then
+if a.meltScram and b.melt>=a.meltScram then
+d("scram",string.format("fuel at %.0f%% of melting point >= scram limit %.0f%%",b.melt,a.meltScram))elseif a.meltWarn and b.melt>=a.meltWarn then
+d("warn",string.format("fuel at %.0f%% of melting point >= warn limit %.0f%%",b.melt,a.meltWarn))end end;if b.unread~=nil and b.unread>0 then
+d("warn",string.format("%d channel%s could not be read",b.unread,
+b.unread==1 and""or"s"))end
+if
+b.flux~=nil then
+if a.fluxScram and b.flux>=a.fluxScram then
+d("scram",string.format("flux %.0f >= scram limit %.0f",b.flux,a.fluxScram))elseif a.fluxWarn and b.flux>=a.fluxWarn then
+d("warn",string.format("flux %.0f >= warn limit %.0f",b.flux,a.fluxWarn))end end;if b.water~=nil and a.waterMin and b.water<a.waterMin then
+d("scram",string.format("coolant %.0f%% < minimum %.0f%%",b.water,a.waterMin))end
+return e,f end
+function k.mergeLimits(a)local b={}for c,d in pairs(k.DEFAULT_LIMITS)do b[c]=d end;if
+type(a)~="table"then return b end
+for c,d in pairs(a)do if k.DEFAULT_LIMITS[c]~=nil then
+local e=tonumber(d)if e and e>0 then b[c]=e end end end;return b end
+k.KINDS={blank="_",fuel="F",control="C",moderator="M",reflector="R",absorber="A",coolant="W",boiler="B",outgasser="O",breeder="D",storage="S",heatex="H",cooler="K"}k.KIND_UNKNOWN="?"k.KIND_ABSENT="."
+local o="0123456789abcdefghijklmnopqrstuvwxyz"local p=36*36*36-1
+local function q(a)local b=""for c=1,3 do
+b=o:sub((a%36)+1,(a%36)+1)..b;a=math.floor(a/36)end;return b end
+local function r(a)local b=0;for c=1,#a do local d=o:find(a:sub(c,c),1,true)if not d then return nil end;b=
+b*36+ (d-1)end;return b end
+function k.normalizeColumns(a,b)local d={}if type(a)~="table"then return d end;b=b or{}
+local e=b.w or 15;local function c(g)if type(g)==m then return g end
+if type(g)==l then return tonumber(g)end;return nil end
+local function f(g,h,i)if
+type(g)~="table"then return end;local j=g.kind or g.type or g.name
+d[#d+1]={x=
+c(g.x)or h,y=c(g.y)or i,kind=(type(j)==l)and j:lower()or nil,temp=c(
+g.temp or g.heat or g.temperature),flux=c(g.flux or g.power or
+g.neutronFlux),steam=c(g.steam),water=c(g.water or g.coolant),rodDepth=c(
+g.rodDepth or g.depth or g.level)}end
+if type(a[1])=="table"and a[1][1]~=nil and
+type(a[1][1])=="table"then
+for g,h in ipairs(a)do for i,j in ipairs(h)do f(j,i,g)end end;return d end;for g,h in ipairs(a)do
+f(h,((g-1)%e)+1,math.floor((g-1)/e)+1)end;return d end
+local s={BLANK="blank",FUEL="fuel",FUEL_SIM="fuel",BREEDER="breeder",CONTROL="control",CONTROL_AUTO="control",BOILER="boiler",MODERATOR="moderator",ABSORBER="absorber",REFLECTOR="reflector",OUTGASSER="outgasser",STORAGE="storage",COOLER="cooler",HEATEX="heatex"}
+function k.scanCore(a)local z=k.NTM.size;local function b(B)
+if
+type(B)==m and B==B and B>-math.huge and B<math.huge then return B end end;local j,c,u={},0,0;local d,e;local v;local w,f=0,0
+local g,x,h=nil,0,0;local y,i=0,0
+for B=0,z-1 do
+for C=0,z-1 do local E,D=pcall(a,C,B)
+if not E then c=c+1 elseif type(D)=="table"then u=u+1
+local F={x=C+1,y=B+1,kind=s[tostring(D.type)]}local H=b(D.hullTemp)
+if H then F.temp=H;if not d or H>d then d=H end end;local K,I=b(D.coreTemp),b(D.coreMaxTemp)
+if K and I and I>0 then
+F.melt=K/I*100;if not e or F.melt>e then e=F.melt end end;local L=b(D.enrichment)if L then y=y+L;i=i+1 end
+local J=b(D.fluxQuantity)if J then F.flux=J;v=(v or 0)+J end;local G=b(D.level)
+if G then
+if G<0 then G=0 elseif G>1 then G=1 end;F.rodDepth=(1-G)*100;w=w+G;f=f+1 end
+if F.kind=="boiler"then local M,N=b(D.water),b(D.steam)if M then F.water=
+M/k.NTM.boilerWater*100
+if not g or F.water<g then g=F.water end end;if N then
+F.steam=N/k.NTM.boilerSteam*100;x=x+F.steam;h=h+1 end end;j[#j+1]=F end end end
+local A={temp=d,melt=e,flux=v,water=g,rodDepth=(f>0)and((1-w/f)*100)or nil,steam=(h>0)and(x/h)or nil,fuel=(
+i>0)and(y/i*100)or nil,unread=c}return A,j,{read=u,unread=c}end
+function k.columnIndex(a)local b={}for e,d in ipairs(a or{})do
+if d.x and d.y then b[d.x..","..d.y]=d end end;return b end
+function k.packColumns(b,a,c)a=a or{}local g,h=a.w or 15,a.h or 15;local i=k.columnIndex(b)
+local d,e={},{}
+for j=1,h do
+for u=1,g do local v=i[u..","..j]if not v then d[#d+1]=k.KIND_ABSENT else
+d[#d+1]=(v.kind and
+k.KINDS[v.kind])or k.KIND_UNKNOWN;e[#e+1]=v end end end;local f={"2",g..","..h,table.concat(d)}
+for u,j in
+ipairs(c or{})do local v={j.key}
+for u,w in ipairs(e)do local x=w[j.field]
+if type(x)~=m or x~=x then
+v[#v+1]="---"else
+local y=math.floor(x/ (j.step or 1)+0.5)if y<0 then y=0 elseif y>p then y=p end;v[#v+1]=q(y)end end;f[#f+1]=table.concat(v)end;return table.concat(f,";")end
+function k.unpackColumns(a,b)if type(a)~=l then return nil,"not a string"end;local d={}for j in
+(a..";"):gmatch("([^;]*);")do d[#d+1]=j end;if d[1]~="2"then
+return nil,"unsupported column format"end
+if type(d[2])~=l then return nil,"bad grid size"end;local c,e=d[2]:match("^(%d+),(%d+)$")
+c,e=tonumber(c),tonumber(e)if
+not(c and e)or c<1 or e<1 or c>64 or e>64 then return nil,"bad grid size"end
+local h=d[3]or""if#h~=c*e then return nil,"kind map is the wrong length"end
+local i={}for j,u in pairs(k.KINDS)do i[u]=j end;local g,f={},{}for j=1,e do
+for u=1,c do local v=h:sub((j-1)*c+u,
+(j-1)*c+u)if v~=k.KIND_ABSENT then
+local w={x=u,y=j,kind=i[v]}g[#g+1]=w;f[#f+1]=w end end end
+for j=4,#d do
+local v=d[j]local w=v:sub(1,1)local x=v:sub(2)local u
+for z,y in ipairs(b or{})do if y.key==w then u=y end end
+if u then if#x~=#f*3 then
+return nil,"value run for "..w.." is the wrong length"end
+for y,z in ipairs(f)do
+local A=x:sub((y-1)*3+1,y*3)if A~="---"then local B=r(A)
+if B then z[u.field]=B* (u.step or 1)end end end end end;return g,{w=c,h=e}end
+function k.frame(a,d,e,f,g,c,b)local h
+if type(b)=="table"and#b>0 then h={}for j=1,math.min(#b,k.MAX_REASONS)do
+h[j]=tostring(b[j]):sub(1,120)end end
+return
+{magic="RBMK",v=k.FRAME_V,name=g or"rbmk",seq=e or 0,uptime=f or 0,level=d or"ok",temp=a and a.temp,flux=a and a.flux,rodDepth=a and a.rodDepth,steam=a and a.steam,water=
+a and a.water,fuel=a and a.fuel,melt=a and a.melt,cols=
+(type(c)==l and#c>0)and c or nil,why=h}end
+function k.validateFrame(a)if type(a)~="table"then return false,"not a table"end;if
+a.magic~="RBMK"then return false,"bad magic"end;if not
+k.FRAME_VERSIONS[a.v]then
+return false,"unsupported version "..tostring(a.v)end;if type(a.seq)~=m then
+return false,"no sequence"end;if a.cols~=nil and type(a.cols)~=l then return false,
+"cols is not a packed string"end
+if a.why~=nil then if
+type(a.why)~="table"then return false,"why is not a list"end
+for c,b in
+ipairs(a.why)do if type(b)~=l then return false,"why holds a non-string"end end end
+for c,b in ipairs({"cmd","command","setRod","rod","scram","exec"})do if
+a[b]~=nil then
+return false,"frame carries a control field ("..b..") — refused"end end;return true end;k.TELEMETRY_PORT=2200;k.WIRE_ARGS=9
+local function t(a)local b={}
+for d,c in
+ipairs({"temp","flux",n,"steam","water","fuel","melt"})do if type(a[c])==m then
+b[#b+1]=c.."="..string.format("%.4g",a[c])end end;return table.concat(b,",")end
+function k.encodeWire(a)
+return
+{"RBMK",a.v or k.FRAME_V,tostring(a.name or"rbmk"),tonumber(a.seq)or 0,
+tonumber(a.uptime)or 0,tostring(a.level or"ok"),t(a),tostring(a.cols or""),(
+type(a.why)=="table")and table.concat(a.why,"|")or
+""}end
+function k.decodeWire(...)local b=table.pack(...)
+if b.n<k.WIRE_ARGS then return nil,"short frame"end;if b[1]~="RBMK"then return nil,"not ours"end
+local c={magic="RBMK",v=tonumber(b[2]),name=tostring(b[3]):sub(1,32),seq=tonumber(b[4]),uptime=
+tonumber(b[5])or 0,level=tostring(b[6])}
+if type(b[7])==l then
+for a,f in b[7]:gmatch("([%a]+)=([%-%d%.eE+]+)")do
+local g=tonumber(f)
+if g and
+(
+a=="temp"or a=="flux"or a==n or a=="steam"or a==
+"water"or a=="fuel"or a=="melt")then c[a]=g end end end;if type(b[8])==l and#b[8]>0 then c.cols=b[8]end
+if
+type(b[9])==l and#b[9]>0 then c.why={}for a in b[9]:gmatch("[^|]+")do
+if
+#c.why<k.MAX_REASONS then c.why[#c.why+1]=a:sub(1,120)end end end;local d,e=k.validateFrame(c)if not d then return nil,e end;return c end;function k.frameStale(b,a,c,d)if b==nil or a==nil then return true end
+return(c-a)> (d or
+k.DEFAULT_LIMITS.staleAfter)end;return k

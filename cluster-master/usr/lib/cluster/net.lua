@@ -1,349 +1,82 @@
-
-
-
-
-
-
-
-
-
-local net      = require("kernel.net")
-local protocol = require("kernel.net.protocol")
-local serialize = require("kernel.serialize")
-
-
-
-local log
+local u=require("kernel.net")
+local s=require("kernel.net.protocol")local w=require("kernel.serialize")local o
 do
-  local okK, mod = pcall(require, "kernel.log")
-  if not (okK and mod and mod.info) then okK, mod = pcall(require, "log") end
-  if okK and mod and mod.info then log = mod
-  else log = { info=function() end, warn=function() end, error=function() end } end
-end
-local LOG_TAG = "cluster.net"
-
-local netmod = {}
-
-
-
-
-
-
-
-local function _ptype(cluster_name, fallback)
-  if protocol.TYPE and protocol.TYPE[cluster_name] then
-    return protocol.TYPE[cluster_name]
-  end
-  return fallback
-end
-
-local TYPE = {
-  CLUSTER_REGISTER     = _ptype("CLUSTER_REGISTER",     "cluster_register"),
-  CLUSTER_REGISTER_ACK = _ptype("CLUSTER_REGISTER_ACK", "cluster_register_ack"),
-  CLUSTER_HEARTBEAT    = _ptype("CLUSTER_HEARTBEAT",    "cluster_heartbeat"),
-  CLUSTER_ASSIGN       = _ptype("CLUSTER_ASSIGN",       "cluster_assign"),
-  CLUSTER_ASSIGN_ACK   = _ptype("CLUSTER_ASSIGN_ACK",   "cluster_assign_ack"),
-  CLUSTER_RESULT       = _ptype("CLUSTER_RESULT",       "cluster_result"),
-  CLUSTER_RESULT_CHUNK = _ptype("CLUSTER_RESULT_CHUNK", "cluster_result_chunk"),
-  CLUSTER_CANCEL       = _ptype("CLUSTER_CANCEL",       "cluster_cancel"),
-  CLUSTER_DRAIN        = _ptype("CLUSTER_DRAIN",        "cluster_drain"),
-  CLUSTER_STATUS_REQ   = _ptype("CLUSTER_STATUS_REQ",   "cluster_status_req"),
-  CLUSTER_STATUS_RES   = _ptype("CLUSTER_STATUS_RES",   "cluster_status_res"),
-  CLUSTER_PAIR_INIT    = _ptype("CLUSTER_PAIR_INIT",    "cluster_pair_init"),
-  CLUSTER_PAIR_CONFIRM = _ptype("CLUSTER_PAIR_CONFIRM", "cluster_pair_conf"),
-  RELAY_FORWARD        = _ptype("RELAY_FORWARD",        "relay_forward"),
-  RELAY_FAIL           = _ptype("RELAY_FAIL",           "relay_fail"),
-}
-netmod.TYPE = TYPE
-
-
-
-
-
-
-
-
-
-
-
-local _returnPaths = {}          
-
-local computer = require("computer")
-
-local function _rememberReturnPath(manager_addr, path)
-  if not manager_addr or type(path) ~= "table" then return end
-  _returnPaths[manager_addr] = {
-    hops      = path,
-    last_seen = computer.uptime(),
-  }
-end
-
-local function _returnPathFor(manager_addr)
-  local e = _returnPaths[manager_addr]
-  if not e then return nil end
-  if computer.uptime() - e.last_seen > 300 then
-    _returnPaths[manager_addr] = nil
-    return nil
-  end
-  return e.hops
-end
-
-netmod._returnPaths = _returnPaths   
-
-
-
-
-
-
-
-local function _sendToManager(manager_addr, msgType, payload)
-  local pkt = protocol.makePacket(msgType, payload, { to = manager_addr })
-
-  local hops = _returnPathFor(manager_addr)
-  if hops and #hops > 0 then
-    
-    
-    
-    local reversed = {}
-    for i = #hops, 1, -1 do reversed[#reversed + 1] = hops[i] end
-
-    
-    local next_hop = reversed[1]
-    if not next_hop then return false, "empty_reverse_path" end
-
-    local inner_blob = serialize.encode(pkt)
-    local wrapper = protocol.makePacket(TYPE.RELAY_FORWARD, {
-      dest       = manager_addr,
-      path       = reversed,            
-      ttl        = math.max(3, #reversed + 1),
-      inner      = inner_blob,
-      inner_type = msgType,
-    }, { to = next_hop })
-
-    return net.send(next_hop, wrapper)
-  end
-
-  return net.send(manager_addr, pkt)
-end
-
-function netmod.sendAssignment(managerAddr, assignment)
-  
-  local payload = {
-    assignment_id   = assignment.assignment_id,
-    job_id          = assignment.job_id,
-    priority        = assignment.priority or 5,
-    deadline        = assignment.deadline or 0,
-    retry_policy    = assignment.retry_policy or "safe",
-    compute_profile = assignment.compute_profile or "mixed",
-    tasks_inline    = assignment.tasks_inline,
-    tasks_ref       = assignment.tasks_ref,
-    inputs_inline   = assignment.inputs_inline,
-    inputs_ref      = assignment.inputs_ref,
-    result_sink     = assignment.result_sink or "inline",
-    result_prefix   = assignment.result_prefix,
-  }
-  return _sendToManager(managerAddr, TYPE.CLUSTER_ASSIGN, payload)
-end
-
-function netmod.sendCancel(managerAddr, assignment_id)
-  return _sendToManager(managerAddr, TYPE.CLUSTER_CANCEL, {
-    assignment_id = assignment_id,
-  })
-end
-
-function netmod.sendDrain(managerAddr)
-  return _sendToManager(managerAddr, TYPE.CLUSTER_DRAIN, {})
-end
-
-function netmod.sendRegisterAck(managerAddr, domain_id, accepted, reason, extra)
-  extra = extra or {}
-  local payload = {
-    accepted               = accepted and true or false,
-    reason                 = reason,
-    domain_id              = accepted and domain_id or nil,
-    worker_port            = accepted and (2001 + (domain_id or 0)) or nil,
-    heartbeat_interval     = extra.heartbeat_interval or 5,
-    master_protocol        = extra.master_protocol or "1.0",
-    min_supported_protocol = extra.min_supported_protocol or "1.0",
-  }
-  
-  
-  
-  
-  return _sendToManager(managerAddr, TYPE.CLUSTER_REGISTER_ACK, payload)
-end
-
-function netmod.sendStatusReq(managerAddr)
-  return _sendToManager(managerAddr, TYPE.CLUSTER_STATUS_REQ, {})
-end
-
-
-
-
-
-
-
-
-
-
-
-function netmod.register(handlers)
-  handlers = handlers or {}
-
-  local function getH(name)
-    return handlers[name] or function()
-      log.warn(LOG_TAG, "no handler bound for " .. name)
-    end
-  end
-
-  local onRegister     = getH("onRegister")
-  local onHeartbeat    = getH("onHeartbeat")
-  local onResult       = getH("onResult")
-  local onResultChunk  = getH("onResultChunk")
-  local onAssignAck    = getH("onAssignAck")
-  local onStatusRes    = getH("onStatusRes")
-  local onRelayFail    = getH("onRelayFail")
-  
-  
-  
-  local onPairInit     = getH("onPairInit")
-
-  local registered = {}
-
-  local function add(typeStr, cb)
-    local id = net.on(typeStr, cb)
-    registered[#registered + 1] = { type = typeStr, id = id }
-  end
-
-  add(TYPE.CLUSTER_REGISTER, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then
-      log.warn(LOG_TAG, "malformed CLUSTER_REGISTER from " .. tostring(from))
-      return
-    end
-    local ok, err = pcall(onRegister, packet, from)
-    if not ok then log.error(LOG_TAG, "onRegister threw: " .. tostring(err)) end
-  end)
-
-  add(TYPE.CLUSTER_HEARTBEAT, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then return end
-    local ok, err = pcall(onHeartbeat, packet, from)
-    if not ok then log.error(LOG_TAG, "onHeartbeat threw: " .. tostring(err)) end
-  end)
-
-  add(TYPE.CLUSTER_RESULT, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then return end
-    local ok, err = pcall(onResult, packet, from)
-    if not ok then log.error(LOG_TAG, "onResult threw: " .. tostring(err)) end
-  end)
-
-  add(TYPE.CLUSTER_RESULT_CHUNK, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then return end
-    local ok, err = pcall(onResultChunk, packet, from)
-    if not ok then log.error(LOG_TAG, "onResultChunk threw: " .. tostring(err)) end
-  end)
-
-  add(TYPE.CLUSTER_ASSIGN_ACK, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then return end
-    local ok, err = pcall(onAssignAck, packet, from)
-    if not ok then log.error(LOG_TAG, "onAssignAck threw: " .. tostring(err)) end
-  end)
-
-  add(TYPE.CLUSTER_STATUS_RES, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then return end
-    local ok, err = pcall(onStatusRes, packet, from)
-    if not ok then log.error(LOG_TAG, "onStatusRes threw: " .. tostring(err)) end
-  end)
-
-  add(TYPE.CLUSTER_PAIR_INIT, function(packet, from)
-    if type(packet) ~= "table" or type(packet.payload) ~= "table" then return end
-    local ok, err = pcall(onPairInit, packet, from)
-    if not ok then log.error(LOG_TAG, "onPairInit threw: " .. tostring(err)) end
-  end)
-
-  
-  
-  --! #SEC — REFUSED, until a relayed packet can prove where it came from.
-  --! The inner packet is `serialize.encode(pkt)`: no encryption, no MAC
-  --! (cluster/protocol.lua's "end-to-end encrypted by the caller with its
-  --! Master secret" describes a design, not this code). Its origin was
-  --! read from the inner packet's own `from`, so ANY trusted Manager could
-  --! wrap a CLUSTER_RESULT / HEARTBEAT / REGISTER "from" another Manager
-  --! and have it accepted as that Manager's, and rewrite that Manager's
-  --! remembered return path so the Master's next assignment for it went
-  --! to the relay instead. Nothing legitimate is lost: no Manager sends
-  --! RELAY_FORWARD (cluster.relayHandle has no caller), so the only
-  --! relayed packet this handler has ever seen is a hand-made one. To turn
-  --! relaying on, MAC the inner with the ORIGIN's Master secret and verify
-  --! it here before trusting inner.from or recording a path.
-  --! (test_cluster_relay_refused.lua)
-  local RELAY_UNAUTHENTICATED = true
-  add(TYPE.RELAY_FORWARD, function(packet, from)
-    local p = packet and packet.payload
-    if type(p) ~= "table" or not p.inner then
-      log.warn(LOG_TAG, "malformed RELAY_FORWARD from " .. tostring(from))
-      return
-    end
-    if RELAY_UNAUTHENTICATED then
-      log.warn(LOG_TAG, "refusing RELAY_FORWARD from " .. tostring(from):sub(1, 8)
-        .. ": relayed packets carry no origin authentication yet")
-      return
-    end
-    local inner, derr = serialize.decode(p.inner)
-    if not inner or type(inner) ~= "table" then
-      log.warn(LOG_TAG, "relay inner decode failed: " .. tostring(derr))
-      return
-    end
-
-    
-    
-    local origin = inner.from or (p.path and p.path[1])
-    if origin and type(p.path) == "table" then
-      _rememberReturnPath(origin, p.path)
-    end
-
-    
-    local inner_from = origin or from
-    local t = inner.type
-    if t == TYPE.CLUSTER_REGISTER then
-      pcall(onRegister, inner, inner_from)
-    elseif t == TYPE.CLUSTER_HEARTBEAT then
-      pcall(onHeartbeat, inner, inner_from)
-    elseif t == TYPE.CLUSTER_RESULT then
-      pcall(onResult, inner, inner_from)
-    elseif t == TYPE.CLUSTER_RESULT_CHUNK then
-      pcall(onResultChunk, inner, inner_from)
-    elseif t == TYPE.CLUSTER_ASSIGN_ACK then
-      pcall(onAssignAck, inner, inner_from)
-    elseif t == TYPE.CLUSTER_STATUS_RES then
-      pcall(onStatusRes, inner, inner_from)
-    else
-      log.warn(LOG_TAG, "relay inner type not routable at Master: " .. tostring(t))
-    end
-  end)
-
-  add(TYPE.RELAY_FAIL, function(packet, from)
-    local ok, err = pcall(onRelayFail, packet, from)
-    if not ok then log.error(LOG_TAG, "onRelayFail threw: " .. tostring(err)) end
-  end)
-
-  log.info(LOG_TAG, "registered " .. tostring(#registered) .. " listener(s)")
-  return registered
-end
-
-function netmod.unregister(registered)
-  if not registered then return end
-  for _, entry in ipairs(registered) do
-    if entry and entry.type and entry.id then
-      net.off(entry.type, entry.id)
-    end
-  end
-end
-
-
-
-
-function netmod.hasRelayReturnPath(manager_addr)
-  return _returnPathFor(manager_addr) ~= nil
-end
-
-return netmod
+local b,a=pcall(require,"kernel.log")
+if not(b and a and a.info)then b,a=pcall(require,"log")end;if b and a and a.info then o=a else
+o={info=function()end,warn=function()end,error=function()end}end end;local p="cluster.net"local r={}local function q(a,b)
+if s.TYPE and s.TYPE[a]then return s.TYPE[a]end;return b end
+local n={CLUSTER_REGISTER=q("CLUSTER_REGISTER","cluster_register"),CLUSTER_REGISTER_ACK=q("CLUSTER_REGISTER_ACK","cluster_register_ack"),CLUSTER_HEARTBEAT=q("CLUSTER_HEARTBEAT","cluster_heartbeat"),CLUSTER_ASSIGN=q("CLUSTER_ASSIGN","cluster_assign"),CLUSTER_ASSIGN_ACK=q("CLUSTER_ASSIGN_ACK","cluster_assign_ack"),CLUSTER_RESULT=q("CLUSTER_RESULT","cluster_result"),CLUSTER_RESULT_CHUNK=q("CLUSTER_RESULT_CHUNK","cluster_result_chunk"),CLUSTER_CANCEL=q("CLUSTER_CANCEL","cluster_cancel"),CLUSTER_DRAIN=q("CLUSTER_DRAIN","cluster_drain"),CLUSTER_STATUS_REQ=q("CLUSTER_STATUS_REQ","cluster_status_req"),CLUSTER_STATUS_RES=q("CLUSTER_STATUS_RES","cluster_status_res"),CLUSTER_PAIR_INIT=q("CLUSTER_PAIR_INIT","cluster_pair_init"),CLUSTER_PAIR_CONFIRM=q("CLUSTER_PAIR_CONFIRM","cluster_pair_conf"),RELAY_FORWARD=q("RELAY_FORWARD","relay_forward"),RELAY_FAIL=q("RELAY_FAIL","relay_fail")}r.TYPE=n;local v={}local x=require("computer")
+local function z(a,b)if
+not a or type(b)~="table"then return end;v[a]={hops=b,last_seen=x.uptime()}end
+local function y(a)local b=v[a]if not b then return nil end;if x.uptime()-b.last_seen>300 then v[a]=
+nil;return nil end;return b.hops end;r._returnPaths=v
+local function t(a,b,c)local e=s.makePacket(b,c,{to=a})local d=y(a)
+if d and#d>0 then
+local f={}for j=#d,1,-1 do f[#f+1]=d[j]end;local g=f[1]if not g then
+return false,"empty_reverse_path"end;local h=w.encode(e)
+local i=s.makePacket(n.RELAY_FORWARD,{dest=a,path=f,ttl=math.max(3,#f+1),inner=h,inner_type=b},{to=g})return u.send(g,i)end;return u.send(a,e)end
+function r.sendAssignment(b,a)
+local c={assignment_id=a.assignment_id,job_id=a.job_id,priority=a.priority or 5,deadline=a.deadline or 0,retry_policy=a.retry_policy or"safe",compute_profile=
+a.compute_profile or"mixed",tasks_inline=a.tasks_inline,tasks_ref=a.tasks_ref,inputs_inline=a.inputs_inline,inputs_ref=a.inputs_ref,result_sink=a.result_sink or"inline",result_prefix=a.result_prefix}return t(b,n.CLUSTER_ASSIGN,c)end
+function r.sendCancel(a,b)return t(a,n.CLUSTER_CANCEL,{assignment_id=b})end;function r.sendDrain(a)return t(a,n.CLUSTER_DRAIN,{})end
+function r.sendRegisterAck(d,c,b,e,a)a=
+a or{}
+local f={accepted=b and true or false,reason=e,domain_id=b and c or nil,worker_port=
+b and(2001+ (c or 0))or nil,heartbeat_interval=a.heartbeat_interval or 5,master_protocol=a.master_protocol or"1.0",min_supported_protocol=
+a.min_supported_protocol or"1.0"}return t(d,n.CLUSTER_REGISTER_ACK,f)end
+function r.sendStatusReq(a)return t(a,n.CLUSTER_STATUS_REQ,{})end
+function r.register(a)a=a or{}local function c(A)
+return a[A]or function()
+o.warn(p,"no handler bound for "..A)end end;local e=c("onRegister")
+local f=c("onHeartbeat")local g=c("onResult")local h=c("onResultChunk")
+local i=c("onAssignAck")local j=c("onStatusRes")local k=c("onRelayFail")
+local l=c("onPairInit")local d={}
+local function b(A,B)local C=u.on(A,B)d[#d+1]={type=A,id=C}end
+b(n.CLUSTER_REGISTER,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then
+o.warn(p,"malformed CLUSTER_REGISTER from "..tostring(B))return end
+local C,D=pcall(e,A,B)if not C then
+o.error(p,"onRegister threw: "..tostring(D))end end)
+b(n.CLUSTER_HEARTBEAT,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then return end;local C,D=pcall(f,A,B)
+if not C then o.error(p,"onHeartbeat threw: "..
+tostring(D))end end)
+b(n.CLUSTER_RESULT,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then return end;local C,D=pcall(g,A,B)
+if not C then o.error(p,"onResult threw: "..
+tostring(D))end end)
+b(n.CLUSTER_RESULT_CHUNK,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then return end;local C,D=pcall(h,A,B)
+if not C then o.error(p,"onResultChunk threw: "..
+tostring(D))end end)
+b(n.CLUSTER_ASSIGN_ACK,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then return end;local C,D=pcall(i,A,B)
+if not C then o.error(p,"onAssignAck threw: "..
+tostring(D))end end)
+b(n.CLUSTER_STATUS_RES,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then return end;local C,D=pcall(j,A,B)
+if not C then o.error(p,"onStatusRes threw: "..
+tostring(D))end end)
+b(n.CLUSTER_PAIR_INIT,function(A,B)if
+type(A)~="table"or type(A.payload)~="table"then return end;local C,D=pcall(l,A,B)
+if not C then o.error(p,"onPairInit threw: "..
+tostring(D))end end)local m=true
+b(n.RELAY_FORWARD,function(B,A)local D=B and B.payload;if
+type(D)~="table"or not D.inner then
+o.warn(p,"malformed RELAY_FORWARD from "..tostring(A))return end;if m then
+o.warn(p,"refusing RELAY_FORWARD from "..
+tostring(A):sub(1,8)..": relayed packets carry no origin authentication yet")return end
+local C,H=w.decode(D.inner)if not C or type(C)~="table"then
+o.warn(p,"relay inner decode failed: "..tostring(H))return end;local G=C.from or
+(D.path and D.path[1])if
+G and type(D.path)=="table"then z(G,D.path)end;local F=G or A;local E=C.type
+if
+E==n.CLUSTER_REGISTER then pcall(e,C,F)elseif E==n.CLUSTER_HEARTBEAT then pcall(f,C,F)elseif E==n.CLUSTER_RESULT then
+pcall(g,C,F)elseif E==n.CLUSTER_RESULT_CHUNK then pcall(h,C,F)elseif E==n.CLUSTER_ASSIGN_ACK then
+pcall(i,C,F)elseif E==n.CLUSTER_STATUS_RES then pcall(j,C,F)else
+o.warn(p,"relay inner type not routable at Master: "..tostring(E))end end)
+b(n.RELAY_FAIL,function(A,B)local C,D=pcall(k,A,B)if not C then
+o.error(p,"onRelayFail threw: "..tostring(D))end end)
+o.info(p,"registered "..tostring(#d).." listener(s)")return d end
+function r.unregister(a)if not a then return end;for c,b in ipairs(a)do if b and b.type and b.id then
+u.off(b.type,b.id)end end end;function r.hasRelayReturnPath(a)return y(a)~=nil end;return r

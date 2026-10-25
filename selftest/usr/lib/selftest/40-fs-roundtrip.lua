@@ -1,57 +1,27 @@
-
-
-
-
-
-
-
-
-return function(t)
-  local fs = _G._TOS and _G._TOS.fs
-  if not fs then return t.skip("fs", "no filesystem module") end
-
-  local dir  = "/tmp/selftest-" .. tostring(math.floor(computer.uptime() * 100))
-  local file = dir .. "/probe.txt"
-  local body = "the quick brown fox\nsecond line\n"
-
-  t.ok("makeDirectory", (fs.makeDirectory(dir)) and true or false)
-  t.ok("directory exists after creation", fs.exists(dir))
-  t.ok("isDirectory agrees", fs.isDirectory(dir))
-
-  t.ok("writeFile", (fs.writeFile(file, body)) and true or false)
-  t.ok("file exists", fs.exists(file))
-  t.eq("read round-trips exactly", body, fs.readFile(file))
-  t.eq("size matches the bytes written", #body, fs.size(file))
-  t.ok("isDirectory is false for a file", not fs.isDirectory(file))
-
-  
-  
-  
-  local found = false
-  for _, e in ipairs(fs.list(dir) or {}) do
-    if tostring(e):gsub("/$", "") == "probe.txt" then found = true end
-  end
-  t.ok("list() finds the file we just wrote", found)
-
-  
-  
-  if fs.writeFileAtomic then
-    local atomic = dir .. "/atomic.txt"
-    t.ok("writeFileAtomic", (fs.writeFileAtomic(atomic, "x")) and true or false)
-    t.eq("atomic content", "x", fs.readFile(atomic))
-    
-    
-    t.ok("no .tos-tmp left behind", not fs.exists(atomic .. ".tos-tmp"))
-    fs.remove(atomic)
-  else
-    t.skip("writeFileAtomic", "not present in this build")
-  end
-
-  t.ok("rename", (fs.rename(file, dir .. "/moved.txt")) and true or false)
-  t.ok("old path gone after rename", not fs.exists(file))
-  t.ok("new path present", fs.exists(dir .. "/moved.txt"))
-
-  fs.remove(dir .. "/moved.txt")
-  fs.remove(dir)
-  t.ok("cleaned up", not fs.exists(dir))
-end
+local b="/moved.txt"
+return
+function(a)local c=_G._TOS and _G._TOS.fs;if not c then return
+a.skip("fs","no filesystem module")end
+local d="/tmp/selftest-"..tostring(math.floor(
+computer.uptime()*100))local e=d.."/probe.txt"local f="the quick brown fox\nsecond line\n"
+a.ok("makeDirectory",
+(c.makeDirectory(d))and true or false)
+a.ok("directory exists after creation",c.exists(d))a.ok("isDirectory agrees",c.isDirectory(d))
+a.ok("writeFile",
+(c.writeFile(e,f))and true or false)a.ok("file exists",c.exists(e))
+a.eq("read round-trips exactly",f,c.readFile(e))
+a.eq("size matches the bytes written",#f,c.size(e))
+a.ok("isDirectory is false for a file",not c.isDirectory(e))local g=false
+for i,h in ipairs(c.list(d)or{})do if tostring(h):gsub("/$","")==
+"probe.txt"then g=true end end;a.ok("list() finds the file we just wrote",g)
+if
+c.writeFileAtomic then local h=d.."/atomic.txt"
+a.ok("writeFileAtomic",(c.writeFileAtomic(h,"x"))and
+true or false)a.eq("atomic content","x",c.readFile(h))
+a.ok("no .tos-tmp left behind",
+not c.exists(h..".tos-tmp"))c.remove(h)else
+a.skip("writeFileAtomic","not present in this build")end
+a.ok("rename",(c.rename(e,d..b))and true or false)
+a.ok("old path gone after rename",not c.exists(e))a.ok("new path present",c.exists(d..b))
+c.remove(d..b)c.remove(d)
+a.ok("cleaned up",not c.exists(d))end

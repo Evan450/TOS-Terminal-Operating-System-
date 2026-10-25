@@ -1,689 +1,131 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local computer = require("computer")
-local component = require("component")
-local serialize = require("kernel.serialize")
-local cluster   = require("cluster.protocol")
-
-local cworker = {}
-
-
-local log, event = nil, nil
-
-
-
-
-
-local MAGIC = "WRK"
-
-local domainId     = nil            
-local workerPort   = nil            
-local nextWorkerId = 1
-local nextTaskId   = 1
-
-
-
-
-
-
-
-
-
-
-
-local workers = {}
-
-
-
-
-
-
-
-
-local tasks = {}
-
-
-local bootstrapUntil = nil
-
-
-
-
-
-
-
-
-local sharedSecret = nil
-local seenNonces   = {}        
-local seenOrder    = {}
-local SEEN_MAX     = 1024
-
-
-
-
-
-function cworker.setSecret(secret)
-  if secret == nil then
-    sharedSecret = nil
-    return true
-  end
-  if type(secret) ~= "string" or #secret < 16 then
-    return false, "secret must be a string of at least 16 bytes"
-  end
-  sharedSecret = secret
-  return true
-end
-
-
-local listenerIds   = {}
-local pingTimerId   = nil
-local timeoutTimerId = nil
-
-
-local resultCb = nil
-
-
-local modems = {}
-
-
-
-
-
-local function logf(lvl, fmt, ...)
-  if not log then return end
-  local msg = string.format(fmt, ...)
-  if lvl == "warn" and log.warn then log.warn("cworker", msg)
-  elseif lvl == "info" and log.info then log.info("cworker", msg)
-  elseif lvl == "debug" and log.debug then log.debug("cworker", msg)
-  end
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-local function canonicalFrame(v)
-  local t = type(v)
-  if t == "string" then
-    return "s" .. #v .. ":" .. v
-  elseif t == "number" then
-    local s = tostring(v)
-    return "n" .. #s .. ":" .. s
-  elseif t == "boolean" then
-    return v and "bT" or "bF"
-  elseif t == "table" then
-    local keys = {}
-    for k in pairs(v) do
-      if k ~= "mac" then keys[#keys + 1] = k end
-    end
-    table.sort(keys, function(a, b)
-      local ta, tb = type(a), type(b)
-      if ta ~= tb then return ta < tb end
-      return a < b
-    end)
-    local parts = {}
-    for _, k in ipairs(keys) do
-      parts[#parts + 1] = canonicalFrame(k) .. canonicalFrame(v[k])
-    end
-    return "{" .. table.concat(parts) .. "}"
-  end
-  return "z"  
-end
-
-
-
-
-local function sendFrame(address, frame)
-  if not workerPort then return false, "domain_id not set" end
-  frame.magic = MAGIC
-  
-  
-  
-  
-  
-  if sharedSecret then
-    local okC, cryptoMod = pcall(require, "kernel.crypto")
-    if okC and cryptoMod and cryptoMod.hmac and cryptoMod.salt then
-      frame.nonce = cryptoMod.salt(16)
-      frame.mac   = cryptoMod.hmac(sharedSecret, canonicalFrame(frame))
-    end
-  end
-  local data = serialize.compact(frame)
-  local anyOk = false
-  for _, m in ipairs(modems) do
-    local ok = pcall(m.send, address, workerPort, data)
-    anyOk = anyOk or ok
-  end
-  if not anyOk then return false, "send failed on all NICs" end
-  return true
-end
-
-
-
-
-local function collectModems()
-  modems = {}
-  for addr in component.list("modem") do
-    local ok, proxy = pcall(component.proxy, addr)
-    if ok and proxy then
-      modems[#modems + 1] = proxy
-    end
-  end
-end
-
-local function openPortOnAllModems(port)
-  for _, m in ipairs(modems) do
-    pcall(m.open, port)
-  end
-end
-
-local function closePortOnAllModems(port)
-  for _, m in ipairs(modems) do
-    pcall(m.close, port)
-  end
-end
-
-
-
-
-
-local function handleRegister(addr, frame)
-  local existing = workers[addr]
-
-  if not existing then
-    
-    if not bootstrapUntil or computer.uptime() > bootstrapUntil then
-      sendFrame(addr, {
-        op       = "REGISTER_ACK",
-        accepted = false,
-        reason   = "bootstrap window closed",
-      })
-      logf("warn", "Rejected worker %s: bootstrap closed", addr:sub(1, 8))
-      return
-    end
-
-    local wid = nextWorkerId
-    nextWorkerId = nextWorkerId + 1
-    workers[addr] = {
-      id             = wid,
-      state          = "idle",
-      hostname       = tostring(frame.hostname or "worker-" .. wid),
-      capabilities   = type(frame.capabilities) == "table" and frame.capabilities or {},
-      last_seen      = computer.uptime(),
-      pings_missed   = 0,
-      current_task   = nil,
-      last_ping_sent = nil,
-    }
-    sendFrame(addr, {
-      op        = "REGISTER_ACK",
-      accepted  = true,
-      worker_id = wid,
-    })
-    logf("info", "Registered worker %d (%s) at %s",
-      wid, workers[addr].hostname, addr:sub(1, 8))
-    return
-  end
-
-  
-  
-  
-  
-  
-  
-  
-  if existing.current_task then
-    sendFrame(addr, {
-      op       = "REGISTER_ACK",
-      accepted = false,
-      reason   = "task in flight; reboot will be honored after timeout",
-    })
-    logf("warn", "Refusing re-REGISTER from %s: task %s still in flight",
-      addr:sub(1, 8), tostring(existing.current_task))
-    return
-  end
-
-  
-  
-  existing.state          = "idle"
-  existing.last_seen      = computer.uptime()
-  existing.pings_missed   = 0
-  existing.current_task   = nil
-  existing.last_ping_sent = nil
-  existing.hostname       = tostring(frame.hostname or existing.hostname)
-  if type(frame.capabilities) == "table" then
-    existing.capabilities = frame.capabilities
-  end
-  sendFrame(addr, {
-    op        = "REGISTER_ACK",
-    accepted  = true,
-    worker_id = existing.id,
-  })
-  logf("info", "Re-registered worker %d at %s", existing.id, addr:sub(1, 8))
-end
-
-local function handleResult(addr, frame)
-  local w = workers[addr]
-  if not w then return end
-
-  w.last_seen = computer.uptime()
-  w.pings_missed = 0
-
-  local tid = tonumber(frame.task_id)
-  if not tid then return end
-
-  local task = tasks[tid]
-  if not task or task.worker_addr ~= addr then
-    
-    return
-  end
-
-  
-  if w.current_task == tid then
-    w.current_task = nil
-    w.state = "idle"
-  end
-
-  local result = {
-    task_id = tid,
-    status  = tostring(frame.status or "ok"),
-    output  = type(frame.output) == "string" and frame.output or "",
-    err     = type(frame.err) == "string" and frame.err or nil,
-  }
-
-  local cb = task.on_result
-  tasks[tid] = nil
-
-  if cb then pcall(cb, addr, tid, result) end
-  if resultCb then pcall(resultCb, addr, tid, result) end
-end
-
-local function handleProgress(addr, frame)
-  local w = workers[addr]
-  if not w then return end
-  w.last_seen = computer.uptime()
-  w.pings_missed = 0
-  
-  
-  logf("debug", "Worker %s task %s: progress=%s %s",
-    addr:sub(1, 8), tostring(frame.task_id),
-    tostring(frame.progress), tostring(frame.msg or ""))
-end
-
-local function handlePong(addr, frame)
-  local w = workers[addr]
-  if not w then return end
-  w.last_seen = computer.uptime()
-  w.pings_missed = 0
-  if w.state == "unresponsive" then
-    w.state = w.current_task and "busy" or "idle"
-    logf("info", "Worker %s recovered", addr:sub(1, 8))
-  end
-end
-
-local DISPATCH = {
-  REGISTER = handleRegister,
-  RESULT   = handleResult,
-  PROGRESS = handleProgress,
-  PONG     = handlePong,
-}
-
-local function onModemMessage(_, _, remoteAddr, port, _, data)
-  if port ~= workerPort then return end
-  if type(data) ~= "string" then return end
-
-  
-  if #data > 8192 then
-    logf("debug", "Oversized frame from %s (%d bytes) dropped",
-      remoteAddr:sub(1, 8), #data)
-    return
-  end
-
-  local ok, frame = pcall(serialize.decode, data)
-  if not ok or type(frame) ~= "table" then return end
-  if frame.magic ~= MAGIC then return end
-
-  
-  
-  
-  
-  if sharedSecret then
-    local nonce, mac = frame.nonce, frame.mac
-    if type(nonce) ~= "string" or #nonce < 8 or #nonce > 64 then
-      logf("warn", "WRK frame from %s missing/bad nonce", remoteAddr:sub(1, 8))
-      return
-    end
-    if type(mac) ~= "string" or #mac ~= 64 then
-      logf("warn", "WRK frame from %s missing/bad mac", remoteAddr:sub(1, 8))
-      return
-    end
-    local okC, cryptoMod = pcall(require, "kernel.crypto")
-    if not okC or not cryptoMod or not cryptoMod.hmac then
-      logf("warn", "crypto unavailable; dropping WRK frame from %s",
-        remoteAddr:sub(1, 8))
-      return
-    end
-    local expected = cryptoMod.hmac(sharedSecret, canonicalFrame(frame))
-    if not cryptoMod.ctEquals(expected, mac) then
-      logf("warn", "WRK frame from %s failed MAC", remoteAddr:sub(1, 8))
-      return
-    end
-    
-    if seenNonces[nonce] then
-      logf("warn", "WRK frame from %s replayed nonce", remoteAddr:sub(1, 8))
-      return
-    end
-    seenNonces[nonce] = true
-    seenOrder[#seenOrder + 1] = nonce
-    if #seenOrder > SEEN_MAX then
-      local stale = table.remove(seenOrder, 1)
-      seenNonces[stale] = nil
-    end
-  end
-
-  local op = frame.op
-  local handler = DISPATCH[op]
-  if not handler then return end
-
-  handler(remoteAddr, frame)
-end
-
-
-
-
-
-local function pingTick()
-  local now = computer.uptime()
-  local pingInterval = cluster.TIMING.WORKER_PING
-
-  for addr, w in pairs(workers) do
-    
-    
-    if w.state == "idle" then
-      
-      if not w.last_ping_sent or (now - w.last_ping_sent) >= pingInterval then
-        --! INTEGER, not the raw float -- see the matching note in
-        --! cluster/openos/cluster-worker.lua's handlePing. The MAC covers
-        --! canonicalFrame, tostring renders an integral float as "100.0"
-        --! on Lua 5.3+ and "100" on 5.2, and OpenOS workers run on either
-        --! architecture. uptime moves in 0.05 steps, so about one ping in
-        --! twenty carried a value the other side canonicalized differently
-        --! and dropped. Nobody reads the field; flooring it needs no
-        --! lockstep upgrade. (test_cluster_worker_frames.lua)
-        sendFrame(addr, { op = "PING", time = math.floor(now) })
-        w.last_ping_sent = now
-      end
-
-      
-      local silent = now - (w.last_seen or 0)
-      if silent >= (2 * pingInterval) and w.state ~= "unresponsive" then
-        w.state = "unresponsive"
-        w.pings_missed = (w.pings_missed or 0) + 1
-        logf("warn", "Worker %s unresponsive (%.0fs silent)",
-          addr:sub(1, 8), silent)
-      end
-    end
-  end
-end
-
-local function timeoutTick()
-  local now = computer.uptime()
-  for tid, t in pairs(tasks) do
-    if (now - t.sent_at) > t.timeout then
-      
-      local w = workers[t.worker_addr]
-      if w and w.current_task == tid then
-        w.current_task = nil
-        w.state = "idle"
-      end
-      local cb = t.on_result
-      tasks[tid] = nil
-      local result = {
-        task_id = tid,
-        status  = "timeout",
-        output  = "",
-        err     = string.format("task timed out after %ds", t.timeout),
-      }
-      if cb then pcall(cb, t.worker_addr, tid, result) end
-      if resultCb then pcall(resultCb, t.worker_addr, tid, result) end
-      logf("warn", "Task %d on %s timed out", tid, t.worker_addr:sub(1, 8))
-    end
-  end
-end
-
-
-
-
-
-function cworker.init(modules)
-  log   = modules.log
-  event = modules.event
-  return true
-end
-
-
-
-
-function cworker.setDomainId(id)
-  if type(id) ~= "number" or id < 0 then
-    return false, "invalid domain_id"
-  end
-
-  
-  
-  
-  
-  
-  
-  
-  if sharedSecret == nil then
-    return false, "refusing to bind: cluster shared secret not set "
-      .. "(set 'shared_secret' (16+ bytes) in /etc/cluster.cfg)"
-  end
-
-  
-  
-  
-  if workerPort and workerPort ~= cluster.workerPort(id) then
-    closePortOnAllModems(workerPort)
-    workers = {}
-    tasks = {}
-    nextWorkerId = 1
-  end
-
-  domainId   = id
-  workerPort = cluster.workerPort(id)
-
-  collectModems()
-  openPortOnAllModems(workerPort)
-
-  
-  if event and #listenerIds == 0 then
-    local lid = event.on("modem_message", onModemMessage, "cworker")
-    listenerIds[#listenerIds + 1] = lid
-  end
-
-  
-  if event and not pingTimerId and event.interval then
-    pingTimerId = event.interval(cluster.TIMING.WORKER_PING, pingTick, "cworker:ping")
-  end
-  if event and not timeoutTimerId and event.interval then
-    timeoutTimerId = event.interval(2, timeoutTick, "cworker:timeout")
-  end
-
-  logf("info", "Bound to domain %d on port %d", id, workerPort)
-  return true
-end
-
-
-
-function cworker.setBootstrap(seconds)
-  seconds = seconds or cluster.TIMING.BOOTSTRAP_WINDOW
-  if type(seconds) ~= "number" or seconds <= 0 then
-    bootstrapUntil = nil
-    logf("info", "Bootstrap window closed")
-    return true
-  end
-  bootstrapUntil = computer.uptime() + seconds
-  logf("info", "Bootstrap window open for %ds", seconds)
-  return true
-end
-
-function cworker.isBootstrapOpen()
-  return bootstrapUntil ~= nil and computer.uptime() <= bootstrapUntil
-end
-
-
-function cworker.list()
-  local out = {}
-  for addr, w in pairs(workers) do
-    out[#out + 1] = {
-      addr         = addr,
-      id           = w.id,
-      state        = w.state,
-      hostname     = w.hostname,
-      last_seen    = w.last_seen,
-      current_task = w.current_task,
-    }
-  end
-  return out
-end
-
-function cworker.domainId() return domainId end
-function cworker.workerPort() return workerPort end
-
-
-
-
-
-
-function cworker.dispatch(addr, code, opts)
-  if type(addr) ~= "string" then return nil, "addr required" end
-  if type(code) ~= "string" or code == "" then return nil, "code required" end
-  opts = opts or {}
-
-  local w = workers[addr]
-  if not w then return nil, "unknown worker" end
-  if w.state ~= "idle" then
-    return nil, "worker not idle: " .. tostring(w.state)
-  end
-
-  local timeout = tonumber(opts.timeout) or cluster.TIMING.TASK_TIMEOUT
-  local tid = nextTaskId
-  nextTaskId = nextTaskId + 1
-
-  local ok, err = sendFrame(addr, {
-    op       = "TASK",
-    task_id  = tid,
-    code     = code,
-    inputs   = type(opts.inputs) == "table" and opts.inputs or {},
-    timeout  = timeout,
-  })
-  if not ok then return nil, err end
-
-  w.state = "busy"
-  w.current_task = tid
-  tasks[tid] = {
-    worker_addr = addr,
-    sent_at     = computer.uptime(),
-    timeout     = timeout,
-    code        = code,
-    on_result   = type(opts.on_result) == "function" and opts.on_result or nil,
-  }
-  return tid
-end
-
-
-
-function cworker.cancel(tid)
-  local t = tasks[tid]
-  if not t then return false, "unknown task" end
-  sendFrame(t.worker_addr, { op = "CANCEL", task_id = tid })
-  local w = workers[t.worker_addr]
-  if w and w.current_task == tid then
-    w.current_task = nil
-    w.state = "idle"
-  end
-  tasks[tid] = nil
-  return true
-end
-
-
-function cworker.onResult(cb)
-  if type(cb) ~= "function" and cb ~= nil then
-    return false, "callback must be function or nil"
-  end
-  resultCb = cb
-  return true
-end
-
-
-function cworker.forget(addr)
-  local w = workers[addr]
-  if not w then return false, "unknown worker" end
-  if w.current_task then
-    tasks[w.current_task] = nil
-  end
-  workers[addr] = nil
-  logf("info", "Forgot worker %d (%s)", w.id, addr:sub(1, 8))
-  return true
-end
-
-function cworker.stop()
-  if workerPort then closePortOnAllModems(workerPort) end
-  if event then
-    if event.off then
-      for _, id in ipairs(listenerIds) do pcall(event.off, "modem_message", id) end
-    end
-    listenerIds = {}
-    
-    if event.cancelTimer then
-      if pingTimerId    then pcall(event.cancelTimer, pingTimerId);    pingTimerId    = nil end
-      if timeoutTimerId then pcall(event.cancelTimer, timeoutTimerId); timeoutTimerId = nil end
-    end
-  end
-  workers = {}
-  tasks = {}
-  workerPort = nil
-  domainId = nil
-  bootstrapUntil = nil
-end
-
-return cworker
+local ao,ap,au,Z,av="REGISTER_ACK","cworker","number","string","unresponsive"
+local W=require("computer")local aq=require("component")
+local ar=require("kernel.serialize")local ac=require("cluster.protocol")local U={}local Y,S=nil,nil;local as="WRK"
+local al=nil;local V=nil;local ai=1;local am=1;local T={}local X={}local _=nil;local aa=nil;local an={}local aj={}local aw=1024
+function U.setSecret(a)if
+a==nil then aa=nil;return true end;if type(a)~=Z or#a<16 then return false,
+"secret must be a string of at least 16 bytes"end
+aa=a;return true end;local ae={}local af=nil;local ag=nil;local ah=nil;local ad={}
+local function R(a,b,...)if not Y then return end
+local c=string.format(b,...)
+if a=="warn"and Y.warn then Y.warn(ap,c)elseif a=="info"and Y.info then
+Y.info(ap,c)elseif a=="debug"and Y.debug then Y.debug(ap,c)end end
+local function ak(a)local b=type(a)
+if b==Z then return"s"..#a..":"..a elseif b==au then local c=tostring(a)return"n"..#c..
+":"..c elseif b=="boolean"then return a and"bT"or"bF"elseif
+b=="table"then local c={}for e in pairs(a)do if e~="mac"then c[#c+1]=e end end
+table.sort(c,function(e,f)
+local g,h=type(e),type(f)if g~=h then return g<h end;return e<f end)local d={}
+for f,e in ipairs(c)do d[#d+1]=ak(e)..ak(a[e])end;return"{"..table.concat(d).."}"end;return"z"end
+local function ab(b,a)if not V then return false,"domain_id not set"end;a.magic=as
+if aa then
+local f,e=pcall(require,"kernel.crypto")if f and e and e.hmac and e.salt then a.nonce=e.salt(16)
+a.mac=e.hmac(aa,ak(a))end end;local d=ar.compact(a)local c=false;for f,e in ipairs(ad)do local g=pcall(e.send,b,V,d)
+c=c or g end
+if not c then return false,"send failed on all NICs"end;return true end
+local function ax()ad={}for a in aq.list("modem")do local c,b=pcall(aq.proxy,a)
+if c and b then ad[#ad+1]=b end end end
+local function ay(a)for c,b in ipairs(ad)do pcall(b.open,a)end end
+local function at(a)for c,b in ipairs(ad)do pcall(b.close,a)end end
+local function az(a,b)local c=T[a]
+if not c then
+if not _ or W.uptime()>_ then
+ab(a,{op=ao,accepted=false,reason="bootstrap window closed"})
+R("warn","Rejected worker %s: bootstrap closed",a:sub(1,8))return end;local d=ai;ai=ai+1
+T[a]={id=d,state="idle",hostname=tostring(b.hostname or"worker-"..d),capabilities=
+type(b.capabilities)=="table"and b.capabilities or{},last_seen=W.uptime(),pings_missed=0,current_task=
+nil,last_ping_sent=nil}ab(a,{op=ao,accepted=true,worker_id=d})
+R("info","Registered worker %d (%s) at %s",d,T[a].hostname,a:sub(1,8))return end
+if c.current_task then
+ab(a,{op=ao,accepted=false,reason="task in flight; reboot will be honored after timeout"})
+R("warn","Refusing re-REGISTER from %s: task %s still in flight",a:sub(1,8),tostring(c.current_task))return end;c.state="idle"c.last_seen=W.uptime()c.pings_missed=0;c.current_task=nil;c.last_ping_sent=
+nil
+c.hostname=tostring(b.hostname or c.hostname)
+if type(b.capabilities)=="table"then c.capabilities=b.capabilities end;ab(a,{op=ao,accepted=true,worker_id=c.id})
+R("info","Re-registered worker %d at %s",c.id,a:sub(1,8))end
+local function aA(b,a)local d=T[b]if not d then return end;d.last_seen=W.uptime()d.pings_missed=0
+local c=tonumber(a.task_id)if not c then return end;local e=X[c]
+if not e or e.worker_addr~=b then return end
+if d.current_task==c then d.current_task=nil;d.state="idle"end
+local f={task_id=c,status=tostring(a.status or"ok"),output=type(a.output)==Z and a.output or"",err=
+type(a.err)==Z and a.err or nil}local g=e.on_result;X[c]=nil;if g then pcall(g,b,c,f)end;if ah then
+pcall(ah,b,c,f)end end
+local function aB(b,a)local c=T[b]if not c then return end;c.last_seen=W.uptime()c.pings_missed=0
+R("debug","Worker %s task %s: progress=%s %s",b:sub(1,8),tostring(a.task_id),tostring(a.progress),tostring(
+a.msg or""))end
+local function aC(a,b)local c=T[a]if not c then return end;c.last_seen=W.uptime()c.pings_missed=0;if
+c.state==av then c.state=c.current_task and"busy"or"idle"
+R("info","Worker %s recovered",a:sub(1,8))end end;local aD={REGISTER=az,RESULT=aA,PROGRESS=aB,PONG=aC}
+local function aE(d,d,a,c,d,b)if c~=V then return end;if type(b)~=
+Z then return end;if#b>8192 then
+R("debug","Oversized frame from %s (%d bytes) dropped",a:sub(1,8),#b)return end
+local g,e=pcall(ar.decode,b)if not g or type(e)~="table"then return end
+if e.magic~=as then return end
+if aa then local i,k=e.nonce,e.mac;if type(i)~=Z or#i<8 or#i>64 then
+R("warn","WRK frame from %s missing/bad nonce",a:sub(1,8))return end;if
+type(k)~=Z or#k~=64 then
+R("warn","WRK frame from %s missing/bad mac",a:sub(1,8))return end
+local l,j=pcall(require,"kernel.crypto")if not l or not j or not j.hmac then
+R("warn","crypto unavailable; dropping WRK frame from %s",a:sub(1,8))return end
+local m=j.hmac(aa,ak(e))if not j.ctEquals(m,k)then
+R("warn","WRK frame from %s failed MAC",a:sub(1,8))return end;if an[i]then
+R("warn","WRK frame from %s replayed nonce",a:sub(1,8))return end;an[i]=true;aj[#aj+1]=i;if
+#aj>aw then local n=table.remove(aj,1)an[n]=nil end end;local h=e.op;local f=aD[h]if not f then return end;f(a,e)end
+local function aF()local a=W.uptime()local b=ac.TIMING.WORKER_PING
+for d,c in pairs(T)do
+if c.state=="idle"then if not
+c.last_ping_sent or(a-c.last_ping_sent)>=b then
+ab(d,{op="PING",time=math.floor(a)})c.last_ping_sent=a end;local e=a- (
+c.last_seen or 0)if
+e>= (2*b)and c.state~=av then c.state=av
+c.pings_missed=(c.pings_missed or 0)+1
+R("warn","Worker %s unresponsive (%.0fs silent)",d:sub(1,8),e)end end end end
+local function aG()local a=W.uptime()
+for c,b in pairs(X)do
+if(a-b.sent_at)>b.timeout then
+local d=T[b.worker_addr]
+if d and d.current_task==c then d.current_task=nil;d.state="idle"end;local e=b.on_result;X[c]=nil
+local f={task_id=c,status="timeout",output="",err=string.format("task timed out after %ds",b.timeout)}if e then pcall(e,b.worker_addr,c,f)end;if ah then
+pcall(ah,b.worker_addr,c,f)end
+R("warn","Task %d on %s timed out",c,b.worker_addr:sub(1,8))end end end;function U.init(a)Y=a.log;S=a.event;return true end
+function U.setDomainId(a)if
+type(a)~=au or a<0 then return false,"invalid domain_id"end
+if aa==nil then return false,
+
+"refusing to bind: cluster shared secret not set ".."(set 'shared_secret' (16+ bytes) in /etc/cluster.cfg)"end
+if V and V~=ac.workerPort(a)then at(V)T={}X={}ai=1 end;al=a;V=ac.workerPort(a)ax()ay(V)if S and#ae==0 then
+local b=S.on("modem_message",aE,ap)ae[#ae+1]=b end;if
+S and not af and S.interval then
+af=S.interval(ac.TIMING.WORKER_PING,aF,"cworker:ping")end
+if
+S and not ag and S.interval then ag=S.interval(2,aG,"cworker:timeout")end;R("info","Bound to domain %d on port %d",a,V)return true end
+function U.setBootstrap(a)a=a or ac.TIMING.BOOTSTRAP_WINDOW
+if
+type(a)~=au or a<=0 then _=nil;R("info","Bootstrap window closed")return true end;_=W.uptime()+a
+R("info","Bootstrap window open for %ds",a)return true end
+function U.isBootstrapOpen()return _~=nil and W.uptime()<=_ end
+function U.list()local a={}for c,b in pairs(T)do
+a[#a+1]={addr=c,id=b.id,state=b.state,hostname=b.hostname,last_seen=b.last_seen,current_task=b.current_task}end;return a end;function U.domainId()return al end;function U.workerPort()return V end
+function U.dispatch(b,c,a)if type(b)~=Z then return nil,
+"addr required"end;if type(c)~=Z or c==""then
+return nil,"code required"end;a=a or{}local d=T[b]
+if not d then return nil,"unknown worker"end;if d.state~="idle"then
+return nil,"worker not idle: "..tostring(d.state)end
+local f=tonumber(a.timeout)or ac.TIMING.TASK_TIMEOUT;local e=am;am=am+1
+local g,h=ab(b,{op="TASK",task_id=e,code=c,inputs=type(a.inputs)=="table"and a.inputs or{},timeout=f})if not g then return nil,h end;d.state="busy"d.current_task=e
+X[e]={worker_addr=b,sent_at=W.uptime(),timeout=f,code=c,on_result=
+type(a.on_result)=="function"and a.on_result or nil}return e end
+function U.cancel(a)local c=X[a]if not c then return false,"unknown task"end
+ab(c.worker_addr,{op="CANCEL",task_id=a})local b=T[c.worker_addr]if b and b.current_task==a then b.current_task=nil
+b.state="idle"end;X[a]=nil;return true end
+function U.onResult(a)if type(a)~="function"and a~=nil then
+return false,"callback must be function or nil"end;ah=a;return true end
+function U.forget(a)local b=T[a]if not b then return false,"unknown worker"end;if b.current_task then X[b.current_task]=
+nil end;T[a]=nil
+R("info","Forgot worker %d (%s)",b.id,a:sub(1,8))return true end
+function U.stop()if V then at(V)end
+if S then if S.off then for b,a in ipairs(ae)do
+pcall(S.off,"modem_message",a)end end;ae={}
+if
+S.cancelTimer then if af then pcall(S.cancelTimer,af)af=nil end;if ag then
+pcall(S.cancelTimer,ag)ag=nil end end end;T={}X={}V=nil;al=nil;_=nil end;return U

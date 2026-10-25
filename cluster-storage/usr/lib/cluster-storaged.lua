@@ -1,372 +1,100 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local storaged = {}
-
-local store    = require("cluster.store")
-local computer = require("computer")
-
-local function firstRequire(...)
-  for i = 1, select("#", ...) do
-    local ok, mod = pcall(require, (select(i, ...)))
-    if ok and mod then return mod end
-  end
-end
-local fs        = firstRequire("kernel.fs", "filesystem")
-local event     = firstRequire("kernel.event", "event")
-local component = firstRequire("component")
-local serialize = require("kernel.serialize")
-local log       = firstRequire("kernel.log", "log")
-  or { info = function() end, warn = function() end, error = function() end }
-local LOG_TAG = "cluster.storaged"
-
-local net, protocol, cproto
-local _cfg, _timers, _handlers = nil, {}, {}
-local _running = false
-
-local _event, _modems, _rawSend, _pubListener = nil, {}, nil, nil
-
-local DEFAULTS = {
-  root            = "/var/cluster-store",
-  capacity        = 0,        
-  write_port      = 2101,
-  read_port       = 2100,
-  sweep_interval  = 60,       
-  master          = nil,      
-  managers        = {},       
-}
-
-
-
-
-
-function storaged.loadConfig(path)
-  local cfg = {}
-  for k, v in pairs(DEFAULTS) do cfg[k] = v end
-  path = path or "/etc/cluster-storage.cfg"
-  if fs and fs.exists and fs.exists(path) then
-    local blob = fs.readFile and fs.readFile(path)
-    if blob and blob ~= "" then
-      local ok, parsed = pcall(serialize.decode, blob, { maxBytes = 8192 })
-      if ok and type(parsed) == "table" then
-        for k, v in pairs(parsed) do cfg[k] = v end
-      else
-        log.error(LOG_TAG, "malformed cluster-storage.cfg; using defaults")
-      end
-    end
-  end
-  _cfg = cfg
-  return cfg
-end
-
-function storaged.config() return _cfg end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function storaged.writerFor(addr)
-  if not _cfg then return nil, "not_configured" end
-  if _cfg.master and addr == _cfg.master then
-    return { role = "master" }
-  end
-  local dom = _cfg.managers and _cfg.managers[addr]
-  if dom then
-    return { role = "manager", domain_id = tonumber(dom), job_assignee = {} }
-  end
-  return nil, "unknown_writer"
-end
-
-
-
-
-
---! Replies go out on the node's DEFAULT port, not write_port. A request
---! is sent to write_port and so needs that port open HERE; the requester
---! (the Master) opens nothing but its own listen port, so a reply sent to
---! write_port would be addressed to a port nobody is listening on and
---! never arrive. kernel.net ignores the port on inbound TOS traffic, so
---! the type-keyed handlers hear the reply wherever it lands.
-local function reply(to, kind, payload)
-  if not (net and protocol) then return end
-  net.send(to, protocol.makePacket(kind, payload, { to = to }))
-end
-
-local function storeError(to, key, reason)
-  reply(to, protocol.TYPE.STORE_ERROR, { key = key, reason = reason })
-end
-
-
-
-
-local function authorize(from, key)
-  local writer, werr = storaged.writerFor(from)
-  if not writer then return nil, werr or "unknown_writer" end
-  local ok, reason = cproto.canWrite(writer, key)
-  if not ok then return nil, reason or "namespace_denied" end
-  return writer
-end
-
-function storaged._onPut(packet, from)
-  local p = packet.payload or {}
-  if type(p.key) ~= "string" then return storeError(from, nil, "invalid_key: missing") end
-  local writer, werr = authorize(from, p.key)
-  if not writer then
-    log.warn(LOG_TAG, "PUT denied for " .. tostring(from):sub(1, 8) .. ": " .. tostring(werr))
-    return storeError(from, p.key, werr)
-  end
-  local ack, err = store.put(p.key, p.data or "", {
-    ttl = tonumber(p.ttl), overwrite = p.overwrite ~= false,
-  })
-  if not ack then return storeError(from, p.key, err) end
-  reply(from, protocol.TYPE.STORE_PUT_ACK, {
-    key = ack.key, lease_id = ack.lease_id,
-    expires_at = ack.expires_at, size_bytes = ack.size_bytes,
-  })
-end
-
-function storaged._onExtend(packet, from)
-  local p = packet.payload or {}
-  local writer, werr = authorize(from, p.key or "")
-  if not writer then return storeError(from, p.key, werr) end
-  local res, err = store.extend(p.key, p.lease_id, tonumber(p.extend_by))
-  if not res then return storeError(from, p.key, err) end
-  reply(from, protocol.TYPE.STORE_PUT_ACK,
-    { key = res.key, lease_id = p.lease_id, expires_at = res.expires_at })
-end
-
-function storaged._onRelease(packet, from)
-  local p = packet.payload or {}
-  local writer, werr = authorize(from, p.key or "")
-  if not writer then return storeError(from, p.key, werr) end
-  local res, err = store.release(p.key, p.lease_id)
-  if not res then return storeError(from, p.key, err) end
-  reply(from, protocol.TYPE.STORE_PUT_ACK, { key = p.key, released = true })
-end
-
-
-
-
-
-function storaged._onList(packet, from)
-  local p = packet.payload or {}
-  local keys, truncated = store.list(p.prefix or "", tonumber(p.limit) or 128)
-  reply(from, protocol.TYPE.STORE_LIST_RES,
-    { prefix = p.prefix, keys = keys, truncated = truncated })
-end
-
-
-
-
-
-
-
-
-
-function storaged._onPubMessage(fromAddr, rawData, viaAddr)
-  if type(rawData) ~= "string" or #rawData > 8192 then return end
-  local ok, msg = pcall(serialize.decode, rawData, { maxBytes = 8192 })
-  if not ok or type(msg) ~= "table" then return end
-  local valid = cproto.validatePubRequest(msg)
-  if not valid then return end
-
-  --! Answered on the modem that heard the request, as a bare serialized
-  --! table: there is no TOS packet to build (the asker may be an OpenOS
-  --! Worker with no TOS stack), and kernel.net has no raw-send to borrow.
-  local function send(t)
-    if _rawSend then _rawSend(viaAddr, fromAddr, _cfg.read_port, serialize.encode(t)) end
-  end
-
-  if msg.op == "GET" then
-    local data, err = store.get(msg.key)
-    if not data then
-      return send({ magic = cproto.PUB_MAGIC, op = "RES", key = msg.key,
-                    req_id = msg.req_id, err = err })
-    end
-    
-    
-    local CHUNK = 6144
-    if #data <= CHUNK then
-      send({ magic = cproto.PUB_MAGIC, op = "RES", key = msg.key,
-             req_id = msg.req_id, data = data, chunk = 1, total = 1 })
-    else
-      local total = math.ceil(#data / CHUNK)
-      for i = 1, total do
-        send({ magic = cproto.PUB_MAGIC, op = "RES", key = msg.key,
-               req_id = msg.req_id, data = data:sub((i - 1) * CHUNK + 1, i * CHUNK),
-               chunk = i, total = total })
-      end
-    end
-  elseif msg.op == "LIST" then
-    local rows = store.list(msg.prefix or "", 128)
-    local keys = {}
-    for i, r in ipairs(rows) do keys[i] = r.key end
-    send({ magic = cproto.PUB_MAGIC, op = "LIST_RES",
-           keys = keys, req_id = msg.req_id })
-  end
-end
-
-
-
-
-
-
-
-local function collectModems(opts)
-  if opts.modems then return opts.modems end
-  local out = {}
-  if component and component.list then
-    for addr in component.list("modem") do
-      local ok, px = pcall(component.proxy, addr)
-      if ok and px then out[#out + 1] = { address = addr, proxy = px } end
-    end
-  end
-  return out
-end
-
-function storaged.start(opts)
-  opts = opts or {}
-  if _running then return true end
-  net      = opts.net or firstRequire("kernel.net")
-  cproto   = opts.cproto or require("cluster.protocol")
-  protocol = opts.protocol or (net and net.getProtocol and net.getProtocol())
-    or firstRequire("kernel.net.protocol")
-  if not (net and protocol and cproto) then
-    return false, "no_network"
-  end
-
-  storaged.loadConfig(opts.config_path)
-  local sok, serr = store.init({
-    root = _cfg.root, capacity = _cfg.capacity,
-    fs = fs, computer = computer, serialize = serialize, log = log,
-  })
-  if not sok then return false, serr end
-
-  _event = opts.event or event
-  _modems = collectModems(opts)
-  _rawSend = opts.rawSend or function(via, to, port, blob)
-    for _, m in ipairs(_modems) do
-      if m.address == via and m.proxy and m.proxy.send then
-        return pcall(m.proxy.send, to, port, blob)
-      end
-    end
-  end
-
-  --! The ports have to be OPENED. kernel.net opens exactly one (its
-  --! listenPort) and a modem silently discards anything on a port it
-  --! does not hold, so without this the Master's writes (sent to
-  --! write_port) and every Worker's read (sent to read_port) go nowhere
-  --! and nothing says so. A Tier-1 wireless card holds only one open
-  --! port, so opening ours would evict TOS's own: that is a warning to
-  --! put the node on a wired or Tier-2 modem, not something to hide.
-  local opened = 0
-  for _, m in ipairs(_modems) do
-    local a = m.proxy and pcall(m.proxy.open, _cfg.write_port)
-    local b = m.proxy and pcall(m.proxy.open, _cfg.read_port)
-    if a and b then opened = opened + 1
-    else log.warn(LOG_TAG, "modem " .. tostring(m.address):sub(1, 8)
-      .. " could not open ports " .. tostring(_cfg.write_port) .. "/"
-      .. tostring(_cfg.read_port) .. " (a Tier-1 wireless card holds only one)") end
-  end
-  if opened == 0 then
-    log.error(LOG_TAG, "no modem has the storage ports open: nothing can reach this node")
-  end
-
-  if _event and _event.on then
-    _pubListener = _event.on("modem_message", function(_, localAddr, remoteAddr, port, _, data)
-      if port == _cfg.read_port then storaged._onPubMessage(remoteAddr, data, localAddr) end
-    end, "cluster-storaged")
-  end
-
-  local T = protocol.TYPE
-  local bind = {
-    [T.STORE_PUT]          = storaged._onPut,
-    [T.STORE_LEASE_EXTEND] = storaged._onExtend,
-    [T.STORE_RELEASE]      = storaged._onRelease,
-    [T.STORE_LIST]         = storaged._onList,
-  }
-  for kind, fn in pairs(bind) do
-    _handlers[#_handlers + 1] = { kind = kind, id = net.on(kind, fn) }
-  end
-
-  
-  
-  if _event and _event.interval then
-    _timers[#_timers + 1] = _event.interval(_cfg.sweep_interval or 60, function()
-      local n = store.sweep()
-      if n > 0 then log.info(LOG_TAG, "swept " .. n .. " expired key(s)") end
-    end)
-  end
-
-  _running = true
-  log.info(LOG_TAG, string.format("storage node up: root=%s capacity=%d",
-    tostring(_cfg.root), store.capacity()))
-  return true
-end
-
-function storaged.stop()
-  for _, h in ipairs(_handlers) do pcall(net.off, h.kind, h.id) end
-  _handlers = {}
-  for _, t in ipairs(_timers) do
-    if _event and _event.cancel then pcall(_event.cancel, t)
-    elseif _event and _event.cancelTimer then pcall(_event.cancelTimer, t) end
-  end
-  _timers = {}
-  if _pubListener and _event and _event.off then
-    pcall(_event.off, "modem_message", _pubListener)
-  end
-  _pubListener = nil
-  if _cfg then
-    for _, m in ipairs(_modems) do
-      if m.proxy then
-        pcall(m.proxy.close, _cfg.write_port)
-        pcall(m.proxy.close, _cfg.read_port)
-      end
-    end
-  end
-  _modems = {}
-  _running = false
-  store.saveIndex()
-  return true
-end
-
-function storaged.isRunning() return _running end
-function storaged.stats() return store.stats() end
-
-storaged._internal = { DEFAULTS = DEFAULTS, setConfig = function(c) _cfg = c end }
-
-return storaged
+local A={}local D=require("cluster.store")
+local X=require("computer")
+local function J(...)for a=1,select("#",...)do local c,b=pcall(require,(select(a,...)))if
+c and b then return b end end end;local K=J("kernel.fs","filesystem")
+local Y=J("kernel.event","event")local O=J("component")local P=require("kernel.serialize")
+local H=
+J("kernel.log","log")or{info=function()end,warn=function()end,error=function()end}local L="cluster.storaged"local F,E,G;local B,Q,R=nil,{},{}local S=false;local C,M,U,T=nil,{},nil,nil
+local W={root="/var/cluster-store",capacity=0,write_port=2101,read_port=2100,sweep_interval=60,master=
+nil,managers={}}
+function A.loadConfig(a)local b={}for c,d in pairs(W)do b[c]=d end
+a=a or"/etc/cluster-storage.cfg"
+if K and K.exists and K.exists(a)then
+local c=K.readFile and K.readFile(a)
+if c and c~=""then local e,d=pcall(P.decode,c,{maxBytes=8192})if e and
+type(d)=="table"then for f,g in pairs(d)do b[f]=g end else
+H.error(L,"malformed cluster-storage.cfg; using defaults")end end end;B=b;return b end;function A.config()return B end
+function A.writerFor(a)
+if not B then return nil,"not_configured"end
+if B.master and a==B.master then return{role="master"}end;local b=B.managers and B.managers[a]if b then return
+{role="manager",domain_id=tonumber(b),job_assignee={}}end;return nil,
+"unknown_writer"end;local function N(a,b,c)if not(F and E)then return end
+F.send(a,E.makePacket(b,c,{to=a}))end;local function I(a,b,c)
+N(a,E.TYPE.STORE_ERROR,{key=b,reason=c})end
+local function V(a,b)local c,d=A.writerFor(a)if not c then return nil,
+d or"unknown_writer"end;local e,f=G.canWrite(c,b)if not e then return nil,f or
+"namespace_denied"end;return c end
+function A._onPut(b,a)local c=b.payload or{}if type(c.key)~="string"then return
+I(a,nil,"invalid_key: missing")end;local f,e=V(a,c.key)if
+not f then
+H.warn(L,"PUT denied for "..
+tostring(a):sub(1,8)..": "..tostring(e))return I(a,c.key,e)end
+local d,g=D.put(c.key,
+c.data or"",{ttl=tonumber(c.ttl),overwrite=c.overwrite~=false})if not d then return I(a,c.key,g)end
+N(a,E.TYPE.STORE_PUT_ACK,{key=d.key,lease_id=d.lease_id,expires_at=d.expires_at,size_bytes=d.size_bytes})end
+function A._onExtend(b,a)local c=b.payload or{}local e,f=V(a,c.key or"")if not e then
+return I(a,c.key,f)end
+local d,g=D.extend(c.key,c.lease_id,tonumber(c.extend_by))if not d then return I(a,c.key,g)end
+N(a,E.TYPE.STORE_PUT_ACK,{key=d.key,lease_id=c.lease_id,expires_at=d.expires_at})end
+function A._onRelease(b,a)local c=b.payload or{}local d,e=V(a,c.key or"")if not d then
+return I(a,c.key,e)end;local f,g=D.release(c.key,c.lease_id)if not f then return
+I(a,c.key,g)end
+N(a,E.TYPE.STORE_PUT_ACK,{key=c.key,released=true})end
+function A._onList(a,b)local c=a.payload or{}
+local d,e=D.list(c.prefix or"",tonumber(c.limit)or 128)
+N(b,E.TYPE.STORE_LIST_RES,{prefix=c.prefix,keys=d,truncated=e})end
+function A._onPubMessage(b,a,c)if type(a)~="string"or#a>8192 then return end
+local f,d=pcall(P.decode,a,{maxBytes=8192})if not f or type(d)~="table"then return end
+local g=G.validatePubRequest(d)if not g then return end;local function e(h)
+if U then U(c,b,B.read_port,P.encode(h))end end
+if d.op=="GET"then local h,j=D.get(d.key)
+if not h then return
+e({magic=G.PUB_MAGIC,op="RES",key=d.key,req_id=d.req_id,err=j})end;local i=6144
+if#h<=i then
+e({magic=G.PUB_MAGIC,op="RES",key=d.key,req_id=d.req_id,data=h,chunk=1,total=1})else local k=math.ceil(#h/i)for l=1,k do
+e({magic=G.PUB_MAGIC,op="RES",key=d.key,req_id=d.req_id,data=h:sub((l-1)*i+1,l*i),chunk=l,total=k})end end elseif d.op=="LIST"then local i=D.list(d.prefix or"",128)local h={}for j,k in ipairs(i)do
+h[j]=k.key end
+e({magic=G.PUB_MAGIC,op="LIST_RES",keys=h,req_id=d.req_id})end end
+local function Z(a)if a.modems then return a.modems end;local b={}if O and O.list then
+for c in O.list("modem")do
+local e,d=pcall(O.proxy,c)if e and d then b[#b+1]={address=c,proxy=d}end end end;return b end
+function A.start(a)a=a or{}if S then return true end
+F=a.net or J("kernel.net")G=a.cproto or require("cluster.protocol")
+E=
+
+a.protocol or(F and F.getProtocol and F.getProtocol())or J("kernel.net.protocol")
+if not(F and E and G)then return false,"no_network"end;A.loadConfig(a.config_path)
+local d,e=D.init({root=B.root,capacity=B.capacity,fs=K,computer=X,serialize=P,log=H})if not d then return false,e end;C=a.event or Y;M=Z(a)
+U=a.rawSend or function(g,h,i,j)
+for l,k in ipairs(M)do if
+k.address==g and k.proxy and k.proxy.send then
+return pcall(k.proxy.send,h,i,j)end end end;local c=0
+for h,g in ipairs(M)do
+local i=g.proxy and pcall(g.proxy.open,B.write_port)
+local j=g.proxy and pcall(g.proxy.open,B.read_port)
+if i and j then c=c+1 else
+H.warn(L,"modem "..
+tostring(g.address):sub(1,8).." could not open ports "..
+
+tostring(B.write_port).."/"..
+tostring(B.read_port).." (a Tier-1 wireless card holds only one)")end end;if c==0 then
+H.error(L,"no modem has the storage ports open: nothing can reach this node")end;if C and C.on then
+T=C.on("modem_message",function(k,g,h,i,k,j)if
+i==B.read_port then A._onPubMessage(h,j,g)end end,"cluster-storaged")end
+local b=E.TYPE
+local f={[b.STORE_PUT]=A._onPut,[b.STORE_LEASE_EXTEND]=A._onExtend,[b.STORE_RELEASE]=A._onRelease,[b.STORE_LIST]=A._onList}
+for g,h in pairs(f)do R[#R+1]={kind=g,id=F.on(g,h)}end
+if C and C.interval then
+Q[#Q+1]=C.interval(B.sweep_interval or 60,function()local g=D.sweep()if g>0 then
+H.info(L,
+"swept "..g.." expired key(s)")end end)end;S=true
+H.info(L,string.format("storage node up: root=%s capacity=%d",tostring(B.root),D.capacity()))return true end
+function A.stop()for b,a in ipairs(R)do pcall(F.off,a.kind,a.id)end
+R={}
+for b,a in ipairs(Q)do if C and C.cancel then pcall(C.cancel,a)elseif C and C.cancelTimer then
+pcall(C.cancelTimer,a)end end;Q={}
+if T and C and C.off then pcall(C.off,"modem_message",T)end;T=nil;if B then
+for b,a in ipairs(M)do if a.proxy then pcall(a.proxy.close,B.write_port)
+pcall(a.proxy.close,B.read_port)end end end;M={}S=false
+D.saveIndex()return true end;function A.isRunning()return S end;function A.stats()return D.stats()end;A._internal={DEFAULTS=W,setConfig=function(a)
+B=a end}return A

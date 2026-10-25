@@ -1,131 +1,44 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local MARKER   = "/etc/selftest.on"
-local RESULTS  = "/var/selftest.log"
-local DIRS     = { "/usr/lib/selftest" }   
-
-local RED, YELLOW, GREEN, DIM, FG, TITLE = 0xFF5555, 0xFFFF55, 0x55FF55, 0xAAAAAA, 0xFFFFFF, 0x55FFFF
-
-local M = {}
-
-
---! Lenient on purpose, like selftest.readMarker: a typo in the marker
---! must never be what stops a machine from booting.
-function M.parseMarker(body)
-  local cfg = {}
-  for line in tostring(body or ""):gmatch("[^\r\n]+") do
-    local k, v = line:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
-    if k == "shutdown" or k == "screen" then cfg[k] = (v == "true" or v == "1")
-    elseif k == "only" and v ~= "" then cfg[k] = v end
-  end
-  return cfg
-end
-
-
-
-
-function M.markerBody(opts, who)
-  local lines = { "# armed by `selftest arm`" .. (who and (" (" .. who .. ")") or "") }
-  if opts.shutdown then lines[#lines + 1] = "shutdown=true" end
-  if opts.screen then lines[#lines + 1] = "screen=true" end
-  if opts.only then lines[#lines + 1] = "only=" .. opts.only end
-  return table.concat(lines, "\n") .. "\n"
-end
-
-
-local function mountRoots(F)
-  local out, seen = {}, {}
-  local function add(p)
-    if p and p ~= "" and p ~= "/" and not seen[p] then seen[p] = true; out[#out + 1] = p end
-  end
-  if F.mounts then
-    local ok, list = pcall(F.mounts)
-    if ok and type(list) == "table" then
-      for _, m in ipairs(list) do add(m.mountPoint) end
-    end
-  end
-  if F.exists("/mnt") then
-    for _, label in ipairs(F.list("/mnt") or {}) do
-      local clean = tostring(label):gsub("/$", "")
-      if clean ~= "" then add("/mnt/" .. clean) end
-    end
-  end
-  return out
-end
-
-
-function M.discover(F)
-  local roots = {}
-  for _, d in ipairs(DIRS) do roots[#roots + 1] = { dir = d, source = "installed" } end
-  for _, m in ipairs(mountRoots(F)) do
-    
-    
-    if not F.exists(m .. "/selftest/package.lua") then
-      roots[#roots + 1] = { dir = m .. "/selftest", source = "disk " .. m }
-    end
-    
-    if F.exists(m .. "/selftest.on") then
-      roots[#roots + 1] = { dir = m, source = "disk " .. m }
-    end
-  end
-  local out = {}
-  for _, r in ipairs(roots) do
-    if F.exists(r.dir) then
-      for _, entry in ipairs(F.list(r.dir) or {}) do
-        local name = tostring(entry):gsub("/$", "")
-        if name:match("%.lua$") then
-          out[#out + 1] = { path = r.dir .. "/" .. name, name = name, source = r.source }
-        end
-      end
-    end
-  end
-  table.sort(out, function(a, b) return a.path < b.path end)
-  return out
-end
-
-
-
-
-
-
-
-
-
-
-function M.summarise(body)
-  local s = { fails = {}, skips = {}, notes = {} }
-  for line in tostring(body or ""):gmatch("[^\r\n]+") do
-    if line:match("^SELFTEST BEGIN") then s.begin = line
-    elseif line:match("^SELFTEST END") then s.finish = line
-    elseif line:match("^RUN%s") then s.lastRun = line:match("^RUN%s+(.-)%s*$")
-    elseif line:match("^FAIL%s") or line:match("^  %- ") then s.fails[#s.fails + 1] = line
-    elseif line:match("^  ~ ") then s.skips[#s.skips + 1] = line
-    elseif line:match("^  i ") then s.notes[#s.notes + 1] = line end
-  end
-  if not s.begin then s.state = "none"
-  elseif s.finish then s.state = (#s.fails > 0) and "failed" or "passed"
-  else s.state = "stalled" end
-  return s
-end
-
-
-local TEMPLATE = [[
+local D,E,F="[^\r\n]+","passed","stalled"local v="/etc/selftest.on"
+local w="/var/selftest.log"local G={"/usr/lib/selftest"}
+local u,z,x,s,y,H=0xFF5555,0xFFFF55,0x55FF55,0xAAAAAA,0xFFFFFF,0x55FFFF;local t={}
+function t.parseMarker(a)local b={}
+for c in tostring(a or""):gmatch(D)do
+local d,e=c:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+if d=="shutdown"or d=="screen"then
+b[d]=(e=="true"or e=="1")elseif d=="only"and e~=""then b[d]=e end end;return b end
+function t.markerBody(a,b)
+local c={"# armed by `selftest arm`".. (b and(" ("..b..")")or"")}if a.shutdown then c[#c+1]="shutdown=true"end;if a.screen then
+c[#c+1]="screen=true"end
+if a.only then c[#c+1]="only="..a.only end;return table.concat(c,"\n").."\n"end
+local function I(a)local b,c={},{}
+local function d(e)if e and e~=""and e~="/"and not c[e]then c[e]=true
+b[#b+1]=e end end
+if a.mounts then local f,e=pcall(a.mounts)if f and type(e)=="table"then for h,g in ipairs(e)do
+d(g.mountPoint)end end end;if a.exists("/mnt")then
+for f,e in ipairs(a.list("/mnt")or{})do
+local g=tostring(e):gsub("/$","")if g~=""then d("/mnt/"..g)end end end;return b end
+function t.discover(a)local b={}
+for f,e in ipairs(G)do b[#b+1]={dir=e,source="installed"}end
+for e,d in ipairs(I(a))do
+if
+not a.exists(d.."/selftest/package.lua")then b[#b+1]={dir=d.."/selftest",source="disk "..d}end;if a.exists(d.."/selftest.on")then
+b[#b+1]={dir=d,source="disk "..d}end end;local c={}
+for e,d in ipairs(b)do
+if a.exists(d.dir)then
+for e,f in ipairs(a.list(d.dir)or{})do
+local g=tostring(f):gsub("/$","")if g:match("%.lua$")then
+c[#c+1]={path=d.dir.."/"..g,name=g,source=d.source}end end end end
+table.sort(c,function(d,e)return d.path<e.path end)return c end
+function t.summarise(a)local b={fails={},skips={},notes={}}
+for c in
+tostring(a or""):gmatch(D)do
+if c:match("^SELFTEST BEGIN")then b.begin=c elseif c:match("^SELFTEST END")then b.finish=c elseif
+c:match("^RUN%s")then b.lastRun=c:match("^RUN%s+(.-)%s*$")elseif c:match("^FAIL%s")or
+c:match("^  %- ")then b.fails[#b.fails+1]=c elseif c:match("^  ~ ")then b.skips[
+#b.skips+1]=c elseif c:match("^  i ")then
+b.notes[#b.notes+1]=c end end;if not b.begin then b.state="none"elseif b.finish then
+b.state=(#b.fails>0)and"failed"or E else b.state=F end;return b end
+local B=[[
 -- What this checks, and why only a real machine can answer it.
 --
 -- A check is a file that returns one function. The battery calls it with
@@ -145,133 +58,72 @@ return function(t)
   t.ok("the machine has memory to spare", computer.freeMemory() > 0)
 end
 ]]
-
-local function usage(o)
-  o("selftest -- the boot self-test battery", TITLE)
-  o("  selftest [status]            armed?  what will run?  how did the last run go?", DIM)
-  o("  selftest arm [shutdown] [screen] [only=<prefix>]   run it at the next boot (root)", DIM)
-  o("  selftest disarm              stop running it at boot (root)", DIM)
-  o("  selftest list                every check an armed boot would run, and where from", DIM)
-  o("  selftest log [all]           the last run: failures, skips, notes (all: every line)", DIM)
-  o("  selftest template [file]     a starting point for a check of your own", DIM)
-end
-
-local function readOr(F, path)
-  if not F.exists(path) then return nil end
-  local ok, body = pcall(F.readFile, path)
-  return ok and body or nil
-end
-
-local function status(F, o)
-  local armedBody = readOr(F, MARKER)
-  if F.exists(MARKER) then
-    local cfg = M.parseMarker(armedBody)
-    local opts = {}
-    if cfg.shutdown then opts[#opts + 1] = "powers off after" end
-    if cfg.screen then opts[#opts + 1] = "screen checks on" end
-    if cfg.only then opts[#opts + 1] = "only " .. cfg.only .. "*" end
-    o("ARMED: the battery runs at the next boot" .. (#opts > 0 and (" (" .. table.concat(opts, ", ") .. ")") or ""), YELLOW)
-  else
-    o("Not armed: boots run normally.  (selftest arm, as root)", DIM)
-  end
-  local checks = M.discover(F)
-  o(string.format("%d check(s) found.  (selftest list)", #checks), FG)
-  local s = M.summarise(readOr(F, RESULTS))
-  if s.state == "none" then
-    o("No run recorded in " .. RESULTS .. ".", DIM)
-  else
-    if s.begin then o("Last run: " .. s.begin:gsub("^SELFTEST BEGIN%s*", ""), DIM) end
-    if s.state == "stalled" then
-      o("STALLED in " .. tostring(s.lastRun or "?") .. " -- the run never finished.", RED)
-    else
-      o(s.finish:gsub("^SELFTEST END%s*", "Result: "), s.state == "passed" and GREEN or RED)
-    end
-  end
-end
-
-function M.run(args, o, F)
-  o = o or print
-  F = F or fs
-  if type(F) ~= "table" then o("selftest needs the fs capability", RED); return end
-  local sub = args[1] or "status"
-
-  if sub == "status" then
-    status(F, o)
-
-  elseif sub == "arm" then
-    local opts = {}
-    for i = 2, #args do
-      local a = tostring(args[i])
-      if a == "shutdown" or a == "--shutdown" then opts.shutdown = true
-      elseif a == "screen" or a == "--screen" then opts.screen = true
-      elseif a:match("^%-?%-?only=") then opts.only = a:gsub("^%-?%-?only=", "")
-      else o("selftest arm: unknown option '" .. a .. "' -- nothing was changed.", RED); usage(o); return end
-    end
-    local okW, err = F.writeFile(MARKER, M.markerBody(opts))
-    if not okW then
-      o("Not armed: " .. tostring(err or "write refused"), RED)
-      o("Arming runs code inside the kernel at the next boot, so only root may do it.", DIM)
-      return
-    end
-    o("Armed. The battery runs at the next boot and writes " .. RESULTS .. ".", GREEN)
-    if opts.shutdown then o("The machine powers itself off when the run finishes.", YELLOW) end
-    o("Disarm with:  selftest disarm", DIM)
-
-  elseif sub == "disarm" then
-    if not F.exists(MARKER) then o("Not armed.", DIM); return end
-    local okR, err = F.remove(MARKER)
-    if not okR then o("Still armed: " .. tostring(err or "remove refused"), RED); return end
-    o("Disarmed. Boots run normally.", GREEN)
-
-  elseif sub == "list" then
-    local checks = M.discover(F)
-    if #checks == 0 then
-      o("No checks found. Install them with `pkg install selftest`, or insert a test", DIM)
-      o("disk carrying a selftest/ folder.", DIM)
-      return
-    end
-    local only = M.parseMarker(readOr(F, MARKER)).only
-    for _, c in ipairs(checks) do
-      local skipped = only and c.name:sub(1, #only) ~= only
-      o(string.format("  %-24s %s%s", c.name, c.source, skipped and "  (not run: only=" .. only .. ")" or ""),
-        skipped and DIM or FG)
-    end
-
-  elseif sub == "log" then
-    local body = readOr(F, RESULTS)
-    if not body or body == "" then o("No run recorded in " .. RESULTS .. ".", DIM); return end
-    if args[2] == "all" then
-      for line in body:gmatch("[^\r\n]+") do
-        o(line, (line:match("^FAIL") or line:match("^  %- ")) and RED
-          or line:match("^  ~ ") and YELLOW or FG)
-      end
-      return
-    end
-    local s = M.summarise(body)
-    if s.begin then o(s.begin, DIM) end
-    for _, l in ipairs(s.fails) do o(l, RED) end
-    for _, l in ipairs(s.skips) do o(l, YELLOW) end
-    for _, l in ipairs(s.notes) do o(l, FG) end
-    if s.state == "stalled" then
-      o("STALLED in " .. tostring(s.lastRun or "?") .. " -- no SELFTEST END line.", RED)
-    elseif s.finish then
-      o(s.finish, s.state == "passed" and GREEN or RED)
-    end
-
-  elseif sub == "template" then
-    if args[2] then
-      local okW, err = F.writeFile(args[2], TEMPLATE)
-      if not okW then o("Could not write " .. args[2] .. ": " .. tostring(err), RED); return end
-      o("Wrote " .. args[2] .. ". Put it in a test disk's selftest/ folder, or ship it in", GREEN)
-      o("a package that installs it under /usr/lib/selftest/ (a root install).", DIM)
-    else
-      for line in TEMPLATE:gmatch("([^\n]*)\n") do o(line, FG) end
-    end
-
-  else
-    usage(o)
-  end
-end
-
-M.TEMPLATE = TEMPLATE
-return { commands = { selftest = function(args, o) return M.run(args or {}, o) end }, lib = M }
+local function C(a)a("selftest -- the boot self-test battery",H)
+a("  selftest [status]            armed?  what will run?  how did the last run go?",s)
+a("  selftest arm [shutdown] [screen] [only=<prefix>]   run it at the next boot (root)",s)
+a("  selftest disarm              stop running it at boot (root)",s)
+a("  selftest list                every check an armed boot would run, and where from",s)
+a("  selftest log [all]           the last run: failures, skips, notes (all: every line)",s)
+a("  selftest template [file]     a starting point for a check of your own",s)end
+local function A(a,b)if not a.exists(b)then return nil end
+local c,d=pcall(a.readFile,b)return c and d or nil end
+local function J(b,a)local d=A(b,v)
+if b.exists(v)then local g=t.parseMarker(d)local f={}if g.shutdown then
+f[#f+1]="powers off after"end
+if g.screen then f[#f+1]="screen checks on"end;if g.only then f[#f+1]="only "..g.only.."*"end
+a(
+"ARMED: the battery runs at the next boot".. (
+#f>0 and(" ("..table.concat(f,", ")..")")or""),z)else
+a("Not armed: boots run normally.  (selftest arm, as root)",s)end;local e=t.discover(b)
+a(string.format("%d check(s) found.  (selftest list)",#e),y)local c=t.summarise(A(b,w))
+if c.state=="none"then
+a("No run recorded in "..w..".",s)else if c.begin then
+a("Last run: "..c.begin:gsub("^SELFTEST BEGIN%s*",""),s)end
+if c.state==F then
+a("STALLED in "..
+tostring(c.lastRun or"?").." -- the run never finished.",u)else
+a(c.finish:gsub("^SELFTEST END%s*","Result: "),c.state==E and x or u)end end end
+function t.run(c,a,b)a=a or print;b=b or fs;if type(b)~="table"then
+a("selftest needs the fs capability",u)return end;local d=c[1]or"status"
+if d=="status"then
+J(b,a)elseif d=="arm"then local e={}
+for h=2,#c do local i=tostring(c[h])
+if
+i=="shutdown"or i=="--shutdown"then e.shutdown=true elseif i=="screen"or i=="--screen"then e.screen=true elseif
+i:match("^%-?%-?only=")then e.only=i:gsub("^%-?%-?only=","")else
+a("selftest arm: unknown option '"..
+i.."' -- nothing was changed.",u)C(a)return end end;local f,g=b.writeFile(v,t.markerBody(e))
+if not f then
+a("Not armed: "..tostring(g or
+"write refused"),u)
+a("Arming runs code inside the kernel at the next boot, so only root may do it.",s)return end
+a("Armed. The battery runs at the next boot and writes "..w..".",x)if e.shutdown then
+a("The machine powers itself off when the run finishes.",z)end
+a("Disarm with:  selftest disarm",s)elseif d=="disarm"then
+if not b.exists(v)then a("Not armed.",s)return end;local e,f=b.remove(v)if not e then
+a("Still armed: "..tostring(f or"remove refused"),u)return end
+a("Disarmed. Boots run normally.",x)elseif d=="list"then local f=t.discover(b)
+if#f==0 then
+a("No checks found. Install them with `pkg install selftest`, or insert a test",s)a("disk carrying a selftest/ folder.",s)return end;local e=t.parseMarker(A(b,v)).only
+for h,g in ipairs(f)do local i=e and
+g.name:sub(1,#e)~=e
+a(string.format("  %-24s %s%s",g.name,g.source,i and"  (not run: only="..e..
+")"or""),
+i and s or y)end elseif d=="log"then local f=A(b,w)if not f or f==""then
+a("No run recorded in "..w..".",s)return end
+if c[2]=="all"then for g in f:gmatch(D)do
+a(g,(g:match("^FAIL")or
+g:match("^  %- "))and u or
+g:match("^  ~ ")and z or y)end;return end;local e=t.summarise(f)if e.begin then a(e.begin,s)end;for h,g in
+ipairs(e.fails)do a(g,u)end;for h,g in ipairs(e.skips)do a(g,z)end;for h,g in
+ipairs(e.notes)do a(g,y)end
+if e.state==F then
+a("STALLED in "..tostring(e.lastRun or"?")..
+" -- no SELFTEST END line.",u)elseif e.finish then a(e.finish,e.state==E and x or u)end elseif d=="template"then
+if c[2]then local e,f=b.writeFile(c[2],B)if not e then
+a("Could not write "..c[2]..": "..
+tostring(f),u)return end
+a("Wrote "..c[2]..
+". Put it in a test disk's selftest/ folder, or ship it in",x)
+a("a package that installs it under /usr/lib/selftest/ (a root install).",s)else for e in B:gmatch("([^\n]*)\n")do a(e,y)end end else C(a)end end;t.TEMPLATE=B;return
+{commands={selftest=function(a,b)return t.run(a or{},b)end},lib=t}

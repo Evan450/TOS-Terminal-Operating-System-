@@ -1,84 +1,37 @@
+local b="function"
+return
+function(a)local h,c=pcall(require,"kernel.process")
+if not h or type(c)~=
+"table"or type(c.inProcess)~=b then return
+a.skip("inprocess callers","kernel.process unavailable")end
+a.note("kernel context: isyieldable="..
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-return function(t)
-  local okP, proc = pcall(require, "kernel.process")
-  if not okP or type(proc) ~= "table" or type(proc.inProcess) ~= "function" then
-    return t.skip("inprocess callers", "kernel.process unavailable")
-  end
-  t.note("kernel context: isyieldable=" .. tostring(coroutine.isyieldable and coroutine.isyieldable())
-    .. " inProcess=" .. tostring(proc.inProcess()))
-
-  
-  local okPi, pipe = pcall(require, "kernel.pipe")
-  if okPi and type(pipe) == "table" and type(pipe.create) == "function" then
-    local r = pipe.create()
-    local t0 = computer.uptime()
-    local okR, v = pcall(r.read, r)
-    t.ok(string.format("an empty pipe read in kernel context returns nil (%.2f s)",
-      computer.uptime() - t0), okR and v == nil and computer.uptime() - t0 < 1)
-  else
-    t.skip("pipe read", "kernel.pipe unavailable")
-  end
-
-  
-  
-  local okE, event = pcall(require, "kernel.event")
-  if okE and type(event) == "table" and type(event.on) == "function" then
-    local NAME = "selftest_inprocess_probe"
-    local got = false
-    local id = event.on(NAME, function() got = true end, "selftest")
-    computer.pushSignal(NAME)
-    local t0 = computer.uptime()
-    local okS, err = pcall(proc.sleep, 0.3)
-    local dt = computer.uptime() - t0
-    event.off(NAME, id)
-    t.ok(string.format("proc.sleep(0.3) in kernel context takes about 0.3 s (%.2f s%s)",
-      dt, okS and "" or (", raised: " .. tostring(err))), okS and dt >= 0.25 and dt < 2)
-    t.ok("...and the signal pushed during it reached its listener", got)
-  else
-    t.skip("proc.sleep", "kernel.event unavailable")
-  end
-
-  
-  local t0 = computer.uptime()
-  local okY = pcall(proc.yield)
-  t.ok(string.format("proc.yield in kernel context returns at once (%.2f s)",
-    computer.uptime() - t0), okY and computer.uptime() - t0 < 1)
-
-  
-  local okB, sandbox = pcall(require, "kernel.sandbox")
-  if okB and type(sandbox) == "table" and type(sandbox.build) == "function" then
-    
-    local okEnv, env = pcall(sandbox.build, { caps = { component = true } })
-    local pull = okEnv and type(env) == "table" and env.computer and env.computer.pullSignal
-    if type(pull) == "function" then
-      local t1 = computer.uptime()
-      local okQ = pcall(pull, 0.2)
-      local dq = computer.uptime() - t1
-      t.ok(string.format("a sandbox pullSignal(0.2) in kernel context returns on time (%.2f s)", dq),
-        okQ and dq < 2)
-    else
-      t.skip("sandbox pullSignal", "sandbox env has no computer.pullSignal")
-    end
-  else
-    t.skip("sandbox pullSignal", "kernel.sandbox unavailable")
-  end
-end
+tostring(coroutine.isyieldable and coroutine.isyieldable()).." inProcess="..tostring(c.inProcess()))local i,e=pcall(require,"kernel.pipe")
+if i and type(e)=="table"and
+type(e.create)==b then local m=e.create()
+local n=computer.uptime()local o,p=pcall(m.read,m)
+a.ok(string.format("an empty pipe read in kernel context returns nil (%.2f s)",
+computer.uptime()-n),o and p==nil and
+computer.uptime()-n<1)else a.skip("pipe read","kernel.pipe unavailable")end;local j,d=pcall(require,"kernel.event")
+if
+j and type(d)=="table"and type(d.on)==b then local m="selftest_inprocess_probe"
+local o=false;local q=d.on(m,function()o=true end,"selftest")
+computer.pushSignal(m)local r=computer.uptime()local p,s=pcall(c.sleep,0.3)local n=
+computer.uptime()-r;d.off(m,q)
+a.ok(string.format("proc.sleep(0.3) in kernel context takes about 0.3 s (%.2f s%s)",n,
+p and""or(", raised: "..tostring(s))),
+p and n>=0.25 and n<2)
+a.ok("...and the signal pushed during it reached its listener",o)else a.skip("proc.sleep","kernel.event unavailable")end;local g=computer.uptime()local k=pcall(c.yield)
+a.ok(string.format("proc.yield in kernel context returns at once (%.2f s)",
+computer.uptime()-g),k and
+computer.uptime()-g<1)local l,f=pcall(require,"kernel.sandbox")
+if
+l and type(f)=="table"and type(f.build)==b then
+local o,m=pcall(f.build,{caps={component=true}})
+local n=o and type(m)=="table"and m.computer and m.computer.pullSignal
+if type(n)==b then local q=computer.uptime()local r=pcall(n,0.2)local p=
+computer.uptime()-q
+a.ok(string.format("a sandbox pullSignal(0.2) in kernel context returns on time (%.2f s)",p),
+r and p<2)else
+a.skip("sandbox pullSignal","sandbox env has no computer.pullSignal")end else
+a.skip("sandbox pullSignal","kernel.sandbox unavailable")end end

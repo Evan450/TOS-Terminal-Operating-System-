@@ -1,556 +1,154 @@
-
-
-
-
-
-
-
-
-
-
-
-
-local state     = require("cluster.state")
-local scheduler = require("cluster.scheduler")
-local jobs      = require("cluster.jobs")
-local netmod    = require("cluster.net")
-local api       = require("cluster.api")
-
-
-
-local pair      = require("cluster.pair")
-local storecli  = require("cluster.store_client")
-
-
-
-
-
-
-
-
-local function firstRequire(...)
-  for i = 1, select("#", ...) do
-    local ok, mod = pcall(require, (select(i, ...)))
-    if ok and mod then return mod end
-  end
-end
-local event    = firstRequire("kernel.event", "event")
-local fs       = firstRequire("kernel.fs", "filesystem")
-local computer = require("computer")
-
-
-
-
-local log
+local ag,ah,ai,ab="active","degraded","draining","offline"
+local G=require("cluster.state")local ac=require("cluster.scheduler")
+local M=require("cluster.jobs")local N=require("cluster.net")local ad=require("cluster.api")
+local O=require("cluster.pair")local R=require("cluster.store_client")
+local function Z(...)for a=1,select("#",...)do
+local c,b=pcall(require,(select(a,...)))if c and b then return b end end end;local P=Z("kernel.event","event")
+local L=Z("kernel.fs","filesystem")local _=require("computer")local J
+do local a=Z("kernel.log","log")
+if
+a and a.info then J=a else local function b(c,d,e)
+if io and io.stderr then io.stderr:write("["..
+c.."]["..d.."] "..e.."\n")end end
+J={info=function(c,d)b("I",c,d)end,warn=function(c,d)
+b("W",c,d)end,error=function(c,d)b("E",c,d)end}end end;local K="clusterd"local H={}local Q=false;local S;local T;local U;local aa={}local V="/etc/cluster-master.cfg"
+local W="/var/cluster/state.dat"local X="/var/cluster/status.dat"
+local ae={host_thread_budget=4,heartbeat_interval=5,heartbeat_degraded_after=15,heartbeat_offline_after=30,scheduler_tick_interval=1,status_snapshot_interval=2,heartbeat_sweep_interval=5,encryption={plaintext_types={}},storage_node_address=nil,cluster_protocol="1.0",min_supported_protocol="1.0"}local I;H._cfg=nil
+local function Y(a)local b={}for c,d in pairs(ae)do b[c]=d end;if type(a)=="table"then for c,d in pairs(a)do
+b[c]=d end end
+if type(a)=="table"and
+type(a.encryption)=="table"then b.encryption={}for c,d in
+pairs(ae.encryption)do b.encryption[c]=d end;for c,d in pairs(a.encryption)do
+b.encryption[c]=d end end;return b end
+local function aj()if not L.exists or not L.exists(V)then J.info(K,"no config at "..
+V.."; using defaults")
+return Y(nil)end
+local b=L.readFile and L.readFile(V)local c,d=b and load(b,"="..V,"t")if not c then
+J.error(K,"config load failed: "..
+tostring(d).."; falling back to defaults")return Y(nil)end
+local e,a=pcall(c)
+if not e or type(a)~="table"then
+J.error(K,"config did not return a table: "..tostring(a)..
+"; falling back to defaults")return Y(nil)end;return Y(a)end
+local function af()local a=W:match("(.+)/[^/]+$")if not a then return end
+if L.exists and
+not L.exists(a)then if L.makeDirectory then local b,c=pcall(L.makeDirectory,a)
+if not b then J.warn(K,
+"mkdir failed: "..tostring(c))end end end end
+function H.start()if Q then return true end;J.info(K,"starting")I=aj()H._cfg=I;af()
+G.init(W)local a,b=G.load(W)if not a then
+J.error(K,"state load failed: "..tostring(b))end;if
+I.storage_node_address and not G._data.storage_node then
+G.setStorageNode({address=I.storage_node_address})end
 do
-  local mod = firstRequire("kernel.log", "log")
-  if mod and mod.info then log = mod else
-    local function emit(lvl, tag, m)
-      if io and io.stderr then
-        io.stderr:write("[" .. lvl .. "][" .. tag .. "] " .. m .. "\n")
-      end
-    end
-    log = {
-      info  = function(tag, m) emit("I", tag, m) end,
-      warn  = function(tag, m) emit("W", tag, m) end,
-      error = function(tag, m) emit("E", tag, m) end,
-    }
-  end
-end
-local LOG_TAG = "clusterd"
-
-local clusterd = {}
-
-
-
-
-
-local _running = false
-local _timer_heartbeat_sweep  
-local _timer_state_snapshot   
-local _timer_scheduler_tick   
-local _net_listeners = {}     
-
-
-
-
-
-local CONFIG_PATH   = "/etc/cluster-master.cfg"
-local STATE_PATH    = "/var/cluster/state.dat"
-local STATUS_PATH   = "/var/cluster/status.dat"
-
-local DEFAULT_CFG = {
-  host_thread_budget       = 4,
-  heartbeat_interval       = 5,
-  heartbeat_degraded_after = 15,
-  heartbeat_offline_after  = 30,
-  scheduler_tick_interval  = 1,
-  status_snapshot_interval = 2,
-  heartbeat_sweep_interval = 5,
-  encryption               = { plaintext_types = {} },
-  storage_node_address     = nil,
-  cluster_protocol         = "1.0",
-  min_supported_protocol   = "1.0",
-}
-
-local cfg  
-clusterd._cfg = nil  
-
-local function _mergeDefaults(loaded)
-  local out = {}
-  for k, v in pairs(DEFAULT_CFG) do out[k] = v end
-  if type(loaded) == "table" then
-    for k, v in pairs(loaded) do out[k] = v end
-  end
-  
-  
-  if type(loaded) == "table" and type(loaded.encryption) == "table" then
-    out.encryption = {}
-    for k, v in pairs(DEFAULT_CFG.encryption) do out.encryption[k] = v end
-    for k, v in pairs(loaded.encryption) do out.encryption[k] = v end
-  end
-  return out
-end
-
-local function loadConfig()
-  if not fs.exists or not fs.exists(CONFIG_PATH) then
-    log.info(LOG_TAG, "no config at " .. CONFIG_PATH .. "; using defaults")
-    return _mergeDefaults(nil)
-  end
-  
-  
-  local src = fs.readFile and fs.readFile(CONFIG_PATH)
-  local chunk, err = src and load(src, "=" .. CONFIG_PATH, "t")
-  if not chunk then
-    log.error(LOG_TAG, "config load failed: " .. tostring(err) ..
-                       "; falling back to defaults")
-    return _mergeDefaults(nil)
-  end
-  local ok, result = pcall(chunk)
-  if not ok or type(result) ~= "table" then
-    log.error(LOG_TAG, "config did not return a table: " .. tostring(result) ..
-                       "; falling back to defaults")
-    return _mergeDefaults(nil)
-  end
-  return _mergeDefaults(result)
-end
-
-
-
-
-
-local function _ensureStateDir()
-  local dir = STATE_PATH:match("(.+)/[^/]+$")
-  if not dir then return end
-  if fs.exists and not fs.exists(dir) then
-    if fs.makeDirectory then
-      local ok, err = pcall(fs.makeDirectory, dir)
-      if not ok then log.warn(LOG_TAG, "mkdir failed: " .. tostring(err)) end
-    end
-  end
-end
-
-
-
-
-
-function clusterd.start()
-  if _running then return true end
-  log.info(LOG_TAG, "starting")
-
-  cfg = loadConfig()
-  clusterd._cfg = cfg
-
-  _ensureStateDir()
-
-  
-  state.init(STATE_PATH)
-  local ok, lerr = state.load(STATE_PATH)
-  if not ok then
-    log.error(LOG_TAG, "state load failed: " .. tostring(lerr))
-    
-  end
-
-  
-  if cfg.storage_node_address and not state._data.storage_node then
-    state.setStorageNode({ address = cfg.storage_node_address })
-  end
-
-  
-  
-  
-  
-  
-  do
-    local okSer, ser = pcall(require, "kernel.serialize")
-    
-    
-    
-    
-    storecli.init({ state = state, serialize = okSer and ser or nil, log = log })
-    jobs.setStore(storecli, okSer and ser or nil)
-    if storecli.available() then
-      log.info(LOG_TAG, "public storage: " .. tostring(storecli.address()):sub(1, 8))
-    else
-      log.info(LOG_TAG, "public storage: none configured (assignments stay inline)")
-    end
-  end
-
-  
-  
-  do
-    local okT, trustMod = pcall(require, "kernel.net.trust")
-    if okT then pair.init({ trust = trustMod }) end
-  end
-
-  
-  
-  _net_listeners = netmod.register({
-    onRegister     = function(p, from) clusterd._onRegister(p, from)     end,
-    onHeartbeat    = function(p, from) clusterd._onHeartbeat(p, from)    end,
-    onResult       = function(p, from) clusterd._onResult(p, from)       end,
-    onResultChunk  = function(p, from) clusterd._onResultChunk(p, from)  end,
-    onAssignAck    = function(p, from) clusterd._onAssignAck(p, from)    end,
-    onStatusRes    = function(p, from) clusterd._onStatusRes(p, from)    end,
-    onRelayFail    = function(p, from) clusterd._onRelayFail(p, from)    end,
-    onPairInit     = function(p, from) pair.onPairInit(p, from)          end,
-  })
-
-  
-  
-  _timer_heartbeat_sweep = event.interval(
-    cfg.heartbeat_sweep_interval,
-    function() clusterd._onHeartbeatSweep() end,
-    "clusterd.hbsweep")
-  _timer_scheduler_tick  = event.interval(
-    cfg.scheduler_tick_interval,
-    function() clusterd._onSchedulerTick() end,
-    "clusterd.sched")
-  _timer_state_snapshot  = event.interval(
-    cfg.status_snapshot_interval,
-    function() clusterd._onStatusSnapshot() end,
-    "clusterd.status")
-
-  
-  api.bind(state, scheduler, jobs, clusterd)
-
-  _running = true
-  log.info(LOG_TAG, "started")
-  return true
-end
-
-function clusterd.stop()
-  if not _running then return true end
-  log.info(LOG_TAG, "stopping")
-
-  if _timer_heartbeat_sweep then event.cancelTimer(_timer_heartbeat_sweep); _timer_heartbeat_sweep = nil end
-  if _timer_scheduler_tick  then event.cancelTimer(_timer_scheduler_tick);  _timer_scheduler_tick  = nil end
-  if _timer_state_snapshot  then event.cancelTimer(_timer_state_snapshot);  _timer_state_snapshot  = nil end
-
-  netmod.unregister(_net_listeners)
-  _net_listeners = {}
-
-  local ok, err = pcall(state.save, STATE_PATH)
-  if not ok then log.error(LOG_TAG, "final save failed: " .. tostring(err)) end
-
-  api.unbind()
-  clusterd._cfg = nil
-
-  _running = false
-  log.info(LOG_TAG, "stopped")
-  return true
-end
-
-function clusterd.isRunning() return _running end
-function clusterd.getConfig() return cfg end
-
-
-
-
-function clusterd.startPairing()    return pair.startWindow()           end
-function clusterd.closePairing()    return pair.closeWindow()           end
-function clusterd.pairingInfo()     return pair.windowInfo()            end
-function clusterd.pairingOpen()     return pair.windowOpen()            end
-
-
-
-
-
-function clusterd._onHeartbeatSweep()
-  if not cfg then return end
-  local now = computer.uptime()
-  for addr, m in pairs(state._data.managers) do
-    local since = now - (m.last_heartbeat or now)
-    local prev  = m.state
-
-    if since > cfg.heartbeat_offline_after and prev ~= "offline" then
-      state.setManagerState(addr, "offline")
-      
-      pcall(jobs.onManagerOffline, m.domain_id, state)
-    elseif since > cfg.heartbeat_degraded_after and prev == "active" then
-      state.setManagerState(addr, "degraded")
-    elseif since <= cfg.heartbeat_degraded_after and prev == "degraded" then
-      state.setManagerState(addr, "active")
-    end
-
-    
-    if prev == "draining" then
-      local any = false
-      for _, j in pairs(state._data.jobs) do
-        for _, a in pairs(j.assignments) do
-          if a.state == "running" and a.assigned_to == addr then
-            any = true; break
-          end
-        end
-        if any then break end
-      end
-      if not any then
-        state.setManagerState(addr, "offline")
-      end
-    end
-  end
-end
-
-function clusterd._onSchedulerTick()
-  if not cfg then return end
-  local now = computer.uptime()
-
-  
-  local pending = jobs.pendingAssignments(state)
-  local ctx = {
-    compute_bound_in_flight = state.computeBoundInFlight(),
-    host_thread_budget      = cfg.host_thread_budget,
-    uptime                  = now,
-  }
-  for _, a in ipairs(pending) do
-    
-    
-    ctx.compute_bound_in_flight = state.computeBoundInFlight()
-    local addr, reason = scheduler.pickDomain(a, state._data.managers, ctx)
-    if addr then
-      local ok_d, derr = jobs.dispatch(a, addr, state, netmod)
-      if not ok_d then
-        log.warn(LOG_TAG, string.format("dispatch %d failed: %s",
-          a.assignment_id or -1, tostring(derr)))
-      end
-    elseif reason and reason ~= "thread_budget_saturated" then
-      
-      
-    end
-  end
-
-  
-  for _, job in pairs(state._data.jobs) do
-    for aid, a in pairs(job.assignments) do
-      if a.state == "running" and a.deadline and a.deadline > 0 then
-        
-        
-        
-        if now > a.deadline then
-          pcall(jobs.onAssignmentTimeout, aid, state, netmod)
-        end
-      end
-    end
-  end
-end
-
-function clusterd._onStatusSnapshot()
-  
-  
-  
-  local snap = {
-    time              = computer.uptime(),
-    managers          = { active = 0, degraded = 0, draining = 0, offline = 0 },
-    jobs              = { pending = 0, running = 0, done = 0, failed = 0, cancelled = 0 },
-    storage           = nil,
-    host_thread_budget      = cfg and cfg.host_thread_budget or nil,
-    compute_bound_in_flight = state.computeBoundInFlight(),
-    recent_events     = state.recentEvents(10),
-  }
-  for _, m in pairs(state._data.managers) do
-    local s = m.state or "offline"
-    snap.managers[s] = (snap.managers[s] or 0) + 1
-  end
-  for _, j in pairs(state._data.jobs) do
-    local s = j.state or "pending"
-    snap.jobs[s] = (snap.jobs[s] or 0) + 1
-  end
-  if state._data.storage_node then
-    local sn = state._data.storage_node
-    snap.storage = {
-      address        = sn.address,
-      capacity_bytes = sn.capacity,
-      used_bytes     = sn.used,
-      last_seen      = sn.last_seen,
-    }
-  end
-
-  
-  local serialize = require("kernel.serialize")
-  local blob = serialize.encode(snap)
-  local tmp  = STATUS_PATH .. ".tmp"
-
-  _ensureStateDir()
-  local ok, err
-  if fs.writeFile then
-    ok, err = fs.writeFile(tmp, blob)
-  else
-    local h
-    h, err = fs.open(tmp, "w")
-    if h then h:write(blob); h:close(); ok = true end
-  end
-  if not ok then
-    log.warn(LOG_TAG, "status snapshot tmp write failed: " .. tostring(err))
-    return
-  end
-  if fs.exists and fs.exists(STATUS_PATH) and fs.remove then
-    pcall(fs.remove, STATUS_PATH)
-  end
-  if fs.rename then
-    local rok = pcall(fs.rename, tmp, STATUS_PATH)
-    if not rok then
-      log.warn(LOG_TAG, "status snapshot rename failed")
-    end
-  end
-end
-
-
-
-
-
-
-
-local function _versionCompatible(manager_ver)
-  local min = cfg and cfg.min_supported_protocol or "1.0"
-  local function split(v)
-    local a, b = tostring(v or ""):match("^(%d+)%.(%d+)$")
-    return tonumber(a), tonumber(b)
-  end
-  local mmaj, mmin = split(manager_ver)
-  local rmaj, rmin = split(min)
-  if not mmaj or not mmin then return false, "version_malformed" end
-  if not rmaj then return true end
-  if mmaj ~= rmaj then return false, "version_mismatch" end
-  if mmin < rmin then return false, "version_mismatch" end
-  return true
-end
-
-function clusterd._onRegister(packet, from)
-  local reg = packet.payload or {}
-  if not reg.hostname or not reg.profile or not reg.worker_count then
-    log.warn(LOG_TAG, "CLUSTER_REGISTER missing required fields from " .. tostring(from))
-    netmod.sendRegisterAck(from, nil, false, "incomplete_register")
-    return
-  end
-
-  local vok, vreason = _versionCompatible(reg.cluster_protocol)
-  if not vok then
-    log.warn(LOG_TAG, string.format(
-      "register rejected from %s: %s (their=%s, ours=%s)",
-      tostring(from), vreason, tostring(reg.cluster_protocol),
-      tostring(cfg and cfg.cluster_protocol)))
-    netmod.sendRegisterAck(from, nil, false, vreason, {
-      master_protocol        = cfg and cfg.cluster_protocol,
-      min_supported_protocol = cfg and cfg.min_supported_protocol,
-    })
-    return
-  end
-
-  local domain_id = state.withLock(function()
-    return state.registerManager(from, reg)
-  end)
-
-  log.info(LOG_TAG, string.format("registered %s@%s as domain %d",
-    reg.hostname or "?", tostring(from):sub(1, 8), domain_id))
-
-  netmod.sendRegisterAck(from, domain_id, true, nil, {
-    heartbeat_interval     = cfg and cfg.heartbeat_interval or 5,
-    master_protocol        = cfg and cfg.cluster_protocol or "1.0",
-    min_supported_protocol = cfg and cfg.min_supported_protocol or "1.0",
-  })
-end
-
-function clusterd._onHeartbeat(packet, from)
-  local snap = packet.payload or {}
-  local ok, err = state.updateManagerHeartbeat(from, snap)
-  if not ok then
-    
-    
-    
-    log.warn(LOG_TAG, "heartbeat from unknown " .. tostring(from) ..
-                      ": " .. tostring(err))
-    return
-  end
-  
-  if snap.state == "draining" then
-    state.setManagerState(from, "draining")
-  end
-  
-  local m = state.getManager(from)
-  if m and m.state == "degraded" then
-    state.setManagerState(from, "active")
-  end
-end
-
-function clusterd._onResult(packet, from)
-  local p = packet.payload or {}
-  if not p.assignment_id then
-    log.warn(LOG_TAG, "CLUSTER_RESULT missing assignment_id from " .. tostring(from))
-    return
-  end
-  state.withLock(function()
-    jobs.onResult(p.assignment_id, p, state)
-  end)
-end
-
-function clusterd._onResultChunk(packet, from)
-  local p = packet.payload or {}
-  if not p.assignment_id or not p.chunk_idx or not p.chunk_total then return end
-  state.withLock(function()
-    jobs.onResultChunk(p.assignment_id, p.chunk_idx, p.chunk_total,
-                       p.data, p.final_stats, state)
-  end)
-end
-
-function clusterd._onAssignAck(packet, from)
-  local p = packet.payload or {}
-  if not p.assignment_id then return end
-  
-  
-  if p.accepted == false then
-    log.warn(LOG_TAG, string.format(
-      "manager %s rejected asn %d: %s",
-      tostring(from):sub(1, 8), p.assignment_id, tostring(p.reason)))
-    
-    for job_id, job in pairs(state._data.jobs) do
-      if job.assignments[p.assignment_id] then
-        state.setAssignmentState(job_id, p.assignment_id, "pending", {
-          assigned_to = state.CLEAR,
-          retry_reason = "manager_rejected",
-        })
-        break
-      end
-    end
-  end
-end
-
-function clusterd._onStatusRes(packet, from)
-  
-  
-  log.info(LOG_TAG, "status response from " .. tostring(from):sub(1, 8))
-end
-
-function clusterd._onRelayFail(packet, from)
-  local p = packet.payload or {}
-  state.pushEvent("relay_fail", {
-    reason       = p.reason,
-    failed_at    = p.failed_at,
-    original_dest = p.original_dest,
-    original_inner_type = p.original_inner_type,
-  })
-  log.warn(LOG_TAG, string.format(
-    "RELAY_FAIL reason=%s at=%s (inner=%s)",
-    tostring(p.reason), tostring(p.failed_at), tostring(p.original_inner_type)))
-end
-
-return clusterd
+local c,d=pcall(require,"kernel.serialize")
+R.init({state=G,serialize=c and d or nil,log=J})M.setStore(R,c and d or nil)
+if R.available()then
+J.info(K,"public storage: "..
+tostring(R.address()):sub(1,8))else
+J.info(K,"public storage: none configured (assignments stay inline)")end end;do local c,d=pcall(require,"kernel.net.trust")if c then
+O.init({trust=d})end end
+aa=N.register({onRegister=function(c,d)
+H._onRegister(c,d)end,onHeartbeat=function(c,d)H._onHeartbeat(c,d)end,onResult=function(c,d)
+H._onResult(c,d)end,onResultChunk=function(c,d)H._onResultChunk(c,d)end,onAssignAck=function(c,d)
+H._onAssignAck(c,d)end,onStatusRes=function(c,d)H._onStatusRes(c,d)end,onRelayFail=function(c,d)
+H._onRelayFail(c,d)end,onPairInit=function(c,d)O.onPairInit(c,d)end})
+S=P.interval(I.heartbeat_sweep_interval,function()H._onHeartbeatSweep()end,"clusterd.hbsweep")
+U=P.interval(I.scheduler_tick_interval,function()H._onSchedulerTick()end,"clusterd.sched")
+T=P.interval(I.status_snapshot_interval,function()H._onStatusSnapshot()end,"clusterd.status")ad.bind(G,ac,M,H)Q=true;J.info(K,"started")return true end
+function H.stop()if not Q then return true end;J.info(K,"stopping")if S then
+P.cancelTimer(S)S=nil end;if U then P.cancelTimer(U)U=nil end;if T then
+P.cancelTimer(T)T=nil end;N.unregister(aa)aa={}
+local a,b=pcall(G.save,W)if not a then
+J.error(K,"final save failed: "..tostring(b))end;ad.unbind()H._cfg=nil;Q=false
+J.info(K,"stopped")return true end;function H.isRunning()return Q end;function H.getConfig()return I end;function H.startPairing()return
+O.startWindow()end
+function H.closePairing()return O.closeWindow()end;function H.pairingInfo()return O.windowInfo()end;function H.pairingOpen()return
+O.windowOpen()end
+function H._onHeartbeatSweep()if not I then return end
+local a=_.uptime()
+for b,c in pairs(G._data.managers)do
+local e=a- (c.last_heartbeat or a)local d=c.state
+if e>I.heartbeat_offline_after and d~=ab then
+G.setManagerState(b,ab)pcall(M.onManagerOffline,c.domain_id,G)elseif
+e>I.heartbeat_degraded_after and d==ag then G.setManagerState(b,ah)elseif
+e<=I.heartbeat_degraded_after and d==ah then G.setManagerState(b,ag)end
+if d==ai then local f=false
+for h,g in pairs(G._data.jobs)do
+for h,i in pairs(g.assignments)do if i.state=="running"and
+i.assigned_to==b then f=true;break end end;if f then break end end;if not f then G.setManagerState(b,ab)end end end end
+function H._onSchedulerTick()if not I then return end;local a=_.uptime()
+local c=M.pendingAssignments(G)
+local b={compute_bound_in_flight=G.computeBoundInFlight(),host_thread_budget=I.host_thread_budget,uptime=a}
+for e,d in ipairs(c)do b.compute_bound_in_flight=G.computeBoundInFlight()
+local f,g=ac.pickDomain(d,G._data.managers,b)
+if f then local h,i=M.dispatch(d,f,G,N)if not h then
+J.warn(K,string.format("dispatch %d failed: %s",d.assignment_id or-1,tostring(i)))end elseif g and
+g~="thread_budget_saturated"then end end
+for e,d in pairs(G._data.jobs)do
+for g,f in pairs(d.assignments)do
+if
+f.state=="running"and f.deadline and f.deadline>0 then if a>f.deadline then
+pcall(M.onAssignmentTimeout,g,G,N)end end end end end
+function H._onStatusSnapshot()
+local a={time=_.uptime(),managers={active=0,degraded=0,draining=0,offline=0},jobs={pending=0,running=0,done=0,failed=0,cancelled=0},storage=nil,host_thread_budget=I and
+I.host_thread_budget or nil,compute_bound_in_flight=G.computeBoundInFlight(),recent_events=G.recentEvents(10)}
+for h,g in pairs(G._data.managers)do local i=g.state or ab;a.managers[i]=
+(a.managers[i]or 0)+1 end;for h,g in pairs(G._data.jobs)do local i=g.state or"pending"a.jobs[i]=
+(a.jobs[i]or 0)+1 end
+if
+G._data.storage_node then local g=G._data.storage_node
+a.storage={address=g.address,capacity_bytes=g.capacity,used_bytes=g.used,last_seen=g.last_seen}end;local f=require("kernel.serialize")local e=f.encode(a)
+local b=X..".tmp"af()local c,d
+if L.writeFile then c,d=L.writeFile(b,e)else local g;g,d=L.open(b,"w")if g then
+g:write(e)g:close()c=true end end;if not c then
+J.warn(K,"status snapshot tmp write failed: "..tostring(d))return end;if L.exists and L.exists(X)and
+L.remove then pcall(L.remove,X)end
+if
+L.rename then local g=pcall(L.rename,b,X)if not g then
+J.warn(K,"status snapshot rename failed")end end end
+local function ak(a)local f=I and I.min_supported_protocol or"1.0"
+local function b(h)
+local i,j=tostring(
+h or""):match("^(%d+)%.(%d+)$")return tonumber(i),tonumber(j)end;local c,d=b(a)local e,g=b(f)
+if not c or not d then return false,"version_malformed"end;if not e then return true end
+if c~=e then return false,"version_mismatch"end;if d<g then return false,"version_mismatch"end;return true end
+function H._onRegister(b,a)local c=b.payload or{}
+if not c.hostname or not c.profile or not
+c.worker_count then
+J.warn(K,"CLUSTER_REGISTER missing required fields from "..tostring(a))
+N.sendRegisterAck(a,nil,false,"incomplete_register")return end;local f,d=ak(c.cluster_protocol)
+if not f then
+J.warn(K,string.format("register rejected from %s: %s (their=%s, ours=%s)",tostring(a),d,tostring(c.cluster_protocol),tostring(
+I and I.cluster_protocol)))
+N.sendRegisterAck(a,nil,false,d,{master_protocol=I and I.cluster_protocol,min_supported_protocol=I and I.min_supported_protocol})return end
+local e=G.withLock(function()return G.registerManager(a,c)end)
+J.info(K,string.format("registered %s@%s as domain %d",c.hostname or"?",tostring(a):sub(1,8),e))
+N.sendRegisterAck(a,e,true,nil,{heartbeat_interval=I and I.heartbeat_interval or 5,master_protocol=
+I and I.cluster_protocol or"1.0",min_supported_protocol=I and I.min_supported_protocol or"1.0"})end
+function H._onHeartbeat(b,a)local c=b.payload or{}
+local e,f=G.updateManagerHeartbeat(a,c)if not e then
+J.warn(K,"heartbeat from unknown "..tostring(a)..": "..tostring(f))return end;if c.state==ai then
+G.setManagerState(a,ai)end;local d=G.getManager(a)if d and d.state==ah then
+G.setManagerState(a,ag)end end
+function H._onResult(a,b)local c=a.payload or{}if not c.assignment_id then
+J.warn(K,"CLUSTER_RESULT missing assignment_id from "..
+tostring(b))return end
+G.withLock(function()
+M.onResult(c.assignment_id,c,G)end)end
+function H._onResultChunk(a,b)local c=a.payload or{}
+if
+not c.assignment_id or not c.chunk_idx or not c.chunk_total then return end
+G.withLock(function()
+M.onResultChunk(c.assignment_id,c.chunk_idx,c.chunk_total,c.data,c.final_stats,G)end)end
+function H._onAssignAck(a,b)local c=a.payload or{}if not c.assignment_id then return end
+if
+c.accepted==false then
+J.warn(K,string.format("manager %s rejected asn %d: %s",tostring(b):sub(1,8),c.assignment_id,tostring(c.reason)))
+for d,e in pairs(G._data.jobs)do
+if e.assignments[c.assignment_id]then
+G.setAssignmentState(d,c.assignment_id,"pending",{assigned_to=G.CLEAR,retry_reason="manager_rejected"})break end end end end;function H._onStatusRes(b,a)
+J.info(K,"status response from "..tostring(a):sub(1,8))end
+function H._onRelayFail(a,b)local c=a.payload or{}
+G.pushEvent("relay_fail",{reason=c.reason,failed_at=c.failed_at,original_dest=c.original_dest,original_inner_type=c.original_inner_type})
+J.warn(K,string.format("RELAY_FAIL reason=%s at=%s (inner=%s)",tostring(c.reason),tostring(c.failed_at),tostring(c.original_inner_type)))end;return H

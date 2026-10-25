@@ -1,596 +1,193 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local core = require("rbmk.core")
-local skala = require("rbmk.skala")
-local wall = require("rbmk.wall")
-
-local M = {}
-
-local function firstRequire(...)
-  for i = 1, select("#", ...) do
-    local ok, mod = pcall(require, (select(i, ...)))
-    if ok and mod then return mod end
-  end
-end
-local component = firstRequire("component")
-local computer  = firstRequire("computer")
-local event     = firstRequire("kernel.event", "event")
-local screenMod = firstRequire("kernel.screen")
-
-
-
-
-
-
-
-
-
-
-
-
-
-function M.localSource(cfg)
-  local cmd = require("rbmk-cmd")
-  cfg = cfg or cmd.loadCfg()
-  local limits = core.mergeLimits(cfg.limits)
-  local grid   = core.mergeGrid(cfg.grid)
-  local profile = cmd.activeProfile(cfg)
-  local src = { kind = "local", limits = limits, grid = grid,
-                name = cfg.name or "rbmk" }
-
-  local proxy, binding
-  local function attach()
-    local cands = cmd.candidates(profile)
-    if #cands == 0 then return false, "no console found -- run `rbmk survey`" end
-    local target = cands[1]
-    if cfg.address then
-      for _, c in ipairs(cands) do
-        if tostring(c.address):sub(1, #cfg.address) == cfg.address then target = c end
-      end
-    end
-    binding = core.bind(profile, cmd.methodsOf(target.address))
-    local ok, px = pcall(component.proxy, target.address)
-    if not ok or not px then return false, "cannot open the console proxy" end
-    proxy = px
-    return true
-  end
-
-  local seq, lastGood = 0, nil
-  function src.poll(now)
-    if not proxy then
-      local ok, why = attach()
-      if not ok then
-        --! A console that is not there yet is reported as a MISSING
-        --! reading, which evaluate() already treats as a scram
-        --! condition. The panel must never render "ok" because it
-        --! failed to look.
-        return { name = src.name, level = "scram", why = { why },
-                 snap = {}, cols = {}, grid = grid, limits = limits,
-                 seq = seq, at = now, stale = true }
-      end
-    end
-    seq = seq + 1
-    local snap, scanned = cmd.read(proxy, binding)
-    local age
-    if snap.temp ~= nil then lastGood, age = now, 0
-    else age = lastGood and (now - lastGood) or (limits.staleAfter + 1) end
-    local level, why = core.evaluate(snap, limits, age)
-    return {
-      name = src.name, level = level, why = why, snap = snap,
-      cols = scanned or cmd.readColumns(proxy, binding, grid), grid = grid,
-      limits = limits, seq = seq, at = now,
-      stale = (age > (limits.staleAfter or 5)),
-      binding = binding,
-    }
-  end
-  return src
-end
-
-
-
-function M.netSource(cfg)
-  cfg = cfg or {}
-  local limits = core.mergeLimits(cfg.limits)
-  local port = tonumber(cfg.telemetryPort) or core.TELEMETRY_PORT
-  local src = { kind = "net", limits = limits, port = port }
-
-  local last, lastAt, handler
-  local modems = {}
-  for addr in (component and component.list and component.list("modem")
-               or function() return nil end) do
-    local ok, m = pcall(component.proxy, addr)
-    if ok and m and m.open then pcall(m.open, port); modems[#modems + 1] = m end
-  end
-  src.modems = #modems
-
-  if event and event.on then
-    handler = event.on("modem_message", function(_, _, _, p, _, ...)
-      if p ~= port then return end
-      local f = core.decodeWire(...)
-      if not f then return end
-      last = f
-      lastAt = computer and computer.uptime() or 0
-    end, "rbmk.skala")
-  end
-
-  function src.close()
-    if handler and event and event.off then pcall(event.off, "modem_message", handler) end
-    for _, m in ipairs(modems) do pcall(m.close, port) end
-  end
-
-  function src.poll(now)
-    local stale = core.frameStale(last and last.seq, lastAt, now, limits.staleAfter)
-    if not last then
-      return { name = "(no signal)", level = "unknown",
-               why = { #modems == 0 and "no modem on this machine"
-                       or ("listening on port " .. port .. " -- no frames yet") },
-               snap = {}, cols = {}, grid = core.mergeGrid(cfg.grid),
-               limits = limits, seq = 0, at = now, stale = true }
-    end
-    local cols, grid = {}, core.mergeGrid(cfg.grid)
-    if last.cols then
-      local c, g = core.unpackColumns(last.cols, skala.PARAMS)
-      if c then cols, grid = c, core.mergeGrid(g) end
-    end
-    return {
-      name = last.name, level = last.level, why = last.why or {},
-      snap = { temp = last.temp, flux = last.flux, steam = last.steam,
-               water = last.water, rodDepth = last.rodDepth, fuel = last.fuel },
-      cols = cols, grid = grid, limits = limits,
-      seq = last.seq, at = lastAt, stale = stale,
-    }
-  end
-  return src
-end
-
-
-
-
-local LEVEL_COLOR = {
-  ok = 0x00FF00, warn = 0xFFAA00, scram = 0xFF0000, unknown = 0x888888,
-}
-
-local function theme(D)
-  local ok, t = pcall(D.getTheme)
-  if ok and type(t) == "table" then return t end
-  return { bg = 0x000000, fg = 0xFFFFFF, dim = 0xAAAAAA,
-           title = 0x00AAFF, error = 0xFF0000, warning = 0xFFAA00 }
-end
-
-local function put(D, x, y, s, fg, bg)
-  if x < 1 or y < 1 then return end
-  pcall(D.set, x, y, s, fg, bg)
-end
-
-
-
-
-local function drawHeader(D, T, L, st, view, srcKind)
-  local W = L.W
-  put(D, 1, 1, string.rep(" ", W), T.fg, T.bg)
-  local title = string.format(" %s  INFORMATION OUTPUT ", (st.name or "rbmk"):upper())
-  put(D, 1, 1, title, T.title, T.bg)
-
-  local lvl = (st.level or "unknown"):upper()
-  local col = LEVEL_COLOR[st.level] or T.dim
-  if st.stale then lvl, col = "STALE", 0xFF00FF end
-  local chip = " " .. lvl .. " "
-  put(D, math.max(1, W - #chip + 1), 1, chip, 0x000000, col)
-
-  local p = view.param
-  local sub = string.format(" %s  %s%s   seq %d   %s",
-    wall.page(view.page) and wall.page(view.page).label or view.page,
-    p and (p.key .. " ") or "", p and p.label or "",
-    st.seq or 0, srcKind == "net" and "REMOTE" or "LOCAL")
-  put(D, 1, 2, string.rep(" ", W), T.dim, T.bg)
-  put(D, 1, 2, sub:sub(1, W), T.dim, T.bg)
-end
-
-
-local function drawMap(D, T, L, st, view)
-  local grid = st.grid
-  local p = view.param
-  local ix = core.columnIndex(st.cols)
-
-  
-  
-  
-  put(D, 1, L.rulerY, string.rep(" ", L.W), T.dim, T.bg)
-  for x = 1, L.gridW do
-    local px = L.mapX + (x - 1) * L.cellW
-    if L.cellW >= 5 then
-      put(D, px, L.rulerY, string.format("%4d", x), T.dim, T.bg)
-    elseif x % 5 == 0 or x == 1 then
-      put(D, px, L.rulerY, tostring(x), T.dim, T.bg)
-    end
-  end
-
-  for y = 1, L.gridH do
-    local py = L.mapY + (y - 1)
-    put(D, 1, py, string.format("%" .. L.rulerW .. "d", y), T.dim, T.bg)
-    for x = 1, L.gridW do
-      local px = L.mapX + (x - 1) * L.cellW
-      local cell = ix[x .. "," .. y]
-      local isCh = skala.isChannel(x, y, grid)
-      local text, fg, bg
-      if not isCh then
-        text, fg, bg = string.rep(" ", L.cellW), T.dim, T.bg
-      elseif not cell then
-        --! A channel the console did not report is NOT an empty
-        --! position. Drawing it blank would shrink the visible core
-        --! every time a reading dropped out.
-        text = L.numeric and "----" or string.rep("\226\150\145", math.min(L.cellW, 4))
-        fg, bg = skala.COLOR_MISSING, T.bg
-      else
-        local v = cell[p.field]
-        local c = select(1, skala.bandOf(v, p, st.limits))
-        if L.numeric then
-          text, fg, bg = skala.cellText(v), c, T.bg
-        else
-          
-          
-          text, fg, bg = string.rep("\226\150\136", math.min(L.cellW, 4)), c, T.bg
-        end
-      end
-      if L.numeric and #text < L.cellW then text = text .. " " end
-      put(D, px, py, text, fg, bg)
-      
-      if view.cur and view.cur.x == x and view.cur.y == y and isCh then
-        put(D, px, py, text:sub(1, L.cellW), 0x000000, fg)
-      end
-    end
-  end
-end
-
-
-
-local function drawRail(D, T, L, st, view)
-  if not L.railX then return end
-  local x, w = L.railX, L.railW
-  for y = L.rulerY, L.statusY - 1 do
-    put(D, x - 1, y, string.rep(" ", w + 1), T.dim, T.bg)
-  end
-  local y = L.rulerY
-  put(D, x, y, ("PARAMETER"):sub(1, w), T.title, T.bg); y = y + 2
-  for _, r in ipairs(skala.railRows(L, view.param and view.param.key)) do
-    local fg, bg = T.fg, T.bg
-    if r.selected then fg, bg = 0x000000, T.title end
-    put(D, x, y, (" " .. r.text .. string.rep(" ", w)):sub(1, w), fg, bg)
-    y = y + 1
-  end
-  y = y + 1
-  if y + #skala.BANDS + 2 < L.statusY then
-    put(D, x, y, ("SCALE"):sub(1, w), T.title, T.bg); y = y + 1
-    for _, b in ipairs(skala.legend(view.param, st.limits)) do
-      local label = b.name
-      if b.at then label = string.format("%-7s%s", b.name, skala.cellText(b.at)) end
-      put(D, x, y, "\226\150\136 ", b.color, T.bg)
-      put(D, x + 2, y, label:sub(1, w - 2), T.dim, T.bg)
-      y = y + 1
-    end
-  end
-end
-
-
-local function drawPanel(D, T, L, st, view)
-  local y = L.rulerY
-  local x = 3
-  put(D, x, y, "REACTOR PARAMETERS", T.title, T.bg); y = y + 2
-  for _, r in ipairs(skala.readout(st.snap, nil, view.param, st.limits)) do
-    local p = skala.param(r.key)
-    put(D, x, y, string.format("  %s  %-10s", r.key, p and p.label or ""), T.fg, T.bg)
-    put(D, x + 16, y, r.text:sub(3), r.color, T.bg)
-    y = y + 1
-  end
-  y = y + 1
-  put(D, x, y, "LIMITS", T.title, T.bg); y = y + 1
-  local keys = {}
-  for k in pairs(st.limits or {}) do keys[#keys + 1] = k end
-  table.sort(keys)
-  for _, k in ipairs(keys) do
-    if y >= L.statusY - 1 then break end
-    put(D, x, y, string.format("  %-12s %s", k, tostring(st.limits[k])), T.dim, T.bg)
-    y = y + 1
-  end
-end
-
-
-local function drawAlarms(D, T, L, st, view)
-  local y = L.rulerY + 1
-  local col = LEVEL_COLOR[st.level] or T.dim
-  if st.stale then col = 0xFF00FF end
-  local banner = st.stale and "TELEMETRY STALE" or (st.level or "unknown"):upper()
-  local bx = math.max(2, math.floor((L.W - #banner - 4) / 2))
-  put(D, bx, y, " " .. string.rep(" ", #banner + 2) .. " ", 0x000000, col)
-  put(D, bx, y + 1, "  " .. banner .. "  ", 0x000000, col)
-  put(D, bx, y + 2, " " .. string.rep(" ", #banner + 2) .. " ", 0x000000, col)
-  y = y + 4
-  local why = st.why or {}
-  if #why == 0 then
-    put(D, 4, y, st.stale and "No frames are arriving from the controller."
-      or "No active warnings.", T.dim, T.bg)
-  else
-    for _, r in ipairs(why) do
-      if y >= L.statusY - 1 then break end
-      put(D, 4, y, ("* " .. r):sub(1, L.W - 5), col, T.bg)
-      y = y + 1
-    end
-  end
-  if st.level == "scram" then
-    y = y + 1
-    put(D, 4, y, "The SCRAM latch does not clear itself -- restart the service.",
-      T.dim, T.bg)
-  end
-end
-
-
-local function drawTrend(D, T, L, st, view)
-  local y = L.rulerY
-  local p = view.param
-  local series = view.series and view.series[p.key] or {}
-  local lo, hi, n = wall.range(series)
-  put(D, 3, y, string.format("TREND  %s %s", p.key, p.label), T.title, T.bg)
-  put(D, 3, y + 1, n > 0
-    and string.format("%d samples   low %s   high %s",
-        n, skala.cellText(lo), skala.cellText(hi))
-    or "collecting...", T.dim, T.bg)
-  local top = y + 3
-  local h = math.max(3, L.statusY - top - 1)
-  local w = math.max(10, L.W - 8)
-  local rows = wall.chart(series, w, h, lo, hi)
-  for i, row in ipairs(rows) do
-    local frac = 1 - ((i - 1) / math.max(1, h - 1))
-    local col = select(1, skala.bandOf(
-      lo and hi and (lo + frac * (hi - lo)) or nil, p, st.limits))
-    put(D, 4, top + i - 1, row, col, T.bg)
-  end
-  if lo and hi then
-    put(D, 4 + w + 1, top, skala.cellText(hi), T.dim, T.bg)
-    put(D, 4 + w + 1, top + h - 1, skala.cellText(lo), T.dim, T.bg)
-  end
-end
-
-
-local function drawStatus(D, T, L, st, view, showKeys)
-  local y = L.statusY
-  put(D, 1, y, string.rep("\226\148\128", L.W), T.dim, T.bg)
-  local line = ""
-  if view.page == "map" and view.cur then
-    local c = core.columnIndex(st.cols)[view.cur.x .. "," .. view.cur.y]
-    line = string.format(" ch %d,%d %s ", view.cur.x, view.cur.y,
-      c and (c.kind or "?") or "(not reported)")
-    local parts = {}
-    for _, r in ipairs(skala.readout(st.snap, c, view.param, st.limits)) do
-      parts[#parts + 1] = r.text
-    end
-    line = line .. table.concat(parts, "  ")
-  else
-    local parts = {}
-    for _, r in ipairs(skala.readout(st.snap, nil, view.param, st.limits)) do
-      parts[#parts + 1] = r.text
-    end
-    line = " " .. table.concat(parts, "  ")
-  end
-  put(D, 1, y + 1, string.rep(" ", L.W), T.fg, T.bg)
-  put(D, 1, y + 1, line:sub(1, L.W), T.fg, T.bg)
-  if showKeys and y + 2 <= L.H then
-    put(D, 1, y + 2, string.rep(" ", L.W), T.dim, T.bg)
-    put(D, 1, y + 2,
-      (" N T X K G parameter   TAB page   arrows channel   Q quit"):sub(1, L.W),
-      T.dim, T.bg)
-  end
-end
-
-
-function M.drawPane(D, st, view, opts)
-  opts = opts or {}
-  local T = theme(D)
-  local W, H = D.getSize()
-  local L = skala.layout(W, H, st.grid)
-  if not L.ok then
-    --! The fallback matters as much as the panel. A screen too small
-    --! for a core map still has to say what is going on, and say what
-    --! size would fix it -- skala.layout computes that number so this
-    --! branch can print it instead of "too small".
-    pcall(D.clear, T.bg)
-    put(D, 1, 1, ((st.name or "rbmk"):upper() .. "  " ..
-      (st.stale and "STALE" or (st.level or "?"):upper())):sub(1, W),
-      LEVEL_COLOR[st.level] or T.fg, T.bg)
-    local y = 3
-    for _, r in ipairs(skala.readout(st.snap, nil, view.param, st.limits)) do
-      if y > H - 2 then break end
-      put(D, 2, y, r.text, r.color, T.bg); y = y + 1
-    end
-    put(D, 1, H, (L.why or "screen too small"):sub(1, W), T.dim, T.bg)
-    return L
-  end
-
-  if D.beginFrame then pcall(D.beginFrame) end
-  pcall(D.clear, T.bg)
-  drawHeader(D, T, L, st, view, opts.srcKind)
-  if view.page == "map" then
-    drawMap(D, T, L, st, view)
-    drawRail(D, T, L, st, view)
-  elseif view.page == "panel" then
-    drawPanel(D, T, L, st, view)
-  elseif view.page == "alarms" then
-    drawAlarms(D, T, L, st, view)
-  elseif view.page == "trend" then
-    drawTrend(D, T, L, st, view)
-  end
-  drawStatus(D, T, L, st, view, opts.interactive)
-  if D.endFrame then pcall(D.endFrame) end
-  return L
-end
-
-
-
-
-local KEY = { UP = 200, DOWN = 208, LEFT = 203, RIGHT = 205, TAB = 15, ESC = 1 }
-
-
-
-
-function M.run(opts)
-  opts = opts or {}
-  local D = opts.display or opts.D
-  local E = opts.event or event
-  local o = opts.o or function() end
-  if not D then o("No display available."); return end
-
-  local cmd = require("rbmk-cmd")
-  local cfg = opts.cfg or cmd.loadCfg()
-
-  
-  
-  
-  local mode = opts.mode or "auto"
-  local src
-  if mode == "net" then
-    src = M.netSource(cfg)
-  elseif mode == "local" then
-    src = M.localSource(cfg)
-  else
-    local cands = cmd.candidates(cmd.activeProfile(cfg))
-    src = (#cands > 0) and M.localSource(cfg) or M.netSource(cfg)
-  end
-
-  
-  
-  local panes, displays = {}, {}
-  if opts.wallMode and screenMod and screenMod.list and screenMod.displayProxy then
-    local seats = screenMod.list()
-    panes = wall.plan(#seats, cfg.wall, function(k) return skala.param(k) ~= nil end)
-    for i, s in ipairs(seats) do
-      --! Built ONCE and held. screen.displayProxy makes a FRESH proxy
-      --! per call, each with its own dirty-cell shadow; rebuilding one
-      --! every frame would throw that shadow away and re-emit every
-      --! cell, which on a wall is the difference between a redraw and
-      --! a stall.
-      displays[i] = screenMod.displayProxy(s.index) or D
-    end
-  end
-  if #panes == 0 then
-    panes = wall.plan(1, cfg.wall, function(k) return skala.param(k) ~= nil end)
-    displays = { D }
-  end
-
-  
-  
-  local view = {
-    page = panes[1].page, param = skala.param(panes[1].param) or skala.PARAMS[1],
-    cur = { x = 1, y = 1 }, series = {},
-  }
-
-  local function pull(timeout)
-    if coroutine.isyieldable and coroutine.isyieldable() then
-      return coroutine.yield()
-    end
-    if E and E.pull then return E.pull(timeout) end
-    return computer.pullSignal(timeout)
-  end
-
-  local interval = math.max(0.25, tonumber(cfg.pollInterval) or 1)
-  local running, nextPoll, st = true, 0, nil
-  local ok, err = pcall(function()
-    while running do
-      local now = computer.uptime()
-      if now >= nextPoll or not st then
-        st = src.poll(now) or st
-        nextPoll = now + interval
-        for _, p in ipairs(skala.PARAMS) do
-          view.series[p.key] = wall.push(view.series[p.key],
-            st.snap and st.snap[p.field], 240)
-        end
-      end
-
-      
-      
-      
-      local eff = wall.effective(panes, st.level, st.stale)
-      for i, pane in ipairs(eff) do
-        local paneView = {
-          page = (i == 1) and (pane.overridden and pane.page or view.page) or pane.page,
-          param = (i == 1) and view.param or (skala.param(pane.param) or skala.PARAMS[1]),
-          cur = (i == 1) and view.cur or nil,
-          series = view.series,
-        }
-        M.drawPane(displays[i] or D, st, paneView,
-          { srcKind = src.kind, interactive = (i == 1) })
-      end
-
-      local remaining = math.max(0.05, nextPoll - computer.uptime())
-      local ev, _, ch, code = pull(remaining)
-      if ev == "key_down" then
-        local c = (type(ch) == "number" and ch > 0) and string.char(ch):upper() or ""
-        if c == "Q" or code == KEY.ESC then running = false
-        elseif skala.param(c) then view.param = skala.param(c)
-        elseif code == KEY.TAB then
-          for i, pg in ipairs(wall.PAGES) do
-            if pg.id == view.page then
-              view.page = wall.PAGES[(i % #wall.PAGES) + 1].id; break
-            end
-          end
-        elseif c >= "1" and c <= "4" and wall.PAGES[tonumber(c)] then
-          view.page = wall.PAGES[tonumber(c)].id
-        elseif code == KEY.LEFT then view.cur.x = math.max(1, view.cur.x - 1)
-        elseif code == KEY.RIGHT then view.cur.x = math.min(st.grid.w, view.cur.x + 1)
-        elseif code == KEY.UP then view.cur.y = math.max(1, view.cur.y - 1)
-        elseif code == KEY.DOWN then view.cur.y = math.min(st.grid.h, view.cur.y + 1)
-        end
-        nextPoll = 0   
-      elseif ev == "touch" then
-        --! A touch signal is (name, screenAddr, x, y, button, player), so
-        --! the two slots `pull` handed back as char/code ARE x and y here.
-        local tx, ty = ch, code
-        local dw, dh = D.getSize()
-        local L = skala.layout(dw, dh, st.grid)
-        local cx, cy = skala.cellAt(L, tx, ty, st.grid)
-        if cx then view.cur.x, view.cur.y = cx, cy; nextPoll = 0 end
-      elseif ev == "interrupted" then
-        running = false
-      end
-    end
-  end)
-
-  --! Whatever happened, give the screens back. A panel that errors and
-  --! leaves a stale reactor map on four displays is worse than one that
-  --! never drew: the numbers stay there looking current.
-  if src.close then pcall(src.close) end
-  for _, d in ipairs(displays) do
-    local T = theme(d)
-    pcall(d.clear, T.bg)
-  end
-  if not ok then o("Panel error: " .. tostring(err)) end
-end
-
-return M
+local I="unknown"local x=require("rbmk.core")
+local w=require("rbmk.skala")local y=require("rbmk.wall")local z={}
+local function F(...)for a=1,select("#",...)do
+local c,b=pcall(require,(select(a,...)))if c and b then return b end end end;local C=F("component")local D=F("computer")
+local A=F("kernel.event","event")local E=F("kernel.screen")
+function z.localSource(a)local b=require("rbmk-cmd")a=a or
+b.loadCfg()local c=x.mergeLimits(a.limits)
+local d=x.mergeGrid(a.grid)local j=b.activeProfile(a)
+local e={kind="local",limits=c,grid=d,name=a.name or"rbmk"}local f,g
+local function k()local l=b.candidates(j)if#l==0 then
+return false,"no console found -- run `rbmk survey`"end;local m=l[1]
+if a.address then for q,p in ipairs(l)do
+if tostring(p.address):sub(1,
+#a.address)==a.address then m=p end end end;g=x.bind(j,b.methodsOf(m.address))
+local o,n=pcall(C.proxy,m.address)
+if not o or not n then return false,"cannot open the console proxy"end;f=n;return true end;local h,i=0,nil
+function e.poll(l)if not f then local r,s=k()
+if not r then return
+{name=e.name,level="scram",why={s},snap={},cols={},grid=d,limits=c,seq=h,at=l,stale=true}end end
+h=h+1;local n,o=b.read(f,g)local m;if n.temp~=nil then i,m=l,0 else
+m=i and(l-i)or(c.staleAfter+1)end;local p,q=x.evaluate(n,c,m)return
+{name=e.name,level=p,why=q,snap=n,cols=o or
+b.readColumns(f,g,d),grid=d,limits=c,seq=h,at=l,stale=(m> (c.staleAfter or 5)),binding=g}end;return e end
+function z.netSource(a)a=a or{}local e=x.mergeLimits(a.limits)local c=
+tonumber(a.telemetryPort)or x.TELEMETRY_PORT
+local f={kind="net",limits=e,port=c}local b,g,h;local d={}
+for i in
+(C and C.list and C.list("modem")or function()return nil end)do local k,j=pcall(C.proxy,i)if k and j and j.open then pcall(j.open,c)
+d[#d+1]=j end end;f.modems=#d
+if A and A.on then
+h=A.on("modem_message",function(j,j,j,i,j,...)if i~=c then return end
+local k=x.decodeWire(...)if not k then return end;b=k;g=D and D.uptime()or 0 end,"rbmk.skala")end
+function f.close()
+if h and A and A.off then pcall(A.off,"modem_message",h)end;for j,i in ipairs(d)do pcall(i.close,c)end end
+function f.poll(i)local l=x.frameStale(b and b.seq,g,i,e.staleAfter)
+if
+not b then
+return
+{name="(no signal)",level=I,why={#d==0 and"no modem on this machine"or
+("listening on port "..c.." -- no frames yet")},snap={},cols={},grid=x.mergeGrid(a.grid),limits=e,seq=0,at=i,stale=true}end;local j,k={},x.mergeGrid(a.grid)
+if b.cols then
+local m,n=x.unpackColumns(b.cols,w.PARAMS)if m then j,k=m,x.mergeGrid(n)end end
+return
+{name=b.name,level=b.level,why=b.why or{},snap={temp=b.temp,flux=b.flux,steam=b.steam,water=b.water,rodDepth=b.rodDepth,fuel=b.fuel},cols=j,grid=k,limits=e,seq=b.seq,at=g,stale=l}end;return f end
+local G={ok=0x00FF00,warn=0xFFAA00,scram=0xFF0000,unknown=0x888888}
+local function H(a)local c,b=pcall(a.getTheme)
+if c and type(b)=="table"then return b end
+return{bg=0x000000,fg=0xFFFFFF,dim=0xAAAAAA,title=0x00AAFF,error=0xFF0000,warning=0xFFAA00}end
+local function v(c,a,b,d,e,f)if a<1 or b<1 then return end;pcall(c.set,a,b,d,e,f)end
+local function J(b,a,e,c,d,f)local g=e.W;v(b,1,1,string.rep(" ",g),a.fg,a.bg)
+local l=string.format(" %s  INFORMATION OUTPUT ",(
+c.name or"rbmk"):upper())v(b,1,1,l,a.title,a.bg)
+local i=(c.level or I):upper()local j=G[c.level]or a.dim
+if c.stale then i,j="STALE",0xFF00FF end;local k=" "..i.." "
+v(b,math.max(1,g-#k+1),1,k,0x000000,j)local h=d.param
+local m=string.format(" %s  %s%s   seq %d   %s",
+y.page(d.page)and y.page(d.page).label or d.page,h and(h.key.." ")or"",h and h.label or
+"",c.seq or 0,f=="net"and"REMOTE"or"LOCAL")v(b,1,2,string.rep(" ",g),a.dim,a.bg)
+v(b,1,2,m:sub(1,g),a.dim,a.bg)end
+local function K(c,b,a,e,d)local g=e.grid;local f=d.param;local h=x.columnIndex(e.cols)
+v(c,1,a.rulerY,string.rep(" ",a.W),b.dim,b.bg)
+for i=1,a.gridW do local j=a.mapX+ (i-1)*a.cellW;if a.cellW>=5 then
+v(c,j,a.rulerY,string.format("%4d",i),b.dim,b.bg)elseif i%5 ==0 or i==1 then
+v(c,j,a.rulerY,tostring(i),b.dim,b.bg)end end
+for i=1,a.gridH do local j=a.mapY+ (i-1)
+v(c,1,j,string.format("%"..a.rulerW.."d",i),b.dim,b.bg)
+for k=1,a.gridW do local o=a.mapX+ (k-1)*a.cellW;local p=h[k..","..i]
+local q=w.isChannel(k,i,g)local l,m,n
+if not q then l,m,n=string.rep(" ",a.cellW),b.dim,b.bg elseif not p then
+l=
+a.numeric and"----"or string.rep("\226\150\145",math.min(a.cellW,4))m,n=w.COLOR_MISSING,b.bg else local r=p[f.field]
+local s=select(1,w.bandOf(r,f,e.limits))if a.numeric then l,m,n=w.cellText(r),s,b.bg else
+l,m,n=string.rep("\226\150\136",math.min(a.cellW,4)),s,b.bg end end;if a.numeric and#l<a.cellW then l=l.." "end
+v(c,o,j,l,m,n)
+if
+d.cur and d.cur.x==k and d.cur.y==i and q then v(c,o,j,l:sub(1,a.cellW),0x000000,m)end end end end
+local function L(c,a,b,e,d)if not b.railX then return end;local g,h=b.railX,b.railW
+for i=b.rulerY,b.statusY-1 do v(c,g-1,i,string.rep(" ",
+h+1),a.dim,a.bg)end;local f=b.rulerY
+v(c,g,f,("PARAMETER"):sub(1,h),a.title,a.bg)f=f+2
+for j,i in
+ipairs(w.railRows(b,d.param and d.param.key))do local k,l=a.fg,a.bg;if i.selected then k,l=0x000000,a.title end
+v(c,g,f,(" "..i.text..
+string.rep(" ",h)):sub(1,h),k,l)f=f+1 end;f=f+1
+if f+#w.BANDS+2 <b.statusY then
+v(c,g,f,("SCALE"):sub(1,h),a.title,a.bg)f=f+1
+for j,i in ipairs(w.legend(d.param,e.limits))do local k=i.name;if i.at then
+k=string.format("%-7s%s",i.name,w.cellText(i.at))end
+v(c,g,f,"\226\150\136 ",i.color,a.bg)v(c,g+2,f,k:sub(1,h-2),a.dim,a.bg)f=f+1 end end end
+local function M(b,a,d,c,e)local f=d.rulerY;local g=3
+v(b,g,f,"REACTOR PARAMETERS",a.title,a.bg)f=f+2
+for j,i in ipairs(w.readout(c.snap,nil,e.param,c.limits))do
+local k=w.param(i.key)
+v(b,g,f,string.format("  %s  %-10s",i.key,k and k.label or""),a.fg,a.bg)v(b,g+16,f,i.text:sub(3),i.color,a.bg)f=f+1 end;f=f+1;v(b,g,f,"LIMITS",a.title,a.bg)f=f+1;local h={}for i in
+pairs(c.limits or{})do h[#h+1]=i end;table.sort(h)for j,i in ipairs(h)do if f>=
+d.statusY-1 then break end
+v(b,g,f,string.format("  %-12s %s",i,tostring(c.limits[i])),a.dim,a.bg)f=f+1 end end
+local function N(b,c,d,a,e)local f=d.rulerY+1;local g=G[a.level]or c.dim
+if a.stale then g=0xFF00FF end
+local h=a.stale and"TELEMETRY STALE"or(a.level or I):upper()
+local i=math.max(2,math.floor((d.W-#h-4)/2))
+v(b,i,f," "..string.rep(" ",#h+2).." ",0x000000,g)v(b,i,f+1,"  "..h.."  ",0x000000,g)
+v(b,i,f+2," "..
+string.rep(" ",#h+2).." ",0x000000,g)f=f+4;local j=a.why or{}
+if#j==0 then
+v(b,4,f,
+a.stale and"No frames are arriving from the controller."or"No active warnings.",c.dim,c.bg)else for l,k in ipairs(j)do if f>=d.statusY-1 then break end
+v(b,4,f,("* "..k):sub(1,d.W-5),g,c.bg)f=f+1 end end;if a.level=="scram"then f=f+1
+v(b,4,f,"The SCRAM latch does not clear itself -- restart the service.",c.dim,c.bg)end end
+local function O(b,a,c,e,d)local k=c.rulerY;local i=d.param
+local o=d.series and d.series[i.key]or{}local f,g,p=y.range(o)
+v(b,3,k,string.format("TREND  %s %s",i.key,i.label),a.title,a.bg)
+v(b,3,k+1,p>0 and
+string.format("%d samples   low %s   high %s",p,w.cellText(f),w.cellText(g))or"collecting...",a.dim,a.bg)local j=k+3;local l=math.max(3,c.statusY-j-1)
+local m=math.max(10,c.W-8)local q=y.chart(o,m,l,f,g)
+for h,n in ipairs(q)do local r=1-
+((h-1)/math.max(1,l-1))
+local s=select(1,w.bandOf(f and g and(f+r* (g-f))or
+nil,i,e.limits))v(b,4,j+h-1,n,s,a.bg)end
+if f and g then v(b,4+m+1,j,w.cellText(g),a.dim,a.bg)v(b,4+m+1,
+j+l-1,w.cellText(f),a.dim,a.bg)end end
+local function P(d,a,c,e,b,f)local g=c.statusY
+v(d,1,g,string.rep("\226\148\128",c.W),a.dim,a.bg)local h=""
+if b.page=="map"and b.cur then
+local i=x.columnIndex(e.cols)[b.cur.x..","..b.cur.y]
+h=string.format(" ch %d,%d %s ",b.cur.x,b.cur.y,i and(i.kind or"?")or"(not reported)")local j={}for l,k in ipairs(w.readout(e.snap,i,b.param,e.limits))do
+j[#j+1]=k.text end
+h=h..table.concat(j,"  ")else local i={}for k,j in ipairs(w.readout(e.snap,nil,b.param,e.limits))do
+i[#i+1]=j.text end
+h=" "..table.concat(i,"  ")end;v(d,1,g+1,string.rep(" ",c.W),a.fg,a.bg)
+v(d,1,g+1,h:sub(1,c.W),a.fg,a.bg)
+if f and g+2 <=c.H then
+v(d,1,g+2,string.rep(" ",c.W),a.dim,a.bg)
+v(d,1,g+2,(" N T X K G parameter   TAB page   arrows channel   Q quit"):sub(1,c.W),a.dim,a.bg)end end
+function z.drawPane(a,b,c,d)d=d or{}local e=H(a)local g,h=a.getSize()
+local f=w.layout(g,h,b.grid)
+if not f.ok then pcall(a.clear,e.bg)
+v(a,1,1,(
+(b.name or"rbmk"):upper().."  "..
+(b.stale and"STALE"or(b.level or"?"):upper())):sub(1,g),
+G[b.level]or e.fg,e.bg)local i=3
+for k,j in ipairs(w.readout(b.snap,nil,c.param,b.limits))do if i>h-2 then
+break end;v(a,2,i,j.text,j.color,e.bg)i=i+1 end
+v(a,1,h,(f.why or"screen too small"):sub(1,g),e.dim,e.bg)return f end;if a.beginFrame then pcall(a.beginFrame)end
+pcall(a.clear,e.bg)J(a,e,f,b,c,d.srcKind)
+if c.page=="map"then K(a,e,f,b,c)L(a,e,f,b,c)elseif
+c.page=="panel"then M(a,e,f,b,c)elseif c.page=="alarms"then N(a,e,f,b,c)elseif c.page=="trend"then
+O(a,e,f,b,c)end;P(a,e,f,b,c,d.interactive)
+if a.endFrame then pcall(a.endFrame)end;return f end;local B={UP=200,DOWN=208,LEFT=203,RIGHT=205,TAB=15,ESC=1}
+function z.run(a)a=a or{}local g=
+a.display or a.D;local j=a.event or A
+local m=a.o or function()end;if not g then m("No display available.")return end
+local k=require("rbmk-cmd")local d=a.cfg or k.loadCfg()local n=a.mode or"auto"local e
+if n=="net"then
+e=z.netSource(d)elseif n=="local"then e=z.localSource(d)else
+local s=k.candidates(k.activeProfile(d))
+e=(#s>0)and z.localSource(d)or z.netSource(d)end;local f,i={},{}
+if a.wallMode and E and E.list and E.displayProxy then
+local s=E.list()
+f=y.plan(#s,d.wall,function(t)return w.param(t)~=nil end)
+for t,u in ipairs(s)do i[t]=E.displayProxy(u.index)or g end end;if#f==0 then
+f=y.plan(1,d.wall,function(s)return w.param(s)~=nil end)i={g}end
+local b={page=f[1].page,param=w.param(f[1].param)or
+w.PARAMS[1],cur={x=1,y=1},series={}}
+local function o(s)if coroutine.isyieldable and coroutine.isyieldable()then return
+coroutine.yield()end;if j and j.pull then
+return j.pull(s)end;return D.pullSignal(s)end
+local p=math.max(0.25,tonumber(d.pollInterval)or 1)local l,h,c=true,0,nil
+local q,r=pcall(function()
+while l do local u=D.uptime()
+if u>=h or not c then c=e.poll(u)or c
+h=u+p;for V,U in ipairs(w.PARAMS)do
+b.series[U.key]=y.push(b.series[U.key],c.snap and c.snap[U.field],240)end end;local R=y.effective(f,c.level,c.stale)
+for U,V in ipairs(R)do
+local W={page=(U==1)and(
+V.overridden and V.page or b.page)or V.page,param=(
+U==1)and b.param or
+(w.param(V.param)or w.PARAMS[1]),cur=(U==1)and b.cur or nil,series=b.series}
+z.drawPane(i[U]or g,c,W,{srcKind=e.kind,interactive=(U==1)})end;local S=math.max(0.05,h-D.uptime())local Q,T,t,s=o(S)
+if
+Q=="key_down"then
+local U=(type(t)=="number"and t>0)and
+string.char(t):upper()or""
+if U=="Q"or s==B.ESC then l=false elseif w.param(U)then b.param=w.param(U)elseif s==B.TAB then
+for V,W in
+ipairs(y.PAGES)do if W.id==b.page then
+b.page=y.PAGES[(V%#y.PAGES)+1].id;break end end elseif U>="1"and U<="4"and y.PAGES[tonumber(U)]then
+b.page=y.PAGES[tonumber(U)].id elseif s==B.LEFT then b.cur.x=math.max(1,b.cur.x-1)elseif s==B.RIGHT then b.cur.x=math.min(c.grid.w,
+b.cur.x+1)elseif s==B.UP then
+b.cur.y=math.max(1,b.cur.y-1)elseif s==B.DOWN then b.cur.y=math.min(c.grid.h,b.cur.y+1)end;h=0 elseif Q=="touch"then local V,W=t,s;local X,Y=g.getSize()local Z=w.layout(X,Y,c.grid)
+local U,_=w.cellAt(Z,V,W,c.grid)if U then b.cur.x,b.cur.y=U,_;h=0 end elseif Q=="interrupted"then l=false end end end)if e.close then pcall(e.close)end;for t,s in ipairs(i)do local u=H(s)
+pcall(s.clear,u.bg)end;if not q then
+m("Panel error: "..tostring(r))end end;return z

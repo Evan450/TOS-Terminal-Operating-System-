@@ -1,359 +1,105 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local M = require("warhead.model")
-local D = M.D
-
-local B = {}
-
-
-
-
-B.GOALS = {
-  tnt    = { name = "Conventional (no fallout)", fires = "TNT",
-             w = { TNT = 1 }, min = { TNT = 75 }, cap = "maxCustomTNTRadius" },
-  nuke   = { name = "Fission", fires = "NUKE",
-             w = { NUKE = 1, TNT = 1 / 2 }, min = { TNT = 16, NUKE = 0.0001 }, cap = "maxCustomNukeRadius" },
-  hydro  = { name = "Thermonuclear", fires = "HYDRO",
-             w = { HYDRO = 1, NUKE = 1 / 2, TNT = 1 / 4 }, min = { TNT = 16, NUKE = 100, HYDRO = 0.0001 },
-             cap = "maxCustomHydroRadius" },
-  bale   = { name = "Balefire", fires = "BALE",
-             w = { BALE = 1, HYDRO = 1 / 2, NUKE = 1 / 4, TNT = 1 / 8 },
-             min = { TNT = 16, NUKE = 50, BALE = 0.0001 }, cap = "maxCustomBaleRadius" },
-  schrab = { name = "Antimatter (FLEIJA-type)", fires = "SCHRAB",
-             w = { SCHRAB = 1, BALE = 1 / 2, HYDRO = 1 / 4, NUKE = 1 / 8, TNT = 1 / 16 },
-             min = { TNT = 16, NUKE = 50, SCHRAB = 0.0001 }, cap = "maxCustomSchrabRadius" },
-  sol    = { name = "Solinium (Blue Rinse)", fires = "SOL",
-             w = { SOL = 1, SCHRAB = 1 / 2, BALE = 1 / 4, HYDRO = 1 / 8, NUKE = 1 / 16, TNT = 1 / 32 },
-             min = { TNT = 16, NUKE = 25, SOL = 0.0001 }, cap = "maxCustomSolRadius" },
-}
-B.ORDER = { "tnt", "nuke", "hydro", "bale", "schrab", "sol" }
-
-
-
-
-
-local function stageTable(stage, stock, nmax)
-  local adds, muls = {}, {}
-  for _, it in ipairs(D.INGREDIENTS) do
-    if it.stage == stage then
-      local have = stock and (stock[it.key] or 0) or nmax
-      have = math.min(have, nmax)
-      for _ = 1, have do
-        if it.m then if it.v > 1 then muls[#muls + 1] = it end
-        else adds[#adds + 1] = it end
-      end
-    end
-  end
-  table.sort(adds, function(a, b) return a.v > b.v end)
-  table.sort(muls, function(a, b) return a.v > b.v end)
-  
-  local sumA, prodM = { [0] = 0 }, { [0] = 1 }
-  for i, it in ipairs(adds) do sumA[i] = sumA[i - 1] + it.v end
-  for i, it in ipairs(muls) do prodM[i] = prodM[i - 1] * it.v end
-  local val, pick = { [0] = 0 }, { [0] = {} }
-  for n = 1, nmax do
-    local best, bestK = 0, nil
-    for k = 0, math.min(n - 1, #muls) do
-      local na = n - k
-      if na <= #adds then
-        local x = sumA[na] * prodM[k]
-        if x > best + 1e-9 then best, bestK = x, k end
-      end
-    end
-    val[n] = best
-    if bestK then
-      local items = {}
-      for i = 1, n - bestK do items[#items + 1] = adds[i] end
-      for i = 1, bestK do items[#items + 1] = muls[i] end
-      pick[n] = items
-    else
-      val[n], pick[n] = val[n - 1], pick[n - 1]   
-    end
-  end
-  return val, pick
-end
-
-
-
-local NUKE_GATE = { HYDRO = 100, BALE = 50, SCHRAB = 50, SOL = 25 }
-
-
-
-
-
-local function allocate(goal, tables, cfg, slots, nukeMin)
-  local stages = {}
-  for _, s in ipairs(D.STAGES) do
-    if goal.w[s] and (NUKE_GATE[s] or 0) <= nukeMin then
-      stages[#stages + 1] = s
-    end
-  end
-  local function minFor(s)
-    local m = goal.min[s] or 0
-    if s == "NUKE" then m = math.max(m, nukeMin) end
-    return m
-  end
-  
-  local dp, how = { [0] = {} }, {}
-  for u = 0, slots do dp[0][u] = (u == 0) and 0 or nil end
-  for i, s in ipairs(stages) do
-    dp[i], how[i] = {}, {}
-    local val = tables[s].val
-    local cap = cfg[D.STAGE_CAP[s]]
-    local need = minFor(s)
-    for u = 0, slots do
-      local best, bestN
-      for n = 0, u do
-        local prev = dp[i - 1][u - n]
-        if prev ~= nil then
-          local raw = val[n] or 0
-          local live = (need <= 0) and true or (raw >= need)
-          if n == 0 and need <= 0 then live = true end
-          if live and (n == 0 or raw > 0) then
-            local sum = prev + goal.w[s] * math.min(raw, cap)
-            if best == nil or sum > best + 1e-9 then best, bestN = sum, n end
-          end
-        end
-      end
-      dp[i][u], how[i][u] = best, bestN
-    end
-  end
-  local last = #stages
-  local finalCap = cfg[goal.cap]
-  local function result(u)
-    local s = dp[last][u]
-    if s == nil then return nil end
-    return M.toInt(math.min(s, finalCap))
-  end
-  return {
-    stages = stages, dp = dp, how = how, result = result,
-    split = function(u)
-      local out = {}
-      for i = last, 1, -1 do
-        local n = how[i][u]
-        out[stages[i]] = n
-        u = u - n
-      end
-      return out
-    end,
-  }
-end
-
-
-local function assemble(split, tables)
-  local slots = {}
-  for _, s in ipairs(D.STAGES) do
-    local n = split[s] or 0
-    if n > 0 then
-      for _, it in ipairs(tables[s].pick[n]) do slots[#slots + 1] = it end
-    end
-  end
-  return slots
-end
-
-local function evaluate(slots, cfg)
-  local v, info = M.stages(slots, cfg)
-  return M.customOutcome(v, cfg), v, info
-end
-
-local function sameBlast(a, b)
-  return a.engine == b.engine and a.radius == b.radius and (a.falloutAdd or 0) == (b.falloutAdd or 0)
-end
-
-
-
-local function downgrade(slots, stock, cfg, want)
-  local used = {}
-  for _, it in ipairs(slots) do used[it.key] = (used[it.key] or 0) + 1 end
-  local function available(it)
-    if not stock then return true end
-    return (stock[it.key] or 0) - (used[it.key] or 0) > 0
-  end
-  local byStage = {}
-  for _, it in ipairs(D.INGREDIENTS) do
-    byStage[it.stage] = byStage[it.stage] or {}
-    table.insert(byStage[it.stage], it)
-  end
-  for _, list in pairs(byStage) do table.sort(list, function(a, b) return a.v < b.v end) end
-  for i = 1, #slots do
-    local cur = slots[i]
-    for _, alt in ipairs(byStage[cur.stage]) do
-      if alt.v >= cur.v then break end
-      if alt.m == cur.m and available(alt) then
-        slots[i] = alt
-        if sameBlast(evaluate(slots, cfg), want) then
-          used[cur.key] = used[cur.key] - 1
-          used[alt.key] = (used[alt.key] or 0) + 1
-          break
-        end
-        slots[i] = cur
-      end
-    end
-  end
-  
-  local i = 1
-  while i <= #slots do
-    local it = table.remove(slots, i)
-    if sameBlast(evaluate(slots, cfg), want) then
-      used[it.key] = used[it.key] - 1
-    else
-      table.insert(slots, i, it)
-      i = i + 1
-    end
-  end
-  return slots
-end
-
-
-
-
-
-
-function B.design(goalKey, cfg, opts)
-  opts = opts or {}
-  cfg = M.conf(cfg)
-  local goal = B.GOALS[goalKey]
-  if not goal then return nil, "unknown kind of blast: " .. tostring(goalKey) end
-  local slots = opts.slots or D.CUSTOM_SLOTS
-  local tables = {}
-  for _, s in ipairs(D.STAGES) do
-    local val, pick = stageTable(s, opts.stock, slots)
-    tables[s] = { val = val, pick = pick }
-  end
-
-  local runs = {}
-  local base = goal.min.NUKE or 0
-  local tiers = { base }
-  if goal.w.NUKE then
-    for _, t in ipairs({ 25, 50, 100 }) do if t > base then tiers[#tiers + 1] = t end end
-  end
-  for _, tier in ipairs(tiers) do
-    runs[#runs + 1] = allocate(goal, tables, cfg, slots, tier)
-  end
-
-  local best
-  for _, run in ipairs(runs) do
-    
-    local top
-    for u = 0, slots do
-      local r = run.result(u)
-      if r and (top == nil or r > top) then top = r end
-    end
-    if top then
-      local target = opts.radius and math.min(opts.radius, top) or top
-      for u = 1, slots do
-        local r = run.result(u)
-        if r and r >= target then
-          if not best or r > best.r or (r == best.r and u < best.u) then
-            best = { r = r, u = u, run = run }
-          end
-          break
-        end
-      end
-    end
-  end
-  if not best or best.r <= 0 then
-    return nil, "the materials on hand cannot make a " .. goal.name:lower() .. " blast"
-  end
-  if opts.radius and best.r < opts.radius then
-    best.short = true
-  end
-
-  local design = assemble(best.run.split(best.u), tables)
-  local o = evaluate(design, cfg)
-  if o.via ~= goal.fires or (goal.fires == "TNT" and o.engine ~= "mk5") then
-    
-    return nil, "no design clears the mod's thresholds with these materials"
-  end
-  design = downgrade(design, opts.stock, cfg, o)
-
-  
-  
-  
-  if opts.salt and (goal.fires == "NUKE" or goal.fires == "HYDRO") then
-    local stock = opts.stock
-    if stock then
-      stock = {}
-      for k, n in pairs(opts.stock) do stock[k] = n end
-      for _, it in ipairs(design) do stock[it.key] = (stock[it.key] or 0) - 1 end
-    end
-    local room = slots - #design
-    if room > 0 then
-      local _, pick = stageTable("DIRTY", stock, room)
-      for _, it in ipairs(pick[room] or {}) do design[#design + 1] = it end
-    end
-  end
-
-  o = evaluate(design, cfg)
-  local v = M.stages(design, cfg)
-  return { slots = design, outcome = o, stages = v, short = best.short, goal = goal }
-end
-
-
-
-function B.designEuph(cfg, opts)
-  opts = opts or {}
-  cfg = M.conf(cfg)
-  local slots = opts.slots or D.CUSTOM_SLOTS
-  
-  
-  
-  local base = {}
-  local function cheapest(stage, need)
-    local list = {}
-    for _, it in ipairs(D.INGREDIENTS) do
-      if it.stage == stage and not it.m then
-        local have = opts.stock and (opts.stock[it.key] or 0) or slots
-        for _ = 1, have do list[#list + 1] = it end
-      end
-    end
-    table.sort(list, function(a, b) return a.v > b.v end)
-    local sum, out = 0, {}
-    for _, it in ipairs(list) do
-      if sum >= need then break end
-      out[#out + 1] = it; sum = sum + it.v
-    end
-    if sum < need then return nil end
-    return out
-  end
-  for _, req in ipairs({ { "TNT", 16 }, { "NUKE", 50 }, { "SCHRAB", 1 }, { "SOL", 1 } }) do
-    local got = cheapest(req[1], req[2])
-    if not got then return nil, "not enough " .. D.STAGE_NAME[req[1]] .. " material to keep Anti Mass live" end
-    for _, it in ipairs(got) do base[#base + 1] = it end
-  end
-  local euphs = {}
-  for _, it in ipairs(D.INGREDIENTS) do
-    if it.stage == "EUPH" then
-      local have = opts.stock and (opts.stock[it.key] or 0) or slots
-      for _ = 1, have do euphs[#euphs + 1] = it end
-    end
-  end
-  table.sort(euphs, function(a, b) return a.key < b.key end)  
-  local room = math.min(slots - #base, cfg.maxCustomEuphLvl)
-  if room <= 0 or #euphs == 0 then return nil, "no Euphemium on hand" end
-  for i = 1, math.min(room, #euphs) do base[#base + 1] = euphs[i] end
-  local v = M.stages(base, cfg)
-  local o = M.customOutcome(v, cfg)
-  return { slots = base, outcome = o, stages = v, goal = { name = "Anti Mass", fires = "EUPH" } }
-end
-
-return B
+local l=require("warhead.model")local k=l.D;local m={}
+m.GOALS={tnt={name="Conventional (no fallout)",fires="TNT",w={TNT=1},min={TNT=75},cap="maxCustomTNTRadius"},nuke={name="Fission",fires="NUKE",w={NUKE=1,TNT=
+1/2},min={TNT=16,NUKE=0.0001},cap="maxCustomNukeRadius"},hydro={name="Thermonuclear",fires="HYDRO",w={HYDRO=1,NUKE=
+1/2,TNT=1/4},min={TNT=16,NUKE=100,HYDRO=0.0001},cap="maxCustomHydroRadius"},bale={name="Balefire",fires="BALE",w={BALE=1,HYDRO=
+1/2,NUKE=1/4,TNT=1/8},min={TNT=16,NUKE=50,BALE=0.0001},cap="maxCustomBaleRadius"},schrab={name="Antimatter (FLEIJA-type)",fires="SCHRAB",w={SCHRAB=1,BALE=
+1/2,HYDRO=1/4,NUKE=1/8,TNT=1/16},min={TNT=16,NUKE=50,SCHRAB=0.0001},cap="maxCustomSchrabRadius"},sol={name="Solinium (Blue Rinse)",fires="SOL",w={SOL=1,SCHRAB=
+1/2,BALE=1/4,HYDRO=1/8,NUKE=1/16,TNT=1/32},min={TNT=16,NUKE=25,SOL=0.0001},cap="maxCustomSolRadius"}}m.ORDER={"tnt","nuke","hydro","bale","schrab","sol"}
+local function o(c,b,a)
+local d,e={},{}
+for u,j in ipairs(k.INGREDIENTS)do
+if j.stage==c then
+local v=b and(b[j.key]or 0)or a;v=math.min(v,a)for u=1,v do
+if j.m then if j.v>1 then e[#e+1]=j end else d[#d+1]=j end end end end
+table.sort(d,function(j,u)return j.v>u.v end)
+table.sort(e,function(j,u)return j.v>u.v end)local h,i={[0]=0},{[0]=1}for j,u in ipairs(d)do h[j]=h[j-1]+u.v end;for j,u in
+ipairs(e)do i[j]=i[j-1]*u.v end;local f,g={[0]=0},{[0]={}}
+for j=1,a do
+local v,u=0,nil
+for w=0,math.min(j-1,#e)do local x=j-w;if x<=#d then local y=h[x]*i[w]
+if y>v+1e-9 then v,u=y,w end end end;f[j]=v
+if u then local w={}for x=1,j-u do w[#w+1]=d[x]end
+for x=1,u do w[#w+1]=e[x]end;g[j]=w else f[j],g[j]=f[j-1],g[j-1]end end;return f,g end;local q={HYDRO=100,BALE=50,SCHRAB=50,SOL=25}
+local function r(a,e,b,c,d)local f={}
+for x,w in ipairs(k.STAGES)do if a.w[w]and
+(q[w]or 0)<=d then f[#f+1]=w end end;local function j(w)local x=a.min[w]or 0;if w=="NUKE"then x=math.max(x,d)end
+return x end;local g,h={[0]={}},{}for w=0,c do g[0][w]=(w==0)and
+0 or nil end
+for w,x in ipairs(f)do g[w],h[w]={},{}
+local z=e[x].val;local A=b[k.STAGE_CAP[x]]local y=j(x)
+for B=0,c do local C,D
+for E=0,B do local F=g[w-1][B-E]
+if F~=
+nil then local G=z[E]or 0;local H=(y<=0)and true or(G>=y)if
+E==0 and y<=0 then H=true end;if H and(E==0 or G>0)then local I=F+
+a.w[x]*math.min(G,A)
+if C==nil or I>C+1e-9 then C,D=I,E end end end end;g[w][B],h[w][B]=C,D end end;local i=#f;local u=b[a.cap]local function v(w)local x=g[i][w]if x==nil then return nil end;return
+l.toInt(math.min(x,u))end;return
+{stages=f,dp=g,how=h,result=v,split=function(w)local x={}for y=i,1,-1 do
+local z=h[y][w]x[f[y]]=z;w=w-z end;return x end}end
+local function s(a,b)local c={}
+for e,d in ipairs(k.STAGES)do local f=a[d]or 0;if f>0 then for e,g in ipairs(b[d].pick[f])do
+c[#c+1]=g end end end;return c end
+local function n(b,a)local c,d=l.stages(b,a)return l.customOutcome(c,a),c,d end
+local function p(c,d)return
+c.engine==d.engine and c.radius==d.radius and
+(c.falloutAdd or 0)== (d.falloutAdd or 0)end
+local function t(a,b,c,d)local e={}
+for j,i in ipairs(a)do e[i.key]=(e[i.key]or 0)+1 end
+local function h(i)if not b then return true end;return
+(b[i.key]or 0)- (e[i.key]or 0)>0 end;local f={}for j,i in ipairs(k.INGREDIENTS)do f[i.stage]=f[i.stage]or{}
+table.insert(f[i.stage],i)end;for j,i in pairs(f)do
+table.sort(i,function(u,v)return u.v<v.v end)end
+for j=1,#a do local i=a[j]
+for v,u in ipairs(f[i.stage])do if
+u.v>=i.v then break end;if u.m==i.m and h(u)then a[j]=u
+if p(n(a,c),d)then
+e[i.key]=e[i.key]-1;e[u.key]=(e[u.key]or 0)+1;break end;a[j]=i end end end;local g=1
+while g<=#a do local i=table.remove(a,g)if p(n(a,c),d)then
+e[i.key]=e[i.key]-1 else table.insert(a,g,i)g=g+1 end end;return a end
+function m.design(c,b,a)a=a or{}b=l.conf(b)local e=m.GOALS[c]if not e then return nil,
+"unknown kind of blast: "..tostring(c)end
+local g=a.slots or k.CUSTOM_SLOTS;local i={}
+for y,v in ipairs(k.STAGES)do local z,A=o(v,a.stock,g)i[v]={val=z,pick=A}end;local j={}local w=e.min.NUKE or 0;local u={w}
+if e.w.NUKE then for y,v in ipairs({25,50,100})do if v>w then
+u[#u+1]=v end end end;for y,v in ipairs(u)do j[#j+1]=r(e,i,b,g,v)end;local d
+for y,v in ipairs(j)do local z
+for A=0,g do
+local B=v.result(A)if B and(z==nil or B>z)then z=B end end
+if z then
+local A=a.radius and math.min(a.radius,z)or z;for B=1,g do local C=v.result(B)
+if C and C>=A then if
+not d or C>d.r or(C==d.r and B<d.u)then d={r=C,u=B,run=v}end;break end end end end
+if not d or d.r<=0 then return nil,
+"the materials on hand cannot make a "..e.name:lower().." blast"end;if a.radius and d.r<a.radius then d.short=true end
+local f=s(d.run.split(d.u),i)local h=n(f,b)if h.via~=e.fires or
+(e.fires=="TNT"and h.engine~="mk5")then
+return nil,"no design clears the mod's thresholds with these materials"end
+f=t(f,a.stock,b,h)
+if
+a.salt and(e.fires=="NUKE"or e.fires=="HYDRO")then local v=a.stock
+if v then v={}for z,A in pairs(a.stock)do v[z]=A end;for A,z in ipairs(f)do v[z.key]=(
+v[z.key]or 0)-1 end end;local y=g-#f;if y>0 then local A,z=o("DIRTY",v,y)
+for A,B in ipairs(z[y]or{})do f[#f+1]=B end end end;h=n(f,b)local x=l.stages(f,b)
+return{slots=f,outcome=h,stages=x,short=d.short,goal=e}end
+function m.designEuph(b,a)a=a or{}b=l.conf(b)local e=a.slots or k.CUSTOM_SLOTS
+local c={}
+local function h(u,j)local v={}
+for z,y in ipairs(k.INGREDIENTS)do if y.stage==u and not y.m then local A=a.stock and
+(a.stock[y.key]or 0)or e
+for z=1,A do v[#v+1]=y end end end
+table.sort(v,function(y,z)return y.v>z.v end)local w,x=0,{}
+for z,y in ipairs(v)do if w>=j then break end;x[#x+1]=y;w=w+y.v end;if w<j then return nil end;return x end
+for u,j in
+ipairs({{"TNT",16},{"NUKE",50},{"SCHRAB",1},{"SOL",1}})do local v=h(j[1],j[2])if not v then
+return nil,"not enough "..
+k.STAGE_NAME[j[1]].." material to keep Anti Mass live"end
+for u,w in ipairs(v)do c[#c+1]=w end end;local d={}
+for u,j in ipairs(k.INGREDIENTS)do if j.stage=="EUPH"then local v=a.stock and
+(a.stock[j.key]or 0)or e
+for u=1,v do d[#d+1]=j end end end
+table.sort(d,function(j,u)return j.key<u.key end)local f=math.min(e-#c,b.maxCustomEuphLvl)if f<=0 or#d==0 then return nil,
+"no Euphemium on hand"end;for j=1,math.min(f,#d)do
+c[#c+1]=d[j]end;local g=l.stages(c,b)
+local i=l.customOutcome(g,b)
+return{slots=c,outcome=i,stages=g,goal={name="Anti Mass",fires="EUPH"}}end;return m

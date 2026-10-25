@@ -1,521 +1,149 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local D = require("warhead.data")
-
-local M = {}
-M.D = D
-
-
-
-
-
-
-
-local f32 = function(x) return x end
-do
-  local okP = pcall(function() return string.pack("f", 1.5) end)
-  if okP then
-    f32 = function(x) return (string.unpack("f", string.pack("f", x))) end
-  end
-end
-M.f32 = f32
-M.EXACT = (f32(0.1) ~= 0.1)
-
-local floor = math.floor
-
-local function toInt(x)
-  if x >= 0 then return floor(x) end
-  return -floor(-x)
-end
-M.toInt = toInt
-
-
-
-function M.config(over)
-  local c = {}
-  for k, v in pairs(D.CONFIG) do c[k] = v end
-  if type(over) == "table" then
-    for k, v in pairs(over) do
-      if D.CONFIG[k] ~= nil and type(v) == type(D.CONFIG[k]) then c[k] = v end
-    end
-  end
-  return c
-end
-
-
-
-
-
-
-function M.conf(cfg)
-  if type(cfg) == "table" and cfg.falloutRange ~= nil then return cfg end
-  return M.config()
-end
-
-
-M.byKey = {}
-M.byItem = {}
-for _, it in ipairs(D.INGREDIENTS) do
-  M.byKey[it.key] = it
-  M.byItem[it.id .. (it.dmg and ("#" .. it.dmg) or "")] = it
-end
-
-
-
-
-
-function M.lookup(id, dmg)
-  if type(id) ~= "string" then return nil end
-  local hit = dmg and M.byItem[id .. "#" .. tostring(toInt(dmg))]
-  return hit or M.byItem[id]
-end
-
-
-local function asIngredient(x)
-  if type(x) == "table" then return x end
-  if type(x) == "string" then return M.byKey[x] end
-  return nil
-end
-M.asIngredient = asIngredient
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-function M.stages(slots, cfg)
-  cfg = M.conf(cfg)
-  local add, mul = {}, {}
-  for _, s in ipairs(D.STAGES) do add[s] = f32(0); mul[s] = f32(1) end
-  local info = { raw = {}, off = {}, capped = {}, edge = {}, used = 0, unknown = 0, fall = false }
-  for i = 1, D.CUSTOM_SLOTS do
-    local x = slots and slots[i]
-    if x ~= nil and x ~= false then
-      info.used = info.used + 1
-      if x == D.DROP_UPGRADE.key or (type(x) == "table" and x.key == D.DROP_UPGRADE.key) then
-        info.fall = true
-      else
-        local it = asIngredient(x)
-        if not it then
-          info.unknown = info.unknown + 1
-        elseif it.m then
-          
-          
-          if it.stage ~= "EUPH" then mul[it.stage] = f32(mul[it.stage] * f32(it.v)) end
-        else
-          add[it.stage] = f32(add[it.stage] + f32(it.v))
-        end
-      end
-    end
-  end
-
-  local v = {}
-  for _, s in ipairs(D.STAGES) do
-    v[s] = (s == "EUPH") and add[s] or f32(add[s] * mul[s])
-    info.raw[s] = v[s]
-  end
-
-  
-  
-  local function gate(stage, by, limit)
-    if v[stage] > 0 and v[by] < limit then
-      info.off[stage] = string.format("%s is %s, under the %s it needs",
-        D.STAGE_NAME[by], M.num(v[by]), M.num(limit))
-      v[stage] = 0
-    end
-    if not M.EXACT and v[by] > 0 and math.abs(v[by] - limit) < 1e-3 then info.edge[by] = true end
-  end
-  gate("NUKE",   "TNT",  16)
-  gate("HYDRO",  "NUKE", 100)
-  gate("BALE",   "NUKE", 50)
-  gate("SCHRAB", "NUKE", 50)
-  gate("SOL",    "NUKE", 25)
-  if v.EUPH > 0 and (v.SCHRAB < 1 or v.SOL < 1) then
-    info.off.EUPH = "Anti Mass needs both Schrabidium and Solinium of at least 1"
-    v.EUPH = 0
-  end
-
-  for _, s in ipairs(D.STAGES) do
-    local cap = cfg[D.STAGE_CAP[s]]
-    if v[s] > cap then v[s] = cap; info.capped[s] = cap end
-  end
-  return v, info
-end
-
-
-
-
-function M.customOutcome(v, cfg)
-  cfg = M.conf(cfg)
-  local tnt, nuke, hydro, bale = v.TNT, v.NUKE, v.HYDRO, v.BALE
-  local schrab, sol, euph = v.SCHRAB, v.SOL, v.EUPH
-  local dirty = math.min(v.DIRTY, cfg.maxCustomDirtyRadius)
-  local o
-  if euph > 0 then
-    local lvl = math.min(euph, cfg.maxCustomEuphLvl)
-    o = { engine = "zomg", via = "EUPH", beams = toInt(100 * lvl), level = lvl }
-  elseif sol > 0 then
-    local r = sol + schrab / 2 + bale / 4 + hydro / 8 + nuke / 16 + tnt / 32
-    o = { engine = "solinium", via = "SOL", raw = r, radius = toInt(math.min(r, cfg.maxCustomSolRadius)),
-          formula = "Sol + Schrab/2 + Bale/4 + Hydro/8 + Nuke/16 + TNT/32" }
-  elseif schrab > 0 then
-    local r = schrab + bale / 2 + hydro / 4 + nuke / 8 + tnt / 16
-    o = { engine = "fleija", via = "SCHRAB", raw = r, radius = toInt(math.min(r, cfg.maxCustomSchrabRadius)),
-          formula = "Schrab + Bale/2 + Hydro/4 + Nuke/8 + TNT/16" }
-  elseif bale > 0 then
-    local r = bale + hydro / 2 + nuke / 4 + tnt / 8
-    o = { engine = "balefire", via = "BALE", raw = r, radius = toInt(math.min(r, cfg.maxCustomBaleRadius)),
-          formula = "Bale + Hydro/2 + Nuke/4 + TNT/8" }
-  elseif hydro > 0 then
-    local r = hydro + nuke / 2 + tnt / 4
-    
-    o = { engine = "mk5", via = "HYDRO", raw = r, radius = toInt(math.min(r, cfg.maxCustomHydroRadius)),
-          falloutAdd = toInt(dirty * 0.25), formula = "Hydro + Nuke/2 + TNT/4" }
-  elseif nuke > 0 then
-    local r = nuke + tnt / 2
-    o = { engine = "mk5", via = "NUKE", raw = r, radius = toInt(math.min(r, cfg.maxCustomNukeRadius)),
-          falloutAdd = toInt(dirty), formula = "Nuke + TNT/2" }
-  elseif tnt >= 75 then
-    o = { engine = "mk5", via = "TNT", fallout = false, raw = tnt,
-          radius = toInt(math.min(tnt, cfg.maxCustomTNTRadius)), formula = "TNT (75 and over)" }
-  elseif tnt > 0 then
-    o = { engine = "large", via = "TNT", power = tnt, formula = "TNT (under 75)" }
-  else
-    o = { engine = "none" }
-  end
-  if o.raw and o.radius and o.raw > o.radius + 1 then o.cappedAt = o.radius end
-  return o
-end
-
-
-
-
-
-local function partKey(stack)
-  if type(stack) ~= "table" or type(stack.id) ~= "string" then return nil end
-  local dmg = tonumber(stack.dmg or stack.damage) or 0
-  return stack.id, stack.id .. "#" .. toInt(dmg)
-end
-
-local function partMatches(want, stack)
-  local id, idDmg = partKey(stack)
-  if not id then return false end
-  if type(want) == "table" then
-    for _, w in ipairs(want) do if partMatches(w, stack) then return true end end
-    return false
-  end
-  if want:find("#") then return want == idDmg end
-  return want == id
-end
-M.partMatches = partMatches
-
-function M.partName(want)
-  if type(want) == "table" then
-    local n = {}
-    for _, w in ipairs(want) do n[#n + 1] = M.partName(w) end
-    return table.concat(n, " or ")
-  end
-  return D.PART_NAME[want] or want
-end
-
-
-
-
-
-function M.bombOutcome(b, cfg, contents)
-  cfg = M.conf(cfg)
-  local o = { engine = b.engine, fallout = (b.fallout ~= false), falloutAdd = 0,
-              name = b.name, ready = true, missing = {} }
-  local function check(slot, want)
-    if contents and not partMatches(want, contents[slot]) then
-      o.missing[#o.missing + 1] = { slot = slot, want = want }
-      return false
-    end
-    return true
-  end
-
-  if b.perCharge then
-    
-    local charges = 12
-    if contents then
-      charges = 0
-      for s = 1, b.slots do if partMatches(b.perCharge, contents[s]) then charges = charges + 1 end end
-    end
-    o.charges = charges
-    if charges == 0 then
-      o.ready = false
-      o.missing[1] = { slot = 1, want = b.perCharge }
-      o.radius = 0
-    else
-      o.radius = toInt(f32(cfg[b.radius] * charges) / 12)
-    end
-    return o
-  end
-
-  for s, want in ipairs(b.parts or {}) do
-    if not check(s, want) then o.ready = false end
-  end
-
-  if b.fixed then
-    o.radius = b.fixed
-  elseif b.filled then
-    local full = true
-    for s, want in pairs(b.filled) do
-      if contents and not partMatches(want, contents[s]) then full = false end
-    end
-    if o.ready and not full then
-      
-      o.radius = cfg[b.fizzle]
-      o.fizzle = true
-      for s, want in pairs(b.filled) do
-        if not partMatches(want, contents[s]) then
-          o.missing[#o.missing + 1] = { slot = s, want = want, optional = true }
-        end
-      end
-    else
-      o.radius = cfg[b.radius]
-    end
-  else
-    o.radius = cfg[b.radius]
-  end
-  if not o.ready then o.radius = 0 end
-  return o
-end
-
-
-function M.missileOutcome(m, cfg)
-  cfg = M.conf(cfg)
-  local r
-  if m.strength then r = toInt(m.strength)
-  else
-    r = cfg[m.radius]
-    if m.div then r = toInt(r / m.div) end
-    if m.mult then r = r * m.mult end
-  end
-  local o = { engine = m.engine, fallout = (m.fallout ~= false), falloutAdd = m.falloutAdd or 0,
-              name = m.name, ready = true, missing = {} }
-  if m.engine == "large" then o.power = r else o.radius = r end
-  return o
-end
-
-
-
-
-
-
-
-
-local function lut(ri, di)
-  local r = f32(f32(f32(ri) / f32(255)) * f32(100))
-  local d = f32(f32(di) / f32(255))
-  return f32((r + 1) ^ (3 * d) - 1)
-end
-
-
-
-
-
-function M.lossFactor(res, t)
-  res = f32(res)
-  if res >= 2000000 then return res end
-  if res <= 0 then return 0 end
-  if res > 100 then return (res + 1) ^ (3 * t) - 1 end
-  local ri = toInt(f32(f32(res * f32(255)) / f32(100)))
-  if ri == 0 then return (res + 1) ^ (3 * t) - 1 end
-  return lut(ri, toInt(t * 255))
-end
-
-
-
-
-
-
-
-
-
-
-function M.ray(radius, materialAt)
-  local energy = f32(f32(2 * radius) * f32(0.3))
-  local entry, k, reached = 0, 0, 0
-  local inv = 1 / radius
-  while energy > 0 do
-    local exit = k + 0.5
-    local seg = exit - entry
-    local rem = radius - entry
-    if rem <= 1e-9 then break end
-    local clipped = seg > rem - 1e-12
-    if clipped then seg = rem end
-    local res = materialAt(k)
-    if res and seg > 1e-9 then
-      if f32(res) >= 2000000 then energy = 0
-      else
-        local t = math.max(entry, 0.009999999776482582) * inv
-        energy = energy - M.lossFactor(res, t) * seg
-      end
-      reached = reached + 1
-    end
-    entry = exit
-    if energy <= 0 or clipped then break end
-    k = k + 1
-  end
-  return reached, energy > 0
-end
-
-
-function M.craterDepth(radius, res)
-  return M.ray(radius, function(k) if k == 0 then return nil end return res end)
-end
-
-
-
-function M.wallStop(radius, res, dist)
-  return M.ray(radius, function(k) if k >= dist then return res end return nil end)
-end
-
-
-
-
-local K = 0
-for t = 2, 9 do K = K + 1 / (5 * t + 1) end
-M.PULSE = 2500000 * K   
-
-
-
-
-function M.dose(d, shield)
-  if d <= 0 then return math.huge end
-  return M.PULSE / math.max(1, shield or 0) / (d * d)
-end
-
-
-function M.doseRadius(rads) return math.sqrt(M.PULSE / rads) end
-
-
-
-
-function M.effects(o, cfg)
-  cfg = M.conf(cfg)
-  local e = { kind = o.engine, notes = {} }
-  local function note(s) e.notes[#e.notes + 1] = s end
-  if o.engine == "none" or (o.radius == 0 and o.engine ~= "large" and o.engine ~= "zomg") then
-    e.kind = "none"
-    note("Nothing happens: no stage of this bomb is live.")
-    return e
-  end
-  if o.engine == "mk5" then
-    local r = o.radius
-    if r == 0 then r = 25 end      
-    local s = 2 * r
-    e.radius, e.strength = r, s
-    e.rays = toInt(7.853981633974483 * s * s)
-    e.energy = f32(f32(s) * f32(0.3))
-    e.blast = 2 * r
-    e.lethal = e.blast * (1 - D.PLAYER_HP / 250)
-    local nuclear = o.fallout ~= false and not cfg.disableNuclear
-    e.nuclear = nuclear
-    if nuclear then
-      if s >= 75 then
-        e.pulse = true
-        e.sick = math.min(M.doseRadius(D.RAD_SICK), e.blast)
-        e.death = math.min(M.doseRadius(D.RAD_DEATH), e.blast)
-      else
-        note("Too small for the radiation pulse (it needs a radius of 38 or more).")
-      end
-      e.glow = r * 1.5
-      e.fallout = toInt(toInt(r * 2.5 + (o.falloutAdd or 0)) * cfg.falloutRange / 100)
-      e.falloutAdd = o.falloutAdd or 0
-    else
-      note(cfg.disableNuclear and "This server's config disables the nuclear part of nukes."
-        or "A clean blast: no radiation pulse, no fallout.")
-    end
-  elseif o.engine == "fleija" then
-    e.radius = o.radius
-    e.blast = 2 * o.radius
-    e.lethal = e.blast * (1 - D.PLAYER_HP / 250)
-    e.sphere = true
-    note("Antimatter: every block in the sphere is deleted except bedrock-class ones.")
-    note("A Field Disturber or a DFC core within 300 blocks jams it: nothing happens.")
-  elseif o.engine == "solinium" then
-    e.radius = o.radius
-    e.sphere = true
-    e.rinse = true
-    note("Everything living inside the sphere takes 15,000-250,000 RAD every tick.")
-    note("Plants, leaves and wood go; wasteland, trinitite and taint revert to land.")
-  elseif o.engine == "balefire" then
-    e.radius = o.radius
-    e.blast = 2 * o.radius
-    e.lethal = e.blast * (1 - D.PLAYER_HP / 250)
-    note("Balefire: carves the sphere and sets it alight with balefire.")
-  elseif o.engine == "large" then
-    e.power = o.power
-    e.reachMin, e.reachMax = 0.7 * o.power / 0.225 * 0.3, 1.3 * o.power / 0.225 * 0.3
-    e.blast = 2 * o.power
-    note("An ordinary explosion (vanilla rules), with HBM's debris on top.")
-  elseif o.engine == "zomg" then
-    e.beams = o.beams
-    note(string.format("Anti Mass: %d rainbow beams fire off in random directions.", o.beams))
-  end
-  return e
-end
-
-
-
-function M.shelter(o, e, mat, dist, thick)
-  local v = { dist = dist, thick = thick }
-  if e.kind == "mk5" then
-    local used, through = M.wallStop(e.radius, mat.nuke, dist)
-    v.need = through and nil or used
-    v.breached = through or used > thick
-    if dist >= e.radius then v.need = 0; v.breached = false; v.outside = true end
-    v.blastRange = dist <= e.blast
-    if e.pulse and dist <= e.blast then
-      v.dose = M.dose(dist, mat.rad * thick)
-    end
-  elseif e.sphere or e.kind == "balefire" then
-    v.need = nil
-    v.breached = dist <= e.radius
-    v.outside = not v.breached
-    v.blastRange = e.blast and dist <= e.blast or false
-    if e.rinse and dist <= e.radius then
-      v.dose = 15000 + (250000 - 15000) * (1 - dist / e.radius)
-    end
-  end
-  return v
-end
-
-
-
-
-function M.num(x)
-  if type(x) ~= "number" then return tostring(x) end
-  if x == math.huge then return "inf" end
-  local s = string.format("%.2f", x)
-  s = s:gsub("0+$", ""):gsub("%.$", "")
-  if s == "-0" then s = "0" end
-  return s
-end
-
-return M
+local u,v="balefire","string"local p=require("warhead.data")local m={}m.D=p;local n=function(a)
+return a end;do
+local a=pcall(function()return string.pack("f",1.5)end)
+if a then n=function(b)
+return(string.unpack("f",string.pack("f",b)))end end end
+m.f32=n;m.EXACT=(n(0.1)~=0.1)local s=math.floor;local function o(a)if a>=0 then return s(a)end;return-
+s(-a)end;m.toInt=o
+function m.config(a)local b={}for c,d in
+pairs(p.CONFIG)do b[c]=d end
+if type(a)=="table"then for c,d in pairs(a)do
+if p.CONFIG[c]~=nil and
+type(d)==type(p.CONFIG[c])then b[c]=d end end end;return b end;function m.conf(a)
+if type(a)=="table"and a.falloutRange~=nil then return a end;return m.config()end
+m.byKey={}m.byItem={}for b,a in ipairs(p.INGREDIENTS)do m.byKey[a.key]=a
+m.byItem[a.id.. (a.dmg and
+("#"..a.dmg)or"")]=a end
+function m.lookup(a,b)
+if type(a)~=v then return nil end
+local c=b and m.byItem[a.."#"..tostring(o(b))]return c or m.byItem[a]end;local function t(a)if type(a)=="table"then return a end
+if type(a)==v then return m.byKey[a]end;return nil end
+m.asIngredient=t
+function m.stages(b,a)a=m.conf(a)local e,g={},{}
+for i,h in ipairs(p.STAGES)do e[h]=n(0)g[h]=n(1)end;local d={raw={},off={},capped={},edge={},used=0,unknown=0,fall=false}
+for h=1,p.CUSTOM_SLOTS
+do local i=b and b[h]
+if i~=nil and i~=false then d.used=d.used+1
+if
+i==p.DROP_UPGRADE.key or
+(type(i)=="table"and i.key==p.DROP_UPGRADE.key)then d.fall=true else local j=t(i)if not j then
+d.unknown=d.unknown+1 elseif j.m then if j.stage~="EUPH"then
+g[j.stage]=n(g[j.stage]*n(j.v))end else
+e[j.stage]=n(e[j.stage]+n(j.v))end end end end;local c={}for i,h in ipairs(p.STAGES)do
+c[h]=(h=="EUPH")and e[h]or n(e[h]*g[h])d.raw[h]=c[h]end
+local function f(i,h,j)if
+c[i]>0 and c[h]<j then
+d.off[i]=string.format("%s is %s, under the %s it needs",p.STAGE_NAME[h],m.num(c[h]),m.num(j))c[i]=0 end;if
+not
+m.EXACT and c[h]>0 and math.abs(c[h]-j)<1e-3 then d.edge[h]=true end end;f("NUKE","TNT",16)f("HYDRO","NUKE",100)
+f("BALE","NUKE",50)f("SCHRAB","NUKE",50)f("SOL","NUKE",25)if c.EUPH>0 and(c.SCHRAB<1 or
+c.SOL<1)then
+d.off.EUPH="Anti Mass needs both Schrabidium and Solinium of at least 1"c.EUPH=0 end;for i,h in
+ipairs(p.STAGES)do local j=a[p.STAGE_CAP[h]]
+if c[h]>j then c[h]=j;d.capped[h]=j end end;return c,d end
+function m.customOutcome(b,a)a=m.conf(a)local d,e,f,g=b.TNT,b.NUKE,b.HYDRO,b.BALE
+local h,i,j=b.SCHRAB,b.SOL,b.EUPH;local k=math.min(b.DIRTY,a.maxCustomDirtyRadius)local c
+if j>0 then
+local l=math.min(j,a.maxCustomEuphLvl)c={engine="zomg",via="EUPH",beams=o(100*l),level=l}elseif i>0 then local l=i+h/2+
+g/4+f/8+e/16+d/32
+c={engine="solinium",via="SOL",raw=l,radius=o(math.min(l,a.maxCustomSolRadius)),formula="Sol + Schrab/2 + Bale/4 + Hydro/8 + Nuke/16 + TNT/32"}elseif h>0 then local l=h+g/2+f/4+e/8+d/16
+c={engine="fleija",via="SCHRAB",raw=l,radius=o(math.min(l,a.maxCustomSchrabRadius)),formula="Schrab + Bale/2 + Hydro/4 + Nuke/8 + TNT/16"}elseif g>0 then local l=g+f/2+e/4+d/8
+c={engine=u,via="BALE",raw=l,radius=o(math.min(l,a.maxCustomBaleRadius)),formula="Bale + Hydro/2 + Nuke/4 + TNT/8"}elseif f>0 then local l=f+e/2+d/4
+c={engine="mk5",via="HYDRO",raw=l,radius=o(math.min(l,a.maxCustomHydroRadius)),falloutAdd=o(
+k*0.25),formula="Hydro + Nuke/2 + TNT/4"}elseif e>0 then local l=e+d/2
+c={engine="mk5",via="NUKE",raw=l,radius=o(math.min(l,a.maxCustomNukeRadius)),falloutAdd=o(k),formula="Nuke + TNT/2"}elseif d>=75 then
+c={engine="mk5",via="TNT",fallout=false,raw=d,radius=o(math.min(d,a.maxCustomTNTRadius)),formula="TNT (75 and over)"}elseif d>0 then
+c={engine="large",via="TNT",power=d,formula="TNT (under 75)"}else c={engine="none"}end;if c.raw and c.radius and c.raw>c.radius+1 then
+c.cappedAt=c.radius end;return c end
+local function w(a)
+if type(a)~="table"or type(a.id)~=v then return nil end;local b=tonumber(a.dmg or a.damage)or 0;return a.id,a.id..
+"#"..o(b)end
+local function q(a,b)local c,d=w(b)if not c then return false end
+if type(a)=="table"then for f,e in ipairs(a)do
+if q(e,b)then return true end end;return false end;if a:find("#")then return a==d end;return a==c end;m.partMatches=q
+function m.partName(a)
+if type(a)=="table"then local b={}for d,c in ipairs(a)do
+b[#b+1]=m.partName(c)end;return table.concat(b," or ")end;return p.PART_NAME[a]or a end
+function m.bombOutcome(a,c,b)c=m.conf(c)
+local d={engine=a.engine,fallout=(a.fallout~=false),falloutAdd=0,name=a.name,ready=true,missing={}}
+local function e(f,g)if b and not q(g,b[f])then
+d.missing[#d.missing+1]={slot=f,want=g}return false end;return true end
+if a.perCharge then local f=12;if b then f=0
+for g=1,a.slots do if q(a.perCharge,b[g])then f=f+1 end end end;d.charges=f;if f==0 then d.ready=false
+d.missing[1]={slot=1,want=a.perCharge}d.radius=0 else
+d.radius=o(n(c[a.radius]*f)/12)end;return d end
+for f,g in ipairs(a.parts or{})do if not e(f,g)then d.ready=false end end
+if a.fixed then d.radius=a.fixed elseif a.filled then local f=true;for g,h in pairs(a.filled)do if b and not q(h,b[g])then
+f=false end end
+if d.ready and not f then
+d.radius=c[a.fizzle]d.fizzle=true
+for g,h in pairs(a.filled)do if not q(h,b[g])then
+d.missing[#d.missing+1]={slot=g,want=h,optional=true}end end else d.radius=c[a.radius]end else d.radius=c[a.radius]end;if not d.ready then d.radius=0 end;return d end
+function m.missileOutcome(a,b)b=m.conf(b)local c
+if a.strength then c=o(a.strength)else c=b[a.radius]if a.div then c=o(c/
+a.div)end;if a.mult then c=c*a.mult end end
+local d={engine=a.engine,fallout=(a.fallout~=false),falloutAdd=a.falloutAdd or 0,name=a.name,ready=true,missing={}}if a.engine=="large"then d.power=c else d.radius=c end;return d end
+local function x(a,b)local c=n(n(n(a)/n(255))*n(100))
+local e=n(n(b)/n(255))return n((c+1)^ (3*e)-1)end
+function m.lossFactor(a,b)a=n(a)if a>=2000000 then return a end;if a<=0 then return 0 end;if a>100 then return(a+1)^
+(3*b)-1 end
+local c=o(n(n(a*n(255))/n(100)))if c==0 then return(a+1)^ (3*b)-1 end
+return x(c,o(b*255))end
+function m.ray(a,b)local c=n(n(2*a)*n(0.3))local d,e,f=0,0,0;local g=1/a
+while c>0 do local k=e+0.5
+local h=k-d;local i=a-d;if i<=1e-9 then break end;local l=h>i-1e-12;if l then h=i end;local j=b(e)if j and
+h>1e-9 then
+if n(j)>=2000000 then c=0 else
+local y=math.max(d,0.009999999776482582)*g;c=c-m.lossFactor(j,y)*h end;f=f+1 end;d=k;if
+c<=0 or l then break end;e=e+1 end;return f,c>0 end
+function m.craterDepth(a,b)return
+m.ray(a,function(c)if c==0 then return nil end;return b end)end
+function m.wallStop(a,b,c)return
+m.ray(a,function(d)if d>=c then return b end;return nil end)end;local r=0;for a=2,9 do r=r+1/ (5*a+1)end;m.PULSE=2500000*r;function m.dose(a,b)if
+a<=0 then return math.huge end;return
+m.PULSE/math.max(1,b or 0)/ (a*a)end;function m.doseRadius(a)return math.sqrt(
+m.PULSE/a)end
+function m.effects(a,b)
+b=m.conf(b)local c={kind=a.engine,notes={}}
+local function d(e)c.notes[#c.notes+1]=e end
+if a.engine=="none"or
+(a.radius==0 and a.engine~="large"and a.engine~="zomg")then c.kind="none"
+d("Nothing happens: no stage of this bomb is live.")return c end
+if a.engine=="mk5"then local e=a.radius;if e==0 then e=25 end;local f=2*e;c.radius,c.strength=e,f;c.rays=o(
+7.853981633974483*f*f)
+c.energy=n(n(f)*n(0.3))c.blast=2*e
+c.lethal=c.blast* (1-p.PLAYER_HP/250)
+local g=a.fallout~=false and not b.disableNuclear;c.nuclear=g
+if g then
+if f>=75 then c.pulse=true
+c.sick=math.min(m.doseRadius(p.RAD_SICK),c.blast)
+c.death=math.min(m.doseRadius(p.RAD_DEATH),c.blast)else
+d("Too small for the radiation pulse (it needs a radius of 38 or more).")end;c.glow=e*1.5
+c.fallout=o(
+o(e*2.5+ (a.falloutAdd or 0))*b.falloutRange/100)c.falloutAdd=a.falloutAdd or 0 else
+d(
+b.disableNuclear and"This server's config disables the nuclear part of nukes."or"A clean blast: no radiation pulse, no fallout.")end elseif a.engine=="fleija"then c.radius=a.radius;c.blast=2*a.radius;c.lethal=c.blast* (1-
+p.PLAYER_HP/250)c.sphere=true
+d("Antimatter: every block in the sphere is deleted except bedrock-class ones.")
+d("A Field Disturber or a DFC core within 300 blocks jams it: nothing happens.")elseif a.engine=="solinium"then c.radius=a.radius;c.sphere=true;c.rinse=true
+d("Everything living inside the sphere takes 15,000-250,000 RAD every tick.")
+d("Plants, leaves and wood go; wasteland, trinitite and taint revert to land.")elseif a.engine==u then c.radius=a.radius;c.blast=2*a.radius;c.lethal=c.blast*
+(1-p.PLAYER_HP/250)
+d("Balefire: carves the sphere and sets it alight with balefire.")elseif a.engine=="large"then c.power=a.power;c.reachMin,c.reachMax=0.7*a.power/0.225*0.3,
+1.3*a.power/0.225*0.3;c.blast=2*
+a.power
+d("An ordinary explosion (vanilla rules), with HBM's debris on top.")elseif a.engine=="zomg"then c.beams=a.beams
+d(string.format("Anti Mass: %d rainbow beams fire off in random directions.",a.beams))end;return c end
+function m.shelter(e,a,d,b,c)local f={dist=b,thick=c}
+if a.kind=="mk5"then
+local g,h=m.wallStop(a.radius,d.nuke,b)f.need=h and nil or g;f.breached=h or g>c;if b>=a.radius then f.need=0
+f.breached=false;f.outside=true end;f.blastRange=b<=a.blast
+if
+a.pulse and b<=a.blast then f.dose=m.dose(b,d.rad*c)end elseif a.sphere or a.kind==u then f.need=nil;f.breached=b<=a.radius
+f.outside=not f.breached;f.blastRange=a.blast and b<=a.blast or false
+if a.rinse and
+b<=a.radius then f.dose=15000+
+(250000-15000)* (1-b/a.radius)end end;return f end
+function m.num(a)if type(a)~="number"then return tostring(a)end;if
+a==math.huge then return"inf"end;local b=string.format("%.2f",a)
+b=b:gsub("0+$",""):gsub("%.$","")if b=="-0"then b="0"end;return b end;return m

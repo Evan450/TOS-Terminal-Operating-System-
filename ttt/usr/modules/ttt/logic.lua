@@ -1,192 +1,35 @@
-
-
-
-
-
-
-
-
-
-
-local L = {}
-
-
-
-
-local LINES = {
-  { 1, 2, 3 }, { 4, 5, 6 }, { 7, 8, 9 },      
-  { 1, 4, 7 }, { 2, 5, 8 }, { 3, 6, 9 },      
-  { 1, 5, 9 }, { 3, 5, 7 },                   
-}
-L.LINES = LINES
-
-function L.newBoard() return {} end
-
-
-
-function L.winner(b)
-  for _, ln in ipairs(LINES) do
-    local a = b[ln[1]]
-    if a and b[ln[2]] == a and b[ln[3]] == a then return a, ln end
-  end
-  for i = 1, 9 do if not b[i] then return nil end end
-  return "draw"
-end
-
-local function other(p) return (p == "X") and "O" or "X" end
-L.other = other
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local function minimax(b, player, me, depth, alpha, beta)
-  local w = L.winner(b)
-  if w == me then return 10 - depth end
-  if w == other(me) then return depth - 10 end
-  if w == "draw" then return 0 end
-
-  if player == me then
-    local best = -math.huge
-    for i = 1, 9 do
-      if not b[i] then
-        b[i] = player
-        local score = minimax(b, other(player), me, depth + 1, alpha, beta)
-        b[i] = nil
-        if score > best then best = score end
-        if best > alpha then alpha = best end
-        if alpha >= beta then break end        
-      end
-    end
-    return best
-  else
-    local best = math.huge
-    for i = 1, 9 do
-      if not b[i] then
-        b[i] = player
-        local score = minimax(b, other(player), me, depth + 1, alpha, beta)
-        b[i] = nil
-        if score < best then best = score end
-        if best < beta then beta = best end
-        if alpha >= beta then break end        
-      end
-    end
-    return best
-  end
-end
-
-
-
-
-
-
-function L.bestMove(b, player, tieBreak)
-  if L.winner(b) then return nil end
-  local bestScore, moves = nil, {}
-  for i = 1, 9 do
-    if not b[i] then
-      b[i] = player
-      
-      
-      
-      local score = minimax(b, other(player), player, 1, -math.huge, math.huge)
-      b[i] = nil
-      if not bestScore or score > bestScore then
-        bestScore, moves = score, { i }
-      elseif score == bestScore then
-        moves[#moves + 1] = i
-      end
-    end
-  end
-  if #moves == 0 then return nil end
-  if tieBreak then return moves[tieBreak(#moves)] end
-  return moves[1]
-end
-
-
-
-
-
-
-
-
-
-
-function L.selfPlay(variant)
-  variant = tonumber(variant) or 1
-  local b = L.newBoard()
-  local boards, player, step = {}, "X", 0
-  while not L.winner(b) do
-    step = step + 1
-    
-    
-    
-    local m = L.bestMove(b, player, function(n)
-      return ((variant * 7 + step * 13 + variant * step) % n) + 1
-    end)
-    if not m then break end
-    L.play(b, m, player)
-    local copy = {}
-    for i = 1, 9 do copy[i] = b[i] end
-    boards[#boards + 1] = copy
-    player = other(player)
-  end
-  return { boards = boards, result = L.winner(b) or "draw" }
-end
-
-
-
-function L.play(b, cell, player)
-  if type(cell) ~= "number" or cell < 1 or cell > 9 then return false end
-  if b[cell] or L.winner(b) then return false end
-  b[cell] = player
-  return true
-end
-
-
-
-
-
-
-function L.step(cell, dir)
-  if dir == "up" then return ((cell - 3 - 1) % 9) + 1
-  elseif dir == "down" then return ((cell + 3 - 1) % 9) + 1
-  elseif dir == "left" then return ((cell - 2) % 9) + 1
-  elseif dir == "right" then return (cell % 9) + 1 end
-  return cell
-end
-
-
-
-
-
-
-
-function L.cellAt(x, y, gx, gy, cw, ch)
-  if type(x) ~= "number" or type(y) ~= "number" then return nil end
-  local col, row
-  for c = 0, 2 do
-    local x0 = gx + c * (cw + 1)
-    if x >= x0 and x < x0 + cw then col = c; break end
-  end
-  for r = 0, 2 do
-    local y0 = gy + r * (ch + 1)
-    if y >= y0 and y < y0 + ch then row = r; break end
-  end
-  if not col or not row then return nil end
-  return row * 3 + col + 1
-end
-
-return L
+local j="number"local f={}
+local i={{1,2,3},{4,5,6},{7,8,9},{1,4,7},{2,5,8},{3,6,9},{1,5,9},{3,5,7}}f.LINES=i;function f.newBoard()return{}end
+function f.winner(a)
+for c,b in ipairs(i)do local d=a[b[1]]if d and
+a[b[2]]==d and a[b[3]]==d then return d,b end end;for b=1,9 do if not a[b]then return nil end end;return"draw"end;local function g(a)return(a=="X")and"O"or"X"end;f.other=g
+local function h(a,d,e,k,b,c)
+local l=f.winner(a)if l==e then return 10-k end;if l==g(e)then return k-10 end
+if l=="draw"then return 0 end
+if d==e then local m=-math.huge;for n=1,9 do
+if not a[n]then a[n]=d;local o=h(a,g(d),e,k+1,b,c)
+a[n]=nil;if o>m then m=o end;if m>b then b=m end;if b>=c then break end end end
+return m else local m=math.huge;for n=1,9 do
+if not a[n]then a[n]=d;local o=h(a,g(d),e,k+1,b,c)a[n]=nil
+if o<m then m=o end;if m<c then c=m end;if b>=c then break end end end
+return m end end
+function f.bestMove(a,b,c)if f.winner(a)then return nil end;local e,d=nil,{}
+for k=1,9 do
+if not a[k]then a[k]=b;local l=h(a,g(b),b,1,-
+math.huge,math.huge)a[k]=nil;if not e or l>e then
+e,d=l,{k}elseif l==e then d[#d+1]=k end end end;if#d==0 then return nil end;if c then return d[c(#d)]end;return d[1]end
+function f.selfPlay(a)a=tonumber(a)or 1;local c=f.newBoard()local k,d,e={},"X",0
+while not
+f.winner(c)do e=e+1
+local b=f.bestMove(c,d,function(m)
+return((a*7+e*13+a*e)%m)+1 end)if not b then break end;f.play(c,b,d)local l={}for m=1,9 do l[m]=c[m]end
+k[#k+1]=l;d=g(d)end;return{boards=k,result=f.winner(c)or"draw"}end
+function f.play(c,a,d)if type(a)~=j or a<1 or a>9 then return false end;if
+c[a]or f.winner(c)then return false end;c[a]=d;return true end
+function f.step(a,b)
+if b=="up"then return((a-3-1)%9)+1 elseif b=="down"then return
+((a+3-1)%9)+1 elseif b=="left"then return((a-2)%9)+1 elseif b=="right"then return(a%9)+1 end;return a end
+function f.cellAt(a,b,e,k,c,d)if type(a)~=j or type(b)~=j then return nil end;local l,m
+for n=0,2 do local o=
+e+n* (c+1)if a>=o and a<o+c then l=n;break end end
+for n=0,2 do local o=k+n* (d+1)if b>=o and b<o+d then m=n;break end end;if not l or not m then return nil end;return m*3+l+1 end;return f

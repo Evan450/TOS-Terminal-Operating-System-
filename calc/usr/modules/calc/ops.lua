@@ -1,454 +1,126 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local S = require("calc.sheet")
-local O = {}
-
-local key, unkey = S._key, S.unkey
-
-
-
-
-local function refAt(src, i)
-  local word = src:match("^%$?%a+%$?%d+", i)
-  if not word then return nil end
-  if src:sub(i + #word, i + #word):match("[%w_]") then return nil end
-  if not S.parseRef(word) then return nil end
-  return word
-end
-
-
-
-
-
-
-function O.rewrite(src, onRef, onRange)
-  local out, i, n, changed = {}, 1, #src, false
-  local function emit(s) out[#out + 1] = s end
-  while i <= n do
-    local ch = src:sub(i, i)
-    if ch == '"' then
-      local j = i + 1
-      while j <= n do
-        if src:sub(j, j) == '"' then
-          if src:sub(j + 1, j + 1) == '"' then j = j + 2 else break end
-        else j = j + 1 end
-      end
-      emit(src:sub(i, j)); i = j + 1
-    elseif ch:match("%d") or (ch == "." and src:sub(i + 1, i + 1):match("%d")) then
-      
-      local num = src:match("^%d*%.?%d+", i) or src:match("^%d+", i)
-      local ex = src:match("^[eE][%+%-]?%d+", i + #num)
-      if ex then num = num .. ex end
-      emit(num); i = i + #num
-    elseif ch == "@" then
-      local w = src:match("^@[%a_][%w_]*", i) or "@"
-      emit(w); i = i + #w
-    elseif ch == "#" then
-      local w = src:match("^#%a+[#!]", i) or "#"
-      emit(w); i = i + #w
-    elseif ch == "$" or ch:match("%a") then
-      local w1 = refAt(src, i)
-      if not w1 then
-        local w = src:match("^[%a_][%w_]*", i) or ch
-        emit(w); i = i + #w
-      else
-        local after = i + #w1
-        local sep = ""
-        if src:sub(after, after + 1) == ".." then sep = ".."
-        elseif src:sub(after, after) == ":" or src:sub(after, after) == "." then sep = src:sub(after, after) end
-        local w2 = sep ~= "" and refAt(src, after + #sep) or nil
-        local c1, r1, a1, b1 = S.parseRef(w1)
-        if w2 then
-          local c2, r2, a2, b2 = S.parseRef(w2)
-          local n1, m1, n2, m2 = onRange(c1, r1, c2, r2, a1, b1, a2, b2)
-          if n1 == nil then emit(S.E_REF); changed = true
-          else
-            local t = S.refName(n1, m1, a1, b1) .. sep .. S.refName(n2, m2, a2, b2)
-            if t ~= w1 .. sep .. w2 then changed = true end
-            emit(t)
-          end
-          i = after + #sep + #w2
-        else
-          local nc, nr = onRef(c1, r1, a1, b1)
-          if nc == nil then emit(S.E_REF); changed = true
-          else
-            local t = S.refName(nc, nr, a1, b1)
-            if t ~= w1 then changed = true end
-            emit(t)
-          end
-          i = after
-        end
-      end
-    else
-      emit(ch); i = i + 1
-    end
-  end
-  return table.concat(out), changed
-end
-
-local function onSheet(c, r)
-  return c >= 1 and r >= 1 and c <= S.MAX_COLS and r <= S.MAX_ROWS
-end
-
-
-
-function O.shift(raw, dc, dr)
-  local kind = S.classify(raw)
-  if kind ~= "formula" then return raw end
-  local function one(c, r, ac, ar)
-    local nc = ac and c or c + dc
-    local nr = ar and r or r + dr
-    if not onSheet(nc, nr) then return nil end
-    return nc, nr
-  end
-  return (O.rewrite(raw, one, function(c1, r1, c2, r2, a1, b1, a2, b2)
-    local x1, y1 = one(c1, r1, a1, b1)
-    local x2, y2 = one(c2, r2, a2, b2)
-    if not x1 or not x2 then return nil end
-    return x1, y1, x2, y2
-  end))
-end
-
-
-
-local function rewriteSheet(sh, onRef, onRange)
-  local n = 0
-  for k, raw in pairs(sh.cells) do
-    if S.classify(raw) == "formula" then
-      local new, changed = O.rewrite(raw, onRef, onRange)
-      if changed then sh.cells[k] = new; n = n + 1 end
-    end
-  end
-  for name, rg in pairs(sh.names) do
-    local c1, r1, c2, r2 = onRange(rg[1], rg[2], rg[3], rg[4])
-    if c1 then sh.names[name] = { math.min(c1, c2), math.min(r1, r2), math.max(c1, c2), math.max(r1, r2) }
-    else sh.names[name] = nil end
-  end
-  return n
-end
-
-local function blockCells(sh, c1, r1, c2, r2)
-  local cells, fmts = {}, {}
-  for c = c1, c2 do
-    for r = r1, r2 do
-      local k = key(c, r)
-      cells[#cells + 1] = { c = c, r = r, raw = sh.cells[k], fmt = sh.fmt[k] }
-    end
-  end
-  return cells
-end
-
-
-
-
-
-
-
-function O.copy(sh, c1, r1, c2, r2, tc1, tr1, tc2, tr2)
-  tc2, tr2 = tc2 or tc1, tr2 or tr1
-  local w, h = c2 - c1 + 1, r2 - r1 + 1
-  local src = blockCells(sh, c1, r1, c2, r2)
-  local anchors = {}
-  if w == 1 and h == 1 then
-    for c = tc1, tc2 do for r = tr1, tr2 do anchors[#anchors + 1] = { c, r } end end
-  elseif h == 1 then
-    for r = tr1, tr2 do anchors[#anchors + 1] = { tc1, r } end
-  elseif w == 1 then
-    for c = tc1, tc2 do anchors[#anchors + 1] = { c, tr1 } end
-  else
-    anchors[1] = { tc1, tr1 }
-  end
-  local n = 0
-  for _, a in ipairs(anchors) do
-    local dc, dr = a[1] - c1, a[2] - r1
-    for _, cell in ipairs(src) do
-      local nc, nr = cell.c + dc, cell.r + dr
-      if onSheet(nc, nr) then
-        local raw = cell.raw and O.shift(cell.raw, dc, dr) or nil
-        S.set(sh, nc, nr, raw)
-        sh.fmt[key(nc, nr)] = cell.fmt
-        n = n + 1
-      end
-    end
-  end
-  return n
-end
-
-
-
-function O.move(sh, c1, r1, c2, r2, tc, tr)
-  local dc, dr = tc - c1, tr - r1
-  if dc == 0 and dr == 0 then return 0 end
-  local w, h = c2 - c1 + 1, r2 - r1 + 1
-  if not onSheet(tc + w - 1, tr + h - 1) then return nil, "the block would fall off the sheet" end
-  local function inSrc(c, r) return c >= c1 and c <= c2 and r >= r1 and r <= r2 end
-  local function inDst(c, r) return c >= tc and c < tc + w and r >= tr and r < tr + h end
-  local function one(c, r)
-    if inSrc(c, r) then return c + dc, r + dr end
-    if inDst(c, r) then return nil end           
-    return c, r
-  end
-  local src = blockCells(sh, c1, r1, c2, r2)
-  
-  rewriteSheet(sh, one, function(a, b, x, y)
-    local n1, m1 = one(a, b)
-    local n2, m2 = one(x, y)
-    if not n1 or not n2 then return nil end
-    return n1, m1, n2, m2
-  end)
-  for _, cell in ipairs(src) do
-    local k = key(cell.c, cell.r)
-    cell.raw = sh.cells[k]                      
-    sh.cells[k] = nil
-    sh.fmt[k] = nil
-  end
-  for _, cell in ipairs(src) do
-    S.set(sh, cell.c + dc, cell.r + dr, cell.raw)
-    sh.fmt[key(cell.c + dc, cell.r + dr)] = cell.fmt
-  end
-  return #src
-end
-
-
-
-local function relocate(sh, axis, map)
-  local cells, fmts = {}, {}
-  for k, raw in pairs(sh.cells) do cells[k] = raw end
-  for k, f in pairs(sh.fmt) do fmts[k] = f end
-  sh.cells, sh.fmt = {}, {}
-  for k, raw in pairs(cells) do
-    local c, r = unkey(k)
-    local nc, nr = map(c, r)
-    if nc then sh.cells[key(nc, nr)] = raw end
-  end
-  for k, f in pairs(fmts) do
-    local c, r = unkey(k)
-    local nc, nr = map(c, r)
-    if nc then sh.fmt[key(nc, nr)] = f end
-  end
-  if axis == "col" then
-    local w = {}
-    for c, v in pairs(sh.colw) do
-      local nc = map(c, 1)
-      if nc then w[nc] = v end
-    end
-    sh.colw = w
-  end
-end
-
-local function lineOps(axis)
-  local function pick(c, r) if axis == "row" then return r end return c end
-  local function put(c, r, v) if axis == "row" then return c, v end return v, r end
-
-  local function insert(sh, at, n)
-    n = n or 1
-    local function one(c, r)
-      local v = pick(c, r)
-      if v >= at then v = v + n end
-      local nc, nr = put(c, r, v)
-      if not onSheet(nc, nr) then return nil end
-      return nc, nr
-    end
-    rewriteSheet(sh, one, function(a, b, x, y)
-      local n1, m1 = one(a, b)
-      local n2, m2 = one(x, y)
-      if not n1 then return nil end
-      if not n2 then n2, m2 = put(x, y, axis == "row" and S.MAX_ROWS or S.MAX_COLS) end
-      return n1, m1, n2, m2
-    end)
-    relocate(sh, axis, one)
-  end
-
-  local function delete(sh, at, n)
-    n = n or 1
-    local last = at + n - 1
-    local function one(c, r)
-      local v = pick(c, r)
-      if v >= at and v <= last then return nil end
-      if v > last then v = v - n end
-      return put(c, r, v)
-    end
-    rewriteSheet(sh, one, function(a, b, x, y)
-      local s, e = pick(a, b), pick(x, y)
-      if s > e then s, e = e, s end
-      
-      local ns = (s >= at and s <= last) and at or (s > last and s - n or s)
-      local ne = (e >= at and e <= last) and (at - 1) or (e > last and e - n or e)
-      if ns > ne then return nil end
-      local n1, m1 = put(a, b, ns)
-      local n2, m2 = put(x, y, ne)
-      return n1, m1, n2, m2
-    end)
-    relocate(sh, axis, one)
-  end
-  return insert, delete
-end
-O.insertRows, O.deleteRows = lineOps("row")
-O.insertCols, O.deleteCols = lineOps("col")
-
-
-
-
-
-local function compareKeys(a, b, asc)
-  local ta = (a == nil or a == "") and 3 or (type(a) == "number" and 1 or 2)
-  local tb = (b == nil or b == "") and 3 or (type(b) == "number" and 1 or 2)
-  if ta ~= tb then return (ta < tb) and -1 or 1 end
-  if ta == 3 then return 0 end
-  if ta == 2 then a, b = tostring(a):lower(), tostring(b):lower() end
-  if a == b then return 0 end
-  local lt = a < b
-  if not asc then lt = not lt end
-  return lt and -1 or 1
-end
-
-
-
-function O.sort(sh, c1, r1, c2, r2, k1, asc1, k2, asc2)
-  local ctx = S.evaluator(sh)
-  local rows = {}
-  for r = r1, r2 do
-    local v1 = ctx.get(k1, r)
-    local v2 = k2 and ctx.get(k2, r) or nil
-    if S.isErr(v1) then v1 = v1.e end
-    if S.isErr(v2) then v2 = v2.e end
-    rows[#rows + 1] = { r = r, k1 = v1, k2 = v2 }
-  end
-  
-  for i = 2, #rows do
-    local item = rows[i]
-    local j = i - 1
-    while j >= 1 do
-      local cmp = compareKeys(item.k1, rows[j].k1, asc1 ~= false)
-      if cmp == 0 and k2 then cmp = compareKeys(item.k2, rows[j].k2, asc2 ~= false) end
-      if cmp < 0 then rows[j + 1] = rows[j]; j = j - 1 else break end
-    end
-    rows[j + 1] = item
-  end
-  local snapshot = {}
-  for _, row in ipairs(rows) do
-    local cells = {}
-    for c = c1, c2 do
-      local k = key(c, row.r)
-      cells[c] = { raw = sh.cells[k], fmt = sh.fmt[k] }
-    end
-    snapshot[#snapshot + 1] = { from = row.r, cells = cells }
-  end
-  for i, row in ipairs(snapshot) do
-    local to = r1 + i - 1
-    for c = c1, c2 do
-      local cell = row.cells[c]
-      local raw = cell.raw and O.shift(cell.raw, 0, to - row.from) or nil
-      S.set(sh, c, to, raw)
-      sh.fmt[key(c, to)] = cell.fmt
-    end
-  end
-  return #rows
-end
-
-
-
-
-function O.fill(sh, c1, r1, c2, r2, start, step, stop)
-  step = step or 1
-  local v, n = start, 0
-  for c = c1, c2 do
-    for r = r1, r2 do
-      if stop and ((step >= 0 and v > stop) or (step < 0 and v < stop)) then return n end
-      S.set(sh, c, r, S.toStr(v))
-      n = n + 1
-      v = v + step
-    end
-  end
-  return n
-end
-
-
-
-function O.values(sh, c1, r1, c2, r2, tc, tr)
-  local ctx = S.evaluator(sh)
-  local out = {}
-  for c = c1, c2 do
-    for r = r1, r2 do
-      local v = ctx.get(c, r)
-      local raw
-      if v == nil then raw = nil
-      elseif S.isErr(v) then raw = "'" .. v.e
-      elseif type(v) == "number" then raw = S.toStr(v)
-      else raw = "'" .. tostring(v) end
-      out[#out + 1] = { c = tc + (c - c1), r = tr + (r - r1), raw = raw }
-    end
-  end
-  for _, cell in ipairs(out) do S.set(sh, cell.c, cell.r, cell.raw) end
-  return #out
-end
-
-
-function O.erase(sh, c1, r1, c2, r2)
-  local n = 0
-  for c = c1, c2 do
-    for r = r1, r2 do
-      if sh.cells[key(c, r)] then sh.cells[key(c, r)] = nil; n = n + 1 end
-    end
-  end
-  return n
-end
-
-
-function O.format(sh, c1, r1, c2, r2, code)
-  for c = c1, c2 do
-    for r = r1, r2 do sh.fmt[key(c, r)] = code end
-  end
-end
-
-
-function O.label(sh, c1, r1, c2, r2, p)
-  local n = 0
-  for c = c1, c2 do
-    for r = r1, r2 do
-      local raw = sh.cells[key(c, r)]
-      if raw then
-        local kind, body, align = S.classify(raw)
-        if kind == "label" and align ~= "REP" then
-          sh.cells[key(c, r)] = p .. body; n = n + 1
-        end
-      end
-    end
-  end
-  return n
-end
-
-
-
-function O.validName(name)
-  if type(name) ~= "string" or not name:match("^%a[%w_]*$") or #name > 15 then return false end
-  if S.parseRef(name) then return false end
-  if S.FUNCS[name:upper()] then return false end
-  if name:upper() == "TRUE" or name:upper() == "FALSE" then return false end
-  return true
-end
-
-return O
+local x="number"local m=require("calc.sheet")local n={}local o,r=m._key,m.unkey
+local function s(b,a)
+local c=b:match("^%$?%a+%$?%d+",a)if not c then return nil end;if b:sub(a+#c,a+#c):match("[%w_]")then
+return nil end;if not m.parseRef(c)then return nil end
+return c end
+function n.rewrite(a,b,c)local g,d,h,f={},1,#a,false;local function e(i)g[#g+1]=i end
+while d<=h do local i=a:sub(d,d)
+if i==
+'"'then local k=d+1
+while k<=h do if a:sub(k,k)=='"'then
+if a:sub(k+1,k+1)=='"'then k=k+2 else break end else k=k+1 end end;e(a:sub(d,k))d=k+1 elseif i:match("%d")or(i=="."and
+a:sub(d+1,d+1):match("%d"))then local j=
+a:match("^%d*%.?%d+",d)or a:match("^%d+",d)local k=a:match("^[eE][%+%-]?%d+",
+d+#j)if k then j=j..k end;e(j)d=d+#j elseif i=="@"then local j=
+a:match("^@[%a_][%w_]*",d)or"@"e(j)d=d+#j elseif i=="#"then local j=
+a:match("^#%a+[#!]",d)or"#"e(j)d=d+#j elseif i=="$"or i:match("%a")then
+local j=s(a,d)
+if not j then local k=a:match("^[%a_][%w_]*",d)or i;e(k)d=d+#k else
+local k=d+#j;local l=""if a:sub(k,k+1)==".."then l=".."elseif
+a:sub(k,k)==":"or a:sub(k,k)=="."then l=a:sub(k,k)end;local y=
+l~=""and s(a,k+#l)or nil;local B,C,z,A=m.parseRef(j)
+if y then
+local G,H,D,E=m.parseRef(y)local F,I,J,K=c(B,C,G,H,z,A,D,E)if F==nil then e(m.E_REF)f=true else local L=m.refName(F,I,z,A)..l..
+m.refName(J,K,D,E)
+if L~=j..l..y then f=true end;e(L)end
+d=k+#l+#y else local D,E=b(B,C,z,A)if D==nil then e(m.E_REF)f=true else local F=m.refName(D,E,z,A)if F~=j then
+f=true end;e(F)end;d=k end end else e(i)d=d+1 end end;return table.concat(g),f end;local function p(a,b)return
+a>=1 and b>=1 and a<=m.MAX_COLS and b<=m.MAX_ROWS end
+function n.shift(a,b,c)
+local e=m.classify(a)if e~="formula"then return a end
+local function d(f,g,h,i)local j=h and f or f+b
+local k=i and g or g+c;if not p(j,k)then return nil end;return j,k end;return
+(n.rewrite(a,d,function(f,g,h,i,j,k,l,y)local z,B=d(f,g,j,k)local A,C=d(h,i,l,y)
+if not z or not A then return nil end;return z,B,A,C end))end
+local function q(a,c,b)local d=0;for f,e in pairs(a.cells)do
+if m.classify(e)=="formula"then local g,h=n.rewrite(e,c,b)if
+h then a.cells[f]=g;d=d+1 end end end
+for f,e in
+pairs(a.names)do local g,h,i,j=b(e[1],e[2],e[3],e[4])if g then
+a.names[f]={math.min(g,i),math.min(h,j),math.max(g,i),math.max(h,j)}else a.names[f]=nil end end;return d end
+local function t(a,b,c,d,e)local f,g={},{}
+for h=b,d do for i=c,e do local j=o(h,i)
+f[#f+1]={c=h,r=i,raw=a.cells[j],fmt=a.fmt[j]}end end;return f end
+function n.copy(e,f,g,h,i,a,b,c,d)c,d=c or a,d or b;local l,y=h-f+1,i-g+1;local z=t(e,f,g,h,i)local j={}
+if
+l==1 and y==1 then for A=a,c do for B=b,d do j[#j+1]={A,B}end end elseif y==1 then for A=b,d do
+j[#j+1]={a,A}end elseif l==1 then for A=a,c do j[#j+1]={A,b}end else j[1]={a,b}end;local k=0
+for B,A in ipairs(j)do local C,D=A[1]-f,A[2]-g
+for B,E in ipairs(z)do local F,G=E.c+C,E.r+D;if p(F,G)then local H=E.raw and
+n.shift(E.raw,C,D)or nil;m.set(e,F,G,H)
+e.fmt[o(F,G)]=E.fmt;k=k+1 end end end;return k end
+function n.move(a,b,c,f,g,d,e)local i,j=d-b,e-c;if i==0 and j==0 then return 0 end;local y,z=f-b+1,g-c+1
+if not p(
+d+y-1,e+z-1)then return nil,"the block would fall off the sheet"end
+local function A(h,C)return h>=b and h<=f and C>=c and C<=g end
+local function B(h,C)return h>=d and h<d+y and C>=e and C<e+z end
+local function k(h,C)if A(h,C)then return h+i,C+j end;if B(h,C)then return nil end;return h,C end;local l=t(a,b,c,f,g)
+q(a,k,function(h,C,D,E)local F,H=k(h,C)local G,I=k(D,E)
+if not F or not G then return nil end;return F,H,G,I end)for C,h in ipairs(l)do local D=o(h.c,h.r)h.raw=a.cells[D]a.cells[D]=nil
+a.fmt[D]=nil end
+for C,h in ipairs(l)do
+m.set(a,h.c+i,h.r+j,h.raw)a.fmt[o(h.c+i,h.r+j)]=h.fmt end;return#l end
+local function u(a,c,b)local d,e={},{}for f,g in pairs(a.cells)do d[f]=g end
+for g,h in pairs(a.fmt)do e[g]=h end;a.cells,a.fmt={},{}for f,g in pairs(d)do local i,j=r(f)local h,k=b(i,j)
+if h then a.cells[o(h,k)]=g end end;for g,h in pairs(e)do local i,j=r(g)local f,k=b(i,j)if f then
+a.fmt[o(f,k)]=h end end
+if c=="col"then local f={}for g,h in
+pairs(a.colw)do local i=b(g,1)if i then f[i]=h end end;a.colw=f end end
+local function v(a)local function c(f,g)if a=="row"then return g end;return f end;local function b(g,h,f)
+if a=="row"then return g,f end;return f,h end
+local function d(g,h,f)f=f or 1
+local function i(j,k)local l=c(j,k)
+if l>=h then l=l+f end;local y,z=b(j,k,l)if not p(y,z)then return nil end;return y,z end
+q(g,i,function(l,y,j,k)local A,C=i(l,y)local z,B=i(j,k)if not A then return nil end
+if not z then z,B=b(j,k,
+a=="row"and m.MAX_ROWS or m.MAX_COLS)end;return A,C,z,B end)u(g,a,i)end
+local function e(h,f,g)g=g or 1;local i=f+g-1
+local function j(k,l)local y=c(k,l)if y>=f and y<=i then return nil end;if y>i then
+y=y-g end;return b(k,l,y)end
+q(h,j,function(k,l,z,A)local y,B=c(k,l),c(z,A)if y>B then y,B=B,y end;local C=(y>=f and y<=i)and f or(y>i and y-
+g or y)
+local D=(
+B>=f and B<=i)and(f-1)or(B>i and B-g or B)if C>D then return nil end;local E,F=b(k,l,C)local G,H=b(z,A,D)return E,F,G,H end)u(h,a,j)end;return d,e end;n.insertRows,n.deleteRows=v("row")n.insertCols,n.deleteCols=v("col")
+local function w(c,d,e)local a=(c==
+nil or c=="")and 3 or
+(type(c)==x and 1 or 2)
+local f=
+(d==nil or d=="")and 3 or(type(d)==x and 1 or 2)if a~=f then return(a<f)and-1 or 1 end;if a==3 then return 0 end;if a==2 then
+c,d=tostring(c):lower(),tostring(d):lower()end;if c==d then return 0 end;local b=c<d
+if not e then b=not b end;return b and-1 or 1 end
+function n.sort(a,c,d,e,f,g,h,b,i)local l=m.evaluator(a)local j={}for y=d,f do local z=l.get(g,y)
+local A=b and l.get(b,y)or nil;if m.isErr(z)then z=z.e end;if m.isErr(A)then A=A.e end
+j[#j+1]={r=y,k1=z,k2=A}end
+for y=2,#j do
+local A=j[y]local z=y-1
+while z>=1 do local B=w(A.k1,j[z].k1,h~=false)if B==0 and b then B=w(A.k2,j[z].k2,i~=
+false)end;if B<0 then j[z+1]=j[z]
+z=z-1 else break end end;j[z+1]=A end;local k={}
+for z,y in ipairs(j)do local A={}for B=c,e do local C=o(B,y.r)
+A[B]={raw=a.cells[C],fmt=a.fmt[C]}end;k[#k+1]={from=y.r,cells=A}end
+for z,y in ipairs(k)do local A=d+z-1;for B=c,e do local C=y.cells[B]local D=
+C.raw and n.shift(C.raw,0,A-y.from)or nil;m.set(a,B,A,D)
+a.fmt[o(B,A)]=C.fmt end end;return#j end
+function n.fill(c,d,e,f,g,h,a,b)a=a or 1;local i,j=h,0
+for k=d,f do for l=e,g do if b and
+((a>=0 and i>b)or(a<0 and i<b))then return j end
+m.set(c,k,l,m.toStr(i))j=j+1;i=i+a end end;return j end
+function n.values(a,b,c,d,e,f,g)local i=m.evaluator(a)local h={}
+for j=b,d do
+for k=c,e do local l=i.get(j,k)local y
+if l==nil then y=nil elseif
+m.isErr(l)then y="'"..l.e elseif type(l)==x then y=m.toStr(l)else y="'"..tostring(l)end;h[#h+1]={c=f+ (j-b),r=g+ (k-c),raw=y}end end;for k,j in ipairs(h)do m.set(a,j.c,j.r,j.raw)end;return#h end;function n.erase(a,b,c,d,e)local f=0
+for g=b,d do for h=c,e do
+if a.cells[o(g,h)]then a.cells[o(g,h)]=nil;f=f+1 end end end;return f end
+function n.format(a,b,c,d,e,f)for g=b,d
+do for h=c,e do a.fmt[o(g,h)]=f end end end
+function n.label(a,b,c,d,e,f)local g=0
+for h=b,d do
+for i=c,e do local j=a.cells[o(h,i)]if j then local k,l,y=m.classify(j)
+if k=="label"and y~=
+"REP"then a.cells[o(h,i)]=f..l;g=g+1 end end end end;return g end
+function n.validName(a)
+if
+type(a)~="string"or not a:match("^%a[%w_]*$")or#a>15 then return false end;if m.parseRef(a)then return false end
+if m.FUNCS[a:upper()]then return false end
+if a:upper()=="TRUE"or a:upper()=="FALSE"then return false end;return true end;return n

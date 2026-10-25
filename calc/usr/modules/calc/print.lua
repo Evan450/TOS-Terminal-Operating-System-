@@ -1,226 +1,66 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local S = require("calc.sheet")
-local P = {}
-
-P.CHAR_PX = 5        
-P.SPACE_PX = 3       
-P.GAP_PX = 3         
-
-
-
-
-function P.headerParts(spec, page)
-  spec = tostring(spec or ""):gsub("#", tostring(page or 1))
-  local parts = {}
-  for part in (spec .. "|"):gmatch("([^|]*)|") do parts[#parts + 1] = part end
-  if #parts == 1 then return parts[1], "", "" end
-  return parts[1] or "", parts[2] or "", parts[3] or ""
-end
-
-
-local function alignText(text, align, w, measure, padUnit)
-  local tw = measure(text)
-  if tw > w then
-    
-    local out = ""
-    for ch in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
-      if measure(out .. ch) > w then break end
-      out = out .. ch
-    end
-    return out, measure(out)
-  end
-  return text, tw, align
-end
-
-
-function P.fileRow(sh, ctx, r, c1, c2)
-  local parts = {}
-  for c = c1, c2 do
-    local w = S.width(sh, c)
-    local text, align = S.cellText(sh, ctx, c, r, w)
-    if #text > w then text = text:sub(1, w) end
-    local pad = w - #text
-    if align == "R" then text = string.rep(" ", pad) .. text
-    elseif align == "C" then
-      local l = math.floor(pad / 2)
-      text = string.rep(" ", l) .. text .. string.rep(" ", pad - l)
-    else text = text .. string.rep(" ", pad) end
-    parts[#parts + 1] = text
-  end
-  return (table.concat(parts, " "):gsub("%s+$", ""))
-end
-
-
-
-
-function P.pixelRow(sh, ctx, r, cols, measure)
-  local line, pos = "", 0
-  for _, col in ipairs(cols) do
-    local text, align = S.cellText(sh, ctx, col.c, r, S.width(sh, col.c))
-    local t, tw = alignText(text, align, col.w, measure)
-    local target = col.x
-    if align == "R" then target = col.x + col.w - tw
-    elseif align == "C" then target = col.x + math.floor((col.w - tw) / 2) end
-    if t ~= "" then
-      if target > pos then
-        local n = math.floor((target - pos) / P.SPACE_PX + 0.5)
-        line = line .. string.rep(" ", n)
-        pos = measure(line)
-      end
-      line = line .. t
-      pos = measure(line)
-    end
-  end
-  return (line:gsub("%s+$", ""))
-end
-
-
-function P.formulaLines(sh, c1, r1, c2, r2)
-  local out = {}
-  for r = r1, r2 do
-    for c = c1, c2 do
-      local raw = sh.cells[S._key(c, r)]
-      if raw then
-        local f = sh.fmt[S._key(c, r)]
-        out[#out + 1] = S.refName(c, r) .. ": " .. (f and ("(" .. f .. ") ") or "") .. raw
-      end
-    end
-  end
-  return out
-end
-
-
-
-
-
-
-
-
-
-function P.pages(sh, ctx, c1, r1, c2, r2, opts)
-  opts = opts or {}
-  local target = opts.target or "file"
-  local perPage = opts.perPage or (target == "file" and 0 or 20)
-  local headLines = (opts.header and opts.header ~= "") and 2 or 0
-  local footLines = (opts.footer and opts.footer ~= "") and 2 or 0
-  local body = (perPage > 0) and math.max(1, perPage - headLines - footLines) or math.huge
-  local measure = opts.measure or function(s) return #s * P.CHAR_PX end
-  local maxW = opts.maxWidth or 164
-
-  
-  local bands = {}
-  if opts.formulas then
-    bands[1] = P.formulaLines(sh, c1, r1, c2, r2)
-  elseif target == "file" then
-    local rows = {}
-    for r = r1, r2 do rows[#rows + 1] = P.fileRow(sh, ctx, r, c1, c2) end
-    bands[1] = rows
-  else
-    
-    local c = c1
-    while c <= c2 do
-      local cols, x = {}, 0
-      while c <= c2 do
-        local w = S.width(sh, c) * P.CHAR_PX
-        if #cols > 0 and x + w > maxW then break end
-        cols[#cols + 1] = { c = c, x = x, w = math.min(w, maxW) }
-        x = x + w + P.GAP_PX
-        c = c + 1
-      end
-      local rows = {}
-      for r = r1, r2 do rows[#rows + 1] = P.pixelRow(sh, ctx, r, cols, measure) end
-      bands[#bands + 1] = rows
-    end
-  end
-
-  local pages = {}
-  local function frame(lines, which)
-    local spec = which == "head" and opts.header or opts.footer
-    if not spec or spec == "" then return end
-    local l, m, rr = P.headerParts(spec, #pages + 1)
-    local text
-    if target == "file" then
-      local width = 0
-      for cc = c1, c2 do width = width + S.width(sh, cc) + 1 end
-      local mid = math.max(0, math.floor((width - #m) / 2) - #l)
-      text = l .. string.rep(" ", mid) .. m
-      local rest = math.max(1, width - #text - #rr)
-      text = (text .. string.rep(" ", rest) .. rr):gsub("%s+$", "")
-    else
-      text = l
-      local function placeAt(px, s)
-        local n = math.max(1, math.floor((px - measure(text)) / P.SPACE_PX + 0.5))
-        text = text .. string.rep(" ", n) .. s
-      end
-      if m ~= "" then placeAt(math.floor((maxW - measure(m)) / 2), m) end
-      if rr ~= "" then placeAt(maxW - measure(rr), rr) end
-    end
-    if which == "head" then lines[#lines + 1] = text; lines[#lines + 1] = ""
-    else lines[#lines + 1] = ""; lines[#lines + 1] = text end
-  end
-  for _, rows in ipairs(bands) do
-    
-    local last = #rows
-    while last > 0 and rows[last] == "" do last = last - 1 end
-    if last == 0 then last = 1 end
-    local i = 1
-    repeat
-      local page = {}
-      frame(page, "head")
-      local n = 0
-      while i <= last and n < body do
-        page[#page + 1] = rows[i]; i = i + 1; n = n + 1
-      end
-      frame(page, "foot")
-      pages[#pages + 1] = page
-    until i > last
-  end
-  return pages
-end
-
-
-
-function P.toText(pages)
-  local out = {}
-  for i, page in ipairs(pages) do
-    if i > 1 then out[#out + 1] = "\f" end
-    for _, l in ipairs(page) do out[#out + 1] = l end
-  end
-  return table.concat(out, "\n") .. "\n"
-end
-
-
-
-function P.toWrite(pages, title)
-  local out = {}
-  if title and title ~= "" then out[1] = ".title " .. title end
-  for i, page in ipairs(pages) do
-    if i > 1 then out[#out + 1] = ".page" end
-    for _, l in ipairs(page) do
-      if l:sub(1, 1) == "." then l = "." .. l end
-      out[#out + 1] = l
-    end
-  end
-  return table.concat(out, "\n") .. "\n"
-end
-
-return P
+local e=require("calc.sheet")local d={}d.CHAR_PX=5;d.SPACE_PX=3;d.GAP_PX=3
+function d.headerParts(a,b)
+a=tostring(
+a or""):gsub("#",tostring(b or 1))local c={}
+for g in(a.."|"):gmatch("([^|]*)|")do c[#c+1]=g end;if#c==1 then return c[1],"",""end;return c[1]or"",c[2]or"",c[3]or""end
+local function f(a,g,c,b,h)local i=b(a)if i>c then local j=""for k in a:gmatch("[%z\1-\127\194-\244][\128-\191]*")do if b(j..k)>c then
+break end;j=j..k end
+return j,b(j)end;return a,i,g end
+function d.fileRow(a,b,c,g,h)local i={}
+for j=g,h do local l=e.width(a,j)local k,n=e.cellText(a,b,j,c,l)if#k>l then
+k=k:sub(1,l)end;local m=l-#k
+if n=="R"then k=string.rep(" ",m)..k elseif n=="C"then local o=math.floor(
+m/2)
+k=string.rep(" ",o)..k..string.rep(" ",m-o)else k=k..string.rep(" ",m)end;i[#i+1]=k end
+return(table.concat(i," "):gsub("%s+$",""))end
+function d.pixelRow(b,c,g,h,a)local i,j="",0
+for l,k in ipairs(h)do
+local q,n=e.cellText(b,c,k.c,g,e.width(b,k.c))local o,p=f(q,n,k.w,a)local m=k.x
+if n=="R"then m=k.x+k.w-p elseif n=="C"then m=k.x+math.floor((k.w-p)/
+2)end;if o~=""then
+if m>j then
+local r=math.floor((m-j)/d.SPACE_PX+0.5)i=i..string.rep(" ",r)j=a(i)end;i=i..o;j=a(i)end end;return(i:gsub("%s+$",""))end
+function d.formulaLines(a,b,c,g,h)local i={}
+for j=c,h do
+for k=b,g do local l=a.cells[e._key(k,j)]if l then
+local m=a.fmt[e._key(k,j)]
+i[#i+1]=e.refName(k,j)..": "..
+(m and("("..m..") ")or"")..l end end end;return i end
+function d.pages(b,j,g,h,c,i,a)a=a or{}local o=a.target or"file"local p=a.perPage or
+(o=="file"and 0 or 20)local r=
+(a.header and a.header~="")and 2 or 0
+local s=(a.footer and
+a.footer~="")and 2 or 0
+local t=(p>0)and math.max(1,p-r-s)or math.huge
+local l=a.measure or function(u)return#u*d.CHAR_PX end;local m=a.maxWidth or 164;local k={}
+if a.formulas then
+k[1]=d.formulaLines(b,g,h,c,i)elseif o=="file"then local u={}
+for v=h,i do u[#u+1]=d.fileRow(b,j,v,g,c)end;k[1]=u else local u=g
+while u<=c do local v,w={},0
+while u<=c do local y=e.width(b,u)*d.CHAR_PX;if#v>0 and
+w+y>m then break end
+v[#v+1]={c=u,x=w,w=math.min(y,m)}w=w+y+d.GAP_PX;u=u+1 end;local x={}for y=h,i do x[#x+1]=d.pixelRow(b,j,y,v,l)end
+k[#k+1]=x end end;local n={}
+local function q(u,v)local z=v=="head"and a.header or a.footer;if not z or
+z==""then return end;local A,x,y=d.headerParts(z,#n+1)local w
+if
+o=="file"then local B=0;for E=g,c do B=B+e.width(b,E)+1 end;local C=math.max(0,math.floor((B-
+#x)/2)-#A)w=
+A..string.rep(" ",C)..x
+local D=math.max(1,B-#w-#y)
+w=(w..string.rep(" ",D)..y):gsub("%s+$","")else w=A
+local function B(C,D)
+local E=math.max(1,math.floor((C-l(w))/d.SPACE_PX+0.5))w=w..string.rep(" ",E)..D end
+if x~=""then B(math.floor((m-l(x))/2),x)end;if y~=""then B(m-l(y),y)end end
+if v=="head"then u[#u+1]=w;u[#u+1]=""else u[#u+1]=""u[#u+1]=w end end
+for v,u in ipairs(k)do local w=#u;while w>0 and u[w]==""do w=w-1 end;if w==0 then w=1 end
+local x=1
+repeat local y={}q(y,"head")local z=0
+while x<=w and z<t do y[#y+1]=u[x]x=x+1;z=z+1 end;q(y,"foot")n[#n+1]=y until x>w end;return n end
+function d.toText(a)local b={}for c,g in ipairs(a)do if c>1 then b[#b+1]="\f"end
+for i,h in ipairs(g)do b[#b+1]=h end end;return
+table.concat(b,"\n").."\n"end
+function d.toWrite(b,a)local c={}if a and a~=""then c[1]=".title "..a end
+for g,h in ipairs(b)do if g>1 then c[
+#c+1]=".page"end;for j,i in ipairs(h)do
+if i:sub(1,1)=="."then i="."..i end;c[#c+1]=i end end;return table.concat(c,"\n").."\n"end;return d

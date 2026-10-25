@@ -1,482 +1,96 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local fmt = require("printerfmt")
-
-local printer = {}
-
-printer._VERSION = "1.0.0"
-printer.fmt = fmt          
-
-local COMPONENT_TYPE = "openprinter"
-
-
-
-
-
-
-local MAX_JOB_PAGES = 64
-
-local proxy       
-local features    
-
-
-
+local C,D,E,F,G,z="maxWidth","printTag","scanBook","scanLine","setTitle","writeln"
+local u=require("printerfmt")local r={}r._VERSION="1.0.0"r.fmt=u;local A="openprinter"local B=64;local x;local w
 do
-  local okE, eventMod = pcall(require, "kernel.event")
-  if okE and eventMod and eventMod.on then
-    local function reset(_, _addr, ctype)
-      if ctype == COMPONENT_TYPE then proxy, features = nil, nil end
-    end
-    eventMod.on("component_removed", reset, "printer.driver")
-    eventMod.on("component_added",   reset, "printer.driver")
-  end
-end
-
-
-
-
-
-local function hasCap()
-  local okP, procMod = pcall(require, "kernel.process")
-  if not (okP and procMod and procMod.current) then
-    return true   
-  end
-  local cur = procMod.current()
-  if not cur then return true end
-  if cur.caps and cur.caps["peripheral.printer"] then return true end
-  return false
-end
-
-local function getProxy()
-  if not hasCap() then return nil, "peripheral.printer cap required" end
-  if proxy then return proxy end
-  local okC, component = pcall(require, "component")
-  if not okC or not component or not component.list then
-    return nil, "no component API"
-  end
-  local addr = component.list(COMPONENT_TYPE)()
-  if not addr then return nil, "no printer attached" end
-  local okP, p = pcall(component.proxy, addr)
-  if not okP or not p then return nil, "cannot open the printer" end
-  proxy = p
-  features = nil
-  return proxy
-end
-
-
-
-
-local function feat(name)
-  local p = getProxy()
-  if not p then return false end
-  if not features then
-    features = {}
-    for _, m in ipairs({ "writeln", "print", "setTitle", "clear",
-                         "getPaperLevel", "getBlackInkLevel",
-                         "getColorInkLevel", "charCount", "width",
-                         "maxWidth", "scan", "scanLine", "scanBook",
-                         "printTag" }) do
-      features[m] = type(p[m]) == "function"
-    end
-  end
-  return features[name] == true
-end
-
-
-
-
-
-
-
-
-local function call(method, ...)
-  local p, err = getProxy()
-  if not p then return nil, err end
-  if type(p[method]) ~= "function" then
-    return nil, "this printer has no " .. method .. "()"
-  end
-  local res = table.pack(pcall(p[method], ...))
-  if not res[1] then
-    local msg = tostring(res[2] or "printer error")
-    msg = msg:gsub("^.-:%d+:%s*", "")           
-    msg = msg:gsub("^java%.lang%.%w+:%s*", "")  
-    return nil, msg
-  end
-  return table.unpack(res, 2, res.n)
-end
-
-
-
-
-
-
-function printer.available()
-  return (getProxy()) ~= nil
-end
-
-
-
-
-
-
-function printer.unavailableReason()
-  local p, err = getProxy()
-  if p then return nil end
-  return err or "no printer attached"
-end
-
-
-
-
-
-function printer.status()
-  local p, err = getProxy()
-  if not p then return nil, err end
-  local function level(name)
-    if not feat(name) then return nil end
-    local v = call(name)
-    return tonumber(v)
-  end
-  
-  
-  
-  feat("writeln")
-  local featCopy = {}
-  for k, v in pairs(features or {}) do featCopy[k] = v end
-  return {
-    address  = p.address,
-    paper    = level("getPaperLevel"),
-    black    = level("getBlackInkLevel"),
-    color    = level("getColorInkLevel"),
-    maxWidth = printer.maxWidth(),
-    maxLines = fmt.MAX_LINES,
-    features = featCopy,
-  }
-end
-
-
-
-function printer.maxWidth()
-  if feat("maxWidth") then
-    local v = call("maxWidth")
-    if tonumber(v) then return math.floor(v) end
-  end
-  return fmt.MAX_WIDTH
-end
-
-
-
-
-
-
-function printer.width(s)
-  if feat("width") then
-    local v = call("width", tostring(s or ""))
-    if tonumber(v) then return math.floor(v), "component" end
-  end
-  return fmt.width(tostring(s or "")), "estimate"
-end
-
-
-
-function printer.measurer()
-  if feat("width") then
-    return function(s) return (printer.width(s)) end
-  end
-  return fmt.width
-end
-
-
-
-
-
-
-
-
-
-local Job = {}
-Job.__index = Job
-
-
-
-
-
-
-
-
-function printer.job(title)
-  local self = setmetatable({
-    _title  = nil,
-    _pages  = { {} },   
-    _copies = 1,
-  }, Job)
-  if title ~= nil then self:title(title) end
-  return self
-end
-
-
-function Job:_cur() return self._pages[#self._pages] end
-
-
-
-function Job:title(t)
-  local clean = fmt.sanitize(tostring(t or ""), { strip = true })
-  if #clean > 64 then clean = clean:sub(1, 64) end
-  self._title = clean
-  return self
-end
-
-
-
-
-function Job:line(text, color, align)
-  local a, err = fmt.align(align)
-  if not a then return nil, err end
-  if color ~= nil then
-    color = tonumber(color)
-    if not color then return nil, "colour must be a number (0xRRGGBB)" end
-    color = math.floor(color) & 0xFFFFFF
-  end
-  local page = self:_cur()
-  if #page >= fmt.MAX_LINES then
-    page = {}
-    self._pages[#self._pages + 1] = page
-  end
-  page[#page + 1] = {
-    text  = fmt.sanitize(tostring(text or "")),
-    color = color,
-    align = a,
-  }
-  return self
-end
-
-
-function Job:blank() return self:line("") end
-
-
-
-function Job:pageBreak()
-  if #self:_cur() > 0 then self._pages[#self._pages + 1] = {} end
-  return self
-end
-
-
-
-
-function Job:text(body, opts)
-  opts = opts or {}
-  opts.measure  = opts.measure or printer.measurer()
-  opts.maxWidth = opts.maxWidth or printer.maxWidth()
-  local pages, err = fmt.layout(body, opts)
-  if not pages then return nil, err end
-  for _, page in ipairs(pages) do
-    if #page > 0 then
-      self:pageBreak()
-      local cur = self:_cur()
-      for _, l in ipairs(page) do cur[#cur + 1] = l end
-    end
-  end
-  return self
-end
-
-
-function Job:copies(n)
-  n = math.floor(tonumber(n) or 1)
-  if n < 1 then return nil, "copies must be at least 1" end
-  self._copies = n
-  return self
-end
-
-
-
-function Job:pages()
-  local out = {}
-  for _, page in ipairs(self._pages) do
-    if #page > 0 then out[#out + 1] = page end
-  end
-  return out
-end
-
-
-function Job:cost()
-  return fmt.cost(self:pages(), self._copies)
-end
-
-
-
-
-
-
-
-function Job:check()
-  local st, err = printer.status()
-  if not st then return false, err end
-  local c = self:cost()
-  if c.paper > MAX_JOB_PAGES then
-    return false, string.format("job is %d pages (limit %d; pass force=true to override)",
-      c.paper, MAX_JOB_PAGES)
-  end
-  if st.paper and c.paper > st.paper then
-    return false, string.format("needs %d sheets, %d loaded", c.paper, st.paper)
-  end
-  if st.black and c.black > st.black then
-    return false, string.format("needs %d black ink, %d left", c.black, st.black)
-  end
-  if st.color and c.color > st.color then
-    return false, string.format("needs %d colour ink, %d left", c.color, st.color)
-  end
-  return true
-end
-
-
-
-
-
-
-
-
-
-
-
-function Job:commit(opts)
-  opts = opts or {}
-  local p, err = getProxy()
-  if not p then return nil, err, 0 end
-  if not opts.force then
-    local ok, why = self:check()
-    if not ok then return nil, why, 0 end
-  end
-  local pages = self:pages()
-  local done = 0
-
-  for _, page in ipairs(pages) do
-    
-    
-    
-    local okC, cErr = call("clear")
-    if okC == nil and cErr then return nil, cErr, done end
-    if self._title and feat("setTitle") then
-      local _, tErr = call("setTitle", self._title)
-      if tErr then return nil, tErr, done end
-    end
-    for _, line in ipairs(page) do
-      local r, wErr
-      if line.color ~= nil then
-        r, wErr = call("writeln", line.text, line.color, line.align or "left")
-      elseif (line.align or "left") ~= "left" then
-        
-        
-        
-        
-        r, wErr = call("writeln", line.text, 0x000000, line.align)
-      else
-        r, wErr = call("writeln", line.text)
-      end
-      if r == nil and wErr then return nil, wErr, done end
-    end
-    local _, pErr = call("print", self._copies)
-    if pErr then return nil, pErr, done end
-    done = done + self._copies
-  end
-  return done
-end
-
-
-
-
-
-
-
-
-
-function printer.printText(body, opts)
-  opts = opts or {}
-  local job = printer.job(opts.title)
-  local ok, err = job:text(body, opts)
-  if not ok then return nil, err, 0 end
-  if opts.copies then
-    local okC, cErr = job:copies(opts.copies)
-    if not okC then return nil, cErr, 0 end
-  end
-  return job:commit(opts)
-end
-
-
-function printer.clear() return call("clear") end
-
-
-
-
-
-
-function printer.scan()
-  if not feat("scan") then return nil, "this printer cannot scan" end
-  return call("scan")
-end
-
-
-function printer.scanLine(n)
-  if not feat("scanLine") then return nil, "this printer cannot scan" end
-  n = math.floor(tonumber(n) or 1)
-  if n < 1 then return nil, "line number must be at least 1" end
-  return call("scanLine", n)
-end
-
-
-function printer.scanBook()
-  if not feat("scanBook") then return nil, "this printer cannot scan books" end
-  return call("scanBook")
-end
-
-
-function printer.tag(text)
-  if not feat("printTag") then return nil, "this printer cannot print tags" end
-  local clean = fmt.sanitize(tostring(text or ""), { strip = true })
-  if clean == "" then return nil, "a name tag needs some text" end
-  if #clean > 64 then clean = clean:sub(1, 64) end
-  return call("printTag", clean)
-end
-
-
-
-function printer.refresh()
-  proxy, features = nil, nil
-  return printer.available()
-end
-
-return printer
+local b,a=pcall(require,"kernel.event")
+if b and a and a.on then local function c(e,f,d)if d==A then x,w=nil,nil end end
+a.on("component_removed",c,"printer.driver")a.on("component_added",c,"printer.driver")end end
+local function H()local c,a=pcall(require,"kernel.process")if not
+(c and a and a.current)then return true end;local b=a.current()if not b then
+return true end
+if b.caps and b.caps["peripheral.printer"]then return true end;return false end
+local function y()
+if not H()then return nil,"peripheral.printer cap required"end;if x then return x end;local d,a=pcall(require,"component")if not d or not a or
+not a.list then return nil,"no component API"end
+local b=a.list(A)()if not b then return nil,"no printer attached"end
+local e,c=pcall(a.proxy,b)
+if not e or not c then return nil,"cannot open the printer"end;x=c;w=nil;return x end
+local function v(a)local b=y()if not b then return false end
+if not w then w={}
+for d,c in
+ipairs({z,"print",G,"clear","getPaperLevel","getBlackInkLevel","getColorInkLevel","charCount","width",C,"scan",F,E,D})do w[c]=type(b[c])=="function"end end;return w[a]==true end
+local function s(a,...)local c,d=y()if not c then return nil,d end
+if type(c[a])~="function"then return nil,"this printer has no "..a..
+"()"end;local b=table.pack(pcall(c[a],...))if not b[1]then
+local e=tostring(b[2]or"printer error")e=e:gsub("^.-:%d+:%s*","")
+e=e:gsub("^java%.lang%.%w+:%s*","")return nil,e end;return
+table.unpack(b,2,b.n)end;function r.available()return(y())~=nil end
+function r.unavailableReason()local a,b=y()
+if a then return nil end;return b or"no printer attached"end
+function r.status()local b,d=y()if not b then return nil,d end;local function a(e)if not v(e)then return nil end
+local f=s(e)return tonumber(f)end;v(z)local c={}for e,f in pairs(w or
+{})do c[e]=f end
+return
+{address=b.address,paper=a("getPaperLevel"),black=a("getBlackInkLevel"),color=a("getColorInkLevel"),maxWidth=r.maxWidth(),maxLines=u.MAX_LINES,features=c}end;function r.maxWidth()
+if v(C)then local a=s(C)if tonumber(a)then return math.floor(a)end end;return u.MAX_WIDTH end
+function r.width(a)
+if
+v("width")then local b=s("width",tostring(a or""))if tonumber(b)then return
+math.floor(b),"component"end end;return u.width(tostring(a or"")),"estimate"end;function r.measurer()
+if v("width")then return function(a)return(r.width(a))end end;return u.width end;local t={}
+t.__index=t
+function r.job(a)
+local b=setmetatable({_title=nil,_pages={{}},_copies=1},t)if a~=nil then b:title(a)end;return b end
+function t:_cur()return self._pages[#self._pages]end
+function t:title(a)
+local b=u.sanitize(tostring(a or""),{strip=true})if#b>64 then b=b:sub(1,64)end;self._title=b;return self end
+function t:line(b,a,c)local e,f=u.align(c)if not e then return nil,f end
+if a~=nil then a=tonumber(a)if not a then return
+nil,"colour must be a number (0xRRGGBB)"end;a=
+math.floor(a)&0xFFFFFF end;local d=self:_cur()if#d>=u.MAX_LINES then d={}
+self._pages[#self._pages+1]=d end
+d[#d+1]={text=u.sanitize(tostring(b or"")),color=a,align=e}return self end;function t:blank()return self:line("")end;function t:pageBreak()
+if
+#self:_cur()>0 then self._pages[#self._pages+1]={}end;return self end
+function t:text(b,a)a=a or{}a.measure=
+a.measure or r.measurer()
+a.maxWidth=a.maxWidth or r.maxWidth()local c,d=u.layout(b,a)if not c then return nil,d end;for f,e in ipairs(c)do
+if#e>0 then
+self:pageBreak()local g=self:_cur()for f,h in ipairs(e)do g[#g+1]=h end end end;return self end
+function t:copies(a)a=math.floor(tonumber(a)or 1)if a<1 then return nil,
+"copies must be at least 1"end;self._copies=a;return self end;function t:pages()local a={}
+for c,b in ipairs(self._pages)do if#b>0 then a[#a+1]=b end end;return a end;function t:cost()return
+u.cost(self:pages(),self._copies)end
+function t:check()local a,c=r.status()if
+not a then return false,c end;local b=self:cost()
+if b.paper>B then return false,
+string.format("job is %d pages (limit %d; pass force=true to override)",b.paper,B)end
+if a.paper and b.paper>a.paper then return false,
+string.format("needs %d sheets, %d loaded",b.paper,a.paper)end
+if a.black and b.black>a.black then return false,
+string.format("needs %d black ink, %d left",b.black,a.black)end
+if a.color and b.color>a.color then return false,
+string.format("needs %d colour ink, %d left",b.color,a.color)end;return true end
+function t:commit(a)a=a or{}local c,d=y()if not c then return nil,d,0 end;if not a.force then
+local f,g=self:check()if not f then return nil,g,0 end end
+local e=self:pages()local b=0
+for g,f in ipairs(e)do local j,h=s("clear")if j==nil and h then return nil,h,b end
+if
+self._title and v(G)then local g,k=s(G,self._title)if k then return nil,k,b end end
+for g,k in ipairs(f)do local m,l
+if k.color~=nil then
+m,l=s(z,k.text,k.color,k.align or"left")elseif(k.align or"left")~="left"then
+m,l=s(z,k.text,0x000000,k.align)else m,l=s(z,k.text)end;if m==nil and l then return nil,l,b end end;local g,i=s("print",self._copies)if i then return nil,i,b end
+b=b+self._copies end;return b end
+function r.printText(b,a)a=a or{}local c=r.job(a.title)local d,e=c:text(b,a)
+if not d then return nil,e,0 end
+if a.copies then local f,g=c:copies(a.copies)if not f then return nil,g,0 end end;return c:commit(a)end;function r.clear()return s("clear")end
+function r.scan()if not v("scan")then
+return nil,"this printer cannot scan"end;return s("scan")end
+function r.scanLine(a)if not v(F)then return nil,"this printer cannot scan"end;a=math.floor(
+tonumber(a)or 1)if a<1 then
+return nil,"line number must be at least 1"end;return s(F,a)end;function r.scanBook()
+if not v(E)then return nil,"this printer cannot scan books"end;return s(E)end
+function r.tag(a)if not v(D)then return nil,
+"this printer cannot print tags"end
+local b=u.sanitize(tostring(a or""),{strip=true})if b==""then return nil,"a name tag needs some text"end;if#b>64 then
+b=b:sub(1,64)end;return s(D,b)end;function r.refresh()x,w=nil,nil;return r.available()end;return r

@@ -1,328 +1,82 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local M = {}
-
-M._VERSION = "1.0.0"
-
-
-
-local net       = require("kernel.net")
-local fs        = require("kernel.fs")
-local serialize = require("kernel.serialize")
-local log
+local u="string"local l={}l._VERSION="1.0.0"local m=require("kernel.net")
+local o=require("kernel.fs")local s=require("kernel.serialize")local p
 do
-  local ok, mod = pcall(require, "kernel.log")
-  if ok and mod and mod.info then log = mod
-  else log = { info = function() end, warn = function() end, error = function() end } end
-end
-
-M.MAX_BODY    = 4096    
-M.MAX_SUBJECT = 120
-M.MAX_BOX     = 200     
-
-
-
-
-
-
-
-function M.senderName(m)
-  if type(m) ~= "table" then return "?" end
-  if type(m.fromUser) == "string" and m.fromUser ~= "" then return m.fromUser end
-  return (tostring(m.from or "?")):sub(1, 8)
-end
-
-
-
-
-
-
-
-
-function M.formatTs(ts)
-  if type(ts) ~= "number" then return "--:--:--" end
-  ts = math.max(0, ts)
-  local h = math.floor(ts / 3600)
-  local m = math.floor((ts % 3600) / 60)
-  local s = math.floor(ts % 60)
-  return string.format("%02d:%02d:%02d", h, m, s)
-end
-
-
-
-function M.inboxRow(m, idx, width)
-  local rd   = (type(m) == "table" and m.read) and " " or "*"
-  local who  = M.senderName(m):sub(1, 12)
-  local subj = (type(m) == "table" and m.subject ~= "" and m.subject) or "(no subject)"
-  local when = M.formatTs(type(m) == "table" and m.ts or nil)
-  local line = string.format(" %s %2d %s %-12s  %s", rd, idx, when, who, subj)
-  width = width or 60
-  if #line > width then line = line:sub(1, width - 1) .. "~" end
-  return line
-end
-
-
-
-function M.resolveRecipient(to, resolve)
-  if not to or to == "" then return nil end
-  local ruser, host = to:match("^([^@]+)@(.+)$")
-  host = host or to
-  local toAddr = host
-  if host == "*" then
-    toAddr = "*"
-  elseif resolve then
-    toAddr = resolve(host) or host
-  end
-  return toAddr, ruser
-end
-
-
-
-
-
-
-local Mailbox = {}
-Mailbox.__index = Mailbox
-
-function M.newMailbox(store, path)
-  return setmetatable({ store = store, path = path, _cache = nil }, Mailbox)
-end
-
-function Mailbox:load()
-  if self._cache then return self._cache end
-  local list = {}
-  if self.store.exists(self.path) then
-    local data = self.store.read(self.path)
-    if data and #data > 0 then
-      local ok, parsed = pcall(serialize.decode, data, { maxBytes = 256 * 1024 })
-      if ok and type(parsed) == "table" then list = parsed end
-    end
-  end
-  self._cache = list
-  return list
-end
-
-function Mailbox:save()
-  local data = serialize.encode(self._cache or {})
-  return self.store.write(self.path, data)
-end
-
-
-
-
-function Mailbox:add(msg)
-  local list = self:load()
-  for _, m in ipairs(list) do if m.id == msg.id then return false end end
-  msg.read = false
-  list[#list + 1] = msg
-  while #list > M.MAX_BOX do table.remove(list, 1) end
-  self:save()
-  return true
-end
-
-function Mailbox:list() return self:load() end
-function Mailbox:get(i) return self:load()[i] end
-
-function Mailbox:unread()
-  local n = 0
-  for _, m in ipairs(self:load()) do if not m.read then n = n + 1 end end
-  return n
-end
-
-function Mailbox:markRead(i)
-  local m = self:get(i)
-  if not m then return false end
-  m.read = true
-  self:save()
-  return true
-end
-
-function Mailbox:delete(i)
-  local list = self:load()
-  if not list[i] then return false end
-  table.remove(list, i)
-  self:save()
-  return true
-end
-
-
-
-
-
-
-
-
-
-local function mailboxFor(user)
-  user = (type(user) == "string" and user ~= "") and user or "_node"
-  user = user:gsub("[^%w%._%-]", "_")
-  local dir = "/var/mail/" .. user
-  return M.newMailbox({
-    exists = function(p) return fs.exists(p) end,
-    read   = function(p) return fs.readFile(p) end,
-    write  = function(p, d)
-      if not fs.exists(dir) then pcall(fs.makeDirectory, dir) end
-      return fs.writeFile(p, d)
-    end,
-  }, dir .. "/inbox.dat")
-end
-M._mailboxFor = mailboxFor   
-
-
-
-
-
-
-
-
-local function callerPrincipal()
-  local okU, users = pcall(require, "kernel.users")
-  if not (okU and users and users.currentSession) then
-    
-    return nil, 3, true
-  end
-  local s = users.currentSession()
-  if not s then return nil, 0, false end
-  return s.user, s.tier or 0, s.isKernel or false
-end
-
-
-
-
-
-function M.inboxBox(user)
-  user = (type(user) == "string" and user ~= "") and user or "_node"
-  local caller, tier, isKernel = callerPrincipal()
-  if not (isKernel or tier >= 2 or (caller ~= nil and caller == user)) then
-    return nil, "access denied: inbox '" .. tostring(user)
-      .. "' is owner-or-admin only (you are " .. tostring(caller or "nobody") .. ")"
-  end
-  return mailboxFor(user)
-end
-
-
-function M.inbox(user)
-  local box, err = M.inboxBox(user)
-  if not box then return nil, err end
-  return box:list()
-end
-
-
-
-
-
-
-function M.available()
-  return net.meshAvailable and net.meshAvailable() or false
-end
-
-
-
-
-
-
-function M.send(opts)
-  opts = opts or {}
-  return net.meshSend({
-    svc = "mail",
-    to = opts.to, user = opts.user, fromUser = opts.fromUser,
-    payload = {
-      subject = tostring(opts.subject or ""):sub(1, M.MAX_SUBJECT),
-      body    = tostring(opts.body or ""):sub(1, M.MAX_BODY),
-    },
-    allowPlaintext = opts.allowPlaintext or (opts.to == "*") or nil,
-  })
-end
-
-
-function M.pending()
-  return net.meshPending and net.meshPending() or 0
-end
-
-
-function M.tick()
-  if net.meshTick then pcall(net.meshTick) end
-end
-
-
-
-
-
-local _running = false
-
-
-
-local function onMeshMail(msg)
-  local p = msg.payload
-  local record = {
-    id = msg.id, from = msg.from, fromUser = msg.fromUser,
-    to = msg.to, user = msg.user,
-    subject = (p and p.subject) or "(unreadable)",
-    body    = (p and p.body) or "",
-    ts = msg.ts, sealed = msg.sealed, readable = msg.readable, how = msg.how,
-  }
-  local box = mailboxFor(msg.user)
-  local added = box and box:add(record)
-  if added then
-    log.info("mail", "Mail delivered to " .. tostring(msg.user or "_node")
-      .. " from " .. tostring(msg.from):sub(1, 8))
-  end
-  return added and true or false
-end
-M._onMeshMail = onMeshMail   
-
-
-function M.start()
-  if _running then return true end
-  if not (net.meshOn and net.meshAvailable and net.meshAvailable()) then
-    return false, "mesh transport not available (no network?)"
-  end
-  net.meshOn("mail", onMeshMail)
-  _running = true
-  log.info("mail", "Mail service up (mesh kind 'mail' registered)")
-  return true
-end
-
-
-
-function M.stop()
-  if not _running then return true end
-  if net.meshOff then net.meshOff("mail") end
-  _running = false
-  log.info("mail", "Mail service stopped")
-  return true
-end
-
-
-function M.running()
-  return _running
-end
-
-return M
+local b,a=pcall(require,"kernel.log")if b and a and a.info then p=a else
+p={info=function()end,warn=function()end,error=function()end}end end;l.MAX_BODY=4096;l.MAX_SUBJECT=120;l.MAX_BOX=200
+function l.senderName(a)
+if type(a)~="table"then return"?"end
+if type(a.fromUser)==u and a.fromUser~=""then return a.fromUser end
+return(tostring(a.from or"?")):sub(1,8)end
+function l.formatTs(a)if type(a)~="number"then return"--:--:--"end
+a=math.max(0,a)local b=math.floor(a/3600)
+local c=math.floor((a%3600)/60)local d=math.floor(a%60)
+return string.format("%02d:%02d:%02d",b,c,d)end
+function l.inboxRow(a,c,b)
+local e=(type(a)=="table"and a.read)and" "or"*"local f=l.senderName(a):sub(1,12)
+local g=
+(type(a)=="table"and
+a.subject~=""and a.subject)or"(no subject)"
+local h=l.formatTs(type(a)=="table"and a.ts or nil)local d=string.format(" %s %2d %s %-12s  %s",e,c,h,f,g)b=b or
+60;if#d>b then d=d:sub(1,b-1).."~"end;return d end
+function l.resolveRecipient(a,b)if not a or a==""then return nil end
+local e,c=a:match("^([^@]+)@(.+)$")c=c or a;local d=c;if c=="*"then d="*"elseif b then d=b(c)or c end;return d,e end;local n={}n.__index=n;function l.newMailbox(a,b)
+return setmetatable({store=a,path=b,_cache=nil},n)end
+function n:load()
+if self._cache then return self._cache end;local a={}
+if self.store.exists(self.path)then
+local b=self.store.read(self.path)
+if b and#b>0 then
+local d,c=pcall(s.decode,b,{maxBytes=256*1024})if d and type(c)=="table"then a=c end end end;self._cache=a;return a end;function n:save()local a=s.encode(self._cache or{})return
+self.store.write(self.path,a)end
+function n:add(a)
+local b=self:load()for d,c in ipairs(b)do if c.id==a.id then return false end end
+a.read=false;b[#b+1]=a;while#b>l.MAX_BOX do table.remove(b,1)end
+self:save()return true end;function n:list()return self:load()end;function n:get(a)
+return self:load()[a]end
+function n:unread()local a=0;for c,b in ipairs(self:load())do
+if not b.read then a=a+1 end end;return a end;function n:markRead(a)local b=self:get(a)if not b then return false end;b.read=true
+self:save()return true end;function n:delete(a)
+local b=self:load()if not b[a]then return false end;table.remove(b,a)
+self:save()return true end
+local function r(a)
+a=(
+type(a)==u and a~="")and a or"_node"a=a:gsub("[^%w%._%-]","_")local b="/var/mail/"..a
+return
+l.newMailbox({exists=function(c)return
+o.exists(c)end,read=function(c)return o.readFile(c)end,write=function(c,e)if
+not o.exists(b)then pcall(o.makeDirectory,b)end
+return o.writeFile(c,e)end},
+b.."/inbox.dat")end;l._mailboxFor=r
+local function v()local c,b=pcall(require,"kernel.users")if not
+(c and b and b.currentSession)then return nil,3,true end
+local a=b.currentSession()if not a then return nil,0,false end
+return a.user,a.tier or 0,a.isKernel or false end
+function l.inboxBox(a)
+a=(type(a)==u and a~="")and a or"_node"local b,c,d=v()
+if
+not(d or c>=2 or(b~=nil and b==a))then return nil,
+"access denied: inbox '"..tostring(a).."' is owner-or-admin only (you are "..
+tostring(b or"nobody")..")"end;return r(a)end
+function l.inbox(a)local b,c=l.inboxBox(a)if not b then return nil,c end;return b:list()end;function l.available()
+return m.meshAvailable and m.meshAvailable()or false end
+function l.send(a)a=a or{}
+return
+m.meshSend({svc="mail",to=a.to,user=a.user,fromUser=a.fromUser,payload={subject=tostring(
+a.subject or""):sub(1,l.MAX_SUBJECT),body=tostring(a.body or""):sub(1,l.MAX_BODY)},allowPlaintext=
+a.allowPlaintext or(a.to=="*")or nil})end;function l.pending()
+return m.meshPending and m.meshPending()or 0 end;function l.tick()
+if m.meshTick then pcall(m.meshTick)end end;local q=false
+local function t(a)local b=a.payload
+local e={id=a.id,from=a.from,fromUser=a.fromUser,to=a.to,user=a.user,subject=(b and
+b.subject)or"(unreadable)",body=(b and b.body)or"",ts=a.ts,sealed=a.sealed,readable=a.readable,how=a.how}local c=r(a.user)local d=c and c:add(e)if d then
+p.info("mail","Mail delivered to "..
+
+tostring(a.user or"_node").." from "..tostring(a.from):sub(1,8))end;return
+d and true or false end;l._onMeshMail=t
+function l.start()if q then return true end
+if
+not(m.meshOn and m.meshAvailable and
+m.meshAvailable())then return false,"mesh transport not available (no network?)"end;m.meshOn("mail",t)q=true
+p.info("mail","Mail service up (mesh kind 'mail' registered)")return true end
+function l.stop()if not q then return true end
+if m.meshOff then m.meshOff("mail")end;q=false;p.info("mail","Mail service stopped")return true end;function l.running()return q end;return l

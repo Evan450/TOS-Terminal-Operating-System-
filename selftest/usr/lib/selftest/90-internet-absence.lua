@@ -1,80 +1,28 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-return function(t)
-  local okI, internet = pcall(require, "kernel.internet")
-  if not okI or type(internet) ~= "table" then
-    return t.skip("internet", "kernel.internet unavailable")
-  end
-
-  local st = internet.status()
-  t.ok("status() returns a table", type(st) == "table")
-
-  if type(st) == "table" and not st.present then
-    t.ok("no card -> a real reason is given, not a bare false",
-      type(st.reason) == "string" and #st.reason > 0)
-    t.ok("no card -> available() agrees", internet.available() == false)
-
-    
-    
-    
-    local okG, body, err = pcall(internet.get, "http://example.invalid/probe")
-    t.ok("get() with no card does not throw", okG)
-    if okG then
-      t.eq("...and returns no body", nil, body)
-      t.ok("...with a reason", type(err) == "string" and #err > 0)
-    end
-  else
-    
-    
-    
-    
-    t.skip("no-card path", "a real internet card is present on this machine")
-  end
-
-  
-  
-  
-  local okC, config = pcall(require, "kernel.config")
-  if not (okC and config and config.get and config.set) then
-    return t.skip("kill switch", "kernel.config unavailable")
-  end
-
-  
-  
-  
-  local had = config.get("internet")
-  local ok, err = pcall(function()
-    config.set("internet", false)
-    t.ok("isEnabled() honours the switch turned off", internet.isEnabled() == false)
-    t.ok("...and available() agrees", internet.available() == false)
-    local stOff = internet.status()
-    if stOff.present then
-      t.ok("switched off -> the reason names the switch, not the card",
-        type(stOff.reason) == "string"
-          and stOff.reason:find("disabled on this machine", 1, true) ~= nil)
-    end
-
-    config.set("internet", true)
-    t.ok("isEnabled() flips back on", internet.isEnabled() == true)
-  end)
-  config.set("internet", had)
-  t.eq("config left exactly as found", had, config.get("internet"))
-  if not ok then t.ok("kill-switch check: " .. tostring(err), false) end
-end
+local c,d="internet","string"
+return
+function(a)local h,b=pcall(require,"kernel.internet")if not
+h or type(b)~="table"then
+return a.skip(c,"kernel.internet unavailable")end;local f=b.status()a.ok("status() returns a table",
+type(f)=="table")
+if
+type(f)=="table"and not f.present then
+a.ok("no card -> a real reason is given, not a bare false",
+type(f.reason)==d and#f.reason>0)
+a.ok("no card -> available() agrees",b.available()==false)local l,n,m=pcall(b.get,"http://example.invalid/probe")
+a.ok("get() with no card does not throw",l)
+if l then a.eq("...and returns no body",nil,n)a.ok("...with a reason",
+type(m)==d and#m>0)end else
+a.skip("no-card path","a real internet card is present on this machine")end;local i,e=pcall(require,"kernel.config")if not
+(i and e and e.get and e.set)then
+return a.skip("kill switch","kernel.config unavailable")end;local g=e.get(c)
+local j,k=pcall(function()
+e.set(c,false)
+a.ok("isEnabled() honours the switch turned off",b.isEnabled()==false)
+a.ok("...and available() agrees",b.available()==false)local l=b.status()
+if l.present then
+a.ok("switched off -> the reason names the switch, not the card",
+type(l.reason)==d and
+l.reason:find("disabled on this machine",1,true)~=nil)end;e.set(c,true)
+a.ok("isEnabled() flips back on",b.isEnabled()==true)end)e.set(c,g)
+a.eq("config left exactly as found",g,e.get(c))if not j then
+a.ok("kill-switch check: "..tostring(k),false)end end

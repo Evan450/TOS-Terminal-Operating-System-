@@ -1,583 +1,148 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local function firstRequire(...)
-  for i = 1, select("#", ...) do
-    local ok, mod = pcall(require, (select(i, ...)))
-    if ok and mod then return mod end
-  end
-end
-local serialize = require("kernel.serialize")
-local fs        = firstRequire("kernel.fs", "filesystem")
-local computer  = require("computer")
-local event     = firstRequire("kernel.event", "event")
-
-
-local log
+local A,y,B="number","running","unknown_manager"
+local function x(...)for a=1,select("#",...)do
+local c,b=pcall(require,(select(a,...)))if c and b then return b end end end;local z=require("kernel.serialize")
+local r=x("kernel.fs","filesystem")local t=require("computer")local C=x("kernel.event","event")local s
 do
-  local mod = firstRequire("kernel.log", "log")
-  if mod and mod.info then log = mod
-  else log = { info=function() end, warn=function() end, error=function() end } end
-end
-local LOG_TAG = "cluster.state"
-
-local state = {}
-
-
-
-
-
-
-
-
-state.CLEAR = setmetatable({}, { __tostring = function() return "<clear>" end })
-
-
-
-
-
-local function freshData()
-  return {
-    managers = {},                     
-    domain_id_counter = 1,
-
-    storage_node = nil,                
-
-    jobs = {},                         
-    job_id_counter = 1,
-    assignment_id_counter = 1,
-
-    
-    _runtime = {
-      compute_bound_in_flight = 0,
-      events = {},                     
-      events_head = 1,
-      events_size = 0,
-      EVENTS_MAX = 128,
-      lock_held = false,               
-    },
-  }
-end
-
-state._data = freshData()
-
-
-
-
-
-
-
-
-function state.withLock(fn, ...)
-  local rt = state._data._runtime
-  local waited = 0
-  while rt.lock_held do
-    
-    
-    local ok, pull = pcall(event.pull, 0.05)
-    if not ok then
-      
-      local deadline = computer.uptime() + 0.05
-      while computer.uptime() < deadline do end
-    end
-    waited = waited + 1
-    
-    if waited > 200 then
-      error("cluster.state: lock wait timed out (held by stuck caller)", 2)
-    end
-  end
-  rt.lock_held = true
-  local args = {...}
-  local ok, r1, r2, r3 = pcall(function() return fn(table.unpack(args)) end)
-  rt.lock_held = false
-  if not ok then error(r1, 2) end
-  return r1, r2, r3
-end
-
-
-
-
-
-local _statePath  
-
-function state.init(statePath)
-  _statePath = statePath
-end
-
-
-
-
-
-
-
-
-
-local function validateShape(d)
-  if type(d) ~= "table" then return false, "root not a table" end
-  if type(d.managers) ~= "table" then return false, "managers not a table" end
-  if type(d.jobs) ~= "table" then return false, "jobs not a table" end
-  if type(d.domain_id_counter) ~= "number" then return false, "domain_id_counter not a number" end
-  if type(d.job_id_counter) ~= "number" then return false, "job_id_counter not a number" end
-  if type(d.assignment_id_counter) ~= "number" then return false, "assignment_id_counter not a number" end
-  if d.storage_node ~= nil and type(d.storage_node) ~= "table" then
-    return false, "storage_node not a table"
-  end
-  return true
-end
-
-function state.load(path)
-  path = path or _statePath
-  if not path then return false, "no_state_path" end
-  if not fs.exists or not fs.exists(path) then
-    log.info(LOG_TAG, "no persisted state at " .. path .. "; starting fresh")
-    
-    
-    
-    return true, "cold_start"
-  end
-
-  local data
-  if fs.readFile then
-    data = fs.readFile(path)
-  else
-    local h, err = fs.open(path, "r")
-    if not h then
-      log.error(LOG_TAG, "open failed: " .. tostring(err))
-      return false, "read_failed: " .. tostring(err)
-    end
-    local parts = {}
-    local n = 0
-    while true do
-      local chunk = h:read(4096)
-      if not chunk or chunk == "" then break end
-      n = n + 1
-      parts[n] = chunk
-    end
-    h:close()
-    data = table.concat(parts)
-  end
-
-  if not data or data == "" then
-    log.warn(LOG_TAG, "state file empty; starting fresh")
-    return true, "cold_start"
-  end
-
-  local decoded, err = serialize.decode(data)
-  if not decoded then
-    log.error(LOG_TAG, "deserialize failed: " .. tostring(err))
-    return false, "decode_failed: " .. tostring(err)
-  end
-
-  local ok, reason = validateShape(decoded)
-  if not ok then
-    log.error(LOG_TAG, "bad state shape: " .. reason .. "; REFUSING to overwrite in-memory state")
-    return false, "bad_state_shape: " .. reason
-  end
-
-  
-  state._data.managers               = decoded.managers
-  state._data.jobs                   = decoded.jobs
-  state._data.domain_id_counter      = decoded.domain_id_counter
-  state._data.job_id_counter         = decoded.job_id_counter
-  state._data.assignment_id_counter  = decoded.assignment_id_counter
-  state._data.storage_node           = decoded.storage_node
-
-  
-  
-  
-  local now = computer.uptime()
-  local mgr_count = 0
-  for _, m in pairs(state._data.managers) do
-    m.last_heartbeat = now
-    mgr_count = mgr_count + 1
-    
-  end
-
-  log.info(LOG_TAG, "loaded state: " .. tostring(mgr_count) ..
-    " manager entries, " .. tostring(decoded.job_id_counter - 1) .. " historical jobs")
-  return true, "loaded"
-end
-
-function state.save(path)
-  path = path or _statePath
-  if not path then return false, "no_state_path" end
-
-  
-  
-  local out = {}
-  for k, v in pairs(state._data) do
-    if k ~= "_runtime" then out[k] = v end
-  end
-
-  local blob = serialize.encode(out)
-  local tmp = path .. ".tmp"
-
-  
-  local dir = path:match("(.+)/[^/]+$")
-  if dir and fs.exists and not fs.exists(dir) then
-    if fs.makeDirectory then fs.makeDirectory(dir) end
-  end
-
-  local ok, err
-  if fs.writeFile then
-    ok, err = fs.writeFile(tmp, blob)
-  else
-    local h
-    h, err = fs.open(tmp, "w")
-    if h then
-      h:write(blob); h:close(); ok = true
-    end
-  end
-  if not ok then
-    log.error(LOG_TAG, "write tmp failed: " .. tostring(err))
-    return false, "write_failed: " .. tostring(err)
-  end
-
-  
-  if fs.exists and fs.exists(path) and fs.remove then
-    pcall(fs.remove, path)
-  end
-  if fs.rename then
-    local rok, rerr = fs.rename(tmp, path)
-    if not rok then
-      log.error(LOG_TAG, "rename failed: " .. tostring(rerr))
-      return false, "rename_failed: " .. tostring(rerr)
-    end
-  else
-    
-    if fs.writeFile then fs.writeFile(path, blob) end
-    if fs.remove then pcall(fs.remove, tmp) end
-  end
-
-  return true
-end
-
-
-
-
-local function persist()
-  if not _statePath then return end
-  local ok, err = pcall(state.save, _statePath)
-  if not ok then log.error(LOG_TAG, "persist failed: " .. tostring(err)) end
-end
-
-
-
-
-
-function state.registerManager(address, reg)
-  local now = computer.uptime()
-  local existing = state._data.managers[address]
-
-  local domain_id
-  if existing then
-    
-    domain_id = existing.domain_id
-  else
-    domain_id = state._data.domain_id_counter
-    state._data.domain_id_counter = state._data.domain_id_counter + 1
-  end
-
-  state._data.managers[address] = {
-    hostname         = reg.hostname,
-    domain_id        = domain_id,
-    profile          = reg.profile,
-    worker_count     = reg.worker_count,
-    storage          = reg.storage or { external_type = "none", external_capacity = 0 },
-    master_path      = reg.master_path or "direct",
-    relay_peer       = reg.relay_peer,
-    has_console      = reg.has_console,
-    compute_capable  = reg.compute_capable,
-    cluster_protocol = reg.cluster_protocol,
-    software_version = reg.software_version,
-    state            = "active",
-    last_heartbeat   = now,
-    last_snapshot    = nil,
-    registered_at    = existing and existing.registered_at or now,
-  }
-
-  persist()
-  state.pushEvent(existing and "manager_reregistered" or "manager_registered",
-                  { domain_id = domain_id, hostname = reg.hostname })
-  return domain_id
-end
-
-function state.updateManagerHeartbeat(address, snapshot)
-  local m = state._data.managers[address]
-  if not m then return false, "unknown_manager" end
-  m.last_snapshot = snapshot
-  m.last_heartbeat = computer.uptime()
-  
-
-  
-  
-  
-  
-  
-  
-  
-  if snapshot and snapshot.external_type then
-    if not m.storage then
-      m.storage = { external_type = "none", external_capacity = 0 }
-    end
-    if m.storage.external_type ~= snapshot.external_type then
-      m.storage.external_type = snapshot.external_type
-      state.pushEvent("manager_storage_change",
-        { domain_id = m.domain_id, external_type = snapshot.external_type })
-      persist()
-    end
-  end
-  return true
-end
-
-local VALID_MANAGER_STATES = {
-  active = true, degraded = true, draining = true, offline = true,
-}
-
-function state.setManagerState(address, newState)
-  if not VALID_MANAGER_STATES[newState] then
-    return false, "invalid_state: " .. tostring(newState)
-  end
-  local m = state._data.managers[address]
-  if not m then return false, "unknown_manager" end
-  if m.state == newState then return true end
-
-  local prev = m.state
-  m.state = newState
-  state.pushEvent("manager_state_change",
-    { domain_id = m.domain_id, from = prev, to = newState })
-  persist()
-  return true
-end
-
-function state.forgetManager(address)
-  local m = state._data.managers[address]
-  if not m then return false, "unknown_manager" end
-
-  
-  
-  state._data.managers[address] = nil
-  state.pushEvent("manager_forgotten", { domain_id = m.domain_id, hostname = m.hostname })
-  persist()
-  return true
-end
-
-function state.listManagers(filter)
-  local out = {}
-  for addr, m in pairs(state._data.managers) do
-    if (not filter) or filter(m) then
-      
-      local row = {}
-      for k, v in pairs(m) do row[k] = v end
-      row.address = addr
-      out[#out + 1] = row
-    end
-  end
-  table.sort(out, function(a, b) return (a.domain_id or 0) < (b.domain_id or 0) end)
-  return out
-end
-
-function state.getManager(address)
-  return state._data.managers[address]
-end
-
-function state.getManagerByDomainId(domain_id)
-  for addr, m in pairs(state._data.managers) do
-    if m.domain_id == domain_id then
-      local row = {}
-      for k, v in pairs(m) do row[k] = v end
-      row.address = addr
-      return row
-    end
-  end
-  return nil
-end
-
-
-
-
-
-function state.createJob(spec)
-  local job_id = state._data.job_id_counter
-  state._data.job_id_counter = state._data.job_id_counter + 1
-
-  state._data.jobs[job_id] = {
-    job_id          = job_id,
-    submitted_by    = spec.submitted_by or "?",
-    submitted_at    = computer.uptime(),
-    state           = "pending",
-    compute_profile = spec.compute_profile or "mixed",
-    retry_policy    = spec.retry_policy or "safe",
-    storage_preference = spec.storage_preference,
-    result_sink     = spec.result_sink or "inline",
-    assignments     = {},
-    spec            = spec,        
-  }
-  persist()
-  state.pushEvent("job_submitted", { job_id = job_id, by = spec.submitted_by })
-  return job_id
-end
-
-function state.addAssignment(job_id, assignment)
-  local j = state._data.jobs[job_id]
-  if not j then return nil, "no_such_job: " .. tostring(job_id) end
-
-  local aid = state._data.assignment_id_counter
-  state._data.assignment_id_counter = state._data.assignment_id_counter + 1
-  assignment.assignment_id = aid
-  assignment.job_id = job_id
-  assignment.state = assignment.state or "pending"
-  assignment.attempts = assignment.attempts or 0
-  j.assignments[aid] = assignment
-  persist()
-  return aid
-end
-
-function state.setAssignmentState(job_id, assignment_id, newState, extra)
-  local j = state._data.jobs[job_id]
-  if not j then return false, "no_such_job" end
-  local a = j.assignments[assignment_id]
-  if not a then return false, "no_such_assignment" end
-
-  local prev = a.state
-  a.state = newState
-  if extra then
-    for k, v in pairs(extra) do
-      if v == state.CLEAR then a[k] = nil else a[k] = v end
-    end
-  end
-
-  
-  if j.compute_profile == "compute_bound" then
-    if prev ~= "running" and newState == "running" then
-      state._data._runtime.compute_bound_in_flight =
-        state._data._runtime.compute_bound_in_flight + 1
-    elseif prev == "running" and newState ~= "running" then
-      state._data._runtime.compute_bound_in_flight =
-        math.max(0, state._data._runtime.compute_bound_in_flight - 1)
-    end
-  end
-
-  persist()
-  return true
-end
-
-function state.setJobState(job_id, newState)
-  local j = state._data.jobs[job_id]
-  if not j then return false, "no_such_job" end
-  j.state = newState
-  if newState == "done" or newState == "failed" or newState == "cancelled" then
-    j.completed_at = computer.uptime()
-  end
-  persist()
-  state.pushEvent("job_state_change", { job_id = job_id, to = newState })
-  return true
-end
-
-function state.listJobs(filter)
-  local out = {}
-  for _, j in pairs(state._data.jobs) do
-    if (not filter) or filter(j) then
-      
-      
-      local done, total = 0, 0
-      for _, a in pairs(j.assignments) do
-        total = total + 1
-        if a.state == "completed" then done = done + 1 end
-      end
-      out[#out + 1] = {
-        job_id          = j.job_id,
-        state           = j.state,
-        submitted_by    = j.submitted_by,
-        submitted_at    = j.submitted_at,
-        compute_profile = j.compute_profile,
-        assignments     = done .. "/" .. total,
-      }
-    end
-  end
-  table.sort(out, function(a, b) return (a.job_id or 0) < (b.job_id or 0) end)
-  return out
-end
-
-function state.getJob(job_id)
-  return state._data.jobs[job_id]
-end
-
-
-
-
-
-function state.setStorageNode(info)
-  state._data.storage_node = info
-  persist()
-  state.pushEvent("storage_configured", { address = info and info.address })
-end
-
-function state.updateStorageUsage(used_bytes)
-  if not state._data.storage_node then return end
-  state._data.storage_node.used = used_bytes
-  state._data.storage_node.last_seen = computer.uptime()
-  
-end
-
-
-
-
-
-function state.pushEvent(kind, detail)
-  local rt = state._data._runtime
-  rt.events[rt.events_head] = {
-    time = computer.uptime(),
-    kind = kind,
-    detail = detail,
-  }
-  rt.events_head = (rt.events_head % rt.EVENTS_MAX) + 1
-  if rt.events_size < rt.EVENTS_MAX then
-    rt.events_size = rt.events_size + 1
-  end
-end
-
-function state.recentEvents(n)
-  local rt = state._data._runtime
-  n = math.min(n or 20, rt.events_size)
-  local out = {}
-  
-  local cursor = rt.events_head - 1
-  if cursor < 1 then cursor = rt.EVENTS_MAX end
-  for _ = 1, n do
-    local ev = rt.events[cursor]
-    if ev then out[#out + 1] = ev end
-    cursor = cursor - 1
-    if cursor < 1 then cursor = rt.EVENTS_MAX end
-  end
-  return out
-end
-
-
-
-
-
-function state.incrementComputeBoundInFlight(delta)
-  state._data._runtime.compute_bound_in_flight =
-    state._data._runtime.compute_bound_in_flight + (delta or 1)
-  if state._data._runtime.compute_bound_in_flight < 0 then
-    state._data._runtime.compute_bound_in_flight = 0
-  end
-end
-
-function state.computeBoundInFlight()
-  return state._data._runtime.compute_bound_in_flight
-end
-
-return state
+local a=x("kernel.log","log")if a and a.info then s=a else
+s={info=function()end,warn=function()end,error=function()end}end end;local u="cluster.state"local q={}
+q.CLEAR=setmetatable({},{__tostring=function()return"<clear>"end})
+local function D()
+return
+{managers={},domain_id_counter=1,storage_node=nil,jobs={},job_id_counter=1,assignment_id_counter=1,_runtime={compute_bound_in_flight=0,events={},events_head=1,events_size=0,EVENTS_MAX=128,lock_held=false}}end;q._data=D()
+function q.withLock(a,...)local b=q._data._runtime;local c=0
+while b.lock_held do
+local i,j=pcall(C.pull,0.05)
+if not i then local k=t.uptime()+0.05;while t.uptime()<k do end end;c=c+1;if c>200 then
+error("cluster.state: lock wait timed out (held by stuck caller)",2)end end;b.lock_held=true;local e={...}
+local f,d,g,h=pcall(function()return a(table.unpack(e))end)b.lock_held=false;if not f then error(d,2)end;return d,g,h end;local w;function q.init(a)w=a end
+local function E(a)
+if type(a)~="table"then return false,"root not a table"end
+if type(a.managers)~="table"then return false,"managers not a table"end
+if type(a.jobs)~="table"then return false,"jobs not a table"end;if type(a.domain_id_counter)~=A then
+return false,"domain_id_counter not a number"end
+if
+type(a.job_id_counter)~=A then return false,"job_id_counter not a number"end;if type(a.assignment_id_counter)~=A then
+return false,"assignment_id_counter not a number"end;if a.storage_node~=nil and
+type(a.storage_node)~="table"then
+return false,"storage_node not a table"end;return true end
+function q.load(a)a=a or w;if not a then return false,"no_state_path"end
+if not r.exists or not
+r.exists(a)then
+s.info(u,"no persisted state at "..a.."; starting fresh")return true,"cold_start"end;local c
+if r.readFile then c=r.readFile(a)else local i,k=r.open(a,"r")if not i then s.error(u,"open failed: "..
+tostring(k))return false,
+"read_failed: "..tostring(k)end
+local l={}local j=0
+while true do local m=i:read(4096)if not m or m==""then break end;j=j+1;l[j]=m end;i:close()c=table.concat(l)end;if not c or c==""then
+s.warn(u,"state file empty; starting fresh")return true,"cold_start"end
+local b,e=z.decode(c)
+if not b then
+s.error(u,"deserialize failed: "..tostring(e))return false,"decode_failed: "..tostring(e)end;local g,f=E(b)
+if not g then
+s.error(u,"bad state shape: "..f.."; REFUSING to overwrite in-memory state")return false,"bad_state_shape: "..f end;q._data.managers=b.managers;q._data.jobs=b.jobs
+q._data.domain_id_counter=b.domain_id_counter;q._data.job_id_counter=b.job_id_counter
+q._data.assignment_id_counter=b.assignment_id_counter;q._data.storage_node=b.storage_node;local h=t.uptime()local d=0;for j,i in
+pairs(q._data.managers)do i.last_heartbeat=h;d=d+1 end
+s.info(u,"loaded state: "..
+
+tostring(d).." manager entries, "..
+tostring(b.job_id_counter-1).." historical jobs")return true,"loaded"end
+function q.save(a)a=a or w;if not a then return false,"no_state_path"end;local g={}for h,i in
+pairs(q._data)do if h~="_runtime"then g[h]=i end end
+local d=z.encode(g)local b=a..".tmp"local e=a:match("(.+)/[^/]+$")if e and r.exists and not
+r.exists(e)then
+if r.makeDirectory then r.makeDirectory(e)end end;local f,c;if r.writeFile then
+f,c=r.writeFile(b,d)else local i;i,c=r.open(b,"w")
+if i then i:write(d)i:close()f=true end end
+if not f then s.error(u,"write tmp failed: "..
+tostring(c))return false,"write_failed: "..
+tostring(c)end
+if r.exists and r.exists(a)and r.remove then pcall(r.remove,a)end
+if r.rename then local i,h=r.rename(b,a)
+if not i then
+s.error(u,"rename failed: "..tostring(h))return false,"rename_failed: "..tostring(h)end else if r.writeFile then r.writeFile(a,d)end;if r.remove then
+pcall(r.remove,b)end end;return true end
+local function v()if not w then return end;local a,b=pcall(q.save,w)if not a then
+s.error(u,"persist failed: "..tostring(b))end end
+function q.registerManager(b,a)local e=t.uptime()local c=q._data.managers[b]local d;if c then
+d=c.domain_id else d=q._data.domain_id_counter
+q._data.domain_id_counter=q._data.domain_id_counter+1 end
+q._data.managers[b]={hostname=a.hostname,domain_id=d,profile=a.profile,worker_count=a.worker_count,storage=
+a.storage or{external_type="none",external_capacity=0},master_path=a.master_path or"direct",relay_peer=a.relay_peer,has_console=a.has_console,compute_capable=a.compute_capable,cluster_protocol=a.cluster_protocol,software_version=a.software_version,state="active",last_heartbeat=e,last_snapshot=
+nil,registered_at=c and c.registered_at or e}v()
+q.pushEvent(c and"manager_reregistered"or"manager_registered",{domain_id=d,hostname=a.hostname})return d end
+function q.updateManagerHeartbeat(b,a)local c=q._data.managers[b]
+if not c then return false,B end;c.last_snapshot=a;c.last_heartbeat=t.uptime()
+if a and a.external_type then
+if
+not c.storage then c.storage={external_type="none",external_capacity=0}end
+if c.storage.external_type~=a.external_type then
+c.storage.external_type=a.external_type
+q.pushEvent("manager_storage_change",{domain_id=c.domain_id,external_type=a.external_type})v()end end;return true end;local F={active=true,degraded=true,draining=true,offline=true}
+function q.setManagerState(b,a)
+if not
+F[a]then return false,"invalid_state: "..tostring(a)end;local c=q._data.managers[b]if not c then return false,B end;if c.state==a then return
+true end;local d=c.state;c.state=a
+q.pushEvent("manager_state_change",{domain_id=c.domain_id,from=d,to=a})v()return true end
+function q.forgetManager(a)local b=q._data.managers[a]if not b then return false,B end;q._data.managers[a]=
+nil
+q.pushEvent("manager_forgotten",{domain_id=b.domain_id,hostname=b.hostname})v()return true end
+function q.listManagers(a)local b={}for d,c in pairs(q._data.managers)do
+if(not a)or a(c)then local e={}for f,g in pairs(c)do
+e[f]=g end;e.address=d;b[#b+1]=e end end
+table.sort(b,function(c,d)
+return(
+c.domain_id or 0)< (d.domain_id or 0)end)return b end;function q.getManager(a)return q._data.managers[a]end
+function q.getManagerByDomainId(a)for c,b in
+pairs(q._data.managers)do
+if b.domain_id==a then local d={}for e,f in pairs(b)do d[e]=f end;d.address=c;return d end end;return nil end
+function q.createJob(a)local b=q._data.job_id_counter
+q._data.job_id_counter=q._data.job_id_counter+1
+q._data.jobs[b]={job_id=b,submitted_by=a.submitted_by or"?",submitted_at=t.uptime(),state="pending",compute_profile=a.compute_profile or"mixed",retry_policy=
+a.retry_policy or"safe",storage_preference=a.storage_preference,result_sink=a.result_sink or"inline",assignments={},spec=a}v()
+q.pushEvent("job_submitted",{job_id=b,by=a.submitted_by})return b end
+function q.addAssignment(b,a)local d=q._data.jobs[b]if not d then
+return nil,"no_such_job: "..tostring(b)end;local c=q._data.assignment_id_counter;q._data.assignment_id_counter=
+q._data.assignment_id_counter+1;a.assignment_id=c;a.job_id=b;a.state=
+a.state or"pending"a.attempts=a.attempts or 0
+d.assignments[c]=a;v()return c end
+function q.setAssignmentState(c,d,a,b)local f=q._data.jobs[c]
+if not f then return false,"no_such_job"end;local e=f.assignments[d]
+if not e then return false,"no_such_assignment"end;local g=e.state;e.state=a;if b then
+for h,i in pairs(b)do if i==q.CLEAR then e[h]=nil else e[h]=i end end end
+if f.compute_profile=="compute_bound"then
+if
+g~=y and a==y then q._data._runtime.compute_bound_in_flight=
+q._data._runtime.compute_bound_in_flight+1 elseif
+g==y and a~=y then
+q._data._runtime.compute_bound_in_flight=math.max(0,q._data._runtime.compute_bound_in_flight-1)end end;v()return true end
+function q.setJobState(b,a)local c=q._data.jobs[b]
+if not c then return false,"no_such_job"end;c.state=a;if a=="done"or a=="failed"or a=="cancelled"then
+c.completed_at=t.uptime()end;v()
+q.pushEvent("job_state_change",{job_id=b,to=a})return true end
+function q.listJobs(a)local b={}
+for d,c in pairs(q._data.jobs)do
+if(not a)or a(c)then local e,f=0,0
+for d,g in
+pairs(c.assignments)do f=f+1;if g.state=="completed"then e=e+1 end end
+b[#b+1]={job_id=c.job_id,state=c.state,submitted_by=c.submitted_by,submitted_at=c.submitted_at,compute_profile=c.compute_profile,assignments=e.."/"..f}end end
+table.sort(b,function(c,d)
+return(c.job_id or 0)< (d.job_id or 0)end)return b end;function q.getJob(a)return q._data.jobs[a]end;function q.setStorageNode(a)
+q._data.storage_node=a;v()
+q.pushEvent("storage_configured",{address=a and a.address})end
+function q.updateStorageUsage(a)if not
+q._data.storage_node then return end
+q._data.storage_node.used=a;q._data.storage_node.last_seen=t.uptime()end
+function q.pushEvent(a,b)local c=q._data._runtime
+c.events[c.events_head]={time=t.uptime(),kind=a,detail=b}
+c.events_head=(c.events_head%c.EVENTS_MAX)+1
+if c.events_size<c.EVENTS_MAX then c.events_size=c.events_size+1 end end
+function q.recentEvents(a)local c=q._data._runtime
+a=math.min(a or 20,c.events_size)local d={}local b=c.events_head-1;if b<1 then b=c.EVENTS_MAX end
+for e=1,a do
+local f=c.events[b]if f then d[#d+1]=f end;b=b-1;if b<1 then b=c.EVENTS_MAX end end;return d end
+function q.incrementComputeBoundInFlight(a)
+q._data._runtime.compute_bound_in_flight=
+q._data._runtime.compute_bound_in_flight+ (a or 1)if q._data._runtime.compute_bound_in_flight<0 then
+q._data._runtime.compute_bound_in_flight=0 end end
+function q.computeBoundInFlight()return q._data._runtime.compute_bound_in_flight end;return q

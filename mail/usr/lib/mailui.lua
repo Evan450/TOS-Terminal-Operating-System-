@@ -1,312 +1,111 @@
+local h="key_down"local f=require("computer")local e=require("mail")
+local g={}
+function g.run(a)a=a or{}local c=a.display or a.D;local z=a.event or a.E
+local w=a.me or"user"if not c then return end;local j,s=c.getSize()local b=c.getTheme()
+local function x(I)if
+coroutine.isyieldable and coroutine.isyieldable()then
+return coroutine.yield()end
+if z and z.pull then return z.pull(I)end;return f.pullSignal(I)end
+local function D(I,J)c.clear(b.bg)c.set(2,2,I,J or b.fg,b.bg)
+c.set(2,4,"Press any key to return.",b.dim,b.bg)local K=f.uptime()+10;while f.uptime()<K do
+local L=x(K-f.uptime())if L==h then break end end end;if not e.available()then
+D("Mail unavailable (no network hardware?)",b.error)return end;local d=e.inboxBox(w)if not d then
+D("Cannot open this inbox (owner or admin only).",b.error)return end;local function A()return
+(d and d.list and d:list())or{}end;local function p()
+e.tick()d=e.inboxBox(w)or d end;local q="list"local i=1
+local r=0;local t=nil;local n={}local k=0;local l=s;local y=3;local u=l-y
+local function B(I,K,L,J)local M=K or""
+while true do
+c.fill(1,J,j,1," ",b.fg,b.bg)c.set(1,J,I,b.highlight,b.bg)
+local O=math.max(1,j-#I-1)local R=#M>O and M:sub(#M-O+1)or M
+c.set(#I+1,J,R.."_",b.fg,b.bg)local P,S,N,Q=x()
+if P==h then
+if Q==28 then return M elseif N==17 then return nil elseif Q==14 then if#M>0 then M=M:sub(1,-2)end elseif N and
+N>=32 and N<127 and#M< (L or 256)then M=M..
+string.char(N)end elseif P=="clipboard"and type(N)=="string"then
+M=M..N:gsub("\n","")end end end
+local function C(I,J)c.clear(b.bg)
+c.set(1,1," Compose mail   (Enter = next field/line, ^Q = cancel)",b.title,b.bg)
+local M=B(" To (peer / alias / user@peer / * = all): ",I,64,3)if not M or M==""then return end;local O=B(" Subject: ",J,100,5)if O==nil then
+return end
+c.set(1,7," Body — Enter for a new line, a blank line sends, ^Q cancels:",b.dim,b.bg)local K,L={},9
+while#K<64 and L<=s-1 do local T=B("  ","",200,L)if T==nil then return end;if
+T==""then break end;K[#K+1]=T;L=L+1 end
+local R,S=e.resolveRecipient(M,a.aliases and a.aliases.resolve)
+local P,N=e.send({to=R,user=S,fromUser=w,subject=O,body=table.concat(K,"\n")})c.fill(1,s,j,1," ",b.fg,b.bg)
+if P then
+c.set(1,s,"Queued "..
 
-
-
-
-
-
-
-
-
-
-
-local computer = require("computer")
-local mailLib  = require("mail")
-
-local M = {}
-
-
-
-function M.run(opts)
-  opts = opts or {}
-  local D  = opts.display or opts.D
-  local E  = opts.event or opts.E
-  local me = opts.me or "user"
-  if not D then return end
-
-  local W, H = D.getSize()
-  local T    = D.getTheme()
-
-  
-  
-  
-  
-  local function pull(timeout)
-    if coroutine.isyieldable and coroutine.isyieldable() then
-      return coroutine.yield()
-    end
-    if E and E.pull then return E.pull(timeout) end
-    return computer.pullSignal(timeout)
-  end
-
-  local function waitKey(msg, color)
-    D.clear(T.bg)
-    D.set(2, 2, msg, color or T.fg, T.bg)
-    D.set(2, 4, "Press any key to return.", T.dim, T.bg)
-    local deadline = computer.uptime() + 10
-    while computer.uptime() < deadline do
-      local ev = pull(deadline - computer.uptime())
-      if ev == "key_down" then break end
-    end
-  end
-
-  if not mailLib.available() then
-    waitKey("Mail unavailable (no network hardware?)", T.error)
-    return
-  end
-
-  local box = mailLib.inboxBox(me)
-  if not box then
-    waitKey("Cannot open this inbox (owner or admin only).", T.error)
-    return
-  end
-  local function list() return (box and box.list and box:list()) or {} end
-  local function refresh()
-    mailLib.tick()
-    box = mailLib.inboxBox(me) or box
-  end
-
-  local mode       = "list"     
-  local sel        = 1
-  local scroll     = 0
-  local openIdx    = nil        
-  local bodyLines  = {}         
-  local readScroll = 0
-
-  local HELP_ROW = H
-  local LIST_TOP = 3
-  local LIST_H   = HELP_ROW - LIST_TOP
-
-  
-  local function readField(label, initial, maxLen, y)
-    local buf = initial or ""
-    while true do
-      D.fill(1, y, W, 1, " ", T.fg, T.bg)
-      D.set(1, y, label, T.highlight, T.bg)
-      local avail = math.max(1, W - #label - 1)
-      local shown = #buf > avail and buf:sub(#buf - avail + 1) or buf
-      D.set(#label + 1, y, shown .. "_", T.fg, T.bg)
-      local sig, _, c, co = pull()
-      if sig == "key_down" then
-        if co == 28 then return buf
-        elseif c == 17 then return nil                       
-        elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
-        elseif c and c >= 32 and c < 127 and #buf < (maxLen or 256) then
-          buf = buf .. string.char(c)
-        end
-      elseif sig == "clipboard" and type(c) == "string" then
-        buf = buf .. c:gsub("\n", "")
-      end
-    end
-  end
-
-  
-  local function compose(prefillTo, prefillSubject)
-    D.clear(T.bg)
-    D.set(1, 1, " Compose mail   (Enter = next field/line, ^Q = cancel)", T.title, T.bg)
-    local to = readField(" To (peer / alias / user@peer / * = all): ", prefillTo, 64, 3)
-    if not to or to == "" then return end
-    local subj = readField(" Subject: ", prefillSubject, 100, 5)
-    if subj == nil then return end
-    D.set(1, 7, " Body — Enter for a new line, a blank line sends, ^Q cancels:", T.dim, T.bg)
-    local lines, y = {}, 9
-    while #lines < 64 and y <= H - 1 do
-      local ln = readField("  ", "", 200, y)
-      if ln == nil then return end           
-      if ln == "" then break end
-      lines[#lines + 1] = ln
-      y = y + 1
-    end
-    local toAddr, ruser = mailLib.resolveRecipient(to,
-      opts.aliases and opts.aliases.resolve)
-    local id, sealed = mailLib.send({ to = toAddr, user = ruser, fromUser = me,
-      subject = subj, body = table.concat(lines, "\n") })
-    D.fill(1, H, W, 1, " ", T.fg, T.bg)
-    if id then
-      D.set(1, H, "Queued " .. tostring(id):sub(1, 18)
-        .. (sealed and "  (sealed)" or "  (PLAINTEXT bulletin)"),
-        sealed and T.highlight or T.warning)
-    else
-      
-      D.set(1, H, "Send failed: " .. tostring(sealed), T.error)
-    end
-    local dl = computer.uptime() + 1.4
-    while computer.uptime() < dl do pull(dl - computer.uptime()) end
-  end
-
-  
-  local function header()
-    D.fill(1, 1, W, 1, " ", T.menubar_fg, T.menubar_bg)
-    local msgs = list()
-    local unread = (box and box.unread and box:unread()) or 0
-    local pend = mailLib.pending()
-    local left = " TOS Mail — " .. me .. " "
-    local right = string.format(" %d msg, %d unread%s%s ", #msgs, unread,
-      pend > 0 and (", " .. pend .. " sending") or "",
-      mailLib.running() and "" or ", RECEIVE OFF")
-    D.set(1, 1, left, T.menubar_fg, T.menubar_bg)
-    D.set(math.max(1, W - #right + 1), 1, right, T.dim, T.menubar_bg)
-  end
-
-  local function drawList()
-    header()
-    D.fill(1, 2, W, 1, " ", T.fg, T.bg)
-    local msgs = list()
-    if #msgs == 0 then
-      D.set(2, LIST_TOP, "(inbox empty)", T.dim, T.bg)
-      for r = LIST_TOP + 1, HELP_ROW - 1 do D.fill(1, r, W, 1, " ", T.fg, T.bg) end
-    else
-      if sel > #msgs then sel = #msgs end
-      if sel < 1 then sel = 1 end
-      if sel <= scroll then scroll = sel - 1 end
-      if sel > scroll + LIST_H then scroll = sel - LIST_H end
-      if scroll < 0 then scroll = 0 end
-      for r = 0, LIST_H - 1 do
-        local idx = scroll + r + 1
-        local y = LIST_TOP + r
-        if idx <= #msgs then
-          local m = msgs[idx]
-          local line = mailLib.inboxRow(m, idx, W - 1)
-          if idx == sel then
-            D.set(1, y, D.fit and D.fit(line, W) or line, T.sel_fg, T.sel_bg)
-          else
-            D.set(1, y, line, m.read and T.dim or T.fg, T.bg)
-          end
-        else
-          D.fill(1, y, W, 1, " ", T.fg, T.bg)
-        end
-      end
-    end
-    D.fill(1, HELP_ROW, W, 1, " ", T.dim, T.menubar_bg)
-    D.set(1, HELP_ROW, " [Enter] read  [c] compose  [r] reply  [d] delete  [R] refresh  ^Q exit",
-      T.dim, T.menubar_bg)
-  end
-
-  local function wrapBody(text)
-    local out = {}
-    for raw in (tostring(text or "") .. "\n"):gmatch("(.-)\n") do
-      if raw == "" then out[#out + 1] = ""
-      else
-        while #raw > 0 do out[#out + 1] = raw:sub(1, W - 1); raw = raw:sub(W) end
-      end
-    end
-    return out
-  end
-
-  local function openMessage(idx)
-    local m = box and box.get and box:get(idx)
-    if not m then return false end
-    if box.markRead then pcall(function() box:markRead(idx) end) end
-    openIdx = idx
-    local hdr = {
-      { "From:    " .. mailLib.senderName(m)
-        .. (m.from and ("  (" .. tostring(m.from):sub(1, 12) .. ")") or ""), T.fg },
-      { "Subject: " .. (m.subject ~= "" and m.subject or "(no subject)"), T.title },
-      { "Sent:    " .. mailLib.formatTs(m.ts) .. " (sender's uptime)", T.dim },
-    }
-    if not m.readable then hdr[#hdr + 1] = { "[sealed — no shared secret to open this]", T.warning } end
-    bodyLines = {}
-    for _, l in ipairs(hdr) do bodyLines[#bodyLines + 1] = l end
-    bodyLines[#bodyLines + 1] = { "", T.fg }
-    for _, l in ipairs(wrapBody(m.body)) do bodyLines[#bodyLines + 1] = { l, T.fg } end
-    readScroll = 0
-    mode = "read"
-    return true
-  end
-
-  local function drawRead()
-    header()
-    local viewH = HELP_ROW - 2
-    for r = 0, viewH - 1 do
-      local y = 2 + r
-      local idx = readScroll + r + 1
-      D.fill(1, y, W, 1, " ", T.fg, T.bg)
-      local e = bodyLines[idx]
-      if e then D.set(1, y, (type(e) == "table" and e[1] or tostring(e)),
-        (type(e) == "table" and e[2]) or T.fg, T.bg) end
-    end
-    D.fill(1, HELP_ROW, W, 1, " ", T.dim, T.menubar_bg)
-    D.set(1, HELP_ROW, " [q/Esc] back  [r] reply  [d] delete  up/down scroll  ^Q exit",
-      T.dim, T.menubar_bg)
-  end
-
-  local function redraw()
-    D.clear(T.bg)
-    if mode == "read" then drawRead() else drawList() end
-  end
-
-  
-  refresh()
-  redraw()
-  local lastTick = computer.uptime()
-
-  while true do
-    local sig, _, ch, co = pull(0.5)
-
-    if sig == "key_down" then
-      if ch == 17 then break                                  
-      elseif mode == "list" then
-        local msgs = list()
-        if co == 200 then sel = math.max(1, sel - 1); drawList()           
-        elseif co == 208 then sel = math.min(#msgs, sel + 1); drawList()   
-        elseif co == 201 then sel = math.max(1, sel - LIST_H); drawList()  
-        elseif co == 209 then sel = math.min(#msgs, sel + LIST_H); drawList()
-        elseif co == 199 then sel = 1; drawList()                          
-        elseif co == 207 then sel = #msgs; drawList()                      
-        elseif co == 28 then                                               
-          if #msgs > 0 and openMessage(sel) then redraw() else drawList() end
-        elseif ch == 99 or ch == 67 then                                   
-          compose(); refresh(); redraw()
-        elseif ch == 114 or ch == 82 then                                  
-          local m = msgs[sel]
-          if m then
-            local rt = (m.fromUser and m.fromUser ~= "" and m.fromUser)
-              or (m.from and ("@" .. tostring(m.from))) or ""
-            local subj = (m.subject and not m.subject:match("^[Rr][Ee]:"))
-              and ("Re: " .. m.subject) or (m.subject or "")
-            compose(rt:gsub("^@", ""), subj); refresh(); redraw()
-          end
-        elseif ch == 100 or ch == 68 then                                  
-          if #msgs > 0 and box and box.delete then
-            pcall(function() box:delete(sel) end)
-            refresh(); drawList()
-          end
-        end
-      else  
-        local maxScroll = math.max(0, #bodyLines - (HELP_ROW - 2))
-        if co == 1 or ch == 113 then mode = "list"; redraw()               
-        elseif co == 200 then readScroll = math.max(0, readScroll - 1); drawRead()
-        elseif co == 208 then readScroll = math.min(maxScroll, readScroll + 1); drawRead()
-        elseif co == 201 then readScroll = math.max(0, readScroll - (HELP_ROW - 2)); drawRead()
-        elseif co == 209 then readScroll = math.min(maxScroll, readScroll + (HELP_ROW - 2)); drawRead()
-        elseif ch == 114 or ch == 82 then                                  
-          local m = openIdx and box and box.get and box:get(openIdx)
-          if m then
-            local rt = (m.fromUser and m.fromUser ~= "" and m.fromUser) or ""
-            local subj = (m.subject and not m.subject:match("^[Rr][Ee]:"))
-              and ("Re: " .. m.subject) or (m.subject or "")
-            compose(rt, subj); mode = "list"; refresh(); redraw()
-          end
-        elseif ch == 100 or ch == 68 then                                  
-          if openIdx and box and box.delete then
-            pcall(function() box:delete(openIdx) end)
-            mode = "list"; refresh(); redraw()
-          end
-        end
-      end
-
-    elseif sig == "tos_focus" then
-      redraw()
-
-    elseif sig == nil then
-      
-      local now = computer.uptime()
-      if now - lastTick >= 2 then
-        lastTick = now
-        refresh()
-        if mode == "list" then drawList() end
-      end
-    end
-  end
-end
-
-return M
+tostring(P):sub(1,18).. (N and"  (sealed)"or"  (PLAINTEXT bulletin)"),N and b.highlight or b.warning)else
+c.set(1,s,"Send failed: "..tostring(N),b.error)end;local Q=f.uptime()+1.4;while f.uptime()<Q do
+x(Q-f.uptime())end end
+local function E()c.fill(1,1,j,1," ",b.menubar_fg,b.menubar_bg)local K=A()
+local L=(d and
+d.unread and d:unread())or 0;local I=e.pending()local M=" TOS Mail — "..w.." "
+local J=string.format(" %d msg, %d unread%s%s ",
+#K,L,I>0 and(", "..I.." sending")or"",
+e.running()and""or", RECEIVE OFF")c.set(1,1,M,b.menubar_fg,b.menubar_bg)
+c.set(math.max(1,j-#J+1),1,J,b.dim,b.menubar_bg)end
+local function m()E()c.fill(1,2,j,1," ",b.fg,b.bg)local I=A()
+if#I==0 then
+c.set(2,y,"(inbox empty)",b.dim,b.bg)for J=y+1,l-1 do c.fill(1,J,j,1," ",b.fg,b.bg)end else if i>#I then i=#
+I end;if i<1 then i=1 end;if i<=r then r=i-1 end;if i>r+u then r=i-u end;if r<0 then
+r=0 end
+for J=0,u-1 do local K=r+J+1;local L=y+J
+if K<=#I then local N=I[K]
+local M=e.inboxRow(N,K,j-1)if K==i then
+c.set(1,L,c.fit and c.fit(M,j)or M,b.sel_fg,b.sel_bg)else
+c.set(1,L,M,N.read and b.dim or b.fg,b.bg)end else
+c.fill(1,L,j,1," ",b.fg,b.bg)end end end;c.fill(1,l,j,1," ",b.dim,b.menubar_bg)
+c.set(1,l," [Enter] read  [c] compose  [r] reply  [d] delete  [R] refresh  ^Q exit",b.dim,b.menubar_bg)end
+local function G(I)local J={}
+for K in
+(tostring(I or"").."\n"):gmatch("(.-)\n")do if K==""then J[#J+1]=""else
+while#K>0 do J[#J+1]=K:sub(1,j-1)K=K:sub(j)end end end;return J end
+local function H(I)local J=d and d.get and d:get(I)if not J then return false end
+if
+d.markRead then pcall(function()d:markRead(I)end)end;t=I
+local K={{"From:    "..e.senderName(J)..
+(J.from and("  ("..
+tostring(J.from):sub(1,12)..")")or""),b.fg},{
+"Subject: "..
+(J.subject~=""and J.subject or"(no subject)"),b.title},{"Sent:    "..
+e.formatTs(J.ts).." (sender's uptime)",b.dim}}if not J.readable then
+K[#K+1]={"[sealed — no shared secret to open this]",b.warning}end;n={}
+for M,L in ipairs(K)do n[#n+1]=L end;n[#n+1]={"",b.fg}
+for M,L in ipairs(G(J.body))do n[#n+1]={L,b.fg}end;k=0;q="read"return true end
+local function v()E()local I=l-2
+for J=0,I-1 do local L=2+J;local M=k+J+1
+c.fill(1,L,j,1," ",b.fg,b.bg)local K=n[M]if K then
+c.set(1,L,(type(K)=="table"and K[1]or tostring(K)),(
+type(K)=="table"and K[2])or b.fg,b.bg)end end;c.fill(1,l,j,1," ",b.dim,b.menubar_bg)
+c.set(1,l," [q/Esc] back  [r] reply  [d] delete  up/down scroll  ^Q exit",b.dim,b.menubar_bg)end
+local function o()c.clear(b.bg)if q=="read"then v()else m()end end;p()o()local F=f.uptime()
+while true do local K,L,I,J=x(0.5)
+if K==h then
+if I==17 then break elseif q=="list"then local M=A()
+if J==200 then i=math.max(1,
+i-1)m()elseif J==208 then i=math.min(#M,i+1)m()elseif J==201 then
+i=math.max(1,i-u)m()elseif J==209 then i=math.min(#M,i+u)m()elseif J==199 then i=1;m()elseif J==207 then i=#M;m()elseif J==28 then if
+#M>0 and H(i)then o()else m()end elseif I==99 or I==67 then C()p()o()elseif I==114 or I==82 then
+local N=M[i]
+if N then
+local O=
+(N.fromUser and N.fromUser~=""and N.fromUser)or
+(N.from and("@"..tostring(N.from)))or""
+local P=
+(N.subject and not N.subject:match("^[Rr][Ee]:"))and("Re: "..N.subject)or
+(N.subject or"")C(O:gsub("^@",""),P)p()o()end elseif I==100 or I==68 then if#M>0 and d and d.delete then
+pcall(function()d:delete(i)end)p()m()end end else local M=math.max(0,#n- (l-2))
+if J==1 or I==113 then q="list"o()elseif J==200 then k=math.max(0,
+k-1)v()elseif J==208 then k=math.min(M,k+1)v()elseif J==201 then
+k=math.max(0,k- (l-2))v()elseif J==209 then k=math.min(M,k+ (l-2))v()elseif I==114 or I==82 then local N=
+t and d and d.get and d:get(t)
+if N then
+local O=(
+N.fromUser and N.fromUser~=""and N.fromUser)or""
+local P=
+(N.subject and not N.subject:match("^[Rr][Ee]:"))and("Re: "..N.subject)or
+(N.subject or"")C(O,P)q="list"p()o()end elseif I==100 or I==68 then if t and d and d.delete then
+pcall(function()d:delete(t)end)q="list"p()o()end end end elseif K=="tos_focus"then o()elseif K==nil then local M=f.uptime()
+if M-F>=2 then F=M;p()if q=="list"then m()end end end end end;return g

@@ -1,377 +1,98 @@
 
-
-
-
-
-
-
-
-
-
-
-
-
-local computer = require("computer")
-
-local api = {}
-
-local _state, _scheduler, _jobs, _clusterd
-local _bound = false
-
-
-
-local function _netmod()
-  return package.loaded["cluster.net"] or require("cluster.net")
-end
-
-
-
-
-
-function api.bind(state, scheduler, jobs, clusterd)
-  _state     = state
-  _scheduler = scheduler
-  _jobs      = jobs
-  _clusterd  = clusterd
-  _bound     = true
-end
-
-function api.unbind()
-  _state, _scheduler, _jobs, _clusterd = nil, nil, nil, nil
-  _bound = false
-end
-
-local function _requireBound()
-  if not _bound then
-    error("cluster daemon is not running (clusterd not started)", 2)
-  end
-end
-
-
-
-
-
-local VALID_PROFILES = { compute_bound = true, io_bound = true, mixed = true }
-local VALID_POLICIES = { safe = true, once = true, none = true }
-local VALID_SINKS    = { inline = true, public = true }
-
-local function _validateJobSpec(spec)
-  if type(spec) ~= "table" then return false, "invalid_spec: not a table" end
-  if spec.tasks ~= nil and type(spec.tasks) ~= "table" then
-    return false, "invalid_tasks: not a table"
-  end
-  if spec.compute_profile and not VALID_PROFILES[spec.compute_profile] then
-    return false, "invalid_compute_profile: " .. tostring(spec.compute_profile)
-  end
-  if spec.retry_policy and not VALID_POLICIES[spec.retry_policy] then
-    return false, "invalid_retry_policy: " .. tostring(spec.retry_policy)
-  end
-  if spec.result_sink and not VALID_SINKS[spec.result_sink] then
-    return false, "invalid_result_sink: " .. tostring(spec.result_sink)
-  end
-  if spec.priority ~= nil then
-    local p = tonumber(spec.priority)
-    if not p or p < 0 or p > 9 then
-      return false, "invalid_priority: must be 0..9"
-    end
-  end
-  return true
-end
-
-
-
-
-
-function api.status()
-  _requireBound()
-  local s = {
-    managers = { active = 0, degraded = 0, draining = 0, offline = 0 },
-    jobs     = { pending = 0, running = 0, done = 0, failed = 0, cancelled = 0 },
-    storage  = nil,
-    host_thread_budget      = _clusterd and _clusterd.getConfig and
-                              (_clusterd.getConfig().host_thread_budget) or nil,
-    compute_bound_in_flight = _state.computeBoundInFlight(),
-    uptime                  = computer.uptime(),
-  }
-  for _, m in pairs(_state._data.managers) do
-    local st = m.state or "offline"
-    s.managers[st] = (s.managers[st] or 0) + 1
-  end
-  for _, j in pairs(_state._data.jobs) do
-    local st = j.state or "pending"
-    s.jobs[st] = (s.jobs[st] or 0) + 1
-  end
-  if _state._data.storage_node then
-    local sn = _state._data.storage_node
-    s.storage = {
-      configured     = true,
-      address        = sn.address,
-      used_bytes     = sn.used,
-      capacity_bytes = sn.capacity,
-      last_seen      = sn.last_seen,
-    }
-  end
-  return s
-end
-
-function api.listManagers(filter)
-  _requireBound()
-  return _state.listManagers(filter)
-end
-
-function api.getManager(domain_id)
-  _requireBound()
-  if not domain_id then return nil, "missing_argument: domain_id" end
-  return _state.getManagerByDomainId(tonumber(domain_id))
-end
-
-function api.listJobs(filter)
-  _requireBound()
-  return _state.listJobs(filter)
-end
-
-function api.getJob(job_id)
-  _requireBound()
-  if not job_id then return nil, "missing_argument: job_id" end
-  
-  
-  
-  local j = _state.getJob(tonumber(job_id))
-  if not j then return nil, "no_such_job" end
-  
-  
-  local out = {}
-  for k, v in pairs(j) do out[k] = v end
-  local arr = {}
-  for _, a in pairs(j.assignments or {}) do arr[#arr + 1] = a end
-  table.sort(arr, function(a, b) return (a.assignment_id or 0) < (b.assignment_id or 0) end)
-  out.assignments_list = arr
-  return out
-end
-
-function api.storageStatus()
-  _requireBound()
-  local sn = _state._data.storage_node
-  if not sn then return nil end
-  return {
-    address        = sn.address,
-    used_bytes     = sn.used,
-    capacity_bytes = sn.capacity,
-    last_seen      = sn.last_seen,
-  }
-end
-
-function api.recentEvents(n)
-  _requireBound()
-  return _state.recentEvents(n or 20)
-end
-
-
-
-
-
-function api.submit(jobSpec)
-  _requireBound()
-  local ok, err = _validateJobSpec(jobSpec)
-  if not ok then return nil, err end
-
-  
-  if not _scheduler.hasAnyActiveCapacity(_state._data.managers) then
-    return nil, "no_eligible_manager: no active managers with free workers"
-  end
-
-  
-  local okUsers, users = pcall(require, "users")
-  if okUsers and users and not jobSpec.submitted_by then
-    local sess = users.currentSession and users.currentSession()
-    if sess and sess.user then jobSpec.submitted_by = sess.user end
-  end
-
-  local job_id
-  _state.withLock(function()
-    job_id = _state.createJob(jobSpec)
-    _jobs.splitIntoAssignments(job_id, jobSpec, _state)
-  end)
-  return job_id
-end
-
-function api.cancelJob(job_id)
-  _requireBound()
-  job_id = tonumber(job_id)
-  if not job_id then return false, "missing_argument: job_id" end
-  local job = _state.getJob(job_id)
-  if not job then return false, "no_such_job" end
-  if job.state == "done" or job.state == "failed" or job.state == "cancelled" then
-    return false, "wrong_state: job already terminal, " .. tostring(job.state)
-  end
-
-  local net = _netmod()
-  _state.withLock(function()
-    for aid, a in pairs(job.assignments) do
-      if a.state == "running" and a.assigned_to then
-        pcall(net.sendCancel, a.assigned_to, aid)
-      end
-      if a.state == "pending" or a.state == "running" then
-        _state.setAssignmentState(job_id, aid, "cancelled",
-          { completed_at = computer.uptime() })
-      end
-    end
-    _state.setJobState(job_id, "cancelled")
-  end)
-  return true
-end
-
-function api.retryJob(job_id)
-  _requireBound()
-  job_id = tonumber(job_id)
-  if not job_id then return nil, "missing_argument: job_id" end
-  local job = _state.getJob(job_id)
-  if not job then return nil, "no_such_job" end
-  if job.state ~= "failed" then
-    return nil, "wrong_state: only failed jobs can be retried (state=" .. tostring(job.state) .. ")"
-  end
-  
-  local new_id
-  _state.withLock(function()
-    local fresh = {}
-    for k, v in pairs(job.spec or {}) do fresh[k] = v end
-    fresh.submitted_by = fresh.submitted_by or job.submitted_by
-    new_id = _state.createJob(fresh)
-    _jobs.splitIntoAssignments(new_id, fresh, _state)
-  end)
-  return new_id
-end
-
-
-
-
-
-function api.drainManager(domain_id)
-  _requireBound()
-  domain_id = tonumber(domain_id)
-  if not domain_id then return false, "missing_argument: domain_id" end
-  local m = _state.getManagerByDomainId(domain_id)
-  if not m then return false, "no_such_domain" end
-  if m.state == "offline" then return false, "wrong_state: already offline" end
-
-  local net = _netmod()
-  pcall(net.sendDrain, m.address)
-  _state.setManagerState(m.address, "draining")
-  return true
-end
-
-function api.undrainManager(domain_id)
-  _requireBound()
-  domain_id = tonumber(domain_id)
-  if not domain_id then return false, "missing_argument: domain_id" end
-  local m = _state.getManagerByDomainId(domain_id)
-  if not m then return false, "no_such_domain" end
-  if m.state ~= "draining" then
-    return false, "wrong_state: manager is not draining (state=" .. tostring(m.state) .. ")"
-  end
-  _state.setManagerState(m.address, "active")
-  return true
-end
-
-function api.forgetManager(domain_id)
-  _requireBound()
-  domain_id = tonumber(domain_id)
-  if not domain_id then return false, "missing_argument: domain_id" end
-  local m = _state.getManagerByDomainId(domain_id)
-  if not m then return false, "no_such_domain" end
-  if m.state ~= "offline" then
-    return false, "wrong_state: refusing to forget online manager (state=" .. tostring(m.state) ..
-                  "); drain first"
-  end
-  _state.withLock(function()
-    _jobs.onManagerOffline(domain_id, _state)
-    _state.forgetManager(m.address)
-  end)
-  return true
-end
-
-
-
-
-
-
-
-local TUNABLE_KEYS = {
-  host_thread_budget       = { type = "number", restart_required = false },
-  heartbeat_interval       = { type = "number", restart_required = true  },
-  heartbeat_degraded_after = { type = "number", restart_required = false },
-  heartbeat_offline_after  = { type = "number", restart_required = false },
-  scheduler_tick_interval  = { type = "number", restart_required = true  },
-  status_snapshot_interval = { type = "number", restart_required = true  },
-  heartbeat_sweep_interval = { type = "number", restart_required = true  },
-  storage_node_address     = { type = "string", restart_required = false },
-}
-
-
-
-
-
-
-
-
-
-
-
-function api.startPairing()
-  _requireBound()
-  if not _clusterd or not _clusterd.startPairing then
-    return nil, "pairing_unsupported"
-  end
-  local code, expires_at = _clusterd.startPairing()
-  return { code = code, expires_in = expires_at - computer.uptime() }
-end
-
-
-function api.closePairing()
-  _requireBound()
-  if not _clusterd or not _clusterd.closePairing then
-    return false, "pairing_unsupported"
-  end
-  _clusterd.closePairing()
-  return true
-end
-
-
-
-
-function api.pairingInfo()
-  _requireBound()
-  if not _clusterd or not _clusterd.pairingInfo then
-    return nil, "pairing_unsupported"
-  end
-  return _clusterd.pairingInfo()
-end
-
-function api.getConfig()
-  _requireBound()
-  local cfg = _clusterd and _clusterd.getConfig and _clusterd.getConfig() or {}
-  
-  local out = {}
-  for k, v in pairs(cfg) do out[k] = v end
-  return out
-end
-
-function api.setConfig(key, value)
-  _requireBound()
-  local spec = TUNABLE_KEYS[key]
-  if not spec then
-    return false, "invalid_key: unknown or read-only, " .. tostring(key)
-  end
-  if spec.type == "number" then
-    local n = tonumber(value)
-    if not n then return false, "invalid_value: must be numeric" end
-    value = n
-  elseif spec.type == "string" then
-    if type(value) ~= "string" then return false, "invalid_value: must be a string" end
-  end
-  local cfg = _clusterd and _clusterd.getConfig and _clusterd.getConfig()
-  if cfg then cfg[key] = value end
-  return true, { restart_required = spec.restart_required }
-end
-
-return api
+local I,G,J,K,L,B,M,N,O="cancelled","missing_argument: domain_id","missing_argument: job_id","no_such_domain","no_such_job","number","offline","pairing_unsupported","string"local D=require("computer")local y={}local x,E,C,z;local F=false;local function H()
+return
+package.loaded["cluster.net"]or require("cluster.net")end
+function y.bind(a,b,c,d)x=a;E=b;C=c;z=d;F=true end;function y.unbind()x,E,C,z=nil,nil,nil,nil;F=false end
+local function A()if not F then
+error("cluster daemon is not running (clusterd not started)",2)end end;local P={compute_bound=true,io_bound=true,mixed=true}
+local Q={safe=true,once=true,none=true}local R={inline=true,public=true}
+local function S(a)if type(a)~="table"then
+return false,"invalid_spec: not a table"end
+if
+a.tasks~=nil and type(a.tasks)~="table"then return false,"invalid_tasks: not a table"end;if a.compute_profile and not P[a.compute_profile]then
+return false,
+"invalid_compute_profile: "..tostring(a.compute_profile)end
+if a.retry_policy and not
+Q[a.retry_policy]then return false,
+"invalid_retry_policy: "..tostring(a.retry_policy)end
+if a.result_sink and not R[a.result_sink]then return false,"invalid_result_sink: "..
+tostring(a.result_sink)end
+if a.priority~=nil then local b=tonumber(a.priority)if not b or b<0 or b>9 then return false,
+"invalid_priority: must be 0..9"end end;return true end
+function y.status()A()
+local a={managers={active=0,degraded=0,draining=0,offline=0},jobs={pending=0,running=0,done=0,failed=0,cancelled=0},storage=nil,host_thread_budget=z and z.getConfig and
+(z.getConfig().host_thread_budget)or nil,compute_bound_in_flight=x.computeBoundInFlight(),uptime=D.uptime()}
+for c,b in pairs(x._data.managers)do local d=b.state or M;a.managers[d]=
+(a.managers[d]or 0)+1 end;for c,b in pairs(x._data.jobs)do local d=b.state or"pending"a.jobs[d]=
+(a.jobs[d]or 0)+1 end
+if
+x._data.storage_node then local b=x._data.storage_node
+a.storage={configured=true,address=b.address,used_bytes=b.used,capacity_bytes=b.capacity,last_seen=b.last_seen}end;return a end;function y.listManagers(a)A()return x.listManagers(a)end;function y.getManager(a)
+A()if not a then return nil,G end
+return x.getManagerByDomainId(tonumber(a))end;function y.listJobs(a)A()
+return x.listJobs(a)end
+function y.getJob(a)A()if not a then return nil,J end
+local c=x.getJob(tonumber(a))if not c then return nil,L end;local d={}for e,f in pairs(c)do d[e]=f end;local b={}for f,e in pairs(
+c.assignments or{})do b[#b+1]=e end
+table.sort(b,function(e,f)return
+(
+e.assignment_id or 0)< (f.assignment_id or 0)end)d.assignments_list=b;return d end
+function y.storageStatus()A()local a=x._data.storage_node;if not a then return nil end;return
+{address=a.address,used_bytes=a.used,capacity_bytes=a.capacity,last_seen=a.last_seen}end
+function y.recentEvents(a)A()return x.recentEvents(a or 20)end
+function y.submit(a)A()local d,e=S(a)if not d then return nil,e end;if not
+E.hasAnyActiveCapacity(x._data.managers)then
+return nil,"no_eligible_manager: no active managers with free workers"end
+local f,b=pcall(require,"users")
+if f and b and not a.submitted_by then
+local g=b.currentSession and b.currentSession()if g and g.user then a.submitted_by=g.user end end;local c
+x.withLock(function()c=x.createJob(a)C.splitIntoAssignments(c,a,x)end)return c end
+function y.cancelJob(a)A()a=tonumber(a)if not a then return false,J end
+local b=x.getJob(a)if not b then return false,L end
+if
+b.state=="done"or b.state=="failed"or b.state==I then return false,
+"wrong_state: job already terminal, "..tostring(b.state)end;local c=H()
+x.withLock(function()
+for e,d in pairs(b.assignments)do if d.state=="running"and d.assigned_to then
+pcall(c.sendCancel,d.assigned_to,e)end;if d.state=="pending"or
+d.state=="running"then
+x.setAssignmentState(a,e,I,{completed_at=D.uptime()})end end;x.setJobState(a,I)end)return true end
+function y.retryJob(a)A()a=tonumber(a)if not a then return nil,J end;local b=x.getJob(a)if not b then return
+nil,L end;if b.state~="failed"then
+return nil,"wrong_state: only failed jobs can be retried (state="..
+tostring(b.state)..")"end;local c
+x.withLock(function()local d={}for e,f in pairs(
+b.spec or{})do d[e]=f end
+d.submitted_by=d.submitted_by or b.submitted_by;c=x.createJob(d)C.splitIntoAssignments(c,d,x)end)return c end
+function y.drainManager(a)A()a=tonumber(a)if not a then return false,G end
+local b=x.getManagerByDomainId(a)if not b then return false,K end;if b.state==M then
+return false,"wrong_state: already offline"end;local c=H()
+pcall(c.sendDrain,b.address)x.setManagerState(b.address,"draining")return true end
+function y.undrainManager(a)A()a=tonumber(a)if not a then return false,G end
+local b=x.getManagerByDomainId(a)if not b then return false,K end;if b.state~="draining"then
+return false,"wrong_state: manager is not draining (state="..
+tostring(b.state)..")"end
+x.setManagerState(b.address,"active")return true end
+function y.forgetManager(a)A()a=tonumber(a)if not a then return false,G end
+local b=x.getManagerByDomainId(a)if not b then return false,K end;if b.state~=M then
+return false,"wrong_state: refusing to forget online manager (state="..
+tostring(b.state).."); drain first"end
+x.withLock(function()
+C.onManagerOffline(a,x)x.forgetManager(b.address)end)return true end
+local T={host_thread_budget={type=B,restart_required=false},heartbeat_interval={type=B,restart_required=true},heartbeat_degraded_after={type=B,restart_required=false},heartbeat_offline_after={type=B,restart_required=false},scheduler_tick_interval={type=B,restart_required=true},status_snapshot_interval={type=B,restart_required=true},heartbeat_sweep_interval={type=B,restart_required=true},storage_node_address={type=O,restart_required=false}}function y.startPairing()A()
+if not z or not z.startPairing then return nil,N end;local a,b=z.startPairing()
+return{code=a,expires_in=b-D.uptime()}end;function y.closePairing()
+A()if not z or not z.closePairing then return false,N end
+z.closePairing()return true end;function y.pairingInfo()
+A()if not z or not z.pairingInfo then return nil,N end;return
+z.pairingInfo()end
+function y.getConfig()A()
+local b=z and
+z.getConfig and z.getConfig()or{}local a={}for c,d in pairs(b)do a[c]=d end;return a end
+function y.setConfig(b,a)A()local c=T[b]if not c then return false,
+"invalid_key: unknown or read-only, "..tostring(b)end
+if
+c.type==B then local e=tonumber(a)
+if not e then return false,"invalid_value: must be numeric"end;a=e elseif c.type==O then
+if type(a)~=O then return false,"invalid_value: must be a string"end end;local d=z and z.getConfig and z.getConfig()
+if d then d[b]=a end;return true,{restart_required=c.restart_required}end;return y

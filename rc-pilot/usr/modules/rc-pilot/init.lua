@@ -1,247 +1,67 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local component = require("component")
-local computer  = require("computer")
-
-
-
-
-
-local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
-local function stdQuit(ch, code)
-  if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
-  return ch == 17 or code == 68 or code == 1
-end
-local function quitLabel()
-  if KEYS and KEYS.label then
-    local l = KEYS.label("quit")
-    if l ~= "" then return l end
-  end
-  return "^Q"
-end
-
-local mod = {}
-
-local PORT  = 7777
-local MAGIC = "RCPILOT1"
-
-
-
-
-
-
-
-
-local crypto = crypto
-if not (crypto and crypto.hmac) then
-  local ok, kc = pcall(require, "kernel.crypto")
-  if ok then crypto = kc end
-end
-
-
-local function randBytes(n) return (crypto.random or crypto.salt)(n) end
-
---! HEX, never raw bytes. The frame is a Lua-literal string the EEPROM
---! parses with  nonce="([^"]+)"  -- a raw 0x22 in the nonce (one frame in
---! sixteen, with 16 random bytes) truncated it on the robot, the MAC was
---! then computed over a different body than the host's, and the
---! keystroke was silently dropped. (test_rc_pilot.lua)
-local function nonce()
-  return (randBytes(16):gsub(".", function(c) return ("%02x"):format(c:byte()) end))
-end
-
-local function packFrame(op, arg, secret)
-  local n = nonce()
-  local body = op .. "|" .. tostring(arg or "") .. "|" .. n
-  local mac  = crypto.hmac(secret, body)
-  
-  local argPart = arg and ("arg=" .. tostring(arg) .. ",") or ""
-  return string.format(
-    '{magic="%s",op="%s",%snonce="%s",mac="%s"}',
-    MAGIC, op, argPart, n, mac)
-end
-
-
-
-
-
-local function resolveSecret(target, sess)
-  
-  local km = _G._TOS and _G._TOS.keychain
-  if km and km.isUnlocked and km.isUnlocked(sess) then
-    local k = "rc:" .. (target or ""):sub(1, 8)
-    local pass = km.get(k, sess)
-    if pass then return pass end
-  end
-  return nil
-end
-
-
-
-
-
-mod.commands = {
-  rc = function(args, o)
-    o = o or print
-    local target = args[1]
-    if not target then
-      o("Usage: rc <robot-address-prefix>")
-      o("  The robot must be running the rc-pilot EEPROM and have a")
-      o("  shared secret either in your keychain (slot 'rc:<addr>')")
-      o("  or passed via 'rc <addr> --secret <secret>'.")
-      o("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
-      o("  swap a blank EEPROM in, `flash` that file, and swap yours back.")
-      return
-    end
-
-    
-    local modemAddr = component.list("modem")()
-    if not modemAddr then o("No modem"); return end
-    local modem = component.proxy(modemAddr)
-    if not modem.isWireless or not modem.isWireless() then
-      o("Modem is not wireless. RC pilot needs a wireless modem.")
-      return
-    end
-
-    
-    
-    
-    
-    
-    
-    local full = nil
-    local tos = _G._TOS or {}
-    local tm = tos.trust or (tos.net and tos.net.trust)
-    if tm and tm.listPeers then
-      local okL, peers = pcall(tm.listPeers)
-      for _, m in ipairs(okL and peers or {}) do
-        local a = m.address or m.addr
-        if type(a) == "string" and a:sub(1, #target) == target then full = a; break end
-      end
-    end
-    full = full or target  
-    if #full < 16 then
-      o("Target address looks too short. Give the robot's full modem address")
-      o("(a prefix only works for a peer TOS already knows about).")
-      return
-    end
-
-    
-    local secret
-    for i = 2, #args do
-      if args[i] == "--secret" and args[i + 1] then
-        secret = args[i + 1]
-        --! argv is shell history. The same reason `pkg trust key` stopped
-        --! taking its passphrase this way; kept for scripts, said out loud.
-        o("Note: --secret puts the shared secret in this seat's command history.")
-        o("      Prefer the keychain:  keychain set rc:" .. full:sub(1, 8))
-      end
-    end
-    if not secret then
-      local sess = tos.users and tos.users.currentSession and tos.users.currentSession()
-      secret = resolveSecret(full, sess)
-    end
-    if not secret then
-      
-      local okT, term = pcall(require, "compat.term")
-      if okT and type(term) == "table" and type(term.read) == "function" then
-        o("Shared secret for " .. full:sub(1, 8) .. "... (not echoed): ")
-        local okR, line = pcall(term.read, nil, false, nil, "*")
-        if okR and type(line) == "string" then secret = line:gsub("[\r\n]+$", "") end
-      end
-    end
-    if not secret or #secret < 16 then
-      o("No shared secret (16+ characters). Either add it to the keychain:")
-      o("  keychain set rc:" .. full:sub(1, 8))
-      o("or, for a script only:  rc <addr> --secret <secret>")
-      return
-    end
-
-    modem.open(PORT)
-    o("RC pilot active. Target: " .. full:sub(1, 12) .. "...")
-    o("Keys: WASD/arrows | Q/E turn | Space/Shift up/down | F use | X break | B place | 1-9 slot | P ping | "
-      .. quitLabel() .. " quit")
-
-    
-    
-    
-    
-    
-    
-    local function dispatchKey(ch, code)
-      if code == 17 or code == 200 then return "move:f" end
-      if code == 31 or code == 208 then return "move:b" end
-      if code == 30 or code == 203 then return "move:l" end
-      if code == 32 or code == 205 then return "move:r" end
-      if code == 16 then return "turn:l" end
-      if code == 18 then return "turn:r" end
-      if code == 57 then return "up"    end
-      if code == 42 then return "down"  end
-      if code == 33 then return "use:f" end
-      if code == 45 then return "swing:f" end
-      if code == 48 then return "place:f" end
-      if code == 25 then return "ping"  end
-      if code >= 2 and code <= 10 then
-        return "select", code - 1   
-      end
-      return nil
-    end
-
-    while true do
-      --! One pull, all of it. This used to take four values, and on a
-      --! modem_message call pullSignal() AGAIN -- with no timeout -- to
-      --! read the payload from whatever signal came next: the pong was
-      --! lost and the pilot hung until the operator pressed a key.
-      local sig, _, a3, a4, _, a6 = computer.pullSignal(0.5)
-      if sig == "key_down" then
-        local char, code = a3, a4          
-        
-        
-        
-        
-        
-        if stdQuit(char, code) or char == 3 then
-          modem.close(PORT)
-          o("RC pilot exited.")
-          return
-        end
-        local op, arg = dispatchKey(char, code)
-        if op then
-          modem.send(full, PORT, packFrame(op, arg, secret))
-        end
-      elseif sig == "modem_message" then
-        
-        local data = a6
-        if type(data) == "string" then
-          local pongAt = data:match('op="pong",arg=(%d+)')
-          if pongAt then o("  pong @ uptime=" .. pongAt) end
-        end
-      end
-    end
-  end,
-}
-
-return mod
+local t="string"local r=require("component")
+local u=require("computer")local o
+do local a,b=pcall(require,"shell.keys")o=a and b or nil end;local function v(b,a)if o and o.is then return o.is("quit",b,a)end;return
+b==17 or a==68 or a==1 end;local function w()
+if
+o and o.label then local a=o.label("quit")if a~=""then return a end end;return"^Q"end;local s={}local q=7777
+local x="RCPILOT1"local p=crypto;if not(p and p.hmac)then
+local a,b=pcall(require,"kernel.crypto")if a then p=b end end;local function y(a)return
+(p.random or p.salt)(a)end
+local function z()return
+(y(16):gsub(".",function(a)return
+("%02x"):format(a:byte())end))end
+local function A(b,a,c)local d=z()
+local e=b.."|"..tostring(a or"").."|"..d;local f=p.hmac(c,e)local g=
+a and("arg="..tostring(a)..",")or""return
+string.format('{magic="%s",op="%s",%snonce="%s",mac="%s"}',x,b,g,d,f)end
+local function B(b,a)local c=_G._TOS and _G._TOS.keychain
+if c and c.isUnlocked and
+c.isUnlocked(a)then local e="rc:".. (b or""):sub(1,8)
+local d=c.get(e,a)if d then return d end end;return nil end
+s.commands={rc=function(b,a)a=a or print;local g=b[1]
+if not g then
+a("Usage: rc <robot-address-prefix>")
+a("  The robot must be running the rc-pilot EEPROM and have a")
+a("  shared secret either in your keychain (slot 'rc:<addr>')")
+a("  or passed via 'rc <addr> --secret <secret>'.")
+a("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
+a("  swap a blank EEPROM in, `flash` that file, and swap yours back.")return end;local i=r.list("modem")()
+if not i then a("No modem")return end;local f=r.proxy(i)if not f.isWireless or not f.isWireless()then
+a("Modem is not wireless. RC pilot needs a wireless modem.")return end;local c=nil
+local e=_G._TOS or{}local h=e.trust or(e.net and e.net.trust)
+if h and
+h.listPeers then local k,l=pcall(h.listPeers)
+for C,n in ipairs(k and l or{})do
+local m=n.address or n.addr;if type(m)==t and m:sub(1,#g)==g then c=m;break end end end;c=c or g
+if#c<16 then
+a("Target address looks too short. Give the robot's full modem address")
+a("(a prefix only works for a peer TOS already knows about).")return end;local d
+for k=2,#b do
+if b[k]=="--secret"and b[k+1]then d=b[k+1]
+a("Note: --secret puts the shared secret in this seat's command history.")
+a("      Prefer the keychain:  keychain set rc:"..c:sub(1,8))end end;if not d then
+local k=e.users and e.users.currentSession and e.users.currentSession()d=B(c,k)end
+if not d then
+local l,k=pcall(require,"compat.term")
+if
+l and type(k)=="table"and type(k.read)=="function"then
+a("Shared secret for "..c:sub(1,8).."... (not echoed): ")local n,m=pcall(k.read,nil,false,nil,"*")if n and type(m)==t then
+d=m:gsub("[\r\n]+$","")end end end
+if not d or#d<16 then
+a("No shared secret (16+ characters). Either add it to the keychain:")a("  keychain set rc:"..c:sub(1,8))
+a("or, for a script only:  rc <addr> --secret <secret>")return end;f.open(q)
+a("RC pilot active. Target: "..c:sub(1,12).."...")
+a("Keys: WASD/arrows | Q/E turn | Space/Shift up/down | F use | X break | B place | 1-9 slot | P ping | "..w().." quit")
+local function j(l,k)if k==17 or k==200 then return"move:f"end;if k==31 or k==208 then
+return"move:b"end;if k==30 or k==203 then return"move:l"end;if k==32 or
+k==205 then return"move:r"end;if k==16 then return"turn:l"end;if k==18 then return
+"turn:r"end;if k==57 then return"up"end
+if k==42 then return"down"end;if k==33 then return"use:f"end;if k==45 then return"swing:f"end;if k==48 then
+return"place:f"end;if k==25 then return"ping"end
+if k>=2 and k<=10 then return"select",k-1 end;return nil end
+while true do local k,C,l,m,C,n=u.pullSignal(0.5)
+if k=="key_down"then local D,E=l,m;if v(D,E)or D==3 then
+f.close(q)a("RC pilot exited.")return end
+local F,G=j(D,E)if F then f.send(c,q,A(F,G,d))end elseif k=="modem_message"then local D=n;if
+type(D)==t then local E=D:match('op="pong",arg=(%d+)')if E then
+a("  pong @ uptime="..E)end end end end end}return s

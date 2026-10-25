@@ -1,895 +1,216 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-local component = require("component")
-local computer  = require("computer")
-
-
-
-
-
-local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
-local function stdQuit(ch, code)
-  if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
-  return ch == 17 or code == 68 or code == 1
-end
-local function quitLabel()
-  if KEYS and KEYS.label then
-    local l = KEYS.label("quit")
-    if l ~= "" then return l end
-  end
-  return "^Q"
-end
-
-local mod = {}
-
-
-local BW       = 10          
-local BH       = 20          
-local CW       = 2           
-local PANEL_W  = 18          
-local PF_BOX_W = BW * CW + 2 
-local PF_BOX_H = BH + 2      
-local MIN_W    = PF_BOX_W + 1 + PANEL_W  
-local MIN_H    = PF_BOX_H + 2            
-
-
-
-
-
-local PIECES = {
-  
-  {{{0,1},{1,1},{2,1},{3,1}}, {{2,0},{2,1},{2,2},{2,3}},
-   {{0,2},{1,2},{2,2},{3,2}}, {{1,0},{1,1},{1,2},{1,3}}},
-  
-  
-  {{{1,0},{2,0},{1,1},{2,1}}, {{1,0},{2,0},{1,1},{2,1}},
-   {{1,0},{2,0},{1,1},{2,1}}, {{1,0},{2,0},{1,1},{2,1}}},
-  
-  
-  {{{1,0},{0,1},{1,1},{2,1}}, {{1,0},{1,1},{2,1},{1,2}},
-   {{0,1},{1,1},{2,1},{1,2}}, {{1,0},{0,1},{1,1},{1,2}}},
-  
-  
-  {{{1,0},{2,0},{0,1},{1,1}}, {{1,0},{1,1},{2,1},{2,2}},
-   {{1,1},{2,1},{0,2},{1,2}}, {{0,0},{0,1},{1,1},{1,2}}},
-  
-  
-  {{{0,0},{1,0},{1,1},{2,1}}, {{2,0},{1,1},{2,1},{1,2}},
-   {{0,1},{1,1},{1,2},{2,2}}, {{1,0},{0,1},{1,1},{0,2}}},
-  
-  
-  {{{0,0},{0,1},{1,1},{2,1}}, {{1,0},{2,0},{1,1},{1,2}},
-   {{0,1},{1,1},{2,1},{2,2}}, {{1,0},{1,1},{0,2},{1,2}}},
-  
-  
-  {{{2,0},{0,1},{1,1},{2,1}}, {{1,0},{1,1},{1,2},{2,2}},
-   {{0,1},{1,1},{2,1},{0,2}}, {{0,0},{1,0},{1,1},{1,2}}},
-}
-
-
-
-local PCOLORS = {
-  [3] = {0x00FFFF, 0xFFFF00, 0xFF00FF, 0x00FF00, 0xFF0000, 0x5555FF, 0xFF8800},
-  [2] = {0x55FFFF, 0xFFFF55, 0xFF55FF, 0x55FF55, 0xFF5555, 0x5555FF, 0xFFAA00},
-  [1] = {0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF},
-}
-
-
-local K = {
-  LEFT=203, RIGHT=205, UP=200, DOWN=208,
-  SPACE=57, ESC=1, ENTER=28,
-  Q=16, W=17, A=30, S=31, D=32, P=25, R=19, Z=44, X=45,
-}
-
-
-
-local WALL_KICKS = {{0,0},{-1,0},{1,0},{-2,0},{2,0},{0,-1}}
-
-
-local LINE_PTS = {100, 300, 500, 800}
-
-
-local function gravity(lv)
-  return math.max(0.05, 0.75 - (lv - 1) * 0.07)
-end
-
-
-
-
-local function fullRows(bd, bw, bh)
-  local rows = {}
-  for r = 1, bh do
-    local full = true
-    for c = 1, bw do
-      if bd[r][c] == 0 then full = false; break end
-    end
-    if full then rows[#rows + 1] = r end
-  end
-  return rows
-end
-
-
-
-
-
-
-
-
-
-
-
-local function removeRows(bd, bw, rows)
-  if #rows == 0 then return end
-  local order = {}
-  for i, r in ipairs(rows) do order[i] = r end
-  table.sort(order, function(a, b) return a > b end)
-  for _, r in ipairs(order) do table.remove(bd, r) end
-  for _ = 1, #rows do
-    local blank = {}
-    for c = 1, bw do blank[c] = 0 end
-    table.insert(bd, 1, blank)
-  end
-end
-
-mod._test = { fullRows = fullRows, removeRows = removeRows }
-
-
-
-local SCORE_FILE = ".tetris_hs"
-local MAX_SCORES = 5
-
-
-
-
-
-
-local function scorePath()
-  if type(fs) ~= "table" or not fs.home then return nil end
-  local ok, home = pcall(fs.home)
-  if not ok or type(home) ~= "string" then return nil end
-  
-  
-  if home == "/tmp" then return nil end
-  return home .. "/" .. SCORE_FILE
-end
-
-
-
-
-
-
-
-local function getSerializer()
-  
-  
-  
-  local ok, ser = pcall(require, "compat.serialization")
-  if ok and type(ser) == "table" then return ser end
-  return nil
-end
-
-local function loadScores(path)
-  if not path or type(fs) ~= "table" then return {} end
-  if not fs.exists(path) then return {} end
-  local data = fs.readFile(path)
-  if not data then return {} end
-  local SZ = getSerializer()
-  if not SZ then return {} end
-  local t = SZ.unserialize(data)
-  return type(t) == "table" and t or {}
-end
-
-local function saveScores(path, tbl)
-  if not path or type(fs) ~= "table" then return end
-  local SZ = getSerializer()
-  if SZ then fs.writeFile(path, SZ.serialize(tbl)) end
-end
-
-
-local function recordScore(path, score, lines, level)
-  local tbl = loadScores(path)
-  tbl[#tbl + 1] = {
-    score = score, lines = lines, level = level,
-    t = math.floor(computer.uptime()),
-  }
-  table.sort(tbl, function(a, b) return a.score > b.score end)
-  while #tbl > MAX_SCORES do tbl[#tbl] = nil end
-  saveScores(path, tbl)
-  return tbl
-end
-
-
-
-local function play(o)
-  
-  
-  
-  
-  local gpuAddr = component.list("gpu")()
-  if not gpuAddr then o("No GPU found.", 0xFF0000); return end
-  local gpu = component.proxy(gpuAddr)
-
-  local W, H = gpu.getResolution()
-  if not W or not H then o("Cannot detect screen size.", 0xFF0000); return end
-
-  
-  local okDepth, depth = pcall(gpu.getDepth)
-  if not okDepth or type(depth) ~= "number" then depth = 1 end
-  local tier = depth <= 1 and 1 or (depth <= 4 and 2 or 3)
-
-  if W < MIN_W or H < MIN_H then
-    o(string.format("Screen too small: need %dx%d, have %dx%d.",
-                    MIN_W, MIN_H, W, H), 0xFF6600)
-    o("A Tier 2+ screen (80×24 minimum) is required.", 0xAAAAAA)
-    return
-  end
-
-  
-  local T = (tier == 1) and {
-    fg = 0xFFFFFF, dim = 0xFFFFFF, border = 0xFFFFFF,
-    title = 0xFFFFFF, highlight = 0xFFFFFF,
-  } or {
-    fg = 0xFFFFFF, dim = 0xAAAAAA,
-    border    = tier == 2 and 0x55FFFF or 0x00FFFF,
-    title     = tier == 2 and 0xFFFF55 or 0xFFFF00,
-    highlight = tier == 2 and 0x55FF55 or 0x00FF00,
-  }
-
-  
-  
-  
-  local BOX = tier >= 2
-    and { tl = "┌", tr = "┐", bl = "└", br = "┘", h = "─", v = "│",
-          DTL = "╔", DTR = "╗", DBL = "╚", DBR = "╝", DH = "═", DV = "║" }
-    or  { tl = "+", tr = "+", bl = "+", br = "+", h = "-", v = "|",
-          DTL = "+", DTR = "+", DBL = "+", DBR = "+", DH = "=", DV = "|" }
-
-  local D = {}
-  function D.set(x, y, text, fg, bg)
-    if fg then gpu.setForeground(fg) end
-    if bg then gpu.setBackground(bg) end
-    gpu.set(x, y, text)
-  end
-  function D.fill(x, y, w, h, char, fg, bg)
-    if fg then gpu.setForeground(fg) end
-    if bg then gpu.setBackground(bg) end
-    gpu.fill(x, y, w, h, char or " ")
-  end
-  function D.clear() D.fill(1, 1, W, H, " ", T.fg, 0x000000) end
-  function D.fit(text, width)
-    text = tostring(text or "")
-    if #text > width then return text:sub(1, width - 1) .. "…" end
-    return text .. string.rep(" ", width - #text)
-  end
-  local function drawBoxKind(x, y, w, h, title, style, double)
-    style = style or {}
-    local bfg = style.border or T.border
-    local bbg = style.bg or 0x000000
-    local tl  = double and BOX.DTL or BOX.tl
-    local tr  = double and BOX.DTR or BOX.tr
-    local bl  = double and BOX.DBL or BOX.bl
-    local br  = double and BOX.DBR or BOX.br
-    local hch = double and BOX.DH  or BOX.h
-    local vch = double and BOX.DV  or BOX.v
-    D.fill(x, y, w, h, " ", T.fg, bbg)
-    D.set(x, y,         tl .. string.rep(hch, w - 2) .. tr, bfg, bbg)
-    D.set(x, y + h - 1, bl .. string.rep(hch, w - 2) .. br, bfg, bbg)
-    for row = y + 1, y + h - 2 do
-      D.set(x,         row, vch, bfg, bbg)
-      D.set(x + w - 1, row, vch, bfg, bbg)
-    end
-    if title then
-      local tstr = " " .. title .. " "
-      D.set(x + math.floor((w - #tstr) / 2), y, tstr, style.title or T.title, bbg)
-    end
-  end
-  function D.box(x, y, w, h, title, style)  drawBoxKind(x, y, w, h, title, style, false) end
-  function D.dbox(x, y, w, h, title, style) drawBoxKind(x, y, w, h, title, style, true)  end
-
-  
-  
-  
-  local E = { pull = function(timeout) return computer.pullSignal(timeout) end }
-
-  
-  local pCol = PCOLORS[tier] or PCOLORS[1]
-
-  local C = {
-    ghost  = tier >= 3 and 0x1A1A3A or (tier == 2 and 0x222255 or 0x555555),
-    empty  = 0x000000,
-    border = tier >= 2 and T.border   or 0xFFFFFF,
-    title  = tier >= 2 and T.title    or 0xFFFFFF,
-    text   = T.fg,
-    dim    = T.dim,
-    hi     = tier >= 2 and T.highlight or 0xFFFFFF,
-    score  = tier == 3 and 0xFFFF00 or (tier == 2 and 0xFFFF55 or 0xFFFFFF),
-    danger = tier >= 2 and 0xFF5555   or 0xFFFFFF,
-  }
-
-  
-  local totalW  = PF_BOX_W + 1 + PANEL_W
-  local bx      = math.max(1, math.floor((W - totalW) / 2) + 1)
-  local by      = math.max(1, math.floor((H - PF_BOX_H) / 2) + 1)
-  local pfx     = bx + 1            
-  local pfy     = by + 1            
-  local panBX   = bx + PF_BOX_W + 1 
-  local pnx     = panBX + 1         
-  local pny     = by + 1            
-  local pniw    = PANEL_W - 2       
-
-  local path    = scorePath()       
-
-  
-
-  
-  local function cxy(col, row) return pfx + col * CW, pfy + row end
-
-  
-  local function drawCell(col, row, color)
-    local sx, sy = cxy(col, row)
-    if tier == 1 then
-      gpu.setForeground(color ~= 0 and 0xFFFFFF or 0x000000)
-      gpu.setBackground(0x000000)
-      gpu.set(sx, sy, color ~= 0 and "[]" or "  ")
-    else
-      gpu.setBackground(color)
-      gpu.fill(sx, sy, CW, 1, " ")
-    end
-  end
-
-  
-  local function drawGhost(col, row)
-    local sx, sy = cxy(col, row)
-    if tier == 1 then
-      gpu.setForeground(C.dim); gpu.setBackground(C.empty)
-      gpu.set(sx, sy, "::")
-    else
-      gpu.setBackground(C.ghost); gpu.fill(sx, sy, CW, 1, " ")
-    end
-  end
-
-  
-
-  
-  local function drawBoard(board)
-    for r = 1, BH do
-      for c = 1, BW do drawCell(c - 1, r - 1, board[r][c]) end
-    end
-  end
-
-  
-  
-  local function eraseOverlay(pt, rot, ox, oy, board)
-    for _, off in ipairs(PIECES[pt][rot]) do
-      local c, r = ox + off[1], oy + off[2]
-      if r >= 0 and r < BH and c >= 0 and c < BW then
-        drawCell(c, r, board[r + 1][c + 1])
-      end
-    end
-  end
-
-  
-  local function drawOverlay(pt, rot, ox, oy, color, isGhost)
-    for _, off in ipairs(PIECES[pt][rot]) do
-      local c, r = ox + off[1], oy + off[2]
-      if r >= 0 and r < BH and c >= 0 and c < BW then
-        if isGhost then drawGhost(c, r) else drawCell(c, r, color) end
-      end
-    end
-  end
-
-  
-
-  local function drawFrame()
-    D.clear()
-    D.box(bx,    by, PF_BOX_W, PF_BOX_H, "TETRIS",
-          {border = C.border, bg = C.empty, title = C.title})
-    D.box(panBX, by, PANEL_W,  PF_BOX_H, nil,
-          {border = C.border, bg = C.empty})
-
-    
-    gpu.setBackground(C.empty)
-    gpu.setForeground(C.score)
-    gpu.set(pnx, pny,     "SCORE")
-    gpu.set(pnx, pny + 3, "LINES")
-    gpu.set(pnx, pny + 6, "LEVEL")
-    gpu.set(pnx, pny + 9, "NEXT")
-
-    
-    local cy = pny + 14
-    if cy + 5 <= by + PF_BOX_H - 1 then
-      gpu.setForeground(C.dim)
-      gpu.set(pnx, cy,     "LR/AD: move")
-      gpu.set(pnx, cy + 1, "U/W/X: rot")
-      gpu.set(pnx, cy + 2, "Z: rot CCW")
-      gpu.set(pnx, cy + 3, "D/dn: soft")
-      gpu.set(pnx, cy + 4, "SPC: drop")
-      
-      
-      
-      
-      local label = quitLabel()
-      local quitLine = "P:pause " .. label .. ":quit"
-      if #quitLine > pniw then
-        quitLine = "P:pause " .. (label:match("^(.-) / ") or label) .. ":quit"
-      end
-      if #quitLine > pniw then quitLine = "P:pause Q:quit" end
-      gpu.set(pnx, cy + 5, quitLine)
-    end
-  end
-
-  
-  local function updatePanel(score, lines, level, nxt)
-    gpu.setBackground(C.empty)
-
-    gpu.setForeground(C.text)
-    gpu.set(pnx, pny + 1, D.fit(tostring(score), pniw))
-    gpu.set(pnx, pny + 4, D.fit(tostring(lines), pniw))
-    gpu.set(pnx, pny + 7, D.fit(tostring(level), pniw))
-
-    
-    for r = 0, 3 do
-      gpu.setBackground(C.empty)
-      gpu.fill(pnx, pny + 10 + r, pniw, 1, " ")
-    end
-    if nxt then
-      for _, off in ipairs(PIECES[nxt][1]) do
-        local sx = pnx + off[1] * CW
-        local sy = pny + 10 + off[2]
-        if tier == 1 then
-          gpu.setForeground(0xFFFFFF); gpu.setBackground(C.empty)
-          gpu.set(sx, sy, "[]")
-        else
-          gpu.setBackground(pCol[nxt]); gpu.fill(sx, sy, CW, 1, " ")
-        end
-      end
-    end
-  end
-
-  
-
-  local function newBoard()
-    local b = {}
-    for r = 1, BH do
-      b[r] = {}
-      for c = 1, BW do b[r][c] = 0 end
-    end
-    return b
-  end
-
-  local function canPlace(board, pt, rot, ox, oy)
-    for _, off in ipairs(PIECES[pt][rot]) do
-      local c, r = ox + off[1], oy + off[2]
-      if c < 0 or c >= BW          then return false end
-      if r >= BH                   then return false end
-      if r >= 0 and board[r + 1][c + 1] ~= 0 then return false end
-    end
-    return true
-  end
-
-  
-  local function calcGhost(board, pt, rot, ox, oy)
-    local gy = oy
-    while canPlace(board, pt, rot, ox, gy + 1) do gy = gy + 1 end
-    return gy
-  end
-
-  
-  
-  
-
-  local bag, bagI = {}, 0
-
-  local function nextPiece()
-    if bagI >= #bag then
-      bag = {1, 2, 3, 4, 5, 6, 7}
-      for i = #bag, 2, -1 do
-        local j = math.random(i)
-        bag[i], bag[j] = bag[j], bag[i]
-      end
-      bagI = 0
-    end
-    bagI = bagI + 1
-    return bag[bagI]
-  end
-
-  
-
-  local function runGame()
-    local board = newBoard()
-    local score, lines, level = 0, 0, 1
-
-    bag, bagI = {}, 0
-    math.randomseed(math.floor(computer.uptime() * 7331) % 2147483647)
-
-    
-    local pt, rot, ox, oy, gy
-
-    
-    local nxt = nextPiece()
-
-    
-
-    
-    
-    
-    local function drawPauseOverlay()
-      local pw = 14
-      local px2 = bx + math.floor((PF_BOX_W - pw) / 2)
-      local py2 = by + math.floor(PF_BOX_H / 2) - 1
-      D.dbox(px2, py2, pw, 3, "PAUSED", {border = C.title, bg = C.empty})
-    end
-
-    local function fullRender()
-      drawFrame()
-      drawBoard(board)
-      updatePanel(score, lines, level, nxt)
-      if pt then
-        if gy ~= oy then drawOverlay(pt, rot, ox, gy, nil, true) end
-        drawOverlay(pt, rot, ox, oy, pCol[pt], false)
-      end
-    end
-
-    
-    local function refresh(oP, oR, oX, oY, oG)
-      if oG ~= oY then eraseOverlay(oP, oR, oX, oG, board) end
-      eraseOverlay(oP, oR, oX, oY, board)
-      if gy ~= oy then drawOverlay(pt, rot, ox, gy, nil, true) end
-      drawOverlay(pt, rot, ox, oy, pCol[pt], false)
-    end
-
-    
-    local function spawn()
-      pt  = nxt
-      nxt = nextPiece()
-      rot = 1
-      ox  = math.floor(BW / 2) - 2   
-      oy  = -2                         
-      gy  = calcGhost(board, pt, rot, ox, oy)
-      return canPlace(board, pt, rot, ox, oy)
-    end
-
-    
-    
-    local function lock()
-      
-      
-      
-      local color = pCol[pt]
-      local aboveBoard = false
-      for _, off in ipairs(PIECES[pt][rot]) do
-        local c, r = ox + off[1], oy + off[2]
-        if r < 0 then
-          aboveBoard = true  
-        elseif r < BH and c >= 0 and c < BW then
-          board[r + 1][c + 1] = color
-          drawCell(c, r, color)
-        end
-      end
-
-      
-      if aboveBoard then return false end
-
-      
-      local cleared = fullRows(board, BW, BH)
-
-      if #cleared > 0 then
-        
-        for _, r in ipairs(cleared) do
-          gpu.setBackground(0xFFFFFF)
-          gpu.fill(pfx, pfy + r - 1, BW * CW, 1, " ")
-        end
-        E.pull(0.07)   
-
-        
-        
-        removeRows(board, BW, cleared)
-
-        
-        local n = #cleared
-        score = score + (LINE_PTS[n] or LINE_PTS[4]) * level
-        lines = lines + n
-        level = math.floor(lines / 10) + 1
-
-        drawBoard(board)
-      end
-
-      
-      if not spawn() then return false end
-
-      
-      
-      
-      
-      
-      
-      updatePanel(score, lines, level, nxt)
-
-      if gy ~= oy then drawOverlay(pt, rot, ox, gy, nil, true) end
-      drawOverlay(pt, rot, ox, oy, pCol[pt], false)
-      return true
-    end
-
-    
-    local function move(dx, dy)
-      if not canPlace(board, pt, rot, ox + dx, oy + dy) then return false end
-      local oP, oR, oX, oY, oG = pt, rot, ox, oy, gy
-      ox = ox + dx;  oy = oy + dy
-      gy = calcGhost(board, pt, rot, ox, oy)
-      refresh(oP, oR, oX, oY, oG)
-      return true
-    end
-
-    
-    local function rotate(dir)
-      local nr    = ((rot - 1 + dir) % 4) + 1
-      for _, k in ipairs(WALL_KICKS) do
-        if canPlace(board, pt, nr, ox + k[1], oy + k[2]) then
-          local oP, oR, oX, oY, oG = pt, rot, ox, oy, gy
-          rot = nr;  ox = ox + k[1];  oy = oy + k[2]
-          gy  = calcGhost(board, pt, rot, ox, oy)
-          refresh(oP, oR, oX, oY, oG)
-          return true
-        end
-      end
-      return false
-    end
-
-    
-
-    if not spawn() then return 0, 0, 1, false end
-    fullRender()
-
-    local lastDrop = computer.uptime()
-    local paused   = false
-
-    while true do
-      local speed   = gravity(level)
-      local now     = computer.uptime()
-      local timeout = paused and 1.0 or math.max(0, speed - (now - lastDrop))
-
-      
-      
-      
-      
-      
-      
-      local sig, _, ch, code = E.pull(timeout)
-
-      
-      
-      
-      
-      
-      if sig == "tos_focus" then
-        paused = true
-        fullRender()
-        drawPauseOverlay()
-        lastDrop = computer.uptime()
-
-      
-      elseif sig == "key_down" then
-
-        if code == K.Q or stdQuit(ch, code) then
-          return score, lines, level, true   
-
-        elseif code == K.P then
-          paused = not paused
-          if paused then drawPauseOverlay() else fullRender() end
-
-        elseif not paused then
-
-          if     code == K.LEFT  or code == K.A then  move(-1, 0)
-          elseif code == K.RIGHT or code == K.D then  move( 1, 0)
-          elseif code == K.UP    or code == K.W
-              or code == K.X                    then  rotate(1)
-          elseif code == K.Z                    then  rotate(-1)
-
-          elseif code == K.DOWN or code == K.S then
-            
-            if move(0, 1) then
-              score = score + 1
-              updatePanel(score, lines, level, nxt)
-              lastDrop = computer.uptime()
-            else
-              if not lock() then return score, lines, level, false end
-              lastDrop = computer.uptime()
-            end
-
-          elseif code == K.SPACE then
-            
-            if gy ~= oy then eraseOverlay(pt, rot, ox, gy, board) end
-            eraseOverlay(pt, rot, ox, oy, board)
-            
-            score    = score + 2 * math.max(0, gy - oy)
-            oy       = gy
-            if not lock() then return score, lines, level, false end
-            lastDrop = computer.uptime()
-          end
-        end
-      end
-
-      
-      if not paused then
-        now = computer.uptime()
-        if now - lastDrop >= speed then
-          lastDrop = now
-          if not move(0, 1) then
-            if not lock() then return score, lines, level, false end
-          end
-        end
-      end
-    end 
-  end 
-
-  
-
-  local function showGameOver(fs, fl, fv, bestScores)
-    local dw = PF_BOX_W        
-    local dh = 10
-    local iw = dw - 4          
-    local dx = bx
-    local dy = by + math.floor((PF_BOX_H - dh) / 2)
-
-    D.dbox(dx, dy, dw, dh, "GAME OVER",
-           {border = C.danger, bg = C.empty})
-
-    gpu.setBackground(C.empty)
-
-    gpu.setForeground(C.text)
-    gpu.set(dx + 2, dy + 2, D.fit(string.format("Score: %d", fs), iw))
-    gpu.set(dx + 2, dy + 3, D.fit(string.format("Ln: %d  Lv: %d", fl, fv), iw))
-
-    if bestScores and #bestScores > 0 then
-      gpu.setForeground(C.score)
-      gpu.set(dx + 2, dy + 4, D.fit(string.format("Best: %d", bestScores[1].score), iw))
-      
-      
-      
-      local isNew = fs > 0 and fs == bestScores[1].score
-          and (#bestScores == 1 or fs > bestScores[2].score)
-      if isNew then
-        gpu.setForeground(C.hi)
-        gpu.set(dx + 2, dy + 5, D.fit("* NEW HIGH SCORE! *", iw))
-      end
-    end
-
-    gpu.setForeground(C.dim)
-    gpu.set(dx + 2, dy + 7, D.fit("[R] Play Again", iw))
-    gpu.set(dx + 2, dy + 8, D.fit("[Q] Quit", iw))
-
-    
-    while true do
-      local sig, _, ch, code = E.pull(120)   
-      if sig == "key_down" then
-        if code == K.R or code == K.ENTER then return true  end
-        if code == K.Q or stdQuit(ch, code) then return false end
-      elseif not sig then
-        return false   
-      end
-    end
-  end
-
-  
-  
-
-  local ok, err = pcall(function()
-    local playing = true
-    while playing do
-      local fs, fl, fv, quit = runGame()
-      if quit then
-        playing = false
-      else
-        
-        local best = recordScore(path, fs, fl, fv)
-        playing = showGameOver(fs, fl, fv, best)
-      end
-    end
-  end)
-
-  D.clear()  
-  if not ok then
-    o("Tetris crashed: " .. tostring(err), 0xFF0000)
-  end
-end
-
-
-
-local function showScores(o)
-  local path = scorePath()
-  if not path then
-    o("Not logged in — no personal score file to read.", 0xFF6600)
-    return
-  end
-
-  
-  
-  
-  local user = path:match("^/home/([^/]+)/") or path:match("^/([^/]+)/") or "?"
-  local scores = loadScores(path)
-
-  if #scores == 0 then
-    o("No high scores yet for " .. user .. ".", 0xAAAAAA)
-    o("Play your first game:  tetris", 0x555555)
-    return
-  end
-
-  o(string.format("  High scores — %s", user), 0xFFFF00)
-  o(string.rep("─", 42), 0x444444)
-  o(string.format("  %-3s  %-12s  %-8s  %s", "#", "SCORE", "LINES", "LEVEL"), 0xAAAAAA)
-  for i, s in ipairs(scores) do
-    local star = (i == 1) and " ★" or "  "
-    o(string.format("  %-3d  %-12d  %-8d  %d%s", i, s.score, s.lines, s.level, star),
-      i == 1 and 0xFFFF00 or 0xFFFFFF)
-  end
-end
-
-
-
-local function tetrisCmd(args, o)
-  
-  
-  
-  
-  local sub = args[1]
-
-  if sub == nil then
-    play(o)
-
-  elseif sub == "scores" or sub == "hs" then
-    showScores(o)
-
-  elseif sub == "help" or sub == "--help" or sub == "-h" then
-    o("=== Tetris ===", 0xFFFF00)
-    o("", 0xFFFFFF)
-    o("  tetris           Launch the game (requires T2+ screen, 80×24+)", 0xFFFFFF)
-    o("  tetris scores    Show your personal high-score table", 0xFFFFFF)
-    o("", 0xFFFFFF)
-    o(" In-game controls:", 0xAAAAAA)
-    o("  ← → / A D       Move left / right", 0xFFFFFF)
-    o("  ↑ / W / X       Rotate clockwise", 0xFFFFFF)
-    o("  Z               Rotate counter-clockwise", 0xFFFFFF)
-    o("  ↓ / S           Soft drop  (+1 pt per row)", 0xFFFFFF)
-    o("  Space           Hard drop  (+2 pts per row)", 0xFFFFFF)
-    o("  P               Pause / unpause", 0xFFFFFF)
-    o("  Q / Esc         Quit to shell", 0xFFFFFF)
-    o("", 0xFFFFFF)
-    o(" Scoring:", 0xAAAAAA)
-    o("  1 line  = 100 × level    2 lines = 300 × level", 0xFFFFFF)
-    o("  3 lines = 500 × level    4 lines = 800 × level  (Tetris!)", 0xFFFFFF)
-    o("  Level increases every 10 lines; speed increases with level.", 0xAAAAAA)
-    o("", 0xFFFFFF)
-    o(" High scores are stored in ~/.tetris_hs (one file per user).", 0x555555)
-
-  else
-    o("Unknown subcommand: " .. tostring(sub), 0xFF6600)
-    o("Usage: tetris [scores | help]", 0xAAAAAA)
-  end
-end
-
-
-
-mod.commands = { tetris = tetrisCmd }
-
-return mod
+local R=require("component")local I=require("computer")local K;do
+local a,b=pcall(require,"shell.keys")K=a and b or nil end
+local function S(b,a)if K and K.is then
+return K.is("quit",b,a)end;return b==17 or a==68 or a==1 end;local function ab()
+if K and K.label then local a=K.label("quit")if a~=""then return a end end;return"^Q"end;local Q={}local H=10
+local J=20;local L=2;local P=18;local N=H*L+2;local M=J+2;local T=N+1+P;local U=M+2
+local O={{{{0,1},{1,1},{2,1},{3,1}},{{2,0},{2,1},{2,2},{2,3}},{{0,2},{1,2},{2,2},{3,2}},{{1,0},{1,1},{1,2},{1,3}}},{{{1,0},{2,0},{1,1},{2,1}},{{1,0},{2,0},{1,1},{2,1}},{{1,0},{2,0},{1,1},{2,1}},{{1,0},{2,0},{1,1},{2,1}}},{{{1,0},{0,1},{1,1},{2,1}},{{1,0},{1,1},{2,1},{1,2}},{{0,1},{1,1},{2,1},{1,2}},{{1,0},{0,1},{1,1},{1,2}}},{{{1,0},{2,0},{0,1},{1,1}},{{1,0},{1,1},{2,1},{2,2}},{{1,1},{2,1},{0,2},{1,2}},{{0,0},{0,1},{1,1},{1,2}}},{{{0,0},{1,0},{1,1},{2,1}},{{2,0},{1,1},{2,1},{1,2}},{{0,1},{1,1},{1,2},{2,2}},{{1,0},{0,1},{1,1},{0,2}}},{{{0,0},{0,1},{1,1},{2,1}},{{1,0},{2,0},{1,1},{1,2}},{{0,1},{1,1},{2,1},{2,2}},{{1,0},{1,1},{0,2},{1,2}}},{{{2,0},{0,1},{1,1},{2,1}},{{1,0},{1,1},{1,2},{2,2}},{{0,1},{1,1},{2,1},{0,2}},{{0,0},{1,0},{1,1},{1,2}}}}
+local V={[3]={0x00FFFF,0xFFFF00,0xFF00FF,0x00FF00,0xFF0000,0x5555FF,0xFF8800},[2]={0x55FFFF,0xFFFF55,0xFF55FF,0x55FF55,0xFF5555,0x5555FF,0xFFAA00},[1]={0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF,0xFFFFFF}}
+local G={LEFT=203,RIGHT=205,UP=200,DOWN=208,SPACE=57,ESC=1,ENTER=28,Q=16,W=17,A=30,S=31,D=32,P=25,R=19,Z=44,X=45}local ac={{0,0},{-1,0},{1,0},{-2,0},{2,0},{0,-1}}
+local W={100,300,500,800}
+local function ad(a)return math.max(0.05,0.75- (a-1)*0.07)end
+local function X(a,b,c)local d={}
+for e=1,c do local f=true
+for g=1,b do if a[e][g]==0 then f=false;break end end;if f then d[#d+1]=e end end;return d end
+local function Y(b,c,a)if#a==0 then return end;local d={}for e,f in ipairs(a)do d[e]=f end
+table.sort(d,function(e,f)return e>f end)for f,e in ipairs(d)do table.remove(b,e)end;for e=1,#a do local f={}
+for g=1,c do f[g]=0 end;table.insert(b,1,f)end end;Q._test={fullRows=X,removeRows=Y}local ae=".tetris_hs"local af=5
+local function Z()if type(fs)~="table"or not
+fs.home then return nil end
+local b,a=pcall(fs.home)if not b or type(a)~="string"then return nil end;if a=="/tmp"then
+return nil end;return a.."/"..ae end
+local function _()local b,a=pcall(require,"compat.serialization")if b and
+type(a)=="table"then return a end;return nil end
+local function aa(a)if not a or type(fs)~="table"then return{}end;if
+not fs.exists(a)then return{}end;local b=fs.readFile(a)if not b then return{}end
+local c=_()if not c then return{}end;local d=c.unserialize(b)return
+type(d)=="table"and d or{}end
+local function ag(a,b)if not a or type(fs)~="table"then return end;local c=_()if c then
+fs.writeFile(a,c.serialize(b))end end
+local function ah(a,b,c,d)local e=aa(a)
+e[#e+1]={score=b,lines=c,level=d,t=math.floor(I.uptime())}
+table.sort(e,function(f,g)return f.score>g.score end)while#e>af do e[#e]=nil end;ag(a,e)return e end
+local function ai(a)local z=R.list("gpu")()if not z then a("No GPU found.",0xFF0000)
+return end;local b=R.proxy(z)local o,p=b.getResolution()
+if
+not o or not p then a("Cannot detect screen size.",0xFF0000)return end;local am,s=pcall(b.getDepth)
+if not am or type(s)~="number"then s=1 end;local e=s<=1 and 1 or(s<=4 and 2 or 3)
+if
+o<T or p<U then
+a(string.format("Screen too small: need %dx%d, have %dx%d.",T,U,o,p),0xFF6600)
+a("A Tier 2+ screen (80×24 minimum) is required.",0xAAAAAA)return end
+local i=
+(e==1)and{fg=0xFFFFFF,dim=0xFFFFFF,border=0xFFFFFF,title=0xFFFFFF,highlight=0xFFFFFF}or
+{fg=0xFFFFFF,dim=0xAAAAAA,border=e==2 and 0x55FFFF or 0x00FFFF,title=e==2 and 0xFFFF55 or 0xFFFF00,highlight=
+e==2 and 0x55FF55 or 0x00FF00}
+local g=e>=2 and
+{tl="┌",tr="┐",bl="└",br="┘",h="─",v="│",DTL="╔",DTR="╗",DBL="╚",DBR="╝",DH="═",DV="║"}or
+{tl="+",tr="+",bl="+",br="+",h="-",v="|",DTL="+",DTR="+",DBL="+",DBR="+",DH="=",DV="|"}local c={}
+function c.set(ay,az,aA,aw,ax)if aw then b.setForeground(aw)end;if ax then
+b.setBackground(ax)end;b.set(ay,az,aA)end
+function c.fill(ay,az,aA,aB,aC,aw,ax)if aw then b.setForeground(aw)end;if ax then
+b.setBackground(ax)end;b.fill(ay,az,aA,aB,aC or" ")end
+function c.clear()c.fill(1,1,o,p," ",i.fg,0x000000)end;function c.fit(aw,ax)aw=tostring(aw or"")if#aw>ax then
+return aw:sub(1,ax-1).."…"end
+return aw..string.rep(" ",ax-#aw)end
+local function A(aw,ax,az,aB,aC,aA,ay)aA=aA or{}local aE=
+aA.border or i.border;local aD=aA.bg or 0x000000
+local aH=ay and g.DTL or g.tl;local aI=ay and g.DTR or g.tr;local aJ=ay and g.DBL or g.bl;local aK=ay and
+g.DBR or g.br;local aF=ay and g.DH or g.h;local aG=
+ay and g.DV or g.v;c.fill(aw,ax,az,aB," ",i.fg,aD)
+c.set(aw,ax,aH..string.rep(aF,
+az-2)..aI,aE,aD)
+c.set(aw,ax+aB-1,aJ..string.rep(aF,az-2)..aK,aE,aD)for aL=ax+1,ax+aB-2 do c.set(aw,aL,aG,aE,aD)
+c.set(aw+az-1,aL,aG,aE,aD)end;if aC then local aL=" "..aC.." "
+c.set(aw+math.floor((az-
+#aL)/2),ax,aL,aA.title or i.title,aD)end end;function c.box(aw,ax,ay,az,aA,aB)A(aw,ax,ay,az,aA,aB,false)end;function c.dbox(aw,ax,ay,az,aA,aB)
+A(aw,ax,ay,az,aA,aB,true)end
+local w={pull=function(aw)return I.pullSignal(aw)end}local q=V[e]or V[1]
+local d={ghost=e>=3 and 0x1A1A3A or
+(e==2 and 0x222255 or 0x555555),empty=0x000000,border=e>=2 and i.border or 0xFFFFFF,title=
+e>=2 and i.title or 0xFFFFFF,text=i.fg,dim=i.dim,hi=e>=2 and i.highlight or 0xFFFFFF,score=
+e==3 and 0xFFFF00 or(e==2 and 0xFFFF55 or 0xFFFFFF),danger=
+e>=2 and 0xFF5555 or 0xFFFFFF}local an=N+1+P
+local r=math.max(1,math.floor((o-an)/2)+1)
+local k=math.max(1,math.floor((p-M)/2)+1)local B=r+1;local C=k+1;local D=r+N+1;local f=D+1;local h=k+1;local l=P-2;local ao=Z()local function E(aw,ax)
+return B+aw*L,C+ax end
+local function t(ax,ay,aw)local az,aA=E(ax,ay)
+if e==1 then
+b.setForeground(aw~=0 and 0xFFFFFF or 0x000000)b.setBackground(0x000000)
+b.set(az,aA,aw~=0 and"[]"or"  ")else b.setBackground(aw)b.fill(az,aA,L,1," ")end end
+local function ap(aw,ax)local ay,az=E(aw,ax)if e==1 then b.setForeground(d.dim)
+b.setBackground(d.empty)b.set(ay,az,"::")else b.setBackground(d.ghost)
+b.fill(ay,az,L,1," ")end end;local function F(aw)
+for ax=1,J do for ay=1,H do t(ay-1,ax-1,aw[ax][ay])end end end
+local function u(aw,ax,ay,az,aA)
+for aC,aB in ipairs(O[aw][ax])do local aD,aE=ay+aB[1],az+
+aB[2]if aE>=0 and aE<J and aD>=0 and aD<H then t(aD,aE,aA[aE+1][
+aD+1])end end end
+local function m(aw,ax,ay,az,aA,aB)
+for aD,aC in ipairs(O[aw][ax])do local aE,aF=ay+aC[1],az+aC[2]
+if
+aF>=0 and aF<J and aE>=0 and aE<H then if aB then ap(aE,aF)else t(aE,aF,aA)end end end end
+local function aq()c.clear()
+c.box(r,k,N,M,"TETRIS",{border=d.border,bg=d.empty,title=d.title})
+c.box(D,k,P,M,nil,{border=d.border,bg=d.empty})b.setBackground(d.empty)b.setForeground(d.score)
+b.set(f,h,"SCORE")b.set(f,h+3,"LINES")b.set(f,h+6,"LEVEL")
+b.set(f,h+9,"NEXT")local aw=h+14
+if aw+5 <=k+M-1 then b.setForeground(d.dim)
+b.set(f,aw,"LR/AD: move")b.set(f,aw+1,"U/W/X: rot")
+b.set(f,aw+2,"Z: rot CCW")b.set(f,aw+3,"D/dn: soft")
+b.set(f,aw+4,"SPC: drop")local ay=ab()local ax="P:pause "..ay..":quit"if#ax>l then
+ax="P:pause ".. (
+ay:match("^(.-) / ")or ay)..":quit"end
+if#ax>l then ax="P:pause Q:quit"end;b.set(f,aw+5,ax)end end
+local function x(ax,ay,az,aw)b.setBackground(d.empty)b.setForeground(d.text)
+b.set(f,h+1,c.fit(tostring(ax),l))b.set(f,h+4,c.fit(tostring(ay),l))
+b.set(f,h+7,c.fit(tostring(az),l))for aA=0,3 do b.setBackground(d.empty)
+b.fill(f,h+10+aA,l,1," ")end
+if aw then
+for aB,aA in ipairs(O[aw][1])do
+local aC=f+aA[1]*L;local aD=h+10+aA[2]if e==1 then b.setForeground(0xFFFFFF)
+b.setBackground(d.empty)b.set(aC,aD,"[]")else b.setBackground(q[aw])
+b.fill(aC,aD,L,1," ")end end end end;local function ar()local aw={}
+for ax=1,J do aw[ax]={}for ay=1,H do aw[ax][ay]=0 end end;return aw end
+local function v(aw,ax,ay,az,aA)
+for aC,aB in
+ipairs(O[ax][ay])do local aD,aE=az+aB[1],aA+aB[2]if aD<0 or aD>=H then return false end;if aE>=
+J then return false end;if aE>=0 and aw[aE+1][aD+1]~=0 then
+return false end end;return true end
+local function y(aw,ax,ay,az,aA)local aB=aA;while v(aw,ax,ay,az,aB+1)do aB=aB+1 end;return aB end;local j,n={},0
+local function al()
+if n>=#j then j={1,2,3,4,5,6,7}for aw=#j,2,-1 do local ax=math.random(aw)
+j[aw],j[ax]=j[ax],j[aw]end;n=0 end;n=n+1;return j[n]end
+local function as()local aA=ar()local aC,aD,aE=0,0,1;j,n={},0
+math.randomseed(
+math.floor(I.uptime()*7331)%2147483647)local ax,az,ay,aw,aB;local aH=al()local function aL()local aP=14
+local aQ=r+math.floor((N-aP)/2)local aR=k+math.floor(M/2)-1
+c.dbox(aQ,aR,aP,3,"PAUSED",{border=d.title,bg=d.empty})end;local function aJ()
+aq()F(aA)x(aC,aD,aE,aH)
+if ax then
+if aB~=aw then m(ax,az,ay,aB,nil,true)end;m(ax,az,ay,aw,q[ax],false)end end
+local function aM(aP,aQ,aR,aS,aT)if aT~=aS then
+u(aP,aQ,aR,aT,aA)end;u(aP,aQ,aR,aS,aA)if aB~=aw then
+m(ax,az,ay,aB,nil,true)end;m(ax,az,ay,aw,q[ax],false)end
+local function aN()ax=aH;aH=al()az=1;ay=math.floor(H/2)-2;aw=-2
+aB=y(aA,ax,az,ay,aw)return v(aA,ax,az,ay,aw)end
+local function aK()local aQ=q[ax]local aR=false
+for aT,aS in ipairs(O[ax][az])do local aU,aV=ay+aS[1],aw+aS[2]if aV<
+0 then aR=true elseif aV<J and aU>=0 and aU<H then aA[aV+1][aU+1]=aQ
+t(aU,aV,aQ)end end;if aR then return false end;local aP=X(aA,H,J)
+if#aP>0 then
+for aU,aT in ipairs(aP)do
+b.setBackground(0xFFFFFF)b.fill(B,C+aT-1,H*L,1," ")end;w.pull(0.07)Y(aA,H,aP)local aS=#aP
+aC=aC+ (W[aS]or W[4])*aE;aD=aD+aS;aE=math.floor(aD/10)+1;F(aA)end;if not aN()then return false end;x(aC,aD,aE,aH)if aB~=aw then
+m(ax,az,ay,aB,nil,true)end;m(ax,az,ay,aw,q[ax],false)return true end
+local function aI(aP,aQ)if not v(aA,ax,az,ay+aP,aw+aQ)then return false end
+local aR,aS,aT,aU,aV=ax,az,ay,aw,aB;ay=ay+aP;aw=aw+aQ;aB=y(aA,ax,az,ay,aw)aM(aR,aS,aT,aU,aV)
+return true end
+local function aO(aP)local aQ=((az-1+aP)%4)+1
+for aS,aR in ipairs(ac)do
+if
+v(aA,ax,aQ,ay+aR[1],aw+aR[2])then local aT,aU,aV,aW,aX=ax,az,ay,aw,aB;az=aQ;ay=ay+aR[1]aw=aw+aR[2]
+aB=y(aA,ax,az,ay,aw)aM(aT,aU,aV,aW,aX)return true end end;return false end;if not aN()then return 0,0,1,false end;aJ()local aF=I.uptime()local aG=false
+while true do
+local aR=ad(aE)local aQ=I.uptime()
+local aT=aG and 1.0 or math.max(0,aR- (aQ-aF))local aS,aV,aU,aP=w.pull(aT)
+if aS=="tos_focus"then aG=true;aJ()aL()aF=I.uptime()elseif aS==
+"key_down"then
+if aP==G.Q or S(aU,aP)then return aC,aD,aE,true elseif aP==G.P then aG=not aG
+if aG then aL()else aJ()end elseif not aG then
+if aP==G.LEFT or aP==G.A then aI(-1,0)elseif aP==G.RIGHT or aP==G.D then
+aI(1,0)elseif aP==G.UP or aP==G.W or aP==G.X then aO(1)elseif aP==G.Z then aO(-1)elseif
+aP==G.DOWN or aP==G.S then
+if aI(0,1)then aC=aC+1;x(aC,aD,aE,aH)aF=I.uptime()else if not aK()then return aC,
+aD,aE,false end;aF=I.uptime()end elseif aP==G.SPACE then if aB~=aw then u(ax,az,ay,aB,aA)end
+u(ax,az,ay,aw,aA)aC=aC+2*math.max(0,aB-aw)aw=aB;if not aK()then
+return aC,aD,aE,false end;aF=I.uptime()end end end;if not aG then aQ=I.uptime()
+if aQ-aF>=aR then aF=aQ;if not aI(0,1)then
+if not aK()then return aC,aD,aE,false end end end end end end
+local function at(ax,ay,az,aw)local aD=N;local aE=10;local aC=aD-4;local aA=r
+local aB=k+math.floor((M-aE)/2)
+c.dbox(aA,aB,aD,aE,"GAME OVER",{border=d.danger,bg=d.empty})b.setBackground(d.empty)b.setForeground(d.text)
+b.set(aA+2,
+aB+2,c.fit(string.format("Score: %d",ax),aC))
+b.set(aA+2,aB+3,c.fit(string.format("Ln: %d  Lv: %d",ay,az),aC))
+if aw and#aw>0 then b.setForeground(d.score)
+b.set(aA+2,aB+4,c.fit(string.format("Best: %d",aw[1].score),aC))local aF=ax>0 and ax==aw[1].score and
+(#aw==1 or ax>aw[2].score)if aF then
+b.setForeground(d.hi)
+b.set(aA+2,aB+5,c.fit("* NEW HIGH SCORE! *",aC))end end;b.setForeground(d.dim)
+b.set(aA+2,aB+7,c.fit("[R] Play Again",aC))b.set(aA+2,aB+8,c.fit("[Q] Quit",aC))
+while true do
+local aG,aI,aH,aF=w.pull(120)
+if aG=="key_down"then if aF==G.R or aF==G.ENTER then return true end;if
+aF==G.Q or S(aH,aF)then return false end elseif not aG then return false end end end
+local au,av=pcall(function()local aw=true
+while aw do local ax,ay,az,aA=as()if aA then aw=false else local aB=ah(ao,ax,ay,az)
+aw=at(ax,ay,az,aB)end end end)c.clear()if not au then
+a("Tetris crashed: "..tostring(av),0xFF0000)end end
+local function aj(a)local b=Z()if not b then
+a("Not logged in — no personal score file to read.",0xFF6600)return end
+local c=b:match("^/home/([^/]+)/")or
+b:match("^/([^/]+)/")or"?"local d=aa(b)
+if#d==0 then
+a("No high scores yet for "..c..".",0xAAAAAA)a("Play your first game:  tetris",0x555555)return end
+a(string.format("  High scores — %s",c),0xFFFF00)a(string.rep("─",42),0x444444)
+a(string.format("  %-3s  %-12s  %-8s  %s","#","SCORE","LINES","LEVEL"),0xAAAAAA)
+for e,f in ipairs(d)do local g=(e==1)and" ★"or"  "
+a(string.format("  %-3d  %-12d  %-8d  %d%s",e,f.score,f.lines,f.level,g),
+e==1 and 0xFFFF00 or 0xFFFFFF)end end
+local function ak(b,a)local c=b[1]
+if c==nil then ai(a)elseif c=="scores"or c=="hs"then aj(a)elseif
+c=="help"or c=="--help"or c=="-h"then a("=== Tetris ===",0xFFFF00)
+a("",0xFFFFFF)
+a("  tetris           Launch the game (requires T2+ screen, 80×24+)",0xFFFFFF)
+a("  tetris scores    Show your personal high-score table",0xFFFFFF)a("",0xFFFFFF)a(" In-game controls:",0xAAAAAA)
+a("  ← → / A D       Move left / right",0xFFFFFF)a("  ↑ / W / X       Rotate clockwise",0xFFFFFF)
+a("  Z               Rotate counter-clockwise",0xFFFFFF)
+a("  ↓ / S           Soft drop  (+1 pt per row)",0xFFFFFF)
+a("  Space           Hard drop  (+2 pts per row)",0xFFFFFF)a("  P               Pause / unpause",0xFFFFFF)
+a("  Q / Esc         Quit to shell",0xFFFFFF)a("",0xFFFFFF)a(" Scoring:",0xAAAAAA)
+a("  1 line  = 100 × level    2 lines = 300 × level",0xFFFFFF)
+a("  3 lines = 500 × level    4 lines = 800 × level  (Tetris!)",0xFFFFFF)
+a("  Level increases every 10 lines; speed increases with level.",0xAAAAAA)a("",0xFFFFFF)
+a(" High scores are stored in ~/.tetris_hs (one file per user).",0x555555)else
+a("Unknown subcommand: "..tostring(c),0xFF6600)a("Usage: tetris [scores | help]",0xAAAAAA)end end;Q.commands={tetris=ak}return Q

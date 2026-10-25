@@ -1,296 +1,64 @@
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-return function(t)
-  
-  
-  
-  
-  if not (t.cfg and t.cfg.screen) then
-    return t.skip("screen truth", "screen checks are opt-in: add screen=true to selftest.on")
-  end
-
-  local okD, display = pcall(require, "kernel.display")
-  if not okD or type(display) ~= "table" then
-    return t.skip("screen truth", "kernel.display unavailable")
-  end
-  local gpu = display.getGpu and display.getGpu()
-  if not gpu or not gpu.get then
-    return t.skip("screen truth", "no GPU, or gpu.get unavailable here")
-  end
-
-  local W, H = gpu.getResolution()
-  local ROW = math.max(2, H - 6)          
-  local A, B = 0x336699, 0x000000         
-
-  
-  
-  
-  
-  
-  local function saveRow(y)
-    local cells = {}
-    for x = 1, W do
-      local ok, ch, fg, bg = pcall(gpu.get, x, y)
-      cells[x] = ok and { ch = ch, fg = fg, bg = bg } or nil
-    end
-    return cells
-  end
-  local function restoreRow(y, cells)
-    
-    
-    
-    
-    
-    
-    for x = 1, W do
-      local c = cells[x]
-      if c then pcall(display.set, x, y, c.ch or " ", c.fg, c.bg) end
-    end
-    
-    local okS, sm = pcall(require, "kernel.screen")
-    if okS and sm and sm.invalidateAll then pcall(sm.invalidateAll) end
-  end
-
-  local saved = saveRow(ROW)
-
-  local function bgAt(x)
-    local ok, ch, fg, bg = pcall(gpu.get, x, ROW)
-    if not ok then return nil end
-    return bg
-  end
-
-  local function countBg(want)
-    local n = 0
-    for x = 1, W do if bgAt(x) == want then n = n + 1 end end
-    return n
-  end
-
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  local resolvedBg = {}
-  local function resolve(want)
-    if resolvedBg[want] then return resolvedBg[want] end
-    if display.invalidateColors then pcall(display.invalidateColors) end
-    pcall(display.fill, 1, ROW, 1, 1, " ", 0xFFFFFF, want)
-    resolvedBg[want] = bgAt(1) or want
-    return resolvedBg[want]
-  end
-
-  
-  display.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-  t.eq("a full-width fill covers every column", W, countBg(A))
-
-  
-  
-  
-  display.set(1, ROW, string.rep("x", 10), 0xFFFFFF, B)
-  t.eq("a 10-cell write changes exactly 10 cells", 10, countBg(B))
-  t.eq("...and leaves the other W-10 as they were", W - 10, countBg(A))
-
-  
-  
-  
-  
-  
-  display.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-  t.eq("baseline row is A", W, countBg(A))
-  display.scrollUp(ROW, ROW + 1)            
-  display.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-  t.eq("the same colour still reaches the glass after a scroll", W, countBg(A))
-
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  local okS, screen = pcall(require, "kernel.screen")
-  local proxy, proxyIdx = nil, nil
-  if okS and screen and screen.displayProxy then
-    for _, idx in ipairs({ (screen.active and screen.active()) or 1, 1 }) do
-      local okP, pr = pcall(screen.displayProxy, idx)
-      if okP and type(pr) == "table" and pr.fill then
-        proxy, proxyIdx = pr, idx
-        break
-      end
-    end
-  end
-  if type(proxy) == "table" and proxy.fill and proxy.set then
-    proxy.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-    if proxy.endFrame then pcall(proxy.endFrame) end
-    t.eq("proxy fill reaches every column", W, countBg(A))
-
-    
-    
-    proxy.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-    if proxy.endFrame then pcall(proxy.endFrame) end
-    t.eq("a repeated proxy fill leaves the glass correct", W, countBg(A))
-
-    
-    
-    
-    
-    
-    
-    pcall(gpu.setBackground, B)
-    pcall(gpu.fill, 1, ROW, W, 1, " ")
-    proxy.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-    if proxy.endFrame then pcall(proxy.endFrame) end
-    local blind = countBg(A)
-    t.ok("an UNDECLARED write behind the proxy is invisible to it ("
-         .. blind .. "/" .. W .. ")", blind < W)
-
-    
-    
-    pcall(gpu.setBackground, B)
-    pcall(gpu.fill, 1, ROW, W, 1, " ")
-    if screen.invalidateAll then pcall(screen.invalidateAll) end
-    proxy.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-    if proxy.endFrame then pcall(proxy.endFrame) end
-    t.eq("proxy repaints after a DECLARED write behind it", W, countBg(A))
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    display.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)      
-    local okW = pcall(display.withContext, gpu, W, H, function()
-      display.fill(1, ROW, W, 1, " ", 0xFFFFFF, B)    
-    end)
-    if okW then
-      t.eq("the forwarded draw really landed", W, countBg(B))
-      display.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-      t.eq("a repaint after a forwarded draw is not skipped", W, countBg(A))
-    else
-      t.skip("withContext", "display.withContext not callable here")
-    end
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    local SEL_FG, SEL_BG = 0x000000, 0x00AAFF   
-    local NRM_FG, NRM_BG = 0xFFFFFF, 0x000000   
-    local rowText = string.rep("r", W)
-    local SEL, NRM = resolve(SEL_BG), resolve(NRM_BG)
-
-    
-    
-    
-    if SEL == NRM then
-      t.skip("selection row",
-        "highlight and normal quantize to the same palette entry here")
-    else
-      proxy.set(1, ROW, rowText, SEL_FG, SEL_BG)
-      if proxy.endFrame then pcall(proxy.endFrame) end
-      t.eq("a highlighted row paints across the full width", W, countBg(SEL))
-
-      
-      proxy.set(1, ROW, rowText, NRM_FG, NRM_BG)
-      if proxy.endFrame then pcall(proxy.endFrame) end
-      t.eq("un-highlighting the row clears every cell", W, countBg(NRM))
-
-      
-      
-      proxy.set(1, ROW, rowText, SEL_FG, SEL_BG)
-      if proxy.endFrame then pcall(proxy.endFrame) end
-      t.eq("re-highlighting it covers every cell again", W, countBg(SEL))
-    end
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    local other = nil
-    if proxyIdx then
-      local okO, o = pcall(screen.displayProxy, proxyIdx)
-      if okO and type(o) == "table" and o.fill then other = o end
-    end
-    if other then
-      proxy.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-      if proxy.endFrame then pcall(proxy.endFrame) end
-
-      other.fill(1, ROW, W, 1, " ", 0xFFFFFF, B)
-      if other.endFrame then pcall(other.endFrame) end
-      t.eq("a second proxy's fill reaches the glass", W, countBg(B))
-
-      
-      proxy.fill(1, ROW, W, 1, " ", 0xFFFFFF, A)
-      if proxy.endFrame then pcall(proxy.endFrame) end
-      t.eq("the first proxy repaints after the second wrote", W, countBg(A))
-    else
-      
-      
-      
-      
-      
-      
-      t.ok("a second proxy can be built for seat " .. tostring(proxyIdx), false)
-    end
-  else
-    t.skip("seat proxy", "no active seat proxy exposed on this build")
-  end
-
-  restoreRow(ROW, saved)
-end
+local b="screen truth"
+return
+function(a)
+if not(a.cfg and a.cfg.screen)then return
+a.skip(b,"screen checks are opt-in: add screen=true to selftest.on")end;local q,g=pcall(require,"kernel.display")
+if
+not q or type(g)~="table"then return a.skip(b,"kernel.display unavailable")end;local i=g.getGpu and g.getGpu()if not i or not i.get then return
+a.skip(b,"no GPU, or gpu.get unavailable here")end
+local c,n=i.getResolution()local e=math.max(2,n-6)local f,j=0x336699,0x000000;local function r(v)local w={}
+for y=1,c do
+local x,z,A,B=pcall(i.get,y,v)w[y]=x and{ch=z,fg=A,bg=B}or nil end;return w end
+local function s(v,w)for z=1,c do
+local A=w[z]
+if A then pcall(g.set,z,v,A.ch or" ",A.fg,A.bg)end end
+local y,x=pcall(require,"kernel.screen")
+if y and x and x.invalidateAll then pcall(x.invalidateAll)end end;local t=r(e)
+local function o(v)local w,y,z,x=pcall(i.get,v,e)if not w then return nil end;return x end
+local function h(v)local w=0;for y=1,c do if o(y)==v then w=w+1 end end;return w end;local l={}
+local function p(v)if l[v]then return l[v]end;if g.invalidateColors then
+pcall(g.invalidateColors)end
+pcall(g.fill,1,e,1,1," ",0xFFFFFF,v)l[v]=o(1)or v;return l[v]end;g.fill(1,e,c,1," ",0xFFFFFF,f)
+a.eq("a full-width fill covers every column",c,h(f))g.set(1,e,string.rep("x",10),0xFFFFFF,j)
+a.eq("a 10-cell write changes exactly 10 cells",10,h(j))
+a.eq("...and leaves the other W-10 as they were",c-10,h(f))g.fill(1,e,c,1," ",0xFFFFFF,f)
+a.eq("baseline row is A",c,h(f))g.scrollUp(e,e+1)g.fill(1,e,c,1," ",0xFFFFFF,f)
+a.eq("the same colour still reaches the glass after a scroll",c,h(f))local u,k=pcall(require,"kernel.screen")local d,m=nil,nil
+if
+u and k and k.displayProxy then
+for w,v in
+ipairs({(k.active and k.active())or 1,1})do local y,x=pcall(k.displayProxy,v)if
+y and type(x)=="table"and x.fill then d,m=x,v;break end end end
+if type(d)=="table"and d.fill and d.set then
+d.fill(1,e,c,1," ",0xFFFFFF,f)if d.endFrame then pcall(d.endFrame)end
+a.eq("proxy fill reaches every column",c,h(f))d.fill(1,e,c,1," ",0xFFFFFF,f)
+if d.endFrame then pcall(d.endFrame)end
+a.eq("a repeated proxy fill leaves the glass correct",c,h(f))pcall(i.setBackground,j)pcall(i.fill,1,e,c,1," ")
+d.fill(1,e,c,1," ",0xFFFFFF,f)if d.endFrame then pcall(d.endFrame)end;local z=h(f)
+a.ok(
+"an UNDECLARED write behind the proxy is invisible to it ("..z.."/"..c..")",z<c)pcall(i.setBackground,j)pcall(i.fill,1,e,c,1," ")if
+k.invalidateAll then pcall(k.invalidateAll)end
+d.fill(1,e,c,1," ",0xFFFFFF,f)if d.endFrame then pcall(d.endFrame)end
+a.eq("proxy repaints after a DECLARED write behind it",c,h(f))g.fill(1,e,c,1," ",0xFFFFFF,f)
+local D=pcall(g.withContext,i,c,n,function()
+g.fill(1,e,c,1," ",0xFFFFFF,j)end)
+if D then a.eq("the forwarded draw really landed",c,h(j))
+g.fill(1,e,c,1," ",0xFFFFFF,f)
+a.eq("a repaint after a forwarded draw is not skipped",c,h(f))else
+a.skip("withContext","display.withContext not callable here")end;local A,w=0x000000,0x00AAFF;local E,B=0xFFFFFF,0x000000;local x=string.rep("r",c)
+local y,C=p(w),p(B)
+if y==C then
+a.skip("selection row","highlight and normal quantize to the same palette entry here")else d.set(1,e,x,A,w)if d.endFrame then pcall(d.endFrame)end
+a.eq("a highlighted row paints across the full width",c,h(y))d.set(1,e,x,E,B)if d.endFrame then pcall(d.endFrame)end
+a.eq("un-highlighting the row clears every cell",c,h(C))d.set(1,e,x,A,w)if d.endFrame then pcall(d.endFrame)end
+a.eq("re-highlighting it covers every cell again",c,h(y))end;local v=nil
+if m then local G,F=pcall(k.displayProxy,m)if G and type(F)=="table"and
+F.fill then v=F end end
+if v then d.fill(1,e,c,1," ",0xFFFFFF,f)
+if d.endFrame then pcall(d.endFrame)end;v.fill(1,e,c,1," ",0xFFFFFF,j)
+if v.endFrame then pcall(v.endFrame)end
+a.eq("a second proxy's fill reaches the glass",c,h(j))d.fill(1,e,c,1," ",0xFFFFFF,f)
+if d.endFrame then pcall(d.endFrame)end
+a.eq("the first proxy repaints after the second wrote",c,h(f))else
+a.ok("a second proxy can be built for seat "..tostring(m),false)end else
+a.skip("seat proxy","no active seat proxy exposed on this build")end;s(e,t)end
