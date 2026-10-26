@@ -21,6 +21,9 @@ SUBCOMMANDS
     trust <addr>        Raise a peer to KNOWN.
     trust <addr> full   Raise a peer to TRUSTED (enables encrypted messaging,
                         file transfer, and remote execution with that peer).
+    trust rekey <addr>  Accept a TRUSTED peer's new identity key (it was
+                        reinstalled) and derive a fresh shared secret from it.
+                        `net peers` marks a peer whose key has changed.
     block <addr>        Drop all packets from a peer.
     revoke <addr>       Reset a peer to UNKNOWN.
     send <addr> <msg>   Send an encrypted message to a TRUSTED peer.
