@@ -1,5 +1,5 @@
 return {
-{ path = "/init.lua", critical = true , hash = "3641b65acb4ceaa21e7e442fac491a55da63de1e35a29a75094b8616779de35d" },
+{ path = "/init.lua", critical = true , hash = "8c8a9adde5b9ec1908ced3407151e9e640389ee368adc2042853c8eb413494ee" },
 { path = "/install.lua", critical = false , hash = "c3606558274026032fc8881fd477528db3a6c137c44c5fc8706c98a9a7562fbd" },
 { path = "/tos/kernel/init.lua", critical = true , hash = "aeee2f595c068dd33b20ba80b3e689a4960e573276465b2d0f6dcffaa28167a1" },
 { path = "/tos/kernel/log.lua", critical = true , hash = "a1dfd345e9e03eacb4cafe4a3900610a4bcaa9dfb86b1aa3e7e4eebc6e7da194" },
@@ -157,7 +157,7 @@ return {
 { path = "/usr/man/networking.man", critical = false , hash = "baf96682030b6075d731bf844f4ee666fd7fac97b38df859c31765d537510704" },
 { path = "/usr/man/notify.man", critical = false , hash = "052a6fc4936701b03bca9597074527f9098f5170ab8f86d3e6791e731a17cd3a" },
 { path = "/usr/man/packages.man", critical = false , hash = "3e3cda1fa6f0b4fc6493fce16e39a9baec76898246d1930eed2aebe60f64b8be" },
-{ path = "/usr/man/pkg.man", critical = false , hash = "fbc2bffa42bb8c7b9becc470e06adf74e8971f81a1b78d5f04176976a6898faa" },
+{ path = "/usr/man/pkg.man", critical = false , hash = "d6422ca0b6f24d8fce1fc6319f92fb758430701e0e4342e570f69e3b5f5253d3" },
 { path = "/usr/man/screen.man", critical = false , hash = "d9c032bec59e3367b6cb5192d8c2eee764a170c1bf2501059b2ec898d1605f0a" },
 { path = "/usr/man/srm.man", critical = false , hash = "c39b0b760fd071c8ba95c2da66d124e14723e1b5afd74349fbec1a56b271dd68" },
 { path = "/usr/man/swap.man", critical = false , hash = "d301cddd26e6ce0952448b43675d58d3da4121f34752ce003807cd900fca9bbf" },
