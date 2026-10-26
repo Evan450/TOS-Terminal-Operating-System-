@@ -95,13 +95,56 @@ local function shapeOf(ast)
   return table.concat(keys, " "), counts
 end
 
+--- The `--!` paragraphs of `src` that are licence or attribution notices,
+--- as one block of comment lines ending in a newline, or "" if there are
+--- none. A paragraph is a run of consecutive `--!` lines; it is a notice
+--- when its first line opens with PROVENANCE, Copyright or
+--- SPDX-License-Identifier (strip.lua's marker convention). A word test
+--- would not do: "licence" is also the name of a pkg install gate.
+--! The formatter writes no comments, so every `--!` line strip.lua kept
+--! was dropped here from 2026-10-17 -- compat/internet.lua's MIT credit
+--! for OpenOS included. Notices are the one kind that must survive: they
+--! are put back at the top of the file, where a licence header belongs.
+--! The other `--!` kinds (#SEC notes, invariants) are still dropped
+--! under --minify-vars; whether they should ship is the operator's
+--! decision (TODO: THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS).
+--! (test_release_credits.lua)
+function M.noticesOf(src)
+  local out, para, isNotice = {}, {}, false
+  local function flush()
+    if isNotice then
+      for _, l in ipairs(para) do out[#out + 1] = l end
+    end
+    para, isNotice = {}, false
+  end
+  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+    local s = line:match("^%s*(%-%-!.*)$")
+    if s then
+      if #para == 0 then
+        local head = s:match("^%-%-!%s*(%S+)") or ""
+        isNotice = head == "PROVENANCE." or head == "Copyright"
+          or head == "SPDX-License-Identifier:"
+      end
+      para[#para + 1] = s
+    else
+      flush()
+    end
+  end
+  flush()
+  if #out == 0 then return "" end
+  return table.concat(out, "\n") .. "\n"
+end
+
 --- Minify the local-variable names in `src`, and hoist any string literal
 --- repeated often enough in this one file into a shared local (see
 --- DedupStrings.lua for exactly why that's always safe). Returns the
 --- minified source on success, or nil + an error message on failure —
 --- NEVER a partial or best-effort result. `chunkname` is used only for
 --- parser error messages (it is not written into the output).
-function M.minify(src, chunkname)
+--- `noticeSrc`, when given, is where the notices are read from: strip.lua
+--- passes the unstripped file, because stripping removes the plain `--`
+--- lines between two `--!` paragraphs and runs them into one.
+function M.minify(src, chunkname, noticeSrc)
   local ok, err = ensureLoaded()
   if not ok then return nil, err end
 
@@ -154,7 +197,7 @@ function M.minify(src, chunkname)
     return nil, "minified output of " .. tostring(chunkname) .. " is a different program ("
       .. table.concat(diffs, ", ") .. ")"
   end
-  return out
+  return M.noticesOf(noticeSrc or src) .. out
 end
 
 -- ============================================================

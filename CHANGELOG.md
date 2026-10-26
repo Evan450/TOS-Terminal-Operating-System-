@@ -9,8 +9,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 42 rounds of work:
+Everything since v1.5.0, in 44 rounds of work:
 
+- [The release credits OpenOS again](#the-release-credits-openos-again)
+- [The pre-publish check fails when a check does](#the-pre-publish-check-fails-when-a-check-does)
 - [The add-ons ship minified, like the release](#the-add-ons-ship-minified-like-the-release)
 - [The installer asks which drive, and the bootstrap answers --help](#the-installer-asks-which-drive-and-the-bootstrap-answers---help)
 - [Strata Systems is branding, not a copyright holder](#strata-systems-is-branding-not-a-copyright-holder)
@@ -53,6 +55,16 @@ Everything since v1.5.0, in 42 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The release credits OpenOS again
+
+Parts of `tos/compat/internet.lua` follow OpenOS's MIT-licensed `lib/internet.lua` line for line, and the file credits it in a `--!` comment, the marker `build/strip.lua` keeps in the release for licence and attribution headers. Local renaming, the release default since 2026-10-17, re-emits every file through LuaMinify's formatter, which writes no comments at all, so every release since then shipped none of the source's 3,560 `--!` lines. The credit was one of them, gone from the release and from the published `main`. `test_provenance.py` only checks the source, which was enough while `--!` lines survived the build.
+
+The minifier now puts notices back at the top of the file. A notice is a `--!` paragraph whose first word is `PROVENANCE.`, `Copyright` or `SPDX-License-Identifier:`. It has to be an explicit opening word, because a word test would also catch a pkgops design note that names the "licence" install gate. The notices are read from the file as written, not from the stripped copy: stripping removes the plain `--` lines between two `--!` paragraphs, and on the first try the credit ran on into the #SEC note after it. internet.lua's six lines are the only notice in the release or the add-ons today, 425 bytes. Every other `--!` kind (#SEC notes, invariants) still does not ship under renaming, and whether it should is still the operator's decision. `test_release_credits.lua` (14 checks) minifies a file built for the purpose, checks that every source credit opens a notice paragraph, and checks that the built `TOS-Release` opens with exactly that file's notices. Against the old build, the built-tree checks fail.
+
+### The pre-publish check fails when a check does
+
+`python tos.py check`, the command to run before publishing, keeps the worst exit code of the checks it runs, and three of its Lua checks (the release digests, the release excludes and the add-on repo index) reported failure with `return false`. The stand-alone `lua` interpreter ignores what a script's main chunk returns, so each of them exited 0 whatever it found, and a run that printed `*** TESTS FAILED ***` still ended `OK`. Every failure path in the three now exits 1, the way 95 test files here already did. `run_tests.py` was never affected, because it reads each test's markers rather than its exit code. `build/test_tos_py_check.py` copies the real checks into a scratch tree, gives each one input it has to reject (a wrong digest, a manifest that does not parse, a stray top-level file, an index naming a file that is not there, and three more), and requires a non-zero exit that comes from the check's own verdict rather than a crash, then runs `tos.py check` itself over such trees. Against the old checks 10 of its 13 tests fail, every one on the exit code.
 
 ### The add-ons ship minified, like the release
 

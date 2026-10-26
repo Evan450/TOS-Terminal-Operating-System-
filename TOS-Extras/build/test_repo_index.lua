@@ -44,7 +44,7 @@ test("kernel.serialize loads from the sibling TOS-Dev tree", okS)
 if not okS then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 
 -- The decoder pkgremote actually uses. If this cannot read the index,
@@ -55,7 +55,7 @@ test("the real decoder parses programs.cfg" .. (index and "" or " (" .. tostring
 if type(index) ~= "table" then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 
 local setSrc = readAll(DIST .. "/disk1/optutil-set.lua")
@@ -224,7 +224,9 @@ else
     .. "(if this fails: lua build/make-repo-index.lua)", succeeded)
 end
 
+-- os.exit, never `return false`: lua ignores a main chunk's return value,
+-- and `tos.py check` goes by the exit code (TOS-Dev/build/test_tos_py_check.py).
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

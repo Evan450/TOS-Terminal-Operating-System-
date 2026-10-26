@@ -206,7 +206,9 @@ do
   end
 end
 
+-- os.exit, never `return false`: lua ignores a main chunk's return value,
+-- and `tos.py check` goes by the exit code (build/test_tos_py_check.py).
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

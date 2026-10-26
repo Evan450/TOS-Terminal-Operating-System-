@@ -56,7 +56,7 @@ if not fn then
   print()
   print(string.format("Results: %d passed, %d failed", passed, failed))
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 
 local okRun, manifest = pcall(fn)
@@ -64,7 +64,7 @@ test("...and returns a table", okRun and type(manifest) == "table")
 if not okRun or type(manifest) ~= "table" then
   print(string.format("Results: %d passed, %d failed", passed, failed))
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 
 -- The same pure SHA-256 the build used.
@@ -172,7 +172,9 @@ do
     #offenders == 0)
 end
 
+-- os.exit, never `return false`: lua ignores a main chunk's return value,
+-- and `tos.py check` goes by the exit code (build/test_tos_py_check.py).
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

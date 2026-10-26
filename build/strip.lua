@@ -24,6 +24,12 @@
 -- ║                                                                    ║
 -- ║  Block comments work the same way — `--[[!` keeps, `--[[` strips.  ║
 -- ║                                                                    ║
+-- ║  --minify-vars writes no comments at all, `--!` ones included,     ║
+-- ║  EXCEPT notices: a `--!` paragraph whose first word is             ║
+-- ║  PROVENANCE., Copyright or SPDX-License-Identifier: goes back at   ║
+-- ║  the top of the file (minify_vars.noticesOf). Start a licence or   ║
+-- ║  attribution credit that way or the release loses it.              ║
+-- ║                                                                    ║
 -- ║  Usage:                                                            ║
 -- ║    lua build/strip.lua <src-dir> <dist-dir>                        ║
 -- ║                              [--minify]                            ║
@@ -542,7 +548,7 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
           --! renamed by this pass regardless of order, but running it
           --! after keeps this in the same relative order as everything
           --! else here -- strip, then stamp, then shrink further.
-          local out, mvErr = minifyVarsMod.minify(stripped, dstPath)
+          local out, mvErr = minifyVarsMod.minify(stripped, dstPath, content)
           if not out then
             io.stderr:write(string.format(
               "strip: %s failed --minify-vars: %s\n", dstPath, tostring(mvErr)))
