@@ -9,8 +9,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 49 rounds of work:
+Everything since v1.5.0, in 51 rounds of work:
 
+- [The installer stops at the first write that fails](#the-installer-stops-at-the-first-write-that-fails)
+- [The fast inventory scan names the right slot](#the-fast-inventory-scan-names-the-right-slot)
 - [Mail, Intercom and the RBMK panel follow `keys set quit`](#mail-intercom-and-the-rbmk-panel-follow-keys-set-quit)
 - [The panels follow `keys set quit` as well](#the-panels-follow-keys-set-quit-as-well)
 - [The picker and the shell's dialogs follow `keys set quit`](#the-picker-and-the-shells-dialogs-follow-keys-set-quit)
@@ -60,6 +62,14 @@ Everything since v1.5.0, in 49 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The installer stops at the first write that fails
+
+`install.lua` copied each file in 4 KB chunks inside `pcall(function() oh:write(chunk) end)`. OpenOS reports a full disk by returning `nil, "not enough space"` rather than raising an error, so the loop carried on writing, and only the size check after the copy noticed the short file. This is the twin of the `fs.writeAll` bug fixed in the September kernel audit. A write that returns a failure now ends the copy, with the reason. The installer also flushes before closing and checks the flush: the flush is what writes the last buffered block, and OpenOS's `buffer:close()` throws away what its own flush returns. Checking free space up front had already made this rare, but not impossible (another writer, or a per-file cost guess that is off). `test_install_copy_write.lua` runs the function, extracted from `install.lua`, against handles shaped like OpenOS's buffer (13 checks; 6 fail on the old file). Run on the headless runner over real OpenOS 1.8.9, a full install still ends "All 165 files verified".
+
+### The fast inventory scan names the right slot
+
+`inv.stacks()` reads a transposer or inventory controller with a single `getAllStacks` call when it can, and its comment said the result's `getAll()` is 0-based. It is not. OpenComputers 1.8.10's `ItemStackArrayValue.getAll`, disassembled from the mod jar, stores each stack under its index plus one. Totals came out right, but every stack's `.slot` was one too high, the last one named a slot that does not exist, and the fast path disagreed with the slot-by-slot fallback. Nothing shipped reads `.slot` yet (`stock` adds up by item), so this was latent until something moved an item by the slot it was given. Slots are read from 1 now, and a result that does carry a slot 0 is still read as 0-based. `test_inventory_getall.lua` (8 checks; 3 fail on the old file) runs the real module against a fake transposer that copies that bytecode.
 
 ### Mail, Intercom and the RBMK panel follow `keys set quit`
 

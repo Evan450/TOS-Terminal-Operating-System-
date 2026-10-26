@@ -95,12 +95,17 @@ aj("Re-installing will overwrite users, configuration, and the")
 aj("system tree but will NOT delete user data under /home or /tmp.")ah(0xFFFF00)
 io.write("Type FORCE-WIPE to confirm: ")ah(0xFFFFFF)local e=io.read()or""if e~="FORCE-WIPE"then
 aq("Install aborted by safety check.")return false end end end end;return true end
-local function aZ(a,b)local c=io.open(a,"r")if not c then return false,"open source"end
-local d=io.open(b,"w")if not d then c:close()return false,"open dest"end
+local function aZ(a,b)local d=io.open(a,"r")if not d then return false,"open source"end
+local c=io.open(b,"w")if not c then d:close()return false,"open dest"end
 while true do
-local e=c:read(4096)if not e then break end
-local f,g=pcall(function()d:write(e)end)
-if not f then c:close()d:close()return false,"write: "..tostring(g)end end;c:close()d:close()return true end
+local e=d:read(4096)if not e then break end;local f,g,h=pcall(c.write,c,e)
+if not f or not g then d:close()
+pcall(c.close,c)return false,
+"write: "..tostring(f and(h or"failed")or g)end end;d:close()
+if c.flush then local e,f,g=pcall(c.flush,c)
+if not e or not f then
+pcall(c.close,c)return false,"write: "..
+tostring(e and(g or"flush failed")or f)end end;c:close()return true end
 local function a_(b,c,a)a=a or""local d,e={},{}
 for g,f in ipairs(c)do local h=a..f.path
 if not ai.exists(h)then

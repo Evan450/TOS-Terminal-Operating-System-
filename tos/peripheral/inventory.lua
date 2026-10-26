@@ -44,8 +44,9 @@ l.."#"..tostring(m)}end
 if c.getAllStacks then local j,i=pcall(c.getAllStacks,b)
 if j and i then
 local l,k=pcall(function()return i.getAll()end)
-if l and type(k)=="table"then local m={}for n=0,#k do local o=e(n+1,k[n])
-if o then m[#m+1]=o end end;return m end end end;local h,f=pcall(c.getInventorySize,b)
+if l and type(k)=="table"then local m={}local n=k[0]~=nil
+for o=n and 0 or 1,#k do local p=e(
+n and(o+1)or o,k[o])if p then m[#m+1]=p end end;return m end end end;local h,f=pcall(c.getInventorySize,b)
 if not h or not f then return nil,H end;local d={}
 for j=1,f do local i,k=pcall(c.getStackInSlot,b,j)if i then local l=e(j,k)if l then
 d[#d+1]=l end end end;return d end

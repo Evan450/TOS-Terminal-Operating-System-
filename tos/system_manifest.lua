@@ -1,6 +1,6 @@
 return {
-{ path = "/init.lua", critical = true , hash = "bc031c44764ee737b2a57d02c32de15385b44097bf105c6b3c1b562f568474cf" },
-{ path = "/install.lua", critical = false , hash = "0ead5bbe43b18bbbeb40d5293dee07778270849fcb91589c859a0210248d7d91" },
+{ path = "/init.lua", critical = true , hash = "7a7995673f81768daf4247ea8afd5a816a8aba7dd5baec44f417edab01abe284" },
+{ path = "/install.lua", critical = false , hash = "c3606558274026032fc8881fd477528db3a6c137c44c5fc8706c98a9a7562fbd" },
 { path = "/tos/kernel/init.lua", critical = true , hash = "aeee2f595c068dd33b20ba80b3e689a4960e573276465b2d0f6dcffaa28167a1" },
 { path = "/tos/kernel/log.lua", critical = true , hash = "a1dfd345e9e03eacb4cafe4a3900610a4bcaa9dfb86b1aa3e7e4eebc6e7da194" },
 { path = "/tos/kernel/hal.lua", critical = true , hash = "7e9db5199cbd879371e0fd827a57cbcd966620b099f1cb2ce6476a14239c36a2" },
@@ -130,7 +130,7 @@ return {
 { path = "/tos/compat/sides.lua", critical = false , hash = "eaa4ff4b98cc8e0ca1cad6b4ed3afe0388a7ed316d930f03d6b3f9dc792b2a1e" },
 { path = "/tos/compat/term.lua", critical = false , hash = "7fbb7d75ff77a1541fbf7f1bc84632289472199ad5b1cae81ad6559f765125f3" },
 { path = "/tos/compat/text.lua", critical = false , hash = "cc27e33bb70ff780b6af0730221958cb607d298df70a5dab10220ef3a3add1db" },
-{ path = "/tos/peripheral/inventory.lua", critical = false , hash = "75363af2508dadde38659ecfbc7a221f7049527b65ab44719956518888436299" },
+{ path = "/tos/peripheral/inventory.lua", critical = false , hash = "cb3ae880bef3bf3d5e47d9eccea7280bd75e84c0533a978ce2b9fd357803ad4d" },
 { path = "/tos/peripheral/redstone.lua", critical = false , hash = "328b776b7e5c1dc8e9eda20b81fdb3c314899b29959d24d0e9374cb7730f7cb1" },
 { path = "/tos/peripheral/robot.lua", critical = false , hash = "d2f4da3c8ae6c99cbc32ffa8a8bf76f4bbdcef417d88657c12e7ecddafa29ab8" },
 { path = "/etc/rc.d/10-discoveryd.lua", critical = false , hash = "9cb7c4d6df22c871f3590c1f7f6b07885bc40bec008ecdb6239b61291c417c36" },
