@@ -211,9 +211,15 @@ function inv.stacks(side)
       local okG, all = pcall(function() return arr.getAll() end)
       if okG and type(all) == "table" then
         local items = {}
-        -- getAll() is 0-based, unlike everything else in this file.
-        for i = 0, #all do
-          local st = normalize(i + 1, all[i])
+        --! getAll() keys slots from 1, like getStackInSlot: OpenComputers
+        --! 1.8.10's ItemStackArrayValue puts index + 1 into a TreeMap
+        --! (javap on the mod jar), with an empty table for an empty slot.
+        --! This read it as 0-based until 2026-10-26, so every .slot was one
+        --! high and the last named a slot that does not exist. A table that
+        --! does carry a [0] is taken as 0-keyed. (test_inventory_getall.lua)
+        local zeroKeyed = all[0] ~= nil
+        for k = zeroKeyed and 0 or 1, #all do
+          local st = normalize(zeroKeyed and (k + 1) or k, all[k])
           if st then items[#items + 1] = st end
         end
         return items

@@ -372,10 +372,28 @@ local function copyFileChunked(src, dst)
   while true do
     local chunk = ih:read(4096)
     if not chunk then break end
-    local wOk, wErr = pcall(function() oh:write(chunk) end)
-    if not wOk then ih:close(); oh:close(); return false, "write: " .. tostring(wErr) end
+    --! OpenOS answers a full disk with nil, "not enough space" rather than
+    --! raising, so a write that RETURNS a failure is one too -- the loop
+    --! used to carry on writing until verifyCopy noticed the short file.
+    --! fs.writeAll's twin (AUDIT 5). The last buffered block is written by
+    --! the flush, and OpenOS's buffer:close() drops what its own flush
+    --! answers, so the flush is made here, where it can be checked: it
+    --! returns the buffer, or nil and the reason. (test_install_copy_write.lua)
+    local wOk, wRes, wErr = pcall(oh.write, oh, chunk)
+    if not wOk or not wRes then
+      ih:close(); pcall(oh.close, oh)
+      return false, "write: " .. tostring(wOk and (wErr or "failed") or wRes)
+    end
   end
-  ih:close(); oh:close()
+  ih:close()
+  if oh.flush then
+    local fOk, fRes, fErr = pcall(oh.flush, oh)
+    if not fOk or not fRes then
+      pcall(oh.close, oh)
+      return false, "write: " .. tostring(fOk and (fErr or "flush failed") or fRes)
+    end
+  end
+  oh:close()
   return true
 end
 
