@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 44 rounds of work:
+Everything since v1.5.0, in 45 rounds of work:
 
+- [A test that checked nothing is a skip](#a-test-that-checked-nothing-is-a-skip)
 - [The release credits OpenOS again](#the-release-credits-openos-again)
 - [The pre-publish check fails when a check does](#the-pre-publish-check-fails-when-a-check-does)
 - [The add-ons ship minified, like the release](#the-add-ons-ship-minified-like-the-release)
@@ -55,6 +56,10 @@ Everything since v1.5.0, in 44 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A test that checked nothing is a skip
+
+`test_manifest_digests.lua`, run with no built `TOS-Release` beside it, prints `SKIP: no built TOS-Release`, then `Results: 0 passed, 0 failed` and `All tests passed.`, and `run_tests.py` counted that as a pass. Here `tos.py test` builds first, so it never came up. But the published `dev` branch carries no `TOS-Release`, so every green CI run on GitHub included a release-digest check that had compared nothing. A clean exit that counts nothing and says `SKIP:` is now a skip, with its reason printed beside it, and the summary's label reads `SKIP` when one is among them. A zero count without a `SKIP:` line keeps its old reading rather than being guessed at. `build/test_run_tests.py` has six new cases, one of which runs the real digest check from a tree with no release; two of them fail on the old classifier.
 
 ### The release credits OpenOS again
 

@@ -75,6 +75,14 @@ FAIL_MARKER = "*** TESTS FAILED ***"
 # Likewise a skip requires a clean exit, so a real failure whose output
 # happens to mention "run inside TOS" isn't misfiled as skipped.
 SKIP_PATTERN = re.compile(r"not available; run inside TOS|run inside TOS", re.I)
+# A test that skipped its WHOLE body still prints the pass marker: it says
+# "SKIP: <why>", counts nothing, and ends "Results: 0 passed, 0 failed" /
+# "All tests passed." (test_manifest_digests with no TOS-Release beside
+# it). That is a skip, not a pass -- counted as a pass, the dev branch's CI,
+# which has no TOS-Release, went green on a digest check that compared
+# nothing. A test that asserted anything is judged on its asserts.
+WHOLE_SKIP_LINE = re.compile(r"^\s*SKIP:\s*(.*)$", re.M)
+ZERO_COUNTED = re.compile(r"Results:\s*0 passed,\s*0 failed")
 
 # ── Tests that need the add-on source tree ───────────────────────────
 # TOS-Extras is a SIBLING of this directory and is not published to any
@@ -216,6 +224,8 @@ def classify(out: str, rc: int) -> str:
     has_skip = bool(SKIP_PATTERN.search(out))
 
     if rc == 0 and has_pass:
+        if ZERO_COUNTED.search(out) and WHOLE_SKIP_LINE.search(out):
+            return "skip"
         return "pass"
     if rc == 0 and has_skip:
         return "skip"
@@ -288,6 +298,10 @@ def report(r: Result, verbose: bool) -> None:
             for line in lines[-8:]:
                 print(f"        {line.rstrip()}")
         print(f"        (exit {r.returncode})")
+    elif r.status == "skip":
+        m = WHOLE_SKIP_LINE.search(r.output)
+        if m:
+            print(f"        SKIP: {m.group(1).strip()}")
     elif verbose:
         for line in r.output.splitlines():
             print(f"        {line.rstrip()}")
@@ -360,6 +374,8 @@ def main() -> int:
         label = "SKIP(needs TOS-Extras)"
     elif REFERENCE_ABSENT and skipped:
         label = "SKIP(needs Reference)"
+    elif any(WHOLE_SKIP_LINE.search(r.output) for r in results if r.status == "skip"):
+        label = "SKIP"
     else:
         label = "SKIP(needs-TOS)"
     print(f"PASS={passed} FAIL={len(failed)} {label}={skipped}"
