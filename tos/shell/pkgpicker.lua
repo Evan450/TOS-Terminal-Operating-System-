@@ -29,6 +29,24 @@
 
 local M = {}
 
+--! The standard close key (shell/keys.lua), so `keys set quit F4` reaches
+--! the picker as it reaches every other first-party surface; until
+--! 2026-10-26 this tested ^Q / Esc itself and drew "Q Quit" whatever the
+--! binding was. A text field never takes a printable binding as quit: a
+--! quit bound to "q" must still type a q into the filter.
+--! (test_keys_readers.lua)
+local function isQuit(ch, code, typing)
+  if typing and ch and ch >= 32 and ch < 127 then return false end
+  local ok, keys = pcall(require, "shell.keys")
+  if ok and keys and keys.is then return keys.is("quit", ch, code) end
+  return ch == 17 or code == 1
+end
+local function quitLabel()
+  local ok, keys = pcall(require, "shell.keys")
+  local l = ok and keys and keys.label and keys.label("quit") or ""
+  return l ~= "" and l or "^Q"
+end
+
 --- Run the picker. Returns true when it completed (including a clean
 --- cancel); false plus a reason when it could not start.
 function M.run(opts)
@@ -740,7 +758,14 @@ function M.run(opts)
         end
       end
       barBase()
-      local keys = " Space · G Group · / Filter · A All · N None · R +Suggested · Enter Install · Q Quit "
+      -- Most-needed first, and spaced only as far as the width allows: at
+      -- 80 columns the old bar (86 wide) was cut at "Enter In…", so the way
+      -- out was never shown. Packed with a bare "·" it is 70, which fits
+      -- the 71 there; fitTo still cuts from the end on anything narrower.
+      local items = { "Space", "Enter Install", quitLabel():gsub(" / .*", "") .. " Quit",
+        "/ Filter", "G Group", "A All", "N None", "R +Suggested" }
+      local keys = " " .. table.concat(items, " · ") .. " "
+      if ulen(keys) > W - 9 then keys = table.concat(items, "·") end
       set(5, BAR, fitTo(keys, W - 9), T.fg, T.bg)
     end
 
@@ -760,11 +785,14 @@ function M.run(opts)
         drawFrame(); drawList(); drawPanel()
         fill(1, BAR, W, 1, " ", T.fg, T.bg)
         set(2, BAR, fitTo("Filter: " .. buf .. "_", W - 22), T.title, T.bg)
-        set(math.max(2, W - 19), BAR, "Enter=keep Esc=undo", T.dim, T.bg)
+        local hint = "Enter=keep " .. quitLabel():gsub(" / .*", "") .. "=undo"
+        set(math.max(2, W - #hint), BAR, hint, T.dim, T.bg)
         local ev2, _, ch2, co2 = computer.pullSignal()
         if ev2 == "key_down" then
           if co2 == 28 then filter = buf; break                  -- Enter
-          elseif co2 == 1 then filter = before; break            -- Esc
+          -- Undo was Esc alone, which real Minecraft never delivers (it
+          -- closes the screen GUI): in-game the prompt had no undo at all.
+          elseif isQuit(ch2, co2, true) then filter = before; break
           elseif co2 == 14 then                                  -- Backspace
             buf = buf:sub(1, -2); filter = buf
           elseif ch2 and ch2 >= 32 and ch2 < 127 then
@@ -849,7 +877,7 @@ function M.run(opts)
           for ri in pairs(add) do selected[ri] = true end
           recomputeAuto()
           redraw()
-        elseif (code == 1 or ch == 17) and filter ~= "" then  -- ^Q / Esc clears the filter
+        elseif isQuit(ch, code) and filter ~= "" then         -- quit clears the filter
           -- ...rather than quitting. A filter that matched nothing leaves an
           -- empty list, and Esc is exactly what you reach for there; exiting
           -- the installer instead would be a nasty surprise. Esc still quits
@@ -857,7 +885,7 @@ function M.run(opts)
           filter = ""
           buildRows(); sel = firstPkgRow(); scroll = 0
           redraw()
-        elseif ch == 113 or ch == 81 or ch == 17 or code == 1 then  -- q / ^Q / Esc
+        elseif ch == 113 or ch == 81 or isQuit(ch, code) then  -- q, or the quit key
           fill(1, 1, W, H, " ", T.fg, T.bg)
           return "cancel"
         elseif code == 28 then                                -- Enter = install

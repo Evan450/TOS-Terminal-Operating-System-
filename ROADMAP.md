@@ -735,6 +735,8 @@ A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME 
 
 SIX SURFACES STILL IGNORE THE KEY TABLE. AUDIT 2. shell.keys is read by the panels core, calc, write, warhead, web, stock, rc-pilot and the games. It is not read by the package picker (its legend says "Q Quit", pkgpicker.lua:743; it takes a typed "q", :1024), panels/dialogs.lua, either mail UI (mailapp.lua tests for 17, ^Q), intercomapp.lua or the rbmk SKALA panel. After `keys set quit F4` those six still answer ^Q, which is what the REAL MINECRAFT round's F4 check exists to catch. Severity LOW-MEDIUM. Pin: usr/lib/tests/test\_keys\_readers.lua (audit branch).
 
+BASE HALF FIXED 2026-10-26: the picker and panels/dialogs.lua ask shell.keys for quit (a text field never takes a printable binding as quit). Found on the way, both in the picker: its filter prompt's undo was Esc ALONE, which real Minecraft never delivers, so in-game it had none; and at 80 columns its key bar (86 wide) was cut at "Enter In…", so the way out was never on screen -- it is ordered most-needed first now and packs to 70 when it must. A new test\_keys\_readers.lua on master DRIVES the dialogs on a fake keys.cfg (quit = F4; 8 fail on the old files) and lifts the picker's helpers. SEEN on the runner: `keys set quit F4`, `pkg install` -&gt; bar "Space·Enter Install·F4 Quit·/ Filter·G Group·A All·N None·R +Suggested"; in the filter ^Q did nothing and F4 undid; in the list ^Q did nothing and F4 left. STILL OPEN: the add-on half (both mail UIs, intercomapp, rbmk SKALA), which needs the pack re-signed.
+
 ### Localise the installer, not just the OS
 
 *Planned* · from the round *What the rest of the field does better (2026-09-20)*

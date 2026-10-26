@@ -22,6 +22,19 @@
 
 local M = {}
 
+--! The standard close key (shell/keys.lua), read here rather than ^Q / Esc
+--! being tested by hand, so `keys set quit F4` closes a dialog as it
+--! closes everything else. Every dialog here takes typed letters (a text
+--! field, hot letters, a typed word), so a printable binding is never
+--! taken as quit -- a quit bound to "q" must still type a q.
+--! (test_keys_readers.lua)
+local function isQuit(ch, code)
+  if ch and ch >= 32 and ch < 127 then return false end
+  local ok, keys = pcall(require, "shell.keys")
+  if ok and keys and keys.is then return keys.is("quit", ch, code) end
+  return ch == 17 or code == 1
+end
+
 --! computer.pullSignal(t) returns THE MOMENT a signal arrives; `t` is
 --! only the longest it will wait when nothing happens. So this number
 --! does not affect how fast a keypress registers -- it only decides how
@@ -100,7 +113,7 @@ function M.promptInput(S, msg, maxLen, isPassword)
     local sig, _, ch2, co2 = pullSignal()
     if sig == "key_down" then
       if co2 == 28 then return buf
-      elseif ch2 == 17 then return nil
+      elseif isQuit(ch2, co2) then return nil
       elseif co2 == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
       elseif ch2 and ch2 >= 32 and ch2 < 127 and #buf < (maxLen or 64) then
         buf = buf .. string.char(ch2)
@@ -318,7 +331,7 @@ local function dialogLoop(S, style, title, lines, labels, focus, escIndex, shado
       -- ^Q cancels. Esc is still accepted, but it never arrives in real
       -- Minecraft (it closes the screen GUI), so a dialog that offered
       -- only Esc was a dialog with no way out but answering it.
-      elseif c == 1 or b == 17 then return escIndex      -- ^Q / Esc
+      elseif isQuit(b, c) then return escIndex           -- the quit key
       elseif c == 203 then focus = (focus > 1) and (focus - 1) or #labels   -- Left
       elseif c == 205 or c == 15 then                    -- Right / Tab
         focus = (focus < #labels) and (focus + 1) or 1
@@ -410,7 +423,7 @@ function M.confirmTyped(S, message, word, opts)
     local sig, _, b, c = pullSignal()
 
     if sig == "key_down" then
-      if c == 1 or b == 17 then                      -- ^Q / Esc
+      if isQuit(b, c) then                           -- the quit key
         if opts.redraw then opts.redraw() end
         return false
       elseif c == 28 then                            -- Enter
@@ -569,7 +582,7 @@ function M.promptSearch(S, currentTerm)
     local sig, _, ch2, co2 = pullSignal()
     if sig == "key_down" then
       if co2 == 28 then return #buf > 0 and buf or nil
-      elseif ch2 == 17 then return currentTerm
+      elseif isQuit(ch2, co2) then return currentTerm
       elseif co2 == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
       elseif ch2 and ch2 >= 32 and ch2 < 127 then buf = buf .. string.char(ch2)
       end

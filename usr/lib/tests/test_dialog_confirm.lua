@@ -112,7 +112,9 @@ do
     test("Cancel is the first button", body:find('opts%.no or "Cancel"') ~= nil)
     test("Confirm is the second", body:find('opts%.yes or "Confirm"') ~= nil)
     test("focus starts on Cancel", body:find("local buf, focus = \"\", 1") ~= nil)
-    test("Esc returns false", body:find("if c == 1 or b == 17 then") ~= nil)
+    -- The quit key (^Q / F10 / Esc by default, whatever `keys set quit`
+    -- says otherwise). Driven with a rebound key in test_keys_readers.lua.
+    test("the quit key returns false", body:find("if isQuit(b, c) then", 1, true) ~= nil)
     -- The point is that it renders through the SHARED dialog renderer
     -- rather than growing a look of its own. It goes through framedDraw
     -- now (which calls drawDialog inside the seat's frame, so a repaint

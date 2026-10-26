@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 46 rounds of work:
+Everything since v1.5.0, in 47 rounds of work:
 
+- [The picker and the shell's dialogs follow `keys set quit`](#the-picker-and-the-shells-dialogs-follow-keys-set-quit)
 - [Two machines that trust each other really do agree a secret now](#two-machines-that-trust-each-other-really-do-agree-a-secret-now)
 - [A test that checked nothing is a skip](#a-test-that-checked-nothing-is-a-skip)
 - [The release credits OpenOS again](#the-release-credits-openos-again)
@@ -57,6 +58,14 @@ Everything since v1.5.0, in 46 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The picker and the shell's dialogs follow `keys set quit`
+
+`shell/keys.lua` promises one key table that the shell, its dialogs, the picker and every bundled package all read, so that `keys set quit F4` changes the quit key everywhere. The panels core and the full-screen add-ons did read it. The package picker and the shell's own dialogs (prompts, button boxes, typed confirmations, the search line) tested ^Q and Esc themselves, so after a rebind they answered only ^Q. They ask the table now. A text field never takes a printable binding as quit, so a quit key bound to `q` still types a q.
+
+Two more picker bugs turned up on the way. Its filter prompt could only be undone with Esc, which real Minecraft never delivers (Esc closes the screen GUI), so in-game the prompt had no undo; it uses the quit key now. And its key bar, 86 columns wide, was cut at "Enter In…" on an 80-column screen, so the way out was never shown. Install and quit come first now, and on a narrow screen the bar packs to 70 columns, which fits.
+
+`test_keys_readers.lua` drives the real dialogs on a key table read from a fake `/etc/keys.cfg` with quit bound to F4, and runs the picker's key helpers lifted from its source (21 checks; 8 fail on the old files before it crashes). Seen on the headless runner: after `keys set quit F4`, `pkg install` shows `Space·Enter Install·F4 Quit·/ Filter·G Group·A All·N None·R +Suggested`. In the filter prompt and in the list, ^Q does nothing and F4 undoes or leaves. The add-on surfaces that still hard-code ^Q (both mail UIs, the intercom app and the RBMK SKALA panel) are a separate change, because they need the pack re-signed.
 
 ### Two machines that trust each other really do agree a secret now
 
