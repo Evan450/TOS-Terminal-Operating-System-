@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**64 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 42 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 19 | Idea, no commitment. Discuss before building. |
+| Planned | 63 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (4) · [Packages](#packages) (10) · [Networking](#networking) (7) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (12) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (5) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (13)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -73,6 +73,19 @@ own header already draws this line -- a battery that
 installs software on the machine it is auditing is a
 
 different and much worse tool.
+
+### In-world checks the headless runner cannot do
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+IN-WORLD CHECKS THE HEADLESS RUNNER CANNOT DO. Belongs with NEXT REAL-MINECRAFT ROUND (REAL MINECRAFT ROUND, below):
+
+- warhead (ce23a0b): no prediction has been compared with a real detonation, and the transposer's view of HBM items (fluid ids read as damage) is unverified.
+- rbmk-control's hbm-ntm driver (99535a3): that a linked console answers in the shapes the fake does; what getColumnData's coordinates mean against getRBMKPos; coreTemp's units; the per-tick cost of a 225-call sweep on each CPU tier; real values for fluxWarn / fluxScram (the summed rod flux has no published scale, and the shipped config says so).
+- once the mod is rebuilt and version-bumped: a FRESH world, the dungeon floppy, install from it, `about` names today's build.
+- `stock` on a transposer, then a slot number from `inventory` against the same stack through inv.stacks().
+- `components` with OpenSecurity's readers and door controller, an adapter on an ME controller and on an NTM battery, and the OpenGlasses terminal, recording the exact names the candidates below need.
+- after the key-table fix: `keys set quit F4`, then the picker, a delete confirm, both mail UIs, intercom and `rbmk skala`.
 
 ### Next real-minecraft round
 
@@ -201,6 +214,18 @@ registered, cap-gated endpoint -- the designed answer, and
 
 the larger job. Recommendation: (a) now, with api-side tier checks, and (b) when IPC exists. Pinned as \[known gap\] in test\_cluster\_cli\_sandbox.lua and in test\_global\_leaks.lua's TOS-Extras half, so either fix fails those lines and they get rewritten. Shipping now: cluster-master 1.0.1 and cluster-manager in the published pack carry this.
 
+### The distributed storage pool waits on five operator decisions
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE DISTRIBUTED STORAGE POOL WAITS ON FIVE OPERATOR DECISIONS. cluster-storage shipped 1.0.0 on 2026-10-23 as ONE node; the pool, inputs\_ref and result\_sink = "public" are not built. TOS-Extras/cluster/storage-spec-draft.md section 10 holds the questions: a coordinator or none; shared/ replication to all members or a quorum; capacity in a contributing Manager's heartbeat; what happens to a lease when its member leaves; and whether netfs read-only exports may go to PAIRED-but-untrusted peers.
+
+### Optional Utilities candidates from the pack's own components
+
+*Idea / far future* · from the round *What nobody wrote down (2026-10-26)*
+
+OPTIONAL UTILITIES CANDIDATES FROM THE PACK'S OWN COMPONENTS. AUDIT 4 read every jar in the pack: nothing drives OpenSecurity, OpenGlasses, holograms, AE2, the geolyzer, printer3d or any NTM energy, radiation or non-RBMK reactor. Ranked value to the pack + value to public TOS users, 0-3 each: access control for OpenSecurity doors and readers on TOS accounts (3+2); an HBM energy monitor (3+2); a watchdog for unattended machines over mesh, notify and intercom (3+2); an AE2 source for stock (2+3); an OpenGlasses HUD (3+1); NTM radiation alarms, small enough to ride in the energy monitor (3+1); a hologram status board (2+2); a 3D-print helper (2+2); an EEPROM kit for microcontrollers and drones (2+2); a text-tools pack -- diff, sort, uniq, cut, tr, sed, hexdump, base64, sha256sum, tee, seq, sleep, yes (1+3); the other NTM reactors once rbmk-control's safety core generalises (3+1). Built since: the RBMK supervisor and the text-mode browser. Each is one package; none belongs in the base image. Confirm OpenSecurity's component names in-world first.
+
 ### Later: the wizard could offer to configure the OpenOS worker bridge
 
 *Idea / far future* · from the round *Cluster setup round (2026-07-28)*
@@ -220,6 +245,18 @@ Specialized per-machine launcher profiles (doors, reactors).
 Tape "personal menu" ecosystem polish.
 
 ## Packages
+
+### The pkg man page leaves out the network, trust and upgrade commands
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE pkg MAN PAGE LEAVES OUT THE NETWORK, TRUST AND UPGRADE COMMANDS. AUDIT 2. usr/man/pkg.man shows install, uninstall, list, info, search and make-disk. Neither it nor packages.man names fetch, repo, trust, upgrade, outdated, enable or disable; MANUAL.md covers most of them and `pkg enable` nowhere. Fix: make pkg.man the full reference and derive the short lists from one table. Also stale: TOS-Extras/build/test\_installer.lua's header says it drives install.lua; it loads tos/shell/pkgpicker.lua. LOW.
+
+### Add-on versioning: decided 2026-09-12, not built
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MINOR.PATCH, an optional two-character stage suffix (-a, -b), release notes per package, no codenames. pkg already accepts and orders suffixes (validVersion, compareVersion). Left: build-disk.lua's SKIP (L528) is still a table of NAMES, empty today, so a new 0.x package ships unless someone lists it -- make it compareVersion(v, "1.0.0") &lt; 0, and decide whether a suffixed pre-1.0 package may ship labelled; the picker fits "v" .. version into 8 columns (pkgpicker.lua:584-588), so v1.10.0-b is cut; a `tos.py check` rule that a version bump carries a notes entry; blockfs.lua still says \_VERSION = "1.2.0" against its manifest's 1.2.1. Full write-up on the audit branch.
 
 ### Slice 3: resolution
 
@@ -308,6 +345,44 @@ Later, and the reason the OPPM work stops here: OPPM proper downloads from GitHu
 Later: teach `pkg install` to refresh the baseline for files it replaces, so an upgrade doesn't leave scan crying drift on every file it legitimately changed. Today that needs a manual `srm baseline` after upgrading (scan says so).
 
 ## Networking
+
+### Remote exec can still reach string.dump — operator decision
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+REMOTE EXEC CAN STILL REACH string.dump -- OPERATOR DECISION. AUDIT 1, same source. net/remote.lua:356 copies `string` without dump, but ("").dump reaches the real one through the string metatable, which remote.lua does not touch. Harmless while TOS is open source and `load` is not exposed there; both premises can change. Decide: shadow the metatable's \_\_index in the remote environment, or record that the two premises are load-bearing.
+
+### Every mesh tenant needs one test across the real transport
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+EVERY MESH TENANT NEEDS ONE TEST ACROSS THE REAL TRANSPORT. AUDIT 3. Mail, intercom and chat each register a handler with meshctl. Only test\_mail.lua drives a real meshctl; intercom's receive handler refused every announcement until 2026-10-10 for want of exactly this test. One contract test per tenant: its real handler on a real meshctl node, a real message from a second node, accepted and stored. About 60 lines each; test\_intercom\_mesh.lua on the audit branch is the template.
+
+### The browser's later steps wait on five operator decisions
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
+
+### A peer that re-keys never gets a new DH secret
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+A PEER THAT RE-KEYS NEVER GETS A NEW DH SECRET. PREDICTED FROM THE CODE, NOT SEEN -- CHECK FIRST. In kernel/net/trust.lua, tryAutoSecret returns as soon as peer.sharedSecret exists, and noteDhPublicKey overwrites peer.dhPub from every HELLO without recording which key a secret came from. So a machine that is reinstalled (same network card, so the same address; a new X25519 identity) derives a fresh secret with each peer that trusts it again, while those peers keep the old one. Every sealed packet between them should then fail until an operator runs `net trust gen` or re-pairs on both sides, and nothing says why. Check on the runner first: --machines 2, trust both ways, delete one side's /etc/trust.dat, re-trust. If it reproduces, the fix touches the trust model, so it is the operator's: keep that a secret was DH-derived and from which key, and on a changed key from a TRUSTED peer either re-derive or refuse loudly.
+
+### See the 2026-10-17..24 work run
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be checked on the headless runner:
+
+- Diffie-Hellman (e2f2445): two machines that trust each other pass a sealed message with no `net trust gen`. Time one X25519 on the T2 APU; the commit's guess is "seconds".
+- the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes, and the runner does two. Grow it to three, or accept test\_meshctl's three-node simulation.
+- cluster-storage (d6963fb): a Master and a Storage Node on two machines exchanging STORE\_PUT and PUB frames -- that commit's own "not verified". The node needs a wired or Tier-2 modem.
+- chat's wrapped lines and mail's Sent: line (49dec7a).
+- the browser (web 1.0.0) against a local http server.
+- PaneUI (c8a76b9) on OpenOS 1.8.9; the runner booted OpenOS for e33d25c. PaneUI's tests check source grammar only, so its event loop and the new wrapText have never run.
+- bootstrap.lua end to end ("nothing ran bootstrap.lua end to end", e33d25c) from a local http server serving a TOS-Release tree.
 
 ### SSH and share have never worked
 
@@ -502,6 +577,18 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 - BOOT PROFILES AND STRIPPING ARE DIFFERENT LAYERS and now interact: a profile gates what LOADS, stripping removes what EXISTS. A profile that would load a stripped feature must degrade with a clear line in the boot log, never panic. Today the load paths pcall-and-warn, which is most of the way there — but it has never been tested against a file that is genuinely absent rather than merely skipped.
 - NOT a package. `pkg uninstall` already covers add-ons; this is about the BASE IMAGE, which pkg does not own.
 
+### A headless machine keeps its boot session — operator decision
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+A HEADLESS MACHINE KEEPS ITS BOOT SESSION -- OPERATOR DECISION. AUDIT 1, from the pentest's "Still recorded, not changed". kernel.headlessMain (kernel/init.lua \~L3487) sets bootSession to the kernel session and never sets bootCompleted (only the screen path does, \~L1690). So on a machine with no screen, securefs.sessionOf() and users.currentSession() answer "kernel" to a caller with no process principal for the whole uptime. Nothing found runs user code there: a missing line of defence, not a hole. Decide: set bootCompleted in headlessMain and make the two agree, or record why not.
+
+### The installer's configure-only mode still means the boot drive
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE INSTALLER'S CONFIGURE-ONLY MODE STILL MEANS THE BOOT DRIVE. e33d25c made the installer ask which drive to install onto, and named this as not covered: with no install disk, install.lua (\~L1145) says "TOS system files must already be present on the boot drive", and TARGET stays "" (L1061), so a TOS installed to a second drive cannot be reconfigured from OpenOS.
+
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
@@ -618,6 +705,12 @@ NOT a gap, recorded so it isn't re-investigated: their "fastest VT100 in OC" is 
 
 ## Files and storage
 
+### Deploy still offers a floppy
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+DEPLOY STILL OFFERS A FLOPPY. AUDIT 1. `deploy <mount>`'s usage says "e.g. deploy /mnt/floppy" and its refusal "Deploy only to an external mount such as /mnt/floppy" (panels/commands/ extras.lua, \~L1523 and L1541). A floppy is 512 KB and a release is 1,354 KB on a managed disk. The free-space line is "best-effort" and the copy goes ahead regardless. `deploy drive` (TBFS) already has a real fit check to reuse. Severity LOW: the victim is a scratch disk.
+
 ### If we build the archive mount, use mtar — do not invent a format
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
@@ -655,6 +748,12 @@ STILL \~8 SECTOR WRITES PER TINY FILE (inode alloc, directory append + its inode
 A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME another OS's disk, the next step would be listing and copying files off it (OSDI/MTPT partitions, SimpleFS), which is a real base-admin task. A line, not a round.
 
 ## Shell and interface
+
+### Six surfaces still ignore the key table
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+SIX SURFACES STILL IGNORE THE KEY TABLE. AUDIT 2. shell.keys is read by the panels core, calc, write, warhead, web, stock, rc-pilot and the games. It is not read by the package picker (its legend says "Q Quit", pkgpicker.lua:743; it takes a typed "q", :1024), panels/dialogs.lua, either mail UI (mailapp.lua tests for 17, ^Q), intercomapp.lua or the rbmk SKALA panel. After `keys set quit F4` those six still answer ^Q, which is what the REAL MINECRAFT round's F4 check exists to catch. Severity LOW-MEDIUM. Pin: usr/lib/tests/test\_keys\_readers.lua (audit branch).
 
 ### Localise the installer, not just the OS
 
@@ -746,6 +845,60 @@ Translate TOS to other languages by the following priority table:
 |   10 | 🇺🇦 Ukrainian            | **Lower, but worthwhile if community interest appears** |
 
 ## The project
+
+### The release has shipped without its `--!` comments since 2026-10-17, the MIT credit…
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS SINCE 2026-10-17, THE MIT CREDIT INCLUDED. Found by this sweep. build/strip.lua's contract is "--! Preserve this comment in dist", for #SEC notes, cross-file invariants and licence / attribution headers. --minify-vars (bb6b2e4, the release default) re-emits each file through LuaMinify's formatter, which writes no comments at all, and that commit does not mention it. The shipped sources hold 3,560 `--!` lines (\~217 KB); today's TOS-Release holds 7, all in the rc.d scripts that get the whitespace pass only. So tos/compat/internet.lua's PROVENANCE note -- parts follow OpenOS's lib/internet.lua (MIT licence) line for line, credited for that reason -- is gone from the release and from the published main. test\_provenance.py cannot see it: it checks that the SOURCE carries a `--!` credit, which was enough while `--!` survived. The add-on pack (092df1e) goes through the same pass. This also settles, silently, the operator decision the RAM and storage entries below still list as open ("dropping the --! comments from the release (219 KB)"). OPERATOR DECISION, in effect made by accident: either keep `--!` through the renamer (the release is 1,292 KB raw, so \~217 KB more still fits the 1,920 KB budget), or accept that the release carries no comments, and then move the MIT credit somewhere that ships (a NOTICE file beside LICENSE.txt, or a string) and say so in strip.lua. Either way, a test on the BUILT tree that the credit is there.
+
+THE CREDIT IS FIXED, 2026-10-26; the rest is still the decision. minify\_vars.noticesOf puts back, at the top of the file, every `--!` paragraph whose first word is PROVENANCE., Copyright or SPDX-License-Identifier: (read from the unstripped file -- from the stripped one the credit ran on into the #SEC note after it). strip.lua's marker convention says so. internet.lua's 425 bytes are the only notice shipped today. test\_release\_credits.lua (14) checks the built TOS-Release; its built-tree checks fail on the old build. So the decision left is only whether #SEC notes and invariants ship (\~217 KB), no longer a licence question. Marked \[ \], not \[!\]: nothing is broken while it waits.
+
+### Selftest 95 still skips the editor column check as unfixed
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+SELFTEST 95 STILL SKIPS THE EDITOR COLUMN CHECK AS UNFIXED. TOS-Extras/modules/selftest/usr/lib/selftest/95-utf8-tokens.lua ends in an unconditional t.skip("editor column model", "draw.lua still advances by bytes (TODO: THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS)"). That entry is \[x\]: draw.lua has measured in cells since 2026-10-01 (textcol.lua). So the hardware battery has never checked the column model on real OC; test\_editor\_utf8\_columns.lua does it off-box only. Replace the skip with a check that drives draw.lua on the real screen.
+
+### The tier 1 gap, re-measured
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE TIER 1 GAP, RE-MEASURED. AUDIT 2 put a full install 773 KB over a 1,024 KB drive (1,797 KB on a managed disk). Dedenting and renaming have since happened: today it is 1,354 KB (1,292 KB of files plus 512 B of fileCost for each of 170 files and 15 dirs), so 330 KB over. What is left is profiles (Install profiles, below) and fileCost (the 21 man pages are 49 KB plus 10.5 KB of fileCost). The `--!` lever is spent, see above.
+
+### A test that skips its whole body still counts as a pass
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+A TEST THAT SKIPS ITS WHOLE BODY STILL COUNTS AS A PASS. AUDIT 1. With no TOS-Release beside it, test\_manifest\_digests.lua prints "SKIP: no built TOS-Release", then "Results: 0 passed, 0 failed" and "All tests passed." (L40-44). run\_tests.py's SKIP\_PATTERN (L77) only knows "run inside TOS", so that is a PASS. Here `tos.py test` builds first and it never bites; but the dev branch carries no TOS-Release, so GitHub CI's green run includes a release-digest check that compared nothing. Fix: count a zero-assertion SKIP as a skip. Severity MEDIUM. Pin: build/test\_run\_tests\_skip.py (audit branch).
+
+### The fast inventory path numbers every slot one too high
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE FAST INVENTORY PATH NUMBERS EVERY SLOT ONE TOO HIGH. AUDIT 3, still true. tos/peripheral/inventory.lua:214 says "getAll() is 0-based" and loops 0..#all labelling each stack i + 1, but OpenComputers 1.8.10 keys getAll() from 1 (ItemStackArrayValue, read from the modpack's jar). Totals are right; every .slot is one high and the last names a slot that does not exist. The per-slot fallback is right, so the two paths disagree. Latent: stock aggregates and never reads .slot. Severity LOW until something moves an item by slot. Pin: usr/lib/tests/test\_inventory\_getall.lua (audit branch).
+
+### The installer's copyFileChunked still ignores what write() answers
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE INSTALLER'S copyFileChunked STILL IGNORES WHAT write() ANSWERS. AUDIT 1. install.lua:375 is `pcall(function() oh:write(chunk) end)`; OpenOS answers a full disk with nil, "not enough space", and the loop writes on until the post-copy size check notices. AUDIT 5's fs.writeAll fix (below) names this as its twin, and this is the only place it was ever written down on master. spaceNeeded() refusing up front makes it rarer, not impossible (another writer, a fileCost guess that is off). Fix: test both shapes, as writeAll does. Severity LOW.
+
+### The loot disk is whatever TOS-Release was when the mod last built
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+THE LOOT DISK IS WHATEVER TOS-Release WAS WHEN THE MOD LAST BUILT. AUDIT 1 found Irradiated Circuits (radbridge 0.4.0) bundling TOS 1.4.0. Its newest jar, radbridge-0.5.0 (built 2026-10-09, unreleased), carries that day's release: its kernel/init.lua differs from today's, and kernel/x25519.lua and curve25519field.lua are absent. The fix is in the mod's repo: rebuild, and bump the mod version, because LootDiskInstaller stamps the extracted disk with it and an unchanged version never reaches an existing world. Nothing on this side notices the drift. Wanted: a `tos.py check` step that, when it can find a radbridge jar, compares its bundled system\_manifest.lua with TOS-Release's.
+
+### GitHub, now that CI has run
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green on dev (Actions API, 2026-10-26).
+
+- OPERATOR DECISION: no branch is protected (dev, main, master, optional-utilities all "protected": false, 2026-10-26). The triage round left that for after CI had proved green on GitHub, and it has.
+- triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
+- Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
 
 ### Licence headers — operator decision
 
