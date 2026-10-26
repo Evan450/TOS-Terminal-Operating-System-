@@ -25,7 +25,7 @@
 -- `fs.write` at all -- there is no cache in this package to write to.
 return {
   name        = "web",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "network",
   description = "Text-mode browser: headings, paragraphs, lists, links and <pre>, read with this machine's own internet card.",

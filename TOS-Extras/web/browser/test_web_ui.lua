@@ -96,9 +96,13 @@ local function run(opts)
   local function req(name)
     if name == "component" then return component end
     if name == "computer" then return computer end
+    -- The real sandbox's shape (tos/kernel/sandbox.lua): the kernel wrapper
+    -- with get() is the `internet` GLOBAL; require("internet") is OpenOS's
+    -- library, request/socket/open and no get. This used to hand back the
+    -- wrapper here, which is how 1.0.0 shipped calling a nil get.
     if name == "internet" then
-      if not internet then error("sandbox: 'internet' capability not granted", 2) end
-      return internet
+      if not internet then error("sandbox: 'compat.internet' needs the internet capability", 2) end
+      return { request = function() error("not used") end, socket = function() end, open = function() end }
     end
     if name == "shell.keys" then error("sandbox: module 'shell.keys' is not on the allowed list", 2) end
     if name == "web.render" then
@@ -107,7 +111,7 @@ local function run(opts)
     end
     error("sandbox: module '" .. name .. "' is not on the allowed list", 2)
   end
-  env = setmetatable({ require = req }, { __index = _G })
+  env = setmetatable({ require = req, internet = internet }, { __index = _G })
   local main = assert(loadfile(ROOT .. "init.lua", "t", env))()
   fx.ok, fx.err = pcall(main.commands.web, opts.args or {}, function(t) fx.said = (fx.said or "") .. t .. "\n" end)
   function fx.any(pat)

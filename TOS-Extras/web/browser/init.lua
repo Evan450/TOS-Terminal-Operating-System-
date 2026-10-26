@@ -24,13 +24,19 @@ local component = require("component")
 local computer  = require("computer")
 local render    = require("web.render")
 
--- `internet` is only present in require()'s table when the package
--- manifest declared the capability and the operator accepted it at
--- install time (tos/kernel/sandbox.lua) -- absent, not an error, so a
--- missing grant reads as "no internet" rather than crashing the program
--- before it can say so.
-local okI, internet = pcall(require, "internet")
-if not okI then internet = nil end
+-- The kernel's bounded HTTP wrapper (get, download; http/https only) is
+-- the `internet` GLOBAL the sandbox gives a package holding the internet
+-- capability (tos/kernel/sandbox.lua). require("internet") is a different
+-- thing: OpenOS's library (request/socket/open), which has no get. This
+-- took the require, so 1.0.0's first fetch died with "attempt to call a
+-- nil value (field 'get')" -- seen on the headless runner 2026-10-26;
+-- the tests stubbed require("internet") with a get and could not see it.
+-- Absent stays not-an-error: no grant reads as "no internet".
+local internet = internet
+if type(internet) ~= "table" or type(internet.get) ~= "function" then
+  local okI, mod = pcall(require, "internet")
+  internet = (okI and type(mod) == "table" and type(mod.get) == "function") and mod or nil
+end
 
 -- Per-call cap (never global -- kernel.internet's own convention, and
 -- settled rather than re-argued per the spec's "Starting point" note):
