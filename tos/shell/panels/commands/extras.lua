@@ -1520,8 +1520,8 @@ return function(C, S, deps)
     local target = args[1]
     if not target then
       o("Usage: deploy <mount-point>   |   deploy drive <addr>  (raw disk, needs blockfs)", T.dim)
-      o("  Creates a TOS install disk on a floppy or drive.", T.dim)
-      o("  e.g. deploy /mnt/floppy", T.dim)
+      o("  Creates a TOS install disk on a mounted drive (Tier 2, 2 MB, or larger).", T.dim)
+      o("  e.g. deploy /mnt/disk_ab12", T.dim)
       o("  Insert the disk on another OpenOS computer and run:", T.dim)
       o("    # /mnt/<disk>/install.lua", T.dim)
       return
@@ -1533,12 +1533,12 @@ return function(C, S, deps)
 
     -- Refuse to deploy onto the running system. `/`, `/tos`, `/etc`,
     -- etc. would overwrite live files and most likely brick the host.
-    -- Require an external mount like /mnt/floppy instead.
+    -- Require an external mount (a second drive under /mnt) instead.
     local FORBIDDEN = { "/", "/tos", "/etc", "/var", "/usr", "/home", "/root", "/public" }
     for _, p in ipairs(FORBIDDEN) do
       if target == p or target:sub(1, #p + 1) == p .. "/" then
         o("Refusing to deploy onto '" .. target .. "' (would overwrite system).", T.error)
-        o("Deploy only to an external mount such as /mnt/floppy.", T.dim)
+        o("Deploy only to an external mount, such as a second drive under /mnt.", T.dim)
         return
       end
     end
@@ -1549,23 +1549,6 @@ return function(C, S, deps)
     end
 
     o("Creating TOS install disk on " .. target .. " ...", T.title)
-
-    -- Check available space (best-effort)
-    local total = F.spaceTotal(target)
-    local free  = F.spaceFree(target)
-    if total and total > 0 then
-      o(string.format(" Target disk: %dK total, %dK free",
-        math.floor(total / 1024), math.floor(free / 1024)), T.dim)
-    end
-
-    -- Directories to create on install media
-    local dirs = {
-      "/tos/", "/tos/kernel/", "/tos/kernel/net/", "/tos/shell/",
-      "/tos/compat/", "/tos/peripheral/",
-    }
-    for _, d in ipairs(dirs) do
-      F.makeDirectory(target .. d)
-    end
 
     -- System files to include on the install disk (#119/#156 —
     -- sourced from /tos/system_manifest.lua so deploy, verify, and
@@ -1594,6 +1577,62 @@ return function(C, S, deps)
           "/tos/shell/init.lua",
         }
       end
+    end
+
+    --! FIT CHECK, BEFORE ANYTHING IS WRITTEN. The free space used to be
+    --! printed "best-effort" and never compared, while the usage offered
+    --! /mnt/floppy: a floppy is 512 KB and the release is ~1.35 MB on a
+    --! managed disk, so the copy ran until the disk filled and printed a
+    --! FAIL per file that did not make it. Priced the way install.lua's
+    --! spaceNeeded does: each file's bytes, less what a file already at
+    --! that path takes (a re-deploy overwrites it), plus OpenComputers'
+    --! 512 B fileCost for each new file and directory. `deploy drive`
+    --! has its own TBFS pre-flight. (test_deploy_mount_fits.lua)
+    local FILE_COST = 512
+    local need, seenDir = 0, {}
+    local writes = {}
+    for _, path in ipairs(files) do writes[#writes + 1] = path end
+    writes[#writes + 1] = "/bios.lua"
+    writes[#writes + 1] = "/install.lua"
+    for _, path in ipairs(writes) do
+      if F.exists(path) then
+        local okS, sz = pcall(F.size, path)
+        need = need + ((okS and tonumber(sz)) or 0)
+        local dst = target .. path
+        if F.exists(dst) then
+          local okD, dsz = pcall(F.size, dst)
+          need = need - ((okD and tonumber(dsz)) or 0)
+        else
+          need = need + FILE_COST
+        end
+        local d = path:match("^(.*)/[^/]+$")
+        while d and d ~= "" and not seenDir[d] do
+          seenDir[d] = true
+          if not F.exists(target .. d) then need = need + FILE_COST end
+          d = d:match("^(.*)/[^/]+$")
+        end
+      end
+    end
+    local free = F.spaceFree and F.spaceFree(target)
+    if free then
+      if need > free then
+        o(string.format("TOS will not fit on %s: it needs %s, and %s is free.  "
+          .. "[E-306 ERR_DRIVE_TOO_SMALL]", target, fmtSz(need), fmtSz(free)), T.error)
+        o("Nothing was copied. A Tier 2 drive (2 MB) holds an install disk; a floppy "
+          .. "(512 KB) does not.", T.dim)
+        return
+      end
+      o(string.format(" Needs %s; %s free on the target", fmtSz(math.max(0, need)), fmtSz(free)),
+        T.dim)
+    end
+
+    -- Directories to create on install media
+    local dirs = {
+      "/tos/", "/tos/kernel/", "/tos/kernel/net/", "/tos/shell/",
+      "/tos/compat/", "/tos/peripheral/",
+    }
+    for _, d in ipairs(dirs) do
+      F.makeDirectory(target .. d)
     end
 
     --! #MEM (pentest, Sep 2026) — copied, not read whole and written back:

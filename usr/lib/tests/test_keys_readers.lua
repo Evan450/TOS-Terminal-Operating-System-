@@ -196,6 +196,27 @@ for rel, n in pairs(seen) do
     ALLOWED[rel] ~= nil and n <= ALLOWED[rel])
 end
 
+-- The hints say the key too: a footer that still read "[^Q]Close" after
+-- `keys set quit F4` was on the output viewer when the runner looked.
+do
+  local HINT_FILES = {
+    "tos/shell/panels/draw.lua", "tos/shell/panels/chatapp.lua",
+    "tos/shell/panels/monitorapp.lua", "tos/shell/panels/settingsapp.lua",
+    "tos/shell/panels/commands/core.lua", "tos/shell/panels/events.lua",
+    "tos/shell/panels/menus.lua",
+  }
+  for _, rel in ipairs(HINT_FILES) do
+    local h = io.open(rel, "rb")
+    local text = h and h:read("a") or ""; if h then h:close() end
+    local bad
+    for line in text:gmatch("[^\n]+") do
+      local code = line:gsub("%-%-.*$", "")      -- comments may say ^Q
+      if code:find('"[^"]*%^Q[%] ]+[CcSs]') or code:find('%[%^Q%]') then bad = line; break end
+    end
+    test(rel .. ": no on-screen hint hard-codes ^Q", bad == nil, bad)
+  end
+end
+
 print()
 print("=== The add-on surfaces follow it too ===")
 print()

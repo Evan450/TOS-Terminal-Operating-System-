@@ -107,7 +107,7 @@ function M.open(S)
   M.addMessage(tab, "Chat started. Send messages to TRUSTED peers.", T.title)
   M.addMessage(tab, "  peer:message   to one peer (addr prefix or hostname)", T.dim)
   M.addMessage(tab, "  message        broadcast to all trusted peers", T.dim)
-  M.addMessage(tab, "  /who  /mail peer text  /clear  /help   ^Q closes the tab", T.dim)
+  M.addMessage(tab, "  /who  /mail peer text  /clear  /help   " .. require("shell.keys").quitHint(S.who) .. " closes the tab", T.dim)
   M.addMessage(tab, "", T.dim)
   local peers = trustedPeers(NM.getTrust and NM.getTrust())
   for _, p in ipairs(peers) do
@@ -219,7 +219,7 @@ function M.draw(S, tab)
   D.set(3, H - 1, shown .. "_", T.fg, T.bg)
 
   ui.drawRampBar(D, T, H, W,
-    "Enter Send · peer:msg Direct · /help · PgUp/Dn Scroll · ^Q Close",
+    "Enter Send · peer:msg Direct · /help · PgUp/Dn Scroll · " .. require("shell.keys").quitHint(S.who) .. " Close",
     nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
 
   -- Seen: clear the badge + dirty flag.
@@ -254,7 +254,7 @@ local function doSend(S, tab)
       M.addMessage(tab, "  /who              list trusted peers", T.dim)
       M.addMessage(tab, "  /group            list groups (new/add/rm/del to edit)", T.dim)
       M.addMessage(tab, "  /mail peer text   send a store-and-forward mesh mail", T.dim)
-      M.addMessage(tab, "  /clear  /help  ^Q closes the tab", T.dim)
+      M.addMessage(tab, "  /clear  /help  " .. require("shell.keys").quitHint(S.who) .. " closes the tab", T.dim)
 
     elseif name == "group" then
       -- /group                        list every group and its members

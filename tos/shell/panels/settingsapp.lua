@@ -408,7 +408,7 @@ function M.draw(S, tab)
     D.set(2, H - 1, tostring(tab.msg[1]):sub(1, W - 2), tab.msg[2] or T.dim, T.bg)
   end
   ui.drawRampBar(D, T, H, W,
-    "Arrows Move · Left/Right Change · Enter Apply · Tab Page · ^Q Close",
+    "Arrows Move · Left/Right Change · Enter Apply · Tab Page · " .. require("shell.keys").quitHint(S.who) .. " Close",
     nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
 end
 

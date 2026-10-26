@@ -56,6 +56,12 @@ local function clipHelpLine(S)
     .. "  Paste " .. keys.label("paste", who)
 end
 
+--- The quit key's name for help text: "^Q", or what `keys set quit` made it.
+local function quitKey(S)
+  local okK, keys = pcall(require, "shell.keys")
+  return (okK and keys and keys.quitHint) and keys.quitHint(S and S.who or nil) or "^Q"
+end
+
 local function cycleKeyHelp(S)
   local k = cycleKeyLabel(S)
   return k .. string.rep(" ", math.max(1, 12 - #k)) .. "Next tab   "
@@ -194,7 +200,7 @@ return function(C, S, deps)
       o("", T.fg)
       o("  Keys:", T.dim)
       o("    up/down move   Enter switch-to   K kill   T suspend/resume (TSR)", T.dim)
-      o("    Enter start-stop a service (admin)   R refresh   ^Q close", T.dim)
+      o("    Enter start-stop a service (admin)   R refresh   " .. quitKey(S) .. " close", T.dim)
     elseif topic == "cron" then
       o("cron [subcommand]", T.title)
       o("  Manage scheduled tasks.  (admin+)", T.fg)
@@ -329,7 +335,7 @@ return function(C, S, deps)
       o("  " .. cycleKeyHelp(S) .. " F9  Menu bar", T.fg)
       o("  F7  Mkdir     F8  Delete", T.fg)
       o("  Text: Shift+arrows select.  " .. clipHelpLine(S), T.fg)
-      o("  F10 Quit      ^Q  Cancel/Close   ^F  Find", T.fg)
+      o("  F10 Quit      " .. quitKey(S) .. "  Cancel/Close   ^F  Find", T.fg)
       o("  Enter on file = context menu  |  ^T  System Monitor", T.dim)
       if S.userTier >= 1 then -- USER+ can mount
       o("", T.fg)
@@ -364,7 +370,7 @@ return function(C, S, deps)
       if S.userTier >= 1 then -- USER+
       o("  run <file>    Execute a Lua file", T.fg)
       o("  bg <file>     Run a Lua file in a background tab", T.fg)
-      o("  edit <file>   Open in editor tab  (^S save, ^Q close)", T.fg)
+      o("  edit <file>   Open in editor tab  (^S save, " .. quitKey(S) .. " close)", T.fg)
       end
       if S.userTier >= 3 then -- ROOT
       o("  lua           Interactive Lua REPL  (exit to quit)", T.fg)

@@ -185,9 +185,9 @@ function M.draw(S, tab)
   local r = tab.rows[tab.sel]
   local hints
   if r and r.kind == "svc" then
-    hints = "Enter Start/Stop · Arrows Move · R Refresh · ^Q Close"
+    hints = "Enter Start/Stop · Arrows Move · R Refresh · " .. require("shell.keys").quitHint(S.who) .. " Close"
   else
-    hints = "Enter Switch · K Kill · T TSR · Arrows Move · R Refresh · ^Q Close"
+    hints = "Enter Switch · K Kill · T TSR · Arrows Move · R Refresh · " .. require("shell.keys").quitHint(S.who) .. " Close"
   end
   ui.drawRampBar(D, T, H, W, hints,
     nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)

@@ -740,7 +740,7 @@ function M.viewTab(S, tab)
   local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
   local home = getHome()
   local cyc = home and home.cycleKeyLabel(S) or "F2"
-  local info = string.format("%d-%d / %d%s  [^Q]Close [^F]Find [%s]Tab",
+  local info = string.format("%d-%d / %d%s  [" .. require("shell.keys").quitHint(S.who) .. "]Close [^F]Find [%s]Tab",
     tab.offset + 1, tab.offset + shown, #content, searchInfo, cyc)
   ui.drawRampBar(D, T, H, W, info, nil, T.bar_fg, T.bar_bg)
 end
@@ -892,7 +892,8 @@ function M.editTab(S, tab)
   -- Status bar. Col is the column the operator SEES (cells), not bytes.
   local mod = tab.modified and " [+]" or ""
   local searchInfo = tab.searchTerm and (" [/" .. tab.searchTerm .. "]") or ""
-  local stat = string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find%s [^Q]Close",
+  local stat = string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find%s ["
+    .. require("shell.keys").quitHint(S.who) .. "]Close",
     tab.label, mod, tab.curRow, curCell, searchInfo,
     tab.suggest and (" [^O]" .. tab.suggest.cmd) or "")
   -- A better-suited program is announced in full until the first key
