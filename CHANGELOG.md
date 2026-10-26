@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 55 rounds of work:
+Everything since v1.5.0, in 56 rounds of work:
 
+- [The installer can reconfigure a TOS on any drive](#the-installer-can-reconfigure-a-tos-on-any-drive)
 - [`tos.py check` says when the loot disk is stale](#tospy-check-says-when-the-loot-disk-is-stale)
 - [Add-on versions follow the rule they were given](#add-on-versions-follow-the-rule-they-were-given)
 - [`man pkg` covers all of pkg](#man-pkg-covers-all-of-pkg)
@@ -66,6 +67,10 @@ Everything since v1.5.0, in 55 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The installer can reconfigure a TOS on any drive
+
+Without an install disk, `install.lua` only changes the settings of a TOS that is already installed, and it assumed that TOS was on the boot drive. Since the installer learned to put TOS on another drive, that assumption could leave the operator unable to reconfigure, and the actual situation was worse than the TODO entry said. An installed TOS carries both `/tos/kernel/init.lua` and `/install.lua`, which is exactly what the installer's search for an install disk looks for. So a second drive holding TOS was taken for an install disk, and the installer offered to install from it rather than configure it. Configuration mode now offers only the drives that already hold TOS: none, and it says so; one, and it uses that drive; several, and it asks. A new `install.lua --configure` skips the install-disk search entirely. On the headless runner over OpenOS 1.8.9, with TOS on `/mnt/d15`, `install.lua --configure` reports "Configuring the TOS on the drive at /mnt/d15" and, after the questions, "Configuration saved to /mnt/d15/etc/tos.cfg". `test_install_target.lua` goes from 48 checks to 56.
 
 ### `tos.py check` says when the loot disk is stale
 
