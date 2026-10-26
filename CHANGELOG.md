@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 57 rounds of work:
+Everything since v1.5.0, in 58 rounds of work:
 
+- [The browser fetches a page](#the-browser-fetches-a-page)
 - [The hardware battery checks the editor's columns](#the-hardware-battery-checks-the-editors-columns)
 - [The installer can reconfigure a TOS on any drive](#the-installer-can-reconfigure-a-tos-on-any-drive)
 - [`tos.py check` says when the loot disk is stale](#tospy-check-says-when-the-loot-disk-is-stale)
@@ -68,6 +69,10 @@ Everything since v1.5.0, in 57 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The browser fetches a page
+
+`web` 1.0.0 had never fetched anything. The first `web <url>` on a real machine stopped with "attempt to call a nil value (field 'get')". The sandbox gives a package holding the internet capability two different things under similar names: the kernel's bounded HTTP wrapper (`get`, `download`) as the global `internet`, and, for ported OpenOS programs, OpenOS's own library (`request`, `socket`, `open`) as `require("internet")`. `web` asked for the second and called a function that only the first has. Its tests stubbed `require("internet")` with a `get`, so they modelled a sandbox that does not exist. `web` 1.0.1 uses the global, and the UI test's fake sandbox now has the real shape; with that fake, 10 of its 14 checks fail on 1.0.0. On the headless runner with an internet card, `web http://info.cern.ch/` shows the page's heading, its four numbered links and the reference list; `1` and Enter opens the first link, `b` comes back, and ^Q leaves. The fix waits for the re-sign.
 
 ### The hardware battery checks the editor's columns
 
