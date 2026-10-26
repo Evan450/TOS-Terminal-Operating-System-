@@ -9,8 +9,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 47 rounds of work:
+Everything since v1.5.0, in 49 rounds of work:
 
+- [Mail, Intercom and the RBMK panel follow `keys set quit`](#mail-intercom-and-the-rbmk-panel-follow-keys-set-quit)
+- [The panels follow `keys set quit` as well](#the-panels-follow-keys-set-quit-as-well)
 - [The picker and the shell's dialogs follow `keys set quit`](#the-picker-and-the-shells-dialogs-follow-keys-set-quit)
 - [Two machines that trust each other really do agree a secret now](#two-machines-that-trust-each-other-really-do-agree-a-secret-now)
 - [A test that checked nothing is a skip](#a-test-that-checked-nothing-is-a-skip)
@@ -58,6 +60,20 @@ Everything since v1.5.0, in 47 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Mail, Intercom and the RBMK panel follow `keys set quit`
+
+Four add-on surfaces still closed on ^Q whatever the key table said: the mail inbox tab, mail's CLI interface, the Intercom tab, and the RBMK SKALA panel. Each now asks the table through a small helper of its own built on `keys.is`, so the packages still work on a base without today's `keys.isQuit`, and their hints name the real key. SKALA was in a worse state than the others. It quit only on a bare Q or Esc: ^Q is character 17, not "Q", and F10 was never read, so in real Minecraft, where Esc never arrives, the letter was its only way out.
+
+Mail 1.0.1, Intercom 1.0.2 and rbmk-control 1.0.1 wait in the re-sign list. `test_keys_readers.lua` (57 checks) extracts each package's helper and runs it. Seen on the headless runner from an unsigned scratch pack: the mail tab's key bar reads "F4 Close" after `keys set quit F4`, ^Q does nothing, and F4 closes it.
+
+### The panels follow `keys set quit` as well
+
+The picker and the dialogs were not the only places that ignored the key table. 22 hand-written ^Q tests were left in the shell. The menu bar, the F10 power prompt, the command line, the file viewer, the editor, and the chat, monitor, settings and desktop tabs all closed on ^Q whatever `keys set quit` said. They ask `keys.isQuit` now. It is a new function, and like the dialogs it never takes a printable binding as quit where text is being typed. The power prompt's "[^Q]Cancel" now names the real key, through a new `keys.quitHint`.
+
+The headless runner found one more. F4 is the panels' close-tab key, and it was swallowed on the shell tab as well, where there is nothing to close, so the manual's own example, `keys set quit F4`, could never clear the command line. F4 falls through to the line there now. With quit bound to F4 on the runner: ^Q left typed text on the command line and F4 cleared it; the power prompt read "[F4]Cancel", ignored ^Q and closed on F4.
+
+What is left is the CLI path: the CLI's prompt, CLI chat, the login prompts, the tutorial, and the kernel's notice viewer. CLI mode never loads the key table, and loading it there costs memory on the 1 MB floor, so those wait for a floor measurement. `test_keys_readers.lua` (37 checks) lists every ^Q test still in the shell with its reason, so a new one fails.
 
 ### The picker and the shell's dialogs follow `keys set quit`
 

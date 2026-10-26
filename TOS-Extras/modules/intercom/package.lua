@@ -29,7 +29,7 @@
 -- not a clock at 4096 B/s (1.12 plays 6000, and ran ~46% past the end).
 return {
   name        = "intercom",
-  version     = "1.0.1",
+  version     = "1.0.2",
   kind        = "service",
   category    = "network",
   description = "Announcement system: plays cataloged tape messages and broadcasts the same words to the network.",

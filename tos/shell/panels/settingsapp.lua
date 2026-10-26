@@ -431,7 +431,7 @@ function M.handleKey(S, tab, ch, co, deps)
   local rows = tab.pages[tab.page].rows
   local row = rows[tab.sel]
 
-  if ch == 17 then                                    -- Ctrl+Q: close
+  if require("shell.keys").isQuit(ch, co, true, S.who) then  -- the quit key: close
     tabsMod.close(S)
     return 3
   elseif co == 15 or co == 209 then                   -- Tab / PgDn: next page

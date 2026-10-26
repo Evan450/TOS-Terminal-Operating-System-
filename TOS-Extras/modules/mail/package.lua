@@ -20,7 +20,7 @@
 -- install hint when it's absent — exactly how `drive` relates to blockfs.
 return {
   name        = "mail",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "service",
   category    = "network",
   description = "Mesh email: store-and-forward mailbox, end-to-end sealed, with an inbox tab + CLI TUI.",

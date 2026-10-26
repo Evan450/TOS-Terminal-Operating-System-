@@ -9,6 +9,7 @@ local draw = require("shell.panels.draw")
 local widgets = require("shell.panels.widgets")
 local editor = require("shell.panels.editor")
 local helpers = require("shell.panels.helpers")
+local keys = require("shell.keys")   -- the quit key, for the prompts below
 
 local M = {}
 
@@ -66,10 +67,10 @@ function M.execute(S, action, deps)
     D.fill(1, S.OUT_ROW, W, 1, " ", T.fg, T.bg)
     -- Kept identical to the ^Q prompt in events.lua — two spellings of
     -- the same four choices is how an operator learns to distrust both.
-    D.set(1, S.OUT_ROW, (" [1]Reboot [2]Shut down [3]Log out [4]CLI Mode [^Q]Cancel"):sub(1, W),
+    D.set(1, S.OUT_ROW, (" [1]Reboot [2]Shut down [3]Log out [4]CLI Mode [" .. keys.quitHint(S.who) .. "]Cancel"):sub(1, W),
           T.title, T.bg)
     while true do
-      local s2, _, c2 = pullSignal()
+      local s2, _, c2, k2 = pullSignal()
       if s2 == "key_down" then
         if c2 == 49 or c2 == 50 then  -- Reboot / Off — power-off gated (#9)
           local ok, reason = helpers.canPowerOff(S)
@@ -80,7 +81,7 @@ function M.execute(S, action, deps)
           else K.shutdown(); return "exit" end
         elseif c2 == 51 then helpers.logout(S); return "exit"
         elseif c2 == 52 then return "cli"
-        elseif c2 == 17 then S.lastOut = nil; return nil end
+        elseif keys.isQuit(c2, k2, true, S.who) then S.lastOut = nil; return nil end
       end
     end
   elseif action == "lua" then exec("lua")
@@ -234,7 +235,7 @@ function M.execute(S, action, deps)
         elseif co2 == 28 then
           local wname = available[wsel]
           enabled[wname] = not enabled[wname]
-        elseif ch2 == 17 then
+        elseif keys.isQuit(ch2, co2, true, S.who) then
           local result = {}
           for _, wname in ipairs(available) do
             if enabled[wname] then result[#result + 1] = wname end

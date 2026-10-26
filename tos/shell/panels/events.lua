@@ -165,6 +165,11 @@ function M.run(S, deps)
   local function isAction(name, ch, co)
     return keysMod.is(name, ch, co, S.who, S.mods)
   end
+  -- The quit key. `typing`: the cmdline and the editor read text, so a
+  -- printable quit binding is a letter there.
+  local function isQuit(ch, co, typing)
+    return keysMod.isQuit(ch, co, typing, S.who, S.mods)
+  end
   local function clipSeat() return S.displayIdx end
 
   --- Say what just went on the clipboard. Copying is silent feedback-free
@@ -431,7 +436,7 @@ function M.run(S, deps)
         elseif co == 28 then
           local item = S.ctxItems[S.ctxSel]
           if item and not item.sep then ctxMod.execute(S, item.action, makeProgramEnv, exec) end
-        elseif ch == 17 then S.ctxOpen = false end
+        elseif isQuit(ch, co, true) then S.ctxOpen = false end
         draw = 3
       elseif S.menuOpen then
         local menuDefs = S.menuDefs or drawMod.menuDefs
@@ -444,7 +449,7 @@ function M.run(S, deps)
               exec = exec, drawAll = drawAll, widgetDefs = widgetDefs })
             if result then return result end
           end
-        elseif ch == 17 then S.menuOpen = nil; S.menuFocused = false
+        elseif isQuit(ch, co, true) then S.menuOpen = nil; S.menuFocused = false
         elseif co == 203 then S.menuOpen = S.menuOpen > 1 and S.menuOpen - 1 or #menuDefs; S.menuSel = 1
         elseif co == 205 then S.menuOpen = S.menuOpen < #menuDefs and S.menuOpen + 1 or 1; S.menuSel = 1
         end
@@ -454,7 +459,7 @@ function M.run(S, deps)
         if co == 203 then S.menuIdx = S.menuIdx > 1 and S.menuIdx - 1 or #menuDefs
         elseif co == 205 then S.menuIdx = S.menuIdx < #menuDefs and S.menuIdx + 1 or 1
         elseif co == 28 then S.menuOpen = S.menuIdx; S.menuSel = 1
-        elseif ch == 17 then S.menuFocused = false end
+        elseif isQuit(ch, co, true) then S.menuFocused = false end
         draw = 3
       else
         local handled = false
@@ -482,7 +487,10 @@ function M.run(S, deps)
             cycleTab(1)   -- split mode: the pre-merge behaviour, intact
           end
           draw = 3; handled = true
-        elseif co == KEYS.tabClose then
+        -- Not on the shell tab, which has nothing to close: there F4 was
+        -- swallowed whole, so the manual's own `keys set quit F4` could
+        -- never clear the command line. It falls through to the line now.
+        elseif co == KEYS.tabClose and not (tab and tab.type == "shell") then
           if tab and tab.type ~= "shell" then
             if tab.type == "edit" and tab.modified then
               D.fill(1, H, W, 1, " ", T.fg, T.bg)
@@ -508,9 +516,9 @@ function M.run(S, deps)
           -- The fourth entry used to be labelled "Shell", which told you
           -- nothing — every one of these four leaves the shell you are
           -- in. It IS the CLI, so it says so now.
-          D.set(1, S.OUT_ROW, (" [1]Reboot [2]Shut down [3]Log out [4]CLI Mode [^Q]Cancel"):sub(1, W), T.title, T.bg)
+          D.set(1, S.OUT_ROW, (" [1]Reboot [2]Shut down [3]Log out [4]CLI Mode [" .. keysMod.quitHint(S.who) .. "]Cancel"):sub(1, W), T.title, T.bg)
           while true do
-            local s2, _, c2 = pullSignal()
+            local s2, _, c2, k2 = pullSignal()
             if s2 == "key_down" then
               if c2 == 49 or c2 == 50 then  -- Reboot / Off — power-off gated (#9)
                 local okPwr, reason = helpers.canPowerOff(S)
@@ -524,7 +532,7 @@ function M.run(S, deps)
                 end
               elseif c2 == 51 then if _G._TOS.audio then _G._TOS.audio.shutdown() end; helpers.logout(S); return "exit"
               elseif c2 == 52 then return "cli"
-              elseif c2 == 17 then S.lastOut = nil; break end
+              elseif isQuit(c2, k2, true) then S.lastOut = nil; break end
             end
           end
           draw = 3; handled = true
@@ -721,7 +729,7 @@ function M.run(S, deps)
                   else openContextMenu() end
                 end
               end; draw = 3
-            elseif ch == 17 then
+            elseif isQuit(ch, co, true) then
               S.cmdline = ""; S.cmdCursor = 1; S.cmdSel = nil
               if S.clipboard then S.clipboard = nil; S.lastOut = { "Copy cancelled", T.dim }; draw = 3
               else S.lastOut = nil; draw = 1 end
@@ -822,7 +830,7 @@ function M.run(S, deps)
               elseif nxt > tab.offset + viewH then tab.offset = nxt - viewH end
             end
 
-            if ch == 17 or ch == 113 then closeTab(); draw = 3
+            if isQuit(ch, co) or ch == 113 then closeTab(); draw = 3
             elseif isAction("copy", ch, co) then
               local block = selMod.lines(content, tab.selAnchor, tab.selCur)
               if not block then
@@ -1014,7 +1022,7 @@ function M.run(S, deps)
             elseif co == 15 then
               local l = lines[tab.curRow]; lines[tab.curRow] = l:sub(1, tab.curCol-1) .. "  " .. l:sub(tab.curCol)
               tab.curCol = tab.curCol + 2; tab.modified = true; draw = 1
-            elseif ch == 17 then
+            elseif isQuit(ch, co, true) then
               if tab.modified then
                 D.fill(1, H, W, 1, " ", T.fg, T.bg); D.set(1, H, " Save? [y]es [n]o [c]ancel", T.warning, T.bg)
                 local s2, _, c2 = pullSignal()

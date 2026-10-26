@@ -360,6 +360,23 @@ function keys.is(action, ch, code, who, mods)
   return false
 end
 
+--- Is this keypress the quit key? `typing` says the caller is reading
+--- text there, so a printable binding (quit bound to "q") is a letter in
+--- that place, not quit.
+--! The one test every surface makes, so a surface cannot get the
+--! printable case wrong on its own. (test_keys_readers.lua)
+function keys.isQuit(ch, code, typing, who, mods)
+  if typing and ch and ch >= 32 and ch < 127 then return false end
+  return keys.is("quit", ch, code, who, mods)
+end
+
+--- The quit key's short name for a one-line hint: "^Q", or "F4" after
+--- `keys set quit F4`. Never empty.
+function keys.quitHint(who)
+  local l = keys.label("quit", who):gsub(" / .*", "")
+  return l ~= "" and l or "^Q"
+end
+
 --- The keys bound to `action`, as the names a person would write:
 --- "^Q / F10". For help text, so a footer can never disagree with what
 --- the program actually listens for.

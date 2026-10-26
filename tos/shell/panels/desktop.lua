@@ -440,7 +440,7 @@ function M.handleKey(S, tab, ch, co, deps)
 
   if co == 28 or ch == 32 then                        -- Enter / Space
     return activate(S, tab, sel, deps)
-  elseif ch == 17 then                                -- Ctrl+Q → Shell tab
+  elseif require("shell.keys").isQuit(ch, co, true, S.who) then  -- quit -> Shell tab
     S.activeTab = shellTabIndex(S)
     return 3
   elseif ch == 114 or ch == 82 then                   -- r / R: rescan apps

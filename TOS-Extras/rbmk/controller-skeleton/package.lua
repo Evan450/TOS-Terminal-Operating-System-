@@ -46,7 +46,7 @@
 -- Survey, configure, then `service start rbmk-controld`.
 return {
   name        = "rbmk-control",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "service",
   category    = "control",
   description = "RBMK reactor supervisor for HBM's rbmk_console: SKALA panel, display wall, safety limits, SCRAM. Survey first.",

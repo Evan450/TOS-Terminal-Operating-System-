@@ -139,6 +139,101 @@ bindQuit(nil)
 test("default: the legend says ^Q / F10", quitLabel() == "^Q / F10", quitLabel())
 
 print()
+print("=== keys.isQuit, and the panels that use it ===")
+print()
+
+bindQuit("F4")
+test("isQuit takes F4", keys.isQuit(0, F4) == true)
+test("isQuit refuses ^Q once rebound", keys.isQuit(17, 16) == false)
+test("quitHint is F4", keys.quitHint() == "F4", keys.quitHint())
+bindQuit("q")
+test("a printable binding is quit outside text", keys.isQuit(113, 16) == true)
+test("...and a letter while typing", keys.isQuit(113, 16, true) == false)
+bindQuit(nil)
+test("default: isQuit takes ^Q", keys.isQuit(17, 16) == true)
+test("default: quitHint is ^Q", keys.quitHint() == "^Q", keys.quitHint())
+
+-- F4 is the panels' close-tab key, and it was taken on the shell tab too,
+-- where there is nothing to close: the manual's own `keys set quit F4`
+-- could never clear the command line (seen on the headless runner).
+do
+  local h = io.open("tos/shell/panels/events.lua", "rb")
+  local ev = h:read("a"); h:close()
+  test("close-tab lets F4 through on the shell tab",
+    ev:find('co == KEYS.tabClose and not (tab and tab.type == "shell")', 1, true) ~= nil)
+end
+
+-- Every hand-written ^Q test left in the shell, and why it stays. A new
+-- one fails here until it either asks keys.isQuit or is listed.
+local ALLOWED = {
+  -- the fallback for when shell.keys cannot be required
+  ["tos/shell/panels/dialogs.lua"] = 1, ["tos/shell/pkgpicker.lua"] = 1,
+  -- the takeover dialogue reads ^C and ^Q as a refusal, deliberately
+  ["tos/shell/panels/takeover.lua"] = 1,
+  -- [known gap] CLI-path surfaces: shell.keys is not loaded in CLI mode,
+  -- and requiring it there costs heap on the 1 MB floor. Not changed
+  -- without a floorcheck run (TODO: SIX SURFACES STILL IGNORE THE KEY TABLE).
+  ["tos/shell/cli.lua"] = 1, ["tos/shell/chat.lua"] = 1,
+  ["tos/shell/login.lua"] = 2, ["tos/shell/tutorial.lua"] = 1,
+}
+local listing = io.popen(package.config:sub(1, 1) == "\\"
+  and 'dir /s /b tos\\shell\\*.lua 2>nul' or "find tos/shell -name '*.lua' 2>/dev/null")
+local seen = {}
+for line in listing:lines() do
+  local rel = line:gsub("\\", "/"):match("(tos/shell/.*)$")
+  if rel then
+    local h = io.open(rel, "rb")
+    local text = h and h:read("a") or ""; if h then h:close() end
+    local n = 0
+    for _ in text:gmatch("[%w_]+ == 17[^%d]") do n = n + 1 end
+    if n > 0 then seen[rel] = n end
+  end
+end
+listing:close()
+test("the scan found the shell (dialogs.lua's fallback is in it)", seen["tos/shell/panels/dialogs.lua"] ~= nil)
+for rel, n in pairs(seen) do
+  test(rel .. ": every hand-written ^Q test is a listed exception (" .. n .. ")",
+    ALLOWED[rel] ~= nil and n <= ALLOWED[rel])
+end
+
+print()
+print("=== The add-on surfaces follow it too ===")
+print()
+
+local EXTRAS
+for _, base in ipairs({ "../TOS-Extras/", "TOS-Extras/" }) do
+  local h = io.open(base .. "build/build-disk.lua", "rb")
+  if h then h:close(); EXTRAS = base; break end
+end
+if not EXTRAS then
+  print("  note: no TOS-Extras tree beside TOS-Dev; add-on surfaces not checked")
+else
+  for _, rel in ipairs({
+    "modules/mail/usr/lib/mailapp.lua", "modules/mail/usr/lib/mailui.lua",
+    "modules/intercom/usr/lib/intercomapp.lua",
+    "rbmk/controller-skeleton/usr/lib/rbmk-skala.lua",
+  }) do
+    local h = io.open(EXTRAS .. rel, "rb")
+    local text = h and h:read("a"):gsub("\r\n", "\n") or ""
+    if h then h:close() end
+    local n = 0
+    for _ in text:gmatch("[%w_]+ == 17[^%d]") do n = n + 1 end
+    test(rel .. ": no ^Q test but the fallback's", n == 1, n)
+    test(rel .. ": no hint still says ^Q", not text:find("%^Q[ =]+[CcEe]"), text:match("[^\n]*%^Q[ =]+[CcEe][^\n]*"))
+    local i = text:find("local function isQuit", 1, true)
+    local j = i and text:find("\nend\n", i, true)
+    local chunk = i and j and load(text:sub(i, j + 4) .. "\nreturn isQuit\n", "=" .. rel)
+    local q = chunk and chunk()
+    bindQuit("F4")
+    test(rel .. ": quits on F4 once rebound", q ~= nil and q(0, F4) == true and q(17, 16) == false)
+    bindQuit("q")
+    test(rel .. ": a printable binding is a letter there", q ~= nil and q(113, 16, true) == false)
+    bindQuit(nil)
+    test(rel .. ": quits on ^Q by default", q ~= nil and q(17, 16) == true)
+  end
+end
+
+print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end
 print("All tests passed.")

@@ -474,7 +474,7 @@ end
 
 --- Keyboard. Returns (drawLevel[, result]).
 function M.handleKey(S, tab, ch, co, deps)
-  if ch == 17 then                                    -- Ctrl+Q: close tab
+  if require("shell.keys").isQuit(ch, co, true, S.who) then  -- the quit key: close
     tabsMod.close(S)
     return 3
   elseif co == 28 then                                -- Enter: send

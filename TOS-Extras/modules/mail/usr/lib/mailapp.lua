@@ -12,6 +12,23 @@
 -- ║  shell.panels.* toolkit requires are fine here.      ║
 -- ╚══════════════════════════════════════════════════════╝
 
+-- The standard quit key (tos/shell/keys.lua), so `keys set quit F4`
+-- closes this as it closes the rest of TOS. `typing`: text is being read
+-- there, so a printable binding is a letter, not quit. Falls back to
+-- ^Q / Esc where the key table is unavailable. (test_keys_readers.lua)
+local function isQuit(ch, code, typing)
+  if typing and ch and ch >= 32 and ch < 127 then return false end
+  local ok, keys = pcall(require, "shell.keys")
+  if ok and keys and keys.is then return keys.is("quit", ch, code) end
+  return ch == 17 or code == 1
+end
+local function quitHint()
+  local ok, keys = pcall(require, "shell.keys")
+  local l = ok and keys and keys.label and keys.label("quit") or ""
+  l = l:gsub(" / .*", "")
+  return l ~= "" and l or "^Q"
+end
+
 local computer = require("computer")
 local ui       = require("shell.panels.ui")
 local tabsMod  = require("shell.panels.tabs")
@@ -130,7 +147,7 @@ local function readField(S, label, initial, maxLen, y)
     local sig, _, c, co = pullSignal()
     if sig == "key_down" then
       if co == 28 then return buf
-      elseif c == 17 then return nil                       -- ^Q cancels
+      elseif isQuit(c, co, true) then return nil           -- quit cancels
       elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
       elseif c and c >= 32 and c < 127 and #buf < (maxLen or 256) then
         buf = buf .. string.char(c)
@@ -144,12 +161,12 @@ end
 local function compose(S, tab, prefillTo, prefillSubject)
   local D, T, W, H, NM = S.D, S.T, S.W, S.H, S.NM
   D.fill(1, 2, W, H - 1, " ", T.fg, T.bg)
-  D.set(1, 2, " Compose mail   (Enter = next field/line, ^Q = cancel)", T.title, T.bg)
+  D.set(1, 2, " Compose mail   (Enter = next field/line, " .. quitHint() .. " = cancel)", T.title, T.bg)
   local to = readField(S, " To (peer / alias / user@peer / * = all): ", prefillTo, 64, 4)
   if not to or to == "" then return end
   local subj = readField(S, " Subject: ", prefillSubject, 100, 6)
   if subj == nil then return end
-  D.set(1, 8, " Body — Enter for a new line, a blank line sends, ^Q cancels:", T.dim, T.bg)
+  D.set(1, 8, " Body — Enter for a new line, a blank line sends, " .. quitHint() .. " cancels:", T.dim, T.bg)
   local lines, y = {}, 10
   while #lines < 64 and y <= H - 1 do
     local ln = readField(S, "  ", "", 200, y)
@@ -204,7 +221,7 @@ function M.draw(S, tab)
       end
     end
     ui.drawRampBar(D, T, H, W,
-      "q Back · Arrows Scroll · R Reply · D Delete · ^Q Close",
+      "q Back · Arrows Scroll · R Reply · D Delete · " .. quitHint() .. " Close",
       nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
   else
     if #list == 0 then
@@ -231,7 +248,7 @@ function M.draw(S, tab)
       end
     end
     ui.drawRampBar(D, T, H, W,
-      "Enter Read · C Compose · R Reply · D Delete · ^Q Close",
+      "Enter Read · C Compose · R Reply · D Delete · " .. quitHint() .. " Close",
       nil, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
   end
   tab.label = M.label(0)     -- looking at it = seen
@@ -252,7 +269,7 @@ function M.handleKey(S, tab, ch, co, deps)
   if not tab._box then M.refresh(S, tab) end
   local listH = listHeight(S.H)
 
-  if ch == 17 then                                    -- Ctrl+Q: close tab
+  if isQuit(ch, co, true) then                        -- the quit key: close tab
     tabsMod.close(S)
     return 3
   end

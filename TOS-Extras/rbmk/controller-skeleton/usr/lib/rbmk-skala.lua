@@ -29,6 +29,17 @@
 -- ║  ask for out loud.                                           ║
 -- ╚══════════════════════════════════════════════════════════════╝
 
+-- The standard quit key (tos/shell/keys.lua), so `keys set quit F4`
+-- closes this as it closes the rest of TOS. `typing`: text is being read
+-- there, so a printable binding is a letter, not quit. Falls back to
+-- ^Q / Esc where the key table is unavailable. (test_keys_readers.lua)
+local function isQuit(ch, code, typing)
+  if typing and ch and ch >= 32 and ch < 127 then return false end
+  local ok, keys = pcall(require, "shell.keys")
+  if ok and keys and keys.is then return keys.is("quit", ch, code) end
+  return ch == 17 or code == 1
+end
+
 local core = require("rbmk.core")
 local skala = require("rbmk.skala")
 local wall = require("rbmk.wall")
@@ -552,7 +563,7 @@ function M.run(opts)
       local ev, _, ch, code = pull(remaining)
       if ev == "key_down" then
         local c = (type(ch) == "number" and ch > 0) and string.char(ch):upper() or ""
-        if c == "Q" or code == KEY.ESC then running = false
+        if c == "Q" or code == KEY.ESC or isQuit(ch, code, true) then running = false
         elseif skala.param(c) then view.param = skala.param(c)
         elseif code == KEY.TAB then
           for i, pg in ipairs(wall.PAGES) do

@@ -9,6 +9,23 @@
 -- ║  returns on ^Q. Ships with the mail package.         ║
 -- ╚══════════════════════════════════════════════════════╝
 
+-- The standard quit key (tos/shell/keys.lua), so `keys set quit F4`
+-- closes this as it closes the rest of TOS. `typing`: text is being read
+-- there, so a printable binding is a letter, not quit. Falls back to
+-- ^Q / Esc where the key table is unavailable. (test_keys_readers.lua)
+local function isQuit(ch, code, typing)
+  if typing and ch and ch >= 32 and ch < 127 then return false end
+  local ok, keys = pcall(require, "shell.keys")
+  if ok and keys and keys.is then return keys.is("quit", ch, code) end
+  return ch == 17 or code == 1
+end
+local function quitHint()
+  local ok, keys = pcall(require, "shell.keys")
+  local l = ok and keys and keys.label and keys.label("quit") or ""
+  l = l:gsub(" / .*", "")
+  return l ~= "" and l or "^Q"
+end
+
 local computer = require("computer")
 local mailLib  = require("mail")
 
@@ -88,7 +105,7 @@ function M.run(opts)
       local sig, _, c, co = pull()
       if sig == "key_down" then
         if co == 28 then return buf
-        elseif c == 17 then return nil                       -- ^Q cancels
+        elseif isQuit(c, co, true) then return nil           -- quit cancels
         elseif co == 14 then if #buf > 0 then buf = buf:sub(1, -2) end
         elseif c and c >= 32 and c < 127 and #buf < (maxLen or 256) then
           buf = buf .. string.char(c)
@@ -102,12 +119,12 @@ function M.run(opts)
   -- ── compose ─────────────────────────────────────────────
   local function compose(prefillTo, prefillSubject)
     D.clear(T.bg)
-    D.set(1, 1, " Compose mail   (Enter = next field/line, ^Q = cancel)", T.title, T.bg)
+    D.set(1, 1, " Compose mail   (Enter = next field/line, " .. quitHint() .. " = cancel)", T.title, T.bg)
     local to = readField(" To (peer / alias / user@peer / * = all): ", prefillTo, 64, 3)
     if not to or to == "" then return end
     local subj = readField(" Subject: ", prefillSubject, 100, 5)
     if subj == nil then return end
-    D.set(1, 7, " Body — Enter for a new line, a blank line sends, ^Q cancels:", T.dim, T.bg)
+    D.set(1, 7, " Body — Enter for a new line, a blank line sends, " .. quitHint() .. " cancels:", T.dim, T.bg)
     local lines, y = {}, 9
     while #lines < 64 and y <= H - 1 do
       local ln = readField("  ", "", 200, y)
@@ -177,7 +194,7 @@ function M.run(opts)
       end
     end
     D.fill(1, HELP_ROW, W, 1, " ", T.dim, T.menubar_bg)
-    D.set(1, HELP_ROW, " [Enter] read  [c] compose  [r] reply  [d] delete  [R] refresh  ^Q exit",
+    D.set(1, HELP_ROW, " [Enter] read  [c] compose  [r] reply  [d] delete  [R] refresh  " .. quitHint() .. " exit",
       T.dim, T.menubar_bg)
   end
 
@@ -225,7 +242,7 @@ function M.run(opts)
         (type(e) == "table" and e[2]) or T.fg, T.bg) end
     end
     D.fill(1, HELP_ROW, W, 1, " ", T.dim, T.menubar_bg)
-    D.set(1, HELP_ROW, " [q/Esc] back  [r] reply  [d] delete  up/down scroll  ^Q exit",
+    D.set(1, HELP_ROW, " [q/Esc] back  [r] reply  [d] delete  up/down scroll  " .. quitHint() .. " exit",
       T.dim, T.menubar_bg)
   end
 
@@ -243,7 +260,7 @@ function M.run(opts)
     local sig, _, ch, co = pull(0.5)
 
     if sig == "key_down" then
-      if ch == 17 then break                                  -- ^Q exit
+      if isQuit(ch, co, true) then break                      -- the quit key
       elseif mode == "list" then
         local msgs = list()
         if co == 200 then sel = math.max(1, sel - 1); drawList()           -- up

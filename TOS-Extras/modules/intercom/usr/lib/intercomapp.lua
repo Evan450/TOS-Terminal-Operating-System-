@@ -12,6 +12,23 @@
 -- ║  and pcall-skips it when this package isn't installed).        ║
 -- ╚══════════════════════════════════════════════════════════════╝
 
+-- The standard quit key (tos/shell/keys.lua), so `keys set quit F4`
+-- closes this as it closes the rest of TOS. `typing`: text is being read
+-- there, so a printable binding is a letter, not quit. Falls back to
+-- ^Q / Esc where the key table is unavailable. (test_keys_readers.lua)
+local function isQuit(ch, code, typing)
+  if typing and ch and ch >= 32 and ch < 127 then return false end
+  local ok, keys = pcall(require, "shell.keys")
+  if ok and keys and keys.is then return keys.is("quit", ch, code) end
+  return ch == 17 or code == 1
+end
+local function quitHint()
+  local ok, keys = pcall(require, "shell.keys")
+  local l = ok and keys and keys.label and keys.label("quit") or ""
+  l = l:gsub(" / .*", "")
+  return l ~= "" and l or "^Q"
+end
+
 local tabsMod  = require("shell.panels.tabs")
 local ic       = require("intercom")
 
@@ -135,7 +152,7 @@ function M.draw(S, tab)
 
   -- Status / keys
   local hint = tab.status
-    or "Enter announce  |  T test (local only)  |  R reload  |  ^Q close"
+    or "Enter announce  |  T test (local only)  |  R reload  |  " .. quitHint() .. " close"
   D.fill(1, bottom, W, 1, " ", T.fg, T.bg)
   D.set(2, bottom, hint:sub(1, W - 2), tab.statusColor or T.dim, T.bg)
 end
@@ -146,7 +163,7 @@ local function selectedCue(tab) return tab.cues[tab.sel] end
 
 function M.handleKey(S, tab, ch, co)
   local T = S.T
-  if ch == 17 then                                    -- Ctrl+Q
+  if isQuit(ch, co, true) then                        -- the quit key
     tabsMod.close(S); return 3
   elseif co == 200 then                               -- Up
     tab.sel = math.max(1, (tab.sel or 1) - 1)

@@ -237,7 +237,7 @@ function M.handleKey(S, tab, ch, co, deps)
   local rows = tab.rows
   local listH = listHeight(S.H)
 
-  if ch == 17 then                                    -- Ctrl+Q: close
+  if require("shell.keys").isQuit(ch, co, true, S.who) then  -- the quit key: close
     tabsMod.close(S)
     return 3
   elseif co == 200 then                               -- Up

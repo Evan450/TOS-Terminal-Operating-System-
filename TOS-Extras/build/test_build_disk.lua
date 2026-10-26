@@ -500,6 +500,9 @@ do
       -- The operator re-signed the pack on 2026-10-24 at 23:01, minified the
       -- way the release is. Name a package here when a fix to it lands ahead
       -- of the next signing.
+      ["mail"] = "1.0.1: both UIs close and cancel on the quit binding (keys set quit)",
+      ["intercom"] = "1.0.2: the tab closes on the quit binding (keys set quit)",
+      ["rbmk-control"] = "1.0.1: SKALA quits on ^Q / F10 / the quit binding, not only Q",
     }
 
     if nShipped == 0 then

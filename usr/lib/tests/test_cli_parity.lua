@@ -266,9 +266,14 @@ do
   end
   local ev = readf("tos/shell/panels/events.lua")
   local mn = readf("tos/shell/panels/menus.lua")
-  local PROMPT = "[1]Reboot [2]Shut down [3]Log out [4]CLI Mode [^Q]Cancel"
-  ok("the ^Q quit prompt offers CLI Mode", ev:find(PROMPT, 1, true) ~= nil)
+  -- The cancel key is the quit binding's name (keys.quitHint), so the
+  -- prompt is pinned up to it.
+  local PROMPT = '[1]Reboot [2]Shut down [3]Log out [4]CLI Mode [" .. '
+  ok("the quit prompt offers CLI Mode", ev:find(PROMPT, 1, true) ~= nil)
   ok("the menu quit prompt says exactly the same", mn:find(PROMPT, 1, true) ~= nil)
+  ok("...and both name the quit key the same way",
+    ev:find('quitHint(S.who) .. "]Cancel"', 1, true) ~= nil
+    and mn:find('quitHint(S.who) .. "]Cancel"', 1, true) ~= nil)
   ok("the old '[4]Shell' label is gone from events", ev:find("[4]Shell", 1, true) == nil)
   ok("the old '[4]Shell' label is gone from menus", mn:find("[4]Shell", 1, true) == nil)
 end
