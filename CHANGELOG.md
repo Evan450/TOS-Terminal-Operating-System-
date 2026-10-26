@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 45 rounds of work:
+Everything since v1.5.0, in 46 rounds of work:
 
+- [Two machines that trust each other really do agree a secret now](#two-machines-that-trust-each-other-really-do-agree-a-secret-now)
 - [A test that checked nothing is a skip](#a-test-that-checked-nothing-is-a-skip)
 - [The release credits OpenOS again](#the-release-credits-openos-again)
 - [The pre-publish check fails when a check does](#the-pre-publish-check-fails-when-a-check-does)
@@ -56,6 +57,14 @@ Everything since v1.5.0, in 45 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Two machines that trust each other really do agree a secret now
+
+Automatic Diffie-Hellman ([Two peers agree on a secret without being told to](#two-peers-agree-on-a-secret-without-being-told-to)) rides on HELLO and HELLO_ACK, the only packets that carry a DH public key. Nothing sent a HELLO: `net.hello` has had no caller since the first commit. Two real machines that trusted each other therefore never agreed a secret, and every sealed send between them was refused with "TRUSTED peer has no shared secret". `test_trust_dh.lua` could not see this, because it hands each side the other's key. Raising a peer to KNOWN or TRUSTED now says hello. The peer answers once it has raised this machine too, so whichever side trusts second completes the exchange. A send refused for want of a secret also asks the peer for its key, at most every 30 seconds per peer, which covers peers trusted before this change.
+
+The same exchange made a reinstalled machine a silent failure. A machine keeps its address across a reinstall (it is the network card's) but gets a new identity key. It derives a fresh secret, its peers keep the old one, and nothing sealed gets through. Accepting a changed key automatically would let anything that can send a HELLO as that address substitute its own key. So TOS now records which key each derived secret came from. A change is logged once, `net peers` marks the peer, and `net trust rekey <peer>` (admin) derives a secret from the new key. A key that changes back clears the mark, and so does pairing.
+
+`test_trust_hello.lua` runs two real `kernel.net` instances over fake modems and calls nothing but trust and send (25 checks; against the code before both fixes 16 fail, then it crashes). `test_trust_rekey.lua` has 31. Both were also seen on the headless runner with two machines behind a relay. After `net scan` and `net trust 1 full` on each side, both machines show the same secret and `net send` says "Sent."; on the old build both say "no secret set". Then one machine was shut down, had its `/etc/trust.dat` moved off its disk, was powered on again and re-trusted the other. The other machine's `net peers` marked it, `net trust rekey 1` produced a secret matching the reinstalled side's, and the next sealed send went through.
 
 ### A test that checked nothing is a skip
 

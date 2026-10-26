@@ -156,6 +156,10 @@ function net.init(modules)
   -- below works. After this call, trust.getBootstrapToken() returns nil
   -- so any code that later requires the module can't fetch it.
   net._trustToken = trustMgr.getBootstrapToken and trustMgr.getBootstrapToken() or nil
+  -- Raising a peer's trust says hello, which is what carries the DH keys.
+  if trustMgr.setHelloSender then
+    trustMgr.setHelloSender(function(address) return net.hello(address) end)
+  end
 
   -- Load config
   if config then
@@ -560,6 +564,16 @@ function net.send(address, packet, port)
           "Refusing plaintext send to TRUSTED peer %s (%s): no shared secret; " ..
           "run 'net trust gen %s' as admin to provision one",
           address:sub(1, 8), packet.type or "?", address:sub(1, 8)))
+      end
+      -- No secret usually means no DH key from the peer yet: a peer
+      -- trusted before trust changes said hello, or a hello that was
+      -- lost. Ask again, at most every 30 s a peer; HELLO is public, so
+      -- this send cannot come back here.
+      net._helloAsked = net._helloAsked or {}
+      local now = computer.uptime()
+      if now - (net._helloAsked[address] or -math.huge) >= 30 then
+        net._helloAsked[address] = now
+        pcall(net.hello, address)
       end
       return false, "TRUSTED peer has no shared secret; refusing plaintext send"
     end

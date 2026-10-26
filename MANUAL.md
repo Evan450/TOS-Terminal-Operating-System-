@@ -1714,6 +1714,8 @@ which is honest: nothing stored it there.
 (`*`) cannot be sealed by definition, so they must be opted into explicitly and
 are labelled PLAINTEXT wherever they appear.
 
+**A reinstalled peer has a new key.** Two TRUSTED peers derive their shared secret from each other's identity keys. Reinstalling a machine keeps its address (the network card) but makes a new key, so it derives a new secret while you still hold the old one, and nothing sealed gets through. TOS does not accept the new key by itself, because anything that can speak as that address could offer a key of its own. Instead the log records the change and `net peers` marks the peer. Once you know why the key changed, `net trust rekey <peer>` (admin) derives a new secret from the new key.
+
 ### 8.4 Chat: one peer, one group, or everybody
 
 Chat is multi-operator. Three ways to address a line, distinguished by how it
@@ -1818,7 +1820,8 @@ step-budgeted, TRUSTED + challenge-verified only), `scp <addr>:<path> <local>`
 `net` itself carries more ground than the tools above: `net scan`/`discover`
 (broadcast ping), `net peers`/`net servers` (discovered hosts), `net trust
 <peer> [full]` / `net block <peer>` / `net revoke <peer>` / `net forget <peer>`
-(trust-tier changes, admin), `net request <peer>` / `net requests` (ask a peer's
+(trust-tier changes, admin), `net trust rekey <peer>` (accept a reinstalled
+peer's new key, admin), `net request <peer>` / `net requests` (ask a peer's
 admin for trust / view pending requests), `net send <peer> <msg>` (chat message),
 `net alias add/rm/list/show` (name a peer — add/rm admin, list/show anyone), and
 `net pair start/status/close/<peer> <code>` (out-of-band shared-secret pairing

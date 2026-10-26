@@ -101,6 +101,7 @@ function X.net(a,ctx)
     ctx.o("  servers                      Discovered hosts w/ device + last-seen",0xAAAAAA)
     ctx.o("  trust <peer> [full]          Elevate peer to KNOWN / TRUSTED",0xAAAAAA)
     ctx.o("  trust gen <peer>             Generate shared secret (admin)",0xAAAAAA)
+    ctx.o("  trust rekey <peer>           Accept a reinstalled peer's key (admin)",0xAAAAAA)
     ctx.o("  trust setSecret <peer> <hex> Mirror a secret from peer (admin)",0xAAAAAA)
     ctx.o("  trust showSecret <peer>      Show my secret with peer (admin)",0xAAAAAA)
     ctx.o("  block <peer>                 Block a peer",0xAAAAAA)
@@ -208,13 +209,18 @@ function X.net(a,ctx)
         ctx.o(string.format(" %2d. %-20s %-4s %-8s %s",
           i, fmtAddr(p.addr), lbl, p.device or "?", p.hostname or ""),
           color)
+        local rec = NM.getTrust and NM.getTrust().getPeer(p.addr)
+        if rec and rec.dhKeyChanged then
+          ctx.o("     new key since our secret was made: 'net trust rekey " .. i .. "'", 0xFF5555)
+        end
       end
     else
       -- Fallback to trust manager listing
       local tm = NM.getTrust()
       for _, p in ipairs(tm.listPeers()) do
-        ctx.o(string.format(" %-20s T%d %s",
-          fmtAddr(p.address), p.level, p.hostname or ""))
+        ctx.o(string.format(" %-20s T%d %s%s",
+          fmtAddr(p.address), p.level, p.hostname or "",
+          p.keyChanged and "  (new key: net trust rekey)" or ""))
       end
     end
     if #peers == 0 then ctx.o("  No peers discovered. Run 'net scan' first.", 0xAAAAAA) end
@@ -271,6 +277,17 @@ function X.net(a,ctx)
       else
         ctx.o("Failed: " .. tostring(err2 or "unknown"),0xFF0000)
       end
+    elseif sub2 == "rekey" then
+      -- A reinstalled peer has a new DH key; the secret we hold came from
+      -- its old one. Accepting the key is the operator's call (trust.rekey).
+      local addr = resolvePeer(a[3])
+      if not addr then ctx.o("Usage: net trust rekey <peer>",0xFFFF00) return end
+      local ok2, err2 = tm.rekey(actor, addr, tier)
+      if ok2 then
+        ctx.o("New shared secret derived from " .. fmtAddr(addr) .. "'s current key.",0x00FF00)
+      else
+        ctx.o("Failed: " .. tostring(err2 or "unknown"),0xFF0000)
+      end
     elseif sub2 == "showSecret" then
       -- Diagnostic: print the secret we have (if any). Audit-logged
       -- by trust.getSecret since the actor goes through the gate.
@@ -292,12 +309,13 @@ function X.net(a,ctx)
       if ok2 then
         ctx.o("Trust updated for "..fmtAddr(addr)..".",0x00FF00)
         if a[3] == "full" then
-          ctx.o("Next: 'net pair start' on the peer + 'net pair "..
-                fmtAddr(addr).." <code>' here to install a shared secret.",0x888888)
+          ctx.o("A shared secret is agreed by itself once the peer trusts this machine too.",0x888888)
+          ctx.o("No secret after that? 'net pair start' on the peer + 'net pair "..
+                fmtAddr(addr).." <code>' here.",0x888888)
         end
       else ctx.o(err2 or "Trust update failed",0xFF0000) end
     else
-      ctx.o("Usage: net trust <gen|setSecret|showSecret|<addr> [full]>",0xFFFF00)
+      ctx.o("Usage: net trust <gen|rekey|setSecret|showSecret|<addr> [full]>",0xFFFF00)
     end
   elseif s=="block" and a[2] then
     local actor, tier = getActor(ctx)

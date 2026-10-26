@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**84 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 62 | Planned or under investigation. Most contributions belong here. |
+| Planned | 61 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (12) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (5) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (12)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (5) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (13)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -363,26 +363,6 @@ EVERY MESH TENANT NEEDS ONE TEST ACROSS THE REAL TRANSPORT. AUDIT 3. Mail, inter
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
-
-### A peer that re-keys never gets a new DH secret
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-A PEER THAT RE-KEYS NEVER GETS A NEW DH SECRET. PREDICTED FROM THE CODE, NOT SEEN -- CHECK FIRST. In kernel/net/trust.lua, tryAutoSecret returns as soon as peer.sharedSecret exists, and noteDhPublicKey overwrites peer.dhPub from every HELLO without recording which key a secret came from. So a machine that is reinstalled (same network card, so the same address; a new X25519 identity) derives a fresh secret with each peer that trusts it again, while those peers keep the old one. Every sealed packet between them should then fail until an operator runs `net trust gen` or re-pairs on both sides, and nothing says why. Check on the runner first: --machines 2, trust both ways, delete one side's /etc/trust.dat, re-trust. If it reproduces, the fix touches the trust model, so it is the operator's: keep that a secret was DH-derived and from which key, and on a changed key from a TRUSTED peer either re-derive or refuse loudly.
-
-### See the 2026-10-17..24 work run
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be checked on the headless runner:
-
-- Diffie-Hellman (e2f2445): two machines that trust each other pass a sealed message with no `net trust gen`. Time one X25519 on the T2 APU; the commit's guess is "seconds".
-- the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes, and the runner does two. Grow it to three, or accept test\_meshctl's three-node simulation.
-- cluster-storage (d6963fb): a Master and a Storage Node on two machines exchanging STORE\_PUT and PUB frames -- that commit's own "not verified". The node needs a wired or Tier-2 modem.
-- chat's wrapped lines and mail's Sent: line (49dec7a).
-- the browser (web 1.0.0) against a local http server.
-- PaneUI (c8a76b9) on OpenOS 1.8.9; the runner booted OpenOS for e33d25c. PaneUI's tests check source grammar only, so its event loop and the new wrapText have never run.
-- bootstrap.lua end to end ("nothing ran bootstrap.lua end to end", e33d25c) from a local http server serving a TOS-Release tree.
 
 ### SSH and share have never worked
 
@@ -883,6 +863,20 @@ THE INSTALLER'S copyFileChunked STILL IGNORES WHAT write() ANSWERS. AUDIT 1. ins
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE LOOT DISK IS WHATEVER TOS-Release WAS WHEN THE MOD LAST BUILT. AUDIT 1 found Irradiated Circuits (radbridge 0.4.0) bundling TOS 1.4.0. Its newest jar, radbridge-0.5.0 (built 2026-10-09, unreleased), carries that day's release: its kernel/init.lua differs from today's, and kernel/x25519.lua and curve25519field.lua are absent. The fix is in the mod's repo: rebuild, and bump the mod version, because LootDiskInstaller stamps the extracted disk with it and an unchanged version never reaches an existing world. Nothing on this side notices the drift. Wanted: a `tos.py check` step that, when it can find a radbridge jar, compares its bundled system\_manifest.lua with TOS-Release's.
+
+### See the 2026-10-17..24 work run
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be checked on the headless runner:
+
+- Diffie-Hellman (e2f2445): SEEN 2026-10-26, once something sent a HELLO (AUTOMATIC DIFFIE-HELLMAN NEVER RAN, above). On the runner's T2 APU both sides had derived, and the sealed send was accepted, within 5 s of the second `net trust`: two X25519s and the HELLO round trip. One X25519 alone is untimed.
+- the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes, and the runner does two. Grow it to three, or accept test\_meshctl's three-node simulation.
+- cluster-storage (d6963fb): a Master and a Storage Node on two machines exchanging STORE\_PUT and PUB frames -- that commit's own "not verified". The node needs a wired or Tier-2 modem.
+- chat's wrapped lines and mail's Sent: line (49dec7a).
+- the browser (web 1.0.0) against a local http server.
+- PaneUI (c8a76b9) on OpenOS 1.8.9; the runner booted OpenOS for e33d25c. PaneUI's tests check source grammar only, so its event loop and the new wrapText have never run.
+- bootstrap.lua end to end ("nothing ran bootstrap.lua end to end", e33d25c) from a local http server serving a TOS-Release tree.
 
 ### GitHub, now that CI has run
 

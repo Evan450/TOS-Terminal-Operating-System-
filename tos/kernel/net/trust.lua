@@ -140,6 +140,9 @@ local myDh = nil
 -- real definition is bound to this local rather than left to resolve
 -- as an undefined global.
 local tryAutoSecret
+-- How to say hello to a peer, registered once by kernel.net (which
+-- requires this module, so this module cannot require it back).
+local helloSender = nil
 -- Cap on UNKNOWN-level peers so a scan/flood can't fill memory.
 -- KNOWN and TRUSTED peers are always kept regardless of this limit.
 local MAX_UNKNOWN_PEERS = 64
@@ -171,6 +174,8 @@ local function saveDB()
       lastSeen    = peer.lastSeen,
       sharedSecret = peer.sharedSecret,
       dhPub       = peer.dhPub,
+      secretDhPub = peer.secretDhPub,
+      dhKeyChanged = peer.dhKeyChanged,
       notes       = peer.notes,
     }
   end
@@ -232,6 +237,10 @@ local function loadDB()
     if type(peer.dhPub) ~= "string" or #peer.dhPub ~= 32 then
       peer.dhPub = nil
     end
+    if type(peer.secretDhPub) ~= "string" or #peer.secretDhPub ~= 32 then
+      peer.secretDhPub = nil
+    end
+    peer.dhKeyChanged = peer.dhKeyChanged == true or nil
   end
 end
 
@@ -430,6 +439,25 @@ function trust.setLevel(actor, address, level, actorTier)
   -- from this peer (approve, refuse, or block all count as "handled").
   pendingRequests[address] = nil
 
+  --! Say hello to a peer the moment it is raised to KNOWN or TRUSTED.
+  --! HELLO / HELLO_ACK carry the DH public key, and until 2026-10-26
+  --! nothing ever sent a HELLO: net.hello had no caller, so the
+  --! automatic Diffie-Hellman below could not run between two real
+  --! machines (its tests hand each side the other's key). The peer only
+  --! answers once it has raised us to KNOWN too; then whichever side
+  --! trusts second completes the exchange. (test_trust_hello.lua)
+  if level >= LEVEL.KNOWN and level > oldLevel and helloSender then
+    pcall(helloSender, address)
+  end
+
+  return true
+end
+
+--- Register how to say hello to a peer (kernel.net, once, at boot). A
+--- second registration is refused, so later code cannot redirect it.
+function trust.setHelloSender(fn)
+  if helloSender or type(fn) ~= "function" then return false end
+  helloSender = fn
   return true
 end
 
@@ -508,6 +536,9 @@ function trust.setSecret(actor, address, secret, actorTier)
     return false, "Peer must be TRUSTED for shared secrets"
   end
   peers[address].sharedSecret = secret
+  -- A secret set here is the operator's, not derived from any DH key.
+  peers[address].secretDhPub = nil
+  peers[address].dhKeyChanged = nil
   saveDB()
   -- #SEC M11 — invalidate the net layer's verifyCache for this peer
   -- so a cached "verified" hit can't continue to authenticate against
@@ -647,6 +678,8 @@ function tryAutoSecret(address)
   local okC, secret, derr = pcall(xm.sharedSecret, dh.priv, peer.dhPub)
   if okC and secret then
     peer.sharedSecret = secret
+    peer.secretDhPub = peer.dhPub
+    peer.dhKeyChanged = nil
     saveDB()
     if log then
       log.info("trust", "Diffie-Hellman secret established automatically with "
@@ -669,8 +702,63 @@ function trust.noteDhPublicKey(address, dhPub)
   address = resolveAddress(address)
   local peer = address and peers[address]
   if not peer then return end
+  local old = peer.dhPub
   peer.dhPub = dhPub
+  --! A TRUSTED peer whose DH key changes was almost always reinstalled:
+  --! same network card, so the same address, but a new X25519 identity.
+  --! It derives a fresh secret with us; we keep the one we have, and
+  --! every sealed packet between the two fails with nothing saying why.
+  --! The key is NOT accepted automatically -- anyone who can send a HELLO
+  --! as this address could otherwise swap in their own key and read the
+  --! sealed traffic. It is flagged and logged, and `net trust rekey`
+  --! (trust.rekey, admin) is the operator's way to accept it.
+  --! (test_trust_rekey.lua)
+  if peer.sharedSecret and old and old ~= dhPub then
+    if peer.secretDhPub == dhPub then
+      peer.dhKeyChanged = nil          -- back to the key the secret came from
+    elseif not peer.dhKeyChanged then
+      peer.dhKeyChanged = true
+      if log then
+        log.warn("trust", "Peer " .. address:sub(1, 8) .. "... has a new identity key"
+          .. " (reinstalled?). The secret we share "
+          .. (peer.secretDhPub and "came from its old key and no longer matches"
+              or "was set by hand and may be gone on its side")
+          .. ": 'net trust rekey " .. address:sub(1, 8) .. "' to accept the new key.")
+      end
+    end
+    saveDB()
+    return
+  end
   tryAutoSecret(address)
+end
+
+--- Accept a peer's new DH key: replace the secret we share with one
+--- derived from the key it last sent. For a peer flagged by
+--- noteDhPublicKey (reinstalled), and harmless otherwise -- the result is
+--- what tryAutoSecret would have made on first contact. Refuses a peer
+--- that is not TRUSTED or has sent no key, and a box with no DH.
+--- @tier admin
+function trust.rekey(actor, address, actorTier)
+  local ok, err = requireAdminActor(actor, actorTier, "re-derive peer secret")
+  if not ok then return false, err end
+  address = resolveAddress(address)
+  local peer = address and peers[address]
+  if not peer then return false, "Unknown peer" end
+  if (peer.level or 0) < LEVEL.TRUSTED then
+    return false, "Peer must be TRUSTED for shared secrets"
+  end
+  if not peer.dhPub then return false, "No key from this peer yet (it has not said hello)" end
+  local dh, xm = ensureMyDh(), getX25519()
+  if not (dh and xm) then return false, "Diffie-Hellman is not available on this machine" end
+  local okC, secret, derr = pcall(xm.sharedSecret, dh.priv, peer.dhPub)
+  if not (okC and secret) then
+    return false, "Key exchange failed: " .. tostring(okC and derr or secret)
+  end
+  local okS, sErr = trust.setSecret(actor, address, secret, actorTier)
+  if not okS then return false, sErr end
+  peer.secretDhPub = peer.dhPub
+  saveDB()
+  return true
 end
 
 -- #SEC H22 — closure-isolated secret access. Previously this function
@@ -790,6 +878,7 @@ function trust.listPeers()
       firstSeen  = peer.firstSeen,
       lastSeen   = peer.lastSeen,
       hasSecret  = peer.sharedSecret ~= nil,
+      keyChanged = peer.dhKeyChanged == true,
       notes      = peer.notes,
     }
   end
