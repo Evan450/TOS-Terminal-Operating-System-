@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 52 rounds of work:
+Everything since v1.5.0, in 53 rounds of work:
 
+- [`man pkg` covers all of pkg](#man-pkg-covers-all-of-pkg)
 - [`deploy` refuses a disk TOS will not fit](#deploy-refuses-a-disk-tos-will-not-fit)
 - [The installer stops at the first write that fails](#the-installer-stops-at-the-first-write-that-fails)
 - [The fast inventory scan names the right slot](#the-fast-inventory-scan-names-the-right-slot)
@@ -63,6 +64,10 @@ Everything since v1.5.0, in 52 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `man pkg` covers all of pkg
+
+`man pkg` covered six subcommands: install, uninstall, list, info, search and make-disk. Updating (`outdated`, `upgrade`), remote repositories (`repo`, `remote`, `fetch`) and signatures (`trust`, `verify-sig`, `sign`) were documented only in MANUAL.md, and `pkg enable` and `pkg disable` nowhere at all. The page is now the full reference, grouped into installed packages, updating, remote repositories, and trust and signatures, and it fits an 80-column screen. MANUAL 7.1 names enable and disable. `test_pkg_man_complete.lua` reads the subcommands that `pkg` actually accepts out of the shell's code and fails on any the page does not name (42 checks; 23 fail on the old page), so a new subcommand cannot go undocumented.
 
 ### `deploy` refuses a disk TOS will not fit
 

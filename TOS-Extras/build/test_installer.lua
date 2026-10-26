@@ -1,7 +1,7 @@
 -- ╔══════════════════════════════════════════════════════════════╗
--- ║  Test: the Optional Utilities picker (install.lua)           ║
+-- ║  Test: the Optional Utilities picker (shell/pkgpicker.lua)   ║
 -- ║                                                              ║
--- ║  Drives the REAL installer script with stubbed kernel deps   ║
+-- ║  Drives the REAL picker with stubbed kernel deps             ║
 -- ║  and a scripted keyboard, so the parts that used to only be  ║
 -- ║  checked by eye are pinned:                                  ║
 -- ║    • the pick-list is GROUPED BY CATEGORY (header rows drawn ║
@@ -11,10 +11,10 @@
 -- ║    • Space selects and Enter installs exactly the chosen     ║
 -- ║      package, via the pkg backend.                           ║
 -- ║                                                              ║
--- ║  install.lua only require()s at RUN time, so stubbing the    ║
+-- ║  The picker only require()s at RUN time, so stubbing the     ║
 -- ║  deps in package.loaded first lets it run headless here.     ║
--- ║  It is byte-identical to kernel/pkg.lua's PICKER_SRC          ║
--- ║  (test_picker_sync), so this covers that copy too.           ║
+-- ║  It lives once, in the base image (TOS-Dev/tos/shell/), and  ║
+-- ║  the disks carry no copy of it.                              ║
 -- ╚══════════════════════════════════════════════════════════════╝
 -- Run: lua build/test_installer.lua   (from the TOS-Extras root)
 

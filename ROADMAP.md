@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**81 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**80 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 58 | Planned or under investigation. Most contributions belong here. |
+| Planned | 57 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -245,12 +245,6 @@ Specialized per-machine launcher profiles (doors, reactors).
 Tape "personal menu" ecosystem polish.
 
 ## Packages
-
-### The pkg man page leaves out the network, trust and upgrade commands
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-THE pkg MAN PAGE LEAVES OUT THE NETWORK, TRUST AND UPGRADE COMMANDS. AUDIT 2. usr/man/pkg.man shows install, uninstall, list, info, search and make-disk. Neither it nor packages.man names fetch, repo, trust, upgrade, outdated, enable or disable; MANUAL.md covers most of them and `pkg enable` nowhere. Fix: make pkg.man the full reference and derive the short lists from one table. Also stale: TOS-Extras/build/test\_installer.lua's header says it drives install.lua; it loads tos/shell/pkgpicker.lua. LOW.
 
 ### Add-on versioning: decided 2026-09-12, not built
 

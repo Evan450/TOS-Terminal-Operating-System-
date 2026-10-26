@@ -1,13 +1,22 @@
 NAME
-    pkg - package manager (install, remove, and run TOS packages)
+    pkg - package manager (install, remove, update and trust TOS packages)
 
 SYNOPSIS
-    pkg list
-    pkg search
-    pkg info <name>
-    pkg install [<name> [--key <licenseKey>] | <dir>]
-    pkg make-disk <mount> [name ...]
+    pkg list | search | info <name> | commands
+    pkg install [<name>... | <dir>] [--dry-run] [--key <licenseKey>]
     pkg uninstall <name>
+    pkg enable <name> | disable <name>
+    pkg outdated
+    pkg upgrade <name>... | --all [--yes] [--dry-run]
+    pkg make-disk <mount> [name ...]
+    pkg repo list | add <name> <url> | remove <name> | forget <n|url|all>
+    pkg remote
+    pkg fetch <name> [--allow-unverified] [--allow-unsigned]
+    pkg trust list | add <name> <key> | remove <name> | require on|off
+    pkg trust discovered [tofu|trusted|off] | key <label>
+    pkg verify-sig <dir>
+    pkg sign <dir> --as <publisher>
+    pkg license-hash <name> <licenseKey>
 
     install <name>          shortcut for 'pkg install <name>'
     uninstall <name>        shortcut for 'pkg uninstall <name>'
@@ -15,55 +24,101 @@ SYNOPSIS
 DESCRIPTION
     pkg is the single package system in TOS (the legacy "module manager" was
     retired in v1.3.1; 'mod' is now an alias for pkg). It installs add-ons,
-    resolves their dependencies, verifies integrity, and dispatches the shell
-    commands they provide.
+    resolves their dependencies, verifies integrity and signatures, and
+    dispatches the shell commands they provide. Every pkg subcommand needs an
+    ADMIN session.
 
-    Sources: a package is a directory containing a package.lua manifest plus its
-    files. pkg reads native package.lua, OPPM-style package.oppm.lua, and bundled
-    Optional Utilities disks. install/uninstall/enable require an ADMIN session.
+    Sources: a package is a directory containing a package.lua manifest plus
+    its files. pkg reads native package.lua, OPPM-style package.oppm.lua,
+    bundled Optional Utilities disks, and (with an Internet Card) remote repos.
 
     Security:
       * Writes are confined to /usr and /var/pkg. A kind="service" package may
-        also install ONE /etc/rc.d/<file>.lua and ONE /etc/<name>.cfg — nothing
+        also install ONE /etc/rc.d/<file>.lua and ONE /etc/<name>.cfg -- nothing
         else under /etc, and never /tos or /init.lua.
       * When a manifest declares hashes, every file is SHA-256 verified
         (constant-time) before it is written.
-      * A package command runs in a capability sandbox built from the manifest's
-        declared, ALLOWLISTED capabilities. The "legacy" capability (raw os/io)
-        can never be requested by a manifest.
+      * A signed package names its publisher; one signed by a key you have not
+        trusted installs with a warning, a bad signature never installs.
+      * A package command runs in a capability sandbox built from the
+        manifest's declared, ALLOWLISTED capabilities. The "legacy" capability
+        (raw os/io) can never be requested by a manifest.
+    An option a subcommand does not know is refused, and nothing is done.
 
 SUBCOMMANDS
+  Installed packages
     list           Installed packages and their enabled state.
-    search         Packages available in any repo or mounted disk.
     info <name>    Manifest details: version, kind, deps, capabilities.
+    commands       The shell commands installed packages provide.
     install [arg]  One smart verb. A bare NAME resolves dependencies and
                    installs from any known source. A PATH (anything with a
-                   "/") installs that single package directory explicitly.
-                   NO argument scans every mounted disk and prompts before
-                   installing each package it finds. (The old 'install-dir'
-                   and 'from-floppy' still work as hidden aliases.)
+                   "/") installs that single package directory. NO argument
+                   opens the Optional Utilities picker. --dry-run prints the
+                   plan and changes nothing. (The old 'install-dir' and
+                   'from-floppy' still work as hidden aliases.)
+    uninstall <name>   Remove an installed package.
+    enable <name>  Switch an installed package back on.
+    disable <name> Switch it off without removing it (its commands and its
+                   service stop; its files stay).
     make-disk <mount> [name ...]
                    Build an Optional Utilities disk from your INSTALLED add-ons
-                   (parity with `deploy`, which builds a whole-OS image). Emits
-                   one package dir per add-on plus the set manifest; on any TOS
-                   machine, insert it and run `pkg install` (the picker is in
-                   the base image, not on the disk). Name args limit the
-                   export; omit for all add-ons.
-                   Targets removable media only (system paths are refused).
-    uninstall <name>   Remove an installed package.
+                   (parity with `deploy`). Targets removable media only.
+
+  Updating
+    outdated       What has a newer version on the mounted disks.
+    upgrade <name>...   Replace those: the new version is verified first,
+                   files the old one shipped and the new one does not are
+                   removed, and the enabled state is kept. --all upgrades
+                   everything (--yes to skip the question); --dry-run prints
+                   the plan.
+
+  Remote repositories (Internet Card)
+    repo list      The configured repos (the allowlist), then the repos
+                   installed packages named ("known"), which carry no trust.
+    repo add <name> <url>   Register a repo: the URL is the directory holding
+                   its programs.cfg. There is no default repo.
+    repo remove <name>      Stop fetching from it.
+    repo forget <n|url|all> Drop repos learned from packages.
+    remote         What the configured repos offer.
+    fetch <name>   Download a package and install it. A package from a repo
+                   nobody configured stands on its own signature.
+
+  Trust and signatures
+    trust list     Publisher keys this machine trusts, with fingerprints.
+    trust add <name> <key>  Trust a publisher's 64-hex public key. Check the
+                   fingerprint with the publisher over another channel first.
+    trust remove <name>     Stop trusting it (installed packages are kept).
+    trust require on|off    Refuse unsigned packages outright (off by default).
+    trust discovered [tofu|trusted|off]
+                   What fetch may take from repos nobody configured.
+    trust key <label>       Prints the public key for a publisher label; asks
+                   for the passphrase, masked.
+    verify-sig <dir>        Say who signed a package, without installing it.
+    sign <dir> --as <name>  Sign a package's manifest (sign after the hashes
+                   are final; the signature covers the manifest, which covers
+                   the hashes, which cover the files).
+    license-hash <name> <key>   The hash a licensed package's manifest holds.
 
 EXAMPLES
     pkg search
     pkg install tetris          (by name)   or:  install tetris
-    pkg install                 (scan the inserted Optional Utilities disk)
-    pkg info tape
+    pkg install                 (the picker, over the inserted disks)
+    pkg install calc --dry-run
+    pkg outdated
+    pkg upgrade --all --yes
+    pkg repo add oc https://example.com/oc/master
+    pkg fetch someprog
+    pkg trust list
 
 ERRORS
     "Insufficient privileges: admin required"   You are not ADMIN+.
-    "already installed (uninstall first): X"     Remove X before reinstalling.
+    "already installed (uninstall first): X"     Same or older version: remove
+                                                 X first; newer: pkg upgrade X
     "hash mismatch on <file>"                    The package failed integrity
                                                  verification; install aborted.
     "package not found in any repo: X"           No source provides X.
+    "unknown option '--x' -- nothing was done."  A misspelt option.
 
 SEE ALSO
-    man packages, mod, MANUAL.md (Chapter 7)
+    man packages, mod, internet, MANUAL.md (Chapter 7: 7.4 updating, 7.8
+    signatures, 7.9 remote repositories)

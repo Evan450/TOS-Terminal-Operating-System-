@@ -982,6 +982,9 @@ v1.3.1; the `mod` command has since been removed too — its `enable`/`disable`/
   limit the export; omit to include every add-on. Targets
   removable media only (system paths are refused).
 - `pkg uninstall <name>`.
+- `pkg enable <name>` / `pkg disable <name>` — switch an installed package
+  on or off without removing it; a disabled package's commands and service
+  stay dormant and its files stay where they are.
 
 Installing/uninstalling/enabling requires an **admin** session. Package writes are
 confined to `/usr` and `/var/pkg`; a `kind="service"` package may additionally

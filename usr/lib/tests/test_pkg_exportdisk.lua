@@ -170,7 +170,7 @@ do
   test("...and no install.lua", nil, block:find('"/install.lua"', 1, true))
   local man = slurp("usr/man/pkg.man")
   test("pkg.man no longer says make-disk ships a picker", nil,
-    (man:match("make%-disk <mount> %[name %.%.%.%]%s+Build.-uninstall <name>") or "?install.lua"):find("install.lua", 1, true))
+    (man:gsub("\r\n", "\n"):match("make%-disk <mount> %[name %.%.%.%]%s+Build.-\n\n") or "?install.lua"):find("install.lua", 1, true))
   local manual = slurp("MANUAL.md")
   test("MANUAL 7.1 no longer says make-disk writes install.lua", nil,
     (manual:match("`pkg make%-disk <mount> %[name…%]`.-Targets") or ""):find("install.lua", 1, true))

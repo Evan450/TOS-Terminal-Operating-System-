@@ -2120,26 +2120,21 @@ end
 --   <target>/<name>/<install path>  each file, mirrored at its abs path
 -- No installer: `pkg install` runs the base image's picker on any TOS.
 
--- Embedded pick-and-choose installer. Behaviour-identical to the dev-box
--- TOS-Extras/build/install.lua (same kernel.pkg backend: admin gate, dep
--- resolution, hash verification); carried on the disk so it self-installs
--- on any TOS machine. ASCII status markers (no Unicode) so the string
--- survives the Release minifier untouched. Keep in sync with the Extras copy.
--- (The picker used to be embedded here as a ~40 KB PICKER_SRC string,
--- byte-identical to a copy on every Optional Utilities floppy. It now lives
--- once, at tos/shell/pkgpicker.lua — see pkg.runInstaller below.)
+-- The pick-and-choose installer used to be embedded here as a ~40 KB
+-- PICKER_SRC string, byte-identical to a copy on every Optional Utilities
+-- floppy. It now lives once, at tos/shell/pkgpicker.lua -- see
+-- pkg.runInstaller below.
 
---- Run the Optional Utilities TUI picker — the SAME installer that ships
---- on the disk (PICKER_SRC above), so `pkg install` (no argument) offers
---- the full-screen category menu instead of a sequence of y/N prompts.
+--- Run the Optional Utilities TUI picker (tos/shell/pkgpicker.lua), so
+--- `pkg install` (no argument) offers the full-screen category menu instead
+--- of a sequence of y/N prompts.
 ---
---- We run the TRUSTED embedded copy rather than the disk's install.lua:
---- it's byte-identical (pinned by test_picker_sync), always present, and
---- — unlike arbitrary code on untrusted media — safe to execute at the
---- shell's full privilege. A corrupt or malicious disk installer can't
+--- The picker is part of the base image, never read from the disk: it is
+--- always present and, unlike arbitrary code on untrusted media, safe to
+--- run at the shell's full privilege. A corrupt or malicious disk cannot
 --- hijack this path; a third-party disk that ships its OWN installer is a
---- future question (running untrusted install code at full priv is
---- exactly what we don't want to do implicitly).
+--- future question (running untrusted install code at full priv is exactly
+--- what we don't want to do implicitly).
 ---
 --- The picker requires a reachable GPU for its TUI; on a GPU-less machine
 --- it degrades to its own line mode, which needs io.read (absent in the
