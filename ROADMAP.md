@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**79 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**78 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 56 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 20 | Idea, no commitment. Discuss before building. |
+| Planned | 54 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 21 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (9) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (12)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -410,12 +410,6 @@ that is not there. The warning added above is the log-level
 
 version of that; whether it should be louder is the call.
 
-### Minitel: decide, don't default
-
-*Planned* · from the round *From the Cynosure 2 survey (2026-08-10)*
-
-MINITEL: DECIDE, DON'T DEFAULT. Cynosure ships Minitel in the KERNEL beside TCP and HTTP (NET\_MTEL), and the partition table options name MTPT as "the Minitel partition table used by PsychOS". It is the ecosystem's de-facto interop protocol. Our mesh is bespoke and SHOULD stay bespoke — you cannot get replay-resistant MACs and trust tiers out of someone else's protocol. But "TOS machines can only talk to TOS machines" should be a position we hold on purpose, not one we backed into. If we ever want it, a Minitel bridge is an Extras package, not a kernel change.
-
 ### Operator idea (raised 2026-08-04, deferred)
 
 *Idea / far future* · from the round *Internet card + remote pkg round (2026-08-04)*
@@ -553,12 +547,6 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 
 A HEADLESS MACHINE KEEPS ITS BOOT SESSION -- OPERATOR DECISION. AUDIT 1, from the pentest's "Still recorded, not changed". kernel.headlessMain (kernel/init.lua \~L3487) sets bootSession to the kernel session and never sets bootCompleted (only the screen path does, \~L1690). So on a machine with no screen, securefs.sessionOf() and users.currentSession() answer "kernel" to a caller with no process principal for the whole uptime. Nothing found runs user code there: a missing line of defence, not a hole. Decide: set bootCompleted in headlessMain and make the two agree, or record why not.
 
-### The installer's configure-only mode still means the boot drive
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-THE INSTALLER'S CONFIGURE-ONLY MODE STILL MEANS THE BOOT DRIVE. e33d25c made the installer ask which drive to install onto, and named this as not covered: with no install disk, install.lua (\~L1145) says "TOS system files must already be present on the boot drive", and TARGET stays "" (L1061), so a TOS installed to a second drive cannot be reconfigured from OpenOS.
-
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
@@ -621,16 +609,6 @@ Do not build it on the compat event queue: compat/event.lua deliberately blocks 
 
 NOT A GAP, recorded so it is not re-investigated: Fuchas' PER-PROCESS SIGNAL QUEUES (computer.pushProcessSignal). The security half -- one process reading another's events -- is already handled at a different layer, where compat/event.lua blocks sensitive names outright and names keystroke-logging other seats and clipboard sniffing as the attacks. Only the addressable-IPC half above is missing.
 
-### Build-time feature config
-
-*Planned* · from the round *From the Cynosure 2 survey (2026-08-10)*
-
-BUILD-TIME FEATURE CONFIG. The best idea in that kernel. A .defconfig + a source preprocessor give it Linux menuconfig semantics: COMPONENT\_\* per device type, FS\_\*, NET\_\*, PART\_\*, EXEC\_\* — features compile OUT of the image. Our boot profiles (minimal/normal/full/diagnostic/safe) gate what LOADS at runtime; the code is still in the image, still on disk, still parsed the moment something requires it. On a RAM-bound box compile-time exclusion strictly dominates runtime skipping.
-
-- We already own the machinery — strip.lua plus the manifest auto-pruning already emit a tailored tree. This is a .config on top of what build-release.sh does, not a new build system.
-- Natural first axes: cluster, internet, tape, blockfs, mesh, i18n. All optional, all currently unconditional.
-- Keep ONE canonical full build as the tested default. A matrix of configs nobody boots is worse than no configs — pick the variants we actually run.
-
 ### Next if still tight: i18n catalogs, and the display-layer work already queued in the OC…
 
 *Planned* · from the round *Memory round (2026-07-24)*
@@ -664,6 +642,18 @@ THREE OF OUR PROBLEMS ARE ONE PROBLEM IN THAT FRAMING:
 This is NOT a proposal to rewrite the terminal layer. It is a note that the next time one of those is patched, the patch should move TOWARD one input-stream abstraction with a discipline, instead of adding a fourth special case to compat.term.
 
 OTHER ROUND-2 NOT-GAPS, recorded so they are not re-investigated: OCOS' SEMVER PACKAGE DEPS -- pkg.lua already takes { name = ..., version = "&gt;=1.0", optional = ... } and has compareVersion (:1072, :1157). OCOS' DOUBLE-BUFFERED COMPOSITOR -- our shadow buffer; their README names MineOS as the source. Cynosure 2's PLUGGABLE BINFMT (src/exec/{lua,cle,shebang}.lua) -- we run .lua and that is the whole population. ULOS 2's LUAPOSIX COMPATIBILITY PUSH -- their target is \*nix programs; ours is OpenOS programs, which is the population that actually exists.
+
+### Build-time feature config
+
+*Idea / far future* · from the round *From the Cynosure 2 survey (2026-08-10)*
+
+BUILD-TIME FEATURE CONFIG. The best idea in that kernel. A .defconfig + a source preprocessor give it Linux menuconfig semantics: COMPONENT\_\* per device type, FS\_\*, NET\_\*, PART\_\*, EXEC\_\* — features compile OUT of the image. Our boot profiles (minimal/normal/full/diagnostic/safe) gate what LOADS at runtime; the code is still in the image, still on disk, still parsed the moment something requires it. On a RAM-bound box compile-time exclusion strictly dominates runtime skipping.
+
+- We already own the machinery — strip.lua plus the manifest auto-pruning already emit a tailored tree. This is a .config on top of what build-release.sh does, not a new build system.
+- Natural first axes: cluster, internet, tape, blockfs, mesh, i18n. All optional, all currently unconditional.
+- Keep ONE canonical full build as the tested default. A matrix of configs nobody boots is worse than no configs — pick the variants we actually run.
+
+SUPERSEDED (marked \[\*\] 2026-10-26) by SELF-STRIPPING, NOT BUILD-TIME CONFIG above, the operator's 2026-08-11 decision; kept for the Cynosure argument. Scheduled in THE OS-SURVEY SUGGESTIONS.
 
 ### /Proc-style read-only introspection
 
@@ -865,6 +855,28 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 - OPERATOR DECISION: no branch is protected (dev, main, master, optional-utilities all "protected": false, 2026-10-26). The triage round left that for after CI had proved green on GitHub, and it has.
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
+
+### Build the survey suggestions in this order, after the bugs
+
+*Planned* · from the round *The os-survey suggestions, scheduled (2026-10-26)*
+
+BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this list only once the open \[!\] entries and the bug entries in WHAT NOBODY WROTE DOWN are done or waiting on the operator. Each line points at the entry that holds the design; the design stays there, this is only the order and the reason. Ordered by what each unblocks, then by value to an operator against its cost.
+
+1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). First because two open bugs wait on it: the cluster CLIs' option (b) (\[!\] THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX) and rc-pilot hearing its robot (RC-PILOT CANNOT BE SET UP). A registered, cap-gated endpoint per service.
+2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). The floor: system\_manifest `floor = true` and the test that the floor is closed under require. Buildable and safe on its own (it deletes nothing), and it is what the Tier 1 gap (330 KB over a 1 MB drive, re-measured above) needs before any stripping UI can be honest. The UI and the strip itself come later.
+3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). One piece of work: log what the sandbox refuses, then a mode that logs instead of refusing. How the audit mode is exposed is an operator decision already batched; the log half needs none.
+4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). The split (minimal EEPROM, recovery UI in stage 2) is the shape that fits the 4 KiB budget bios.lua already strains. Needs a real-Minecraft or runner boot round to land.
+5. A DRIVER REGISTRY WITH PER-DEVICE PROBING (survey 4).
+6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). component\_caps.cfg and pkg\_caps.cfg already exist; this is one place that says who may do what.
+7. SHARED getopt (OCOS \[\*\]). \~50 commands parse their own flags; pkg's unknownOption refusal is the model to share.
+8. LOCALISE THE INSTALLER (survey 10). install.lua has no i18n at all today; the OS has catalogs.
+9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). Disk, not RAM; large; wants the floor (2) first.
+10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). Builds on 9.
+11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]).
+12. /proc-STYLE READ-ONLY INTROSPECTION (Cynosure \[\*\]).
+13. FAR: RUN-THIS-ONCE CONFINEMENT (survey 11), "ASK" AS A THIRD STATE (KittenOS), LINE DISCIPLINES (survey 19), the LOG WALL appliance (settle its local-or-feed question first).
+
+NOT ON THIS LIST, because they are the operator's to decide, not to build: the boot battery in CI (it runs on the headless runner today; the CI host is the open question), and PUT THE COMPAT NUMBER IN THE README (an editorial call).
 
 ### Licence headers — operator decision
 

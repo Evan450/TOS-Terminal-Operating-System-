@@ -106,7 +106,8 @@ local function lift(m)
   local chunk = assert(load(install:sub(from, to - 1)
     .. "\nreturn { spaceNeeded = spaceNeeded, rankTargets = rankTargets, classifyArgs = classifyArgs,"
     .. " mountPaths = mountPaths, listTargets = listTargets, chooseTarget = chooseTarget,"
-    .. " freeOnTarget = freeOnTarget, describeTarget = describeTarget }", "=install-lift", "t", env))
+    .. " freeOnTarget = freeOnTarget, describeTarget = describeTarget,"
+    .. " chooseConfigTarget = chooseConfigTarget }", "=install-lift", "t", env))
   return chunk()
 end
 
@@ -263,6 +264,47 @@ do
   m, L = world(5e4, 5e4); answers = {}
   test("no drive has room: nothing is offered and the player is told", L.chooseTarget(SRC, MANIFEST) == nil
     and text():find("None of these drives has room", 1, true) ~= nil)
+end
+
+print("=== configuration mode finds the TOS to configure ===")
+do
+  -- No install disk: only drives that already hold TOS are offered. It
+  -- was the boot drive, always, so a TOS on a second drive could not be
+  -- reconfigured from OpenOS.
+  local TOS = { ["/init.lua"] = true, ["/tos/kernel/init.lua"] = true }
+  local function cfgWorld(bootHasTos, secondHasTos)
+    local m = newMachine({
+      [BOOT] = { label = "OpenOS", total = 4e6, used = 1e6,
+                 files = bootHasTos and TOS or { ["/init.lua"] = true } },
+      ["e7a0"] = { label = "store", total = 2e6, used = 1.4e6, mount = "/mnt/e7a",
+                   files = secondHasTos and TOS or nil },
+    })
+    fresh()
+    return lift(m)
+  end
+  local L = cfgWorld(false, true)
+  local c = L.chooseConfigTarget()
+  test("TOS on the second drive only: that drive is configured, nothing asked",
+    c and c.prefix == "/mnt/e7a" and not c.isBoot and not text():find("ASK", 1, true))
+  L = cfgWorld(true, false)
+  c = L.chooseConfigTarget()
+  test("TOS on the boot drive only: the boot drive, as before", c and c.isBoot and c.prefix == "")
+  L = cfgWorld(true, true); answers = { "2" }
+  c = L.chooseConfigTarget()
+  test("TOS on both: the player is asked, and 2 is the second drive",
+    c and c.prefix == "/mnt/e7a" and text():find("Which TOS should be configured", 1, true) ~= nil)
+  L = cfgWorld(true, true); answers = { "0" }
+  test("...and 0 cancels", L.chooseConfigTarget() == nil)
+  L = cfgWorld(false, false)
+  test("no TOS anywhere: nothing is configured, and the player is told",
+    L.chooseConfigTarget() == nil and text():find("No drive holds a TOS", 1, true) ~= nil)
+  local a = L.classifyArgs({ "--configure" })
+  test("--configure is an option, not an unknown one", a.configure == true and a.unknown == nil)
+  test("...and it skips the install-disk search",
+    install:find("(not parsed.configure) and findInstallDisk(", 1, true) ~= nil)
+  test("the configuration branch uses it, not the boot drive",
+    install:find("targetDrive = chooseConfigTarget()", 1, true) ~= nil
+    and not install:find("must already be present on the boot drive", 1, true))
 end
 
 print("=== OpenOS leftovers and the old /init.lua are handled on the CHOSEN drive ===")

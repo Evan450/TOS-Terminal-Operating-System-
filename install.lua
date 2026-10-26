@@ -502,6 +502,8 @@ local function classifyArgs(args)   --[[TEST-EXTRACT]]
   for _, a in ipairs(args) do
     if a == "-h" or a == "--help" or a == "-?" or a == "/?" then
       out.help = true
+    elseif a == "--configure" then
+      out.configure = true
     elseif type(a) == "string" and a:sub(1, 1) == "-" then
       out.unknown = out.unknown or a
     else
@@ -647,6 +649,36 @@ local function chooseTarget(srcDisk, manifest)
     else
       warn("Type a number from the list.")
     end
+  end
+end
+
+--- Configuration mode (no install disk): which drive's TOS to configure.
+--- Only drives that already hold TOS are offered. It used to be the boot
+--- drive, always, so a TOS installed onto a second drive (e33d25c's drive
+--- picker) could not be reconfigured from OpenOS. Returns the candidate,
+--- or nil when there is none or the player cancels. (test_install_target.lua)
+local function chooseConfigTarget()
+  local all = listTargets("", nil)
+  local cands = {}
+  for _, c in ipairs(all) do if c.hasTos then cands[#cands + 1] = c end end
+  if #cands == 0 then
+    fail("No drive holds a TOS installation to configure.")
+    warn("Insert the TOS install disk to install it first.")
+    return nil
+  end
+  if #cands == 1 then return cands[1] end
+  color(0x00AAFF); print("--- Which TOS should be configured? ---"); color(0xFFFFFF)
+  for i, c in ipairs(cands) do
+    print(string.format("  %d. %s%s", i, c.isBoot and "Boot drive" or c.prefix,
+      (c.label and c.label ~= "") and ('  "' .. c.label .. '"') or ""))
+  end
+  print()
+  while true do
+    local pick = ask("Configure which drive? (0 = cancel)", nil, "1")
+    local n = tonumber(pick)
+    if n == 0 then return nil end
+    if n and cands[n] then return cands[n] end
+    warn("Type a number from the list.")
   end
 end
 
@@ -1049,6 +1081,7 @@ if parsed.help or parsed.unknown then
   print()
   print("Usage:")
   print("  install.lua [source-dir]")
+  print("  install.lua --configure")
   print("  install.lua --help")
   print()
   print("Run it from an install disk (/mnt/<disk>/install.lua), or")
@@ -1062,8 +1095,11 @@ if parsed.help or parsed.unknown then
   print("source-dir  a directory holding a TOS release, for")
   print("            scripted installs. Normally found by itself.")
   print()
-  print("With no install disk it only changes the settings of a")
-  print("TOS that is already installed.")
+  print("--configure  only change the settings of a TOS that")
+  print("            is already installed, on whichever drive")
+  print("            holds it. Also what happens with no")
+  print("            install disk. (A second drive that holds")
+  print("            TOS reads as an install disk otherwise.)")
   return
 end
 
@@ -1071,7 +1107,10 @@ local hw = surveyHardware()
 printHardwareReport(hw)
 
 -- Detect install disk.
-local srcDisk = findInstallDisk(parsed.positional[1])
+-- --configure skips the search: an installed TOS on a second drive has
+-- both /tos/kernel/init.lua and /install.lua, so findInstallDisk takes it
+-- for an install disk, and configuring it was otherwise unreachable.
+local srcDisk = (not parsed.configure) and findInstallDisk(parsed.positional[1]) or nil
 local diskMode = srcDisk ~= nil
 
 -- The drive TOS goes on: "" is the drive OpenOS booted from (root "/"),
@@ -1160,11 +1199,15 @@ if diskMode then
     print()
   end
 else
-  -- Standalone mode: just configure an existing installation
+  -- Standalone mode: just configure an existing installation, on
+  -- whichever drive holds it.
   color(0xFFFF00)
   print("No install disk detected - running in configuration mode.")
-  print("TOS system files must already be present on the boot drive.")
   color(0xFFFFFF)
+  targetDrive = chooseConfigTarget()
+  if not targetDrive then print("Cancelled."); return end
+  TARGET = targetDrive.prefix
+  print("Configuring the TOS on " .. describeTarget(targetDrive) .. ".")
   print()
   if not confirm("Continue?") then print("Cancelled."); return end
   print()
