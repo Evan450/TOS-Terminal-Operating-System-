@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 56 rounds of work:
+Everything since v1.5.0, in 57 rounds of work:
 
+- [The hardware battery checks the editor's columns](#the-hardware-battery-checks-the-editors-columns)
 - [The installer can reconfigure a TOS on any drive](#the-installer-can-reconfigure-a-tos-on-any-drive)
 - [`tos.py check` says when the loot disk is stale](#tospy-check-says-when-the-loot-disk-is-stale)
 - [Add-on versions follow the rule they were given](#add-on-versions-follow-the-rule-they-were-given)
@@ -67,6 +68,10 @@ Everything since v1.5.0, in 56 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The hardware battery checks the editor's columns
+
+Self-test check 95 ended with an unconditional skip: "draw.lua still advances by bytes". That had been untrue since 2026-10-01, when the editor started measuring in cells, so the battery on real OpenComputers had never checked the editor's column model; only the off-box test did. The check now has the real editor paint `local café = naïve -- ok` on the screen, reads it back cell by cell, and requires the line to arrive whole with the cursor in the cell right after its last character. Under the old byte model the cursor lands two cells too far, because é and ï are two bytes each. On the headless machine the check passes (4 passed, none skipped). With the editor put back to counting bytes it fails, so it catches the bug it was written for. The selftest package becomes 1.0.1, which waits for the re-sign.
 
 ### The installer can reconfigure a TOS on any drive
 

@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**78 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**77 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 54 | Planned or under investigation. Most contributions belong here. |
+| Planned | 53 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 21 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (12)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -811,12 +811,6 @@ Translate TOS to other languages by the following priority table:
 THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS SINCE 2026-10-17, THE MIT CREDIT INCLUDED. Found by this sweep. build/strip.lua's contract is "--! Preserve this comment in dist", for #SEC notes, cross-file invariants and licence / attribution headers. --minify-vars (bb6b2e4, the release default) re-emits each file through LuaMinify's formatter, which writes no comments at all, and that commit does not mention it. The shipped sources hold 3,560 `--!` lines (\~217 KB); today's TOS-Release holds 7, all in the rc.d scripts that get the whitespace pass only. So tos/compat/internet.lua's PROVENANCE note -- parts follow OpenOS's lib/internet.lua (MIT licence) line for line, credited for that reason -- is gone from the release and from the published main. test\_provenance.py cannot see it: it checks that the SOURCE carries a `--!` credit, which was enough while `--!` survived. The add-on pack (092df1e) goes through the same pass. This also settles, silently, the operator decision the RAM and storage entries below still list as open ("dropping the --! comments from the release (219 KB)"). OPERATOR DECISION, in effect made by accident: either keep `--!` through the renamer (the release is 1,292 KB raw, so \~217 KB more still fits the 1,920 KB budget), or accept that the release carries no comments, and then move the MIT credit somewhere that ships (a NOTICE file beside LICENSE.txt, or a string) and say so in strip.lua. Either way, a test on the BUILT tree that the credit is there.
 
 THE CREDIT IS FIXED, 2026-10-26; the rest is still the decision. minify\_vars.noticesOf puts back, at the top of the file, every `--!` paragraph whose first word is PROVENANCE., Copyright or SPDX-License-Identifier: (read from the unstripped file -- from the stripped one the credit ran on into the #SEC note after it). strip.lua's marker convention says so. internet.lua's 425 bytes are the only notice shipped today. test\_release\_credits.lua (14) checks the built TOS-Release; its built-tree checks fail on the old build. So the decision left is only whether #SEC notes and invariants ship (\~217 KB), no longer a licence question. Marked \[ \], not \[!\]: nothing is broken while it waits.
-
-### Selftest 95 still skips the editor column check as unfixed
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-SELFTEST 95 STILL SKIPS THE EDITOR COLUMN CHECK AS UNFIXED. TOS-Extras/modules/selftest/usr/lib/selftest/95-utf8-tokens.lua ends in an unconditional t.skip("editor column model", "draw.lua still advances by bytes (TODO: THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS CHARACTERS)"). That entry is \[x\]: draw.lua has measured in cells since 2026-10-01 (textcol.lua). So the hardware battery has never checked the column model on real OC; test\_editor\_utf8\_columns.lua does it off-box only. Replace the skip with a check that drives draw.lua on the real screen.
 
 ### The tier 1 gap, re-measured
 
