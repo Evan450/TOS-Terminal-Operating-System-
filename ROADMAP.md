@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 63 | Planned or under investigation. Most contributions belong here. |
+| Planned | 62 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (12) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (5) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (13)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (12) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (5) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (12)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -865,12 +865,6 @@ SELFTEST 95 STILL SKIPS THE EDITOR COLUMN CHECK AS UNFIXED. TOS-Extras/modules/s
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE TIER 1 GAP, RE-MEASURED. AUDIT 2 put a full install 773 KB over a 1,024 KB drive (1,797 KB on a managed disk). Dedenting and renaming have since happened: today it is 1,354 KB (1,292 KB of files plus 512 B of fileCost for each of 170 files and 15 dirs), so 330 KB over. What is left is profiles (Install profiles, below) and fileCost (the 21 man pages are 49 KB plus 10.5 KB of fileCost). The `--!` lever is spent, see above.
-
-### A test that skips its whole body still counts as a pass
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-A TEST THAT SKIPS ITS WHOLE BODY STILL COUNTS AS A PASS. AUDIT 1. With no TOS-Release beside it, test\_manifest\_digests.lua prints "SKIP: no built TOS-Release", then "Results: 0 passed, 0 failed" and "All tests passed." (L40-44). run\_tests.py's SKIP\_PATTERN (L77) only knows "run inside TOS", so that is a PASS. Here `tos.py test` builds first and it never bites; but the dev branch carries no TOS-Release, so GitHub CI's green run includes a release-digest check that compared nothing. Fix: count a zero-assertion SKIP as a skip. Severity MEDIUM. Pin: build/test\_run\_tests\_skip.py (audit branch).
 
 ### The fast inventory path numbers every slot one too high
 
