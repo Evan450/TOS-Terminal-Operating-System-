@@ -159,22 +159,23 @@ aq(1,bf,aw,1," ",ak.fg,ak.bg)
 if bg and bg.header then local bi=(ar and"-"or"─")
 local bj=" "..bg.header.." "
 am(1,bf,bi..bi..
-bj..string.rep(bi,math.max(0,aw-3-ax(bj))),ak.dim,ak.bg)am(4,bf,bg.header,ak.title,ak.bg)elseif bg and bg.ai then local bm=bg.ai
-local bj=c[bm]local bn=q(bj.name)
-local bp=bn and"[*]"or(d[bm]and"[x]"or
-(r[bm]and"[+]"or"[ ]"))local bi=(bh==ao)
+bj..string.rep(bi,math.max(0,aw-3-ax(bj))),ak.dim,ak.bg)am(4,bf,bg.header,ak.title,ak.bg)elseif bg and bg.ai then local bn=bg.ai
+local bj=c[bn]local bo=q(bj.name)
+local bp=bo and"[*]"or(d[bn]and"[x]"or
+(r[bn]and"[+]"or"[ ]"))local bi=(bh==ao)
 local bk=bi and ak.sel_fg or(
-(bn or bj.reachable==false)and ak.dim or ak.fg)local bl=bi and ak.sel_bg or ak.bg;if bi then
+(bo or bj.reachable==false)and ak.dim or ak.fg)local bl=bi and ak.sel_bg or ak.bg;if bi then
 aq(1,bf,aw,1," ",bk,bl)end
 local bq=bi and bk or
-(bn and ak.ok or(d[bm]and ak.warn or
-(r[bm]and ak.title or ak.dim)))am(3,bf,bp,bq,bl)local br=aA and(aw-16)or 17
+(bo and ak.ok or(d[bn]and ak.warn or
+(r[bn]and ak.title or ak.dim)))am(3,bf,bp,bq,bl)local br=aA and(aw-16)or 17
 am(7,bf,an(bj.name or"?",math.max(4,br)),bk,bl)
-local bo=bj.version and("v"..tostring(bj.version))or""
-if aA then
-am(aw-8,bf,an(bo,8),bi and bk or ak.dim,bl)else am(25,bf,an(bo,8),bi and bk or ak.dim,bl)
-am(34,bf,an(
-bj.description or"",math.max(0,al-35)),bi and bk or ak.dim,bl)end end end
+local bm=bj.version and tostring(bj.version)or""if bm~=""and ax(bm)<8 then bm="v"..bm end
+if aA then am(aw-8,bf,an(bm,8),
+bi and bk or ak.dim,bl)else am(25,bf,an(bm,8),bi and bk or
+ak.dim,bl)
+am(34,bf,an(bj.description or"",math.max(0,
+al-35)),bi and bk or ak.dim,bl)end end end
 if#e>as then local be=math.floor(
 (at/math.max(1,#e-as))* (as-1)+0.5)for bf=0,as-1 do
 am(aw,

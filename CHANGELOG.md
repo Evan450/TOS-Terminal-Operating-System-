@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 53 rounds of work:
+Everything since v1.5.0, in 54 rounds of work:
 
+- [Add-on versions follow the rule they were given](#add-on-versions-follow-the-rule-they-were-given)
 - [`man pkg` covers all of pkg](#man-pkg-covers-all-of-pkg)
 - [`deploy` refuses a disk TOS will not fit](#deploy-refuses-a-disk-tos-will-not-fit)
 - [The installer stops at the first write that fails](#the-installer-stops-at-the-first-write-that-fails)
@@ -64,6 +65,10 @@ Everything since v1.5.0, in 53 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Add-on versions follow the rule they were given
+
+The versioning rule for the Optional Utilities (decided 2026-09-12) is MAJOR.MINOR.PATCH with an optional stage suffix, and nothing below 1.0.0 ships. Three places did not follow it. The pack builder held packages back only if they were named in a list, so a new 0.x package would have shipped unless someone remembered to add it; the builder now holds back any package whose major version is 0, suffix or not. The picker gave versions 8 columns and always prefixed a "v", so `1.10.0-b` lost its suffix; the "v" is dropped when it would not fit. And `blockfs` reported `_VERSION` 1.2.0 inside a 1.2.1 package, a drift that today's quit-key bumps had also caused in `mail` and `intercom`. All three now match, and blockfs becomes 1.2.2, which waits for the re-sign. No package is below 1.0.0 today, so what the pack contains does not change. `build/test_addon_versions.lua` (22 checks; 6 fail on the old files) checks all three, including every add-on library's `_VERSION` against its manifest. Still open: a check that a version bump carries release notes, which first needs somewhere for per-package notes to live.
 
 ### `man pkg` covers all of pkg
 
