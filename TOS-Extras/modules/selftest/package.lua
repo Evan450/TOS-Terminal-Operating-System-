@@ -12,7 +12,7 @@ return {
   name        = "selftest",
   -- 1.0.0 -- the battery as it stood on 2026-10-02: sixteen checks, 10-boot
   -- through 97-inprocess, and the `selftest` command.
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "dev",
   -- One string literal, not "a" .. "b": pkg reads this file with the
