@@ -62,7 +62,10 @@ if g.code and c and
 g.code==c then if not a then return true end;local i=g.needCtrl==true;local j=
 g.needShift==true;local k=g.needAlt==true;if
 
-(a.ctrl==true)==i and(a.shift==true)==j and(a.alt==true)==k then return true end end end;return false end
+(a.ctrl==true)==i and(a.shift==true)==j and(a.alt==true)==k then return true end end end;return false end;function m.isQuit(a,b,c,d,e)if c and a and a>=32 and a<127 then return false end;return
+m.is("quit",a,b,d,e)end
+function m.quitHint(a)
+local b=m.label("quit",a):gsub(" / .*","")return b~=""and b or"^Q"end
 function m.label(a,b)local c=m.load(b)[a]if not c or#c==0 then return""end;local d={}
 for f,e in
 ipairs(c)do if e.code~=1 then d[#d+1]=m.name(e)end end;return table.concat(d," / ")end

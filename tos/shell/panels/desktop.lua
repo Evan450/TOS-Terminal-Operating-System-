@@ -114,9 +114,10 @@ if b and b.exec then b.exec(e.cmd)end;return 3 end;return 0 end
 function r.handleKey(b,a,d,c,e)local g=a.apps or{}
 if#g==0 then r.refresh(b,a)g=a.apps end;local f=a.sel or 1;local h=v(b,a)local i=t(b)and 1 or u(b).cols
 if c==28 or d==
-32 then return A(b,a,f,e)elseif d==17 then b.activeTab=z(b)return 3 elseif d==114 or d==82 then
-r.refresh(b,a)return 3 elseif c==203 then if f>1 then a.sel=f-1;return 3 end elseif c==205 then
-if f<#g then a.sel=f+1;return 3 end elseif c==200 then if f-i>=1 then a.sel=f-i;return 3 end elseif c==208 then
+32 then return A(b,a,f,e)elseif
+require("shell.keys").isQuit(d,c,true,b.who)then b.activeTab=z(b)return 3 elseif d==114 or d==82 then r.refresh(b,a)return 3 elseif c==203 then if f>1 then
+a.sel=f-1;return 3 end elseif c==205 then if f<#g then a.sel=f+1;return 3 end elseif c==200 then if f-i>=1 then a.sel=
+f-i;return 3 end elseif c==208 then
 if f+i<=#g then a.sel=f+i;return 3 end elseif c==201 then a.sel=math.max(1,f-h)return 3 elseif c==209 then
 a.sel=math.min(#g,f+h)return 3 elseif c==199 then a.sel=1;return 3 elseif c==207 then a.sel=#g;return 3 elseif d and d>=49 and d<=57 then local k=math.floor(
 (f-1)/h)*h;local j=k+ (d-48)if g[j]then a.sel=j;return

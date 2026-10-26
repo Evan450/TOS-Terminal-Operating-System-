@@ -74,19 +74,19 @@ if
 c.kind=="svc"then
 return m(b,a,"svc",c.name,(c.running and"Stopping "or"Starting ")..
 tostring(c.name))elseif c.kind=="proc"then return m(b,a,"switch",c.pid)end;return 0 end
-function k.handleKey(b,a,c,d,e)if not a.rows then k.refresh(b,a)end;local f=a.rows
+function k.handleKey(b,a,d,c,e)if not a.rows then k.refresh(b,a)end;local f=a.rows
 local g=o(b.H)
-if c==17 then n.close(b)return 3 elseif d==200 then
-a.sel=k.nextSelectable(f,a.sel,-1)return 3 elseif d==208 then a.sel=k.nextSelectable(f,a.sel,1)return 3 elseif d==201 then for h=1,g do a.sel=k.nextSelectable(f,a.sel,
--1)end;return 3 elseif d==209 then for h=1,g do
-a.sel=k.nextSelectable(f,a.sel,1)end;return 3 elseif d==199 then a.sel=k.firstSelectable(f)
-a.scroll=0;return 3 elseif d==207 then a.sel=#f;if not k.rowSelectable(f[a.sel])then a.sel=k.nextSelectable(f,a.sel,
--1)end
-return 3 elseif c==114 or c==82 then k.refresh(b,a)return 3 elseif d==28 then return r(b,a)elseif c==107 or c==75 then
-local h=f[a.sel]
+if require("shell.keys").isQuit(d,c,true,b.who)then
+n.close(b)return 3 elseif c==200 then a.sel=k.nextSelectable(f,a.sel,-1)return 3 elseif c==208 then
+a.sel=k.nextSelectable(f,a.sel,1)return 3 elseif c==201 then
+for h=1,g do a.sel=k.nextSelectable(f,a.sel,-1)end;return 3 elseif c==209 then
+for h=1,g do a.sel=k.nextSelectable(f,a.sel,1)end;return 3 elseif c==199 then a.sel=k.firstSelectable(f)a.scroll=0;return 3 elseif c==207 then a.sel=#f
+if not
+k.rowSelectable(f[a.sel])then a.sel=k.nextSelectable(f,a.sel,-1)end;return 3 elseif d==114 or d==82 then k.refresh(b,a)return 3 elseif c==28 then return r(b,a)elseif
+d==107 or d==75 then local h=f[a.sel]
 if h and h.kind=="proc"then if not h.canAct then
 a.msg={"Not permitted.",b.T.warning}return 3 end;return
-m(b,a,"kill",h.pid,"Killed PID "..h.pid)end elseif c==116 or c==84 then local h=f[a.sel]
+m(b,a,"kill",h.pid,"Killed PID "..h.pid)end elseif d==116 or d==84 then local h=f[a.sel]
 if h and h.kind=="proc"then if not h.canAct then
 a.msg={"Not permitted.",b.T.warning}return 3 end;return m(b,a,"tsr",h.pid)end end;return 0 end
 function k.handleClick(c,a,b,d)if not a.rows then k.refresh(c,a)end;local e=(a.scroll or 0)+ (

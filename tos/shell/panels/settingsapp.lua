@@ -130,10 +130,11 @@ local function D(c,a,b)a.page=a.page+b;if a.page>#a.pages then a.page=1 end;if a
 u.firstSelectable(a.pages[a.page].rows)or 1 end
 function t.handleKey(c,a,e,b,d)if not a.pages then t.refresh(c,a)end
 local f=a.pages[a.page].rows;local g=f[a.sel]
-if e==17 then z.close(c)return 3 elseif b==15 or b==209 then D(c,a,1)return 3 elseif b==201 then D(c,a,
--1)return 3 elseif b==200 then a.sel=u.nextSelectable(f,a.sel,-1)return 3 elseif b==
-208 then a.sel=u.nextSelectable(f,a.sel,1)return 3 elseif b==203 then
-return x(c,a,g,-1,d)elseif b==205 then return x(c,a,g,1,d)elseif b==28 then return x(c,a,g,1,d)end;return 0 end
+if
+require("shell.keys").isQuit(e,b,true,c.who)then z.close(c)return 3 elseif b==15 or b==209 then D(c,a,1)return 3 elseif b==201 then D(c,a,-1)return 3 elseif
+b==200 then a.sel=u.nextSelectable(f,a.sel,-1)return 3 elseif b==208 then
+a.sel=u.nextSelectable(f,a.sel,1)return 3 elseif b==203 then return x(c,a,g,-1,d)elseif b==205 then return x(c,a,g,1,d)elseif b==28 then
+return x(c,a,g,1,d)end;return 0 end
 function t.handleClick(c,a,b,d)if not a.pages then t.refresh(c,a)end
 if b.y==3 then
 for j,k in

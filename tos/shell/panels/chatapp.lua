@@ -164,14 +164,15 @@ p.addMessage(a,string.format("  delivered to %d of %d peer(s)",j,#i),c.warning)
 if k then p.addMessage(a,"  "..tostring(k),c.error)if
 tostring(k):find("shared secret",1,true)then
 p.addMessage(a,"  run: net trust gen <addr>   (as admin)",c.dim)end end end end end end
-function p.handleKey(c,a,b,d,e)
-if b==17 then s.close(c)return 3 elseif d==28 then B(c,a)a.scroll=0;return 3 elseif d==14 then
-if#
-(a.input or"")>0 then a.input=a.input:sub(1,-2)end;return 3 elseif d==201 then
-a.scroll=(a.scroll or 0)+math.max(1,c.H-5)return 3 elseif d==209 then
-a.scroll=math.max(0,(a.scroll or 0)-math.max(1,c.H-5))return 3 elseif b and b>=32 and b<127 then
+function p.handleKey(b,a,c,d,e)
+if require("shell.keys").isQuit(c,d,true,b.who)then
+s.close(b)return 3 elseif d==28 then B(b,a)a.scroll=0;return 3 elseif d==14 then if# (a.input or"")>0 then a.input=a.input:sub(1,
+-2)end;return 3 elseif d==201 then a.scroll=
+(a.scroll or 0)+math.max(1,b.H-5)return 3 elseif d==209 then
+a.scroll=math.max(0,(
+a.scroll or 0)-math.max(1,b.H-5))return 3 elseif c and c>=32 and c<127 then
 if# (a.input or"")<200 then a.input=(a.input or
-"")..string.char(b)end;return 3 end;return 0 end
+"")..string.char(c)end;return 3 end;return 0 end
 function p.handleScroll(c,a,b)local e=(b.dir or 0)>0 and 1 or-1;local d=math.max(0,(
 a.scroll or 0)+e*2)if d==a.scroll then
 return 0 end;a.scroll=d;return 3 end
