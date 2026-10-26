@@ -268,6 +268,11 @@ def cmd_check(args) -> int:
     if (DEV / "build" / "make_apiref.py").is_file():
         checks.append(("API reference + tier marks",
                        [sys.executable, "build/make_apiref.py", "--check"], DEV))
+    # Advisory: says whether the Irradiated Circuits loot disk is this
+    # release, and exits 0 either way -- the mod is its own repo.
+    if (DEV / "build" / "check_lootdisk.py").is_file():
+        checks.append(("loot disk (Irradiated Circuits)",
+                       [sys.executable, "build/check_lootdisk.py"], DEV))
 
     need("lua", "install with:  winget install DEVCOM.Lua")
     worst = 0

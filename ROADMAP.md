@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**80 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**79 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 57 | Planned or under investigation. Most contributions belong here. |
+| Planned | 56 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (9) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -347,12 +347,6 @@ Later: teach `pkg install` to refresh the baseline for files it replaces, so an 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 REMOTE EXEC CAN STILL REACH string.dump -- OPERATOR DECISION. AUDIT 1, same source. net/remote.lua:356 copies `string` without dump, but ("").dump reaches the real one through the string metatable, which remote.lua does not touch. Harmless while TOS is open source and `load` is not exposed there; both premises can change. Decide: shadow the metatable's \_\_index in the remote environment, or record that the two premises are load-bearing.
-
-### Every mesh tenant needs one test across the real transport
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-EVERY MESH TENANT NEEDS ONE TEST ACROSS THE REAL TRANSPORT. AUDIT 3. Mail, intercom and chat each register a handler with meshctl. Only test\_mail.lua drives a real meshctl; intercom's receive handler refused every announcement until 2026-10-10 for want of exactly this test. One contract test per tenant: its real handler on a real meshctl node, a real message from a second node, accepted and stored. About 60 lines each; test\_intercom\_mesh.lua on the audit branch is the template.
 
 ### The browser's later steps wait on five operator decisions
 
@@ -845,6 +839,8 @@ THE TIER 1 GAP, RE-MEASURED. AUDIT 2 put a full install 773 KB over a 1,024 KB d
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE LOOT DISK IS WHATEVER TOS-Release WAS WHEN THE MOD LAST BUILT. AUDIT 1 found Irradiated Circuits (radbridge 0.4.0) bundling TOS 1.4.0. Its newest jar, radbridge-0.5.0 (built 2026-10-09, unreleased), carries that day's release: its kernel/init.lua differs from today's, and kernel/x25519.lua and curve25519field.lua are absent. The fix is in the mod's repo: rebuild, and bump the mod version, because LootDiskInstaller stamps the extracted disk with it and an unchanged version never reaches an existing world. Nothing on this side notices the drift. Wanted: a `tos.py check` step that, when it can find a radbridge jar, compares its bundled system\_manifest.lua with TOS-Release's.
+
+THE CHECK IS BUILT, 2026-10-26: build/check\_lootdisk.py, a step of `tos.py check`. It finds the newest radbridge-X.Y.Z.jar (or --jar / $TOS\_LOOTDISK\_JAR), compares assets/radbridge/loot/tos/ with TOS-Release file by file, and names what differs. Advisory (exit 0; --strict fails): the mod is its own repo, and a stale disk is no reason to hold a TOS publish. build/test\_check\_lootdisk.py (6). Today it says radbridge-0.5.0.jar's disk is build 1448305: 143 files differ and 6 are missing (x25519, curve25519field, pkgops, diskmount, open + its man page). STILL OPEN, in the mod's repo and so not done here: rebuild radbridge against this release and bump its version.
 
 ### See the 2026-10-17..24 work run
 

@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 54 rounds of work:
+Everything since v1.5.0, in 55 rounds of work:
 
+- [`tos.py check` says when the loot disk is stale](#tospy-check-says-when-the-loot-disk-is-stale)
 - [Add-on versions follow the rule they were given](#add-on-versions-follow-the-rule-they-were-given)
 - [`man pkg` covers all of pkg](#man-pkg-covers-all-of-pkg)
 - [`deploy` refuses a disk TOS will not fit](#deploy-refuses-a-disk-tos-will-not-fit)
@@ -65,6 +66,10 @@ Everything since v1.5.0, in 54 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `tos.py check` says when the loot disk is stale
+
+The Irradiated Circuits mod bundles a copy of TOS-Release into its jar as a dungeon loot floppy, and that copy is whatever TOS-Release held when the mod last built. Nothing on this side noticed when it went stale. The September audit found the mod shipping TOS 1.4.0, and the current jar, radbridge 0.5.0, carries the release of 2026-10-09. `build/check_lootdisk.py`, now a step of `tos.py check`, finds the newest radbridge jar, compares the loot disk inside it with TOS-Release file by file, and names what differs. Today that is 143 changed files and 6 missing, `kernel/x25519.lua` among them. It is advisory and exits 0 either way, because the mod is its own repository and a stale loot disk is no reason to hold back a TOS release; `--strict` makes it fail. The fix itself happens in the mod: rebuild it against this release and bump its version, because the disk extracted into a world is stamped with the mod version and an unchanged version never reaches an existing world. `build/test_check_lootdisk.py` has 6 cases.
 
 ### Add-on versions follow the rule they were given
 
