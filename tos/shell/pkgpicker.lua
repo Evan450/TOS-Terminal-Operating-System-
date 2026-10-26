@@ -599,7 +599,10 @@ function M.run(opts)
           -- is just mark + name + version and can be much narrower.
           local nameW = twoPane and (LISTW - 16) or 17
           set(7, y, fitTo(e.name or "?", math.max(4, nameW)), fg, bg)
-          local ver = e.version and ("v" .. tostring(e.version)) or ""
+          -- 8 cells. "v1.10.0-b" is 9 and lost its suffix; without the
+          -- "v" it is 8, so the "v" goes first when it would not fit.
+          local ver = e.version and tostring(e.version) or ""
+          if ver ~= "" and ulen(ver) < 8 then ver = "v" .. ver end
           if twoPane then
             set(LISTW - 8, y, fitTo(ver, 8), isSel and fg or T.dim, bg)
           else

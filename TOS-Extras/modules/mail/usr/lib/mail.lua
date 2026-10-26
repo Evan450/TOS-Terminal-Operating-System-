@@ -29,7 +29,7 @@
 
 local M = {}
 
-M._VERSION = "1.0.0"
+M._VERSION = "1.0.1"
 
 -- Boot-order-proof requires (cluster lesson): rc.d loads this BEFORE the
 -- OpenOS compat aliases exist — use the kernel modules directly.

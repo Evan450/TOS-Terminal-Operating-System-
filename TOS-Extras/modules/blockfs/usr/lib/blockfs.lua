@@ -33,7 +33,7 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 
 local blockfs = {}
-blockfs._VERSION = "1.2.0"
+blockfs._VERSION = "1.2.2"
 
 local MAGIC        = "TBFS"
 local FMT_VERSION  = 1

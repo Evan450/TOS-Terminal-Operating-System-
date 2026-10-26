@@ -528,6 +528,19 @@ local DISCOVERY_ROOTS = { "modules", "cluster", "rbmk", "web" }
 local SKIP = {
 }
 
+--! THE RULE IS THE VERSION, so it is applied to the version: a package
+--! whose major number is 0 is skipped whether or not anyone listed it
+--! here. Until 2026-10-26 SKIP was the only gate, so a new 0.x package
+--! shipped unless someone remembered to name it. A stage suffix does not
+--! change this (0.9.0-b is still 0.x); whether a suffixed pre-1.0
+--! package may ever ship, labelled, is the operator's call and not
+--! made here. SKIP stays for holding back a 1.x by hand.
+--! (test_build_disk.lua)
+local function preRelease(version)
+  local major = tostring(version or ""):match("^(%d+)%.")
+  return major == nil or tonumber(major) == 0
+end
+
 -- Explicit target→source maps for layouts that predate the mirror/flat
 -- conventions. Only entries the automatic resolution can NOT find are
 -- needed; everything else in the same package resolves normally.
@@ -627,6 +640,9 @@ for _, root in ipairs(DISCOVERY_ROOTS) do
         problems[#problems + 1] = srcDirRel .. ": " .. tostring(err)
       elseif SKIP[m.name] then
         io.write(string.format("  %-18s SKIPPED (%s)\n", m.name, SKIP[m.name]))
+      elseif preRelease(m.version) then
+        io.write(string.format("  %-18s SKIPPED (version %s is below 1.0.0)\n",
+          m.name, tostring(m.version)))
       else
         local manifestSrc = normalizeEOL(readAll(mpath))
         --! The manifest ships through the whitespace pass too. Its comments

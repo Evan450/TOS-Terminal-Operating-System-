@@ -503,6 +503,7 @@ do
       ["mail"] = "1.0.1: both UIs close and cancel on the quit binding (keys set quit)",
       ["intercom"] = "1.0.2: the tab closes on the quit binding (keys set quit)",
       ["rbmk-control"] = "1.0.1: SKALA quits on ^Q / F10 / the quit binding, not only Q",
+      ["blockfs"] = "1.2.2: _VERSION says the package's version (it said 1.2.0 in 1.2.1)",
     }
 
     if nShipped == 0 then
