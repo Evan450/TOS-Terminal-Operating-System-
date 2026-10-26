@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**82 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**81 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 59 | Planned or under investigation. Most contributions belong here. |
+| Planned | 58 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 20 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (5) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (12) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (13) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -685,12 +685,6 @@ NOT a gap, recorded so it isn't re-investigated: their "fastest VT100 in OC" is 
 
 ## Files and storage
 
-### Deploy still offers a floppy
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-DEPLOY STILL OFFERS A FLOPPY. AUDIT 1. `deploy <mount>`'s usage says "e.g. deploy /mnt/floppy" and its refusal "Deploy only to an external mount such as /mnt/floppy" (panels/commands/ extras.lua, \~L1523 and L1541). A floppy is 512 KB and a release is 1,354 KB on a managed disk. The free-space line is "best-effort" and the copy goes ahead regardless. `deploy drive` (TBFS) already has a real fit check to reuse. Severity LOW: the victim is a scratch disk.
-
 ### If we build the archive mount, use mtar — do not invent a format
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
@@ -737,7 +731,7 @@ SIX SURFACES STILL IGNORE THE KEY TABLE. AUDIT 2. shell.keys is read by the pane
 
 BASE HALF FIXED 2026-10-26: the picker and panels/dialogs.lua ask shell.keys for quit (a text field never takes a printable binding as quit). Found on the way, both in the picker: its filter prompt's undo was Esc ALONE, which real Minecraft never delivers, so in-game it had none; and at 80 columns its key bar (86 wide) was cut at "Enter In…", so the way out was never on screen -- it is ordered most-needed first now and packs to 70 when it must. A new test\_keys\_readers.lua on master DRIVES the dialogs on a fake keys.cfg (quit = F4; 8 fail on the old files) and lifts the picker's helpers. SEEN on the runner: `keys set quit F4`, `pkg install` -&gt; bar "Space·Enter Install·F4 Quit·/ Filter·G Group·A All·N None·R +Suggested"; in the filter ^Q did nothing and F4 undid; in the list ^Q did nothing and F4 left. THE PANELS, SAME DAY: the audit's six were not all. 22 hand-written ^Q tests were left in tos/shell: the menus, the power prompt, the cmdline, the viewer, the editor, and the chat, monitor, settings and desktop tabs all ignored the table. They ask keys.isQuit now (new, with keys.quitHint for one-line hints; the power prompt says "\[F4\]Cancel"). One more found on the runner: F4 is the panels' close-tab key and it was swallowed on the SHELL tab too, where it closes nothing, so the manual's own `keys set quit F4` could never clear the command line; it falls through there now. SEEN on the runner with quit = F4: ^Q left "abcdef" on the line and F4 cleared it; F10's prompt read "\[F4\]Cancel", ignored ^Q, closed on F4. test\_keys\_readers.lua (37) lists every ^Q test left in the shell with its reason, so a new one fails. STILL OPEN: (1) the CLI path -- cli.lua's prompt, CLI chat, login's two prompts, the tutorial, and kernel/init.lua's notice viewer. CLI mode never loads shell.keys and requiring it there costs heap on the 1 MB floor, so these wait for a `tos.py floorcheck` run; pinned as exceptions in the test. (2) the add-on half (both mail UIs, intercomapp, rbmk SKALA), which needs the pack re-signed.
 
-ADD-ON HALF BUILT 2026-10-26, AWAITING THE RE-SIGN: mail 1.0.1, intercom 1.0.2 and rbmk-control 1.0.1 ask shell.keys (a local isQuit over keys.is, so they still run on an older base) and their hints name the key. SKALA was worse than listed: it quit on a bare Q or Esc only (^Q is char 17, not "Q"; F10 was never read), so in-game the letter was the only way out. All three are in PENDING\_RESIGN. test\_keys\_readers.lua (57) lifts and runs each one's helper. SEEN on the runner from an unsigned scratch pack (--machines 2, for the network card): the mail tab's bar read "F4 Close", ^Q did nothing, F4 closed it.
+ADD-ON HALF BUILT 2026-10-26, AWAITING THE RE-SIGN: mail 1.0.1, intercom 1.0.2 and rbmk-control 1.0.1 ask shell.keys (a local isQuit over keys.is, so they still run on an older base) and their hints name the key. SKALA was worse than listed: it quit on a bare Q or Esc only (^Q is char 17, not "Q"; F10 was never read), so in-game the letter was the only way out. All three are in PENDING\_RESIGN. test\_keys\_readers.lua (57) lifts and runs each one's helper. SEEN on the runner from an unsigned scratch pack (--machines 2, for the network card): the mail tab's bar read "F4 Close", ^Q did nothing, F4 closed it. THE HINTS, SAME DAY: the viewer's and editor's footers, the chat, monitor and settings key bars and the help text still printed ^Q whatever the binding; they call keys.quitHint now. SEEN: after `keys set quit F4`, `help`'s viewer footer read "\[F4\]Close", ^Q did nothing and F4 closed it. Left as is: the desktop's key bar, an i18n string (desktop.keys) whose catalogs would all need the change -- the desktop does close on the quit key.
 
 ### Localise the installer, not just the OS
 

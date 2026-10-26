@@ -177,8 +177,9 @@ local u,v=E.lineRange(a.selAnchor,a.selCur or a.selAnchor)if q>=u and q<=v then
 d.set(e+1,1+p,M(b,r,f),c.sel_fg or c.bg,c.sel_bg or c.highlight)end end end end;local l=math.min(i,math.max(0,#g-a.offset))
 local m=
 a.searchTerm and(" [/"..a.searchTerm.."]")or""local k=F()local n=k and k.cycleKeyLabel(b)or"F2"
-local o=string.format("%d-%d / %d%s  [^Q]Close [^F]Find [%s]Tab",
-a.offset+1,a.offset+l,#g,m,n)C.drawRampBar(d,c,j,h,o,nil,c.bar_fg,c.bar_bg)end
+local o=string.format(
+"%d-%d / %d%s  ["..
+require("shell.keys").quitHint(b.who).."]Close [^F]Find [%s]Tab",a.offset+1,a.offset+l,#g,m,n)C.drawRampBar(d,c,j,h,o,nil,c.bar_fg,c.bar_bg)end
 function z.editTab(b,a)local f,c,l,p=b.D,b.T,b.W,b.H;local h=a.lines or{""}local k=p-2;local e=
 b.tier>=2 and(math.max(#tostring(
 #h),2)+1)or 0;local j=l-e;local q=a.path and
@@ -213,8 +214,10 @@ local t=e+ (g-d)+1
 if t>=e+1 and t<=e+j then
 local u=A.slice(h[a.curRow]or"",g,g)if u==""then u=" "end;f.set(t,n,u,c.sel_fg,c.sel_bg)end end;local r=a.modified and" [+]"or""local s=a.searchTerm and
 (" [/"..a.searchTerm.."]")or""
-local o=string.format("%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find%s [^Q]Close",a.label,r,a.curRow,g,s,
-a.suggest and(" [^O]"..a.suggest.cmd)or"")
+local o=string.format(
+"%s%s  Ln %d, Col %d%s  [^S]Save [^F]Find%s ["..
+require("shell.keys").quitHint(b.who).."]Close",a.label,r,a.curRow,g,s,a.suggest and(" [^O]"..
+a.suggest.cmd)or"")
 if a.flash then o=a.flash elseif a.suggest and not a.hintSeen then
 o=string.format("%s suits this file: %s.  [^O] opens it there",a.suggest.cmd,a.suggest.why)end;C.drawRampBar(f,c,p,l,o,nil,c.bar_fg,c.bar_bg)end
 function z.shell(a,b)local c=F()local d=a.tabs[a.activeTab]

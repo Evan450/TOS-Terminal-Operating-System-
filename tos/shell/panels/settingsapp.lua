@@ -123,8 +123,10 @@ for k=1,g do local l=a.scroll+k;local m=j.rows[l]
 if not m then break end;u.drawSettingRow(d,c,i+k-1,2,e-2,m,l==a.sel)end;if a.msg then d.fill(1,f-1,e,1," ",c.fg,c.bg)
 d.set(2,f-1,tostring(a.msg[1]):sub(1,
 e-2),a.msg[2]or c.dim,c.bg)end
-u.drawRampBar(d,c,f,e,"Arrows Move · Left/Right Change · Enter Apply · Tab Page · ^Q Close",
-nil,c.statusbar_fg or c.bar_fg,c.statusbar_bg or c.bar_bg)end
+u.drawRampBar(d,c,f,e,
+"Arrows Move · Left/Right Change · Enter Apply · Tab Page · "..
+require("shell.keys").quitHint(b.who).." Close",nil,c.statusbar_fg or c.bar_fg,
+c.statusbar_bg or c.bar_bg)end
 local function D(c,a,b)a.page=a.page+b;if a.page>#a.pages then a.page=1 end;if a.page<1 then a.page=
 #a.pages end;a.scroll=0;a.msg=nil;a.sel=
 u.firstSelectable(a.pages[a.page].rows)or 1 end

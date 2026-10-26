@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 51 rounds of work:
+Everything since v1.5.0, in 52 rounds of work:
 
+- [`deploy` refuses a disk TOS will not fit](#deploy-refuses-a-disk-tos-will-not-fit)
 - [The installer stops at the first write that fails](#the-installer-stops-at-the-first-write-that-fails)
 - [The fast inventory scan names the right slot](#the-fast-inventory-scan-names-the-right-slot)
 - [Mail, Intercom and the RBMK panel follow `keys set quit`](#mail-intercom-and-the-rbmk-panel-follow-keys-set-quit)
@@ -63,6 +64,10 @@ Everything since v1.5.0, in 51 rounds of work:
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
 
+### `deploy` refuses a disk TOS will not fit
+
+`deploy <mount>` suggested `deploy /mnt/floppy`, and its refusal for a system path named `/mnt/floppy` too. A floppy holds 512 KB and the release takes about 1.35 MB on a managed disk. The free space was printed "best-effort" and never compared with anything, so the copy ran until the disk filled and then printed a FAIL for every file that did not fit. `deploy` now works out what the copy will take before writing anything, the same way the installer does: each file's size, less what a file already at that path takes, plus OpenComputers' 512-byte cost per new file and directory. If that is more than is free, it refuses with E-306 and says nothing was copied. The examples name a drive instead of a floppy. `test_deploy_mount_fits.lua` drives the real command (12 checks; 7 fail on the old file). On the headless runner, a real 512 KB floppy gets "TOS will not fit on /mnt/blank: it needs 1.3M, and 511K is free", and the second hard disk gets "Install disk created: 167 files".
+
 ### The installer stops at the first write that fails
 
 `install.lua` copied each file in 4 KB chunks inside `pcall(function() oh:write(chunk) end)`. OpenOS reports a full disk by returning `nil, "not enough space"` rather than raising an error, so the loop carried on writing, and only the size check after the copy noticed the short file. This is the twin of the `fs.writeAll` bug fixed in the September kernel audit. A write that returns a failure now ends the copy, with the reason. The installer also flushes before closing and checks the flush: the flush is what writes the last buffered block, and OpenOS's `buffer:close()` throws away what its own flush returns. Checking free space up front had already made this rare, but not impossible (another writer, or a per-file cost guess that is off). `test_install_copy_write.lua` runs the function, extracted from `install.lua`, against handles shaped like OpenOS's buffer (13 checks; 6 fail on the old file). Run on the headless runner over real OpenOS 1.8.9, a full install still ends "All 165 files verified".
@@ -82,6 +87,8 @@ Mail 1.0.1, Intercom 1.0.2 and rbmk-control 1.0.1 wait in the re-sign list. `tes
 The picker and the dialogs were not the only places that ignored the key table. 22 hand-written ^Q tests were left in the shell. The menu bar, the F10 power prompt, the command line, the file viewer, the editor, and the chat, monitor, settings and desktop tabs all closed on ^Q whatever `keys set quit` said. They ask `keys.isQuit` now. It is a new function, and like the dialogs it never takes a printable binding as quit where text is being typed. The power prompt's "[^Q]Cancel" now names the real key, through a new `keys.quitHint`.
 
 The headless runner found one more. F4 is the panels' close-tab key, and it was swallowed on the shell tab as well, where there is nothing to close, so the manual's own example, `keys set quit F4`, could never clear the command line. F4 falls through to the line there now. With quit bound to F4 on the runner: ^Q left typed text on the command line and F4 cleared it; the power prompt read "[F4]Cancel", ignored ^Q and closed on F4.
+
+The hints followed in a second pass. The viewer's and editor's footers, the chat, monitor and settings key bars, and the help text all printed ^Q whatever the binding was; they name the real key now, through `keys.quitHint`. After `keys set quit F4` on the runner, the viewer footer reads "[F4]Close". The desktop's key bar is the one exception: it is a translated string, and changing it means changing every language catalog.
 
 What is left is the CLI path: the CLI's prompt, CLI chat, the login prompts, the tutorial, and the kernel's notice viewer. CLI mode never loads the key table, and loading it there costs memory on the 1 MB floor, so those wait for a floor measurement. `test_keys_readers.lua` (37 checks) lists every ^Q test still in the shell with its reason, so a new one fails.
 
