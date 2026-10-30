@@ -2671,6 +2671,8 @@ refreshes live while the tab is in front; the tab label shows an unread badge
 (`Mail(2)`); **Ctrl+Q closes the tab**. The subcommands are the line/scripting
 form; `mail ui` opens the full-screen TUI in the CLI shell. Recipients are a
 peer addr-prefix, hostname, `user@peer`, or `*` for all trusted peers.
+Mail that names no user goes to the machine: an admin finds it in their own
+inbox, and a `*` bulletin shows in everyone's.
 
 **Mail is an ADD-ON.** The *mesh transport* it rides is part of the base OS
 (see `man networking`), but mailboxes are not: install the package from the

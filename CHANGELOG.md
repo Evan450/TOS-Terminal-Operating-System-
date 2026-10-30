@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 59 rounds of work:
+Everything since v1.5.0, in 60 rounds of work:
 
+- [Mail to a machine reaches someone](#mail-to-a-machine-reaches-someone)
 - [`pkg install` says when a service is not running](#pkg-install-says-when-a-service-is-not-running)
 - [The browser fetches a page](#the-browser-fetches-a-page)
 - [The hardware battery checks the editor's columns](#the-hardware-battery-checks-the-editors-columns)
@@ -70,6 +71,10 @@ Everything since v1.5.0, in 59 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Mail to a machine reaches someone
+
+Mail addressed to a machine rather than `user@machine` could not be read. That covers chat's `/mail`, a bare peer in the compose screen or `mail send`, and every `*` bulletin. Such mail names no user, so it was filed in the machine's own mailbox, and every mail screen opens the reader's mailbox instead. On two machines the sender saw "queued", the receiver acknowledged it, and the inbox stayed empty, with the message sitting in `/var/mail/_node/inbox.dat`. Your own inbox now shows your mail followed by the machine's: all of it for an admin, and only `*` bulletins for anyone else, who can read but not delete them. An admin opening someone else's mailbox by name still sees only that mailbox. `test_mail_mesh_seam.lua` goes from 13 checks to 27, 8 of which fail on the old file. On the headless runner a `/mail` from one machine now shows as unread in root's inbox on the other, and opens with its "Sent:" line. The fix is part of mail 1.0.1, which waits for the re-sign.
 
 ### `pkg install` says when a service is not running
 
