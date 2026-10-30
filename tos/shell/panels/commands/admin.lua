@@ -195,6 +195,40 @@ return function(C, S, deps)
     end
     local sub = args[1]
 
+    --! A service package's daemon starts at the NEXT boot: rc runs
+    --! /etc/rc.d when the machine starts, and an install only copies the
+    --! script there. That was never said. On the headless runner
+    --! (2026-10-26) mail installed with "Installed: mail", then its inbox
+    --! read "service stopped -- receive off" while a mail sent to it sat
+    --! unacknowledged. So name the services and the command that starts
+    --! them now. (test_pkg_service_hint.lua)
+    local function serviceHint(names)
+      for _, n in ipairs(names or {}) do
+        local m = pkgMod.info and pkgMod.info(n)
+        if type(m) == "table" and m.kind == "service" then
+          local svcs = {}
+          for _, f in ipairs(m.files or {}) do
+            local stem = tostring(f):match("^/etc/rc%.d/(.+)%.lua$")
+            if stem then svcs[#svcs + 1] = stem end
+          end
+          if #svcs > 0 then
+            local off = type(m.service) == "table" and m.service.defaultState == "disabled"
+            o(string.format(off and "  %s's service is installed switched off. To start it: service start %s"
+              or "  %s runs as a service from the next boot. To start it now: service start %s",
+              n, table.concat(svcs, ", ")), T.dim)
+          end
+        end
+      end
+    end
+    local function installedNames()
+      local set = {}
+      for _, e in ipairs((pkgMod.list and pkgMod.list()) or {}) do
+        local n = type(e) == "table" and e.name or e
+        if type(n) == "string" then set[n] = true end
+      end
+      return set
+    end
+
     --! A `--` word a verb does not know is refused, and nothing happens.
     --! They used to be dropped without a word, which is how
     --! --allow-unsigned -- named in the signature gate's own refusal --
@@ -1008,6 +1042,7 @@ return function(C, S, deps)
             force = force })
         if ok2 then
           o(string.format("Installed: %s", table.concat(summary.installed, ", ")), T.highlight)
+          serviceHint(summary.installed)
           if #summary.skipped > 0 then
             o(string.format("Skipped (already present): %s",
               table.concat(summary.skipped, ", ")), T.dim)
@@ -1019,10 +1054,18 @@ return function(C, S, deps)
 
       elseif mode == "dir" then
         if not target then o("Usage: pkg install <dir>", T.dim); return end
+        local before = installedNames()
         local ok2, info = pkgMod.install(target,
           { session = helpers.sessionOf(S), allowUnverified = allowUnverified,  -- #SEC CR-5
             allowUnsigned = allowUnsigned, force = force })
-        if ok2 then o("Installed: " .. tostring(info), T.highlight)
+        if ok2 then
+          -- pkg.install answers with a file count; say WHICH package too.
+          local new = {}
+          for n in pairs(installedNames()) do if not before[n] then new[#new + 1] = n end end
+          table.sort(new)
+          o("Installed: " .. (#new > 0 and (table.concat(new, ", ") .. " (") or "")
+            .. tostring(info) .. (#new > 0 and ")" or ""), T.highlight)
+          serviceHint(new)
         else
           o("Install failed: " .. tostring(info), T.error)
           memoryHint(info, o, "Installing packages")

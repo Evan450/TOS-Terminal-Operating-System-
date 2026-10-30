@@ -9,8 +9,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 58 rounds of work:
+Everything since v1.5.0, in 59 rounds of work:
 
+- [`pkg install` says when a service is not running](#pkg-install-says-when-a-service-is-not-running)
 - [The browser fetches a page](#the-browser-fetches-a-page)
 - [The hardware battery checks the editor's columns](#the-hardware-battery-checks-the-editors-columns)
 - [The installer can reconfigure a TOS on any drive](#the-installer-can-reconfigure-a-tos-on-any-drive)
@@ -69,6 +70,10 @@ Everything since v1.5.0, in 58 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `pkg install` says when a service is not running
+
+Installing a service package copies its script into `/etc/rc.d`; it does not start it. `pkg install mail` said "Installed: mail", and the inbox then read "service stopped — receive off" with nothing to say why. `mail` is also installed switched off, so it does not start at the next boot either. `pkg install` now says which it is for each service package it installs, with the command: "mail's service is installed switched off. To start it: service start mail", or "runs as a service from the next boot" for one that is not. A directory install also names the package now rather than only counting its files. `test_pkg_service_hint.lua` has 7 checks, and the headless runner shows the hint, then `service start mail` answering "Started: mail".
 
 ### The browser fetches a page
 

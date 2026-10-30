@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**77 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**82 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 53 | Planned or under investigation. Most contributions belong here. |
+| Planned | 57 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 21 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (10) · [The project](#the-project) (11)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (12) · [The project](#the-project) (12)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -353,6 +353,18 @@ REMOTE EXEC CAN STILL REACH string.dump -- OPERATOR DECISION. AUDIT 1, same sour
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
+
+### Still not run on the runner, from see the 2026-10-17..24 work run
+
+*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
+
+STILL NOT RUN ON THE RUNNER, from SEE THE 2026-10-17..24 WORK RUN: bootstrap.lua end to end (the session is designed: OpenOS, --internet, wget bootstrap.lua, then pin the branch argument to main's commit SHA so the raw CDN cannot serve a mix of builds), PaneUI on OpenOS 1.8.9, cluster-storage on two machines. Chat's wrapped lines ARE seen: a 150-character message arrived on three rows, continuations aligned under the text, on both machines.
+
+### Publish.ps1's live check fails on a fresh-push 404
+
+*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
+
+publish.ps1's LIVE CHECK FAILS ON A FRESH-PUSH 404. Once, right after a push, /usr/bin/share.lua read 404 by SHA and the dev check failed, so main was not attempted; a minute later the same URL was 200. Retry a 404 once or twice with a delay before calling it a problem. (That run also lost main for a second reason: an edit made while it ran tripped "release build is OLDER". Do not edit TOS-Dev during a publish.)
 
 ### SSH and share have never worked
 
@@ -703,6 +715,12 @@ A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME 
 
 ## Shell and interface
 
+### Chat's /mail goes to a mailbox nothing reads
+
+*Open bug* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
+
+CHAT'S /mail GOES TO A MAILBOX NOTHING READS. PREDICTED FROM THE CODE AND ONE RUNNER SYMPTOM; CHECK /var/mail FIRST. chatapp's /mail calls mailLib.send with no `user`, so mailboxFor() files it under /var/mail/\_node, and the inbox tab reads inboxBox(S.who), root's. On two machines with mail's service running, the sender said "Mail queued" and the receiver's inbox stayed at 0 messages. Mail composed in the mail UI names a user, so it is not affected. Fix: send to a user (`/mail peer[:user] text`), or have the inbox also show \_node's mail to an admin. Until this is fixed, mail's "Sent:" line (49dec7a) has not been seen on a machine: use the compose UI.
+
 ### Six surfaces still ignore the key table
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
@@ -712,6 +730,18 @@ SIX SURFACES STILL IGNORE THE KEY TABLE. AUDIT 2. shell.keys is read by the pane
 BASE HALF FIXED 2026-10-26: the picker and panels/dialogs.lua ask shell.keys for quit (a text field never takes a printable binding as quit). Found on the way, both in the picker: its filter prompt's undo was Esc ALONE, which real Minecraft never delivers, so in-game it had none; and at 80 columns its key bar (86 wide) was cut at "Enter In…", so the way out was never on screen -- it is ordered most-needed first now and packs to 70 when it must. A new test\_keys\_readers.lua on master DRIVES the dialogs on a fake keys.cfg (quit = F4; 8 fail on the old files) and lifts the picker's helpers. SEEN on the runner: `keys set quit F4`, `pkg install` -&gt; bar "Space·Enter Install·F4 Quit·/ Filter·G Group·A All·N None·R +Suggested"; in the filter ^Q did nothing and F4 undid; in the list ^Q did nothing and F4 left. THE PANELS, SAME DAY: the audit's six were not all. 22 hand-written ^Q tests were left in tos/shell: the menus, the power prompt, the cmdline, the viewer, the editor, and the chat, monitor, settings and desktop tabs all ignored the table. They ask keys.isQuit now (new, with keys.quitHint for one-line hints; the power prompt says "\[F4\]Cancel"). One more found on the runner: F4 is the panels' close-tab key and it was swallowed on the SHELL tab too, where it closes nothing, so the manual's own `keys set quit F4` could never clear the command line; it falls through there now. SEEN on the runner with quit = F4: ^Q left "abcdef" on the line and F4 cleared it; F10's prompt read "\[F4\]Cancel", ignored ^Q, closed on F4. test\_keys\_readers.lua (37) lists every ^Q test left in the shell with its reason, so a new one fails. STILL OPEN: (1) the CLI path -- cli.lua's prompt, CLI chat, login's two prompts, the tutorial, and kernel/init.lua's notice viewer. CLI mode never loads shell.keys and requiring it there costs heap on the 1 MB floor, so these wait for a `tos.py floorcheck` run; pinned as exceptions in the test. (2) the add-on half (both mail UIs, intercomapp, rbmk SKALA), which needs the pack re-signed.
 
 ADD-ON HALF BUILT 2026-10-26, AWAITING THE RE-SIGN: mail 1.0.1, intercom 1.0.2 and rbmk-control 1.0.1 ask shell.keys (a local isQuit over keys.is, so they still run on an older base) and their hints name the key. SKALA was worse than listed: it quit on a bare Q or Esc only (^Q is char 17, not "Q"; F10 was never read), so in-game the letter was the only way out. All three are in PENDING\_RESIGN. test\_keys\_readers.lua (57) lifts and runs each one's helper. SEEN on the runner from an unsigned scratch pack (--machines 2, for the network card): the mail tab's bar read "F4 Close", ^Q did nothing, F4 closed it. THE HINTS, SAME DAY: the viewer's and editor's footers, the chat, monitor and settings key bars and the help text still printed ^Q whatever the binding; they call keys.quitHint now. SEEN: after `keys set quit F4`, `help`'s viewer footer read "\[F4\]Close", ^Q did nothing and F4 closed it. Left as is: the desktop's key bar, an i18n string (desktop.keys) whose catalogs would all need the change -- the desktop does close on the quit key.
+
+### Smaller, noted in passing
+
+*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
+
+SMALLER, NOTED IN PASSING.
+
+- The chat tab repaints in full on every keystroke (handleKey returns 3): about 16 keys a second on the runner's T2 APU. Past human speed, so not a bug, but a pasted line lags.
+- desktop.keys still says "^Q Shell" after `keys set quit`: it is an i18n string, and every catalog would change with it.
+- The CLI path's quit tests (test\_keys\_readers.lua's exceptions) wait on a floorcheck run.
+- 289 test files report failure by marker only and exit 0. run\_tests.py reads the markers, so the suite is right, but anything that reads the exit code alone is told they passed; that is how `tos.py check` went wrong.
+- check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
 
 ### Localise the installer, not just the OS
 
@@ -849,6 +879,12 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 - OPERATOR DECISION: no branch is protected (dev, main, master, optional-utilities all "protected": false, 2026-10-26). The triage round left that for after CI had proved green on GitHub, and it has.
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
+
+### The build stamp has been -dirty, so no build-\* tag has been pushed since at least…
+
+*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
+
+THE BUILD STAMP HAS BEEN -dirty, SO NO build-\* TAG HAS BEEN PUSHED SINCE AT LEAST 2026-10-26. usr/lib/tests/test\_install\_preinit.lua carries an uncommitted box-alignment edit from 2026-10-23, and buildStamp marks any uncommitted change under TOS-Dev. It is a test file the release does not ship, so the shipped code is the commit it names. Commit or drop the edit (the operator's; the session that made it is unknown) and the tags resume.
 
 ### Build the survey suggestions in this order, after the bugs
 
