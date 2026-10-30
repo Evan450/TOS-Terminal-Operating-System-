@@ -162,6 +162,52 @@ for _, mm in ipairs(receiver.M.inbox("bob") or {}) do if mm.subject == "Twice" t
 test("a duplicate delivery is kept once", twice == 1, twice)
 
 print()
+print("=== mail to a machine, not a user, reaches someone ===")
+print()
+
+-- A bare peer, chat's /mail and a "*" bulletin name no user, so they are
+-- filed under _node. Every UI opens the reader's own inbox, so nothing
+-- could read them: sent, acknowledged, and unreachable.
+local function as(user, tier)
+  package.loaded["kernel.users"].currentSession = function()
+    return { user = user, tier = tier }
+  end
+end
+id = sender.M.send({ to = B_ADDR, fromUser = "alice", subject = "To the machine", body = "hello" })
+test("mail to a bare peer is accepted", id ~= nil)
+carry(outA, netB, A_ADDR); carry(outB, netA, B_ADDR)
+test("...and filed under the machine", receiver.files["/var/mail/_node/inbox.dat"] ~= nil)
+
+local function subjects(user)
+  local out = {}
+  for _, mm in ipairs(receiver.M.inbox(user) or {}) do out[#out + 1] = mm.subject end
+  return table.concat(out, "|")
+end
+as("root", 3)
+test("root's own inbox shows it", subjects("root") == "To the machine", subjects("root"))
+local box = receiver.M.inboxBox("root")
+test("...it counts as unread", box:unread() == 1, box:unread())
+test("...and get(1) opens it", (box:get(1) or {}).subject == "To the machine")
+test("...reading it marks it read", box:markRead(1) and receiver.M.inboxBox("root"):unread() == 0)
+test("an admin opening bob's box by name sees only bob's mail",
+  not subjects("bob"):find("To the machine", 1, true), subjects("bob"))
+
+as("carol", 1)
+test("an ordinary user does not see mail to the machine", subjects("carol") == "", subjects("carol"))
+
+id = sender.M.send({ to = "*", fromUser = "alice", subject = "Bulletin", body = "all hands" })
+test("a bulletin is accepted", id ~= nil)
+carry(outA, netB, A_ADDR)
+test("an ordinary user sees a bulletin, and only that", subjects("carol") == "Bulletin", subjects("carol"))
+box = receiver.M.inboxBox("carol")
+test("...and may not delete it", box:delete(1) == false)
+as("root", 3)
+test("root still has it", subjects("root"):find("Bulletin", 1, true) ~= nil, subjects("root"))
+box = receiver.M.inboxBox("root")
+test("root sees the machine's mail in arrival order", subjects("root") == "To the machine|Bulletin", subjects("root"))
+test("root may delete from it", box:delete(1) == true and subjects("root") == "Bulletin", subjects("root"))
+
+print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end
 print("All tests passed.")

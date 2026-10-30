@@ -500,7 +500,7 @@ do
       -- The operator re-signed the pack on 2026-10-24 at 23:01, minified the
       -- way the release is. Name a package here when a fix to it lands ahead
       -- of the next signing.
-      ["mail"] = "1.0.1: both UIs close and cancel on the quit binding (keys set quit)",
+      ["mail"] = "1.0.1: the quit binding, and mail to a machine reaches an inbox",
       ["intercom"] = "1.0.2: the tab closes on the quit binding (keys set quit)",
       ["rbmk-control"] = "1.0.1: SKALA quits on ^Q / F10 / the quit binding, not only Q",
       ["blockfs"] = "1.2.2: _VERSION says the package's version (it said 1.2.0 in 1.2.1)",

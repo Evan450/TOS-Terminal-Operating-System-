@@ -32,7 +32,7 @@ mail ui                            the full-screen inbox in the CLI shell
 
 In the inbox tab: arrows move, **Enter** reads, **c** composes (recipient, subject, then a multi-line body), **r** replies, **d** deletes and **R** refreshes. The inbox refreshes by itself while the tab is in front, and the tab's label carries an unread count, as in `Mail(2)`. **Ctrl+Q** closes the tab.
 
-A recipient is a peer's address prefix, its hostname, `user@peer`, or `*` for every trusted peer.
+A recipient is a peer's address prefix, its hostname, `user@peer`, or `*` for every trusted peer. Mail that names no user goes to the machine: an admin finds it in their own inbox, and a `*` bulletin shows in everyone's.
 
 - **Pair first.** Sending to a peer you have not paired with (`net pair`) is refused, not quietly sent in the clear.
 - **`*` is a bulletin**, and bulletins are plaintext by definition. The screens label them as such.

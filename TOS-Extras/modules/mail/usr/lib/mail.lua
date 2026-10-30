@@ -213,10 +213,64 @@ local function callerPrincipal()
   return s.user, s.tier or 0, s.isKernel or false
 end
 
+-- What a person reads: their own mail, then the machine's. Mail addressed
+-- to a machine rather than user@machine (a bare peer, chat's /mail, a "*"
+-- bulletin) is filed under _node, and every UI opens the reader's own box,
+-- so nothing could read it: the sender saw "queued", the receiver acked it,
+-- and it sat in /var/mail/_node (two machines, 2026-10-26). An admin sees
+-- all of it. Anyone else sees only bulletins, which are public by
+-- definition, and may not delete one: it is the machine's, not theirs.
+-- Rows are recomputed on each call, so an index stays the one on screen.
+local Merged = {}
+Merged.__index = Merged
+
+function Merged:rows()
+  local rows = {}
+  for i, m in ipairs(self.own:list()) do
+    rows[#rows + 1] = { box = self.own, i = i, m = m }
+  end
+  for i, m in ipairs(self.machine:list()) do
+    if self.all or m.to == "*" then
+      rows[#rows + 1] = { box = self.machine, i = i, m = m }
+    end
+  end
+  return rows
+end
+
+function Merged:list()
+  local out = {}
+  for _, r in ipairs(self:rows()) do out[#out + 1] = r.m end
+  return out
+end
+
+function Merged:get(i)
+  local r = self:rows()[i]
+  return r and r.m or nil
+end
+
+function Merged:unread()
+  local n = 0
+  for _, r in ipairs(self:rows()) do if not r.m.read then n = n + 1 end end
+  return n
+end
+
+function Merged:markRead(i)
+  local r = self:rows()[i]
+  return r ~= nil and r.box:markRead(r.i)
+end
+
+function Merged:delete(i)
+  local r = self:rows()[i]
+  if not r or (r.box == self.machine and not self.all) then return false end
+  return r.box:delete(r.i)
+end
+
 --- The Mailbox object for `user` (list/markRead/delete/unread), or
 --- (nil, reason). Owner or ADMIN+ only — enforced against the calling
 --- process's principal, so a sandboxed program that require()s this lib
---- can't read someone else's inbox by claiming a name.
+--- can't read someone else's inbox by claiming a name. Opening your OWN
+--- inbox also shows the machine's mail you may see (Merged, above); an
+--- admin opening someone else's by name sees exactly that box.
 function M.inboxBox(user)
   user = (type(user) == "string" and user ~= "") and user or "_node"
   local caller, tier, isKernel = callerPrincipal()
@@ -224,7 +278,12 @@ function M.inboxBox(user)
     return nil, "access denied: inbox '" .. tostring(user)
       .. "' is owner-or-admin only (you are " .. tostring(caller or "nobody") .. ")"
   end
-  return mailboxFor(user)
+  local own = mailboxFor(user)
+  if user == "_node" or caller ~= user then return own end
+  local merged = setmetatable({ own = own, machine = mailboxFor("_node"),
+    all = isKernel or tier >= 2 }, Merged)
+  local hasMachineMail = #merged:rows() > #own:list()
+  return hasMachineMail and merged or own
 end
 
 --- The inbox (array of message records) for `user`. Same enforcement.

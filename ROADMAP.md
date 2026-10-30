@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**82 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 2 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 57 | Planned or under investigation. Most contributions belong here. |
+| Planned | 61 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 21 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (11) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (12) · [The project](#the-project) (12)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (14) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -253,6 +253,27 @@ Tape "personal menu" ecosystem polish.
 ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MINOR.PATCH, an optional two-character stage suffix (-a, -b), release notes per package, no codenames. pkg already accepts and orders suffixes (validVersion, compareVersion). Left: build-disk.lua's SKIP (L528) is still a table of NAMES, empty today, so a new 0.x package ships unless someone lists it -- make it compareVersion(v, "1.0.0") &lt; 0, and decide whether a suffixed pre-1.0 package may ship labelled; the picker fits "v" .. version into 8 columns (pkgpicker.lua:584-588), so v1.10.0-b is cut; a `tos.py check` rule that a version bump carries a notes entry; blockfs.lua still says \_VERSION = "1.2.0" against its manifest's 1.2.1. Full write-up on the audit branch.
 
 THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major number is 0 (preRelease), suffix or not, beside the SKIP list; the picker drops the "v" when a version would not fit its 8 cells, so 1.10.0-b shows whole; blockfs's \_VERSION matches (blockfs 1.2.2, pending re-sign), and so do mail's and intercom's, which today's quit-key bumps had made drift too. No package is 0.x today, so the pack's contents do not change. build/ test\_addon\_versions.lua (22; 6 fail on the old files) checks all three and every modules/&lt;pkg&gt;/usr/lib/&lt;pkg&gt;.lua \_VERSION against its manifest. STILL OPEN: the notes rule -- there is no per-package release notes file yet for a `tos.py check` step to look in, so where the notes live comes first; and whether a SUFFIXED pre-1.0 package may ship labelled (operator; held back for now, as every 0.x is).
+
+### Warhead's pop-up messages have no borders
+
+*Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
+
+WARHEAD'S POP-UP MESSAGES HAVE NO BORDERS. Operator: it seems unpolished and is sometimes a mess of text. Give warhead's pop-ups a box, the way panels/dialogs.lua's are drawn. Goes through the pack re-sign like any warhead change.
+
+### The package picker: auto-includes, and enter
+
+*Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
+
+THE PACKAGE PICKER: AUTO-INCLUDES, AND ENTER. Two operator reports, both about `pkg install`'s picker.
+
+- "pkg isn't following the auto-include things": not yet reproduced. Start from what it may mean: `requires` should mark dependencies \[+\] (recomputeAuto) and install them; `recommends` are only offered through the R key, on purpose. Find out which one the operator expected before changing either.
+- The operator keeps pressing Enter to add what they picked, where Space is the key that selects. Enter goes straight to install, and with nothing selected that leaves the picker. Either Enter selects the highlighted package when nothing is ticked yet, or the picker stays open and says what to do when there is nothing to install. Operator accepts either.
+
+### An image viewer for ascii-ified images
+
+*Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
+
+AN IMAGE VIEWER FOR ASCII-IFIED IMAGES. Operator idea: MineOS worked this out, and images make the world and the possibilities bigger. A package that shows images converted to text cells. Look at MineOS's format first (the survey covers MineOS elsewhere), and at what each GPU tier can do with half-block characters and colour. A viewer needs a converter beside it, on the dev box or on the machine.
 
 ### Slice 3: resolution
 
@@ -715,12 +736,6 @@ A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME 
 
 ## Shell and interface
 
-### Chat's /mail goes to a mailbox nothing reads
-
-*Open bug* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-CHAT'S /mail GOES TO A MAILBOX NOTHING READS. PREDICTED FROM THE CODE AND ONE RUNNER SYMPTOM; CHECK /var/mail FIRST. chatapp's /mail calls mailLib.send with no `user`, so mailboxFor() files it under /var/mail/\_node, and the inbox tab reads inboxBox(S.who), root's. On two machines with mail's service running, the sender said "Mail queued" and the receiver's inbox stayed at 0 messages. Mail composed in the mail UI names a user, so it is not affected. Fix: send to a user (`/mail peer[:user] text`), or have the inbox also show \_node's mail to an admin. Until this is fixed, mail's "Sent:" line (49dec7a) has not been seen on a machine: use the compose UI.
-
 ### Six surfaces still ignore the key table
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
@@ -865,7 +880,7 @@ SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be 
 - Diffie-Hellman (e2f2445): SEEN 2026-10-26, once something sent a HELLO (AUTOMATIC DIFFIE-HELLMAN NEVER RAN, above). On the runner's T2 APU both sides had derived, and the sealed send was accepted, within 5 s of the second `net trust`: two X25519s and the HELLO round trip. One X25519 alone is untimed.
 - the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes, and the runner does two. Grow it to three, or accept test\_meshctl's three-node simulation.
 - cluster-storage (d6963fb): a Master and a Storage Node on two machines exchanging STORE\_PUT and PUB frames -- that commit's own "not verified". The node needs a wired or Tier-2 modem.
-- chat's wrapped lines and mail's Sent: line (49dec7a).
+- chat's wrapped lines and mail's Sent: line (49dec7a): both SEEN, see FOUND RUNNING THE 2026-10 WORK.
 - the browser (web 1.0.0): SEEN 2026-10-26, and it had never worked. Its first fetch died: "pkg:web:36: attempt to call a nil value (field 'get')". web took require("internet"), which in the sandbox is OpenOS's library (request/socket/open); the kernel wrapper with get() is the `internet` GLOBAL. Its tests stubbed require("internet") with a get. Fixed in web 1.0.1 (pending re-sign); test\_web\_ui.lua's fake sandbox now has the real shape and fails 10 of 14 on 1.0.0. Then, from an unsigned scratch pack with --internet: http://info.cern.ch/ rendered with its heading, four numbered links and the references list; 1 + Enter opened TheProject.html, b came back, ^Q left. A LOCAL http server is not reachable: the card's filteringRules deny private addresses, and adding "allow 127.0.0.1" to a copy of the config disabled HTTP altogether in this Ocelot build -- so the run used a public page.
 - PaneUI (c8a76b9) on OpenOS 1.8.9; the runner booted OpenOS for e33d25c. PaneUI's tests check source grammar only, so its event loop and the new wrapText have never run.
 - bootstrap.lua end to end ("nothing ran bootstrap.lua end to end", e33d25c) from a local http server serving a TOS-Release tree.
@@ -879,6 +894,12 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 - OPERATOR DECISION: no branch is protected (dev, main, master, optional-utilities all "protected": false, 2026-10-26). The triage round left that for after CI had proved green on GitHub, and it has.
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
+
+### A prefab base designer
+
+*Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
+
+A PREFAB BASE DESIGNER. Operator idea: like warhead, but for building. Geolyzer to read the site, robots and drones to build, and a designer for your own blueprints in a 2.5D style, with slices in the X, Y and Z directions. It would probably recommend the mouse driver (`recommends`, not `requires`). Needs its own design pass first: blueprint format, what a robot and a drone can each place, inventory supply, and how the geolyzer's noisy density readings are handled.
 
 ### The build stamp has been -dirty, so no build-\* tag has been pushed since at least…
 
