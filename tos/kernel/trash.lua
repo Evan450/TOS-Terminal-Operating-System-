@@ -256,10 +256,31 @@ function trash.list(session)
   return out
 end
 
---- Restore a trash entry by its name back to its original path (or
---- to `destOverride` if supplied). Returns (true) on success, (false,
---- reason) otherwise. Refuses to overwrite an existing file unless
---- the caller passes `force = true` in opts.
+--- A trash entry is stored under a stamped name (k.txt~25041.6), so that two
+--- deletions of k.txt can both be kept. The name a person has is k.txt, which
+--- is also what the manual says to type: take it when it means one entry, and
+--- when it means several, say which rather than pick one.
+local function resolveEntry(dir, name, session)
+  if securefs.exists(dir .. "/" .. name, session) then return name end
+  local found = {}
+  for _, e in ipairs(listTrashEntries(dir, session)) do
+    local origin = e.meta and e.meta.origin
+    if type(origin) == "string" and origin:match("[^/]+$") == name then
+      found[#found + 1] = e.name
+    end
+  end
+  if #found == 1 then return found[1] end
+  if #found == 0 then return nil, "no such trash entry: " .. name end
+  table.sort(found)
+  return nil, "several trash entries are named " .. name .. ": "
+    .. table.concat(found, ", ")
+end
+
+--- Restore a trash entry back to its original path (or to `destOverride` if
+--- supplied). `name` is the entry's stored name, or the name it had before it
+--- was deleted. Returns (true) on success, (false, reason) otherwise. Refuses
+--- to overwrite an existing file unless the caller passes `force = true` in
+--- opts.
 function trash.restore(name, opts)
   if not securefs then return false, "trash not initialized" end
   opts = opts or {}
@@ -268,11 +289,11 @@ function trash.restore(name, opts)
   local dir = trashDirFor(session)
   if not dir then return false, "no trash for this session" end
 
+  local entry, whyNot = resolveEntry(dir, name, session)
+  if not entry then return false, whyNot end
+  name = entry
   local srcPath = dir .. "/" .. name
   local metaPath = srcPath .. META_SUFFIX
-  if not securefs.exists(srcPath, session) then
-    return false, "no such trash entry: " .. name
-  end
 
   local origin = opts.dest
   if not origin then

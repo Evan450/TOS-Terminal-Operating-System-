@@ -19,21 +19,17 @@
 -- ║    end                                                       ║
 -- ╚══════════════════════════════════════════════════════════════╝
 --
--- #SEC — WHY THIS FILE POLICES ITSELF.
--- A library under /usr/lib is resolved by the sandbox's user-lib path and
--- then loaded through the REAL require (kernel.sandbox ~line 674), so the
--- code you are reading runs with ambient authority: its `component` is the
--- unfiltered one, not the caps-filtered proxy the calling package sees.
--- That is deliberate and is how every full-privilege add-on lib works —
--- but it means the `peripheral.printer` capability added to
--- GATED_COMPONENT_TYPES would buy nothing here. Any package holding
--- fs.read could require("printer") and print.
---
--- So this module re-checks the capability itself, per call, exactly as
--- tos/peripheral/redstone.lua does for #SEC H34 and for the same reason.
--- The check is folded into proxy resolution so there is ONE gate and no
--- entry point can route around it. If you add a function that reaches the
--- hardware, reach it through getProxy(); do not cache a proxy of your own.
+-- #SEC — THE CHECK BELOW IS A SECOND GATE, NOT THE GATE.
+-- Since 2026-09-11 a sandboxed program's require loads a /usr/lib library
+-- INSIDE that sandbox (kernel/sandbox.lua, test_sandbox_userlib_env.lua), so
+-- `component` here is already the caps-filtered view and the sandbox is what
+-- refuses a package without `peripheral.printer`. This file was written when
+-- libraries ran with ambient authority, and hasCap() is what is left of that:
+-- `kernel.process` cannot be required from a sandbox, so there it answers
+-- true and the filter does the work. It still applies to anything that loads
+-- this file through the real require. The check is folded into proxy
+-- resolution so there is ONE path to the hardware. If you add a function that
+-- reaches it, go through getProxy(); do not cache a proxy of your own.
 
 local fmt = require("printerfmt")
 

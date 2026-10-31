@@ -8,7 +8,7 @@ This file is the shot list so the capture session is mechanical.
 
 `docs/screenshots/` on the **`dev`** branch, at the exact filenames below. The README references them by absolute `raw.githubusercontent.com` URL pinned to `dev`, so one copy renders correctly on every branch.
 
-`publish.ps1` refuses any top-level directory that is not on its allowlist. `docs` is on the `dev` list (so screenshots publish with the source) and deliberately **not** on `main`'s: that is the branch installers download, and a machine with ~450 KB free after a full install has no business carrying images it will never open.
+`publish.ps1` refuses any top-level directory that is not on its allowlist. `docs` is on the `dev` list (so screenshots publish with the source) and deliberately **not** on `main`'s: that is the branch installers download, and a Tier 2 drive with about 150 KB left after first boot has no business carrying images it will never open.
 
 Then delete the `<!-- SCREENSHOTS ... -->` comment wrapper at the top of `README.md` — the markup inside it is already written.
 

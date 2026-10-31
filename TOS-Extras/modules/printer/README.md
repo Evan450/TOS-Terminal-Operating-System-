@@ -69,7 +69,7 @@ The split is load-bearing: because the layout half is pure, it is tested off-box
 
 A printer writes to the world. It uses the player's paper and ink and drops physical pages into a chest, which is real actuation with a running cost: the same reason `piston` and `robot` are gated rather than covered by the blanket `component` grant. Installing a game must not also hand it your ink.
 
-A library under `/usr/lib` is loaded through the real `require`, outside the sandbox's per-component filter, so the gate alone would not cover it. `printer.lua` therefore checks the capability itself, on every call. Its header explains the details; the base OS's `tos/peripheral/redstone.lua` (`#SEC H34`) is the precedent.
+A library under `/usr/lib` loads inside the sandbox of the program that required it, so `printer.lua` sees the same filtered components its caller does, and a package without the capability finds no printer. `printer.lua` also checks the capability itself, for anything that loads it through the real `require`.
 
 ## Tests
 

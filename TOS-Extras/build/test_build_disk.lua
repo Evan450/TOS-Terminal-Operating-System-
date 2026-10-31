@@ -503,6 +503,7 @@ do
       ["mail"] = "1.0.1: the quit binding, and mail to a machine reaches an inbox",
       ["intercom"] = "1.0.2: the tab closes on the quit binding (keys set quit)",
       ["rbmk-control"] = "1.0.1: SKALA quits on ^Q / F10 / the quit binding, not only Q",
+      ["rc-pilot"] = "1.2.1: stops sending people to a keychain slot it cannot read",
       ["blockfs"] = "1.2.2: _VERSION says the package's version (it said 1.2.0 in 1.2.1)",
       ["selftest"] = "1.0.1: check 95 tests the editor column model on the glass instead of skipping it",
       ["web"] = "1.0.1: fetches through the kernel wrapper (1.0.0 called require('internet').get, which is nil)",

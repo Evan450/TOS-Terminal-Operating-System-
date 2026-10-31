@@ -91,6 +91,24 @@ test("the next command does not inherit a stale status", shown() == "", shown())
 exec("plain")
 test("o() output is routed as before", shown() == "just this", shown())
 
+-- The CLI supplies its own showOutput, which prints and does not touch
+-- S.lastOut, and then drains S.lastOut itself (cli.lua). Folding the report
+-- into the output and leaving it set said it twice: `useradd` on a headless
+-- machine printed "User 'kiosk' created." on two lines, as did every command
+-- that reports this way.
+print()
+print("=== the CLI's route says it once ===")
+local printed = {}
+local cliExec = executorMod.build(S, {
+  rp = function(p) return p end,
+  makeProgramEnv = function() return {} end,
+  showOutput = function(wrapped) for _, l in ipairs(wrapped) do printed[#printed + 1] = l[1] end end,
+  C = { quiet = function() S.lastOut = { "User 'alice' created.", "HL" } end },
+})
+cliExec("quiet")
+if S.lastOut then printed[#printed + 1] = S.lastOut[1] end  -- what cli.lua drains
+test("a status reaches the CLI exactly once", #printed == 1, table.concat(printed, " | "))
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)

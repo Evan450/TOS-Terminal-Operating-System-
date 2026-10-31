@@ -114,10 +114,10 @@ builder edit needed). Each manifest `files[]` target is resolved in order: **mir
 (source laid out at its install path, like `modules/mouse/usr/lib/mouse.lua`),
 **flat** (single-file modules keeping `init.lua` at their root, like
 `modules/tetris/`), then an explicit **legacy** map for pre-convention
-layouts (`cluster/master-skeleton`'s `lib/cluster/*`). Deliberate exclusions
-go in the `SKIP` table with a reason that prints at build time (empty right
-now — `cluster-storage` and `rbmk-control` left it at 1.0.0, and
-`tape-authenticator` before them).
+layouts (`cluster/master-skeleton`'s `lib/cluster/*`). A package whose major
+version is 0 is skipped whether or not anyone listed it, and the build prints
+why. To hold back a 1.x by hand, put it in the `SKIP` table with a reason that
+prints at build time (empty right now).
 
 ### Multi-floppy splitting
 

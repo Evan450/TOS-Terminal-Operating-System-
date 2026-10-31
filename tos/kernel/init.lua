@@ -1618,6 +1618,14 @@ function kernel.loginAndStartShell()
       if okK and kioskMod and kioskMod.run then
         shellRunner = kioskMod.run
         log.info("kernel", "Seat " .. dIdx .. ": KIOSK mode")
+      else
+        --! #SEC — fail closed. Falling through here handed the `kiosk` account
+        --! the full panels shell whenever the kiosk would not load (a low
+        --! memory login, say), which is what kiosk mode exists to prevent.
+        --! An error takes the shell-crash path below, back to the login
+        --! screen. (test_kiosk_input.lua)
+        local why = tostring(kioskMod)
+        shellRunner = function() error("kiosk shell would not load: " .. why, 0) end
       end
     end
 

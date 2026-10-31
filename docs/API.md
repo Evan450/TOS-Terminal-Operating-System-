@@ -1525,7 +1525,7 @@ body calls, and every gate against a mark.
 - `trash.list(session)`
   List the caller's trash entries. Returns an array of { name, path, size, origin, deletedAt } records sorted newest-first.
 - `trash.restore(name, opts)`
-  Restore a trash entry by its name back to its original path (or to `destOverride` if supplied). Returns (true) on success, (false, reason) otherwise. Refuses to overwrite an existing file unless the caller passes `force = true` in opts.
+  Restore a trash entry back to its original path (or to `destOverride` if supplied). `name` is the entry's stored name, or the name it had before it was deleted. Returns (true) on success, (false, reason) otherwise. Refuses to overwrite an existing file unless the caller passes `force = true` in opts.
 - `trash.empty(session)`
   Permanently empty the caller's trash.
 - `trash.usage(session)`

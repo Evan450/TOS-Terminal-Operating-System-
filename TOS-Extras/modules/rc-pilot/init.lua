@@ -89,7 +89,11 @@ end
 -- ============================================================
 
 local function resolveSecret(target, sess)
-  -- Prefer keychain slot "rc:<addr>" if present + unlocked.
+  -- A package's sandbox has no _G._TOS, so on a real machine this finds no
+  -- keychain and `rc` asks for the secret instead. It also could not hold
+  -- this slot: keychain names do not allow ':'. Whether a package may read
+  -- a slot at all is an open decision (TODO, THE KEYCHAIN IS NOT WITHIN A
+  -- PACKAGE'S REACH). Only an un-sandboxed run gets here with a keychain.
   local km = _G._TOS and _G._TOS.keychain
   if km and km.isUnlocked and km.isUnlocked(sess) then
     local k = "rc:" .. (target or ""):sub(1, 8)
@@ -108,10 +112,9 @@ mod.commands = {
     o = o or print
     local target = args[1]
     if not target then
-      o("Usage: rc <robot-address-prefix>")
-      o("  The robot must be running the rc-pilot EEPROM and have a")
-      o("  shared secret either in your keychain (slot 'rc:<addr>')")
-      o("  or passed via 'rc <addr> --secret <secret>'.")
+      o("Usage: rc <robot-address>")
+      o("  The robot must be running the rc-pilot EEPROM. rc asks for the")
+      o("  shared secret, or takes it from 'rc <addr> --secret <secret>'.")
       o("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
       o("  swap a blank EEPROM in, `flash` that file, and swap yours back.")
       return
@@ -144,8 +147,7 @@ mod.commands = {
     end
     full = full or target  -- accept full address verbatim
     if #full < 16 then
-      o("Target address looks too short. Give the robot's full modem address")
-      o("(a prefix only works for a peer TOS already knows about).")
+      o("Target address looks too short. Give the robot's full modem address.")
       return
     end
 
@@ -157,7 +159,7 @@ mod.commands = {
         --! argv is shell history. The same reason `pkg trust key` stopped
         --! taking its passphrase this way; kept for scripts, said out loud.
         o("Note: --secret puts the shared secret in this seat's command history.")
-        o("      Prefer the keychain:  keychain set rc:" .. full:sub(1, 8))
+        o("      Leave --secret off and rc asks for it, without showing it.")
       end
     end
     if not secret then
@@ -174,9 +176,8 @@ mod.commands = {
       end
     end
     if not secret or #secret < 16 then
-      o("No shared secret (16+ characters). Either add it to the keychain:")
-      o("  keychain set rc:" .. full:sub(1, 8))
-      o("or, for a script only:  rc <addr> --secret <secret>")
+      o("No shared secret (16+ characters). Run rc again and type it when")
+      o("asked, or, for a script only:  rc <addr> --secret <secret>")
       return
     end
 

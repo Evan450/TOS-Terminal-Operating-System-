@@ -312,9 +312,26 @@ function M.build(S, deps)
       elseif name == "wc" and #args == 0 then
         local lc, wc2, bc = 0, 0, #inputData
         for _ in inputData:gmatch("\n") do lc = lc + 1 end
+        -- A pipeline joins lines with no trailing newline, so the last line
+        -- has none to count.
+        if inputData:sub(-1) ~= "\n" then lc = lc + 1 end
         for _ in inputData:gmatch("%S+") do wc2 = wc2 + 1 end
         o(string.format(" %d lines  %d words  %d bytes", lc, wc2, bc), T.fg)
         return buf
+      elseif name == "head" or name == "tail" then
+        local n, file = 10, false
+        for i, a in ipairs(args) do
+          if a == "-n" then n = tonumber(args[i + 1]) or n
+          elseif a:match("^%-%d+$") then n = tonumber(a:sub(2))
+          elseif args[i - 1] ~= "-n" then file = true end
+        end
+        if not file then
+          local lines = {}
+          for line in (inputData .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = line end
+          local first = name == "head" and 1 or math.max(1, #lines - n + 1)
+          for i = first, math.min(#lines, first + n - 1) do o(lines[i], T.fg) end
+          return buf
+        end
       end
     end
 
@@ -535,7 +552,12 @@ function M.build(S, deps)
   -- command set can be folded in. (test_lastout_kept.lua)
   local function withReport(buf)
     local said = S.lastOut
-    if type(said) == "table" and said[1] then buf[#buf + 1] = said end
+    if type(said) == "table" and said[1] then
+      buf[#buf + 1] = said
+      -- Folded in, so spent: the CLI drains lastOut after its own
+      -- showOutput, which would say it a second time.
+      S.lastOut = nil
+    end
     return buf
   end
 

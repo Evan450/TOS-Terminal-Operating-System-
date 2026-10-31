@@ -44,8 +44,8 @@ def test_every_case_matches_the_readme():
 
 
 def test_a_changed_readme_is_caught():
-    out = fc.readme_mismatches(README.replace("about 280 KB free", "about 300 KB free"))
-    assert out == ["1536K: the README no longer says 'about 280 KB free after you log in'"]
+    out = fc.readme_mismatches(README.replace("about 330 KB free", "about 300 KB free"))
+    assert out == ["1536K: the README no longer says 'about 330 KB free after you log in'"]
 
 
 def test_the_panels_floor_is_bootcfgs():

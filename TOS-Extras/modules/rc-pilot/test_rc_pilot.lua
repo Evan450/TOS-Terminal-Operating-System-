@@ -107,8 +107,9 @@ test("a short target is refused with the full-address instruction",
   #sent == 0 and table.concat(hostOut, "\n"):find("full modem address", 1, true))
 hostOut = {}
 rc({ ROBOT }, o)                                 -- no secret anywhere
-test("no secret: told to use the keychain, nothing sent",
-  #sent == 0 and table.concat(hostOut, "\n"):find("keychain set rc:", 1, true))
+test("no secret: told how to give one, and not sent to a keychain rc cannot read",
+  #sent == 0 and table.concat(hostOut, "\n"):find("--secret", 1, true) ~= nil
+  and table.concat(hostOut, "\n"):find("keychain", 1, true) == nil)
 
 -- A session: W, S, slot 3, ping, a pong reply, then the quit key.
 hostOut = {}

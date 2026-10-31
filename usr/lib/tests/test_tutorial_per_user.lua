@@ -98,6 +98,15 @@ do
   eq("bob is still new", true, tut.shouldShow(F, BOB))
 end
 
+-- A kiosk has no file list, prompt bar or Home tab, so a tour of them only
+-- stands between a passer-by and the menu.
+print()
+print("-- the kiosk account is not a new operator --")
+do
+  eq("kiosk is never offered it", false,
+    tut.shouldShow(fsWith(), { user = "kiosk", tier = 1, home = "/home/kiosk" }))
+end
+
 -- ── Migration: an existing box must not replay it for root ─────────
 print()
 print("-- upgrading a machine that used the old shared marker --")

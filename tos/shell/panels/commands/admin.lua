@@ -3009,7 +3009,7 @@ return function(C, S, deps)
       else      S.lastOut = { tostring(err2), T.error } end
     else
       o("Unknown action: " .. action, T.error)
-      o("Valid: lock, unlock, admin, user", T.dim)
+      o("Valid: lock, unlock, admin, user, root", T.dim)
     end
   end
   C.lsdev = function(args, o)
@@ -3694,8 +3694,12 @@ return function(C, S, deps)
       local name = args[2]
       local interval = tonumber(args[3])
       local script = table.concat(args, " ", 4)
-      if not interval then o("Invalid interval", T.error); return end
-      local id = cronMod.add(name, interval, script)
+      if not interval then
+        o("Invalid interval. Usage: cron add <name> <seconds> <script>", T.error)
+        return
+      end
+      local id, addErr = cronMod.add(name, interval, script)
+      if not id then o(tostring(addErr), T.error); return end
       o("Added job #" .. id .. ": " .. name, T.highlight)
     elseif args[1] == "rm" and args[2] then
       local id = tonumber(args[2])

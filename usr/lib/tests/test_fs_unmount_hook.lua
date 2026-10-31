@@ -72,6 +72,14 @@ end
 
 test("root cannot be unmounted", fs.unmount("/") == false)
 
+-- `umount zzz` on a booted machine said "Unmounted /zzz": nothing was
+-- mounted there, and fs.unmount reported success for any path at all.
+do
+  local ok, why = fs.unmount("/mnt/never-mounted")
+  test("unmounting what was never mounted is refused", ok == false)
+  test("...and says so", tostring(why):find("Not mounted", 1, true) ~= nil)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)

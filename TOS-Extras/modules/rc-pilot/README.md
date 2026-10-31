@@ -20,7 +20,7 @@ Both ends share a secret of at least 16 characters. Every frame carries an HMAC-
 
    `flash` warns that the file does not look like a BIOS. It is right, because this is a robot program: type `force`. Then type the shared secret when asked, twice; it is not shown. Last, type `flash` to write the program and the secret together. The secret goes in the chip's data field, which is where the robot reads it.
 2. Swap your own EEPROM back, and build the chip into the robot or drone, with a wireless network card.
-3. **Give `rc` the same secret.** `keychain unlock`, then `keychain set rc:<the first 8 characters of the robot's modem address>`; it asks for the secret without showing it.
+3. **Keep the secret to hand.** `rc` asks for it each time it starts.
 
 > **Not finished yet.** The robot does not announce its wireless card's address, which `rc` needs in full, and a chip with no secret ignores everything without a sound. Fixing either needs `rc` to hear the robot's replies, and a TOS package cannot hear raw network traffic at present: the sandbox drops it so that no program can listen in on another's. Whether a package may hear the ports it opened itself is an open decision on the TOS TODO list.
 
@@ -30,7 +30,9 @@ Both ends share a secret of at least 16 characters. Every frame carries an HMAC-
 rc <robot-address>
 ```
 
-The secret comes from your keychain (slot `rc:` plus the first 8 characters of the address). With no keychain entry, `rc` asks for it without echoing it. `rc <address> --secret <secret>` works for scripts, but says so, because the secret then sits in the seat's command history. A known TOS peer can be given by an address prefix; a robot usually is not one, so give its full address.
+`rc` asks for the secret without echoing it. `rc <address> --secret <secret>` works for scripts, but says so, because the secret then sits in the seat's command history. Give the robot's full address.
+
+`rc` cannot use the keychain yet: a package cannot reach it from its sandbox, so a secret stored there is never read. The same limit is why an address prefix does not work. Whether a package may read a keychain slot is an open decision on the TOS TODO list.
 
 | Key | Robot | Drone |
 |---|---|---|

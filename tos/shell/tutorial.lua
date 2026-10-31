@@ -217,6 +217,8 @@ local pages = {
 --- `session` is the authenticated session (users.getSession(token)).
 function tutorial.shouldShow(F, session)
   if not (F and F.exists) then return false end
+  -- The kiosk account has no file list, prompt bar or Home tab to tour.
+  if session and session.user == "kiosk" then return false end
   --! PASS THE SESSION. securefs resolves the acting principal as
   --! explicit -> process principal -> users.currentSession() -> boot
   --! session, and on the first-boot path every one of those is empty:

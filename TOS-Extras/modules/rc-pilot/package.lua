@@ -5,7 +5,7 @@
 -- robot/eeprom-rc-pilot.lua into it and refuses a build over 4096 bytes.
 return {
   name        = "rc-pilot",
-  version     = "1.2.0",
+  version     = "1.2.1",
   kind        = "command",
   category    = "control",
   description = "WASD remote-control host for OC robots/drones running the rc-pilot EEPROM.",

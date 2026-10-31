@@ -6,7 +6,7 @@ Optional add-ons for TOS: programs, games, drivers and services that run on TOS 
 
 On a TOS machine, as admin, insert the Optional Utilities floppy and run `pkg install`. It opens a checkbox picker grouped by category: tick what you want and it installs the lot in one pass. `pkg install <name>` installs one add-on by name. With an internet card, `pkg fetch <name>` gets one from a configured repository instead (TOS manual, §7.9).
 
-The service packages (`mail`, `intercom` and the cluster) and `selftest` need **root**, not just admin: a service runs at boot outside the package sandbox, and a self-test check runs inside the kernel.
+The service packages (`mail`, `intercom`, `rbmk-control` and the cluster) and `selftest` need **root**, not just admin: a service runs at boot outside the package sandbox, and a self-test check runs inside the kernel.
 
 The signed pack is published on the repository's `optional-utilities` branch. This directory is the source, and the pack can trail it until its next signing; the picker shows the version of each package it offers.
 
@@ -56,12 +56,14 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 | [mail](modules/mail/README.md) | `mail` | Store-and-forward email between TOS machines, sealed end to end, with no server. Root. |
 | [intercom](modules/intercom/README.md) | `intercom` | Facility announcements: a recorded message plays from tape, and the same words go out over the network. Root. |
 | [cluster](cluster/README.md) | `cluster-setup` | Spreads jobs across machines: one Master, any number of Managers, and optional OpenOS workers. Root. Its `cluster` command does not start at present; see its README. |
+| [cluster-storage](cluster/storage-skeleton/README.md) | service | A single Storage Node: the scratch tier the cluster Master spills oversized task lists into. Not the distributed pool its spec also describes. Root. |
 | [web](web/browser/README.md) | `web` | A text-mode browser: headings, paragraphs, lists, links and `<pre>`, read with this machine's own internet card. No fetch proxy yet — see its README. |
 
 **Control and automation**
 
 | Add-on | Command | What it is |
 |---|---|---|
+| [rbmk-control](rbmk/README.md) | `rbmk` | A safety supervisor and operator panel for HBM's RBMK reactors, bound to the mod's real `rbmk_console` (read from its jar). Root. Not yet run against a world: `rbmk survey` first. |
 | [rc-pilot](modules/rc-pilot/README.md) | `rc` | Fly a robot or drone from the keyboard, with every keystroke signed. The robot cannot yet tell you its address; see its README. |
 | [stock](modules/stock/README.md) | `stock` | Totals every item in the chests around a transposer, and warns when something runs low. |
 
@@ -81,13 +83,11 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 
 | Path | What it is |
 |---|---|
-| [rbmk/](rbmk/README.md) | `rbmk-control` 1.0.0, a safety supervisor and operator panel for HBM's RBMK reactors, bound to the mod's real `rbmk_console` (read from its jar). Not yet run against a world: `rbmk survey` first. |
-| [cluster/storage-skeleton/](cluster/storage-skeleton/README.md) | `cluster-storage` 1.0.0, a single Storage Node: the scratch tier the cluster Master spills oversized task lists into. Not the distributed pool its spec also describes. |
 | [pane-ui/](pane-ui/README.md) | PaneUI, the TOS look and file manager for OpenOS machines. One file, copied by hand rather than installed with `pkg`. |
 | [robot/](robot/README.md) | The program on the robot's own chip for `rc-pilot`. The rc-pilot package ships it ready to burn. |
 | [web/](web/README.md) | The fetch proxy, shared page cache and cluster back end for `web` (above) — steps 3-5 of its design. Design only; blocked on trust decisions (proxy discovery, cache-read defaults), not code. |
 
-A package below version 1.0.0 is not finished, so it stays off the pack: the builder keeps a list of them and prints each one it skips, and why.
+A package below version 1.0.0 is not finished, so it stays off the pack: the builder goes by the version number and prints each one it skips, and why. Every package here is 1.0.0 or later today, so none is skipped.
 
 ## Building the pack
 

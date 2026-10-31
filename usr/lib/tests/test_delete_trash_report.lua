@@ -114,7 +114,7 @@ test("a session with NO trash still falls through (a guest's rm is final)",
   rmBody:find('why:find("no trash"', 1, true) ~= nil
   and rmBody:find("deleting " , 1, true) ~= nil)
 test("the success message still points at restore",
-  rmBody:find("use 'restore' to undo", 1, true) ~= nil)
+  rmBody:find("use 'trash restore ", 1, true) ~= nil)
 
 -- ── F8 in the browser goes through the same door ──────────────────
 print()

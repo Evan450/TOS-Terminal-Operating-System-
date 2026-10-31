@@ -26,7 +26,7 @@ write tells TOS that `.wri` is its own format, and that a `.txt`, `.doc` or `.te
 | F4 | set the title |
 | F5 | switch between the text and the page view |
 | F6 | start a new page here |
-| F7 | centre this line, or un-centre it |
+| F7 | centre from this line on; again to undo it |
 | Ctrl+B | send it to the background; Ctrl+T brings it back |
 | Ctrl+Q | quit, asking to save first if there are changes |
 

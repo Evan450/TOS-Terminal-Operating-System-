@@ -107,6 +107,7 @@ function fs.unmount(path)
   if not path then return false, "invalid path" end  -- #SEC M-1
   if path == "/" then return false, "Cannot unmount root" end
   local proxy = mounts[path]
+  if proxy == nil then return false, "Not mounted: " .. path end
   mounts[path] = nil
   -- A proxy that keeps on-disk state of its own (TBFS marks its volume
   -- dirty at mount and clean at unmount) gets told. Managed OC filesystem

@@ -34,7 +34,7 @@ In the inbox tab: arrows move, **Enter** reads, **c** composes (recipient, subje
 
 A recipient is a peer's address prefix, its hostname, `user@peer`, or `*` for every trusted peer. Mail that names no user goes to the machine: an admin finds it in their own inbox, and a `*` bulletin shows in everyone's.
 
-- **Pair first.** Sending to a peer you have not paired with (`net pair`) is refused, not quietly sent in the clear.
+- **Share a secret first.** Sending to a peer you share no secret with is refused, not quietly sent in the clear. Trusting each other from both machines (`net trust <peer> full`) agrees one by itself; `net pair` does it with a code.
 - **`*` is a bulletin**, and bulletins are plaintext by definition. The screens label them as such.
 - **Limits:** a subject is cut at 120 characters and a body at 4096, which keeps a sealed message under the mesh's size cap. An inbox keeps its newest 200 messages.
 

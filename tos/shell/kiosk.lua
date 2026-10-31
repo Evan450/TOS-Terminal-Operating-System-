@@ -30,9 +30,9 @@
 --   }
 --
 -- Activation: kiosk mode is triggered when the logged-in user is the
--- special account "kiosk" (TIER.GUEST). Alternatively, an admin can
--- launch any user into kiosk via `kiosk start` from a shell — useful
--- for testing the config.
+-- account named "kiosk". No such account ships: root makes it with
+-- `useradd kiosk`, which gives it the USER tier. The `kiosk` command only
+-- explains this.
 --
 -- Security posture:
 --   * Kiosk runs under the calling user's session — the C8 session-
@@ -283,11 +283,12 @@ function kiosk.run(kernel, token)
           -- Ctrl+D: log out
           if usersmod.logout then usersmod.logout(token) end
           return
-        elseif char and char >= 49 and char <= 57 then
-          -- Number key → menu item
-          local idx = char - 48
-          local item = cfg.menu[idx]
-          if item then buf = item.cmd; break end
+        elseif char and char >= 49 and char <= 57 and buf == "" and cfg.menu[char - 48] then
+          -- Number key → menu item, on an empty line only. Anywhere else a
+          -- digit is text: it used to be swallowed, so `cat map2.txt` read
+          -- map.txt, and with a menu it threw the line away and ran the item.
+          buf = cfg.menu[char - 48].cmd
+          break
         elseif char and char >= 32 and char < 127 and #buf < 80 then
           buf = buf .. string.char(char)
         end

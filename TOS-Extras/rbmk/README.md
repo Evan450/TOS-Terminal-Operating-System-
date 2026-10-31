@@ -19,7 +19,7 @@ the wire format — is tested off-box. See [Plan.md](Plan.md).
 
 | Path | What it is |
 |---|---|
-| `controller-skeleton/` | The `rbmk-control` package (v1.0.0, `kind="service"`, installed DISABLED). |
+| `controller-skeleton/` | The `rbmk-control` package (v1.0.1, `kind="service"`, installed DISABLED). |
 | `openos/rbmk-display.lua` | The OpenOS display satellite. Single file, read-only, never transmits. |
 | `test_rbmk.lua` | Binding + safety rules (73 assertions). |
 | `test_rbmk_skala.lua` | Panel model, display wall, wire format, and the satellite's copied constants (196). |
@@ -43,7 +43,7 @@ rbmk wall              what each screen on this machine would show
 channel, with a rail of lettered parameter keys — **N** power, **T**
 core temp, **X** steam, **K** rod depth, **G** coolant — that swap what
 the map shows, plus **alarm** and **trend** pages. Arrow keys move an
-inspection cursor; `Q` leaves.
+inspection cursor; `Q`, Ctrl+Q or F10 leaves.
 
 `--wall` drives *every* screen on the machine, each with a different
 page. It is opt-in because TOS is multi-seat: painting every display by

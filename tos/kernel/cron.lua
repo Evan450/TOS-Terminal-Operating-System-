@@ -179,6 +179,18 @@ function cron.add(name, intervalSec, script, opts)
     end
   end
 
+  --! A job is Lua source or a path to a .lua file, never a shell line, and
+  --! the timer only finds that out by logging a syntax error every interval.
+  --! The manual's own example was one. Say so now, while someone is looking.
+  --! (test_cron_add_report.lua)
+  if script:sub(1, 1) ~= "/" then
+    local fn, lerr = load(script, "=cron", "t", {})
+    if not fn then
+      return nil, "cron: a job is Lua source or a path to a .lua file, not a "
+        .. "shell line (" .. tostring(lerr) .. ")"
+    end
+  end
+
   -- #SEC H12 — if `script` is a path, validate canRead AT INSERTION
   -- time as the caller (not the actor). A USER scheduling a job as
   -- themselves shouldn't be able to register `/etc/users.dat` and then

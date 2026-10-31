@@ -188,7 +188,7 @@ Configuration screen** (2.2) for what your machine has.
 |---|---|
 | **Memory** | At least 1 MB (one Tier 3.5 stick), or 1.25 MB with a network card or linked card, whose network stack and services take about 170 KB more. On a machine that size TOS starts at the command line; installing add-ons needs 1.25 MB, because the package manager does not load in 1 MB; the full panels interface needs 1.5 MB (two Tier 3 sticks). Below 1 MB it does not reach a usable shell. |
 | **Drive** | About 1.9 MB free. A Tier 2 drive (2 MB) holds TOS on its own, with about 150 KB left after first boot: enough to run, not to grow, so add-ons and `srm baseline --full` (about 220 KB) want a Tier 3 drive (4 MB). Installing from OpenOS onto the same drive needs a Tier 3 drive (4 MB), because OpenOS stays there until the install finishes. TOS does not fit on a floppy. |
-| **CPU** | Any tier, on the Lua 5.3 or 5.4 architecture (sneak-click the CPU to switch it). |
+| **CPU** | Any tier, on the Lua 5.3 or 5.4 architecture (sneak-click the CPU to switch it). OpenComputers added Lua 5.4 in 1.8.0, so on an older version use 5.3. |
 | **To install from** | OpenOS, plus an Internet Card or a TOS install disk. |
 
 ### 1.2 Installing TOS
@@ -416,10 +416,12 @@ raw drives, and a discovered boot volume of either kind needs this approval.
 
 ### 3.2 First boot
 
-Log in as `root` / `root`. TOS forces a password change on first boot — the
-session is minted at GUEST tier with a *password-change-only* token until you
-set a real password, so the default password can't be used to do anything else.
-A role-aware tutorial then walks you through the basics.
+There is nothing to log in to yet: the first boot opens root's session by itself
+and asks you to set root's password before anything else. Until you do, that
+session sits at GUEST tier with a *password-change-only* token, so the default
+password `root` can't be used to do anything else. If that step doesn't finish,
+the login screen takes `root` / `root` and asks again. A role-aware tutorial
+then walks you through the basics.
 
 ### 3.3 Passwords, lockout & backoff
 
@@ -554,7 +556,7 @@ that closes one closes all of them:
 | `cut` | **Shift+Delete**, ^X | Cut the selection |
 | `paste` | **Shift+Insert**, ^V | Paste the clipboard |
 
-`view` is the sixth and newest action. It arrived with the merged Home
+`view` arrived with the merged Home
 surface, and it is here rather than hard-wired into the shell for the reason
 this table exists at all: "flip to the other view" is something an operator
 will want to rebind, and one rebind should re-label every screen that mentions
@@ -768,7 +770,7 @@ it did before. `home` is the default and everything above describes it.
 
 The **Settings app** (`settings`, or Settings → Settings App) is four pages of
 forms: **Appearance** (theme preset with live preview, then "Save as my
-theme"), **Status Bar** (widget checkboxes, saved immediately), **Desktop**
+theme"), **Status Bar** (widget checkboxes, saved immediately), **Home**
 (the landing choice), **System** (buttons for `bootsettings`, `users`,
 `doctor`, `about`; admin buttons hidden below ADMIN tier). Tab switches page,
 Left/Right changes a value, Enter applies.
@@ -996,8 +998,9 @@ under `/etc`, and never `/tos` or `/init.lua`.
 The bundled add-ons ship on the **Optional Utilities** disk, a pick-and-choose
 set modeled on the MS-DOS Supplemental Utilities Disk: games (`tetris`, `snake`,
 `ttt`), `calc`, `write`, `tape` and `tape-authenticator`, `rc-pilot`, `stock`,
-the `mouse` and `printer` drivers, `blockfs`, `mail`, `intercom`, the cluster
-packages, and `selftest`. Building it is one command,
+the `mouse` and `printer` drivers, `blockfs`, `mail`, `intercom`, the `web`
+browser, `warhead`, `rbmk-control`, the cluster packages, and `selftest`.
+Building it is one command,
 `TOS-Extras/build/build-disk.cmd` (Windows) or `build-disk.sh` (POSIX), which
 auto-discovers every add-on with a `package.lua`. Add
 `--install <path-to-OC-floppy-folder>` to "burn" the result straight onto a
@@ -1044,7 +1047,7 @@ means "give me the rest of these" until there is nothing left to add.
 the category — you'll type any of the three looking for "the spreadsheet one",
 and shouldn't have to guess which field the author used. **Enter** keeps the
 filter, **Esc** undoes it (and with a filter already active, Esc from the list
-clears it rather than quitting). The count rail changes to `3 of 14 match
+clears it rather than quitting). The count rail changes to `3 of 21 match
 'gam'` while one is on, because a filter you forgot about otherwise looks
 exactly like a disk with packages missing.
 
@@ -1097,7 +1100,7 @@ When you install, it does everything reachable now, then asks for the next
 disk:
 
 ```
-Insert disk 2 for: tetris, ttt
+Insert disk 2 for: snake, web
 Enter = continue   A = stop, keep what's installed   U = undo all
 ```
 
@@ -1690,11 +1693,13 @@ and name the protocol.
 
 Point-to-point packets reach a peer you can *hear*. The **mesh** reaches one you
 can't: it is part of the integrated network, and any service can ride it. There
-is no central server and no routing table — a node knows only its immediate
-radio neighbours, and a message reaches a destination several hops away by
-**controlled flooding**: each node re-broadcasts what it hasn't seen before,
-decaying a hop budget (TTL) so nothing circulates forever, de-duplicating by
-message id so loops collapse.
+is no central server and no map of the network — a node starts out knowing only
+its immediate radio neighbours, and a message reaches a destination several hops
+away by **controlled flooding**: each node re-broadcasts what it hasn't seen
+before, decaying a hop budget (TTL) so nothing circulates forever, de-duplicating
+by message id so loops collapse.
+
+**A node remembers what the traffic shows it.** Every message that arrives lists the path it took, so its last hop is a neighbour known to reach the sender. A node keeps that for up to 64 destinations, for five minutes each, and sends a later message for one of them straight to that neighbour rather than to everyone in range. If that send fails, or repeated probes go unanswered, the route is forgotten and the message floods as before, so the cache can only cut down the traffic. It cannot lose a message a flood would have found.
 
 Reliability is **store-and-forward**. The origin keeps a copy and re-floods on a
 timer until an acknowledgement (flooded back the same way) arrives or a deadline
@@ -1713,9 +1718,11 @@ arriving kind drops it **without acknowledging** — the sender keeps retrying,
 which is honest: nothing stored it there.
 
 **Sealed or refused.** Sending to a peer you have no shared secret with is
-*refused*, not silently sent in the clear (pair first — `net pair`). Broadcasts
-(`*`) cannot be sealed by definition, so they must be opted into explicitly and
-are labelled PLAINTEXT wherever they appear.
+*refused*, not silently sent in the clear. Two machines get a secret by raising
+each other to TRUSTED (`net trust <peer> full`, on both): they then agree one by
+themselves, with nothing to type. `net pair` is the out-of-band way to do it
+with a code. Broadcasts (`*`) cannot be sealed by definition, so they must be
+opted into explicitly and are labelled PLAINTEXT wherever they appear.
 
 **A reinstalled peer has a new key.** Two TRUSTED peers derive their shared secret from each other's identity keys. Reinstalling a machine keeps its address (the network card) but makes a new key, so it derives a new secret while you still hold the old one, and nothing sealed gets through. TOS does not accept the new key by itself, because anything that can speak as that address could offer a key of its own. Instead the log records the change and `net peers` marks the peer. Once you know why the key changed, `net trust rekey <peer>` (admin) derives a new secret from the new key.
 
@@ -1997,7 +2004,7 @@ color <key> <0xRRGGBB>|reset|clear|keys` (aliased `colors`) — `theme color`
 also accepts the `syn_*`, `file_lua`, and `dir_color` keys. Saved per user
 (`~/.theme.cfg`) and re-applied at login. On Tier-1 monochrome GPUs themes are
 disabled (RGB would be unreadable); on Tier-2 they snap to the dye palette;
-Tier-3 is full RGB. (The PaneUI app for OpenOS mirrors the six classic themes.)
+Tier-3 is full RGB. (The PaneUI app for OpenOS carries the same nine themes.)
 
 A profile can also name a preset (`profile set theme <name>`); it applies at
 login only when you have no explicit `theme set` choice saved — the more
@@ -2180,7 +2187,9 @@ line is kept as ordinary text — a document does not fail to open over a typo.
   card it is not loaded at all, which saves the memory its code would hold, and
   `service` lists it as `not loaded: needs network hardware` (add the card and
   reboot). All five defaults declare it.
-- **cron:** `cron [list|add <interval> <cmd>|rm <id>]` — persistent scheduled tasks.
+- **cron:** `cron [list|add <name> <seconds> <script>|rm <id>]` — persistent
+  scheduled tasks. A job's script is Lua source or the full path of a `.lua`
+  file, not a shell line, and a job runs as the user who added it.
 
 ---
 
@@ -2277,7 +2286,7 @@ To run a script automatically:
 
 - **At boot** — drop it in `/etc/rc.d/` as a service (Chapter 12); kernel-tier
   names need the allowlist, everything else runs sandboxed.
-- **On a timer** — `cron add <interval> "run /home/me/backup.lua"` (Chapter 12).
+- **On a timer** — `cron add backup 300 /home/me/backup.lua` (Chapter 12).
 
 ---
 
@@ -2435,9 +2444,10 @@ impossible, it goes to another writable disk, without the log, and the boot
 message names where (`crash /mnt/<disk>/var/crash/<name>` reads it). *See also:*
 `log`, `doctor`.
 
-**cron** — `cron [list | add <interval> <cmd> | rm <id>]` **(admin)**
-Manage persistent scheduled tasks (Chapter 12). *Example:*
-`cron add 300 "run /home/me/backup.lua"`.
+**cron** — `cron [list | add <name> <seconds> <script> | rm <id>]` **(admin)**
+Manage persistent scheduled tasks (Chapter 12). The script is Lua source or the
+full path of a `.lua` file; a shell line is refused when you add it. *Example:*
+`cron add backup 300 /home/me/backup.lua`.
 
 ### D
 
@@ -2616,7 +2626,7 @@ module isn't loaded. *Errors:* `JBOD is disabled`, `ambiguous address prefix`,
 Your own store of passphrases, locked with your login password. `unlock` asks
 for that password; `set` asks for the passphrase to store, without echoing it,
 so neither lands in your command history. `get` prints a stored passphrase on
-the screen. `rc` (rc-pilot) reads its shared secrets from here.
+the screen. No package can read it yet: `rc` (rc-pilot) asks for its secret instead.
 
 **keys** — `keys [list | set <action> <key>... | reset [action]]`
 Show TOS's standard keyboard shortcuts, rebind one, or put one (or all) back to
@@ -2627,8 +2637,9 @@ Terminate a job by id. *See also:* `ps`, `fg`, `bg`.
 
 **kiosk** — `kiosk` **(admin)**
 Explain kiosk mode: the locked, guest-facing menu (an allow-list, read-only)
-that runs when someone logs in as the `kiosk` user. To try it, log out and log
-in as `kiosk`.
+that runs when someone logs in as an account named `kiosk`. No such account
+ships, so make it first with `useradd kiosk`, then log out and log in as it.
+Its allow-list and menu live in `/etc/kiosk.cfg`.
 
 ### L
 
@@ -2681,9 +2692,10 @@ mail`** so the machine can *receive* (the service registers the delivery
 handler at boot, which is what makes store-and-forward work with nobody logged
 in). Without the add-on, `mail` prints an install hint; a TOS box without it
 still *relays* mail for its trusted neighbours — relaying is the transport's
-job, and relays can't read the sealed payload anyway. *Sending to an unpaired
-peer is refused* rather than silently sent in the clear (pair first with `net
-pair`); `*` bulletins are plaintext by definition and labelled as such.
+job, and relays can't read the sealed payload anyway. *Sending to a peer you
+share no secret with is refused* rather than silently sent in the clear (trust
+it from both machines, which agrees one, or pair with `net pair`; §8.3); `*`
+bulletins are plaintext by definition and labelled as such.
 *See also:* `chat`, `net`, `pkg`, `service`, `man networking`.
 
 **man** — `man <topic>`
@@ -2875,8 +2887,9 @@ Print the working directory. *See also:* `cd`.
 ### R
 
 **rbmk** — `rbmk <survey | status | limits | scram | skala | wall>`
-Supervise an RBMK reactor console. Needs the `rbmk-control` add-on, which is
-not on the published Optional Utilities pack yet.
+Supervise an RBMK reactor console. Needs the `rbmk-control` add-on from the
+Optional Utilities pack: it is a service, so installing it takes root. Run `rbmk
+survey` before starting the service.
 
 **reboot** — `reboot` **(admin)**
 Cleanly restart the machine (writes the clean-shutdown marker first, so the next
@@ -2932,7 +2945,7 @@ Manage `/etc/rc.d/` services (Chapter 12). *See also:* `cron`.
 
 **settings** — `settings`
 Open (or focus) the **Settings app** tab: Appearance (theme, live preview),
-Status Bar (widgets), Desktop (login landing), System (admin shortcuts).
+Status Bar (widgets), Home (login landing), System (admin shortcuts).
 *See also:* `theme`, `profile`, `bootsettings`, Chapter 4.4.
 
 **screendump** — `screendump [<path>]`
@@ -2941,8 +2954,10 @@ Capture exactly what's on this seat's screen to a text file (default
 report. Reads the display buffer when active, else the GPU directly. *See also:*
 `crash`, `log`.
 
-**share** — `share [...]` **(tier: modem)**
-Front end to the file-share service (Chapter 8). *See also:* `scp`, `net servers`.
+**share** — `share <host> [path]` **(tier: modem)**
+Meant to fetch a file from a peer's `/public`, but it does not work at present:
+it cannot see the network from the sandbox it runs in, so it prints `Network not
+available`. Use `scp`. *See also:* `scp`, `net servers`.
 
 **shutdown** — `shutdown` **(admin)**
 Cleanly power off (writes the clean-shutdown marker). *See also:* `reboot`,
@@ -2954,8 +2969,11 @@ boot-time repair pass and backups. With no argument it reports what it knows,
 including a fault the BIOS parked in the EEPROM. *See also:* `man srm`,
 Chapter 17.
 
-**ssh** — `ssh <addr>` **(tier: modem; TRUSTED peer)**
-Open an interactive remote shell on a TRUSTED machine. *See also:* `rsh`, `scp`.
+**ssh** — `ssh <host> <command...>` **(tier: modem; TRUSTED peer)**
+Meant to run a command on a TRUSTED machine, but it does not work at present: it
+cannot see the network from the sandbox it runs in, so it prints `Network not
+available`. There is no interactive remote shell. Use `rsh`, which runs Lua on
+the peer. *See also:* `rsh`, `scp`.
 
 **swap** — `swap [status | keys | now | clear | on | off | auto]` **(toggles: admin)**
 The disk-swap "slow RAM" store on `/var/swap` (Chapter 9.4). `swap` (or `status`)
@@ -3203,7 +3221,6 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 | `/etc/tos.cfg` | System config: device profile, hostname, thresholds, `swapMaxKB`, `critBatShutdown`, … |
 | `/etc/users.dat` | User DB (admin-read, atomic-written) |
 | `/etc/trust.dat` | Network trust DB + shared secrets |
-| `/etc/hostname` | Machine hostname |
 | `/etc/rc.d/*.lua` | Startup services |
 | `/etc/cluster-master.cfg` | Cluster Master tuning (only with `cluster-master` installed) |
 | `/etc/cluster-manager.cfg` | Cluster Manager: which Master, worker count (only with `cluster-manager`) |
@@ -3284,12 +3301,16 @@ its own and silently split the cluster in two, which is why there is one.
 address and a pairing code. Run `cluster-setup` on each Manager and give it
 both. (It rejects a shortened address — every TOS listing abbreviates to 8
 characters, so pasting one back is the easy mistake, and a config built from
-one can never connect.) Watch them arrive with `cluster pair status`; list
-them with `cluster managers`. The window lasts five minutes; `cluster pair
-start` opens another.
+one can never connect.) The window lasts five minutes; if it lapses, run
+`cluster-setup` on the Master again to open another.
 
-Afterwards: `cluster status`, `cluster managers`, `cluster watch` on the
-Master; `cluster-manager status` on a Manager.
+> **Known issue.** The `cluster` and `cluster-manager` commands do not start at
+> present, so `cluster status`, `cluster managers`, `cluster watch`, `cluster
+> pair status`, `cluster pair start` and `cluster-manager status` all fail, even
+> though `cluster-setup` still mentions some of them when it finishes. The
+> services run normally and `cluster-setup` pairs machines without them; `service
+> list` shows whether `clusterd` or `cluster-manager` is running. The cause is in
+> `TOS-Extras/cluster/README.md`.
 
 **OpenOS workers** are the one part that needs manual copying, because they
 run OpenOS and TOS's package manager has no reach into it — and they're

@@ -924,6 +924,13 @@ return function(C, S, deps)
 
     if not canWrite(p, o) then return end
 
+    -- Said here, because the trash would otherwise refuse it and the
+    -- refusal goes on to say "It is still there".
+    if F.exists and not F.exists(p) then
+      o("No such file: " .. target, T.error)
+      return
+    end
+
     -- Non-empty directories need -r so `rm /home/user/project` doesn't
     -- silently wipe a whole tree when the user meant a single file.
     if F.isDirectory and F.isDirectory(p) then
@@ -969,7 +976,8 @@ return function(C, S, deps)
         local ok2, err2 = trashMod.put(p, sess)
         if ok2 then
           trashOk = true
-          o("Trashed: " .. target .. " (use 'restore' to undo)", T.highlight)
+          o("Trashed: " .. target .. " (use 'trash restore "
+            .. (target:match("[^/]+$") or target) .. "' to undo)", T.highlight)
         else
           local why = tostring(err2 or "unknown reason")
           if why:find("no trash", 1, true) then

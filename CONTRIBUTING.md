@@ -8,14 +8,14 @@ Thanks for looking. TOS is a Terminal Operating System for the OpenComputers Min
 
 | Branch | What it is | Edit it? |
 |---|---|---|
-| `main` | The **release build** — what installers download. Comments stripped, dev tests and build tooling removed, blank-line runs collapsed. | **No.** Generated. |
+| `main` | The **release build** — what installers download. Comments stripped, local variables renamed, dev tests and build tooling removed. | **No.** Generated. |
 | `dev` | The **source tree**. Full `--!` security/invariant comments, `usr/lib/tests/`, `build/`, and the add-on source in `TOS-Extras/`. One clone, suite green. | **Yes** — all work happens here. |
 | `optional-utilities` | The **add-on pack**, laid out as a `pkg` repository so a machine with an internet card installs from it directly. | **No.** Generated from `TOS-Extras/` on `dev`. |
 | `master` | A stub carrying only an OPPM index, so `oppm` can find TOS. OPPM hardcodes the branch name. | **No.** Two files. |
 
 `main` is produced from `dev` by `build/strip.lua`. A commit to `main` is not "a fix that skipped review" — it is a change that the next release build silently overwrites. If you have already done it, cherry-pick onto `dev` and open the PR there.
 
-The split exists because comments cost real memory on a machine where every kilobyte counts, and the BIOS is fighting a hard 4 KiB EEPROM budget — roughly a third of `bios.lua` is comments that must not ship, and must not be lost either. `strip.lua` keeps every `--!`-marked comment (security notes, cross-file invariants, license headers) and drops the rest.
+The split exists because comments cost real memory on a machine where every kilobyte counts, and the BIOS is fighting a hard 4 KiB EEPROM budget — about two thirds of `bios.lua` is comments that must not ship, and must not be lost either. The release build, `strip.lua --minify-vars`, writes no comments at all, with two exceptions: a `--!` notice stays (see [Comment conventions](#comment-conventions)), and the rc.d scripts, which only get a whitespace pass, keep their `--!` lines. Every other `--!` comment lives on `dev` alone.
 
 Installing from either branch works, since both carry the same tree shape and the same `tos/system_manifest.lua`:
 
@@ -57,10 +57,11 @@ python tos.py sign <dir>|--all    sign package manifests in place
 python tos.py key                 print the public key you sign as
 python tos.py check               fast drift checks, without the full suite
 python tos.py selftest            build, then run the boot battery on a real machine
+python tos.py floorcheck          build, then check the README's memory figures on real machines
 python tos.py roadmap             regenerate the queue and ROADMAP.md
 ```
 
-Every path resolves from the script, not from your shell, so it works from any directory. `check` is the one worth knowing: it runs only the checks that catch a *generated* file drifting from its source — release digests, manifest completeness, release excludes, the add-on repo index — which is the mistake this project makes most often.
+Every path resolves from the script, not from your shell, so it works from any directory. `check` is the one worth knowing: it runs only the checks that catch a *generated* file drifting from its source — release digests, manifest completeness, release excludes, the add-on repo index, the open queue and roadmap, the MANUAL's contents list and the API reference — which is the mistake this project makes most often. Its last step reports whether the Irradiated Circuits loot disk is stale, and never fails.
 
 `roadmap` is maintainer-only and says so; the notes it reads are not published.
 
@@ -70,7 +71,7 @@ cd TOS-Terminal-Operating-System-
 python run_tests.py
 ```
 
-The suite is a couple of hundred files of pure Lua plus a few Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
+The suite is about 400 files, nearly all pure Lua, plus some Python build tests. It touches no GPU and needs no Minecraft — everything runs off-box against fakes. It should be green before you start and green when you finish.
 
 One clone gives you everything: the OS in `tos/`, and the add-on source in `TOS-Extras/`. CI runs this same command on Linux (Lua 5.3, Ubuntu) for every push to `dev` and every pull request, so a green run locally and a green check on your PR should agree; if they do not, that is worth reporting. A pull request aimed at `main` fails a separate check that tells you to change its base to `dev`. Two tests that need the maintainer's vendored `Reference/` tree report as skipped, not failed.
 
@@ -139,7 +140,7 @@ Three rules the tooling enforces rather than trusts:
 
 - **A manifest is data, not code.** `pkg` never runs `package.lua`: it decodes it with the kernel's data-only reader, so a manifest may hold literals and nothing else. No `..` to split a long description, no variables, no function calls. Lua itself runs such a file without complaint, which is why `build-disk.lua` checks with the kernel's reader too and refuses the manifest, naming the line.
 
-- **Below 1.0.0 does not ship.** `build-disk.lua`'s `SKIP` table holds pre-1.0 packages off the public pack, and the tests fail if one rejoins. An unfinished add-on that installs cleanly is worse than one nobody can reach.
+- **Below 1.0.0 does not ship.** `build-disk.lua` skips any package whose major version is 0, so a 0.x package stays off the public pack without anyone listing it, and the build prints each one it skips. Its `SKIP` table is for holding back a 1.x by hand. An unfinished add-on that installs cleanly is worse than one nobody can reach.
 - **Hashes are not optional.** `pkg.install` refuses a package whose manifest does not declare a SHA-256 for every file, unless the operator explicitly passes `--allow-unverified`. The builder writes them; you should never have to.
 
 ## Signing a package
@@ -158,14 +159,15 @@ Three rules the tooling enforces rather than trusts:
 
 ## Comment conventions
 
-The comment markers are load-bearing — `strip.lua` reads them:
+The comment markers are load-bearing — `strip.lua` and the release minifier read them:
 
 | Marker | Meaning | Survives into `main`? |
 |---|---|---|
-| `--!` | Security note, cross-file invariant, license header | **Yes** |
+| `--!` opening with `PROVENANCE.`, `Copyright` or `SPDX-License-Identifier:` | A notice: licence or attribution | **Yes**, at the top of the file |
+| `--!` | Security note, cross-file invariant | Only in the rc.d scripts. Elsewhere it stays on `dev`, since local renaming writes no comments |
 | `--` | Ordinary explanation, rationale, dev notes | No |
 
-Use `--!` for anything a future reader must not lose: why a check exists, what attack it stops, what invariant another file depends on. Use plain `--` for everything else. Block comments follow the same rule (`--[[!` keeps, `--[[` drops).
+Use `--!` for anything a future reader must not lose: why a check exists, what attack it stops, what invariant another file depends on. Use plain `--` for everything else. Block comments follow the same rule (`--[[!` keeps, `--[[` drops). Whether `#SEC` notes and invariants should ship is an open decision; see `TODO.txt`. A credit that has to reach the release has to be a notice, and `test_release_credits.lua` checks the built tree for it.
 
 Mark security-relevant code with a `#SEC` tag and the finding ID where one exists, matching the existing style.
 
