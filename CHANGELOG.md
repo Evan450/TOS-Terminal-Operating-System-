@@ -9,8 +9,20 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 62 rounds of work:
+**What's new since v1.5.0, in short:**
 
+- **Networking:** two machines that trust each other agree a shared secret by themselves, and the mesh learns routes from its own traffic instead of always flooding. A reinstalled peer is flagged rather than silently failing.
+- **Packages:** a package is now its name and the key that signs it. Dependencies are found across disks and repositories, version constraints are enforced before anything is written, and `pkg fetch` brings what a package requires.
+- **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails.
+- **Add-ons:** a text-mode `web` browser, the `warhead` nuke designer, a Lotus-style `calc` 2.0, `rbmk-control` bound to the real console, and a cluster `cluster-storage` node.
+- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says.
+- **Size and speed:** the release and add-ons ship minified with local variables renamed, and the render path does less work per frame.
+
+The details follow, newest first.
+
+Everything since v1.5.0, in 63 rounds of work:
+
+- [The docs are easier to find your way around](#the-docs-are-easier-to-find-your-way-around)
 - [Every command, run on a real machine](#every-command-run-on-a-real-machine)
 - [The docs catch up with the code](#the-docs-catch-up-with-the-code)
 - [Mail to a machine reaches someone](#mail-to-a-machine-reaches-someone)
@@ -73,6 +85,22 @@ Everything since v1.5.0, in 62 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The docs are easier to find your way around
+
+A pass over presentation rather than accuracy, for a reader who has never seen TOS.
+
+- **Links on `main` no longer 404.** The README and CONTRIBUTING linked into `docs/` and `TOS-Extras/`, which only `dev` carries, and every link check ran on the source tree, which has both. Those links now name `dev` in full, and `build/test_main_doc_links.py` fails if a doc that ships on `main` links into a folder `main` lacks.
+- **The MANUAL has a way in.** It told a new reader to go front to back, and Chapter 2 is the boot spectrum. It now says what to read first and what to leave.
+- **Every section citation is one form, and clickable.** `Chapter 5.4`, `§5.4` and `(5.4)` all meant the same thing. They are `§5.4` now, and the MANUAL's links to its own sections, outside the contents list, went from about a dozen to 97.
+- **Chapter 14 is in order, and can be jumped through.** `sudo` was filed under P and `screendump` and `protect` were out of place. `test_docs_sync.lua` said the chapter was sorted because its pattern consumed each next heading and so checked every second letter. It now walks every letter, and catches an entry under the wrong one.
+- **Reference material is laid out as reference.** Chapter 16 listed 13 files and now lists 34, sorted by whose they are. The themes are a table, the `open` ranking is a numbered list, and `why` and `tape-menu` are no longer single paragraphs of nearly 200 words. §7.2, which had five topics under one heading, has five subsections.
+- **The manual stopped telling its own history.** "Used to", "the pre-1.3.1 behavior" and notes on which version folded which command are gone from text a reader only needs in the present tense. That history is here.
+- **The landing pages say what you need first.** The README's requirements are a short list rather than one long sentence, and it lists `ssh` and `share` under Known limitations. The add-on catalogue now leads with installing over the network, the route most players have, and every add-on README points to it.
+- **Add-on READMEs say what they are.** `mouse`, `printer` and `blockfs` open with what you get, and with what TOS is. `mail` explains itself before its transport, and its keys are a table. `tape` and `intercom` explain `DFPWM` and tape positions.
+- **This list has a summary.** Unreleased ran to 37,896 words with nothing to tell a player what changed. It now opens with one.
+
+A local model reviewed the twelve shorter add-on READMEs, one per job. Every finding was checked by hand, and most were not used.
 
 ### Every command, run on a real machine
 

@@ -4,7 +4,7 @@ Eat, grow, and don't hit the walls or yourself. The snake speeds up as your scor
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install snake`. It needs a screen of at least 44 by 22 characters, so a Tier 2 screen or better. It is its own package on purpose: you can take snake without `ttt` or `tetris`, and installing it pulls in nothing else.
+As admin, with the Optional Utilities disk inserted: `pkg install snake`. No disk? [Install it over the network](../../README.md#installing-them). It needs a screen of at least 44 by 22 characters, so a Tier 2 screen or better. It is its own package on purpose: you can take snake without `ttt` or `tetris`, and installing it pulls in nothing else.
 
 ## Play
 

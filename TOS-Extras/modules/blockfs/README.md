@@ -1,12 +1,14 @@
 # blockfs — TBFS, a filesystem for unmanaged drives
 
+Lets TOS, the Terminal Operating System for OpenComputers, store files on an unmanaged drive, and even boot from one.
+
 OpenComputers drives come in two kinds. A *managed* drive is a `filesystem` component with a ready-made file API, and it is what TOS mounts by default. An *unmanaged* drive is a raw `drive` component: read a sector, write a sector, and nothing else. It holds no files until an operating system lays a filesystem onto its bare sectors.
 
 This package is that filesystem, **TBFS**. Install it and the base OS's `drive` command can format, mount, check and defragment unmanaged drives, after which they behave like any other TOS disk: the file browser, `cp` and file permissions all work on them unchanged.
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install blockfs`.
+As admin, with the Optional Utilities disk inserted: `pkg install blockfs`. No disk? [Install it over the network](../../README.md#installing-them).
 
 TOS always *sees* unmanaged drives without it: `lsdev`, `hw` and the System Configuration screen list them as *Raw Drive*, and `drive list`, `drive info` and `drive read` work on the base image. You need this package only to store files on one.
 

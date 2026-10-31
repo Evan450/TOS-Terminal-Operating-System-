@@ -6,7 +6,7 @@ The numbers are the mod's own. Every table and formula was read out of **NTM Com
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install warhead`. It needs nothing else. With a transposer (or an inventory controller) attached it can read bombs and chests; without one, everything else still works.
+As admin, with the Optional Utilities disk inserted: `pkg install warhead`. No disk? [Install it over the network](../../README.md#installing-them). It needs nothing else. With a transposer (or an inventory controller) attached it can read bombs and chests; without one, everything else still works.
 
 ## Use
 

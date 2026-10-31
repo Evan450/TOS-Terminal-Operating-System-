@@ -114,20 +114,28 @@ end
 table.sort(stray)
 test("every entry is a command, a /usr/bin program, or marked as gone", #stray == 0, table.concat(stray, ", "))
 
--- The reference is alphabetical within each letter, as its title says.
-local unsorted = {}
-for section in (ch .. "\n### "):gmatch("\n### %u\n(.-)\n### ") do
-  local prev
-  for line in section:gmatch("[^\n]+") do
+-- The reference is alphabetical within each letter, as its title says. This
+-- walks line by line: a gmatch ending on "\n### " consumed the next letter's
+-- heading, so every second letter went unchecked, P and S among them, and
+-- `sudo` sat under P for as long as this test passed.
+local unsorted, misfiled = {}, {}
+local letter, prev
+for line in ch:gmatch("[^\n]+") do
+  local l = line:match("^### (%u)$")
+  if l then
+    letter, prev = l, nil
+  elseif letter then
     local names = heading(line)
     local name = names and names[1]
     if name then
+      if name:sub(1, 1):upper() ~= letter then misfiled[#misfiled + 1] = name .. " under " .. letter end
       if prev and name < prev then unsorted[#unsorted + 1] = prev .. " > " .. name end
       prev = name
     end
   end
 end
 test("entries are alphabetical within each letter", #unsorted == 0, table.concat(unsorted, "; "))
+test("every entry is under its own letter", #misfiled == 0, table.concat(misfiled, "; "))
 
 -- ── The release the docs name is the one the OS reports ─────────────
 -- "Version bumps and docs stay in sync" is a release rule here, and it

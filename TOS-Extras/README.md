@@ -4,7 +4,17 @@ Optional add-ons for TOS: programs, games, drivers and services that run on TOS 
 
 ## Installing them
 
-On a TOS machine, as admin, insert the Optional Utilities floppy and run `pkg install`. It opens a checkbox picker grouped by category: tick what you want and it installs the lot in one pass. `pkg install <name>` installs one add-on by name. With an internet card, `pkg fetch <name>` gets one from a configured repository instead (TOS manual, §7.9).
+**With an internet card**, which is the easy way, as admin:
+
+```
+pkg repo add utils https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/optional-utilities
+pkg search
+pkg fetch <name>
+```
+
+The first line only needs doing once on each machine. (TOS manual, §7.9.)
+
+**From a floppy:** insert the Optional Utilities disk and run `pkg install`. It opens a checkbox picker grouped by category: tick what you want and it installs the lot in one pass. `pkg install <name>` installs one add-on by name. To make a disk, build one as described under [Building the pack](#building-the-pack), or run `pkg make-disk` on a machine that already has the add-ons.
 
 The service packages (`mail`, `intercom`, `rbmk-control` and the cluster) and `selftest` need **root**, not just admin: a service runs at boot outside the package sandbox, and a self-test check runs inside the kernel.
 

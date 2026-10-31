@@ -4,7 +4,7 @@ Totals every item across every inventory next to a transposer or an inventory co
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install stock`. It needs a transposer or an inventory controller with at least one inventory beside it. `mouse` is recommended, not needed.
+As admin, with the Optional Utilities disk inserted: `pkg install stock`. No disk? [Install it over the network](../../README.md#installing-them). It needs a transposer or an inventory controller with at least one inventory beside it. `mouse` is recommended, not needed.
 
 ## Use
 

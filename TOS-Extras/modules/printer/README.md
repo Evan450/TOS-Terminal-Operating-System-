@@ -1,12 +1,14 @@
 # printer — the printer driver
 
+Prints text on paper from a machine running TOS, the Terminal Operating System for OpenComputers.
+
 TOS has no built-in printing, the same way it has no built-in mouse. This is the DOS-style driver you install when the base actually has the hardware: a `printer` command, and a `require("printer")` library for programs that want to print.
 
 It drives the **OpenPrinter** add-on by PC-Logix, its `openprinter` component. OpenComputers' own `printer3d` prints 3D models and is a different device entirely.
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install printer`. The command is complete on the keyboard; `mouse` is recommended, not needed. The `write` word processor depends on this package.
+As admin, with the Optional Utilities disk inserted: `pkg install printer`. No disk? [Install it over the network](../../README.md#installing-them). The command is complete on the keyboard; `mouse` is recommended, not needed. The `write` word processor depends on this package.
 
 ## Use
 
@@ -32,7 +34,7 @@ printer clear               empty the printer's buffer
 | `--dry-run` | say what it would cost, print nothing |
 | `--force` | try even when the paper or ink looks short |
 
-`preview` exists because paper is a real resource. The way to find out that a three-line footer pushed your document onto a fourth sheet should not be finding a fourth sheet in the output chest.
+`preview` shows how many sheets a document takes before you spend any paper. A three-line footer can push a document onto a fourth sheet, and that is better found here than in the output chest.
 
 A page holds 20 lines, and a line is measured in pixels rather than characters (164, or whatever the printer reports), using OpenPrinter's own character widths. A file over 64 KB is refused; print the part you want instead.
 

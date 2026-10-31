@@ -4,7 +4,7 @@ Noughts and crosses against a machine that cannot lose, or against a friend on t
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install ttt`. It needs a screen of at least 34 by 18 characters, so a Tier 2 screen or better. It is its own package: installing it pulls in nothing else. A click on a cell plays there too.
+As admin, with the Optional Utilities disk inserted: `pkg install ttt`. No disk? [Install it over the network](../../README.md#installing-them). It needs a screen of at least 34 by 18 characters, so a Tier 2 screen or better. It is its own package: installing it pulls in nothing else. A click on a cell plays there too.
 
 ## Play
 

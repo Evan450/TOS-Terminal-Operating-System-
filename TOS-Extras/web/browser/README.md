@@ -6,7 +6,7 @@ This is steps 1-2 of [`../browser-spec-draft.md`](../browser-spec-draft.md)'s bu
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install web`. Needs an internet card on this machine; there is no borrowing a peer's yet.
+As admin, with the Optional Utilities disk inserted: `pkg install web`. No disk? [Install it over the network](../../README.md#installing-them). Needs an internet card on this machine; there is no borrowing a peer's yet.
 
 ## Use
 

@@ -4,7 +4,7 @@ Falling pieces, line clears, levels that speed up, and a high-score table for ea
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install tetris`. It needs a screen at least 24 rows tall, so a Tier 2 screen or better. It is its own package: installing it pulls in nothing else. `mouse` is recommended, not needed.
+As admin, with the Optional Utilities disk inserted: `pkg install tetris`. No disk? [Install it over the network](../../README.md#installing-them). It needs a screen at least 24 rows tall, so a Tier 2 screen or better. It is its own package: installing it pulls in nothing else. `mouse` is recommended, not needed.
 
 ## Play
 

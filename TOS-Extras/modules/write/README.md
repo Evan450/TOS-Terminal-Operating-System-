@@ -4,7 +4,7 @@ TOS already has `edit`, and this is not a second text editor. The difference is 
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install write`. It **requires** the `printer` package, and the picker selects `printer` alongside it, marks it `[+]` and counts it in what will be installed, so nothing arrives behind your back. `mouse` is recommended, not needed.
+As admin, with the Optional Utilities disk inserted: `pkg install write`. No disk? [Install it over the network](../../README.md#installing-them). It **requires** the `printer` package, and the picker selects `printer` alongside it, marks it `[+]` and counts it in what will be installed, so nothing arrives behind your back. `mouse` is recommended, not needed.
 
 The printer *hardware* is optional. Writing, pagination, the page view and saving all work on a machine with no printer in the world.
 

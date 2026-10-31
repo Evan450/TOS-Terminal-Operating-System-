@@ -1,12 +1,10 @@
 # mail — mesh email
 
-Addressed, store-and-forward mail between TOS machines, sealed end to end, with no server anywhere. A message hops across trusted relays until it reaches the machine it is for, and waits on the way if that machine is off.
-
-The *transport* is part of the base OS (`tos/kernel/net/meshctl.lua`: flooded, de-duplicated, store-and-forward, end-to-end sealed, shared by any service that wants it). This package is the *mailbox*: where messages are kept, what a subject and a body are, the inbox and compose screens, and the boot service that accepts deliveries.
+Email between TOS machines, with no server anywhere. A message hops across machines you trust until it reaches the one it is for, and waits on the way if that machine is off. That network of hops is the *mesh*. Every message is sealed end to end, so the machines it passes through cannot read it.
 
 ## Install
 
-As **root**, with the Optional Utilities disk inserted:
+As **root**, with the Optional Utilities disk inserted. No disk? [Install it over the network](../../README.md#installing-them). Then:
 
 ```
 pkg install mail
@@ -30,7 +28,19 @@ mail delete <n>                    delete message n
 mail ui                            the full-screen inbox in the CLI shell
 ```
 
-In the inbox tab: arrows move, **Enter** reads, **c** composes (recipient, subject, then a multi-line body), **r** replies, **d** deletes and **R** refreshes. The inbox refreshes by itself while the tab is in front, and the tab's label carries an unread count, as in `Mail(2)`. **Ctrl+Q** closes the tab.
+In the inbox tab:
+
+| Key | Does |
+|---|---|
+| arrows | move |
+| Enter | read |
+| c | compose: recipient, subject, then a multi-line body |
+| r | reply |
+| d | delete |
+| R | refresh |
+| Ctrl+Q | close the tab |
+
+The inbox refreshes by itself while the tab is in front, and the tab's label carries an unread count, as in `Mail(2)`.
 
 A recipient is a peer's address prefix, its hostname, `user@peer`, or `*` for every trusted peer. Mail that names no user goes to the machine: an admin finds it in their own inbox, and a `*` bulletin shows in everyone's.
 
@@ -39,6 +49,10 @@ A recipient is a peer's address prefix, its hostname, `user@peer`, or `*` for ev
 - **Limits:** a subject is cut at 120 characters and a body at 4096, which keeps a sealed message under the mesh's size cap. An inbox keeps its newest 200 messages.
 
 The base image has a `mail` command whether or not this package is installed. Without the package it prints how to install it.
+
+## How it fits together
+
+The *transport* is part of the base OS (`tos/kernel/net/meshctl.lua`: flooded, de-duplicated, store-and-forward, end-to-end sealed, shared by any service that wants it). This package is the *mailbox*: where messages are kept, what a subject and a body are, the inbox and compose screens, and the boot service that accepts deliveries.
 
 ## Files
 

@@ -1,10 +1,10 @@
 # tape — the Computronics tape drive, all of it
 
-One command for everything a Computronics tape drive does: archive files to a tape and restore them, play audio, read and write raw bytes, and encrypt what is on it.
+One command for everything a tape drive from the Computronics mod does: archive files to a tape and restore them, play audio, read and write raw bytes, and encrypt what is on it.
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install tape`. It works on the first tape drive it finds.
+As admin, with the Optional Utilities disk inserted: `pkg install tape`. No disk? [Install it over the network](../../README.md#installing-them). It works on the first tape drive it finds.
 
 It used to be called `tape-storage`, from when it only archived data, and it still answers to that name for any package that `requires` it. **Upgrading from 2.1 or older:** run `pkg uninstall tape` first, because the old build's files live at the old install path, `/usr/modules/tape-storage/`.
 
@@ -27,7 +27,7 @@ tape restore [path]                restore it all, under /home unless you say wh
 
 `store` adds to whatever the archive already holds; `--overwrite` starts the archive again from the beginning of the tape.
 
-**Audio.** Computronics plays DFPWM audio straight off the tape.
+**Audio.** Computronics plays DFPWM, a compact audio format, straight off the tape.
 
 ```
 tape load <file.dfpwm>             rewind and write the audio file onto the tape

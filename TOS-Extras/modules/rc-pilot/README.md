@@ -6,7 +6,7 @@ The robot runs no operating system. It carries a small EEPROM program, `robot/ee
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install rc-pilot`.
+As admin, with the Optional Utilities disk inserted: `pkg install rc-pilot`. No disk? [Install it over the network](../../README.md#installing-them).
 
 ## Setting up a robot
 

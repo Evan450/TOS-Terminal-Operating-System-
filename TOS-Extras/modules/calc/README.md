@@ -4,7 +4,7 @@ A keyboard program of the kind that kept the world's books before windows: the t
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install calc`. With an internet card and a repository configured, `pkg fetch calc` does the same from the network (TOS manual, §7.9).
+As admin, with the Optional Utilities disk inserted: `pkg install calc`. No disk? [Install it over the network](../../README.md#installing-them). With an internet card and a repository configured, `pkg fetch calc` does the same from the network (TOS manual, §7.9).
 
 It needs nothing else. Three packages make it better and are offered, never installed for you:
 

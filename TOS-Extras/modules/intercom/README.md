@@ -1,10 +1,10 @@
 # intercom — the facility announcement system
 
-Says whatever you need said: the reactor has gone offline, you're low on iron, the shift is over. One announcement goes out on two channels at once. A Computronics tape plays the recorded voice, and the same words go over the mesh to every machine willing to hear them, where they land in the chat tab and, when they matter enough, in a message box on the screen.
+Says whatever you need said: the reactor has gone offline, you're low on iron, the shift is over. One announcement goes out on two channels at once. A Computronics tape plays the recorded voice, and the same words go over the network to every machine willing to hear them, where they land in the chat tab and, when they matter enough, in a message box on the screen.
 
 ## Install
 
-As **root**, with the Optional Utilities disk inserted:
+As **root**, with the Optional Utilities disk inserted. No disk? [Install it over the network](../../README.md#installing-them). Then:
 
 ```
 pkg install intercom
@@ -25,7 +25,7 @@ offline   [0006] "Warning: Reactor offline. Facility on backup power generation.
 evac      [0011] "Evacuate the facility." [0020]  critical
 ```
 
-That is the start position, what it says, the end position and how urgent it is. From that one line the Intercom knows where to seek, when to stop, what to broadcast and how hard to interrupt people. Positions are tape byte offsets, and `[0001]` and `[1]` both parse. A typo on one line is reported by its line number instead of taking the whole catalogue down.
+That is the start position, what it says, the end position and how urgent it is. From that one line the Intercom knows where to seek, when to stop, what to broadcast and how hard to interrupt people. Positions count bytes from the start of the tape, and `[0001]` and `[1]` both parse. A typo on one line is reported by its line number instead of taking the whole catalogue down.
 
 ## Use
 

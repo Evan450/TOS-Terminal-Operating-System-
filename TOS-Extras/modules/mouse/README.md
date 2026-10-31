@@ -1,12 +1,14 @@
 # mouse — the mouse driver
 
+Lets you click and scroll in TOS, the Terminal Operating System for OpenComputers: menus, tabs, files and the editor.
+
 TOS has no built-in mouse support, the way MS-DOS had none: the shell reads the keyboard. OpenComputers screens do report touches, drags, drops and scroll-wheel turns, though, and this package is the small DOS-style driver that turns those into something programs can use.
 
 Install it and the TOS panels shell picks it up by itself: menus, tabs, the file list, dialogs and the editor become clickable and scrollable, with nothing to configure. `calc`, `mail`, `printer`, `stock`, `tetris`, `ttt` and `write` recommend it for the same reason.
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install mouse`. `pkg disable mouse` turns mouse support in the shell back off without uninstalling it.
+As admin, with the Optional Utilities disk inserted: `pkg install mouse`. No disk? [Install it over the network](../../README.md#installing-them). `pkg disable mouse` turns mouse support in the shell back off without uninstalling it.
 
 ## Try it
 

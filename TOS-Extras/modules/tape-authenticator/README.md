@@ -4,7 +4,7 @@ A tape is far bigger than a keycard needs, so this uses the rest of it. The fron
 
 ## Install
 
-As admin, with the Optional Utilities disk inserted: `pkg install tape-authenticator`. The command it installs is `tape-auth`. The `tape` add-on is recommended alongside it for inspecting and looking after the tapes, though nothing here needs it.
+As admin, with the Optional Utilities disk inserted: `pkg install tape-authenticator`. No disk? [Install it over the network](../../README.md#installing-them). The command it installs is `tape-auth`. The `tape` add-on is recommended alongside it for inspecting and looking after the tapes, though nothing here needs it.
 
 ## Use
 

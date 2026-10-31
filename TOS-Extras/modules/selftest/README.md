@@ -17,6 +17,8 @@ command for the rest.
 pkg install selftest        # as root
 ```
 
+No disk? [Install it over the network](../../README.md#installing-them).
+
 Root, not admin: a check runs as the kernel, so `pkg` holds any package that
 puts a file in `/usr/lib/selftest/` to the same root gate as a service
 package.
