@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**86 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 63 | Planned or under investigation. Most contributions belong here. |
+| Planned | 62 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 21 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (16) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (15) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -261,15 +261,6 @@ THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major nu
 *Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
 
 WARHEAD'S POP-UP MESSAGES HAVE NO BORDERS. Operator: it seems unpolished and is sometimes a mess of text. Give warhead's pop-ups a box, the way panels/dialogs.lua's are drawn. Goes through the pack re-sign like any warhead change.
-
-### The package picker: auto-includes, and enter
-
-*Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
-
-THE PACKAGE PICKER: AUTO-INCLUDES, AND ENTER. Two operator reports, both about `pkg install`'s picker.
-
-- "pkg isn't following the auto-include things": not yet reproduced. Start from what it may mean: `requires` should mark dependencies \[+\] (recomputeAuto) and install them; `recommends` are only offered through the R key, on purpose. Find out which one the operator expected before changing either.
-- The operator keeps pressing Enter to add what they picked, where Space is the key that selects. Enter goes straight to install, and with nothing selected that leaves the picker. Either Enter selects the highlighted package when nothing is ticked yet, or the picker stays open and says what to do when there is nothing to install. Operator accepts either.
 
 ### An image viewer for ascii-ified images
 

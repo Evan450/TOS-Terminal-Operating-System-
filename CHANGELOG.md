@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 63 rounds of work:
+Everything since v1.5.0, in 64 rounds of work:
 
+- [The picker says what comes along, and Enter adds](#the-picker-says-what-comes-along-and-enter-adds)
 - [The docs are easier to find your way around](#the-docs-are-easier-to-find-your-way-around)
 - [Every command, run on a real machine](#every-command-run-on-a-real-machine)
 - [The docs catch up with the code](#the-docs-catch-up-with-the-code)
@@ -85,6 +86,12 @@ Everything since v1.5.0, in 63 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The picker says what comes along, and Enter adds
+
+On a machine installing from a repo, `pkg install`'s picker showed no `[+]`, no `Needs`, no `Suggests`, an **R** key that added nothing, and every add-on under one "Remote" heading. The repo index never carried `requires` or `recommends`, and the category and kind were dropped on the way to the picker. A floppy showed all of it, because a disk's manifests are read directly. The index now carries them, so the picker reads the same either way. The install always followed `requires`; now you see it before it happens.
+
+**Enter** used to install at once, so pressing it to pick a package left the picker with nothing done. It now adds the package you are on, and installs once that package is already going in. The key bar says which it will do. A pick also names any dependency it brought and any suggestion **R** would add, since either can be far off screen. With nothing to add, **Enter** says so and stays.
 
 ### The docs are easier to find your way around
 

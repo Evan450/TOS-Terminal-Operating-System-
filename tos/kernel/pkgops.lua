@@ -615,7 +615,7 @@ not ap or type(ao)~="table"then return{}end;local an={}
 for ar,aq in ipairs(ao)do
 if type(aq)=="table"and
 type(aq.name)==r then
-an[#an+1]={name=aq.name,version=aq.version,description=aq.description,category=aq.category or"remote",repo=aq.repo,remote=true}end end;return an end
+an[#an+1]={name=aq.name,version=aq.version,description=aq.description,category=aq.category or"remote",kind=aq.kind,author=aq.author,requires=aq.requires,recommends=aq.recommends,repo=aq.repo,remote=true}end end;return an end
 function a.installFromFloppy(al)al=al or{}local ap,aq=f(al)if not ap then return false,aq end
 local ar=(
 type(al.confirm)==B)and al.confirm or function()return false end;local ao={}local am={}local an={}
