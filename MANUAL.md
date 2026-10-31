@@ -21,12 +21,25 @@ Like the old *MS-DOS User's Guide and Reference*, this Manual is two books bound
 
 - **Book One — The Operator's Guide.** Tutorial chapters that teach TOS by
   doing: booting and logging in, navigating the filesystem, managing files,
-  configuring the system, writing Lua scripts, and setting up hardware. Read it
-  front to back the first time; it assumes nothing.
+  configuring the system, writing Lua scripts, and setting up hardware.
 - **Book Two — The Reference.** Look-up material: a complete **alphabetical
   command reference** — every command, built-in or installed, with its syntax,
   options, examples, and error messages — plus the security model, the
   configuration files, recovery procedures, and appendices.
+
+**New to TOS? Read these, in this order,** and leave the rest until you need it:
+
+| To | Read |
+|---|---|
+| Install it | [§1.2](#12-installing-tos) |
+| Get through the first boot | [§3.2](#32-first-boot) |
+| Find your way around the screen | [§4.1](#41-layout--keys) |
+| Find the command for a job | [Chapter 6](#6-commands-at-a-glance) |
+| Add programs | [§7.1](#71-using-pkg) and [§7.2](#72-the-optional-utilities-disk) |
+| Fix something that went wrong | [Chapter 17](#17-recovery--troubleshooting) |
+
+[Chapter 2](#2-booting) explains how a machine starts. You will not need it until you want to
+change that.
 
 There are three depths of help, shallowest to deepest:
 
@@ -37,8 +50,7 @@ There are three depths of help, shallowest to deepest:
 
 Page/section numbers are stable (`Chapter.Section`), so a `(Manual 6.3)` flag in
 `help` — or a `MANUAL.md (Chapter 7)` line in a man page — always points to the
-same place. They were renumbered once, in October 2026, to remove duplicate
-and lettered numbers such as 7.5a.
+same place.
 
 ---
 
@@ -159,7 +171,7 @@ TOS is a Norton-Commander-inspired operating system for OpenComputers
   requires a deliberate local admin action. Sensitive traffic between `TRUSTED`
   peers is encrypted and MAC-authenticated with replay protection.
 - **Modular, configurable kernel.** Boot is a spectrum from "nothing" to
-  "everything" (Chapter 2). Optional subsystems load by profile + available RAM.
+  "everything" ([Chapter 2](#2-booting)). Optional subsystems load by profile + available RAM.
 - **Multi-seat.** Each GPU+Screen pair is an independent shell session with its
   own login and foreground. It works best when operators take **turns**, not
   when they work at the same instant — one computer has one CPU, and
@@ -180,7 +192,7 @@ TOS is a Norton-Commander-inspired operating system for OpenComputers
 **Tiers of hardware** matter. TOS auto-detects GPU tier (1 monochrome / 2
 sixteen-color / 3 full RGB), RAM tier, and the data-card tier (which decides
 whether you get hardware SHA-256/AES or a software fallback). See the **System
-Configuration screen** (2.2) for what your machine has.
+Configuration screen** ([§2.2](#22-the-system-configuration-screen-post)) for what your machine has.
 
 ### 1.1 What you need
 
@@ -218,7 +230,7 @@ folder were an install disk. It refuses an incomplete or mismatched download
 rather than install part of TOS. `bootstrap.lua <owner>/<repo> [branch]`
 installs from a fork instead, and `bootstrap.lua --help` prints this usage in
 the game, so you do not need to look anything up first. The installer then
-asks which drive TOS goes on (§1.2.1).
+asks which drive TOS goes on ([§1.2.1](#121-what-the-installer-asks)).
 
 **From an install disk.** On a machine already running TOS, as root, put a
 spare hard drive in and run `deploy /mnt/<drive>`, which writes the whole system
@@ -231,11 +243,11 @@ onto it. Move that drive to the OpenOS machine and run
 | Step | What happens |
 |---|---|
 | **Hardware** | It lists memory, GPU, drive, network and crypto (a data card, or software). Below 1 MB of memory, or 1.25 MB with a network card or linked card, it warns that TOS's commands will not load; below 1.5 MB, that TOS will start at the command line. |
-| **Which drive** | The installer used to write to the drive OpenOS booted from and nothing else. It now lists every writable drive (not the scratch `/tmp`, a read-only drive, or the install disk itself) with its size, its free space and whether it holds TOS or another system, and asks which one. Pressing Enter takes the boot drive. A drive that is too small is shown greyed with what TOS needs, and cannot be picked. If the boot drive is too small, the first drive with room becomes the default instead of the install ending. With a single drive that fits, nothing is asked. |
+| **Which drive** | The installer lists every writable drive (not the scratch `/tmp`, a read-only drive, or the install disk itself) with its size, its free space and whether it holds TOS or another system, and asks which one. Pressing Enter takes the boot drive. A drive that is too small is shown greyed with what TOS needs, and cannot be picked. If the boot drive is too small, the first drive with room becomes the default instead of the install ending. With a single drive that fits, nothing is asked. |
 | **Existing install** | If the drive already has TOS accounts, you must type `FORCE-WIPE` to go on. Users, configuration and the system files are replaced; `/home` and `/tmp` are kept. The old `/init.lua` is kept as `/init.lua.pre-tos`. |
 | **Space** | It adds up what TOS needs on the chosen drive and compares it with what is free, before anything is written. If no drive has room, nothing is copied and the install ends. |
 | **Copy** | Every file is copied and then checked. If any fails, the BIOS is not flashed later, so nothing is left half-bootable; run the installer again. |
-| **Clean install** | Offered when OpenOS's `/bin`, `/boot` and `/lib` are still on the drive. Saying yes removes them at the very end, so OpenOS will no longer boot from this drive. Your files and configuration stay. Say no and you can still do it later with `reclaim` (§7.6). |
+| **Clean install** | Offered when OpenOS's `/bin`, `/boot` and `/lib` are still on the drive. Saying yes removes them at the very end, so OpenOS will no longer boot from this drive. Your files and configuration stay. Say no and you can still do it later with `reclaim` ([§7.6](#76-reclaiming-space-after-installing-over-openos)). |
 | **Device type** | Computer, Tablet or Server (below). |
 | **Hostname** | The machine's name on the network. The default is `tos-` and four random hex digits. |
 | **Security level** | Standard, Relaxed or Open (below). |
@@ -259,7 +271,7 @@ onto it. Move that drive to the OpenOS machine and run
 - **Relaxed** — a password is needed, but nothing is locked.
 - **Open** — also allows a guest login with no password.
 
-You can change all of these later: `bootsettings`, `config` and Chapter 3.
+You can change all of these later: `bootsettings`, `config` and [Chapter 3](#3-logging-in-users--tiers).
 
 #### 1.2.2 If it goes wrong
 
@@ -293,7 +305,7 @@ falls back to the `normal` profile. Two independent dials:
     misbehaves": boot safe, remove the culprit, set the profile back, reboot.
     Safe Mode boots loud on purpose (a SAFE MODE banner + text log). You can
     also press **S** at the POST screen for a **one-time** safe boot that
-    touches no config at all (2.3).
+    touches no config at all ([§2.3](#23-boot-settings-press-del--one-time-safe-mode-press-s)).
 - **`verbosity`** ("the muter") — *what the boot LOG says*, never *what TOS
   does*: `silent` (no boot-log lines), `splash` (logo + bar), `text` (per-stage
   lines, the default), `verbose` (every line stamped with `[NNNNms]`
@@ -322,7 +334,7 @@ falls back to the `normal` profile. Two independent dials:
 `advanced` per-feature toggles (`net`/`swap`/`power`/`theme`/`compat`/`audio`/
 `integrityCheck`/`jbod`/`services`/`cron`/`packages`) override the profile when
 you want one thing on or off without leaving your profile — e.g. Safe Mode plus
-`net on` for a remote-rescue session. (`jbod` — disk pooling, Chapter 5.3 — is
+`net on` for a remote-rescue session. (`jbod` — disk pooling, [§5.3](#53-disk-pooling-jbod-opt-in) — is
 the one feature that stays *off* in every profile; it loads only via this
 toggle.)
 
@@ -349,7 +361,7 @@ This screen — and the **DEL → Boot Settings** entry point on it — is gated
 `showConfig` alone, independent of verbosity. A `silent` boot still shows it
 (so you can always recover settings); to suppress it as well, turn `showConfig`
 off. If TOS can't read your data card's tier (some OC builds/emulators report a
-bare `data` proxy), set it manually with `dataTier` (2.3), exactly like the CPU
+bare `data` proxy), set it manually with `dataTier` ([§2.3](#23-boot-settings-press-del--one-time-safe-mode-press-s)), exactly like the CPU
 tier — the POST line then shows your confirmed tier with a `*`.
 
 ### 2.3 Boot Settings (press DEL) & one-time Safe Mode (press S)
@@ -379,7 +391,7 @@ adopt a new disk (that was a floppy-bootkit lever). It prompts: **Y** updates th
 EEPROM permanently, **Shift+Enter** boots once without touching the EEPROM (a
 "one-time boot" — shown on the splash, and it suppresses the floppy→HDD migration
 offer), any other key or the 30s timeout halts. The same prompt guards **raw
-TBFS boot drives** (Chapter 5.4): the BIOS scans managed filesystems first, then
+TBFS boot drives** ([§5.4](#54-unmanaged-raw-drives--tbfs)): the BIOS scans managed filesystems first, then
 raw drives, and a discovered boot volume of either kind needs this approval.
 
 ### 2.5 What happens during boot, in order
@@ -395,7 +407,7 @@ raw drives, and a discovered boot volume of either kind needs this approval.
    configuration, events, processes, display), then power monitoring on a
    tablet, security (crypto, users, `securefs`), the theme manager, the network
    stack, startup services (`/etc/rc.d/`) and cron. What loads depends on the
-   boot profile and the memory free (2.1).
+   boot profile and the memory free ([§2.1](#21-the-boot-spectrum-etcbootcfg)).
 4. **Login** — the full login screen, or minimal authentication when memory is
    very short.
 5. **Your theme** is applied, then the **first-boot tour** runs if you have not
@@ -474,7 +486,7 @@ the editor). Everything else is the same program.
 > root password. It has the recovery basics — `ls`, `cat`, `mem`, `df`, `log`,
 > `verify`, `srm status|scan|repair`, `reboot`, `shutdown` — and depends on nothing
 > the other two need: `df` asks the disks directly, `log` falls back to the file
-> on disk, and `srm` says so if it cannot load. See §9.3.
+> on disk, and `srm` says so if it cannot load. See [§9.3](#93-srm--system-repair--maintenance).
 
 ### 4.1 Layout & keys
 
@@ -660,7 +672,7 @@ handler, a sandboxed package command — none of them can draw (another process
 may own the screen), so they *post* a notice and the shell that owns the
 display raises the box on its next idle tick. The Intercom rides this: an
 announcement at `alert` or above becomes a dialog on every listening machine
-(§8.5). A package asks for the `notify` capability to do the same.
+([§8.5](#85-the-intercom-announcement-system-add-on)). A package asks for the `notify` capability to do the same.
 
 **The rate limits are what make that safe.** A modal any program can raise is
 a way to lock you out of your own computer — by accident, from a service stuck
@@ -691,8 +703,7 @@ never outlives what you can see.
 | `Shift+Delete` or `^X` | Cut |
 | `Shift+Insert` or `^V` | Paste |
 
-With **nothing** selected, copy and cut take the whole line — which is what the
-editor's old line-clipboard did, so that muscle memory still works. At the
+With **nothing** selected, copy and cut take the whole line. At the
 prompt with nothing selected *and* nothing typed, copy takes the **path of the
 file under the cursor**, which is the short answer to "how do I get this path
 onto the command line".
@@ -764,9 +775,9 @@ What login lands on is per-user: the `landing` profile field, which now picks a
 `shell` spellings still work and mean the same two things). Unset, root gets
 files and everyone else tiles. Change it in **Settings → Home**.
 
-**Want the old two-tab shape back?** Boot Settings → Interface has a `split`
-setting: a Shell tab and a separate Desktop tab, with F2 cycling tabs the way
-it did before. `home` is the default and everything above describes it.
+**Prefer separate tabs?** Boot Settings → Interface has a `split` setting: a
+Shell tab and a Desktop tab, with F2 cycling between them. `home` is the
+default, and everything above describes it.
 
 The **Settings app** (`settings`, or Settings → Settings App) is four pages of
 forms: **Appearance** (theme preset with live preview, then "Save as my
@@ -901,7 +912,7 @@ drive` volume is also a complete, mountable TOS disk you can reach with
 `help` shows the lean, install-aware list; this chapter is a quick **catalog by
 category** so you can find the right command by what you're trying to do. For the
 exhaustive per-command entry — syntax, every flag, examples, and error messages -
-see the **alphabetical Command Reference in Book Two (Chapter 14)**. Commands are
+see the **alphabetical Command Reference in Book Two ([Chapter 14](#14-command-reference-alphabetical))**. Commands are
 tier-gated and hidden from `help` if their hardware/package isn't present.
 
 ### 6.1 Files & navigation
@@ -910,7 +921,7 @@ tier-gated and hidden from `help` if their hardware/package isn't present.
 
 ### 6.2 Saying things
 `echo` (polite, above the command line) `notify` (a dialog box in the
-operator's face, every seat — see §4.1.4)
+operator's face, every seat — see [§4.1.4](#414-two-ways-to-say-something))
 
 ### 6.3 System & session
 `desktop` `settings` `mem` `hw` `ps` `monitor` (= `top`, live) `watch` `kill`
@@ -918,7 +929,7 @@ operator's face, every seat — see §4.1.4)
 `shutdown` `srm` `doctor` (= `diag`) `log` `verify` `menu`
 
 (`srm` is the front door over `doctor` and `verify`, and the only command that
-reports a POST fault the BIOS caught — see §9.3.)
+reports a POST fault the BIOS caught — see [§9.3](#93-srm--system-repair--maintenance).)
 
 ### 6.4 Administration
 `users` `useradd` `userdel` `usermod` `mount` `umount` `jbod` `flash` `lua` `run`
@@ -930,7 +941,7 @@ jbod on`; see Chapter 5 and `man jbod`.)
 ### 6.5 Packages (see Chapter 7)
 `pkg` (`list`/`search`/`info`/`install`/`uninstall`/`enable`/`disable`/`commands`/
 `make-disk`); top-level `install` / `uninstall` shortcuts. With an internet card:
-`pkg repo`, `pkg remote`, `pkg fetch` (§7.9) and `internet` for card status.
+`pkg repo`, `pkg remote`, `pkg fetch` ([§7.9](#79-remote-repositories-internet-card)) and `internet` for card status.
 
 ### 6.6 Network (see Chapter 8)
 `net` (incl. `net servers`) `ping` `hostname` `config` `chat` `mail` (add-on)
@@ -946,7 +957,7 @@ jbod on`; see Chapter 5 and `man jbod`.)
 
 Three things can answer to one name — a built-in, an installed package's command,
 and a program on the search path. `which` says which one wins. `open` asks the
-same of a file: which program suits it, by a fixed ranking (§7.3, `handles`).
+same of a file: which program suits it, by a fixed ranking ([§7.3](#73-writing-a-package), `handles`).
 
 ### 6.9 Peripherals (see Chapter 11)
 `redstone` (= `rs`) `robot` `inventory` (= `inv`) `component` `tape`
@@ -958,9 +969,8 @@ same of a file: which program suits it, by a fixed ranking (§7.3, `handles`).
 
 ## 7. Packages
 
-TOS uses one package manager, `pkg` (the legacy "module manager" was retired in
-v1.3.1; the `mod` command has since been removed too — its `enable`/`disable`/
-`commands` subcommands were folded into `pkg`).
+TOS has one package manager, `pkg`. It installs, upgrades and removes add-ons,
+from a disk or over the network.
 
 ### 7.1 Using pkg
 - `pkg list` — installed packages.
@@ -1013,7 +1023,7 @@ template` to write checks for what you add to TOS. Installing it needs root,
 because an armed machine runs those checks as the kernel. See
 `TOS-Extras/modules/selftest/README.md`.
 
-You can also build one **from inside TOS** with `pkg make-disk <mount>` (§7.1) -
+You can also build one **from inside TOS** with `pkg make-disk <mount>` ([§7.1](#71-using-pkg)) -
 it bundles your installed add-ons onto the disk, no dev box required. Either
 way, when you insert the finished disk TOS recognizes it and tells you to run
 `pkg install`.
@@ -1021,11 +1031,10 @@ way, when you insert the finished disk TOS recognizes it and tells you to run
 **The installer is not on the disk.** It doesn't need to be: the picker only
 runs on a TOS machine, and every TOS machine has it in the base image. The
 disk carries the packages, a set manifest, and a README saying `pkg install`.
-(It used to ship a ~40 KB copy on every floppy *and* a second copy embedded in
-the kernel's package manager — 40 KB of installer delivered to a machine that
-already had one.)
 
-**Reading the picker.** The list is on the left, grouped by category; the
+#### 7.2.1 Reading the picker
+
+The list is on the left, grouped by category; the
 right-hand panel describes whatever you're resting on.
 
 | Mark | Meaning |
@@ -1057,7 +1066,21 @@ ticked the packages you had just filtered away would be the opposite of a
 filter's purpose. Ticks survive filtering, so you can filter, tick, refilter,
 tick again, and install the union.
 
-**For scripts**, skip the picker entirely:
+The panel's `From` field says which disk a package is on — the set spans two
+floppies, and everything mounted is listed together, so this is how you tell
+them apart. `Needs` is what will be installed alongside (automatically, marked
+`[+]`); if a requirement isn't on any inserted disk the panel says so rather
+than letting the install fail. `Suggests` is optional — nothing is installed
+from it unless you press **R**. `Wanted by` is the reverse view: every add-on
+on the disk that recommends the highlighted one, which is usually the better
+argument for installing it.
+
+Below 60 columns the panel is dropped and the description moves to a footer,
+so the picker still works on a small T1 screen.
+
+#### 7.2.2 Installing from a script
+
+Scripts can skip the picker entirely:
 
 ```
 pkg install <name> <name> ...     several at once
@@ -1078,19 +1101,9 @@ An option `pkg install`, `pkg upgrade` or `pkg fetch` does not know is refused
 and nothing is done, with the list of options it does know. A misspelt
 `--dry-run` must not install anything.
 
-The panel's `From` field says which disk a package is on — the set spans two
-floppies, and everything mounted is listed together, so this is how you tell
-them apart. `Needs` is what will be installed alongside (automatically, marked
-`[+]`); if a requirement isn't on any inserted disk the panel says so rather
-than letting the install fail. `Suggests` is optional — nothing is installed
-from it unless you press **R**. `Wanted by` is the reverse view: every add-on
-on the disk that recommends the highlighted one, which is usually the better
-argument for installing it.
+#### 7.2.3 A set on several floppies
 
-Below 60 columns the panel is dropped and the description moves to a footer,
-so the picker still works on a small T1 screen.
-
-**A set can span more than one floppy, and the picker knows it.** The builder
+The picker knows when a set spans more than one floppy. The builder
 writes a *set manifest* (`optutil-set.lua`) onto every disk describing the
 whole set — so with one floppy in the drive you still see the entire
 catalogue. Packages on a disk that isn't inserted are dimmed, and their panel
@@ -1116,6 +1129,8 @@ The builder also keeps related packages *together* where it can: hard
 When a soft pair genuinely doesn't fit on one disk the build says which pairs
 it had to separate rather than leaving you to discover it.
 
+#### 7.2.4 The mouse driver
+
 The **mouse** add-on is TOS's MS-DOS-style mouse driver. TOS has no baked-in
 mouse support (the shell is keyboard-driven), but OpenComputers screens emit
 touch/scroll signals — so installing `mouse` gives programs a
@@ -1138,6 +1153,8 @@ auto-detects the driver (like DOS programs probing for MOUSE.COM):
 No configuration needed; `pkg disable mouse` switches shell mouse support
 back off. Uninstalled, every mouse signal is ignored exactly as before -
 the driver and the shell hooks are pure opt-in.
+
+#### 7.2.5 The stock monitor
 
 The **stock** add-on is the warehouse monitor. Put a transposer or inventory
 controller next to your chests and `stock` totals every item across all of
@@ -1294,7 +1311,7 @@ An entry may name `cmd`, one of the package's commands; a package with exactly o
 needs none. Markers are plain line prefixes of 2 to 24 characters, never patterns:
 the shell compares them against a user's file outside any sandbox, and a prefix
 compare cannot be made to run long. How the declarations are ranked against each
-other and against the operator's own choices is under `open` in Chapter 14; the
+other and against the operator's own choices is under `open` in [Chapter 14](#14-command-reference-alphabetical); the
 short version is that a declaration earns a place by rule, never by being
 installed first.
 
@@ -1446,7 +1463,7 @@ Two things about that format need translating rather than copying:
   absolute path for both roles. A destination of `/lib` is relative to the install
   prefix and lands at `/usr/lib`; `//usr/bin` is absolute. An absolute
   destination outside `/usr` or `/var/pkg` is refused, which is the package write
-  confinement (§7.1) doing its job rather than a translation failure.
+  confinement ([§7.1](#71-using-pkg)) doing its job rather than a translation failure.
 - **`dependencies` values are install paths, not version constraints.**
   `dependencies = { libGUI = "/" }` means "also install libGUI", so the `/` is
   dropped rather than recorded as a version requirement.
@@ -1607,7 +1624,7 @@ internet                                          Card status (is it even usable
 | Signed by a key you do not know | You are shown its fingerprint, the repo and what requires it, and asked to name the publisher. Naming it is `pkg trust add`; Enter refuses. Never offered for a `service` or `driver`, which run outside the sandbox: trust their key first, by hand. |
 | Unsigned, or its signature does not verify | Refused. No `--allow-…` flag changes that. An unsigned package installs only from a repo you added. |
 
-Compare a fingerprint with the publisher somewhere that is not the repo it came from: a key that arrives with the package it signs proves nothing. `pkg trust discovered` sets the floor. `tofu` (trust on first use, the default) works as above. `trusted` takes only what is signed by a key already trusted here, and never asks. `off` reads configured repos only. A trust store that will not read counts as `off`. A requirement that pins a `key` (§7.3) gets exactly that publisher's copy, from wherever it is found. The refusals carry E-606 (`why E-606`).
+Compare a fingerprint with the publisher somewhere that is not the repo it came from: a key that arrives with the package it signs proves nothing. `pkg trust discovered` sets the floor. `tofu` (trust on first use, the default) works as above. `trusted` takes only what is signed by a key already trusted here, and never asks. `off` reads configured repos only. A trust store that will not read counts as `off`. A requirement that pins a `key` ([§7.3](#73-writing-a-package)) gets exactly that publisher's copy, from wherever it is found. The refusals carry E-606 (`why E-606`).
 
 **A fetch is a download followed by an ordinary install.** `pkg` downloads the
 index and the package's files into a staging directory under `/var/pkg/remote`,
@@ -1632,7 +1649,7 @@ fetched.
 executable code from a stranger. `pkg fetch` refuses it until you say
 `--allow-unverified`, exactly as a hashless floppy package does. That prompt is
 the point at which you are deciding to trust the repo — the fetch itself proves
-nothing. Under `pkg trust require on` (§7.8) a fetched package must also be
+nothing. Under `pkg trust require on` ([§7.8](#78-signed-packages-and-the-publisher-trust-store)) a fetched package must also be
 signed by a publisher you trust, or fetched with `--allow-unsigned`.
 
 A fetched package can be signed two ways: its own `package.sig`, as Optional
@@ -1836,7 +1853,7 @@ admin for trust / view pending requests), `net send <peer> <msg>` (chat message)
 `net alias add/rm/list/show` (name a peer — add/rm admin, list/show anyone), and
 `net pair start/status/close/<peer> <code>` (out-of-band shared-secret pairing
 window, admin). `<peer>` accepts an alias, a full address, an address prefix, or
-a `net scan` result index. *See also:* Chapter 14, `man net`.
+a `net scan` result index. *See also:* [Chapter 14](#14-command-reference-alphabetical), `man net`.
 
 ## 9. Power & Resilience
 
@@ -1985,26 +2002,43 @@ after an operator pointed out that `optimize swap status` reads as
 When a **data card** is installed, swapped data is compressed (deflate) on the
 way to disk and inflated on the way back, so more fits under the cap — automatic
 and detection-gated (a card-less box behaves exactly as before). The same data
-card powers the `compress`/`decompress` file commands (Chapter 14) for shrinking
+card powers the `compress`/`decompress` file commands ([Chapter 14](#14-command-reference-alphabetical)) for shrinking
 files on small disks.
 
 ## 10. Themes & Customization
 
-Nine built-in presets — `default` (teal frames + gold titles on black),
-`midnight` (Tokyo-night indigo), `amber` and `green` (CRT phosphor),
-`plasma` (neon red-orange like early plasma panels; every color stays in
-the red-orange band with no blue/green light, so operators working in the
-dark keep their night vision), `classic` (Norton white-on-blue with cyan
-bars), `contrast` (high contrast), `nord` (arctic blues), `solarized`
-(Solarized dark) — plus per-key overrides. Every preset uses tinted bars instead of solid accent
-blocks, keeps title/warning/error visually distinct, and now carries its
-own syntax-highlighting colors, so switching presets restyles the editor
-too. `theme list|show|set <name>|preview <name>|
-color <key> <0xRRGGBB>|reset|clear|keys` (aliased `colors`) — `theme color`
-also accepts the `syn_*`, `file_lua`, and `dir_color` keys. Saved per user
-(`~/.theme.cfg`) and re-applied at login. On Tier-1 monochrome GPUs themes are
-disabled (RGB would be unreadable); on Tier-2 they snap to the dye palette;
-Tier-3 is full RGB. (The PaneUI app for OpenOS carries the same nine themes.)
+TOS has nine built-in themes:
+
+| Theme | Look |
+|---|---|
+| `default` | teal frames and gold titles on black |
+| `midnight` | Tokyo Night indigo |
+| `amber` | amber CRT phosphor |
+| `green` | green CRT phosphor |
+| `plasma` | neon red-orange, like early plasma panels. It has no blue or green light, so operators working in the dark keep their night vision |
+| `classic` | Norton white on blue, with cyan bars |
+| `contrast` | high contrast |
+| `nord` | arctic blues |
+| `solarized` | Solarized dark |
+
+Each one also sets the editor's syntax colours, so switching themes restyles the
+editor too.
+
+```
+theme list                     the themes
+theme show                     the one in use
+theme preview <name>           try one
+theme set <name>               use one
+theme color <key> <0xRRGGBB>   change one colour
+theme keys                     the colours you can change
+theme reset                    drop your colour changes, keep the theme
+theme clear                    forget your saved theme
+```
+
+`colors` is the same command. Your choice is saved in `~/.theme.cfg` and comes
+back when you log in. A Tier 1 GPU is monochrome, so themes are off there. A
+Tier 2 GPU snaps them to its 16 colours, and Tier 3 shows them exactly. The
+PaneUI app for OpenOS carries the same nine themes.
 
 A profile can also name a preset (`profile set theme <name>`); it applies at
 login only when you have no explicit `theme set` choice saved — the more
@@ -2037,7 +2071,7 @@ over the same physical blocks means bigger, readable text. The policy is set by
   Falls back to an ~80×25 cap when the block
   size can't be read. Tune the density with `screenColsPerBlock` /
   `screenRowsPerBlock`.
-- **`max`** — use the hardware maximum (the pre-1.3.1 behavior).
+- **`max`** — use the hardware maximum.
 - **`<W>x<H>`** — an explicit resolution (e.g. `80x25`), clamped to the max with
   a warning if it didn't fit.
 
@@ -2075,7 +2109,7 @@ Currently translated surfaces: the login screen and the Desktop (a Russian
 starter catalog ships in the base image). Command output, `help`, and man
 pages are English for now. Rarer languages can ship as ordinary packages
 that just install a file into `/usr/lang`. Copying one in by hand takes root,
-because `/usr` is a protected system path (5.1): `lang dump` to `/tmp`,
+because `/usr` is a protected system path ([§5.1](#51-layout--permissions)): `lang dump` to `/tmp`,
 translate, then `protect off`, copy the file to `/usr/lang/<code>.lang`, and
 `protect on`.
 
@@ -2093,7 +2127,7 @@ Each is hidden from `help` when the hardware isn't attached.
 ### 11.1 Printing (add-on)
 
 TOS has no baked-in printing, the same way it has no baked-in mouse support.
-Install the **`printer`** package from the Optional Utilities disk (§7.2) and
+Install the **`printer`** package from the Optional Utilities disk ([§7.2](#72-the-optional-utilities-disk)) and
 you get `require("printer")` plus a `printer` command. It drives PC-Logix's
 **OpenPrinter** addon — the `openprinter` component. (OpenComputers' own
 `printer3d` prints *models*, not pages; it is a different device and this
@@ -2237,7 +2271,7 @@ run /home/me/backup.lua /home/me/docs
 
 `run` reads the file, compiles it, and runs it in the sandbox with `...` set to
 your arguments. Edit scripts with the built-in editor (`edit /home/me/backup.lua`,
-Chapter 4.3). Use `man edit` for its keys.
+[§4.3](#43-the-editor)). Use `man edit` for its keys.
 
 What a script can `require`:
 
@@ -2278,15 +2312,15 @@ return { commands = { backup = function(args, opts) ... end } }
 ```
 
 Install with `pkg install`, then `backup` works like any built-in. Full details,
-the capability allowlist, and hashing are in Chapter 7 (and `man packages`).
+the capability allowlist, and hashing are in [Chapter 7](#7-packages) (and `man packages`).
 
 ### 13.4 Scheduling scripts
 
 To run a script automatically:
 
-- **At boot** — drop it in `/etc/rc.d/` as a service (Chapter 12); kernel-tier
+- **At boot** — drop it in `/etc/rc.d/` as a service ([Chapter 12](#12-services--scheduling)); kernel-tier
   names need the allowlist, everything else runs sandboxed.
-- **On a timer** — `cron add backup 300 /home/me/backup.lua` (Chapter 12).
+- **On a timer** — `cron add backup 300 /home/me/backup.lua` ([Chapter 12](#12-services--scheduling)).
 
 ---
 
@@ -2307,14 +2341,16 @@ an ADMIN session;
 
 > Tip: `help <cmd>` gives the one-line version and `man <cmd>` the page; this is
 > the exhaustive version. If a command isn't listed in your `help`, it's
-> install-aware hiding — the hardware or package isn't there (see Chapter 17).
+> install-aware hiding — the hardware or package isn't there (see [Chapter 17](#17-recovery--troubleshooting)).
+
+**Jump to:** [A](#a) · [B](#b) · [C](#c) · [D](#d) · [E](#e) · [F](#f) · [G](#g) · [H](#h) · [I](#i) · [J](#j) · [K](#k) · [L](#l) · [M](#m) · [N](#n) · [O](#o) · [P](#p) · [R](#r) · [S](#s) · [T](#t) · [U](#u) · [V](#v) · [W](#w)
 
 ### A
 
 **about** — `about`
 Show the product banner, version, codename, the build (the commit the release
 was made from, or `source` when running from the source tree), and a one-line
-hardware summary. No flags. (v1.4.0 folded the old `ver` command in here.) The
+hardware summary. No flags. The
 same build appears in the first line of every boot's kernel log and of
 `/var/selftest.log`. *See also:* `hw`.
 
@@ -2347,7 +2383,7 @@ whole-tree snapshots. *See also:* `trash`, `deploy`.
 
 **battery** — `battery`
 Show stored/maximum energy and the current charge level. Used by the power
-subsystem to warn and clean-shutdown on critical battery (Chapter 9).
+subsystem to warn and clean-shutdown on critical battery ([Chapter 9](#9-power--resilience)).
 
 **bg** — `bg [job]` **(admin)**
 Resume a stopped job in the background. *See also:* `fg`, `ps`, `kill`.
@@ -2363,7 +2399,7 @@ still work), plus one on/off/auto toggle per optional
 feature (`net`, `services`, `cron`, `packages`, ...). `bootsettings show`
 prints everything; changes apply on the next boot. This is how the MACHINE
 starts; its other settings are `config` (`/etc/tos.cfg`), and your own are
-`profile` (`~/.profile.cfg`). *See also:* `man bootsettings`, Chapter 2.
+`profile` (`~/.profile.cfg`). *See also:* `man bootsettings`, [Chapter 2](#2-booting).
 
 ### C
 
@@ -2375,11 +2411,11 @@ Change the working directory; `cd` with no argument goes home, `cd -` to the
 previous directory. *Error:* `not a directory`.
 
 **chat** — `chat` **(tier: modem)**
-Open the encrypted chat client to TRUSTED peers (Chapter 8) as a
+Open the encrypted chat client to TRUSTED peers ([Chapter 8](#8-networking-zero-trust)) as a
 **persistent tab**: switch to other tabs and keep working — messages keep
 arriving in the background and the tab label shows an unread badge
 (`Chat(3)`). Type to talk — `peer:message` for one peer, `@group:message`
-for a named group (`/group` creates and edits them; see §8.4), plain text to
+for a named group (`/group` creates and edits them; see [§8.4](#84-chat-one-peer-one-group-or-everybody)), plain text to
 broadcast, `/help` for commands, `/mail` to bridge into mesh mail — which
 needs the `mail` add-on installed, and says so if it isn't;
 Announcements from the `intercom` add-on appear here too, marked `***`;
@@ -2390,7 +2426,7 @@ base image and rides the same mesh transport mail does. *See also:* `net`,
 
 **cli** — `cli`
 Leave the panels for the plain command line: the same commands, without the
-panel interface. `tui` goes back. *See also:* `tui`, Chapter 4.
+panel interface. `tui` goes back. *See also:* `tui`, [Chapter 4](#4-the-shell).
 
 **clip** — `clip [set <text> | clear]`
 Show what this seat's text clipboard holds (the first ten lines), put text on
@@ -2406,7 +2442,7 @@ before any cluster package is installed. *See also:* Appendix B.
 
 **compat** — `compat`
 List the OpenOS compatibility modules and whether each is loaded. *See also:*
-§7.7.
+[§7.7](#77-third-party-and-openos-packages).
 
 **component** — `component <type> [method] [args...]` **(admin; invoking a method: root)**
 List a component *type*'s available methods, or call one, through the
@@ -2428,7 +2464,7 @@ verbatim. *Errors:* `Compression needs a data card`, `Not a file`. *See also:*
 Dump every key in `/etc/tos.cfg`, the machine's settings (hostname, thresholds,
 `swapMaxKB`, `critBatShutdown`, …). Takes no arguments — read-only, no
 `get`/`set` subcommands. How the machine boots is `bootsettings`
-(`/etc/boot.cfg`); your own settings are `profile`. *See also:* Chapter 16.
+(`/etc/boot.cfg`); your own settings are `profile`. *See also:* [Chapter 16](#16-configuration-files).
 
 **cp** — `cp <src> <dst>`
 Copy a file or directory (recursively). *Errors:* `no such file`,
@@ -2445,7 +2481,7 @@ message names where (`crash /mnt/<disk>/var/crash/<name>` reads it). *See also:*
 `log`, `doctor`.
 
 **cron** — `cron [list | add <name> <seconds> <script> | rm <id>]` **(admin)**
-Manage persistent scheduled tasks (Chapter 12). The script is Lua source or the
+Manage persistent scheduled tasks ([Chapter 12](#12-services--scheduling)). The script is Lua source or the
 full path of a `.lua` file; a shell line is refused when you add it. *Example:*
 `cron add backup 300 /home/me/backup.lua`.
 
@@ -2471,7 +2507,7 @@ unless `-k`/`--keep`; with no `out`, strips the `.tcz` suffix. *Errors:*
 Write the whole-OS system image to a target disk per the manifest (an install
 disk you run on another machine). `deploy drive <addr>` instead installs onto an
 **unmanaged raw drive** as a bootable TBFS volume (needs the `blockfs` package;
-fails loudly if it's absent) — see Chapter 5.4. For the add-on counterpart — a
+fails loudly if it's absent) — see [§5.4](#54-unmanaged-raw-drives--tbfs). For the add-on counterpart — a
 pick-and-choose disk of your installed extras — use `pkg make-disk <mount>`.
 *See also:* `drive`, `verify`, `pkg`, `man packages`.
 
@@ -2479,9 +2515,9 @@ pick-and-choose disk of your installed extras — use `pkg make-disk <mount>`.
 Open (or focus) the **Desktop** tab — the tile home screen of built-in apps and
 installed package commands. Re-opening re-scans installed packages. Tiles honor
 command tiers and hardware gates. Your personal `~/.launcher.cfg` entries appear
-here as tiles too. *See also:* `settings`, `tape-menu`, Chapter 4.4.
+here as tiles too. *See also:* `settings`, `tape-menu`, [§4.4](#44-the-tiles-view--the-settings-app).
 
-**device** — folded into `hostname` (v1.4.0): `hostname` with no argument shows
+**device** — folded into `hostname`: `hostname` with no argument shows
 the device type + hostname; `hostname <name>` sets the name.
 
 **df** — `df`
@@ -2524,8 +2560,8 @@ Open the built-in text editor (undo, find/replace, clipboard, Lua syntax
 coloring); creates the file if missing. Keys: Ctrl+S save, Ctrl+Q close, Ctrl+F
 find, Ctrl+H replace, Ctrl+Z undo, Ctrl+G go-to-line, Ctrl+Insert copy,
 Shift+Delete/^X cut, Shift+Insert/^V paste (`^C` is the kernel interrupt and
-never reaches the editor — Chapter 4.3).
-*See also:* `man edit`, Chapter 4.3.
+never reaches the editor — [§4.3](#43-the-editor)).
+*See also:* `man edit`, [§4.3](#43-the-editor).
 
 **env** / **export** — `env [KEY | KEY=VALUE]` (also `set`)
 With no argument, list this session's environment variables; with `KEY`, print
@@ -2548,7 +2584,7 @@ drone, as long as this computer's own EEPROM goes back in before it restarts.
 `--data` also writes the chip's data field, asked for twice and not shown:
 it is where rc-pilot's robot program keeps its shared secret. A BIOS is
 refused `--data`, because it keeps its boot address there. *See also:*
-Chapter 2.
+[Chapter 2](#2-booting).
 
 ### G
 
@@ -2571,8 +2607,7 @@ List the commands typed at this seat, oldest first.
 **hostname** — `hostname [name]` **(admin to set)**
 With no argument, shows the device type + hostname; `hostname <name>` sets the
 name (the `hostname` key in `/etc/tos.cfg`; 1-32 printable characters) and peers
-hear it at the next handshake, no reboot needed. (v1.4.0 folded the old `device`
-command in here.)
+hear it at the next handshake, no reboot needed.
 *See also:* `hw`, `net`.
 
 **hw** — `hw`
@@ -2582,7 +2617,7 @@ screen). *See also:* `doctor`, `component`.
 ### I
 
 **intercom** — `intercom [status | cues | say "…" | play <cue> | test <cue> | log [N] | set <k> <v>]` **(add-on; tier: modem)**
-The facility announcement system (§8.5). A Computronics tape holds the
+The facility announcement system ([§8.5](#85-the-intercom-announcement-system-add-on)). A Computronics tape holds the
 recorded voice; `/etc/intercom.cues` tells the Intercom what is on it and
 where, one line per announcement — `fuel-low  [0001] "Warning: Reactor fuel
 low." [0005]  warn`. `intercom play <cue>` seeks the tape, plays it, stops at
@@ -2606,7 +2641,7 @@ a URL and prints the first 20 lines — a check that the card works, not a pager
 shared box where the card is wanted for one service and not for everybody.
 Reaching the network from a *package* additionally requires the `internet`
 capability, which is never implied by `component`. Hidden from `help` on a
-machine with no card. *See also:* `pkg` (§7.9), `hw`, `config`.
+machine with no card. *See also:* `pkg` ([§7.9](#79-remote-repositories-internet-card)), `hw`, `config`.
 
 **inventory** — `inventory` (alias `inv`) **(tier: inventory controller / robot)**
 List the contents of an attached inventory. *See also:* `redstone`, `robot`.
@@ -2646,7 +2681,7 @@ Its allow-list and menu live in `/etc/kiosk.cfg`.
 **lang** — `lang [<code> | system <code> | dump [path]]`
 Show or set the UI language. Catalogs are data files in `/usr/lang`;
 `lang dump` writes a translator template. Per-user via your profile,
-machine default via `lang system` (admin). *See also:* Chapter 10.2,
+machine default via `lang system` (admin). *See also:* [§10.2](#102-language-packs-i18n),
 `profile`.
 
 **log** — `log [N | clear]` **(admin)**
@@ -2667,14 +2702,14 @@ List every connected component with its type, short address and, where known, a
 detail such as a disk's label. *See also:* `component`.
 
 **lua** — `lua <code>` **(root)**
-Evaluate a Lua snippet in the session sandbox (Chapter 13.1). *Example:*
+Evaluate a Lua snippet in the session sandbox ([§13.1](#131-one-liners-with-lua)). *Example:*
 `lua print(math.pi)`. *See also:* `run`.
 
 ### M
 
 **mail** — `mail [ui | send <to> [subject] [body…] | list | read <n> | delete <n>]` **(add-on; tier: modem)**
 Mesh email — addressed, store-and-forward, end-to-end-sealed mail that hops
-across trusted relays with no central server (Chapter 8). With **no subcommand**
+across trusted relays with no central server ([Chapter 8](#8-networking-zero-trust)). With **no subcommand**
 it opens the inbox as a **persistent tab** (like `chat`): arrows navigate,
 **Enter** reads (marks read), **c** composes (recipient / subject / multi-line
 body), **r** replies, **d** deletes, **R** refreshes now, and the inbox
@@ -2694,7 +2729,7 @@ in). Without the add-on, `mail` prints an install hint; a TOS box without it
 still *relays* mail for its trusted neighbours — relaying is the transport's
 job, and relays can't read the sealed payload anyway. *Sending to a peer you
 share no secret with is refused* rather than silently sent in the clear (trust
-it from both machines, which agrees one, or pair with `net pair`; §8.3); `*`
+it from both machines, which agrees one, or pair with `net pair`; [§8.3](#83-the-mesh-transport)); `*`
 bulletins are plaintext by definition and labelled as such.
 *See also:* `chat`, `net`, `pkg`, `service`, `man networking`.
 
@@ -2705,7 +2740,7 @@ help depth, between `help` and this Manual. *Error:* `no manual entry for <topic
 
 **mem** — `mem [--boot]`
 The memory report: RAM used/total with a usage bar, the RAM tier, swap usage, and
-a warning near the ~16 KB danger zone (Chapter 9, `man memory`). `--boot` shows
+a warning near the ~16 KB danger zone ([Chapter 9](#9-power--resilience), `man memory`). `--boot` shows
 how much memory each boot stage used, when the boot was profiled: add
 `memprofile = true` to `/etc/boot.cfg` and reboot (it slows the boot a little, so
 it is off by default; the same table goes to the log). *See also:* `hw`,
@@ -2747,14 +2782,14 @@ Move or rename a file/directory. *Errors:* `no such file`, `destination exists`.
 ### N
 
 **net** — `net [scan|peers|trust <addr> [full]|block <addr>|revoke <addr>|send <addr> <msg>]` **(tier: modem; trust: admin)**
-The zero-trust networking front end (Chapter 8). With no argument, shows status.
+The zero-trust networking front end ([Chapter 8](#8-networking-zero-trust)). With no argument, shows status.
 *Example:* `net trust 3f8a1c2d full`. *See also:* `man net`, `ping`, `chat`.
 
 **netfs** — `netfs [status | exports | mount <host> <share> <mount> | umount <mount>]` **(admin)**
 Mount a directory that another TOS machine exports. *See also:* `man netfs`.
 
 **notify** — `notify <message> [--style info|warn|danger|error] [--title T]`
-The intrusive counterpart to `echo` (§4.1.4). Raises a DOS-style modal dialog
+The intrusive counterpart to `echo` ([§4.1.4](#414-two-ways-to-say-something)). Raises a DOS-style modal dialog
 box on **every seat**, over whatever the operator was doing, instead of a line
 in the output area they'll see when they next look down. Also the operator
 surface for `kernel.notify`, the facility any program or service posts to when
@@ -2769,17 +2804,22 @@ With no argument, reports what's pending and the current limits. *See also:*
 
 **open** — `open <file>` · `open with <file> [program]` · `open set .<ext> <program> [--system]` · `open unset .<ext>` · `open list` · `open hints on|off`
 Run a file in the program that suits it. Packages declare what they open
-(`handles`, §7.3) and TOS ranks every program that could by a fixed rule, never
-by install order: your choice (`open set`, kept in `~/.open.cfg`), then the
-machine's (`--system`, admin, `/etc/open.cfg`), then a package whose content
-markers start a line of the file (write for a `.txt` full of its dot commands),
-then a package's own format (`.calc`), then `edit` for plain-text types (`.txt`
-`.lua` `.cfg` ...), then a package that can open the type (`.csv` in calc), then
-`edit` for any other text. A package that merely *can* open `.txt` does not take
-text files from the editor. `open with` shows the ranking and why. The file
-browser's Enter menu offers the same programs ("Open in calc"), and when `edit`
-opens a file another program suits better its status line says so; Ctrl+O hands
-the file over. *See also:* `which`, `edit`, `man open`.
+(`handles`, [§7.3](#73-writing-a-package)), and TOS picks by a fixed ranking, never by install order:
+
+1. your choice (`open set`, kept in `~/.open.cfg`);
+2. the machine's choice (`--system`, admin, kept in `/etc/open.cfg`);
+3. a package whose content markers start a line of the file (`write` for a
+   `.txt` full of its dot commands);
+4. a package's own format (`.calc`);
+5. `edit`, for plain-text types (`.txt`, `.lua`, `.cfg` and so on);
+6. a package that can open the type (`.csv` in `calc`);
+7. `edit`, for any other text.
+
+So a package that merely *can* open `.txt` does not take text files from the
+editor. `open with` shows the ranking and why. The file browser's Enter menu
+offers the same programs, and when `edit` opens a file another program suits
+better, its status line says so and Ctrl+O hands the file over. *See also:*
+`which`, `edit`, `man open`.
 
 **optimize** — `optimize [show | power <off|balanced|save> | buffer <on|off|auto> | swap …]` **(set: admin)**
 Show or toggle TOS's three optimizations. `optimize show` reports each one's state
@@ -2792,7 +2832,7 @@ for live views like `monitor` and `watch`, in both time and energy. `auto`
 (default) enables it only with memory headroom; `on` forces it whenever it fits;
 `off` always draws directly. **swap** is the disk-swap "slow RAM" feature and has
 its own top-level command; `optimize swap …` and `swap …` run the same code.
-*See also:* `swap`, `mem`, `monitor`, Chapter 9.4.
+*See also:* `swap`, `mem`, `monitor`, [§9.4](#94-disk-swap-slow-ram).
 
 **optimize power** — `optimize power [show | off|balanced|save | blank <secs|off> | idle <secs>]` **(set: admin)**
 Trade responsiveness for energy. `optimize power` on its own reports the machine's
@@ -2834,34 +2874,16 @@ peer can be a full address, an alias, or an index from `net scan`.
 With no argument, broadcasts a discovery ping; `net peers` lists who answered.
 *See also:* `net`, `hostname`.
 
-**protect** — `protect [status | off | on]` **(root)**
-The protected-path guards stop even root from writing under `/tos`, `/etc`,
-`/usr` and `/var` through securefs, as a defence against a tampered admin
-session. `protect off` stands them down for this session only; `protect on`
-puts them back.
-
-**sudo** — `sudo <command>` | `sudo -s` | `sudo -k` | `sudo setup [admin|root]` |
-`sudo off` **(USER+; guests cannot elevate)**
-Run a command with elevated privileges using a **separate elevation password**
-— distinct from any account's login password, so a non-root user can perform
-higher-tier actions **without the root account**. Root configures it once with
-`sudo setup admin` (or `sudo setup root` to allow full-root elevation); `sudo
-off` disables it. Then `sudo <cmd>` prompts for the elevation password and runs
-that one command elevated (up to the configured ceiling, never above); `sudo -s`
-opens an elevated shell until `sudo -k` or `logout`. Every attempt is logged.
-The elevation raises your **effective tier** for the action; it never gives you
-the root *account*. *See also:* `passwd`, `users`, `whoami`.
-
 **pkg** — `pkg <list|search|info <name>|install [name|dir]|uninstall <name>|enable <name>|disable <name>|commands|make-disk <mount>>` **(admin)**
 Top-level `install <name>` / `uninstall <name>` are shortcuts for the same.
-The package manager — the one way to add or remove add-ons (Chapter 7). `enable`/
+The package manager — the one way to add or remove add-ons ([Chapter 7](#7-packages)). `enable`/
 `disable` toggle an installed package without removing it. Installs are sandboxed
 by the manifest's declared capabilities; the `legacy` cap is never grantable.
 With an internet card, `pkg repo add <name> <url>` / `repo list` / `repo remove`
 manage remote repositories, `pkg remote` lists what they offer, and `pkg fetch
 <name>` downloads and installs one — the configured repo list is the allowlist,
 and a fetch runs the ordinary install against a staging directory rather than a
-second, network-aware copy of it (§7.9).
+second, network-aware copy of it ([§7.9](#79-remote-repositories-internet-card)).
 *Errors:* `unknown package`, `capability not allowed`, `hash mismatch`. *See
 also:* `man pkg`, `man packages`.
 
@@ -2875,6 +2897,12 @@ whole machine. *See also:* `bootsettings`, `config`, `theme`.
 
 **programs** — `programs` **(admin)**
 List runnable programs/commands available to you. *See also:* `help`, `pkg list`.
+
+**protect** — `protect [status | off | on]` **(root)**
+The protected-path guards stop even root from writing under `/tos`, `/etc`,
+`/usr` and `/var` through securefs, as a defence against a tampered admin
+session. `protect off` stands them down for this session only; `protect on`
+puts them back.
 
 **ps** — `ps [-v]`
 A one-shot snapshot of processes — ids, owner, and state (`-v` adds capabilities,
@@ -2893,11 +2921,11 @@ survey` before starting the service.
 
 **reboot** — `reboot` **(admin)**
 Cleanly restart the machine (writes the clean-shutdown marker first, so the next
-boot won't warn of an unsafe shutdown). *See also:* `shutdown`, Chapter 9.
+boot won't warn of an unsafe shutdown). *See also:* `shutdown`, [Chapter 9](#9-power--resilience).
 
 **reclaim** — `reclaim [--apply]` **(root)**
 Remove the OpenOS files left behind after installing TOS over OpenOS. Without
-`--apply` it only lists them, with sizes. *See also:* §7.6.
+`--apply` it only lists them, with sizes. *See also:* [§7.6](#76-reclaiming-space-after-installing-over-openos).
 
 **redstone** — `redstone [...]` (alias `rs`) **(tier: redstone card)**
 Read/set redstone signals on the sides of the machine. *See also:* `inventory`,
@@ -2917,20 +2945,20 @@ Drive an attached robot (move, turn, interact). *See also:* `inventory`,
 
 **rsh** — `rsh <peer> <lua>` **(admin; tier: modem; TRUSTED peer)**
 Run a chunk of Lua on a TRUSTED remote machine, in a step-budgeted sandbox whose
-`print` comes back to you: `rsh two print(1+2)` answers `3` (Chapter 8). It is Lua,
+`print` comes back to you: `rsh two print(1+2)` answers `3` ([Chapter 8](#8-networking-zero-trust)). It is Lua,
 not a shell line: `rsh two ls` is a syntax error there. `<peer>` is an alias from
 `net alias`, a full address, or a prefix that matches one aliased address, as
 everywhere in `net`. *See also:* `scp`, `ssh`, `net`.
 
 **run** — `run <file> [args...]` **(admin)**
 Execute a Lua script file in the session sandbox with `...` set to the arguments
-(Chapter 13.2). *Errors:* `no such file`, plus any runtime error from the script.
+([§13.2](#132-script-files-with-run)). *Errors:* `no such file`, plus any runtime error from the script.
 *See also:* `lua`, `edit`.
 
 ### S
 
 **scp** — `scp <peer>:<path> <local>` **(admin; needs a modem and a TRUSTED peer)**
-Copy a file from a TRUSTED peer's `/public` (Chapter 8); `<peer>` is named as for
+Copy a file from a TRUSTED peer's `/public` ([Chapter 8](#8-networking-zero-trust)); `<peer>` is named as for
 `rsh`. It only downloads: nothing on the far side accepts an upload. *See also:*
 `rsh`, `share`, `net`.
 
@@ -2938,21 +2966,21 @@ Copy a file from a TRUSTED peer's `/public` (Chapter 8); `<peer>` is named as fo
 Manage display seats (`list`/`next`/`<index>` need multiple screens) and the
 screen resolution. `screen res` shows current/max/block sizes + policy;
 `screen res <auto|max|WxH>` (admin) sets it live and saves it (fixes tiny text on
-a tier-3 GPU + large screen). *See also:* `man screen`, Chapter 10.1.
-
-**service** — `service [start|stop|list] <name>` **(admin)**
-Manage `/etc/rc.d/` services (Chapter 12). *See also:* `cron`.
-
-**settings** — `settings`
-Open (or focus) the **Settings app** tab: Appearance (theme, live preview),
-Status Bar (widgets), Home (login landing), System (admin shortcuts).
-*See also:* `theme`, `profile`, `bootsettings`, Chapter 4.4.
+a tier-3 GPU + large screen). *See also:* `man screen`, [§10.1](#101-screen-resolution).
 
 **screendump** — `screendump [<path>]`
 Capture exactly what's on this seat's screen to a text file (default
 `./screen-<uptime>.txt`) — including a garbled or panicked display — for a bug
 report. Reads the display buffer when active, else the GPU directly. *See also:*
 `crash`, `log`.
+
+**service** — `service [start|stop|list] <name>` **(admin)**
+Manage `/etc/rc.d/` services ([Chapter 12](#12-services--scheduling)). *See also:* `cron`.
+
+**settings** — `settings`
+Open (or focus) the **Settings app** tab: Appearance (theme, live preview),
+Status Bar (widgets), Home (login landing), System (admin shortcuts).
+*See also:* `theme`, `profile`, `bootsettings`, [§4.4](#44-the-tiles-view--the-settings-app).
 
 **share** — `share <host> [path]` **(tier: modem)**
 Meant to fetch a file from a peer's `/public`, but it does not work at present:
@@ -2961,13 +2989,13 @@ available`. Use `scp`. *See also:* `scp`, `net servers`.
 
 **shutdown** — `shutdown` **(admin)**
 Cleanly power off (writes the clean-shutdown marker). *See also:* `reboot`,
-Chapter 9.
+[Chapter 9](#9-power--resilience).
 
 **srm** — `srm [status | scan | health | verify | full | baseline [--full] | repair [--restore | --online [--apply]] | restore [...]]` **(baseline/repair/restore: admin)**
 System Repair & Maintenance: one front door over `doctor`, `verify`, the
 boot-time repair pass and backups. With no argument it reports what it knows,
 including a fault the BIOS parked in the EEPROM. *See also:* `man srm`,
-Chapter 17.
+[Chapter 17](#17-recovery--troubleshooting).
 
 **ssh** — `ssh <host> <command...>` **(tier: modem; TRUSTED peer)**
 Meant to run a command on a TRUSTED machine, but it does not work at present: it
@@ -2975,8 +3003,20 @@ cannot see the network from the sandbox it runs in, so it prints `Network not
 available`. There is no interactive remote shell. Use `rsh`, which runs Lua on
 the peer. *See also:* `rsh`, `scp`.
 
+**sudo** — `sudo <command>` | `sudo -s` | `sudo -k` | `sudo setup [admin|root]` |
+`sudo off` **(USER+; guests cannot elevate)**
+Run a command with elevated privileges using a **separate elevation password**
+— distinct from any account's login password, so a non-root user can perform
+higher-tier actions **without the root account**. Root configures it once with
+`sudo setup admin` (or `sudo setup root` to allow full-root elevation); `sudo
+off` disables it. Then `sudo <cmd>` prompts for the elevation password and runs
+that one command elevated (up to the configured ceiling, never above); `sudo -s`
+opens an elevated shell until `sudo -k` or `logout`. Every attempt is logged.
+The elevation raises your **effective tier** for the action; it never gives you
+the root *account*. *See also:* `passwd`, `users`, `whoami`.
+
 **swap** — `swap [status | keys | now | clear | on | off | auto]` **(toggles: admin)**
-The disk-swap "slow RAM" store on `/var/swap` (Chapter 9.4). `swap` (or `status`)
+The disk-swap "slow RAM" store on `/var/swap` ([§9.4](#94-disk-swap-slow-ram)). `swap` (or `status`)
 shows what it holds, how many view tabs are paged out, and the free-RAM threshold
 that triggers paging; `keys` lists the entries; `now` pages every cold tab
 immediately, ignoring the pressure threshold (the only way to confirm the wiring
@@ -2987,7 +3027,7 @@ and size-capped by `swapMaxKB`.
 Paging spends disk writes to buy RAM, and OpenComputers bills disk I/O per
 kilobyte, so swap is the one optimization that *costs* energy; see
 `optimize power`. `optimize swap …` is the same command under the older
-spelling. *See also:* `optimize`, `mem`, Chapter 9.4.
+spelling. *See also:* `optimize`, `mem`, [§9.4](#94-disk-swap-slow-ram).
 
 ### T
 
@@ -3002,25 +3042,27 @@ Control a tape drive (play/write/seek), once the tape package is installed. *See
 also:* `pkg`, `man packages`.
 
 **tape-menu** — `tape-menu` **(tier: tape drive)**
-Open the personal command menu carried on your **identity tape** (a
-tape-authenticator keycard — manage it with `tape-auth menu
-add|list|remove|passwd|clear <passphrase>`). To add an item, `--` separates the
-label from the command — `tape-auth menu add <pass> Diagnostics -- doctor` —
-because an unquoted `|` would be read as a shell pipe and run the second half
-immediately. The **first** `menu add` on a tape is what SETS that tape's
-passphrase; pick one that is not your login password, and change it later with
-`tape-auth menu passwd <old> <new>`. Any passphrase argument can be `-` instead:
-`tape-auth menu add - Diagnostics -- doctor` asks for it without echoing it, so
-it is not left in your command history the way a typed one is (a new passphrase
-is asked twice). Insert the card, enter your passphrase, and your toolbox runs at
-your tier — it follows you between machines. (v1.4.0 retired the standalone
-`launcher`/`apps` command: the **Desktop** is TOS's menu surface now — built-in
-apps, installed package commands, and your `~/.launcher.cfg` entries all appear
-there as tiles. The launcher engine still powers the locked guest `kiosk`.)
+Open the personal command menu carried on your **identity tape**. Insert the
+card, enter your passphrase, and your toolbox runs at your tier, so it follows
+you between machines.
+
+Make the card and fill the menu with `tape-auth` (the `tape-authenticator`
+add-on):
+
+```
+tape-auth menu add <pass> Diagnostics -- doctor    add an item
+tape-auth menu list <pass>                         show them
+tape-auth menu passwd <old> <new>                  change the passphrase
+```
+
+`--` separates the label from the command, because an unquoted `|` would be read
+as a shell pipe. The **first** `menu add` on a tape sets its passphrase, so pick
+one that is not your login password. Any passphrase can be `-` instead, and you
+are then asked for it without it being shown or kept in your command history.
 *See also:* `desktop`, `kiosk`, `menu`, `tape-auth`.
 
 **theme** — `theme [name]` (alias `colors`)
-Show or set the color theme; saved per-user to `~/.theme.cfg` (Chapter 10). *See
+Show or set the color theme; saved per-user to `~/.theme.cfg` ([Chapter 10](#10-themes--customization)). *See
 also:* `tutorial`.
 
 **touch** — `touch <file...>`
@@ -3038,7 +3080,7 @@ Return from the command line to the full panel interface. *See also:* `cli`.
 
 **tutorial** — `tutorial`
 Launch the interactive new-operator walkthrough. *See also:* this Manual,
-Chapter 1.
+[Chapter 1](#1-what-tos-is).
 
 ### U
 
@@ -3063,7 +3105,7 @@ Delete a user account. *See also:* `users`, `useradd`.
 Modify a user (tier, lock state). *See also:* `users`, `passwd`.
 
 **users** — `users` **(admin)**
-List user accounts and their tiers (Chapter 3). *See also:* `useradd`,
+List user accounts and their tiers ([Chapter 3](#3-logging-in-users--tiers)). *See also:* `useradd`,
 `userdel`, `usermod`, `passwd`.
 
 ### V
@@ -3110,21 +3152,20 @@ I refused?". *See also:* `why`, `alias`, `programs`, `pkg`.
 Print the current user and tier. *See also:* `logout`, `users`.
 
 **why** — `why [<code> | <command>]`
-Explain the last refusal or error, in plain English, with the fix. With no
-argument it takes whatever just failed on this seat — a tier denial, a
-protected-path refusal, a trash refusal, an out-of-memory, an unknown command —
-quotes it back, names its error code, and explains it. A tier denial gets the
-fullest answer (which tier the command needs against the one you hold). A
-refusal that carries a code (`[E-402 ERR_PATH_PROTECTED]`) is identified by the
-code; older messages are matched against the refusals TOS knows how to explain.
-If it recognises neither, it says so and points at `log` rather than guessing.
-`why <code>` explains an error code in any spelling — `E-402`,
-`ERR_PATH_PROTECTED`, `0x00040002`, or an EEPROM beep code like `K4` — so a code
-read off a stop screen or a log can be looked up afterwards (Appendix C lists
-them). `why <command>` explains what that command needs and whether your account
-can run it. File-browser actions (F8 delete and friends) count too — you do not
-have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
-`crash`, Appendix C.
+Explain the last refusal or error, in plain English, with the fix.
+
+- **`why`** takes whatever just failed on this seat, quotes it back, names its
+  error code and explains it. That covers tier denials, protected paths, trash
+  refusals, out-of-memory, unknown commands and file-browser actions such as F8.
+  If it recognises neither the code nor the message, it says so and points at
+  `log`.
+- **`why <code>`** explains an error code in any spelling: `E-402`,
+  `ERR_PATH_PROTECTED`, `0x00040002`, or an EEPROM beep code like `K4`. Use it
+  for a code read off a stop screen or a log. Appendix C lists them all.
+- **`why <command>`** says what that command needs and whether your account can
+  run it.
+
+*See also:* `whoami`, `users`, `protect`, `log`, `crash`, Appendix C.
 
 ---
 
@@ -3187,7 +3228,7 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 - **The release manifest vouches for every file.** A release's manifest carries
   a SHA-256 for each file it installs (the build writes them over the bytes it
   actually ships), and `verify` — and the boot self-check, when the profile
-  runs it (2.1) — compares every installed file against it, counting a
+  runs it ([§2.1](#21-the-boot-spectrum-etcbootcfg)) — compares every installed file against it, counting a
   mismatch as damage. The manifest itself can be pinned too: `verify anchor`
   records its hash in the EEPROM, and `doctor` then reports if it ever
   changes. A machine running straight from the source tree has no digests to
@@ -3215,21 +3256,54 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
 
 ## 16. Configuration Files
 
+**The machine's:**
+
 | File | Purpose |
-|------|---------|
-| `/etc/boot.cfg` | Boot spectrum: `profile`, `verbosity`, `advanced`, `cpuTier`, `showConfig`, `memprofile` (Ch 2) |
-| `/etc/tos.cfg` | System config: device profile, hostname, thresholds, `swapMaxKB`, `critBatShutdown`, … |
-| `/etc/users.dat` | User DB (admin-read, atomic-written) |
-| `/etc/trust.dat` | Network trust DB + shared secrets |
+|---|---|
+| `/etc/boot.cfg` | How the machine starts: `profile`, `verbosity`, `ui`, `advanced`, `cpuTier`, `showConfig`, `memprofile` ([Chapter 2](#2-booting)). Change it with `bootsettings` |
+| `/etc/tos.cfg` | Machine settings: device type, hostname, thresholds, `swapMaxKB`, `critBatShutdown`, … Read it with `config` |
+| `/etc/users.dat` | Accounts (admin-read, written atomically) |
+| `/etc/elevate.dat` | The `sudo` elevation password |
+| `/etc/trust.dat` | Network trust and shared secrets |
 | `/etc/rc.d/*.lua` | Startup services |
-| `/etc/cluster-master.cfg` | Cluster Master tuning (only with `cluster-master` installed) |
-| `/etc/cluster-manager.cfg` | Cluster Manager: which Master, worker count (only with `cluster-manager`) |
-| `/etc/jbod.cfg` | JBOD pool table (only when `advanced.jbod` is enabled) |
-| `~/.theme.cfg` | Per-user saved theme |
-| `/etc/open.cfg` | Which program opens each file type, for every user (`open set --system`, admin) |
-| `~/.open.cfg` | Your own choices, and `hints off` (`open set`, `open hints`) |
-| `/var/run/pwrstate` | Clean/unsafe-shutdown dirty bit |
-| `/var/swap/` | Disk-swap scratch (volatile) |
+| `/etc/cron.dat` | Scheduled jobs |
+| `/etc/keys.cfg` | Keyboard shortcuts for every user (`keys set --system`) |
+| `/etc/menu.cfg` | The menu bar for every user (`menu … --system`) |
+| `/etc/open.cfg` | Which program opens each file type, for every user (`open set --system`) |
+| `/etc/kiosk.cfg` | What the kiosk allows and offers |
+| `/etc/chat-groups.cfg` | Chat groups |
+| `/etc/jbod.cfg` | Disk pools (only with `advanced.jbod`) |
+| `/etc/pkg_caps.cfg` | What packages may ask for ([§7.3](#73-writing-a-package)) |
+| `/etc/component_caps.cfg` | Modded component types and the capability that gates each |
+| `/etc/pkg_trust.cfg` | Publishers this machine trusts ([§7.8](#78-signed-packages-and-the-publisher-trust-store)) |
+| `/etc/pkg-repos.cfg` | Repositories this machine fetches from ([§7.9](#79-remote-repositories-internet-card)) |
+| `/var/pkg/known-repos.cfg` | Repositories learned from packages, which carry no trust ([§7.9](#79-remote-repositories-internet-card)) |
+| `/var/run/pwrstate` | Clean or unsafe shutdown marker |
+| `/var/swap/` | Disk swap (wiped every boot) |
+
+**Yours, in your home directory:**
+
+| File | Purpose |
+|---|---|
+| `~/.profile.cfg` | Your settings, aliases and login commands (`profile`, `alias`) |
+| `~/.theme.cfg` | Your theme |
+| `~/.keys.cfg` | Your keyboard shortcuts |
+| `~/.menu.cfg` | Your menu bar edits |
+| `~/.open.cfg` | Your `open` choices, and `hints off` |
+| `~/.launcher.cfg` | Your own tiles on the Home screen |
+| `~/.keychain.vault` | Your keychain, encrypted |
+| `~/.trash/` | Your trash |
+
+**Add-ons, only when installed:**
+
+| File | Purpose |
+|---|---|
+| `/etc/cluster-master.cfg` | Cluster Master tuning |
+| `/etc/cluster-manager.cfg` | Cluster Manager: which Master, how many workers |
+| `/etc/intercom.cues` | What is on the Intercom's tape, and where |
+| `/etc/intercom.cfg` | How this machine is interrupted |
+| `/etc/stock-watch.cfg` | Stock thresholds |
+| `~/.warhead` | Your saved warhead designs and places |
 
 ## 17. Recovery & Troubleshooting
 
@@ -3256,7 +3330,7 @@ have to have typed a command. *See also:* `whoami`, `users`, `protect`, `log`,
   could load. The two-character code is also the beep count (`K4` is four short
   beeps after a long one). `srm status` reports it on the next successful boot,
   and `why K4` explains it. For `K4`, `I5` and `I6`, press **d** to boot another
-  disk instead (§ SRM Basic).
+  disk instead ([§9.3](#93-srm--system-repair--maintenance)).
 - **A command vanished from `help`:** that's install-aware help — its hardware or
   package isn't present. Check `pkg list` / attach the peripheral.
 - **One slow login after upgrading from an early 1.3.1 build:** if an account's

@@ -37,7 +37,7 @@ The roadmap also records work deliberately **not** done, with reasons. Reading t
 
 ## Reporting a problem
 
-Use the issue forms. A bug report asks for the output of `about` (the exact version and build) and, if you have it, `why` or an error code like `E-401`; those are what make a report reproducible. A bot does a first pass on every issue: it checks the fields, resolves error codes, suggests related issues and roadmap items, and labels it `triage:ready`, `triage:needs-info` or `triage:needs-human`. **It never closes or rejects an issue**; a person reads everything it cannot settle. Security problems go to the private Security tab instead. How it works: [`docs/ISSUE-TRIAGE.md`](docs/ISSUE-TRIAGE.md).
+Use the issue forms. A bug report asks for the output of `about` (the exact version and build) and, if you have it, `why` or an error code like `E-401`; those are what make a report reproducible. A bot does a first pass on every issue: it checks the fields, resolves error codes, suggests related issues and roadmap items, and labels it `triage:ready`, `triage:needs-info` or `triage:needs-human`. **It never closes or rejects an issue**; a person reads everything it cannot settle. Security problems go to the private Security tab instead. How it works: [`docs/ISSUE-TRIAGE.md`](https://github.com/Evan450/TOS-Terminal-Operating-System-/blob/dev/docs/ISSUE-TRIAGE.md).
 
 ## Getting set up
 
@@ -100,7 +100,7 @@ bootstrap.lua <your-fork> dev
 |---|---|
 | `bios.lua`, `init.lua` | The BIOS (4 KiB EEPROM) and the boot loader that builds `require` |
 | `install.lua`, `bootstrap.lua` | The installer, and the network bootstrap that fetches a release and hands off to it |
-| `tos/kernel/` | The kernel: users, `securefs`, the scheduler, packages, crypto, display. [`docs/API.md`](docs/API.md) lists every module and public function |
+| `tos/kernel/` | The kernel: users, `securefs`, the scheduler, packages, crypto, display. [`docs/API.md`](https://github.com/Evan450/TOS-Terminal-Operating-System-/blob/dev/docs/API.md) lists every module and public function |
 | `tos/kernel/net/` | Networking: trust, the mesh, file transfer, remote execution |
 | `tos/shell/` | The two shells: the panels interface (`panels/`) and the command line (`cli.lua`), plus login, the tour and the package picker |
 | `tos/shell/panels/commands/` | The commands, in three groups: `core`, `admin`, `extras` |
@@ -145,7 +145,7 @@ Three rules the tooling enforces rather than trusts:
 
 ## Signing a package
 
-`pkg` verifies Ed25519 publisher signatures, and an operator can refuse anything unsigned. Most contributors never sign anything: the maintainer signs the Optional Utilities pack. If you publish packages of your own, read [docs/SIGNING.md](docs/SIGNING.md) first. Your passphrase is your private key, and losing it means starting again with a new identity.
+`pkg` verifies Ed25519 publisher signatures, and an operator can refuse anything unsigned. Most contributors never sign anything: the maintainer signs the Optional Utilities pack. If you publish packages of your own, read [docs/SIGNING.md](https://github.com/Evan450/TOS-Terminal-Operating-System-/blob/dev/docs/SIGNING.md) first. Your passphrase is your private key, and losing it means starting again with a new identity.
 
 ## Making a change
 

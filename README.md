@@ -2,7 +2,14 @@
 
 **A multi-user operating system for the OpenComputers Minecraft mod.** Logins, per-user permissions, a capability sandbox, signed packages and an encrypted mesh network.
 
-**Requires OpenComputers 1.7.5 or newer (developed against 1.8.10, the current release), on Minecraft 1.12.2**, with a CPU set to the **Lua 5.3 or 5.4 architecture**, 1 MB of memory (1.25 MB with a network card) and a hard drive with about 1.9 MB free. Details under [Requirements](#requirements).
+**You need:**
+
+- **OpenComputers 1.7.5 or newer on Minecraft 1.12.2.** TOS is developed against 1.8.10, the current release.
+- **A CPU set to the Lua 5.3 or 5.4 architecture.**
+- **1 MB of memory**, or 1.25 MB with a network card. The full interface needs 1.5 MB.
+- **A hard drive with about 1.9 MB free.**
+
+The details are under [Requirements](#requirements).
 
 Current release: **v1.5.0 "Aletheia"** — see [`CHANGELOG.md`](CHANGELOG.md) for what changed.
 
@@ -86,10 +93,11 @@ pkg search
 pkg fetch calc
 ```
 
-Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. Every package is signed and its files hash-checked; [`TOS-Extras/README.md`](TOS-Extras/README.md) lists them all.
+Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. Every package is signed and its files hash-checked; [the add-on catalogue](https://github.com/Evan450/TOS-Terminal-Operating-System-/blob/dev/TOS-Extras/README.md) lists them all.
 
 ## Known limitations
 
+- **`ssh` and `share` do not work.** Use `rsh` and `scp`, which do.
 - **OpenOS programs run on a best-effort basis.** A program that reaches for raw components or the global environment runs into the sandbox. Programs that use OpenOS's documented libraries generally work.
 - **One theme for every seat.** The last person to log in, or to change the theme, sets the colours everyone sees.
 - **The remote shell is off by default.** `rshd` is registered but not started; `service start 20-rshd` turns it on, and even then only TRUSTED peers can use it.
@@ -106,7 +114,7 @@ Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. 
 | | |
 |---|---|
 | [`MANUAL.md`](MANUAL.md) | *The Book of TOS*: installing, every command, the security model, configuration, recovery |
-| [`docs/API.md`](docs/API.md) | The kernel's functions, for writing add-ons |
+| [`docs/API.md`](https://github.com/Evan450/TOS-Terminal-Operating-System-/blob/dev/docs/API.md) | The kernel's functions, for writing add-ons |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Working on TOS: setup, tests, house rules. Work on `dev`, never `main` |
 | [`ROADMAP.md`](ROADMAP.md) | What is still open, including what was deliberately not done |
 | [`CHANGELOG.md`](CHANGELOG.md) | What each release changed |
