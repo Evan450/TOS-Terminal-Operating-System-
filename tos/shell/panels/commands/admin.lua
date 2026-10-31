@@ -1224,7 +1224,7 @@ a.lastOut={"'"..ay.."' promoted to root.",d.highlight}else a.lastOut={tostring(a
 if g.setTier then aw,ax=g.setTier(aA,ay,1)else aw,ax=false,ao end
 if aw then
 a.lastOut={"'"..ay.."' set to user.",d.highlight}else a.lastOut={tostring(ax),d.error}end else E("Unknown action: "..az,d.error)
-E("Valid: lock, unlock, admin, user",d.dim)end end
+E("Valid: lock, unlock, admin, user, root",d.dim)end end
 b.lsdev=function(av,E)
 E(string.format(" %-16s %-10s %s","Type","Address","Info"),d.title)E(string.rep("-",46),d.dim)local aw=0
 for ax,ay in K.list()do local az=""
@@ -1529,12 +1529,14 @@ for aA,az in ipairs(ay)do
 E(string.format(" %-4d %-16s %-8s %s",az.id,az.name:sub(1,16),az.interval.."s",az.enabled and
 "yes"or"no"),
 az.enabled and d.fg or d.dim)end elseif av[1]=="add"and av[2]and av[3]and av[4]then
-local ay=av[2]local az=tonumber(av[3])local aA=table.concat(av," ",4)if not az then
-E("Invalid interval",d.error)return end;local aB=aw.add(ay,az,aA)E("Added job #"..
-aB..": "..ay,d.highlight)elseif av[1]=="rm"and
-av[2]then local ay=tonumber(av[2])
-if ay then local az,aA=aw.remove(ay)if az then
-E("Removed job #"..ay,d.highlight)else
-E("cron rm: "..tostring(aA or"no such job"),d.error)end else
+local ay=av[2]local az=tonumber(av[3])local aB=table.concat(av," ",4)if not az then
+E("Invalid interval. Usage: cron add <name> <seconds> <script>",d.error)return end
+local aA,aC=aw.add(ay,az,aB)if not aA then E(tostring(aC),d.error)return end
+E(
+"Added job #"..aA..": "..ay,d.highlight)elseif av[1]=="rm"and av[2]then local ay=tonumber(av[2])
+if ay then
+local az,aA=aw.remove(ay)if az then E("Removed job #"..ay,d.highlight)else
+E("cron rm: "..tostring(aA or
+"no such job"),d.error)end else
 E("Invalid ID",d.error)end else
 E("Usage: cron [list|add <name> <seconds> <script>|rm <id>]",d.dim)end end end

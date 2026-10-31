@@ -52,18 +52,25 @@ if#C==0 then return""end;local A=C[1]:lower()
 if y and A~="watch"then
 for L=2,#C do if C[L]=="--live"or
 (C[L]=="-f"and o[A])then table.remove(C,L)
-table.insert(C,1,"watch")A="watch"break end end end;a.curCmd=A;if A~="why"then k.clearFailure(a)end;local E={}for L=2,#C do
-E[#E+1]=C[L]end;local G={}local function B(L,M)G[#G+1]={tostring(L),M or c.fg}
+table.insert(C,1,"watch")A="watch"break end end end;a.curCmd=A;if A~="why"then k.clearFailure(a)end;local D={}for L=2,#C do
+D[#D+1]=C[L]end;local F={}local function B(L,M)F[#F+1]={tostring(L),M or c.fg}
 if M==
 c.error and A~="why"then k.noteFailure(a,A,L)end;n()end
 if x and#x>0 then
 if
-A=="grep"and#E>=1 and not E[2]then local L=E[1]for M in x:gmatch("([^\n]*)\n?")do if
-M:find(L,1,true)then B(M,c.fg)end end;return G elseif
-A=="wc"and#E==0 then local L,M,N=0,0,#x;for O in x:gmatch("\n")do L=L+1 end;for O in x:gmatch("%S+")do M=
-M+1 end
-B(string.format(" %d lines  %d words  %d bytes",L,M,N),c.fg)return G end end;local D=j[A]
-if D then local O,M=pcall(require,"shell.panels.commands")local N=
+A=="grep"and#D>=1 and not D[2]then local L=D[1]for M in x:gmatch("([^\n]*)\n?")do if
+M:find(L,1,true)then B(M,c.fg)end end;return F elseif
+A=="wc"and#D==0 then local L,M,N=0,0,#x;for O in x:gmatch("\n")do L=L+1 end;if
+x:sub(-1)~="\n"then L=L+1 end;for O in x:gmatch("%S+")do M=M+1 end
+B(string.format(" %d lines  %d words  %d bytes",L,M,N),c.fg)return F elseif A=="head"or A=="tail"then local L,M=10,false;for O,N in ipairs(D)do
+if N=="-n"then L=
+tonumber(D[O+1])or L elseif N:match("^%-%d+$")then L=tonumber(N:sub(2))elseif
+D[O-1]~="-n"then M=true end end
+if not
+M then local N={}
+for P in(x.."\n"):gmatch("(.-)\n")do N[#N+1]=P end
+local O=A=="head"and 1 or math.max(1,#N-L+1)for P=O,math.min(#N,O+L-1)do B(N[P],c.fg)end;return F end end end;local E=j[A]
+if E then local O,M=pcall(require,"shell.panels.commands")local N=
 O and
 type(M)=="table"and M.entry and M.entry(A)or nil;local L=N and
 tonumber(N.tier)or 0
@@ -74,23 +81,23 @@ local Q="Permission denied: '"..
 A.."' needs "..
 (
 k.tierName and k.tierName(L)or("tier "..L)).."  [E-403 ERR_TIER_REQUIRED]"if k.fail then k.fail(a,Q,B)else B(Q,c.error)end
-a.lastDenial={cmd=A,need=L,have=P}return G end end end;local F=nil;local H=false;local I,J=false,"drowsy"
-if not D then local M,L=false,nil;if k.mayHavePackages()then
+a.lastDenial={cmd=A,need=L,have=P}return F end end end;local G=nil;local H=false;local I,J=false,"drowsy"
+if not E then local M,L=false,nil;if k.mayHavePackages()then
 M,L=pcall(require,"kernel.pkg")end
 if M and L and L.getCommand then
-D=L.getCommand(A)H=D~=nil
-if D and L.getCommandScreen then F=L.getCommandScreen(A)end
-if D and L.getCommandFullscreen then I=L.getCommandFullscreen(A)if
-L.getCommandBackground then J=L.getCommandBackground(A)end end end end;if D and I and y then if u(A,D,E,F,J)then return{}end end
+E=L.getCommand(A)H=E~=nil
+if E and L.getCommandScreen then G=L.getCommandScreen(A)end
+if E and L.getCommandFullscreen then I=L.getCommandFullscreen(A)if
+L.getCommandBackground then J=L.getCommandBackground(A)end end end end;if E and I and y then if u(A,E,D,G,J)then return{}end end
 local function K()if a.D and
 a.D.invalidate then pcall(a.D.invalidate)end end
-if D then local L=false
-if F then
-local O=F.mode=="min"and(a.W or 0)>=F.width and
-(a.H or 0)>=F.height
+if E then local L=false
+if G then
+local O=G.mode=="min"and(a.W or 0)>=G.width and
+(a.H or 0)>=G.height
 if not O then local Q,P=pcall(require,r)
 if Q and P and P.fitDisplay then
-local S,T,R=P.fitDisplay(a.displayIdx,{mode="size",w=F.width,h=F.height})if S then L=true end;if R then B(R,c.warning)end end end end;local M,N=pcall(D,E,B)
+local S,T,R=P.fitDisplay(a.displayIdx,{mode="size",w=G.width,h=G.height})if S then L=true end;if R then B(R,c.warning)end end end end;local M,N=pcall(E,D,B)
 if not M then B(q..tostring(N),c.error)end;if H then K()end
 if L then local Q,O=pcall(require,r)if Q and O and O.restore then
 pcall(O.restore,a.displayIdx)end
@@ -98,13 +105,13 @@ local R,P=pcall(require,"shell.panels.state")
 if R and P and P.recomputeLayout then pcall(P.recomputeLayout,a)end end else local L=k.resolveProgram(d,A)
 if L then
 local M=k.safeModeRefusal and k.safeModeRefusal(L)
-if M then if k.fail then k.fail(a,M,B)else B(M,c.error)end;return G end;local N=d.readFile(L)
+if M then if k.fail then k.fail(a,M,B)else B(M,c.error)end;return F end;local N=d.readFile(L)
 if N then local P,Q=nil,nil;local R,O=false,nil;if k.mayHavePackages()then
 R,O=pcall(require,"kernel.pkg")end;if
 R and type(O)=="table"and O.capsForFile then P,Q=O.capsForFile(L)end
 local S=i{name=L,pkgName=Q,caps=P,stdout=function(V)
 B(V,c.fg)end}local T,U=load(N,"="..L,"t",S)if T then
-local V,W=pcall(T,table.unpack(E))k.reportProgramEnd(a,B,V,W,q,S)K()else
+local V,W=pcall(T,table.unpack(D))k.reportProgramEnd(a,B,V,W,q,S)K()else
 B("Compile error: "..tostring(U),c.error)end end else local N,M=pcall(require,"shell.panels.commands")local O=N and M.entry and
 M.entry(A)or nil
 if O then
@@ -115,13 +122,13 @@ a.lastOut=nil else
 B("Its command group failed to load — check `log` for the reason.",c.dim)end
 B("Free some memory (close tabs, or reboot) and try again.",c.dim)else
 B("Unknown command: "..A.."  [E-801 ERR_UNKNOWN_CMD]",c.error)B("Type 'help' for available commands.",c.dim)end
-if _G._TOS.audio then _G._TOS.audio.warning()end end end;return G end;local v=8
+if _G._TOS.audio then _G._TOS.audio.warning()end end end;return F end;local v=8
 local f=b.showOutput or
 function(x,y)a.lastOut=nil;a.outLines=nil;local z=k.routeOutput(#x,v)
 if
 z=="status"then a.lastOut=x[1]elseif z=="inline"then a.outLines=x elseif z=="tab"then local A=t()if A then
 A.openViewTab(a,x,y or s,true)else a.outLines=x end end end;local function g(x)local y=a.lastOut
-if type(y)=="table"and y[1]then x[#x+1]=y end;return x end
+if type(y)=="table"and y[1]then x[#x+1]=y;a.lastOut=nil end;return x end
 local function w(x)a.lastOut=nil
 local y=x:find("|",1,true)local z=x:find("[>]")or x:find("<")
 if y or z then

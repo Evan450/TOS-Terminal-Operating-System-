@@ -9,8 +9,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 ## Unreleased
 
-Everything since v1.5.0, in 60 rounds of work:
+Everything since v1.5.0, in 62 rounds of work:
 
+- [Every command, run on a real machine](#every-command-run-on-a-real-machine)
+- [The docs catch up with the code](#the-docs-catch-up-with-the-code)
 - [Mail to a machine reaches someone](#mail-to-a-machine-reaches-someone)
 - [`pkg install` says when a service is not running](#pkg-install-says-when-a-service-is-not-running)
 - [The browser fetches a page](#the-browser-fetches-a-page)
@@ -71,6 +73,41 @@ Everything since v1.5.0, in 60 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Every command, run on a real machine
+
+Every registered command was run on a booted headless machine three ways (bare, with a bad argument, with a bad flag), along with every subcommand the MANUAL names: 566 cases. None produced a Lua error. Bad input was also checked for reading like success, and multi-step workflows from the MANUAL were run and their results read. Backup, compress, vault and the `alias`, `keys` and `theme` commands all held. What did not hold:
+
+- **`cron add` crashed on anything it refused.** `cron add x 0 print(1)` put a raw Lua error on the screen, because `cron.add` answers `nil, reason` and the command concatenated the nil. It reports the reason now.
+- **The MANUAL's `cron` syntax was wrong, and its example would have failed for ever.** The command is `cron add <name> <seconds> <script>`, and a script is Lua source or a path to a `.lua` file. The MANUAL showed `cron add 300 "run /home/me/backup.lua"`, a shell line. Under the right syntax that is accepted, then logs a syntax error at every interval. `cron.add` now compiles inline source and refuses what does not parse, and the MANUAL is right in all three places.
+- **`trash restore <name>` needed a name nobody has.** Entries are stored as `k.txt~25041.6`, so restoring `k.txt`, as the MANUAL says and `rm` implies, answered "no such trash entry" while `trash list` showed the file. The old name now works when it means one entry. When it means several, the refusal names them. `rm` says exactly what to type.
+- **A kiosk could not take a digit.** Keys 1 to 9 were always menu shortcuts, so a digit never reached the line: `cat map2.txt` silently read `map.txt`, and with a menu configured a digit mid-word threw the line away and ran that item. A digit is a shortcut only on an empty line with an item behind it.
+- **The kiosk failed open.** If `shell.kiosk` would not load, a low-memory login for instance, the `kiosk` account got the full panels shell. It now takes the crash path back to login. The kiosk also no longer opens with the new-operator tour, whose subject is everything a kiosk hides.
+- **`rc` sent people to a keychain slot that cannot exist.** Its help, its README and the MANUAL said to run `keychain set rc:<addr>`. Keychain names refuse `:`, and a package's sandbox has no `_G._TOS`, so `rc` could not have read the slot anyway; the same is true of its address-prefix lookup. All of this was seen on a real machine. rc-pilot 1.2.1 says what works, which is the masked prompt and `--secret`. Whether a package may read a slot is an open decision in TODO.
+- **Pipes reached only `grep` and `wc`.** `cat f | head -n 1` printed a usage line, and `wc` counted newlines in text with none on its last line, so a three-line pipe was two lines. `head` and `tail` now read a pipe and `wc` counts the last line.
+- **A status line printed twice in the CLI.** `useradd` and the other commands that report through `S.lastOut` were folded into the output and then drained again. `test_lastout_kept.lua` drove only the panels' route, which clears it.
+- **`umount zzz` said "Unmounted /zzz".** `fs.unmount` succeeded for any path. It now says "Not mounted". `disk eject` of a path that is not mounted gets the same answer, and the four other callers already checked first.
+- **`rm` of a missing path said "It is still there".** The trash refused the path, and the refusal assumed it existed. It says "No such file" now.
+
+New: `test_kiosk_input.lua` (11 checks, 5 fail on the old code), `test_cron_add_report.lua` (9, 8), `test_pipe_stdin.lua` (9, 8), `test_trash_restore_name.lua` (7, 4). Extended: `test_lastout_kept.lua`, `test_tutorial_per_user.lua`, `test_fs_unmount_hook.lua`, each failing on the old code. Every fix was then seen on a booted machine from a fresh build.
+
+### The docs catch up with the code
+
+The docs were read against the source as published on `main` and `dev`. The generated ones were already fine: `tos.py check` covers them, and every flag, config key and subcommand the docs name exists in the source. What had drifted was prose, each line true when it was written.
+
+- **The memory table.** `tos.py floorcheck` still passes every floor, but the free figures had risen. Three fresh runs read 64/88/64 KB at 1 MB (the README said 35), 330/358/331 at 1.5 MB (280), and 174/174/179 at 1.5 MB with a network card (115). The README now says 65, 330 and 175. 815-842 at 2 MB is close enough to its 800 to leave. `pkg list` loaded at 1 MB in all three runs, which is the edge the tool already notes, so the README says too little to count on it rather than too little for it.
+- **`--!` comments do not reach `main`.** CONTRIBUTING and the workspace README both said they do. Since local renaming became the release default, only notices (`PROVENANCE.`, `Copyright`, `SPDX-License-Identifier:`) and the rc.d scripts' lines ship. The docs now describe that. Whether `#SEC` notes should ship is still the open decision in TODO.
+- **`rbmk-control` and `cluster-storage` are on the pack.** The MANUAL and the add-on catalogue said they were not; both are in the published index. The catalogue lists them with the other add-ons now, and `rbmk-control` is 1.0.1 in its README.
+- **The pack's version gate is the version.** CONTRIBUTING and the add-on catalogue said a list holds 0.x packages back. Since 2026-10-26 the builder goes by the major number and `SKIP` only holds back a 1.x by hand.
+- **Appendix B sent people to commands that do not start.** `cluster pair status`, `cluster status` and the rest have failed since the sandbox hardening, as the cluster README and installer guide already say. The Appendix says so too now. `cluster-setup`'s closing notes still name them; that is code, and it is noted in TODO.
+- **`ssh` and `share` do not work.** Chapter 14 described both as working, and `ssh` as an interactive remote shell it never was. Both look for the network where a sandboxed program cannot see it, so `ssh peer ls` on a booted machine with a modem prints "Network not available". The entries say so and point to `rsh` and `scp`. Whether to fix or remove them is still the open question in TODO.
+- **The mesh has a route cache.** §8.3 said there was no routing table. There is one, learned from traffic: 64 destinations, five minutes each.
+- **A shared secret no longer needs `net pair`.** §8.3, `mail` in Chapter 14 and the mail README said to pair first. Trusting a peer from both machines agrees one by itself.
+- **First boot does not ask you to log in.** §3.2 said to log in as `root` / `root`. The first boot opens that session itself and asks for a password, as the README already said.
+- **Lua 5.4 needs OpenComputers 1.8.0.** The requirement line paired "1.7.5 or newer" with "Lua 5.3 or 5.4", and 5.4 arrived in 1.8.0. The README and §1.1 say so now, and name 1.8.10, the current release.
+- **Smaller ones.** The Settings page is Home, not Desktop. PaneUI has nine themes, not six. §16 listed an `/etc/hostname` nothing writes, since the name lives in `/etc/tos.cfg`. `bios.lua` is about two thirds comments, not a third. The suite is about 400 files, not 170 or "a couple of hundred". `warhead`, `web` and `rbmk-control` joined §7.2's list. write's F7 centres from that line on, not just that line. The workspace README still described the add-ons as two modules "slated to ship".
+
+`build/floorcheck.py` keeps these README phrases verbatim, so it and `test_floorcheck.py` changed with them.
 
 ### Mail to a machine reaches someone
 

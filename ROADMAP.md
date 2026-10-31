@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**87 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 61 | Planned or under investigation. Most contributions belong here. |
+| Planned | 63 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 21 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (14) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (16) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -214,6 +214,8 @@ registered, cap-gated endpoint -- the designed answer, and
 
 the larger job. Recommendation: (a) now, with api-side tier checks, and (b) when IPC exists. Pinned as \[known gap\] in test\_cluster\_cli\_sandbox.lua and in test\_global\_leaks.lua's TOS-Extras half, so either fix fails those lines and they get rewritten. Shipping now: cluster-master 1.0.1 and cluster-manager in the published pack carry this.
 
+STILL SAYS OTHERWISE ON SCREEN (found 2026-10-31, doc pass): tos/shell/clustersetup.lua's closing notes tell the operator to run `cluster pair start`, `cluster pair status`, `cluster status`, `cluster managers` and `cluster-manager status`, and launcher.lua offers "Manager status". All of them fail while this entry stands. MANUAL Appendix B and the installer guide say so; the wizard does not. Fix it with this entry, or change the wizard's wording first.
+
 ### The distributed storage pool waits on five operator decisions
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
@@ -274,6 +276,42 @@ THE PACKAGE PICKER: AUTO-INCLUDES, AND ENTER. Two operator reports, both about `
 *Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
 
 AN IMAGE VIEWER FOR ASCII-IFIED IMAGES. Operator idea: MineOS worked this out, and images make the world and the possibilities bigger. A package that shows images converted to text cells. Look at MineOS's format first (the survey covers MineOS elsewhere), and at what each GPU tier can do with half-block characters and colour. A viewer needs a converter beside it, on the dev box or on the machine.
+
+### The keychain is not within a package's reach — operator decision
+
+*Planned* · from the round *The command fuzz and workflow pass (2026-10-31)*
+
+THE KEYCHAIN IS NOT WITHIN A PACKAGE'S REACH -- OPERATOR DECISION. rc-pilot is the only package that wants a stored secret. It cannot have one: `_G._TOS` is nil in a package's sandbox (seen on a real machine), and the keychain's name rule refuses the `:` in its `rc:<addr>` slot. Its code still looks, so a decision only has to open the door. Options:
+
+(a) a `keychain` capability scoped to slots named after the
+
+package, so it reads its own and nothing else. The name rule
+
+takes `:` or the slot becomes rc-pilot.&lt;addr&gt;. Narrow, but a
+
+package's capability then reaches a user's unlocked secrets,
+
+which the sandbox has never allowed;
+
+(b) leave it closed: `rc` asks every time, or takes --secret.
+
+Honest and working, and what 1.2.1 documents. Do not fix the name rule alone: the secret would then save happily and never be read.
+
+### Smaller, found by the same pass
+
+*Planned* · from the round *The command fuzz and workflow pass (2026-10-31)*
+
+SMALLER, FOUND BY THE SAME PASS. None loses data.
+
+- `rc`'s "Shared secret for ..." line is buffered with the rest of its output, so the masked prompt shows nothing until it returns. Seen through `run`, which behaves the same; a package that prompts is a blank line on the CLI.
+- `du /nonexistent` answers "0B" rather than saying it is not there.
+- `touch` on a directory says "Touched".
+- `mv f /dir/nothere/f` makes the missing directory without saying.
+- `compress` on a tiny file says "(-113% smaller: 8B -&gt; 17B)".
+- keychain.lua's header says logout clears the unlocked map through a users hook. There is no hook: users.logout never calls keychain.lock, so the map lives until the weak key is collected. Unreachable, but the login password is in it until then.
+- extras.lua falls back to reading /etc/hostname, which nothing writes.
+- `cat < file` is parsed and then ignored, so it prints a usage line. The MANUAL does not promise `<`.
+- 20-chatrelay.lua indexes a payload that is neither string nor table. The listener's pcall catches it, so a peer gets a log line and no more, but it is the one rc.d service with no test.
 
 ### Slice 3: resolution
 

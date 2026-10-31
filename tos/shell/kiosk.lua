@@ -65,6 +65,7 @@ while true do d.fill(8,F,i-8,1," ",c.fg,c.bg)
 d.set(8,F,E.."_",c.fg,c.bg)local K,L,I,J=u.pullSignal(1)
 if K=="key_down"then H=u.uptime()
 if J==28 then break elseif J==14 then if#E>0 then E=E:sub(1,
--2)end elseif I==4 then if h.logout then h.logout(b)end;return elseif I and
-I>=49 and I<=57 then local N=I-48;local M=f.menu[N]if M then E=M.cmd;break end elseif
+-2)end elseif I==4 then if h.logout then h.logout(b)end;return elseif
+I and
+I>=49 and I<=57 and E==""and f.menu[I-48]then E=f.menu[I-48].cmd;break elseif
 I and I>=32 and I<127 and#E<80 then E=E..string.char(I)end else if u.uptime()-H>f.idleSeconds then E=""g={}break end end end;if#E>0 then D(E)end end end;return l

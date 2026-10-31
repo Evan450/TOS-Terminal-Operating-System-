@@ -415,9 +415,11 @@ local y=_G._TOS.profile.load(r)local z=_G._TOS.profile.apply(y,{session=r})
 r.startupCommands=z end)end
 local v=setmetatable({display=q,displayIdx=o,getDisplay=function()return q end,getDisplayIdx=function()return o end},{__index=ae})
 Z.info(_,"Seat "..o..": shell for "..s)local t=g.run
-if s=="kiosk"then local z,y=pcall(require,"shell.kiosk")if
+if s=="kiosk"then local z,y=pcall(require,"shell.kiosk")
+if
 z and y and y.run then t=y.run
-Z.info(_,"Seat "..o..": KIOSK mode")end end;h()
+Z.info(_,"Seat "..o..": KIOSK mode")else local A=tostring(y)t=function()
+error("kiosk shell would not load: "..A,0)end end end;h()
 Z.info(_,string.format("Seat %d: loading shell (%dKB free)",o,math.floor(ab.freeMemory()/1024)))
 local u=aa.spawn("shell:"..s.."@"..o,function()local y,z=pcall(t,v,p)
 if not y then local A=tostring(z)

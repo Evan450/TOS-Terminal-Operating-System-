@@ -18,9 +18,9 @@ local c=n.list(a)
 if type(c)=="table"and#c>0 then return false,
 "Refusing to mount over non-empty directory: "..a end else return false,"Mount path is a file, not a directory: "..a end end;p[a]=b;return true end
 function n.unmount(a)a=n.normalize(a)if not a then return false,q end;if a=="/"then
-return false,"Cannot unmount root"end;local b=p[a]p[a]=nil
-if type(b)=="table"and type(b.unmount)==
-"function"then pcall(b.unmount)end;return true end
+return false,"Cannot unmount root"end;local b=p[a]
+if b==nil then return false,"Not mounted: "..a end;p[a]=nil;if
+type(b)=="table"and type(b.unmount)=="function"then pcall(b.unmount)end;return true end
 local function o(a)a=n.normalize(a)if not a then return nil end;local d="/"local c=1;for e in pairs(p)do
 if#e>c then if
 e=="/"or(a:sub(1,

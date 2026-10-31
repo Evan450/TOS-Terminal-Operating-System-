@@ -37,6 +37,10 @@ type(k)=="number"and k>g then
 return nil,"cron: tier "..
 tostring(g).." cannot schedule jobs as '"..tostring(f)..
 "' (that account outranks you)"end end
+if a:sub(1,1)~="/"then local i,j=load(a,"=cron","t",{})
+if not i then return nil,
+
+"cron: a job is Lua source or a path to a .lua file, not a ".."shell line ("..tostring(j)..")"end end
 if a:sub(1,1)=="/"then local j,i=pcall(require,x)
 if j and i and i.canAccessAs then local k;if
 i.currentSession then k=i.currentSession()end;if k then
