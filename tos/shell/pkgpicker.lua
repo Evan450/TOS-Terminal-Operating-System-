@@ -471,6 +471,17 @@ function M.run(opts)
       return n
     end
 
+    --! Enter adds the package you are on, and only installs once that one
+    --! is already going in. It used to install outright, so the operator's
+    --! habit of pressing Enter to pick left the picker with nothing done,
+    --! and a second pick would have started the install without it. The
+    --! key bar says which one Enter will do. (test_picker_enter.lua)
+    local function enterAdds()
+      local e, ai = curPkg()
+      return e ~= nil and not isInstalled(e.name)
+        and not selected[ai] and not autoSel[ai]
+    end
+
     -- ── Group + filter operations ──────────────────────────────────
     -- These act on what is VISIBLE. Filtering to "game" and pressing A is
     -- meant to take the games — an A that quietly also ticked the twelve
@@ -765,14 +776,47 @@ function M.run(opts)
       -- 80 columns the old bar (86 wide) was cut at "Enter In…", so the way
       -- out was never shown. Packed with a bare "·" it is 70, which fits
       -- the 71 there; fitTo still cuts from the end on anything narrower.
-      local items = { "Space", "Enter Install", quitLabel():gsub(" / .*", "") .. " Quit",
+      local items = { quitLabel():gsub(" / .*", "") .. " Quit",
         "/ Filter", "G Group", "A All", "N None", "R +Suggested" }
+      if enterAdds() then table.insert(items, 1, "Space/Enter Add")
+      else
+        table.insert(items, 1, "Enter Install")
+        table.insert(items, 1, "Space")
+      end
       local keys = " " .. table.concat(items, " · ") .. " "
       if ulen(keys) > W - 9 then keys = table.concat(items, "·") end
       set(5, BAR, fitTo(keys, W - 9), T.fg, T.bg)
     end
 
     local function redraw() drawFrame(); drawList(); drawPanel(); drawFoot() end
+
+    --- A notice has the key bar to itself until the next key repaints it.
+    --- Painted over the start of the bar instead, it ran into the keys left
+    --- beside it ("Selected 3 in Games  / Filter · A All ..." on the
+    --- headless machine) and covered the left cap. (test_picker_bar_notice.lua)
+    local function barNotice(text)
+      barBase()
+      set(5, BAR, fitTo(" " .. text .. " ", W - 9), T.title, T.bg)
+    end
+
+    --- Says what a pick brought with it. A dependency or a suggestion can
+    --- sit far off screen, so "2 selected" alone leaves you to go and look.
+    --- Returns nil when there is nothing to say.
+    local function pickedNote(e, ai)
+      local deps, sug = {}, {}
+      for di in pairs(depsOf(ai)) do deps[#deps + 1] = avail[di].name end
+      for _, r in ipairs(e.recommends or {}) do
+        local ri = byName[r]
+        if ri and not isInstalled(r) and not selected[ri] and not autoSel[ri] then
+          sug[#sug + 1] = r
+        end
+      end
+      if #deps == 0 and #sug == 0 then return nil end
+      local s = e.name .. (#deps > 0 and (" + " .. table.concat(deps, " + ")) or "")
+        .. " selected · Enter installs"
+      if #sug > 0 then s = s .. " · R adds " .. table.concat(sug, ", ") end
+      return s
+    end
 
     --- Inline filter prompt on the key bar. Reads keys directly (the picker
     --- has no stdin — that is the whole reason it is a TUI), applies live so
@@ -829,23 +873,20 @@ function M.run(opts)
             -- Dependencies follow the choice immediately, so the counts rail
             -- and the [+] marks always describe what will ACTUALLY install.
             recomputeAuto()
+            redraw()
+            local note = selected[ai] and pickedNote(e, ai)
+            if note then barNotice(note) end
+          else
+            redraw()
           end
-          redraw()
         elseif ch == 103 or ch == 71 then                     -- g = group
           -- Select/deselect every package in the category the cursor is in.
           local cat = curCategory()
           if cat then
             local turnedOn, n = toggleGroup(cat)
             redraw()
-            -- The notice takes the whole bar until the next key repaints
-            -- it. Painted over the start of the key bar instead, it ran
-            -- into the keys left beside it ("Selected 3 in Games  /
-            -- Filter · A All ..." on the headless machine) and covered
-            -- the left cap. (test_picker_bar_notice.lua)
-            barBase()
-            set(5, BAR, fitTo(string.format(" %s %d in %s ",
-              turnedOn and "Selected" or "Cleared", n, catLabel(cat)), W - 9),
-              T.title, T.bg)
+            barNotice(string.format("%s %d in %s",
+              turnedOn and "Selected" or "Cleared", n, catLabel(cat)))
           end
         elseif ch == 47 or ch == 63 then                      -- / or ? = filter
           promptFilter()
@@ -877,9 +918,16 @@ function M.run(opts)
               if ri and not isInstalled(avail[ri].name) then add[ri] = true end
             end
           end
-          for ri in pairs(add) do selected[ri] = true end
+          local added = 0
+          for ri in pairs(add) do
+            if not selected[ri] then added = added + 1 end
+            selected[ri] = true
+          end
           recomputeAuto()
           redraw()
+          -- An R that changes nothing used to look like a dead key.
+          barNotice(added > 0 and string.format("Added %d suggested", added)
+            or "Your selection suggests nothing more")
         elseif isQuit(ch, code) and filter ~= "" then         -- quit clears the filter
           -- ...rather than quitting. A filter that matched nothing leaves an
           -- empty list, and Esc is exactly what you reach for there; exiting
@@ -891,6 +939,14 @@ function M.run(opts)
         elseif ch == 113 or ch == 81 or isQuit(ch, code) then  -- q, or the quit key
           fill(1, 1, W, H, " ", T.fg, T.bg)
           return "cancel"
+        elseif code == 28 and enterAdds() then                -- Enter = add
+          local e, ai = curPkg()
+          selected[ai] = true
+          recomputeAuto()
+          redraw()
+          barNotice(pickedNote(e, ai) or (e.name .. " selected · Enter installs"))
+        elseif code == 28 and next(selected) == nil then      -- on nothing to add
+          barNotice("Nothing selected. Space or Enter adds a package")
         elseif code == 28 then                                -- Enter = install
           local total = 0
           --! What the progress screen shows, kept so it can be painted again
@@ -1053,6 +1109,8 @@ function M.run(opts)
       end
       line = line:gsub("%s+", "")
       if line == "q" then out("Cancelled — nothing installed."); return "cancel"
+      elseif line == "i" and next(selected) == nil then
+        out("  Nothing selected: enter a package's number first.")
       elseif line == "i" then return "install"
       elseif line == "a" then
         for i, e in ipairs(avail) do if not isInstalled(e.name) then selected[i] = true end end
@@ -1097,10 +1155,6 @@ function M.run(opts)
   local chosen = {}
   for i, e in ipairs(avail) do
     if selected[i] or autoSel[i] then chosen[#chosen + 1] = e end
-  end
-  if #chosen == 0 then
-    if progress then progress("Nothing selected.", "done") else out("Nothing selected.") end
-    return
   end
 
   if progress then progress(nil, "begin", #chosen) else

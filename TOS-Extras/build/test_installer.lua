@@ -284,6 +284,7 @@ do
   for _ = 1, 5 do key_code(208) end
   key_char(32)     -- Space: select drive (blockfs should follow)
   key_code(208)    -- Down to mouse, so the panel draws ITS detail too
+  key_code(200)    -- back to drive: Enter would add mouse, the row it is on
   key_code(28)     -- Enter: install
   key_char(32)     -- dismiss "Press any key"
 
@@ -577,8 +578,7 @@ do
   drawn = {}; keyq = {}
   key_char(103)    -- g: select Games
   key_char(103)    -- g: and clear it again
-  key_code(28)     -- Enter
-  key_char(32)
+  key_char(113)    -- q: Enter would add the row the cursor is on
   local ok = pcall(chunk)
   test("second G run completed", ok)
   eq("pressing G twice leaves the group unselected", 0, #env.installs)

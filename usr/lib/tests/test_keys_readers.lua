@@ -119,7 +119,8 @@ test("the filter prompt no longer offers Esc alone", not src:find("Esc=undo", 1,
 -- fitTo cuts the key bar's end; at 80 columns the old order lost the quit
 -- hint entirely ("... · Enter In…"). Install and quit come first now.
 test("the key bar lists install and quit ahead of everything optional",
-  src:find('"Space", "Enter Install", quitLabel()', 1, true) ~= nil)
+  src:find('table.insert(items, 1, "Enter Install")', 1, true) ~= nil
+    and src:find('local items = { quitLabel()', 1, true) ~= nil)
 test("no hand-written ^Q / Esc test is left outside the fallback",
   select(2, src:gsub("ch == 17 or code == 1", "")) == 1)
 

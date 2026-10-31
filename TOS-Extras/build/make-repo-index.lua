@@ -133,11 +133,30 @@ for _, name in ipairs(names) do
   end
   fileCount = fileCount + n
 
+  --! The picker can only say what comes along if the index does. It read
+  --! requires and recommends from a disk's manifests and had no such thing
+  --! over the network, so a machine installing from this repo showed no
+  --! [+], no Suggests, and an R key that added nothing. Bare names: the
+  --! install still reads each package's real manifest, version constraints
+  --! and key pins included, so this list only ever describes.
+  --! (test_picker_remote_deps.lua)
+  local function bareNames(list)
+    local out = {}
+    for _, r in ipairs(type(list) == "table" and list or {}) do
+      local n = type(r) == "table" and r.name or r
+      if type(n) == "string" then out[#out + 1] = n:match("^%S+") end
+    end
+    return #out > 0 and out or nil
+  end
+
   index[name] = {
     version     = manifest.version or meta.version,
     description = manifest.description or meta.description,
     category    = manifest.category or meta.category,
     kind        = manifest.kind or meta.kind,
+    author      = manifest.author,
+    requires    = bareNames(manifest.requires or meta.requires),
+    recommends  = bareNames(manifest.recommends or meta.recommends),
     files       = files,
   }
 end
@@ -194,6 +213,10 @@ do
     if na ~= nb then
       io.stderr:write("error: round-trip lost files for '" .. name ..
         "' (" .. na .. " -> " .. nb .. ")\n")
+      os.exit(2)
+    end
+    if #(a.requires or {}) ~= #(b.requires or {}) or #(a.recommends or {}) ~= #(b.recommends or {}) then
+      io.stderr:write("error: round-trip lost dependencies for '" .. name .. "'\n")
       os.exit(2)
     end
   end

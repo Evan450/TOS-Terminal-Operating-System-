@@ -444,8 +444,25 @@ local function indexSignature(im, repo, opts)
   return answer
 end
 
+--! The index is a stranger's data and these go straight to the picker,
+--! whose sort and category label fall over on anything but a string, and
+--! which joins dependency names for display. So: strings only, and a name
+--! only if it could be a package. (test_picker_remote_deps.lua)
+local function str(v) return type(v) == "string" and v or nil end
+local function depNames(list)
+  local out = {}
+  for _, d in ipairs(type(list) == "table" and list or {}) do
+    local n = type(d) == "table" and d.name or d
+    n = type(n) == "string" and n:match("^%S+")
+    if n and validPkgName(n) then out[#out + 1] = n end
+  end
+  return out
+end
+
 --- Every package available across the configured repos.
---- Returns an array of { name, repo, description, version, files }.
+--- Returns an array of { name, repo, description, version, category, kind,
+--- author, requires, recommends }. requires and recommends are bare names,
+--- and only describe: an install reads the package's own manifest.
 function pkgremote.search(opts)
   local out = {}
   for _, repo in ipairs(pkgremote.repos()) do
@@ -453,11 +470,21 @@ function pkgremote.search(opts)
     if idx then
       for name, entry in pairs(idx) do
         if type(name) == "string" and type(entry) == "table" and not entry.hidden then
+          local requires = depNames(entry.requires)
+          -- OPPM's shape: { [name] = install path }.
+          for dep in pairs(type(entry.dependencies) == "table" and entry.dependencies or {}) do
+            if validPkgName(dep) then requires[#requires + 1] = dep end
+          end
           out[#out + 1] = {
             name        = name,
             repo        = repo.name,
             description = entry.description or entry.note,
             version     = entry.version,
+            category    = str(entry.category),
+            kind        = str(entry.kind),
+            author      = str(entry.author),
+            requires    = requires,
+            recommends  = depNames(entry.recommends),
           }
         end
       end

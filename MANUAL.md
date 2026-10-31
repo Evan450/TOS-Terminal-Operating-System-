@@ -1044,9 +1044,13 @@ right-hand panel describes whatever you're resting on.
 | `[+]` | pulled in because something you selected needs it |
 | `[ ]` | available |
 
-Keys: **Space** toggle · **G** whole category · **/** filter · **A** all ·
-**N** none · **R** add what your selection suggests · **Enter** install ·
-**Q** quit.
+Keys: **Space** toggle · **Enter** add the package you're on, or install once
+it's already going in · **G** whole category · **/** filter · **A** all ·
+**N** none · **R** add what your selection suggests · **Q** quit.
+
+The key bar says which of the two **Enter** will do: `Space/Enter Add` on a
+package you haven't picked, `Enter Install` on one you have. With nothing
+selected and nothing to add, **Enter** says so and stays in the picker.
 
 **G** selects every package in the category the cursor is in — press it again
 to clear them. Half-ticked groups fill up rather than emptying, so G always
@@ -1073,7 +1077,9 @@ them apart. `Needs` is what will be installed alongside (automatically, marked
 than letting the install fail. `Suggests` is optional — nothing is installed
 from it unless you press **R**. `Wanted by` is the reverse view: every add-on
 on the disk that recommends the highlighted one, which is usually the better
-argument for installing it.
+argument for installing it. When a pick brings a dependency or has a suggestion
+waiting, the key bar names them, because either can be far off screen. All of
+this reads the same over the network as from a disk.
 
 Below 60 columns the panel is dropped and the description moves to a footer,
 so the picker still works on a small T1 screen.

@@ -2043,6 +2043,10 @@ function pkg.listRemoteAvailable(opts)
         version     = e.version,
         description = e.description,
         category    = e.category or "remote",
+        kind        = e.kind,
+        author      = e.author,
+        requires    = e.requires,
+        recommends  = e.recommends,
         repo        = e.repo,
         remote      = true,
       }

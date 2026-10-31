@@ -1105,7 +1105,7 @@ body calls, and every gate against a mark.
   Fetch and parse a repo's programs.cfg. Cached for the session so a multi-package install doesn't re-download the index per package. Returns index, err.
 - `pkgremote.clearCache()`
 - `pkgremote.search(opts)`
-  Every package available across the configured repos. Returns an array of { name, repo, description, version, files }.
+  Every package available across the configured repos. Returns an array of { name, repo, description, version, category, kind, author, requires, recommends }. requires and recommends are bare names, and only describe: an install reads the package's own manifest.
 - `pkgremote.fetch(name, opts)`
   Download `name` from the configured repos into a local staging tree laid out like a repo directory, and return the PACKAGE DIRECTORY inside it for pkg.install to consume. Returns pkgDir, err.
 - `pkgremote.cleanup(pkgDir)`

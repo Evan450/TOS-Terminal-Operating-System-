@@ -197,6 +197,38 @@ do
   end
 end
 
+-- ── What the picker shows has to be in the index ───────────────────
+--! Over the network the index is all the picker has. It carried neither
+--! list until 2026-10-31, so a machine installing from this repo showed
+--! no [+], no Suggests, and an R key that added nothing, while a floppy
+--! of the same pack showed them all.
+do
+  local lost, checked = nil, 0
+  local function same(want, got)
+    local n = 0
+    for _, r in ipairs(want or {}) do
+      n = n + 1
+      local name = type(r) == "table" and r.name or tostring(r):match("^%S+")
+      if not got or got[n] ~= name then return false end
+    end
+    return n == #(got or {})
+  end
+  for name, entry in pairs(index) do
+    local meta = set and set.packages and set.packages[name]
+    local disk = meta and tonumber(meta.disk) or 1
+    local manSrc = readAll(string.format("%s/disk%d/%s/package.lua", DIST, disk, name))
+    local man = manSrc and serialize.decode(manSrc, { maxBytes = 256 * 1024 })
+    if type(man) == "table" then
+      checked = checked + 1
+      if not same(man.requires, entry.requires) then lost = lost or (name .. " requires") end
+      if not same(man.recommends, entry.recommends) then lost = lost or (name .. " recommends") end
+      if man.category ~= entry.category then lost = lost or (name .. " category") end
+    end
+  end
+  test(("every manifest's requires, recommends and category reach the index (%d)"):format(checked)
+    .. (lost and (" -- " .. lost) or ""), lost == nil and checked > 0)
+end
+
 -- Each package must ship its own manifest, or the installer has nothing
 -- to verify the download against.
 local noManifest = nil
