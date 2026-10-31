@@ -1,4 +1,4 @@
-local aK="bad handle"local X={}X._VERSION="1.2.0"local aA="TBFS"local aB=1;local af=64;local Z=8
+local aK="bad handle"local X={}X._VERSION="1.2.2"local aA="TBFS"local aB=1;local af=64;local Z=8
 local ao,ae,Y=0,1,2;local aL=48;local ag=1
 local function aM(a)
 local b=a.getSectorSize and a.getSectorSize()or 512

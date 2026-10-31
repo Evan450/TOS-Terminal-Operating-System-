@@ -20,10 +20,9 @@ c.isUnlocked(a)then local e="rc:".. (b or""):sub(1,8)
 local d=c.get(e,a)if d then return d end end;return nil end
 s.commands={rc=function(b,a)a=a or print;local g=b[1]
 if not g then
-a("Usage: rc <robot-address-prefix>")
-a("  The robot must be running the rc-pilot EEPROM and have a")
-a("  shared secret either in your keychain (slot 'rc:<addr>')")
-a("  or passed via 'rc <addr> --secret <secret>'.")
+a("Usage: rc <robot-address>")
+a("  The robot must be running the rc-pilot EEPROM. rc asks for the")
+a("  shared secret, or takes it from 'rc <addr> --secret <secret>'.")
 a("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
 a("  swap a blank EEPROM in, `flash` that file, and swap yours back.")return end;local i=r.list("modem")()
 if not i then a("No modem")return end;local f=r.proxy(i)if not f.isWireless or not f.isWireless()then
@@ -32,14 +31,13 @@ local e=_G._TOS or{}local h=e.trust or(e.net and e.net.trust)
 if h and
 h.listPeers then local k,l=pcall(h.listPeers)
 for C,n in ipairs(k and l or{})do
-local m=n.address or n.addr;if type(m)==t and m:sub(1,#g)==g then c=m;break end end end;c=c or g
-if#c<16 then
-a("Target address looks too short. Give the robot's full modem address")
-a("(a prefix only works for a peer TOS already knows about).")return end;local d
+local m=n.address or n.addr;if type(m)==t and m:sub(1,#g)==g then c=m;break end end end;c=c or g;if#c<16 then
+a("Target address looks too short. Give the robot's full modem address.")return end;local d
 for k=2,#b do
-if b[k]=="--secret"and b[k+1]then d=b[k+1]
+if b[k]=="--secret"and
+b[k+1]then d=b[k+1]
 a("Note: --secret puts the shared secret in this seat's command history.")
-a("      Prefer the keychain:  keychain set rc:"..c:sub(1,8))end end;if not d then
+a("      Leave --secret off and rc asks for it, without showing it.")end end;if not d then
 local k=e.users and e.users.currentSession and e.users.currentSession()d=B(c,k)end
 if not d then
 local l,k=pcall(require,"compat.term")
@@ -48,8 +46,8 @@ l and type(k)=="table"and type(k.read)=="function"then
 a("Shared secret for "..c:sub(1,8).."... (not echoed): ")local n,m=pcall(k.read,nil,false,nil,"*")if n and type(m)==t then
 d=m:gsub("[\r\n]+$","")end end end
 if not d or#d<16 then
-a("No shared secret (16+ characters). Either add it to the keychain:")a("  keychain set rc:"..c:sub(1,8))
-a("or, for a script only:  rc <addr> --secret <secret>")return end;f.open(q)
+a("No shared secret (16+ characters). Run rc again and type it when")
+a("asked, or, for a script only:  rc <addr> --secret <secret>")return end;f.open(q)
 a("RC pilot active. Target: "..c:sub(1,12).."...")
 a("Keys: WASD/arrows | Q/E turn | Space/Shift up/down | F use | X break | B place | 1-9 slot | P ping | "..w().." quit")
 local function j(l,k)if k==17 or k==200 then return"move:f"end;if k==31 or k==208 then

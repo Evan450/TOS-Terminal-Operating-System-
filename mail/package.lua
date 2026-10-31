@@ -1,12 +1,12 @@
 return {
 hashes = {
 ["/etc/rc.d/mail.lua"] = "0741ded89a5de836ee443e36f3ce4b2e8a1bb2da404927ef6f2c177ece4944da",
-["/usr/lib/mail.lua"] = "059b2e75ffaf0df55ff6c01e681769f0390156c9a3a2029ad9871d748e0540c5",
-["/usr/lib/mailapp.lua"] = "f0ee2f075bc3acf74aa035f036d4edb74ade004c94e5d9af7ea3ee00428a2f02",
-["/usr/lib/mailui.lua"] = "1a76a7a263e8fa16595b492ba5ed993ab3c6813c9c39f0581d45b932fc9ebee0",
+["/usr/lib/mail.lua"] = "647b78949cccce08137c525ac1f2cc31b895f8c2d7d44238b0a6dd84acf9351f",
+["/usr/lib/mailapp.lua"] = "a73c96fce8a96e01d20a7be4dfb79ae112c7fadefcd61e0bc96d87e7ee576261",
+["/usr/lib/mailui.lua"] = "9823d62a54c2edc078cf3554fcf66ae4a5e7d091ff8bea41195c646e258e3e4c",
 },
 name = "mail",
-version = "1.0.0",
+version = "1.0.1",
 kind = "service",
 category = "network",
 description = "Mesh email: store-and-forward mailbox, end-to-end sealed, with an inbox tab + CLI TUI.",

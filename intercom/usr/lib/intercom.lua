@@ -1,4 +1,4 @@
-local r,y="intercom","string"local n={}n._VERSION="1.0.1"local function p(a)local b,c=pcall(require,a)if
+local r,y="intercom","string"local n={}n._VERSION="1.0.2"local function p(a)local b,c=pcall(require,a)if
 b then return c end end;local x=p("component")
 local q=p("computer")local o=p("kernel.net")local s=p("kernel.fs")
 local v=p("kernel.serialize")local u=p("kernel.event")local t=p("kernel.log")or{}
