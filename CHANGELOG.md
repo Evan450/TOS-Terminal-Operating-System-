@@ -20,8 +20,13 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 92 rounds of work:
+Everything since v1.5.0, in 97 rounds of work:
 
+- [programs hear their own modem ports](#programs-hear-their-own-modem-ports)
+- [users can look, admins can power off](#users-can-look-admins-can-power-off)
+- [boot checks the manifest anchor](#boot-checks-the-manifest-anchor)
+- [rshd says there is no budget](#rshd-says-there-is-no-budget)
+- [ssh and share are rsh and scp](#ssh-and-share-are-rsh-and-scp)
 - [A refused package leaves a trail](#a-refused-package-leaves-a-trail)
 - [TOS knows what it can't live without](#tos-knows-what-it-cant-live-without)
 - [The shell reads its own variables](#the-shell-reads-its-own-variables)
@@ -114,6 +119,26 @@ Everything since v1.5.0, in 92 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### programs hear their own modem ports
+
+A program holding `peripheral.modem` now hears the ports it opened itself, and only those. The kernel's port is refused to everyone, the cluster and reactor telemetry ports are refused to everything but rc.d services, and a port another program holds is refused too. `modem.close()` with no port used to shut every port on the card, which took the machine off the network; it now closes only your own. A program's ports close when it exits.
+
+### users can look, admins can power off
+
+Users can now run `pkg list`, `pkg search`, `pkg info` and `service list`; changing anything still takes admin. `reboot` and `shutdown` now follow the same rule by every route: anyone alone on the machine may use them, and with others logged in they take admin. Typing them used to need admin even alone, which could trap a user on a machine too short of memory to load its commands. Admins can also write language catalogs to `/usr/lang` without `protect off`, since a catalog is data and never runs.
+
+### boot checks the manifest anchor
+
+If you have pinned the manifest with `verify anchor`, boot now warns when it no longer matches, on the POST screen and in the log. It doesn't stop the machine: an update changes the manifest too, so run `verify anchor` again after one. A headless machine also ends boot the way one with a screen does, instead of treating anything without an owner as the kernel for its whole uptime.
+
+### rshd says there is no budget
+
+`service start rshd` now tells you that OpenComputers gives remote commands no CPU or memory limit, at the moment you choose to run it. It used to say so only in the log.
+
+### ssh and share are rsh and scp
+
+`ssh` and `share` work now. They are other names for `rsh` and `scp`, so they take the same arguments and stay admin-only. They used to be programs that always printed `Network not available`.
 
 ### A refused package leaves a trail
 

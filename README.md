@@ -97,7 +97,6 @@ Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. 
 
 ## Known limitations
 
-- **`ssh` and `share` do not work.** Use `rsh` and `scp`, which do.
 - **OpenOS programs run on a best-effort basis.** A program that reaches for raw components or the global environment runs into the sandbox. Programs that use OpenOS's documented libraries generally work.
 - **One theme for every seat.** The last person to log in, or to change the theme, sets the colours everyone sees.
 - **The remote shell is off by default.** `rshd` is registered but not started; `service start 20-rshd` turns it on, and even then only TRUSTED peers can use it.

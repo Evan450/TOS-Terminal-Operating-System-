@@ -4,11 +4,11 @@ local r=require("shell.panels.helpers")local t=function()end
 do local b,a=pcall(require,"kernel.process")if b and a and
 a.yieldCooperative then t=a.yieldCooperative end end
 return
-function(b,a,c)local h,G,o,e,m,M=a.K,a.E,a.P,a.F,a.D,a.U;local P,k,f=a.SC,a.NM,a.st;local d=a.T;local Q=a.tier
-local I,R=a.W,a.H;local N=c.rp;local S=c.openViewTab;local T=c.openEditTab;local n=c.refreshBrowser
+function(a,b,c)local h,G,o,e,m,M=b.K,b.E,b.P,b.F,b.D,b.U;local P,k,f=b.SC,b.NM,b.st;local d=b.T;local Q=b.tier
+local I,R=b.W,b.H;local N=c.rp;local S=c.openViewTab;local T=c.openEditTab;local n=c.refreshBrowser
 local U=c.canRead;local V=c.canWrite;local W=c.canAccess;local J=c.rootOnly;local K=c.dialog;local i=c.adminOnly
 local X=c.makeProgramEnv;local g=r.fmtSz
-local Y=function(H)return r.expandBuf(a,H)end;local j=c.promptInput;local l=c.confirm
+local Y=function(H)return r.expandBuf(b,H)end;local j=c.promptInput;local l=c.confirm
 local function p(Z,H)
 local ab,aa=pcall(require,"shell.panels.diskprobe")if not ab or type(aa)~="table"then return nil end
 local ac,_=pcall(aa.probe,Z)if not ac or type(_)~="table"then return nil end
@@ -19,7 +19,7 @@ type(f)=="table"then
 local ae=tostring(f.label or""):gsub("%c","?"):sub(1,24)return
 ('a TBFS volume labelled "%s": %d file(s), %d dir(s)'):format(ae,
 tonumber(f.files)or 0,tonumber(f.dirs)or 0)end end;return _.text end
-b.redstone=function(H,Z)local aa,_=pcall(require,"peripheral.redstone")if not aa then
+a.redstone=function(H,Z)local aa,_=pcall(require,"peripheral.redstone")if not aa then
 Z("No redstone module",d.error)return end
 if not H[1]then local ab=_.status()if not ab then
 Z("No redstone component",d.error)return end
@@ -30,8 +30,8 @@ local ab,ac=_.setOutput(H[2],tonumber(H[3])or 15)
 Z(ab and"Set "..H[2].." = "..H[3]or tostring(ac),
 ab and d.highlight or d.error)elseif H[1]=="pulse"and H[2]then
 _.pulse(H[2],tonumber(H[3])or 0.5)Z("Pulsed "..H[2],d.highlight)else
-Z("Usage: redstone [set <side> <0-15>|pulse <side> [duration]]",d.dim)end end;b.rs=b.redstone
-b["cluster-setup"]=function(Z,H)if not J(H)then return end
+Z("Usage: redstone [set <side> <0-15>|pulse <side> [duration]]",d.dim)end end;a.rs=a.redstone
+a["cluster-setup"]=function(Z,H)if not J(H)then return end
 local ad,ab=pcall(require,"shell.clustersetup")if not ad or not ab then
 H("cluster setup module unavailable",d.error)return end
 local aa=_G._TOS and _G._TOS.fs
@@ -54,7 +54,7 @@ _.installed=function(ah)local ai=ac()return
 (ai and ai.info and ai.info(ah))~=nil end
 _.install=function(ah)local ai=ac()if not(ai and ai.installByName)then return false,
 "package manager unavailable"end;return
-ai.installByName(ah,{session=r.sessionOf(a)})end
+ai.installByName(ah,{session=r.sessionOf(b)})end
 _.writeFile=function(ah,ai)if not aa then return false,"filesystem unavailable"end;if
 aa.writeFileAtomic then return aa.writeFileAtomic(ah,ai)end;return
 aa.writeFile(ah,ai)end
@@ -63,7 +63,7 @@ _.startService=function(ah)local am,ai=pcall(require,"kernel.rc")if not
 local aj,al=ai.start(ah)if
 not aj and tostring(al):find("Already running",1,true)then return true end;local ak=ac()if
 aj and ak and ak.noteServiceStarted then
-ak.noteServiceStarted(ah,{session=r.sessionOf(a)})end;return aj,al end
+ak.noteServiceStarted(ah,{session=r.sessionOf(b)})end;return aj,al end
 _.setBootStart=function(ah,ai)if not aa then return false,"filesystem unavailable"end;local aj=
 "/etc/rc.d/"..ah..".disabled"if ai then if aa.exists(aj)then return
 aa.remove(aj)end;return true end;if
@@ -85,7 +85,7 @@ aj.pair then return false,"cluster-manager library not loadable"end;return aj.pa
 if(Z[1]or""):lower()=="explain"then
 H("=== What a cluster is made of ===",d.title)for ai,ah in ipairs(ab.explain())do H(ah,d.fg)end;return end;local af,ag=pcall(ab.run,_)if not af then
 H("Setup failed: "..tostring(ag),d.error)end;n()end
-b.intercom=function(Z,H)local ag,_=pcall(require,"intercom")
+a.intercom=function(Z,H)local ag,_=pcall(require,"intercom")
 if
 not ag or type(_)~="table"or not _.announce then
 H("The Intercom is an add-on and isn't installed on this machine.",d.error)
@@ -109,7 +109,7 @@ H(string.format("Playing on the tape (%.1fs).",ah.seconds or 0),d.highlight)end
 if ah.sent then
 H("Broadcast to the network.",d.highlight)elseif not ah.localOnly then H("Nothing was broadcast.",d.warning)end end
 if aa==""then local ai,ah=pcall(require,"intercomapp")if ai and ah and ah.open then
-ah.open(a)return end;aa=z end
+ah.open(b)return end;aa=z end
 if aa==z then H("=== Intercom ===",d.title)local ah,aj=_.findDrive()
 if ah then
 local am=(
@@ -185,16 +185,16 @@ H("  intercom test <cue>                      play it here only, to check it",d.
 H("  intercom cues                            what's catalogued on the tape",d.dim)
 H("  intercom log [N]                         what this box has heard",d.dim)
 H("  intercom set <key> <value>               receive policy (admin)",d.dim)end end
-b.mail=function(Z,H)local ac,_=pcall(require,"mail")
+a.mail=function(Z,H)local ac,_=pcall(require,"mail")
 if not ac or type(_)~="table"or not
 _.send then
 H("Mail is an add-on and isn't installed on this machine.",d.error)
 H("Install it from the Optional Utilities disk:  pkg install mail",d.dim)
 H("(then `service start mail` so this box can RECEIVE mail)",d.dim)return end;if not _.available()then
 H("Mail unavailable (no network hardware?)",d.error)return end;_.tick()
-local ab=a.who or"user"local aa=Z[1]
+local ab=b.who or"user"local aa=Z[1]
 if not aa or aa=="ui"or aa=="tui"then
-local ae,ad=pcall(require,"mailapp")if ae and ad and ad.open then ad.open(a)return end end
+local ae,ad=pcall(require,"mailapp")if ae and ad and ad.open then ad.open(b)return end end
 if not _.running()then
 H("Note: the mail service is stopped — this box won't RECEIVE mail.",d.warning)
 H("      Start it with:  service start mail",d.dim)end
@@ -231,14 +231,14 @@ H("Inbox for "..ab..":",d.title)for ah,ag in ipairs(ad)do
 H(_.inboxRow(ag,ah,I-1),ag.read and d.dim or d.fg)end end;local ae=_.pending()if ae and ae>0 then
 H(ae.." outbound awaiting delivery",d.dim)end
 H("Commands: mail send <peer> [subj] [body] | read <n> | delete <n>",d.dim)end end
-b.rbmk=function(Z,H)local aa,_=pcall(require,"rbmk-cmd")
+a.rbmk=function(Z,H)local aa,_=pcall(require,"rbmk-cmd")
 if
 not aa or type(_)~="table"or not _.run then
 H("The RBMK controller add-on isn't installed on this machine.",d.error)
 H("Install it from the Optional Utilities disk:  pkg install rbmk-control",d.dim)
 H("Then:  rbmk survey   (identifies the console's real API)",d.dim)return end;local ab,ac=pcall(require,"kernel.screen")
 _.run(Z,H,{display=m,event=G,screen=ab and ac or nil})end
-b.robot=function(Z,H)local ab,_=pcall(require,"peripheral.robot")if not ab then
+a.robot=function(Z,H)local ab,_=pcall(require,"peripheral.robot")if not ab then
 H("No robot module",d.error)return end;if not _.available()then
 H("Not a robot",d.error)return end;local aa=Z[1]
 if aa=="forward"or aa=="fwd"then
@@ -261,7 +261,7 @@ for ae,ad in ipairs(ac)do if ad.count>0 then
 H(string.format(" [%2d] %dx %s",ad.slot,ad.count,
 ad.name or"?"),d.fg)end end end else
 H("Usage: robot <forward|back|up|down|left|right|swing|use|detect|inv>",d.dim)end end
-b.inventory=function(Z,H)local ab,_=pcall(require,"peripheral.inventory")if not ab then
+a.inventory=function(Z,H)local ab,_=pcall(require,"peripheral.inventory")if not ab then
 H("No inventory module",d.error)return end;if not _.available()then
 H("No inventory controller/transposer",d.error)return end;local ac=Z[1]and
 (tonumber(Z[1])or Z[1])or nil
@@ -269,8 +269,8 @@ local aa=_.list(ac)
 if aa then
 H(string.format(" %-4s %-24s %s","Slot","Item","Count"),d.title)
 for ae,ad in ipairs(aa)do if ad.count>0 then
-H(string.format(" %-4d %-24s %d",ad.slot,(ad.name or"?"):sub(1,24),ad.count),d.fg)end end else H("Cannot read inventory",d.error)end end;b.inv=b.inventory
-b.component=function(Z,H)if not i(H)then return end
+H(string.format(" %-4d %-24s %d",ad.slot,(ad.name or"?"):sub(1,24),ad.count),d.fg)end end else H("Cannot read inventory",d.error)end end;a.inv=a.inventory
+a.component=function(Z,H)if not i(H)then return end
 if not Z[1]then
 H("Usage: component <type> [method] [args...]",d.dim)
 H("  component list            List all component types",d.dim)
@@ -310,7 +310,7 @@ ab[#ab+1]=true elseif af=="false"then ab[#ab+1]=false elseif tonumber(af)then ab
 local ac=table.pack(pcall(ad,table.unpack(ab)))
 if ac[1]then
 for ae=2,ac.n do H("  "..tostring(ac[ae]),d.fg)end else H("Error: "..tostring(ac[2]),d.error)end end end
-b.internet=function(Z,H)local ab,aa=pcall(require,"kernel.internet")if not ab or not aa then
+a.internet=function(Z,H)local ab,aa=pcall(require,"kernel.internet")if not ab or not aa then
 H("internet module unavailable",d.error)return end
 local _=(Z[1]or z):lower()
 if _==z then local f=aa.status()
@@ -342,13 +342,13 @@ tostring(ad.status)..")")or""),d.dim)local ae=0
 for ag in ac:gmatch("([^\n]*)\n?")do
 if ae>=20 then H("... (truncated)",d.dim)break end;H(ag,d.fg)ae=ae+1 end else
 H("Usage: internet [status|get <url>|on|off]",d.dim)end end
-b.compat=function(Z,H)local _,aa=pcall(require,"compat")if not _ then
+a.compat=function(Z,H)local _,aa=pcall(require,"compat")if not _ then
 H("Compat layer not loaded",d.error)return end;local ab=aa.list()
 H(" OpenOS Compatibility Layer",d.title)
 H(string.format(" %-16s %s","Module",C),d.dim)for ad,ac in ipairs(ab)do
 H(string.format(" %-16s %s",ac.name,ac.loaded and"loaded"or"not loaded"),
 ac.loaded and d.highlight or d.dim)end end
-b.disk=function(Z,H)local _=Z[1]
+a.disk=function(Z,H)local _=Z[1]
 if not _ or _=="list"then
 local aa=e.mounts and e.mounts()or nil
 if aa and type(aa)=="table"and#aa>0 then local ab={}
@@ -397,7 +397,7 @@ H("Eject failed: "..tostring(ac),d.error)end else
 H("Usage: disk [list|info <mnt>|eject <mnt>]",d.dim)
 H("  Removable disks + what's on them.  Install packages: 'pkg'.",d.dim)
 H("  Pool several disks into one: 'jbod'.   Free space per mount: 'df'.",d.dim)end end
-b.drive=function(Z,H)local _=Z[1]local function ad()local ag,ah=pcall(require,"blockfs")
+a.drive=function(Z,H)local _=Z[1]local function ad()local ag,ah=pcall(require,"blockfs")
 return ag and ah or nil end
 local function ab(ag)local ah={}for al in q.list("drive",true)do
 if not ag or al:sub(1,
@@ -472,7 +472,7 @@ av=l(aw,{title="Unmount "..ak.."?",severity=D,yes="Unmount and continue",no=A})e
 local ay=j and
 j("Unmount "..ak.." and continue? [y/N]: ",4)or"n"av=(ay or""):lower()=="y"end;if not av then
 H("Cancelled; the drive is still mounted.",d.dim)return false end else
-H(string.format("Nothing is using %s — unmounting for the %s.",ak,ah),d.dim)end;local am=r.sessionOf(a)local aq,ar=e.unmount(ak,am)if aq==false then
+H(string.format("Nothing is using %s — unmounting for the %s.",ak,ah),d.dim)end;local am=r.sessionOf(b)local aq,ar=e.unmount(ak,am)if aq==false then
 H("Could not unmount "..ak..
 ": "..tostring(ar or"?"),d.error)return false end;local as,an=pcall(ai)local at=function()
 return math.floor(
@@ -488,7 +488,7 @@ H("  Mount it by hand:  drive mount "..ag:sub(1,8).." "..ak,d.dim)end;if not as 
 if _=="unmount"or _=="umount"then if not i(H)then return end;local ai,ag=ab(Z[2])if not
 ai then H(tostring(ag),d.error)return end
 local ah=ac(ag)if not ah then
-H(w..ag:sub(1,8).."... is not mounted.",d.dim)return end;local aj=r.sessionOf(a)
+H(w..ag:sub(1,8).."... is not mounted.",d.dim)return end;local aj=r.sessionOf(b)
 local ak,al=e.unmount(ah,aj)if ak==false then
 H(tostring(al or"unmount failed"),d.error)return end
 H("Unmounted "..ah.." (volume marked clean).",d.highlight)pcall(n)return end
@@ -522,7 +522,7 @@ H("Mount failed: "..tostring(am),d.error)return end
 local an=r.safeMountName(ah.getLabel and ah.getLabel(),aj)local ag=Z[3]or("/mnt/"..an)if ag:sub(1,1)~="/"then
 ag="/mnt/"..ag end;if not e.exists("/mnt")then
 pcall(e.makeDirectory,"/mnt")end;if not e.exists(ag)then
-pcall(e.makeDirectory,ag)end;local ao=r.sessionOf(a)
+pcall(e.makeDirectory,ag)end;local ao=r.sessionOf(b)
 local ap,aq=e.mount(ag,ah,ao)if ap==false then
 H(tostring(aq or"mount failed"),d.error)return end
 H("Mounted TBFS at "..ag,d.highlight)local ak=aa.stats(ai)
@@ -577,7 +577,7 @@ H("for deliberate raw writes. Format/mount/defrag cover normal use.",d.dim)retur
 H("Usage: drive [list | info <addr> | format <addr> [label] | mount <addr> [path]",d.dim)
 H("             | unmount <addr> | check <addr> [--repair] | defrag <addr> [--if-over N]",d.dim)
 H("             | read <addr> <sec>]   (format/repair/defrag need the drive unmounted)",d.dim)end
-b.tape=function(Z,H)local aa,_=pcall(require,E)
+a.tape=function(Z,H)local aa,_=pcall(require,E)
 if aa and _ and _.getCommand then
 local ab=_.getCommand("tape")if ab then ab(Z,H)return end
 if _.info and _.info("tape")then
@@ -590,7 +590,7 @@ H("    pkg install tape",d.dim)H("",d.fg)
 H(" Build your own: a /usr/modules/<name>/init.lua returning",d.dim)
 H("   { commands = { tape = function(args, o) ... end } }",d.dim)
 H(" plus a package.lua manifest (kind=\"command\"). See the TOS Manual.",d.dim)end
-b.deploy=function(Z,H)if not J(H)then return end
+a.deploy=function(Z,H)if not J(H)then return end
 if Z[1]=="drive"then
 local aC,al=pcall(require,"blockfs")
 if not aC or not al then
@@ -735,22 +735,22 @@ H("Install disk created: "..ab.." files",d.highlight)H("",d.fg)
 H("On the target machine (OpenOS), run:",d.dim)H("  # ".._..u,d.fg)
 H("Or insert the disk and run: /mnt/<disk>/install.lua",d.dim)else
 H(ab.." files copied, "..ac.." failed",d.error)end end
-b.chat=function(Z,H)if not k then H(B,d.error)return end
+a.chat=function(Z,H)if not k then H(B,d.error)return end
 local aa,_=pcall(require,"shell.panels.chatapp")if not aa then
-H("Chat unavailable: "..tostring(_),d.error)return end;_.open(a)end
+H("Chat unavailable: "..tostring(_),d.error)return end;_.open(b)end
 local function L(H)local aa,Z=pcall(require,"shell.ext")
 if aa and type(Z)=="table"and
 Z.resolvePeer then return Z.resolvePeer(H)end
 local _=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if type(H)==s and _ and _.resolve then local ab=_.resolve(H)
 if ab then return ab end end;return H end
-b.rsh=function(Z,H)if not i(H)then return end;if not Z[1]or not Z[2]then
+a.rsh=function(Z,H)if not i(H)then return end;if not Z[1]or not Z[2]then
 H("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)",d.dim)return end
 if not k then H(B,d.error)return end;local ab,ac=pcall(require,"kernel.net.remote")if not ab then
 H("Remote module unavailable",d.error)return end;local _=L(Z[1])
 local ad=table.concat(Z," ",2)
 H("Executing on ".._:sub(1,8).."...",d.dim)local aa,ae=ac.execute(_,ad)if aa then H(aa,d.fg)else
-H("Error: "..tostring(ae),d.error)end end
-b.scp=function(Z,H)if not i(H)then return end
+H("Error: "..tostring(ae),d.error)end end;a.ssh=a.rsh
+a.scp=function(Z,H)if not i(H)then return end
 if not Z[1]or not Z[2]then
 H("Usage: scp <peer>:<remote_path> <local_path>",d.dim)
 H("  Copies a file from a TRUSTED peer's /public.",d.dim)return end;if not k then H(B,d.error)return end
@@ -763,8 +763,8 @@ H(
 (ad~=_ and(" ("..ad:sub(1,8)..")")or"").."...",d.dim)local af,ag=ac.request(ad,aa,ae)if af then n()
 H("Downloaded: "..aa.." -> "..ae,d.highlight)else
 H("Transfer failed: "..tostring(ag),d.error)end else
-H("Usage: scp <peer>:<remote_path> <local_path>",d.dim)end end
-b.screen=function(Z,H)local aa,_=pcall(require,"kernel.screen")if not aa then
+H("Usage: scp <peer>:<remote_path> <local_path>",d.dim)end end;a.share=a.scp
+a.screen=function(Z,H)local aa,_=pcall(require,"kernel.screen")if not aa then
 H("Screen module unavailable",d.error)return end
 if Z[1]=="res"then
 local ac=m.getGpu and m.getGpu()local ae,af=m.getSize()local ah,ai=ae,af
@@ -785,9 +785,9 @@ if
 
 ad~="auto"and ad~="max"and not ad:match("^%d+%s*[x×]%s*%d+$")then H("Usage: screen res <auto|max|WxH>",d.error)return end;if ab and ab.set then ab.set("screenRes",ad)
 if ab.save then ab.save()end end
-_.setPolicy(_.specFromConfig(ab))local al,am,ak=_.fitDisplay(a.displayIdx)
+_.setPolicy(_.specFromConfig(ab))local al,am,ak=_.fitDisplay(b.displayIdx)
 local an,ag=pcall(require,"shell.panels.state")
-if an and ag and ag.recomputeLayout then ag.recomputeLayout(a)end;if c.drawAll then pcall(c.drawAll)end
+if an and ag and ag.recomputeLayout then ag.recomputeLayout(b)end;if c.drawAll then pcall(c.drawAll)end
 H(string.format("Resolution -> %dx%d (policy '%s')",
 al or ae or 0,am or af or 0,ad),d.highlight)if ak then H(ak,d.warning)end
 H("Applied now and saved for next boot.",d.dim)return end
@@ -804,6 +804,6 @@ local function O(H)
 return
 function(_,Z)local ab,aa=pcall(require,"shell.ext")
 if ab and aa[H]then
-aa[H](_,{K=h,E=G,P=o,F=e,D=m,U=M,o=Z,st=f,computer=F,cwd=a.cwd})else if H=="logout"then G.push("tos_logout",a.displayIdx)else
+aa[H](_,{K=h,E=G,P=o,F=e,D=m,U=M,o=Z,st=f,computer=F,cwd=b.cwd})else if H=="logout"then G.push("tos_logout",b.displayIdx)else
 Z("Extension unavailable (low RAM?)",d.error)end end end end;for Z,H in
-ipairs({"net","ping","hostname","config","battery","audio"})do b[H]=O(H)end end
+ipairs({"net","ping","hostname","config","battery","audio"})do a[H]=O(H)end end

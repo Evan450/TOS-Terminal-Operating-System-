@@ -86,7 +86,7 @@ H[c]={running=false,unavailable=h.reason,hint=h.hint,disabledAtBoot=F.exists(I..
 E.info("rc","Not loading "..a..": "..h.reason)end;return H[c]end;local j,k=_(g.user)
 if not j then
 b="Skipping '"..a.."': "..tostring(k)if E then E.warn("rc",b)end else local l;if g.user==S then l=ag()else
-l=require("kernel.sandbox").build({caps=i,session=j,allowUserLibs=true})end
+l=require("kernel.sandbox").build({caps=i,session=j,allowUserLibs=true,service=true})end
 local m,n=load(e,"="..d,"t",l)
 if m then local p,o=pcall(m)
 if p then

@@ -1,5 +1,5 @@
 local au,aa="No modem","string"local ai=require("component")
-local U=require("computer")local P={}local S=nil;local Q=nil;local T=nil;local av=8;local ap=256
+local W=require("computer")local P={}local S=nil;local Q=nil;local T=nil;local av=8;local ap=256
 local function aq(a,d,b,c)if
 type(b)~=aa or type(c)~="number"then return true end;local e=a[d]
 if not e then
@@ -11,38 +11,39 @@ if
 e.retired[b]then return false,"replayed packet from a retired epoch"end;e.retired[e.epoch]=true
 e.retiredOrder[#e.retiredOrder+1]=e.epoch;if#e.retiredOrder>av then
 local f=table.remove(e.retiredOrder,1)e.retired[f]=nil end;e.epoch=b
-e.maxSeq=c;return true end;P._seqCheck=aq;local V=nil;local W=nil;local ab=nil;local X={}local Y=42;local Z=nil
-local aj={[14]="Ethernet-over-OC",[148]="the GUI service",[4096]="MultICE / Minitel",[4378]="GERTi",[4379]="GERTi",[4662]="short messages",[9100]="the network print service",[9900]="Zorya BIOS LAN boot"}P.REGISTERED_PORTS=aj;function P.portOwner(a)return aj[a]end;local ag=true;local ae="tos"
-local am=false;local _={}local R=nil;local ad=nil;local ah=nil;local an;local af
-function P.init(a)R=a.log;ad=a.config;ah=a.event
-S=require("kernel.net.protocol")Q=require("kernel.net.trust")
-T=require("kernel.crypto")Q.init({fs=a.fs,crypto=T,log=R,config=ad})
-P._trustToken=
-Q.getBootstrapToken and Q.getBootstrapToken()or nil;if Q.setHelloSender then
+e.maxSeq=c;return true end;P._seqCheck=aq;local X=nil;local Y=nil;local ab=nil;local Z={}local U=42;local V=nil
+local aj={[14]="Ethernet-over-OC",[148]="the GUI service",[4096]="MultICE / Minitel",[4378]="GERTi",[4379]="GERTi",[4662]="short messages",[9100]="the network print service",[9900]="Zorya BIOS LAN boot"}P.REGISTERED_PORTS=aj;function P.portOwner(a)return aj[a]end;function P.kernelPorts()
+local a={[U]=true}if V then a[V]=true end;return a end;local ag=true
+local ae="tos"local am=false;local _={}local R=nil;local ad=nil;local ah=nil;local an;local af
+function P.init(a)R=a.log;ad=a.config
+ah=a.event;S=require("kernel.net.protocol")
+Q=require("kernel.net.trust")T=require("kernel.crypto")
+Q.init({fs=a.fs,crypto=T,log=R,config=ad})
+P._trustToken=Q.getBootstrapToken and Q.getBootstrapToken()or nil;if Q.setHelloSender then
 Q.setHelloSender(function(g)return P.hello(g)end)end
 if ad then
-Y=ad.get("listenPort")or 42;local g=ad.get("broadcastPort")Z=
-(type(g)=="number"and g~=Y)and g or nil;ag=
+U=ad.get("listenPort")or 42;local g=ad.get("broadcastPort")V=
+(type(g)=="number"and g~=U)and g or nil;ag=
 ad.get("encryptComms")~=false
 ae=ad.get("hostname")or"tos"end
-for h,g in ipairs({Y,Z})do local i=g and aj[g]
+for h,g in ipairs({U,V})do local i=g and aj[g]
 if i and R then
 R.warn("net",string.format(
-"Port %d is registered to %s: TOS traffic will share ".."that network. TOS's own port is 42 (listenPort in /etc/tos.cfg).",g,i))end end;X={}
+"Port %d is registered to %s: TOS traffic will share ".."that network. TOS's own port is 42 (listenPort in /etc/tos.cfg).",g,i))end end;Z={}
 for g in ai.list("modem")do local i,h=pcall(ai.proxy,g)
 if i and h then
-pcall(h.open,Y)if Z then pcall(h.open,Z)end;local j=false
-pcall(function()j=h.isWireless()end)X[#X+1]={addr=g,proxy=h,wireless=j}if R then
-R.info("net",string.format("Modem %d: %s [%s]",#X,
+pcall(h.open,U)if V then pcall(h.open,V)end;local j=false
+pcall(function()j=h.isWireless()end)Z[#Z+1]={addr=g,proxy=h,wireless=j}if R then
+R.info("net",string.format("Modem %d: %s [%s]",#Z,
 j and"wireless"or"wired",g:sub(1,8).."..."))end end end
-if#X>0 then V=X[1].proxy;ab=X[1].addr;if R and#X>1 then
-R.info("net",#X.." NICs active (multi-modem)")end
+if#Z>0 then X=Z[1].proxy;ab=Z[1].addr;if R and#Z>1 then
+R.info("net",#Z.." NICs active (multi-modem)")end
 if R then
 local g=
-Z and("ports "..Y..", "..Z)or("port "..Y.." (single-port mode)")R.info("net","Listening on "..g)end end
-for g in ai.list("tunnel")do local i,h=pcall(ai.proxy,g)if i and h then W=h;if R then
+V and("ports "..U..", "..V)or("port "..U.." (single-port mode)")R.info("net","Listening on "..g)end end
+for g in ai.list("tunnel")do local i,h=pcall(ai.proxy,g)if i and h then Y=h;if R then
 R.info("net","Linked card detected")end end;break end
-if not V and not W then if R then
+if not X and not Y then if R then
 R.warn("net","No network hardware detected")end;return false end;if ah then
 ah.on("modem_message",function(k,l,g,h,i,j)P.handleIncoming(g,h,i,j)P.meshTick()end,"net")end;am=true
 local d,b=pcall(require,"kernel.net.chatpair")
@@ -60,8 +61,8 @@ not g then return end
 if not g.exists(i)then g.makeDirectory(i)end;j.saveFile(g,h,k)end}end;local f,c=pcall(require,"kernel.net.meshctl")
 if f and c then
 c.init({crypto=T,serialize=require("kernel.serialize"),log=R,clock=function()return
-U.uptime()end})
-P._meshctl=c.new({myAddr=ab,clock=function()return U.uptime()end,freeMemory=U.freeMemory,store=e(a and a.fs or
+W.uptime()end})
+P._meshctl=c.new({myAddr=ab,clock=function()return W.uptime()end,freeMemory=W.freeMemory,store=e(a and a.fs or
 (_G._TOS and _G._TOS.fs)),broadcast=function(h)local k=
 (h.kind=="ack")and S.TYPE.MESH_ACK or S.TYPE.MESH
 local j=S.makePacket(k,h)local i=h.to
@@ -86,18 +87,18 @@ P._meshctl then P._meshctl:off(a)end end;function P.meshHasHandler(a)
 return P._meshctl~=nil and P._meshctl:hasHandler(a)end
 function P.meshPending()return P._meshctl and
 P._meshctl:pending()or 0 end
-function P.meshTick()if not P._meshctl then return end;local a=U.uptime()if a-
+function P.meshTick()if not P._meshctl then return end;local a=W.uptime()if a-
 (P._lastMeshTick or 0)>=5 then P._lastMeshTick=a
-P._meshctl:tick(a)end end;function P.isAvailable()return V~=nil or W~=nil end
+P._meshctl:tick(a)end end;function P.isAvailable()return X~=nil or Y~=nil end
 function P.getAddress()return ab end;function P.getHostname()return ae end
 function P.setHostname(a)if
 type(a)~=aa or a==""or#a>32 or a:find("%c")then
-return false,"hostname must be 1-32 printable characters"end;ae=a;return true end;function P.modemCount()return#X end
+return false,"hostname must be 1-32 printable characters"end;ae=a;return true end;function P.modemCount()return#Z end
 local ar={ping=true,pong=true,hello=true,hello_ack=true,challenge=true,chall_res=true,deny=true,ch_pair_init=true,ch_pair_conf=true,cl_pair_init=true,cl_pair_conf=true}local aw={mesh=true,mesh_ack=true}
 local function as(...)local a={"tosmac2"}
 for b=1,select("#",...)do local c=tostring(
 (select(b,...))or"")a[#a+1]=#c..":"..c end;return table.concat(a)end
-function P.send(b,a,c)if not V and not W then return false,au end;c=c or Y;a.from=ab;a.to=b
+function P.send(b,a,c)if not X and not Y then return false,au end;c=c or U;a.from=ab;a.to=b
 local g=Q.getLevel(b)local h=ar[a.type]
 if ag and g>=Q.LEVEL.TRUSTED and not h then
 local i=Q._internalGetSecret(b,P._trustToken)
@@ -108,21 +109,21 @@ a.epoch=P._bootEpoch;a.seq=P._sendSeq[b]a.nonce=T.salt(16)a.macv=2
 a.mac=T.hmac(i,as(a.type,a.to,k,a.epoch,a.seq,a.nonce,j))elseif a.payload and not i then
 if R then
 R.warn("net",string.format("Refusing plaintext send to TRUSTED peer %s (%s): no shared secret; "..
-"run 'net trust gen %s' as admin to provision one",b:sub(1,8),a.type or"?",b:sub(1,8)))end;P._helloAsked=P._helloAsked or{}local j=U.uptime()if j- (P._helloAsked[b]or-
+"run 'net trust gen %s' as admin to provision one",b:sub(1,8),a.type or"?",b:sub(1,8)))end;P._helloAsked=P._helloAsked or{}local j=W.uptime()if j- (P._helloAsked[b]or-
 math.huge)>=30 then
 P._helloAsked[b]=j;pcall(P.hello,b)end;return false,
 "TRUSTED peer has no shared secret; refusing plaintext send"end end;local d=S.serialize(a)
 if#d>S.MAX_SIZE then return false,"Packet too large"end;local e,f
-if V then e,f=pcall(V.send,b,c,d)else e,f=pcall(W.send,d)end
+if X then e,f=pcall(X.send,b,c,d)else e,f=pcall(Y.send,d)end
 if not e then return false,"Send failed: "..tostring(f)end;return true end
-function P.broadcast(b,a)if not V and not W then return false,au end;a=a or Z or Y
-b.from=ab;local d=S.serialize(b)local c=false;for f,e in ipairs(X)do
-local g=pcall(e.proxy.broadcast,a,d)c=c or g end;if W then local e=pcall(W.send,d)
+function P.broadcast(b,a)if not X and not Y then return false,au end;a=a or V or U
+b.from=ab;local d=S.serialize(b)local c=false;for f,e in ipairs(Z)do
+local g=pcall(e.proxy.broadcast,a,d)c=c or g end;if Y then local e=pcall(Y.send,d)
 c=c or e end
 if not c then return false,"Broadcast failed on all NICs"end;return true end
-function P.sendToAddress(c,b,a)if not V and not W then return false,au end;a=a or Z or Y
-b.from=ab;local e=S.serialize(b)local d=false;for g,f in ipairs(X)do
-local h=pcall(f.proxy.send,c,a,e)d=d or h end;if W then local f=pcall(W.send,e)
+function P.sendToAddress(c,b,a)if not X and not Y then return false,au end;a=a or V or U
+b.from=ab;local e=S.serialize(b)local d=false;for g,f in ipairs(Z)do
+local h=pcall(f.proxy.send,c,a,e)d=d or h end;if Y then local f=pcall(Y.send,e)
 d=d or f end
 if not d then return false,"Send failed on all NICs"end;return true end
 function P.handleIncoming(a,d,b,c)if not am then return end;local e,i=S.deserialize(c)if not e then return end
@@ -196,7 +197,7 @@ local k=Q.getPeer(a)
 if k and type(e.payload)=="table"then
 k.hostname=af(e.payload.hostname)pcall(Q.noteDhPublicKey,a,e.payload.dhPub)end end
 if e.type==S.TYPE.CHALLENGE then if f<Q.LEVEL.TRUSTED then return end;P._challengeRate=
-P._challengeRate or{}local n=U.uptime()
+P._challengeRate or{}local n=W.uptime()
 local q=P._challengeRate[a]or 0
 if n-q<1.0 then if R then
 R.warn("net","CHALLENGE throttled from "..a:sub(1,8))end;return end;P._challengeRate[a]=n
@@ -242,13 +243,13 @@ if a and type(a.inProcess)==
 "function"then return a.inProcess()end
 return
 (coroutine.isyieldable and coroutine.isyieldable())and true or false end
-function P.waitFor(a,b)local c=U.uptime()+ (b or 10)
-while not a()do if U.uptime()>=c then
+function P.waitFor(a,b)local c=W.uptime()+ (b or 10)
+while not a()do if W.uptime()>=c then
 return false end
 if az()then coroutine.yield()else
 local d=
 (ah and ah.pull)and ah or package.loaded["kernel.event"]if type(d)=="table"and type(d.pull)=="function"then
-d.pull(0.5)else U.pullSignal(0.5)end end end;return true end;local al={}local aA=60
+d.pull(0.5)else W.pullSignal(0.5)end end end;return true end;local al={}local aA=60
 local function aB(c,d,T)
 if T and T.ctEquals then return T.ctEquals(c,d)end;if type(c)~=aa or type(d)~=aa then return false end
 local a,b=#c,#d;local f=a>b and a or b;local e=a~b
@@ -257,7 +258,7 @@ local h=g<=a and c:byte(g)or 0;local i=g<=b and d:byte(g)or 0;e=e| (h~i)end;retu
 function P.verifyPeer(a,b,c)if not S then return false,"protocol unavailable"end;if
 not a or a==""then return false,"no address"end;if not Q then
 return false,"trust manager unavailable"end;if not c then local m=al[a]
-if m and U.uptime()<m then return true end end;if
+if m and W.uptime()<m then return true end end;if
 Q.getLevel(a)<Q.LEVEL.TRUSTED then return false,"peer not trusted"end
 local f=Q._internalGetSecret and
 Q._internalGetSecret(a,P._trustToken)or nil
@@ -275,9 +276,9 @@ type(e)~=aa or#e<8 or#e>64 then return false,"bad server nonce"end;local j
 do local n=d.."|"..e;local o,m=pcall(T.hmac,f,n)if not o or not m then
 return false,"hmac failed"end;j=m end
 if not aB(h,j,T)then if R then
-R.warn("net","Challenge proof mismatch from "..a:sub(1,8))end;return false,"bad proof"end;al[a]=U.uptime()+aA;return true end
+R.warn("net","Challenge proof mismatch from "..a:sub(1,8))end;return false,"bad proof"end;al[a]=W.uptime()+aA;return true end
 function P.invalidateVerification(a)if a then al[a]=nil else al={}end end
-function P.discover()local a=S.ping()return P.broadcast(a,Z)end
+function P.discover()local a=S.ping()return P.broadcast(a,V)end
 function P.hello(a)local b=Q.getLevel(a)if b<Q.LEVEL.KNOWN then
 return false,"Peer must be KNOWN to exchange hellos"end
 local c=S.hello(ae,_G._TOS.version,Q.getMyDhPublicKey())return P.send(a,c)end
@@ -288,7 +289,7 @@ function P.requestTrust(a)local b=S.trustRequest(ae)return P.send(a,b)end;functi
 if type(a)~=aa then return nil end;a=a:gsub("%c",""):sub(1,32)
 if a==""then return nil end;return a end
 function P._recordPeer(a,b)if
-type(a)~=aa then return end;local e=U.uptime()
+type(a)~=aa then return end;local e=W.uptime()
 local f=Q and Q.getLevel(a)or 0;local c=nil;local d=nil
 if type(b)=="table"then c=af(b.hostname)d=af(b.device)end
 if Q then local g=Q.getPeer(a)if g then c=c or af(g.hostname)end end
@@ -313,7 +314,7 @@ for f,e in pairs(c)do b[#b+1]=e end;return b end;function P.getProtocol()return 
 function P.status()local a=Q.stats()
 return
 {available=P.isAvailable(),address=ab and(
-ab:sub(1,8).."...")or"none",fullAddress=ab,hostname=ae,listenPort=Y,portOwner=aj[Y],encrypted=ag,hasModem=V~=nil,hasTunnel=W~=nil,peers=a}end
-function P.shutdown()am=false;if V then
-pcall(function()V.close(Y)if Z then V.close(Z)end end)end;if R then
+ab:sub(1,8).."...")or"none",fullAddress=ab,hostname=ae,listenPort=U,portOwner=aj[U],encrypted=ag,hasModem=X~=nil,hasTunnel=Y~=nil,peers=a}end
+function P.shutdown()am=false;if X then
+pcall(function()X.close(U)if V then X.close(V)end end)end;if R then
 R.info("net","Network shut down")end end;return P

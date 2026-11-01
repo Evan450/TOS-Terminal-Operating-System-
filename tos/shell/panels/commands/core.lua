@@ -1395,16 +1395,13 @@ E("System language: "..ay.language(),d.highlight)return end
 if az=="dump"then
 local aH=f(ax[2]or"/tmp/lang-template.lang")local aI=ay.keysSeen()if#aI==0 then
 E("No keys seen yet — visit a few screens first (log out/in, open the Desktop).",d.warning)return end
-local aG={"-- TOS language catalog template (every t() key seen this session).","-- Translate the values, set meta.code/name, save as /usr/lang/<code>.lang,","-- then run `lang <code>`. Untranslated keys keep their English default.","-- /usr is a protected system path: as root, `protect off` to copy this","-- in and `protect on` after -- or ship the catalog as a package.","return {",'  meta = { code = "xx", name = "Language name" },',"  strings = {"}for aM,aL in ipairs(aI)do
+local aG={"-- TOS language catalog template (every t() key seen this session).","-- Translate the values, set meta.code/name, save as /usr/lang/<code>.lang,","-- then run `lang <code>`. Untranslated keys keep their English default.","-- An admin can write there directly, or ship the catalog as a package.","return {",'  meta = { code = "xx", name = "Language name" },',"  strings = {"}for aM,aL in ipairs(aI)do
 aG[#aG+1]=string.format("    [%q] = %q,",aL.key,aL.default)end;aG[#aG+1]="  },"
 aG[#aG+1]="}"
 if not o(aH)then E("Cannot write: "..aH,d.error)return end
-local aK,aJ=e.writeFile(aH,table.concat(aG,"\n").."\n")
-if aK then
+local aK,aJ=e.writeFile(aH,table.concat(aG,"\n").."\n")if aK then
 E("Template with "..#aI.." key(s) -> "..aH,d.highlight)k()else E(ak..aH,d.error)
-if aJ then E(tostring(aJ),d.dim)end
-if aH:sub(1,10)=="/usr/lang/"then
-E("Dump to /tmp (the default), then copy it in under `protect off`,",d.dim)E("or ship the catalog as a package.",d.dim)end end;return end;local aD,aE=ay.setLanguage(az)if not aD then
+if aJ then E(tostring(aJ),d.dim)end end;return end;local aD,aE=ay.setLanguage(az)if not aD then
 E("Cannot set '"..tostring(az)..
 "': "..tostring(aE),d.error)E("Run 'lang' to list installed catalogs.",d.dim)
 return end

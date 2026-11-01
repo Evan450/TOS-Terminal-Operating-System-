@@ -201,10 +201,14 @@ j.lastRun=V.uptime()
 if not q then j.state=T.DEAD;j.error=tostring(r)Z()elseif
 coroutine.status(k)=="dead"then j.state=T.DEAD;Z()else j.state=j.tsr and T.TSR or T.READY end;U=nil end end end;local f,e=nil,nil
 for i,h in pairs(S)do
-if h.state==T.DEAD then if h.coroutine then h.coroutine=nil end;if not
-h._purged then h._purged=true;if f==nil then f,e=pcall(require,ar)end
-if f and
-type(e)=="table"and e.purgeOwner then e.purgeOwner(i)end end end end;local c={}
+if h.state==T.DEAD then if h.coroutine then h.coroutine=nil end
+if not
+h._purged then h._purged=true;if f==nil then f,e=pcall(require,ar)end;if
+h.modemPorts then local j=package.loaded["kernel.sandbox"]
+if type(j)=="table"and
+j.releasePorts then pcall(j.releasePorts,h)end end
+if f and type(e)==
+"table"and e.purgeOwner then e.purgeOwner(i)end end end end;local c={}
 for h,i in pairs(S)do if i.state==T.DEAD then c[#c+1]=h end end
 if#c>3 then table.sort(c)for h=1,#c-3 do S[c[h]]=nil end end
 for h,i in pairs(X)do

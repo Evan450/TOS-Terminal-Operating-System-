@@ -78,7 +78,7 @@ d..
 "allows is logged).  [E-402 ERR_PATH_PROTECTED]"end
 return d..
 "  Only root can lift it, with `protect off`, and only ".."for their own session.  [E-402 ERR_PATH_PROTECTED]"end
-local ac={"/var/log/","/var/run/","/var/lib/","/var/cluster/","/etc/widgets/"}
+local ac={"/var/log/","/var/run/","/var/lib/","/var/cluster/","/etc/widgets/","/usr/lang/"}
 local function X(a)if ab[a]then return nil end;for c,b in ipairs(ac)do
 if a:sub(1,#b)==b then return nil end end
 for c,b in ipairs(aa)do if a==b then return b end end;for c,b in ipairs(_)do
