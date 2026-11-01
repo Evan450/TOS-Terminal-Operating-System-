@@ -77,6 +77,17 @@ local function world(opts)
   W.slots = slots
   function W.give(slot, name, damage, n) slots[slot] = { name = name, damage = damage or 0, size = n } end
 
+  -- A chest right behind where the robot started, as a list of stacks.
+  W.chest = opts.chest
+  local cx, cz = ox - DX[f0], oz - DZ[f0]
+  if opts.chest then W.blocked[key(cx, 1, cz)] = true end
+  local function overChest() return W.chest and rx == cx and ry == 2 and rz == cz end
+  function W.chestHolds(name)
+    local n = 0
+    for _, st in pairs(W.chest) do if st and st.name == name then n = n + st.size end end
+    return n
+  end
+
   local selected = 1
   local energy = opts.energy or math.huge
   W.power = function(e) energy = e end
@@ -122,6 +133,18 @@ local function world(opts)
     return it and it.size or 0
   end
   function robot.inventorySize() return #slots end
+  function robot.space(s)
+    local it = slots[s or selected]
+    return it and ((it.maxSize or 64) - it.size) or 64
+  end
+  function robot.drop(side)
+    if side ~= 0 or not overChest() then return false end
+    local it = slots[selected]
+    if not it then return false end
+    W.chest[#W.chest + 1] = it
+    slots[selected] = false
+    return true
+  end
   function robot.detect(side)
     if side ~= 0 then error("only down in this sim") end
     if W.solid(rx, ry - 1, rz) then return true, "solid" end
@@ -146,6 +169,29 @@ local function world(opts)
     local it = slots[s]
     return it and { name = it.name, damage = it.damage, size = it.size } or nil
   end }
+  function ic.getInventorySize(side)
+    if side ~= 0 or not overChest() then return nil, "no inventory" end
+    return math.max(27, #W.chest)
+  end
+  function ic.getStackInSlot(side, s)
+    if side ~= 0 or not overChest() then return nil end
+    local st = W.chest[s]
+    return st and { name = st.name, damage = st.damage, size = st.size, maxSize = st.maxSize or 64 } or nil
+  end
+  function ic.suckFromSlot(side, s, n)
+    if side ~= 0 or not overChest() then return false end
+    local st, it = W.chest[s], slots[selected]
+    if not st then return false end
+    if it and (it.name ~= st.name or it.damage ~= st.damage) then return false end
+    local max = st.maxSize or 64
+    local have = it and it.size or 0
+    local take = math.min(n or 64, st.size, max - have)
+    if take <= 0 then return false end
+    slots[selected] = { name = st.name, damage = st.damage, size = have + take, maxSize = st.maxSize }
+    st.size = st.size - take
+    if st.size == 0 then W.chest[s] = false end
+    return true
+  end
 
   local component = { robot = robot,
     isAvailable = function(n)
@@ -463,6 +509,139 @@ do
   local small = world({ size = 1 })
   small.run((E.program(bp, { slots = 16 })))
   test("too few slots says so before moving", has(small.text(), "needs 2 inventory slots") and small.moves == 0, small.text())
+end
+
+print()
+print("=== fetching from a chest ===")
+print()
+
+local function chestOf(bp, extra)
+  local out = {}
+  for _, m in ipairs((B.materials(bp))) do
+    local left = m.count
+    while left > 0 do
+      local n = math.min(64, left)
+      out[#out + 1] = { name = m.id, damage = m.meta, size = n }
+      left = left - n
+    end
+  end
+  for _, st in ipairs(extra or {}) do out[#out + 1] = st end
+  return out
+end
+
+do
+  local bp = B.parse(HUT)
+  local src, info = E.program(bp, { chest = true })
+  test("the program says where the chest goes", has(src, "Put a chest right behind it"))
+  test("...and what goes in it", has(src, "--   40 Cobblestone"))
+  test("a hut's worth fits in one trip", info.trips == 1 and info.chest == true, info.trips)
+  for facing = 0, 3 do
+    local W = world({ facing = facing, ic = true, chest = chestOf(bp) })
+    local ok, err = W.run(src)
+    test("facing " .. facing .. ": an empty robot and a chest build it", ok and differs(W, bp) == nil, err or differs(W, bp))
+    test("facing " .. facing .. ": the route costs what the export said",
+      W.moves == info.moves and W.turns == info.turns, W.moves .. "/" .. info.moves .. ", " .. W.turns .. "/" .. info.turns)
+  end
+  local W = world({ ic = true, chest = chestOf(bp) })
+  W.run(src)
+  test("the chest gave exactly what the build took",
+    W.chestHolds("minecraft:cobblestone") == 0 and W.chestHolds("minecraft:glass") == 0)
+  local x, y, z = W.pos()
+  test("it finishes parked on the chest", x == 9 and y == 2 and z == 20, x .. "," .. y .. "," .. z)
+  test("the robot is left empty", W.slots[1] == false and W.slots[2] == false)
+end
+
+do
+  -- More than it can carry: as many trips as the export said.
+  local bp = B.new(16, 1, 16, "Slab")
+  B.addBlock(bp, "a", "minecraft:stone", 0, "Stone")
+  for z = 1, 16 do for x = 1, 16 do B.set(bp, x, 1, z, "a") end end
+  local src, info = E.program(bp, { slots = 2, chest = true })
+  test("256 blocks in 2 slots is 2 trips", info.trips == 2, info.trips)
+  local W = world({ size = 2, ic = true, chest = chestOf(bp) })
+  local ok, err = W.run(src)
+  test("it goes back for more, without being asked", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...on the route the export counted", W.moves == info.moves and W.turns == info.turns,
+    W.moves .. "/" .. info.moves)
+end
+
+do
+  -- Identity is name and damage. A chest full of near misses is left alone.
+  local bp = B.new(2, 1, 1, "Flag")
+  B.addBlock(bp, "w", "minecraft:wool", 0, "White")
+  B.addBlock(bp, "r", "minecraft:wool", 14, "Red")
+  B.set(bp, 1, 1, 1, "w")
+  B.set(bp, 2, 1, 1, "r")
+  local junk = { { name = "minecraft:wool", damage = 5, size = 64 }, { name = "minecraft:dirt", damage = 0, size = 64 } }
+  local W = world({ ic = true, chest = chestOf(bp, junk) })
+  local ok, err = W.run((E.program(bp, { chest = true })))
+  test("damage tells wool from wool", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("what the build does not need stays in the chest",
+    W.chestHolds("minecraft:dirt") == 64 and W.chestHolds("minecraft:wool") == 64)
+end
+
+do
+  -- The chest runs out: it waits on top of it, and says for what.
+  local bp = B.parse(HUT)
+  local W = world({ ic = true, chest = { { name = "minecraft:glass", damage = 0, size = 2 },
+    { name = "minecraft:cobblestone", damage = 0, size = 10 } } })
+  W.onSleep = function()
+    if W.chestHolds("minecraft:cobblestone") == 0 then
+      W.chest[#W.chest + 1] = { name = "minecraft:cobblestone", damage = 0, size = 30 }
+    end
+  end
+  local ok, err = W.run((E.program(bp, { chest = true })))
+  test("a short chest: it waits, then finishes", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...saying what it wants", has(W.text(), "The chest has no Cobblestone"), W.text())
+end
+
+do
+  local bp = B.parse(HUT)
+  local src = E.program(bp, { chest = true })
+  local noIc = world({ chest = chestOf(bp) })
+  noIc.run(src)
+  test("no inventory controller says so before moving",
+    has(noIc.text(), "needs an inventory controller") and noIc.moves == 0, noIc.text())
+  local noChest = world({ ic = true })
+  noChest.run(src)
+  test("no chest says where it goes", has(noChest.text(), "right behind where the robot started"), noChest.text())
+end
+
+do
+  -- A block already standing: what it did not use goes back.
+  local bp = B.parse(HUT)
+  local W = world({ ic = true, chest = chestOf(bp) })
+  W.blocked["11,1,20"] = true
+  W.run((E.program(bp, { chest = true })))
+  test("what is left over goes back in the chest", W.chestHolds("minecraft:cobblestone") == 1
+    and W.slots[1] == false, W.chestHolds("minecraft:cobblestone"))
+end
+
+do
+  -- Stopped part way: the blocks it carries are counted, not fetched again.
+  local bp = B.parse(HUT)
+  local src = E.program(bp, { chest = true })
+  local W = world({ ic = true, chest = chestOf(bp) })
+  W.blocked["13,2,20"] = true
+  W.run(src)
+  test("stopped with a load on board", has(W.text(), "cannot move: solid"), W.text())
+  W.blocked["13,2,20"] = nil
+  local ok, err = W.run(src)
+  test("it carries on and finishes", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...and took no more than the build needed", W.chestHolds("minecraft:cobblestone") == 0
+    and W.slots[1] == false and W.slots[2] == false)
+end
+
+do
+  -- Things that stack to 16: more trips than the export can know about.
+  local bp = B.new(40, 1, 1, "Fence")
+  B.addBlock(bp, "s", "minecraft:sign", 0, "Sign")
+  for x = 1, 40 do B.set(bp, x, 1, 1, "s") end
+  local stacks = {}
+  for i = 1, 3 do stacks[i] = { name = "minecraft:sign", damage = 0, size = 16, maxSize = 16 } end
+  local W = world({ size = 1, ic = true, chest = stacks })
+  local ok, err = W.run((E.program(bp, { slots = 1, chest = true })))
+  test("a 16-stack block just means more trips", ok and differs(W, bp) == nil, err or differs(W, bp))
 end
 
 print()

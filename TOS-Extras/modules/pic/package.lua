@@ -12,7 +12,7 @@
 -- picture is data and is never executed.
 return {
   name        = "pic",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "productivity",
   description = "Picture viewer: MineOS .pic and PNG on any GPU, from disk or a URL, and PNG to .pic.",

@@ -35,7 +35,7 @@ local fmt = require("printerfmt")
 
 local printer = {}
 
-printer._VERSION = "1.0.0"
+printer._VERSION = "1.0.1"
 printer.fmt = fmt          -- layout helpers, for callers that want them
 
 local COMPONENT_TYPE = "openprinter"

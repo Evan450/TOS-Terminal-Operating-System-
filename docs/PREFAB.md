@@ -2,7 +2,7 @@
 
 The operator's idea: like `warhead`, but for building. Read the site with a geolyzer, draw your own blueprints a slice at a time in a 2.5D designer, and have robots and drones build them.
 
-Status: the blueprint format, the designer, the build planner, the survey and the robot program exist as `prefab` 0.3.0 in `TOS-Extras/modules/prefab`. Supply and site clearing are designed here and not built. A 0.x package stays off the Optional Utilities pack by rule, so nothing here needs signing yet.
+Status: the blueprint format, the designer, the build planner, the survey and the robot program exist as `prefab` 0.5.0 in `TOS-Extras/modules/prefab`. Site clearing is designed here and not built. A 0.x package stays off the Optional Utilities pack by rule, so nothing here needs signing yet.
 
 ## What the hardware can do
 
@@ -91,13 +91,15 @@ The map shows the site from above against the chosen floor: `.` is ready, a digi
 
 **Loading:** export prints which slots to fill. Each block gets a slot, and the rest go to whatever needs the most. When a block runs out the robot walks back to the corner, says what it wants, and waits. With an inventory controller it also checks each item's name and damage, so the wrong thing in a slot is refused rather than built.
 
+**Fetching from a chest:** with `--chest` the robot starts empty, and a chest goes right behind where it starts. It stands on the chest and reads every slot, taking only what the rest of the build needs, by name and damage, so a chest shared with anything else is safe. It goes back whenever it runs out, and at the end it returns any leftovers and parks on the chest. The chest is outside the building, so the way there is clear at any height. This needs an inventory controller. If the chest runs short the robot waits on it and says what it wants. Export counts the trips by walking the same route, taking a stack as 64: anything that stacks lower only makes more trips.
+
 **When it can't go on:** a player or a flat battery gets 30 seconds of patience. After that, or for a block in the way or nothing to place against, it stops, says where, and saves its place in `/home/.prefab-state`. Running the file again carries on from there, and `fresh` as an argument starts over. A block already standing in a target cell is left alone and counted.
 
 **A hover problem is known in advance.** Export walks the same path as the robot, under OpenComputers' flight rule, and names the step that would need a hover upgrade.
 
 **What a stranger's blueprint can do:** nothing. The generator is the one place a blueprint becomes code, so every string goes through `%q`, and comments have control characters taken out, because a bare carriage return would end the comment and turn the rest of the line into code.
 
-How it was tested: `test_prefab_export.lua` runs the generated program against a simulated world, in all four facings, through refills, wrong items, blocked paths, flat batteries and resuming. Then a file exported on a real TOS machine ran on real OpenOS against the runner's stand-in robot (`--robot`): all 42 blocks of the test hut landed in the right cells from the right slots, none twice. The stand-in and the simulator are both my reading of OpenComputers, so neither proves a real robot behaves this way.
+How it was tested: `test_prefab_export.lua` runs the generated program against a simulated world, in all four facings, through refills, wrong items, blocked paths, flat batteries and resuming. Then a file exported on a real TOS machine ran on real OpenOS against the runner's stand-in robot (`--robot`): all 42 blocks of the test hut landed in the right cells from the right slots, none twice. With `--robot-chest` it started empty beside a chest that also held dirt: it took exactly 40 cobblestone and 2 glass, and every cell got the right item. The stand-in and the simulator are both my reading of OpenComputers, so neither proves a real robot behaves this way.
 
 Limits for now:
 
@@ -106,12 +108,22 @@ Limits for now:
 - After a finished build, running the file again builds again from wherever the robot is.
 - Blocks are placed facing however the robot's facing lands them, which is the open question below.
 
+## With the rest of the pack
+
+Nothing here is needed to design or build. Each link does more when another package is installed, and says what to install when it isn't. They're `recommends`, so the picker suggests them.
+
+- **`prefab need`** compares a build with what's in reach of a transposer or inventory controller. It needs no other package, because the inventory library belongs to the base.
+- **`prefab watch`** puts a build's materials on `stock`'s watch list, through `stock`'s own `readWatches` and `saveWatches`, so `stock low` and the monitor flag what's short. A higher threshold someone already set stays. `--off` removes only what the build set.
+- **`prefab print`** prints a sheet of materials and a plan per layer through `printer`, in evenly wide letters because a printer's font is proportional, in strips where a row is wider than the paper. `--dry` gives the cost without printing.
+- **`prefab csv`** writes the bill of materials for `calc` or anything else, with what you have if inventories are in reach.
+
+A library from another package runs inside prefab's sandbox with prefab's capabilities, so prefab has to declare `peripheral.inventory` and `peripheral.printer` itself. `pkg info` shows them. It only reads inventories and never moves an item.
+
 ## Still to build, in order
 
-1. **Supply:** the robot fetching from a chest with an inventory controller, finding each item by name and damage.
-2. **Clearing the site**, before anything is placed.
-3. **Drones as couriers.**
-4. **In a real world:** nothing above reaches 1.0.0 until a robot has built something in one.
+1. **Clearing the site**, before anything is placed.
+2. **Drones as couriers.**
+3. **In a real world:** nothing above reaches 1.0.0 until a robot has built something in one.
 
 ## Open questions
 

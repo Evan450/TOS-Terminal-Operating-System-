@@ -28,7 +28,7 @@
 local fmt = require("printerfmt")
 
 local doc = {}
-doc._VERSION = "1.1.0"
+doc._VERSION = "1.1.1"
 
 doc.MAX_LINES = fmt.MAX_LINES
 doc.MAX_WIDTH = fmt.MAX_WIDTH

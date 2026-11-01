@@ -84,6 +84,7 @@ local function makeFixture(opts)
     readFile = function(p) return fx.files[p] end,
     writeFile = function(p, d)
       if opts.writeError then error(opts.writeError, 0) end
+      if opts.writeRefused then return false, opts.writeRefused end
       fx.files[p] = d; return true
     end,
   }
@@ -425,6 +426,14 @@ do
   test("...with all of it readable", has(s, "NOT saved:") and has(s, "last one you had free"))
   local after = fx.screens[#fx.screens - 1]
   test("...and a key closes it", after ~= nil and not has(after, "Any key to go on"))
+end
+
+do
+  -- A real refusal is a return, not an error, and has to say why.
+  local keys = script({ ENTER }, { char("g") }, typed("big"), { ENTER }, { CTRL_Q }, { CTRL_Q })
+  local fx = makeFixture({ keys = keys, writeRefused = "access denied" })
+  pcall(fx.run, {})
+  test("a refused save says why, not \"false\"", firstWith(fx, "NOT saved: access denied") ~= nil)
 end
 
 do

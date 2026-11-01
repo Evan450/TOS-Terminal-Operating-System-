@@ -17,6 +17,7 @@ local B = require("prefab.blueprint")
 local P = require("prefab.plan")
 local G = require("prefab.survey")
 local E = require("prefab.export")
+local L = require("prefab.links")
 
 local V = {}   -- exported for test_prefab.lua
 
@@ -130,12 +131,18 @@ local function screen()
   return S
 end
 
-local function saveFile(path, bp)
+--! The sandbox's fs.writeFile refuses by returning false and a reason, not
+--! by throwing, so `pcall` alone calls a refused write a success, and its
+--! second value is only that false. (test_prefab_links.lua)
+local function writeFile(path, data)
   if not (fs and fs.writeFile) then return false, "nothing here can write a file" end
-  local ok, err = pcall(fs.writeFile, path, B.serialize(bp))
-  if not ok or err == false then return false, tostring(err) end
+  local ok, done, why = pcall(fs.writeFile, path, data)
+  if not ok then return false, tostring(done) end
+  if done == false or done == nil then return false, tostring(why or "the write was refused") end
   return true
 end
+
+local function saveFile(path, bp) return writeFile(path, B.serialize(bp)) end
 
 local function loadFile(path)
   if not (fs and fs.exists and fs.exists(path)) then return nil, "no such file: " .. path end
@@ -629,9 +636,9 @@ local function cliSurvey(args, o)
 end
 
 -- ── Export ─────────────────────────────────────────────────────────────
---- `prefab export`'s words. Returns in, out and slots, or nil and why.
+--- `prefab export`'s words. Returns in, out, slots and chest, or nil and why.
 function V.parseExport(args)
-  local pos, slots = {}, 16
+  local pos, slots, chest = {}, 16, false
   local i = 2
   while i <= #args do
     local a = args[i]
@@ -640,6 +647,9 @@ function V.parseExport(args)
       if not slots or slots < 1 or slots > 64 then return nil, "--slots is 1 to 64" end
       slots = math.floor(slots)
       i = i + 2
+    elseif a == "--chest" then
+      chest = true
+      i = i + 1
     elseif a:sub(1, 2) == "--" then
       return nil, "unknown option " .. a
     else
@@ -647,20 +657,28 @@ function V.parseExport(args)
       i = i + 1
     end
   end
-  if #pos ~= 2 then return nil, "prefab export <file.bp> <out.lua> [--slots N]" end
-  return pos[1], pos[2], slots
+  if #pos ~= 2 then return nil, "prefab export <file.bp> <out.lua> [--slots N] [--chest]" end
+  return pos[1], pos[2], slots, chest
 end
 
 --- What to tell whoever is about to carry the program to a robot.
 function V.exportLines(path, info)
   local lines = { { string.format("Wrote %s: %d steps, %d moves, about %d s and %d energy.", path,
     info.steps, info.moves, info.seconds, math.ceil(info.energy)), "hi" } }
-  lines[#lines + 1] = { "Load the robot:", "fg" }
-  for _, l in ipairs(info.sheet) do
-    lines[#lines + 1] = { string.format("  slot %-5s %d  %s", l.slots, l.count, l.label), "fg" }
-  end
-  if info.loads > 1 then
-    lines[#lines + 1] = { string.format("That is %d loads: it walks back to the corner and waits for each.", info.loads), "warn" }
+  if info.chest then
+    lines[#lines + 1] = { "Put a chest right behind the robot, holding:", "fg" }
+    for _, l in ipairs(info.sheet) do
+      lines[#lines + 1] = { string.format("  %5d  %s", l.count, l.label), "fg" }
+    end
+    lines[#lines + 1] = { string.format("It needs an inventory controller, and makes %d trip(s) to the chest.", info.trips), "dim" }
+  else
+    lines[#lines + 1] = { "Load the robot:", "fg" }
+    for _, l in ipairs(info.sheet) do
+      lines[#lines + 1] = { string.format("  slot %-5s %d  %s", l.slots, l.count, l.label), "fg" }
+    end
+    if info.loads > 1 then
+      lines[#lines + 1] = { string.format("That is %d loads: it walks back to the corner and waits for each.", info.loads), "warn" }
+    end
   end
   if info.hover then
     lines[#lines + 1] = { string.format("Needs a hover upgrade from step %d: there is nothing near enough to fly over.", info.hover), "warn" }
@@ -672,16 +690,118 @@ end
 
 local function cliExport(args, o)
   local colours = { hi = 0x55FF55, fg = 0xFFFFFF, dim = 0xAAAAAA, warn = 0xFF5555 }
-  local src, dest, slots = V.parseExport(args)
+  local src, dest, slots, chest = V.parseExport(args)
   if not src then o(dest, 0xFF5555); return end
   local bp, err = loadFile(src)
   if not bp then o(tostring(err), 0xFF5555); return end
-  local program, info = E.program(bp, { slots = slots })
+  local program, info = E.program(bp, { slots = slots, chest = chest })
   if not program then o("Cannot export: " .. tostring(info), 0xFF5555); return end
-  if not (fs and fs.writeFile) then o("Nothing here can write a file.", 0xFF5555); return end
-  local ok, wErr = pcall(fs.writeFile, dest, program)
-  if not ok or wErr == false then o("Not saved: " .. tostring(wErr), 0xFF5555); return end
+  local ok, wErr = writeFile(dest, program)
+  if not ok then o("Not saved: " .. tostring(wErr), 0xFF5555); return end
   for _, l in ipairs(V.exportLines(dest, info)) do o(l[1], colours[l[2]]) end
+end
+
+-- ── With the rest of the pack ──────────────────────────────────────────
+-- Each of these asks for the other package when it is used, not at load,
+-- so prefab works exactly the same on a machine without it.
+local function optional(name)
+  local ok, mod = pcall(require, name)
+  if ok and type(mod) == "table" then return mod end
+end
+
+--- What is in reach, or nil and why. Nothing here needs the stock package:
+--- the inventory library belongs to the base.
+local function readStacks()
+  local inv = optional("peripheral.inventory")
+  if not inv then return nil, "inventory support is not available here" end
+  return L.scan(inv)
+end
+
+local function blueprintArg(args, o)
+  if not args[2] then o("Which blueprint?", 0xFF5555); return nil end
+  local bp, err = loadFile(args[2])
+  if not bp then o(tostring(err), 0xFF5555) end
+  return bp
+end
+
+local function cliNeed(args, o)
+  local bp = blueprintArg(args, o)
+  if not bp then return end
+  local stacks, names = readStacks()
+  if not stacks then o("Cannot read your inventories: " .. tostring(names), 0xFF5555); return end
+  local rows, short = L.need(bp, stacks)
+  o(string.format("%s, against what is on: %s", bp.name, table.concat(names, ", ")), 0xFFFF55)
+  for _, r in ipairs(rows) do
+    o(string.format("%5d of %-5d %s%s", math.min(r.have, r.need), r.need, r.label,
+      r.short > 0 and string.format("  (%d short)", r.short) or ""),
+      r.short > 0 and 0xFF5555 or 0xFFFFFF)
+  end
+  if short == 0 then o("You have everything it takes.", 0x55FF55)
+  else
+    o(string.format("%d block(s) short.", short), 0xFF5555)
+    if optional("stock.stock") then
+      o("prefab watch puts these on stock's monitor.", 0xAAAAAA)
+    end
+  end
+end
+
+local function cliWatch(args, o)
+  local bp = blueprintArg(args, o)
+  if not bp then return end
+  local S = optional("stock.stock")
+  if not S then o("This needs the stock package: pkg install stock", 0xFF5555); return end
+  if not S.saveWatches then o("This needs stock 1.0.2: pkg upgrade stock", 0xFF5555); return end
+  local watches, labels = S.readWatches(fs)
+  local off = args[3] == "--off"
+  local n = (off and L.unwatch or L.watch)(watches, labels, bp)
+  local ok, err = S.saveWatches(fs, watches, labels)
+  if not ok then
+    o("Not saved: " .. tostring(err) .. " (stock's list needs an admin)", 0xFF5555)
+    return
+  end
+  if off then o(string.format("stock stopped watching %d block(s) for %s.", n, bp.name), 0x55FF55)
+  else
+    o(string.format("stock is watching %d block(s) for %s.", n, bp.name), 0x55FF55)
+    o("`stock low` lists what is short, and the monitor flags it.", 0xAAAAAA)
+  end
+end
+
+local function cliPrint(args, o)
+  local bp = blueprintArg(args, o)
+  if not bp then return end
+  local PR, fmt = optional("printer"), optional("printerfmt")
+  if not PR or not fmt then o("This needs the printer package: pkg install printer", 0xFF5555); return end
+  local dry = args[3] == "--dry"
+  if not dry and not PR.available() then
+    o("No printer: " .. tostring(PR.unavailableReason and PR.unavailableReason() or "none attached"), 0xFF5555)
+    return
+  end
+  local width = PR.available() and PR.maxWidth() or fmt.MAX_WIDTH
+  local job = L.printJob(PR.job(bp.name), bp, P.report(bp, 16), width)
+  local cost = job:cost()
+  o(string.format("%d page(s): %d sheet(s), %d black ink.", #job:pages(), cost.paper, cost.black), 0xFFFFFF)
+  if dry then return end
+  local done, err, pages = job:commit()
+  if not done then
+    o(string.format("Stopped after %d page(s): %s", pages or 0, tostring(err)), 0xFF5555)
+    return
+  end
+  o(string.format("Printed %d page(s).", done), 0x55FF55)
+end
+
+local function cliCsv(args, o)
+  local bp = blueprintArg(args, o)
+  if not bp then return end
+  local dest = args[3]
+  if not dest then o("prefab csv <file.bp> <out.csv>", 0xFF5555); return end
+  local stacks = readStacks()
+  local rows = stacks and L.need(bp, stacks) or nil
+  local ok, err = writeFile(dest, L.csv(bp, rows))
+  if not ok then o("Not saved: " .. tostring(err), 0xFF5555); return end
+  o("Wrote " .. dest .. (rows and ", with what you have in it." or "."), 0x55FF55)
+  if fs.exists and fs.exists("/usr/modules/calc/init.lua") then
+    o("calc " .. dest .. " opens it as a worksheet.", 0xAAAAAA)
+  end
 end
 
 -- ── Command line ───────────────────────────────────────────────────────
@@ -693,7 +813,11 @@ local function help(o)
   o("  prefab info <file.bp> [slots]  what it takes to build", 0xFFFFFF)
   o("  prefab survey <file.bp>      read the site with a geolyzer", 0xFFFFFF)
   o("  prefab survey <w> <d> [--height N] [--at X Z] [--down N] [--up N]", 0xFFFFFF)
-  o("  prefab export <file.bp> <out.lua> [--slots N]   a program for a robot", 0xFFFFFF)
+  o("  prefab export <file.bp> <out.lua> [--slots N] [--chest]   a program for a robot", 0xFFFFFF)
+  o("  prefab need <file.bp>        what you have against what it takes", 0xFFFFFF)
+  o("  prefab watch <file.bp> [--off]   put its materials on stock's watch list", 0xFFFFFF)
+  o("  prefab print <file.bp> [--dry]   print its plans", 0xFFFFFF)
+  o("  prefab csv <file.bp> <out.csv>   its materials, for calc or anything else", 0xFFFFFF)
   o("  In the designer: Space paint, X Y Z change the view, PgUp/PgDn change the slice.", 0xAAAAAA)
 end
 
@@ -713,6 +837,10 @@ local function prefabCmd(args, o)
   end
   if a == "survey" then cliSurvey(args, o); return end
   if a == "export" then cliExport(args, o); return end
+  if a == "need" then cliNeed(args, o); return end
+  if a == "watch" then cliWatch(args, o); return end
+  if a == "print" then cliPrint(args, o); return end
+  if a == "csv" then cliCsv(args, o); return end
   if a == "new" then
     local x, y, z = tonumber(args[2]), tonumber(args[3]), tonumber(args[4])
     local function side(n) return n and n >= 1 and n <= B.MAX_SIDE and n == math.floor(n) end

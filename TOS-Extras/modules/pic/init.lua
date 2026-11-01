@@ -394,8 +394,12 @@ local function cliConvert(args, o)
   if not img then o("Cannot convert: " .. tostring(err), 0xFF5555); return end
   local body = O.encode(img)
   if not (fs and fs.writeFile) then o("Nothing here can write a file.", 0xFF5555); return end
-  local okW, wErr = pcall(fs.writeFile, dest, body)
-  if not okW or wErr == false then o("Not saved: " .. tostring(wErr), 0xFF5555); return end
+  -- A refusal is a return of false and a reason, not an error.
+  local okW, wErr, why = pcall(fs.writeFile, dest, body)
+  if not okW or wErr == false or wErr == nil then
+    o("Not saved: " .. tostring(okW and (why or "the write was refused") or wErr), 0xFF5555)
+    return
+  end
   o(string.format("Wrote %s: %dx%d cells, %d bytes.", dest, img.w, img.h, #body), 0x55FF55)
 end
 

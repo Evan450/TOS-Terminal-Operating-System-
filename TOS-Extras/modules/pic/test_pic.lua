@@ -426,7 +426,11 @@ local function machine(opts)
       return out
     end,
     readFile = function(p) return fx.files[p] end,
-    writeFile = function(p, d) fx.files[p] = d; return true end,
+    writeFile = function(p, d)
+      if opts.refuse then return false, opts.refuse end
+      fx.files[p] = d
+      return true
+    end,
   }
   local function req(name)
     if name == "component" then return component end
@@ -571,6 +575,14 @@ do
   test("info reads a .pic's", has(fx.run({ "info", "/a.pic" }), "MineOS .pic (OCIF 8)"))
   test("no such file says so", has(fx.run({ "/nope.png" }), "No such file"))
   test("no argument is the help", has(fx.run({}), "pic convert"))
+end
+
+do
+  -- A real refusal is a return, not an error, and has to say why.
+  local fx = machine({ files = { ["/a.png"] = FIX.big }, refuse = "access denied" })
+  local out = fx.run({ "convert", "/a.png", "/a.pic" })
+  test("a refused convert says why, not \"false\"", has(out, "Not saved: access denied"), out)
+  test("...and claims nothing", not has(out, "Wrote"), out)
 end
 
 do

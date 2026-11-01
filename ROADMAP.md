@@ -1039,4 +1039,10 @@ SURVEY BUILT 2026-10-31 (test\_prefab.lua 91 -&gt; 142): reads in 4x4x4 cubes an
 
 EXPORT BUILT 2026-10-31 (test\_prefab\_export.lua, 62): one Lua file for OpenOS, run for real against a simulated world. Facing-independent, so no compass; refills at the corner, saves its place when it stops, resumes; export names the step that needs a hover upgrade, and the simulator stopped at that same step. Blueprint strings go through %q and comments lose control characters: a bare CR would have ended the comment and made the rest code. SEEN on the runner: exported on real TOS, run on real OpenOS against the stand-in robot (--robot): 42 of 42 in the right cells from the right slots, none twice. A real robot has not been tried. Its place is lost on a power cut, and it cannot dig.
 
-NEXT, in order: supply from a chest, clearing the site, drones, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc.
+CHEST SUPPLY BUILT 2026-10-31 (test\_prefab\_export.lua 62 -&gt; 90): export --chest; an empty robot reads a chest behind its start, takes what the rest of the build needs by name and damage, and returns leftovers. Export's route counts include the trips. SEEN under real OpenOS with an inventory controller stand-in (--robot-chest): took exactly 40 cobblestone and 2 glass past a stack of dirt, 42 of 42 cells right.
+
+LINKS BUILT 2026-10-31 (test\_prefab\_links.lua, against the real stock, printer and calc code): prefab need, watch, print and csv, all optional. There is no package called supply: the operator's "supply package" was taken to be stock. SEEN on real TOS with all three really installed and a stand-in transposer (--transposer): need read a real chest through the kernel's library, watch then `stock low` flagged both shortfalls, and they were still there after a reboot.
+
+OTHER PAIRS WORTH LINKING, not done: web showing &lt;img&gt; through pic; stock's listing through printer, or to CSV for calc; warhead's reports through printer.
+
+NEXT, in order: clearing the site, drones, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc.

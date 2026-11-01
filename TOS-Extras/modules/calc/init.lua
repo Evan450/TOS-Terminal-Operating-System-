@@ -456,6 +456,15 @@ local function run(args, o)
 
   -- ── Files ──────────────────────────────────────────────────────
   local function haveFs() return fs and fs.writeFile and fs.readFile end
+  --- true, or false and why. fs.writeFile refuses by RETURNING false and a
+  --- reason, so the second value of a pcall of it is only that false, and
+  --- the message read "Save failed: false".
+  local function writeOut(target, data)
+    local ok, done, why = pcall(fs.writeFile, target, data)
+    if not ok then return false, tostring(done) end
+    if done == false or done == nil then return false, tostring(why or "the write was refused") end
+    return true
+  end
   local function homeDir()
     if fs and fs.home then
       local okH, h = pcall(fs.home)
@@ -486,8 +495,8 @@ local function run(args, o)
     target = absPath(target or path)
     if not target then return false end
     if not target:match("[^/]+%.[^/]*$") then target = target .. DEFAULT_EXT end
-    local okW, e = pcall(fs.writeFile, target, S.serialize(sh))
-    if okW and e ~= false then
+    local okW, e = writeOut(target, S.serialize(sh))
+    if okW then
       path, dirty = target, false
       say("Saved " .. target, "hi")
       return true
@@ -926,8 +935,8 @@ local function run(args, o)
       local t = promptText("Enter print file name:", suggest)
       if not t or t == "" then return end
       t = absPath(t)
-      local okW, e = pcall(fs.writeFile, t, P.toText(pages))
-      if okW and e ~= false then say("Printed " .. #pages .. " page(s) to " .. t, "hi")
+      local okW, e = writeOut(t, P.toText(pages))
+      if okW then say("Printed " .. #pages .. " page(s) to " .. t, "hi")
       else say("Not written: " .. tostring(e), "err") end
     elseif target == "printer" then
       local PR, measure, maxW, _, fmt = printerParts()
@@ -1159,8 +1168,8 @@ local function run(args, o)
     if not t or t == "" then return end
     recalc(true)
     local p = absPath(t)
-    local okW, e = pcall(fs.writeFile, p, S.toCSV(sh, ctx))
-    if okW and e ~= false then say("Exported " .. p, "hi") else say("Export failed: " .. tostring(e), "err") end
+    local okW, e = writeOut(p, S.toCSV(sh, ctx))
+    if okW then say("Exported " .. p, "hi") else say("Export failed: " .. tostring(e), "err") end
   end
   CMD["file.list"] = function()
     local lines = { { "Worksheets in " .. dir, "title" }, "" }

@@ -209,4 +209,36 @@ function S.decodeWatches(text)
   return watches, labels
 end
 
+-- ============================================================
+-- Where the list lives
+-- ============================================================
+--! /etc is a protected path, closed above the permission model, so this
+--! file has to be on securefs's WRITE_PROTECTED_EXEMPT list. It was not until
+--! 2026-10-31, so no threshold was ever saved on a real machine, and the
+--! refusal went unseen (see saveWatches). An admin can write it and anyone
+--! can read it, which is what a base-wide alarm level wants.
+S.WATCH_FILE = "/etc/stock-watch.cfg"
+
+--- Thresholds and labels, through the caller's own `fs`. prefab reads the
+--- list through this too, so there is one idea of where it is.
+function S.readWatches(fs)
+  if not (fs and fs.exists and fs.readFile) or not fs.exists(S.WATCH_FILE) then return {}, {} end
+  local ok, data = pcall(fs.readFile, S.WATCH_FILE)
+  if not ok or not data then return {}, {} end
+  return S.decodeWatches(data)
+end
+
+--- Save the list. Returns true, or false and why.
+--! Through the CALLER's session, so someone who may not write it is refused
+--! and told. fs.writeFile refuses by RETURNING false and a reason, not by
+--! throwing, so pcall alone calls a refused write a success: that is how this
+--! said "saved" on every machine it ever ran on.
+function S.saveWatches(fs, watches, labels)
+  if not (fs and fs.writeFile) then return false, "no filesystem access" end
+  local ok, done, why = pcall(fs.writeFile, S.WATCH_FILE, S.encodeWatches(watches, labels))
+  if not ok then return false, tostring(done) end
+  if done == false or done == nil then return false, tostring(why or "the write was refused") end
+  return true
+end
+
 return S

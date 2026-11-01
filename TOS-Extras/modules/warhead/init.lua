@@ -199,8 +199,10 @@ end
 local function saveSettings(st)
   local p = settingsPath()
   if not p or not fs.writeFile then return false, "no home directory to save in" end
-  local okW, err = pcall(fs.writeFile, p, W.serializeSettings(st))
-  if not okW or err == false then return false, tostring(err) end
+  -- A refusal is a return of false and a reason, not an error.
+  local okW, done, why = pcall(fs.writeFile, p, W.serializeSettings(st))
+  if not okW then return false, tostring(done) end
+  if done == false or done == nil then return false, tostring(why or "the write was refused") end
   return true
 end
 

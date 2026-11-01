@@ -33,7 +33,7 @@
 -- the real screen.
 return {
   name        = "calc",
-  version     = "2.0.0",
+  version     = "2.0.1",
   kind        = "command",
   category    = "productivity",
   description = "Spreadsheet, the Lotus 1-2-3 way: / menus, pointing, @functions, formats, copy/move, sort, graphs, print.",

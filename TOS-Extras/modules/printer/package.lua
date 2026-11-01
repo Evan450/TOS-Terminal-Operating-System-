@@ -30,7 +30,7 @@
 -- also hand it your ink.
 return {
   name        = "printer",
-  version     = "1.0.0",
+  version     = "1.0.1",
   kind        = "command",
   category    = "drivers",
   description = "Printer driver for OpenPrinter: require(\"printer\") + a `printer` command (status, print, preview, scan, tags).",

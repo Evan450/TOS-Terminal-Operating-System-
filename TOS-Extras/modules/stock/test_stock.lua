@@ -189,6 +189,45 @@ do
 end
 
 -- ── Watch persistence ───────────────────────────────────────────────
+print("\n-- where the list lives --")
+do
+  --! A filesystem shaped like the sandbox's: a refusal is a return of false
+  --! and a reason, not an error. A fake that threw is how this went unseen.
+  --! That the path really can be written on a machine is not something a fake
+  --! can show: build/test_addon_cfg_writable.py reads securefs's own list,
+  --! and two fakes in a row let a path through that a real machine refused.
+  local function sandboxFs()
+    local fs = { files = {} }
+    function fs.exists(p) return fs.files[p] ~= nil end
+    function fs.readFile(p) return fs.files[p] end
+    function fs.writeFile(p, d) fs.files[p] = d; return true end
+    return fs
+  end
+
+  local fs = sandboxFs()
+  local ok, why = S.saveWatches(fs, { ["minecraft:stone#0"] = 32 }, { ["minecraft:stone#0"] = "Stone" })
+  test("a threshold saves on a filesystem shaped like a real machine's", ok == true)
+  test("...with nothing to complain of", why == nil)
+  local w, l = S.readWatches(fs)
+  eq("and reads back", 32, w["minecraft:stone#0"])
+  eq("label included", "Stone", l["minecraft:stone#0"])
+
+  local refused = sandboxFs()
+  refused.writeFile = function() return false, "access denied" end
+  local okR, whyR = S.saveWatches(refused, { a = 1 }, {})
+  test("a refused save is a failure, though nothing threw", okR == false)
+  eq("...and says why", "access denied", whyR)
+  local thrown = sandboxFs()
+  thrown.writeFile = function() error("disk on fire", 0) end
+  local okT, whyT = S.saveWatches(thrown, { a = 1 }, {})
+  test("a save that throws is a failure too", okT == false and whyT == "disk on fire")
+  test("no filesystem at all is a failure", S.saveWatches(nil, {}, {}) == false)
+
+  local empty = S.readWatches(sandboxFs())
+  test("no list is an empty list", next(empty) == nil)
+  test("no filesystem is an empty list", next((S.readWatches(nil))) == nil)
+end
+
 print("\n-- watch persistence --")
 do
   local text = S.encodeWatches(

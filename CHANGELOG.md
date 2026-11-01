@@ -20,8 +20,12 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 70 rounds of work:
+Everything since v1.5.0, in 74 rounds of work:
 
+- [`prefab` works with `stock`, `printer` and `calc`](#prefab-works-with-stock-printer-and-calc)
+- [A refused save is not called saved](#a-refused-save-is-not-called-saved)
+- [`stock` keeps its thresholds](#stock-keeps-its-thresholds)
+- [A `prefab` robot can fetch its own blocks](#a-prefab-robot-can-fetch-its-own-blocks)
 - [`prefab export` writes a program for a robot](#prefab-export-writes-a-program-for-a-robot)
 - [`prefab survey` reads a building site](#prefab-survey-reads-a-building-site)
 - [`prefab`, a base designer, is started](#prefab-a-base-designer-is-started)
@@ -92,6 +96,22 @@ Everything since v1.5.0, in 70 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `prefab` works with `stock`, `printer` and `calc`
+
+`prefab` 0.5.0. `prefab need` compares a build with what's in your inventories, `prefab watch` puts its materials on `stock`'s watch list so `stock low` flags what's short, `prefab print` prints the materials and a plan of each layer, and `prefab csv` writes the materials for `calc`. Each one tells you what to install if the other package isn't there, and `prefab` works the same without them.
+
+### A refused save is not called saved
+
+`write` marked a document saved when the save had been refused, so you could lose your work thinking it was safe. `printer scan` said it had written its file, the same way. `calc`, `warhead` and `pic` noticed but told you only "false". All of them now say what happened and why.
+
+### `stock` keeps its thresholds
+
+`stock` 1.0.2. Setting a threshold in `stock` never worked on a real machine. Its list in `/etc` wasn't on the list of files an admin may change there, so the save was refused even for root, and `stock` didn't notice: W said it had saved, and the threshold was gone next time. It's on the list now, along with `rbmk.cfg`, `rbmk-display.cfg`, `cluster.cfg` and `cluster-storage.cfg`, which had the same problem. A save that fails says why.
+
+### A `prefab` robot can fetch its own blocks
+
+`prefab` 0.4.0. With `prefab export --chest` the robot starts empty and takes what it needs from a chest behind it, by name and damage, leaving anything else in there alone. It goes back when it runs out, and finishes parked on the chest with any leftovers returned. It needs an inventory controller.
 
 ### `prefab export` writes a program for a robot
 

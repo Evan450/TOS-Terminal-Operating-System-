@@ -60,10 +60,14 @@ end
 
 --- Walk the build the way the program will, counting what it costs, and
 --- finding the first step a robot without a hover upgrade could not reach.
---- This has to stay the same walk as travel() in the program below; the
---- tests hold the two to the same counts.
-function E.walk(bp, steps)
+--- This has to stay the same walk as travel() and restock() in the program
+--- below; the tests hold the two to the same counts. With opts.chest, opts.map
+--- says which slots each block has, and stacks are taken as P.STACK: blocks
+--- that stack lower make more trips than this counts.
+function E.walk(bp, steps, opts)
+  opts = opts or {}
   local placed = {}
+  if opts.chest then placed["0,1,1"] = true end
   local function solid(x, y, z)
     if y < 1 then return true end
     return placed[x .. "," .. y .. "," .. z] == true
@@ -78,10 +82,11 @@ function E.walk(bp, steps)
     return false
   end
   local x, y, z, dir = 1, 1, 1, 0
-  local moves, turns, hover = 0, 0, nil
+  local moves, turns, hover, trips = 0, 0, nil, 0
   local n = 0
   local function step(nx, ny, nz)
-    if not hover and not valid(x, y, z) and not valid(nx, ny, nz) then hover = n end
+    -- Going down is always allowed.
+    if ny >= y and not hover and not valid(x, y, z) and not valid(nx, ny, nz) then hover = n end
     x, y, z = nx, ny, nz
     moves = moves + 1
   end
@@ -90,9 +95,7 @@ function E.walk(bp, steps)
     turns = turns + (diff == 3 and 1 or diff)
     dir = d
   end
-  for i, s in ipairs(steps) do
-    n = i
-    local tx, ty, tz = s[1], s[2] + 1, s[3]
+  local function travel(tx, ty, tz)
     while y < ty do step(x, y + 1, z) end
     if x ~= tx then
       face(tx > x and 0 or 2)
@@ -102,9 +105,30 @@ function E.walk(bp, steps)
       face(tz > z and 1 or 3)
       while z ~= tz do step(x, y, z + (tz > z and 1 or -1)) end
     end
-    placed[s[1] .. "," .. s[2] .. "," .. s[3]] = true
+    while y > ty do step(x, y - 1, z) end
   end
-  return moves, turns, hover
+  local left, carried = {}, {}
+  for _, s in ipairs(steps) do
+    left[s[4]] = (left[s[4]] or 0) + 1
+    carried[s[4]] = 0
+  end
+  for i, s in ipairs(steps) do
+    n = i
+    local k = s[4]
+    if opts.chest and carried[k] == 0 then
+      travel(0, 2, 1)
+      trips = trips + 1
+      for key, need in pairs(left) do
+        carried[key] = math.min(need, #opts.map[key] * P.STACK)
+      end
+    end
+    travel(s[1], s[2] + 1, s[3])
+    placed[s[1] .. "," .. s[2] .. "," .. s[3]] = true
+    left[k] = left[k] - 1
+    carried[k] = carried[k] - 1
+  end
+  if opts.chest then travel(0, 2, 1) end
+  return moves, turns, hover, trips
 end
 
 -- The builder. Everything above "--[[DATA]]" in the output is generated.
@@ -193,6 +217,7 @@ local function travel(tx, ty, tz)
     face(tz > z and 1 or 3)
     while z ~= tz do go(FRONT); z = z + (tz > z and 1 or -1) end
   end
+  while y > ty do go(DOWN); y = y - 1 end
 end
 
 local function holds(slot, b)
@@ -201,11 +226,50 @@ local function holds(slot, b)
   return s ~= nil and s.name == b[1] and s.damage == b[2]
 end
 
---- Select a slot holding this block. With none left, walk to the corner
---- and wait there, where a player can reach, until there is.
+--- Stand over the chest and take what the rest of the build still needs,
+--- by name and damage, leaving everything else in it alone. The chest sits
+--- behind where the robot started, outside the building, so the way there
+--- is clear at any height.
+local function restock()
+  travel(0, 2, 1)
+  local size = ic.getInventorySize(DOWN)
+  if not size then stop("no chest under the robot: it goes right behind where the robot started") end
+  local want = {}
+  for i = at, TOTAL do
+    local k = STEPS:sub(i * 4, i * 4)
+    want[k] = (want[k] or 0) + 1
+  end
+  for key, list in pairs(SLOTS) do
+    for _, s in ipairs(list) do want[key] = (want[key] or 0) - robot.count(s) end
+  end
+  for cs = 1, size do
+    local st = ic.getStackInSlot(DOWN, cs)
+    for key, b in pairs(BLOCKS) do
+      if st and st.name == b[1] and st.damage == b[2] then
+        local left = st.size
+        for _, s in ipairs(SLOTS[key]) do
+          if left > 0 and want[key] > 0 and (robot.count(s) == 0 or holds(s, b)) then
+            local n = math.min(left, want[key], robot.space(s))
+            if n > 0 then
+              robot.select(s)
+              local before = robot.count(s)
+              ic.suckFromSlot(DOWN, cs, n)
+              local got = robot.count(s) - before
+              left, want[key] = left - got, want[key] - got
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+--- Select a slot holding this block. Out of it, go to the chest if there is
+--- one. Otherwise, or if the chest has none either, wait where a player can
+--- reach until there is some.
 local function take(key)
   local b = BLOCKS[key]
-  local told = false
+  local told, stocked = false, false
   while true do
     local wrong = false
     for _, slot in ipairs(SLOTS[key]) do
@@ -214,14 +278,21 @@ local function take(key)
         wrong = true
       end
     end
-    if not told then
-      told = true
-      travel(1, y, 1)
-      print((wrong and "Wrong item for " or "Out of ") .. b[3] .. ": load it into slot(s) "
-        .. table.concat(SLOTS[key], ", "))
-      computer.beep(800, 0.3)
+    if CHEST and not wrong and not stocked then
+      restock()
+      stocked = true
+    else
+      if not told then
+        told = true
+        travel(CHEST and 0 or 1, CHEST and 2 or y, 1)
+        if wrong then print("Wrong item for " .. b[3] .. " in slot(s) " .. table.concat(SLOTS[key], ", "))
+        elseif CHEST then print("The chest has no " .. b[3] .. ": put some in it.")
+        else print("Out of " .. b[3] .. ": load it into slot(s) " .. table.concat(SLOTS[key], ", ")) end
+        computer.beep(800, 0.3)
+      end
+      os.sleep(2)
+      stocked = false
     end
-    os.sleep(2)
   end
 end
 
@@ -249,6 +320,7 @@ local function main(...)
   if robot.inventorySize() < MAXSLOT then
     stop("this needs " .. MAXSLOT .. " inventory slots and the robot has " .. robot.inventorySize())
   end
+  if CHEST and not ic then stop("taking from a chest needs an inventory controller") end
   local layer = nil
   while at <= TOTAL do
     local i = (at - 1) * 4
@@ -258,6 +330,15 @@ local function main(...)
     travel(tx, ty + 1, tz)
     put(tx, ty, tz)
     at = at + 1
+  end
+  if CHEST then
+    -- Back over the chest, and anything left over goes back in it.
+    travel(0, 2, 1)
+    for _, list in pairs(SLOTS) do
+      for _, s in ipairs(list) do
+        if robot.count(s) > 0 then robot.select(s); robot.drop(DOWN) end
+      end
+    end
   end
   os.remove(STATE)
   print(string.format("Done: %d placed, %d already there.", placed, there))
@@ -272,7 +353,8 @@ if not ok and err ~= STOP then error(err, 0) end
 --- would end the comment and leave the rest of the line as code.
 local function plain(s) return (tostring(s):gsub("%c", " ")) end
 
---- The program for a blueprint. opts.slots is the robot's inventory.
+--- The program for a blueprint. opts.slots is the robot's inventory, and
+--- opts.chest has it fetch from a chest instead of being loaded by hand.
 --- Returns source and a table describing it, or nil and why.
 function E.program(bp, opts)
   opts = opts or {}
@@ -307,9 +389,17 @@ function E.program(bp, opts)
 
   local head = { "-- Built by prefab from: " .. plain(bp.name),
     "-- Stand the robot in the corner of the first layer. The building goes ahead",
-    "-- of it and to its right, whichever way it faces. Load it first:" }
-  for _, l in ipairs(sheet) do
-    head[#head + 1] = string.format("--   slot %s: %s (%d)", l.slots, plain(l.label), l.count)
+    "-- of it and to its right, whichever way it faces." }
+  if opts.chest then
+    head[#head + 1] = "-- Put a chest right behind it, holding:"
+    for _, l in ipairs(sheet) do
+      head[#head + 1] = string.format("--   %d %s", l.count, plain(l.label))
+    end
+  else
+    head[#head + 1] = "-- Load it first:"
+    for _, l in ipairs(sheet) do
+      head[#head + 1] = string.format("--   slot %s: %s (%d)", l.slots, plain(l.label), l.count)
+    end
   end
   head[#head + 1] = string.format("local NAME = %q", bp.name)
   head[#head + 1] = "local BLOCKS = {"
@@ -319,12 +409,14 @@ function E.program(bp, opts)
   for _, l in ipairs(slots) do head[#head + 1] = l end
   head[#head + 1] = "}"
   head[#head + 1] = string.format("local TOTAL, LAYERS, MAXSLOT = %d, %d, %d", #steps, bp.sy, maxSlot)
+  head[#head + 1] = "local CHEST = " .. tostring(opts.chest == true)
   -- x, y, z and the key, a character each.
   head[#head + 1] = string.format("local STEPS = %q", table.concat(encoded))
 
-  local moves, turns, hover = E.walk(bp, steps)
+  local moves, turns, hover, trips = E.walk(bp, steps, { chest = opts.chest, map = map })
   return table.concat(head, "\n") .. "\n--[[DATA]]\n" .. BODY, {
     steps = #steps, moves = moves, turns = turns, hover = hover, loads = loads, sheet = sheet,
+    chest = opts.chest == true, trips = trips,
     energy = moves * E.MOVE_ENERGY + turns * E.TURN_ENERGY,
     seconds = math.ceil((moves + turns + #steps) * E.DELAY),
   }

@@ -21,8 +21,6 @@ local component = require("component")
 local computer  = require("computer")
 local S         = require("stock.stock")
 
-local WATCH_FILE = "/etc/stock-watch.cfg"
-
 -- ── Screen acquisition over a raw GPU proxy (same kit the game ────────
 -- ── packages use; duplicated rather than shared so installing  ────────
 -- ── `stock` pulls in nothing else). ───────────────────────────────────
@@ -114,30 +112,14 @@ end
 -- ── Watch list persistence ────────────────────────────────────────────
 -- Stored as plain tab-separated lines (see stock.lua): hand-editable, and
 -- never executable. Reads/writes go through the sandbox's session-bound
--- `fs`, so an operator without write access to /etc simply cannot save —
--- which is the correct outcome, not a bug to work around.
+-- `fs`, so an operator without write access simply cannot save — which is
+-- the correct outcome, not a bug to work around.
 -- `fs` is the sandbox's session-bound securefs (the fs.read/fs.write
 -- caps), reached as a bare global exactly as calc does.
 local function haveFs() return fs and fs.readFile and fs.writeFile end
 
-local function loadWatches()
-  if not haveFs() or not fs.exists or not fs.exists(WATCH_FILE) then return {}, {} end
-  local ok, data = pcall(fs.readFile, WATCH_FILE)
-  if not ok or not data then return {}, {} end
-  return S.decodeWatches(data)
-end
-
-local function saveWatches(watches, labels)
-  if not haveFs() then return false, "no filesystem access" end
-  --! Writes through the CALLER's securefs session, so a non-admin simply
-  --! cannot change the thresholds — /etc is admin-writable. That is the
-  --! right outcome for a base-wide alarm level rather than a bug to route
-  --! around, and the caller surfaces the refusal instead of pretending the
-  --! setting was saved.
-  local ok, err = pcall(fs.writeFile, WATCH_FILE, S.encodeWatches(watches, labels))
-  if not ok then return false, tostring(err or "write failed") end
-  return true
-end
+local function loadWatches() return S.readWatches(haveFs() and fs or nil) end
+local function saveWatches(watches, labels) return S.saveWatches(fs, watches, labels) end
 
 -- ── Key decoding ──────────────────────────────────────────────────────
 
@@ -420,7 +402,7 @@ local function cmdStock(args, o)
     o("In the monitor: R rescan · / filter · L low-only · W set a", 0xAAAAAA)
     o("threshold on the highlighted item · U remove it · "
       .. quitLabel() .. " quit.", 0xAAAAAA)
-    o("Thresholds are saved in " .. WATCH_FILE .. ".", 0xAAAAAA)
+    o("Thresholds are saved in " .. S.WATCH_FILE .. ".", 0xAAAAAA)
     o("", 0xAAAAAA)
     o("Needs a transposer or inventory controller with at least one", 0xAAAAAA)
     o("inventory next to it. Items are totalled by their registry", 0xAAAAAA)

@@ -14,7 +14,8 @@ answers off the real screen.
         [--os tos|openos] [--install-disk] [--boot-tier N]
         [--extra-disk DIR] [--extra-disk-tier N]
         [--floppy NAME=DIR]... [--floppy-in NAME]
-        [--trace] [--keep] [--internet] [--geolyzer] [--robot]
+        [--trace] [--keep] [--internet] [--geolyzer] [--transposer]
+        [--robot [--robot-chest]]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
 A script is one step per line (HeadlessTOS.java's runScript lists them):
@@ -277,6 +278,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="a stand-in geolyzer over a small built-in site")
     ap.add_argument("--robot", action="store_true",
                     help="a stand-in robot component, printing each block it places")
+    ap.add_argument("--transposer", action="store_true",
+                    help="a stand-in transposer with a small chest to the north")
+    ap.add_argument("--robot-chest", action="store_true",
+                    help="with --robot: starts empty, with an inventory controller and a chest")
     ap.add_argument("--machines", choices=["1", "2"], default="1",
                     help="2 adds a second computer with its own fresh TOS, joined by "
                          "network cards and a relay; `machine N` picks which one")
@@ -382,6 +387,10 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--geolyzer")
     if args.robot:
         cmd.append("--robot")
+    if args.robot_chest:
+        cmd.append("--robot-chest")
+    if args.transposer:
+        cmd.append("--transposer")
     if args.seats != "1":
         cmd += ["--seats", args.seats]
     if peer_boot is not None:

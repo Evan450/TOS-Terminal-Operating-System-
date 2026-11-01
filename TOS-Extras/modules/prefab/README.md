@@ -2,7 +2,7 @@
 
 A blueprint designer. A screen is flat and a building isn't, so you draw one slice of the building at a time, looking along X, Y or Z, with the slice behind it showing faintly under the one you're drawing. It also counts what a build takes, finds any block a robot couldn't place, reads a real site with a geolyzer to find the best place for the floor, and writes a program for a robot to build it.
 
-**Not on the pack yet.** This is 0.3.0: it has been tested against simulations of a geolyzer and a robot, but never in a real world. `docs/PREFAB.md` on the `dev` branch has what was checked against OpenComputers itself, and what's left.
+**Not on the pack yet.** This is 0.5.0: it has been tested against simulations of a geolyzer and a robot, but never in a real world. `docs/PREFAB.md` on the `dev` branch has what was checked against OpenComputers itself, and what's left.
 
 ## Use
 
@@ -85,13 +85,33 @@ The building goes ahead of it and to its right. On OpenOS, run the file.
 
 The robot needs an inventory upgrade and OpenOS. Carry the file over on a floppy, load the slots, stand it in the corner, and run the file. `--slots N` says how many inventory slots it has, 16 by default.
 
+**Or let it fetch for itself:** `prefab export hut.bp build.lua --chest` leaves the robot empty. Put a chest right behind where it starts, holding what the build needs. It takes only those blocks, so the chest can hold other things too, goes back whenever it runs out, and finishes parked on the chest with any leftovers returned. It needs an inventory controller for this.
+
 - **No compass needed.** The building goes ahead of the robot and to its right, whichever way it's facing.
-- **Running out:** it walks back to the corner, says what it wants, and carries on once you've loaded it.
+- **Running out:** it walks back to the corner, or the chest, says what it wants, and carries on once it's there.
 - **An inventory controller** lets it check each item, so the wrong block in a slot is refused rather than built.
 - **If it stops,** it says why and saves its place. Fix the problem and run the file again. Run it with `fresh` to start over.
 - **It can't dig yet.** Clear the site first: anything solid in its way stops it.
 - **A power cut loses its place.** It only saves when it stops itself, so after one, stand it back in the corner and run it with `fresh`.
 - **Stairs and doors** may come out facing the wrong way, because a blueprint doesn't record facing yet.
+
+## With other add-ons
+
+These all work without the other package, or tell you what to install. The picker suggests them when you pick `prefab`.
+
+```
+prefab need hut.bp              what you have against what it takes
+prefab watch hut.bp             put its materials on stock's watch list
+prefab watch hut.bp --off       take them off again
+prefab print hut.bp             print the materials and a plan of each layer
+prefab print hut.bp --dry       what that would cost, without printing
+prefab csv hut.bp mats.csv      the materials, for calc or anything else
+```
+
+- **`need`** reads everything next to a transposer or inventory controller. It only reads, and never moves an item.
+- **`watch`** needs `stock` 1.0.2 and an admin. After it, `stock low` and the monitor flag what's short. A higher threshold you already set stays, and `--off` only removes what this build set.
+- **`print`** needs `printer`. Rows wider than the paper go across several strips.
+- **`csv`** adds what you have when it can read your inventories.
 
 ## The file
 

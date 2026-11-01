@@ -274,8 +274,12 @@ local function cmdScan(pos, o)
   if out then
     if not (fs and fs.writeFile) then o("No filesystem access.", C_ERR); return end
     local body = table.concat(lines, "\n")
-    local ok, wErr = pcall(fs.writeFile, out, body)
-    if not ok then o("Cannot write " .. out .. ": " .. tostring(wErr), C_ERR); return end
+    -- A refusal is a return of false and a reason, not an error.
+    local ok, wErr, why = pcall(fs.writeFile, out, body)
+    if not ok or wErr == false or wErr == nil then
+      o("Cannot write " .. out .. ": " .. tostring(ok and (why or "the write was refused") or wErr), C_ERR)
+      return
+    end
     o(string.format("Scanned %d line(s) into %s.", #lines, out), C_OK)
     return
   end

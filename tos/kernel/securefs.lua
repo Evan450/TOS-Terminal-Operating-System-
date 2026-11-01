@@ -332,6 +332,16 @@ local WRITE_PROTECTED_EXEMPT = {
   ["/etc/chat-groups.cfg"]     = true,  -- multi-operator chat groups
   ["/etc/intercom.cues"]       = true,  -- announcement catalog (intercom pkg)
   ["/etc/intercom.cfg"]        = true,  -- announcement receive policy
+  --! Add-on configs an admin is told to change. None of these was listed, so
+  --! stock's thresholds were refused on every machine, and with stock not
+  --! looking at the answer it said they had saved; the rbmk README's procedure
+  --! could not be followed either. build/test_addon_cfg_writable.py now fails
+  --! on any add-on config missing from this list.
+  ["/etc/stock-watch.cfg"]     = true,  -- stock's thresholds
+  ["/etc/rbmk.cfg"]            = true,  -- rbmk-control's reactor settings
+  ["/etc/rbmk-display.cfg"]    = true,  -- rbmk-control's panel settings
+  ["/etc/cluster-storage.cfg"] = true,
+  ["/etc/cluster.cfg"]         = true,  -- a Manager's shared_secret goes here
   ["/etc/jbod.cfg"]            = true,  -- JBOD pool table (opt-in feature)
   ["/etc/widgets"]             = true,  -- dir, see C15 widget cache
   ["/var/log"]          = true,  -- log rotation needs to remove

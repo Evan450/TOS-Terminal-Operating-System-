@@ -157,8 +157,12 @@ end
 
 local function saveFile(path, text)
   if not haveFs() then return false, "no filesystem access" end
-  local ok, err = pcall(fs.writeFile, path, text)
-  if not ok then return false, tostring(err or "write failed") end
+  --! fs.writeFile refuses by RETURNING false and a reason, not by throwing,
+  --! so pcall alone called a refused save a success, and the document was
+  --! marked saved when it was not. (build/test_addon_fs_refusals.py)
+  local ok, done, why = pcall(fs.writeFile, path, text)
+  if not ok then return false, tostring(done or "write failed") end
+  if done == false or done == nil then return false, tostring(why or "the write was refused") end
   return true
 end
 

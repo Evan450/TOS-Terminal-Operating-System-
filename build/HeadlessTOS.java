@@ -214,6 +214,45 @@ public class HeadlessTOS {
   static boolean withTape;      // --tape
   static boolean withGeolyzer;  // --geolyzer
   static boolean withRobot;     // --robot
+  static boolean withChest;     // --robot-chest
+  static boolean withTransposer; // --transposer
+
+  /**
+   * A transposer with one chest, to the north, holding 20 cobblestone and a
+   * glass block. What it is for is the real peripheral.inventory library, and
+   * the capability check in front of it, which only a package installed on a
+   * real machine goes through. A NoteBlock for the reason Geolyzer is.
+   */
+  public static class StandInTransposer extends NoteBlock {
+    private Node transposerNode;
+    private static final String[] NAMES = { "minecraft:cobblestone", "minecraft:glass" };
+    private static final int[] SIZES = { 20, 1 };
+
+    @Override public Node node() {
+      if (transposerNode == null) {
+        transposerNode = Network.newNode(this, Visibility.Network(), Network.newNode$default$3())
+            .withComponent("transposer").create();
+      }
+      return transposerNode;
+    }
+
+    @Callback public Object[] getInventorySize(Context context, Arguments args) {
+      if (args.checkInteger(0) != 2) return new Object[] { null, "no inventory" };
+      return new Object[] { 27 };
+    }
+
+    @Callback public Object[] getStackInSlot(Context context, Arguments args) {
+      int side = args.checkInteger(0), slot = args.checkInteger(1) - 1;
+      if (side != 2 || slot >= NAMES.length) return new Object[] { null };
+      Map<String, Object> stack = new HashMap<>();
+      stack.put("name", NAMES[slot]);
+      stack.put("label", NAMES[slot]);
+      stack.put("damage", 0);
+      stack.put("size", SIZES[slot]);
+      stack.put("maxSize", 64);
+      return new Object[] { stack };
+    }
+  }
 
   /**
    * A stand-in for the robot component, for what a prefab export does on a
@@ -223,15 +262,28 @@ public class HeadlessTOS {
    * placed is printed as "[headless] robot placed x y z", in cells from where it began,
    * so a run can be checked against the blueprint. A NoteBlock for the reason
    * Geolyzer below is.
+   *
+   * With --robot-chest it starts empty, with StandInController fitted and a
+   * chest right behind it holding 64 cobblestone, 64 dirt and 10 glass.
    */
   public static class StandInRobot extends NoteBlock {
     private Node robotNode;
-    private int x = 0, y = 0, z = 0, facing = 0, selected = 1;
-    private final int[] items = new int[17];
+    int x = 0, y = 0, z = 0;
+    private int facing = 0, selected = 1;
+    final int[] items = new int[17];
+    final String[] names = new String[17];
     private final Map<String, Integer> cells = new HashMap<>();
     private static final int[] DX = { 1, 0, -1, 0 }, DZ = { 0, 1, 0, -1 };
+    final String[] chestNames = { "minecraft:cobblestone", "minecraft:dirt", "minecraft:glass" };
+    final int[] chestSizes = { 64, 64, 10 };
 
-    public StandInRobot() { java.util.Arrays.fill(items, 64); }
+    public StandInRobot() {
+      if (!withChest) java.util.Arrays.fill(items, 64);
+      if (!withChest) java.util.Arrays.fill(names, "any");
+    }
+
+    boolean overChest() { return withChest && x == -1 && y == 1 && z == 0; }
+    int selected() { return selected; }
 
     @Override public Node node() {
       if (robotNode == null) {
@@ -242,7 +294,18 @@ public class HeadlessTOS {
     }
 
     private boolean solid(int cx, int cy, int cz) {
+      if (withChest && cx == -1 && cy == 0 && cz == 0) return true;
       return cy < 0 || cells.containsKey(cx + "," + cy + "," + cz);
+    }
+
+    @Callback public Object[] space(Context context, Arguments args) {
+      return new Object[] { 64 - items[args.count() > 0 ? args.checkInteger(0) : selected] };
+    }
+
+    @Callback public Object[] drop(Context context, Arguments args) {
+      System.out.println("[headless] robot dropped " + items[selected] + " " + names[selected]);
+      items[selected] = 0;
+      return new Object[] { true };
     }
 
     @Callback public Object[] move(Context context, Arguments args) {
@@ -290,7 +353,67 @@ public class HeadlessTOS {
           || solid(x, ty, z + 1) || solid(x, ty - 1, z))) return new Object[] { false };
       cells.put(x + "," + ty + "," + z, selected);
       items[selected]--;
-      System.out.println("[headless] robot placed " + x + " " + ty + " " + z + " slot " + selected);
+      System.out.println("[headless] robot placed " + x + " " + ty + " " + z + " slot " + selected
+          + " " + names[selected]);
+      return new Object[] { true };
+    }
+  }
+
+  /** The inventory controller in that robot, reading the chest under it. */
+  public static class StandInController extends NoteBlock {
+    private Node controllerNode;
+    private final StandInRobot robot;
+
+    public StandInController(StandInRobot robot) { this.robot = robot; }
+
+    @Override public Node node() {
+      if (controllerNode == null) {
+        controllerNode = Network.newNode(this, Visibility.Network(), Network.newNode$default$3())
+            .withComponent("inventory_controller").create();
+      }
+      return controllerNode;
+    }
+
+    @Callback public Object[] getInventorySize(Context context, Arguments args) {
+      if (args.checkInteger(0) != 0 || !robot.overChest()) return new Object[] { null, "no inventory" };
+      return new Object[] { 27 };
+    }
+
+    @Callback public Object[] getStackInSlot(Context context, Arguments args) {
+      int side = args.checkInteger(0), slot = args.checkInteger(1) - 1;
+      if (side != 0 || !robot.overChest() || slot >= robot.chestSizes.length
+          || robot.chestSizes[slot] == 0) return new Object[] { null };
+      Map<String, Object> stack = new HashMap<>();
+      stack.put("name", robot.chestNames[slot]);
+      stack.put("label", robot.chestNames[slot]);
+      stack.put("damage", 0);
+      stack.put("size", robot.chestSizes[slot]);
+      stack.put("maxSize", 64);
+      return new Object[] { stack };
+    }
+
+    @Callback public Object[] getStackInInternalSlot(Context context, Arguments args) {
+      int slot = args.count() > 0 ? args.checkInteger(0) : robot.selected();
+      if (robot.items[slot] == 0) return new Object[] { null };
+      Map<String, Object> stack = new HashMap<>();
+      stack.put("name", robot.names[slot]);
+      stack.put("damage", 0);
+      stack.put("size", robot.items[slot]);
+      return new Object[] { stack };
+    }
+
+    @Callback public Object[] suckFromSlot(Context context, Arguments args) {
+      int side = args.checkInteger(0), slot = args.checkInteger(1) - 1;
+      int want = args.optInteger(2, 64), to = robot.selected();
+      if (side != 0 || !robot.overChest() || slot >= robot.chestSizes.length) return new Object[] { false };
+      String item = robot.chestNames[slot];
+      if (robot.items[to] > 0 && !item.equals(robot.names[to])) return new Object[] { false };
+      int n = Math.min(want, Math.min(robot.chestSizes[slot], 64 - robot.items[to]));
+      if (n <= 0) return new Object[] { false };
+      robot.chestSizes[slot] -= n;
+      robot.items[to] += n;
+      robot.names[to] = item;
+      System.out.println("[headless] robot took " + n + " " + item);
       return new Object[] { true };
     }
   }
@@ -512,6 +635,17 @@ public class HeadlessTOS {
       StandInRobot robot = ws.add(new StandInRobot());
       pc.connect(robot);
       System.out.println("[headless] robot " + robot.node().address());
+      if (withChest) {
+        StandInController controller = ws.add(new StandInController(robot));
+        pc.connect(controller);
+      }
+    }
+
+    // A transposer (--transposer), with a chest to read.
+    if (withTransposer) {
+      StandInTransposer transposer = ws.add(new StandInTransposer());
+      pc.connect(transposer);
+      System.out.println("[headless] transposer " + transposer.node().address());
     }
 
     // A second computer (--peer-boot): its own case, disk, screen and
@@ -996,6 +1130,8 @@ public class HeadlessTOS {
     withTape = flag(args, "--tape");
     withGeolyzer = flag(args, "--geolyzer");
     withRobot = flag(args, "--robot");
+    withChest = flag(args, "--robot-chest");
+    withTransposer = flag(args, "--transposer");
     if (opt(args, "--disk2", null) != null) {
       disk2Dir = Paths.get(opt(args, "--disk2", null)).toAbsolutePath();
       disk2Address = opt(args, "--disk2-address", null);
