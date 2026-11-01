@@ -738,9 +738,11 @@ H(ab.." files copied, "..ac.." failed",d.error)end end
 b.chat=function(Z,H)if not k then H(B,d.error)return end
 local aa,_=pcall(require,"shell.panels.chatapp")if not aa then
 H("Chat unavailable: "..tostring(_),d.error)return end;_.open(a)end
-local function L(H)
-local Z=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if type(H)==s and Z and Z.resolve then local _=Z.resolve(H)
-if _ then return _ end end;return H end
+local function L(H)local aa,Z=pcall(require,"shell.ext")
+if aa and type(Z)=="table"and
+Z.resolvePeer then return Z.resolvePeer(H)end
+local _=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if type(H)==s and _ and _.resolve then local ab=_.resolve(H)
+if ab then return ab end end;return H end
 b.rsh=function(Z,H)if not i(H)then return end;if not Z[1]or not Z[2]then
 H("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)",d.dim)return end
 if not k then H(B,d.error)return end;local ab,ac=pcall(require,"kernel.net.remote")if not ab then

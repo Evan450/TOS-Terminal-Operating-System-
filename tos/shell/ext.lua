@@ -25,10 +25,11 @@ local function l(a)if type(a)~="string"or a==""then return a end
 local b=tonumber(a)if b and p and p[b]then return p[b].addr end;local c=
 _G._TOS and _G._TOS.net and _G._TOS.net.aliases
 if c and
-c.resolve then local d=c.resolve(a)if d then return d end end;return a end
-function m.net(c,b)local a=b.K.getNet()
-if not a then b.o("No network",0xFF0000)return end
-if not c[1]then b.o("net <subcommand>",0xFFFF00)
+c.resolve then local d=c.resolve(a)if d then return d end end;return a end;m.resolvePeer=l
+function m.net(c,b)local a=b.K.getNet()if not a then
+b.o("No network",0xFF0000)return end
+if not c[1]then
+b.o("net <subcommand>",0xFFFF00)
 b.o("  status                       Show network state",0xAAAAAA)
 b.o("  discover (or scan)           Broadcast ping",0xAAAAAA)
 b.o("  peers                        List discovered peers",0xAAAAAA)

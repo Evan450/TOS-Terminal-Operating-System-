@@ -2480,7 +2480,7 @@ Dump every key in `/etc/tos.cfg`, the machine's settings (hostname, thresholds,
 `get`/`set` subcommands. How the machine boots is `bootsettings`
 (`/etc/boot.cfg`); your own settings are `profile`. *See also:* [Chapter 16](#16-configuration-files).
 
-**cp** — `cp <src> <dst>`
+**cp** — `cp [-r] <src> <dst>`
 Copy a file or directory (recursively). *Errors:* `no such file`,
 `destination exists` (for non-overwrite cases). *See also:* `mv`.
 
@@ -2579,8 +2579,10 @@ never reaches the editor — [§4.3](#43-the-editor)).
 
 **env** / **export** — `env [KEY | KEY=VALUE]` (also `set`)
 With no argument, list this session's environment variables; with `KEY`, print
-one; with `KEY=VALUE`, set it for this session. A variable you want at every
-login belongs in your profile: `profile env`. *See also:* `profile`.
+one; with `KEY=VALUE`, set it for this session. The shell expands `$KEY` and
+`${KEY}` on any command line, except inside single quotes; a name that is not set
+stays as typed. A variable you want at every login belongs in your profile:
+`profile env`. *See also:* `profile`.
 
 ### F
 

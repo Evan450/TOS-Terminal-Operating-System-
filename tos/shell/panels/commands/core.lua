@@ -621,6 +621,7 @@ aB.remove(ay.home.."/.profile.cfg",ay)end
 E("Profile reset to defaults.",d.highlight)else
 E("Usage: profile [show|set|env|startup|reset]",d.dim)end end
 b.cp=function(E,ax)
+if E[1]=="-r"or E[1]=="-R"then table.remove(E,1)end
 if not E[2]then ax("Usage: cp <src> <dst>",d.dim)return end;local az,ay=f(E[1]),f(E[2])if e.isDirectory(ay)then
 ay=e.join(ay,az:match(X)or az)end;local aA,aB=e.copy(az,ay)
 if aA then k()
@@ -636,36 +637,43 @@ if e.rename(ay,az)then k()
 E("Moved: "..ax[2],d.highlight)else local aB,aC=e.copy(ay,az)if aB and e.remove(ay)then k()
 E("Moved: "..ax[2],d.highlight)else
 E("Move failed: "..tostring(aC or"cross-fs copy failed"),d.error)end end end
-b.find=function(E,ax)local aC="/"local aA=nil;local ay=1
-while ay<=#E do if E[ay]=="-name"and E[ay+1]then
-aA=E[ay+1]ay=ay+2 else aC=f(E[ay])ay=ay+1 end end
-if aA then local aH,aI=pcall(string.match,"",aA)if not aH then
-ax("Invalid pattern: "..tostring(aI),d.error)return end end;ax("Searching "..aC.." ...",d.dim)local aF=16
-local aB=1000;local az={}
-local function aG(aH)if not g or not g.canAccessAs then return false end
-local aI=K.sessionOf(a)local aJ=g.canAccessAs(aI,aH,"r")return aJ end
-local function aE(aH,aI)if aI>aF then return end;if#az>=aB then return end;if not aG(aH)then return end
-local aL,aJ=pcall(e.list,aH)if not aL or not aJ then return end;local aK={}
-if type(aJ)=="table"then aK=aJ elseif
-type(aJ)==an then for aM in aJ do aK[#aK+1]=aM end end
-for aN,aM in ipairs(aK)do if#az>=aB then break end;R()
-local aO=e.join(aH,aM:gsub("/$",""))local aP=aM:sub(-1)=="/"local aQ=false;if aA then
-local aR,aS=pcall(string.match,aO,aA)local aT,aU=pcall(string.match,aM,aA)
-aQ=(aR and aS)or(aT and aU)else aQ=true end;if aQ then
-az[
-#az+1]={aO.. (aP and"/"or""),
-aP and(d.dir or d.highlight)or d.fg}end;if
-aP and not aO:match("^/tos")then aE(aO,aI+1)end end end;aE(aC,0)if#az==0 then ax("No matches found",d.dim)else for aI,aH in ipairs(az)do
-ax(aH[1],aH[2])end end;local aD=#az..
-" result(s)"if#az>=aB then
-aD=aD.." (truncated at "..aB..")"end;ax(aD,d.dim)end
-b.grep=function(ax,E)
-if not ax[2]then E("Usage: grep <pattern> <file>",d.dim)return end;local aB=ax[1]local aA=f(ax[2])if not l(aA,E)then return end;local ay=0;local az=0
-local aC=K.eachLine(e,aA,function(aD)az=
-az+1;if aD:find(aB,1,true)then
-E(string.format("%4d: %s",az,aD),d.fg)ay=ay+1 end end)if not aC then E(N..ax[2],d.error)return end
-E(ay>0 and
-(ay.." match(es)")or"No matches",d.dim)end
+b.find=function(E,ax)local aC="/"local ay=nil;local az={}local aA=1;while aA<=#E do
+if E[aA]=="-name"and E[aA+1]then
+ay=E[aA+1]aA=aA+2 else az[#az+1]=E[aA]aA=aA+1 end end
+if az[2]then aC=f(az[1])ay=ay or
+az[2]elseif az[1]then if ay or e.isDirectory(f(az[1]))then aC=f(az[1])else
+ay=az[1]end end
+if ay then local aI,aJ=pcall(string.match,"",ay)if not aI then
+ax("Invalid pattern: "..tostring(aJ),d.error)return end end;ax("Searching "..aC.." ...",d.dim)local aG=16
+local aD=1000;local aB={}
+local function aH(aI)if not g or not g.canAccessAs then return false end
+local aJ=K.sessionOf(a)local aK=g.canAccessAs(aJ,aI,"r")return aK end
+local function aF(aI,aJ)if aJ>aG then return end;if#aB>=aD then return end;if not aH(aI)then return end
+local aM,aK=pcall(e.list,aI)if not aM or not aK then return end;local aL={}
+if type(aK)=="table"then aL=aK elseif
+type(aK)==an then for aN in aK do aL[#aL+1]=aN end end
+for aO,aN in ipairs(aL)do if#aB>=aD then break end;R()
+local aP=e.join(aI,(aN:gsub("/$","")))local aQ=aN:sub(-1)=="/"local aR=false;if ay then
+local aS,aT=pcall(string.match,aP,ay)local aU,aV=pcall(string.match,aN,ay)
+aR=(aS and aT)or(aU and aV)else aR=true end;if aR then
+aB[
+#aB+1]={aP.. (aQ and"/"or""),
+aQ and(d.dir or d.highlight)or d.fg}end;if
+aQ and not aP:match("^/tos")then aF(aP,aJ+1)end end end;aF(aC,0)if#aB==0 then ax("No matches found",d.dim)else for aJ,aI in ipairs(aB)do
+ax(aI[1],aI[2])end end;local aE=#aB..
+" result(s)"if#aB>=aD then
+aE=aE.." (truncated at "..aD..")"end;ax(aE,d.dim)end
+b.grep=function(E,ax)local az=E[1]=="-i"if az then table.remove(E,1)end;if not E[2]then
+ax("Usage: grep [-i] <pattern> <file...>",d.dim)return end
+local aA=az and E[1]:lower()or E[1]local aB=E[3]~=nil;local ay=0
+for aC=2,#E do local aD=f(E[aC])
+if l(aD,ax)then local aE=0
+local aF=K.eachLine(e,aD,function(aG)aE=aE+1
+if(az and
+aG:lower()or aG):find(aA,1,true)then if aB then ax(
+E[aC]..":"..aE..": "..aG,d.fg)else
+ax(string.format("%4d: %s",aE,aG),d.fg)end;ay=ay+1 end end)if not aF then ax(N..E[aC],d.error)end end end
+ax(ay>0 and(ay.." match(es)")or"No matches",d.dim)end
 b.wc=function(E,ax)
 if not E[1]then ax("Usage: wc <file>",d.dim)return end;local aA=f(E[1])if not l(aA,ax)then return end;local ay,az=0,0
 local aB,aC=K.eachLine(e,aA,function(aD)ay=ay+1;for aE in
@@ -835,7 +843,7 @@ local function az(aB)
 if e.isDirectory(aB)then
 local aC,aD=0,e.list(aB)
 if type(aD)=="table"then for aF,aE in ipairs(aD)do R()aC=aC+
-az(aA(aB,aE:gsub("/$","")))end end;return aC end;return(e.size and e.size(aB))or 0 end
+az(aA(aB,(aE:gsub("/$",""))))end end;return aC end;return(e.size and e.size(aB))or 0 end
 if e.isDirectory(ay)then local aB=e.list(ay)
 if type(aB)=="table"then for aD,aC in ipairs(aB)do
 local aE=aC:gsub("/$","")

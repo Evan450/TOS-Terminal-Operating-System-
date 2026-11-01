@@ -31,7 +31,8 @@ SERVING
     Stopping netfsd stops serving immediately. There is no state where
     exports are configured and quietly served by a stopped service.
 
-    The export file is serialized data, never executed:
+    The export file lives under /etc, so writing it takes root and
+    `protect off`. It is serialized data, never executed:
 
       return {
         { name = "pub",   path = "/srv/pub",   mode = "ro",

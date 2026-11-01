@@ -1387,33 +1387,34 @@ E("Format: { { name=\"pub\", path=\"/srv/pub\", mode=\"ro\", allow={\"<addr>\"} 
 for aE,aD in ipairs(aA)do
 E(string.format("%-12s %-24s %s",aD.name,aD.path,aD.mode),d.highlight)
 for aE,aF in ipairs(aD.allow or{})do E("    allow "..aF,d.dim)end;if# (aD.allow or{})==0 then
-E("    allow (none) — this export is unreachable",d.warning)end end
-E("Changes take effect on: service restart netfsd",d.dim)elseif ax=="mount"then if not f(E)then return end;local aE,aC,aA=av[2],av[3],av[4]
+E("    allow (none) — this export is unreachable",d.warning)end end elseif ax=="mount"then if not f(E)then return end;local aE,aC,aB=av[2],av[3],av[4]
 if not
-(aE and aC and aA)then
+(aE and aC and aB)then
 E("Usage: netfs mount <host> <share> <mountpoint>",d.dim)
 E("  <host>  = peer hostname or address prefix (see net peers)",d.dim)
 E("  <share> = export name on that machine (ask its operator)",d.dim)return end
-if not m then E("Networking is not available.",d.error)return end;local aB=aE;local aF=m.findPeer and m.findPeer(aE)if aF and aF.addr then
-aB=aF.addr end
+if not m then E("Networking is not available.",d.error)return end;local aA=aE;local aH,aF=pcall(require,"shell.ext")
+if
+aH and type(aF)=="table"and aF.resolvePeer then aA=aF.resolvePeer(aE)end;local aG=m.findPeer and m.findPeer(aA)if aG and aG.addr then
+aA=aG.addr end
 if m.getTrust or m.getProtocol then
-local aL,aK=pcall(require,"kernel.net.trust")
-if aL and aK and aK.getLevel and aK.LEVEL then
-if aK.getLevel(aB)<
-aK.LEVEL.TRUSTED then
+local aN,aM=pcall(require,"kernel.net.trust")
+if aN and aM and aM.getLevel and aM.LEVEL then
+if aM.getLevel(aA)<
+aM.LEVEL.TRUSTED then
 E("Peer is not TRUSTED — netfs refuses to mount from it.",d.error)
-E("Raise trust first (see 'net trust'), then retry.",d.dim)return end end end;if not(aA:sub(1,5)=="/mnt/"and#aA>5)then
+E("Raise trust first (see 'net trust'), then retry.",d.dim)return end end end;if not(aB:sub(1,5)=="/mnt/"and#aB>5)then
 E("Mount point must be under /mnt/  (e.g. netfs mount box pub /mnt/box)",d.error)return end
-local aD=aw.attach(aB,aC)
-local aG=aD.spaceTotal and aD.spaceTotal()or 0
-if not aD.exists("/")and aG==0 then
+local aD=aw.attach(aA,aC)
+local aI=aD.spaceTotal and aD.spaceTotal()or 0
+if not aD.exists("/")and aI==0 then
 E("Cannot reach share '"..aC.."' on "..
-tostring(aB):sub(1,8)..".",d.error)
+tostring(aA):sub(1,8)..".",d.error)
 E("Check the export name, and that netfsd runs there and allows this machine.",d.dim)return end;pcall(e.makeDirectory,"/mnt")
-pcall(e.makeDirectory,aA)local aH=J.sessionOf(a)local aI,aJ=e.mount(aA,aD,aH)if not aI then
-E(tostring(aJ or ai),d.error)return end
-E("Mounted "..aC.." from "..tostring(aB):sub(1,8)..
-" at "..aA,d.highlight)
+pcall(e.makeDirectory,aB)local aJ=J.sessionOf(a)local aK,aL=e.mount(aB,aD,aJ)if not aK then
+E(tostring(aL or ai),d.error)return end
+E("Mounted "..aC.." from "..tostring(aA):sub(1,8)..
+" at "..aB,d.highlight)
 E("This mount is only usable while that machine is online.",d.dim)elseif ax=="umount"then if not f(E)then return end;local aA=av[2]if not aA then
 E("Usage: netfs umount <mountpoint>",d.dim)return end;local aB=false;for aG,aF in ipairs(ay())do if
 aF.mountPoint==aA then aB=true;break end end;if not aB then E(
@@ -1492,8 +1493,9 @@ E("  clear                 Wipe saved theme, revert to default",d.dim)end end;b.
 b.service=function(E,av)if not f(av)then return end
 local ax,aw=J.requireRoomy(a,"kernel.rc","admin")if not ax then av(J.loadFailure("service",aw),d.error)
 return end
-if not E[1]then local ay=aw.list()if#ay==0 then
-av("No services registered",d.dim)return end
+if not E[1]or E[1]=="list"then
+local ay=aw.list()
+if#ay==0 then av("No services registered",d.dim)return end
 av(string.format(U,"Service","Status"),d.title)av(string.rep("-",28),d.dim)
 for aA,az in ipairs(ay)do
 local aB=
@@ -1510,7 +1512,8 @@ aB and type(aA)=="table"and aA.noteServiceStarted then
 local aC=aA.noteServiceStarted(E[2],{session=J.sessionOf(a)})if aC then
 av("Package '"..aC.."' enabled with it.",d.dim)end end end elseif E[1]=="stop"and E[2]then local ay,az=aw.stop(E[2])
 av(
-ay and"Stopped: "..E[2]or tostring(az),ay and d.highlight or d.error)else av("Usage: service [start|stop <name>]",d.dim)end end
+ay and"Stopped: "..E[2]or tostring(az),ay and d.highlight or d.error)else
+av("Usage: service [list | start <name> | stop <name>]",d.dim)end end
 b.cron=function(av,E)if not f(E)then return end
 if _G._TOS and _G._TOS.cronDisabled then
 E("Cron is off in this boot profile: no job runs.",d.warning)local aA=e.readFile("/etc/cron.dat")
