@@ -1,10 +1,10 @@
 return {
 hashes = {
-["/usr/modules/write/doc.lua"] = "831a3e2b47c1f6c04a331d491c6ab3cd19000b812d8bdd20aba84e9c9a6f53a1",
-["/usr/modules/write/init.lua"] = "3d32f8b4c2f417f8ca226219511bf8f84c09d834aff0c45341587c030b35f361",
+["/usr/modules/write/doc.lua"] = "e7e3743ca94b75e1d0c1a53d5ccbcc39678610eff550f79c4af90b3e0c6eda01",
+["/usr/modules/write/init.lua"] = "6801933cb1493c8be8a212411ed9594a6a33f701aa7d0761aa35d83f92eb787e",
 },
 name = "write",
-version = "1.1.0",
+version = "1.1.1",
 kind = "command",
 category = "productivity",
 description = "Word processor: live page breaks, ink/paper cost, dot-command formatting, prints via the printer driver.",

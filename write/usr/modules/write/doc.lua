@@ -1,4 +1,4 @@
-local d=require("printerfmt")local c={}c._VERSION="1.1.0"
+local d=require("printerfmt")local c={}c._VERSION="1.1.1"
 c.MAX_LINES=d.MAX_LINES;c.MAX_WIDTH=d.MAX_WIDTH
 function c.parse(a)local b={title=nil,blocks={},warnings={}}
 local e,f="left",nil;local g=false

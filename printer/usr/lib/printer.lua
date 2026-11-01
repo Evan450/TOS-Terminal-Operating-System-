@@ -1,5 +1,5 @@
 local C,D,E,F,G,z="maxWidth","printTag","scanBook","scanLine","setTitle","writeln"
-local u=require("printerfmt")local r={}r._VERSION="1.0.0"r.fmt=u;local A="openprinter"local B=64;local x;local w
+local u=require("printerfmt")local r={}r._VERSION="1.0.1"r.fmt=u;local A="openprinter"local B=64;local x;local w
 do
 local b,a=pcall(require,"kernel.event")
 if b and a and a.on then local function c(e,f,d)if d==A then x,w=nil,nil end end

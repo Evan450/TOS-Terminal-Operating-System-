@@ -38,8 +38,9 @@ if
 not c or not b then return nil,tostring(b or"cannot read")end;if#b>I then
 return nil,string.format("%d bytes; the limit is %d",#b,I)end;return b end
 local function P(a,b)if not H()then return false,"no filesystem access"end
-local c,d=pcall(fs.writeFile,a,b)
-if not c then return false,tostring(d or"write failed")end;return true end
+local d,c,e=pcall(fs.writeFile,a,b)
+if not d then return false,tostring(c or"write failed")end;if c==false or c==nil then
+return false,tostring(e or"the write was refused")end;return true end
 local function J(a,c,b)local h=N(c,46,12)if not h then return end;local e,i,n=h.T,h.W,h.H;local u,U
 if b then u=tostring(b)else
 u,U=O(a)if U then c("Cannot open "..a..": "..U,0xFF5555)

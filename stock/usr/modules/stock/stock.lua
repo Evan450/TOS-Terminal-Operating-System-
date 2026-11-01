@@ -53,4 +53,13 @@ c or{})[f]or""))end end;return table.concat(e,"\n")end
 function b.decodeWatches(a)local c,d={},{}
 for e in tostring(a or""):gmatch("[^\n]+")do
 local f,h,g=e:match("^([^\t]+)\t(%-?%d+)\t?(.*)$")if f and h then local i=tonumber(h)
-if i and i>=0 then c[f]=i;if g and g~=""then d[f]=g end end end end;return c,d end;return b
+if i and i>=0 then c[f]=i;if g and g~=""then d[f]=g end end end end;return c,d end;b.WATCH_FILE="/etc/stock-watch.cfg"
+function b.readWatches(a)if
+not
+(a and a.exists and a.readFile)or not a.exists(b.WATCH_FILE)then return{},{}end
+local d,c=pcall(a.readFile,b.WATCH_FILE)if not d or not c then return{},{}end;return b.decodeWatches(c)end
+function b.saveWatches(a,c,d)
+if not(a and a.writeFile)then return false,"no filesystem access"end
+local f,e,g=pcall(a.writeFile,b.WATCH_FILE,b.encodeWatches(c,d))if not f then return false,tostring(e)end
+if e==false or e==nil then return false,tostring(
+g or"the write was refused")end;return true end;return b

@@ -86,10 +86,13 @@ a("Scan failed: "..tostring(e),y)return end;if type(c)~="table"then
 a("Nothing in the input slot.",E)return end;local d=b[2]
 if d then
 if
-not(fs and fs.writeFile)then a("No filesystem access.",y)return end;local f=table.concat(c,"\n")local g,h=pcall(fs.writeFile,d,f)if
-not g then
-a("Cannot write "..d..": "..tostring(h),y)return end
-a(string.format("Scanned %d line(s) into %s.",#c,d),C)return end;for f,g in ipairs(c)do
+not(fs and fs.writeFile)then a("No filesystem access.",y)return end;local h=table.concat(c,"\n")local g,f,i=pcall(fs.writeFile,d,h)if
+not g or f==false or f==nil then
+a("Cannot write "..d..
+": "..tostring(g and
+(i or"the write was refused")or f),y)return end
+a(string.format("Scanned %d line(s) into %s.",
+#c,d),C)return end;for f,g in ipairs(c)do
 a(string.format("%3d  %s",f,tostring(g)),B)end;if#c==0 then
 a("(the page is blank)",z)end end
 local function T(b,a)

@@ -124,16 +124,18 @@ if
 e=="--width"then c.maxW=f elseif e=="--height"then c.maxH=f elseif f<=1 then c.depth=1 elseif f==2 then c.depth=4 else c.depth=8 end;b=b+2 elseif e=="--no-dither"then c.dither=false;b=b+1 elseif e:sub(1,2)=="--"then return nil,
 "unknown option "..e else d[#d+1]=e;b=b+1 end end;if#d~=2 then return nil,"pic convert <in.png> <out.pic>"end;return c,
 d[1],d[2]end
-local function ah(b,a)local d,e,h=G.parseConvert(b)if not d then a(e,0xFF5555)return end
+local function ah(b,a)local d,e,i=G.parseConvert(b)if not d then a(e,0xFF5555)return end
 local f,g=S(e)if not f then a(g,0xFF5555)return end;if not O.is(f)then
-a(M(e).." is not a PNG.",0xFF5555)return end;local k=X()d.progress=function()k()end
+a(M(e).." is not a PNG.",0xFF5555)return end;local l=X()d.progress=function()l()end
 local c;c,g=T.fromPNG(f,d)if not c then
-a("Cannot convert: "..tostring(g),0xFF5555)return end;local i=F.encode(c)if not
+a("Cannot convert: "..tostring(g),0xFF5555)return end;local j=F.encode(c)if not
 (fs and fs.writeFile)then
 a("Nothing here can write a file.",0xFF5555)return end
-local l,j=pcall(fs.writeFile,h,i)if not l or j==false then
-a("Not saved: "..tostring(j),0xFF5555)return end
-a(string.format("Wrote %s: %dx%d cells, %d bytes.",h,c.w,c.h,#i),0x55FF55)end
+local k,h,m=pcall(fs.writeFile,i,j)if not k or h==false or h==nil then
+a("Not saved: "..tostring(k and
+(m or"the write was refused")or h),0xFF5555)return end
+a(string.format("Wrote %s: %dx%d cells, %d bytes.",i,c.w,c.h,
+#j),0x55FF55)end
 local function ai(b,a)b=b or{}a=a or print;local c=b[1]if
 not c or c=="help"or c=="--help"or c=="-h"then af(a)return end;if
 c=="info"then ag(b,a)return end;if c=="convert"then ah(b,a)return end

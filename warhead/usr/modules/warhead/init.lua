@@ -57,10 +57,11 @@ local function as()local a=ar()if a and fs.exists and fs.exists(a)then
 local c,b=pcall(fs.readFile,a)
 if c and type(b)==aq then return V.parseSettings(b)end end;return
 V.newSettings()end
-local function ae(a)local b=ar()if not b or not fs.writeFile then
+local function ae(a)local c=ar()if not c or not fs.writeFile then
 return false,"no home directory to save in"end
-local d,c=pcall(fs.writeFile,b,V.serializeSettings(a))if not d or c==false then return false,tostring(c)end
-return true end
+local d,b,e=pcall(fs.writeFile,c,V.serializeSettings(a))if not d then return false,tostring(b)end
+if b==false or b==nil then return false,tostring(
+e or"the write was refused")end;return true end
 function V.cleanName(a)
 a=tostring(a or""):gsub("[%c]"," "):gsub("^%s+",""):gsub("%s+$","")if aa(a)>24 then a=ap(a,1,24)end;return a end
 function V.catalogue()
