@@ -95,6 +95,9 @@ package.preload["kernel.pkg"] = function()
     getCommand = function(name)
       if name == "fakegame" then return function() ran.fakegame = true end end
     end,
+    commandFailure = function(name)
+      if name == "toobig" then return "the sandbox would not load: not enough memory" end
+    end,
     getCommandScreen = function() return nil end,
   }
 end
@@ -137,6 +140,15 @@ test("built-ins run as before", ran.ls == true and loads == 0)
 files["/var/pkg/installed/fakegame/package.lua"] = "return {}"
 exec("fakegame")
 test("with a package installed, its command loads the manager and runs", loads == 1 and ran.fakegame == true, loads)
+
+S.lastFailure = nil
+exec("toobig")
+local said = tostring(S.lastFailure and S.lastFailure.text)
+test("an installed command that will not load is not called unknown",
+  said:find("could not be loaded", 1, true) ~= nil and said:find("Unknown", 1, true) == nil, said)
+S.lastFailure = nil
+exec("xyzzy")
+test("...while a real typo still is", tostring(S.lastFailure and S.lastFailure.text):find("Unknown command", 1, true) ~= nil)
 exec("xyzzy")
 test("...and the manager loads once, not per lookup", loads == 1, loads)
 

@@ -65,7 +65,7 @@ local EXPECTED = { "tetris", "tape", "rc-pilot", "mouse",
                    "tape-authenticator", "cluster-manager", "cluster-master",
                    "blockfs", "mail", "calc", "snake", "ttt",
                    "stock", "printer", "write", "intercom", "selftest", "warhead",
-                   "web", "rbmk-control", "cluster-storage" }
+                   "web", "rbmk-control", "cluster-storage", "pic" }
 
 -- The other half of the same guarantee. build-disk.lua's SKIP table holds
 -- packages below 1.0.0 back off the public pack, and an exclusion is only
@@ -500,6 +500,8 @@ do
       -- The operator re-signed the pack on 2026-10-31 at 15:19, minified the
       -- way the release is. Name a package here when a fix to it lands ahead
       -- of the next signing.
+      ["warhead"] = "1.0.1: pop-ups wear a frame, and a long message wraps",
+      ["pic"] = "1.0.0: new, the picture viewer",
     }
 
     if nShipped == 0 then

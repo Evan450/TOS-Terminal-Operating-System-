@@ -30,6 +30,7 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 |---|---|---|
 | [calc](modules/calc/README.md) | `calc` | A spreadsheet the Lotus 1-2-3 way: the control panel, / menus, pointing at cells, formats, copy and move, sort, graphs. Prints through `printer` and into `write` when they are installed; nothing in a cell can ever run as code. |
 | [write](modules/write/README.md) | `write` | A word processor that shows where the printed page breaks as you type, and what it will cost in paper and ink. Brings `printer` with it. |
+| [pic](modules/pic/README.md) | `pic` | Shows a MineOS `.pic` or a PNG on any GPU, from a disk or a URL, and turns a PNG into a `.pic`. |
 
 **Games**
 

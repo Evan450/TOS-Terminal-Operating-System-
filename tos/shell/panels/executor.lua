@@ -500,7 +500,20 @@ function M.build(S, deps)
         -- reason in S.lastOut; the old code then overwrote it here.
         local okReg, cmdsMod = pcall(require, "shell.panels.commands")
         local known = okReg and cmdsMod.entry and cmdsMod.entry(name) or nil
-        if known then
+        -- The same difference for a package's command, and a package has
+        -- only just been asked, so asking again costs nothing new.
+        local why = nil
+        if not known and helpers.mayHavePackages() then
+          local okP, pkgMod = pcall(require, "kernel.pkg")
+          if okP and type(pkgMod) == "table" and pkgMod.commandFailure then
+            why = pkgMod.commandFailure(name)
+          end
+        end
+        if why then
+          o("'" .. name .. "' is installed but could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
+          o(tostring(why), T.error)
+          o("Free some memory (close tabs, or reboot) and try again.", T.dim)
+        elseif known then
           o("'" .. name .. "' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
           if S.lastOut and S.lastOut[1] then
             o(S.lastOut[1], T.error)

@@ -1007,7 +1007,7 @@ under `/etc`, and never `/tos` or `/init.lua`.
 
 The bundled add-ons ship on the **Optional Utilities** disk, a pick-and-choose
 set modeled on the MS-DOS Supplemental Utilities Disk: games (`tetris`, `snake`,
-`ttt`), `calc`, `write`, `tape` and `tape-authenticator`, `rc-pilot`, `stock`,
+`ttt`), `calc`, `write`, `pic`, `tape` and `tape-authenticator`, `rc-pilot`, `stock`,
 the `mouse` and `printer` drivers, `blockfs`, `mail`, `intercom`, the `web`
 browser, `warhead`, `rbmk-control`, the cluster packages, and `selftest`.
 Building it is one command,

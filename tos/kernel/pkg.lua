@@ -1084,6 +1084,18 @@ function pkg.noteServiceStarted(svcName, opts)
   return nil
 end
 
+--! Why a package's entry would not load. Every way of failing here returned
+--! nil and most of them said nothing, so the shell reported "Unknown command"
+--! straight after "Installed: pic", with nothing in the log: on the headless
+--! machine at 1 MB, kernel.sandbox would not fit in memory.
+--! (test_pkg_unloadable.lua)
+local entryError = {}
+local function entryFailed(pkgName, why)
+  entryError[pkgName] = why
+  if log then log.warn("pkg", "cannot load " .. pkgName .. ": " .. why) end
+  return nil
+end
+
 local function loadPkgEntry(pkgName, m, entryPath)
   if pkgActive[pkgName] then
     pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
@@ -1092,9 +1104,9 @@ local function loadPkgEntry(pkgName, m, entryPath)
   -- Make room BEFORE building, so the new entry is not loaded on top of
   -- every old one (#MEM, see PKG_CACHE_MAX).
   trimCache(lowMemory() and 0 or (PKG_CACHE_MAX - 1))
-  if not fs.exists(entryPath) then return nil end
+  if not fs.exists(entryPath) then return entryFailed(pkgName, entryPath .. " is missing") end
   local source = fs.readFile(entryPath)
-  if not source then return nil end
+  if not source then return entryFailed(pkgName, entryPath .. " cannot be read") end
   local caps = grantedCaps(pkgName, m)
   -- #SEC — DO NOT capture a fixed session here. The sandbox env built below
   -- (including its securefs-bound `fs` proxy) is cached in `pkgActive` and
@@ -1114,20 +1126,16 @@ local function loadPkgEntry(pkgName, m, entryPath)
   -- loads it, but that path returns the command table and is not a per-user
   -- privileged-fs surface; per-invocation command code is what callers reach.
   local okSB, sandbox = pcall(require, "kernel.sandbox")
-  if not okSB or not sandbox or not sandbox.build then return nil end
+  if not okSB or not sandbox or not sandbox.build then
+    return entryFailed(pkgName, "the sandbox would not load: " .. tostring(sandbox))
+  end
   -- pkgName scopes the crypto cap's per-package machine secret. It comes
   -- from the validated manifest (validName), never from the entry code.
   local env = sandbox.build({ caps = caps, pkgName = pkgName })
   local fn, lerr = load(source, "=pkg:" .. pkgName, "t", env)
-  if not fn then
-    if log then log.warn("pkg", "command load error in " .. pkgName .. ": " .. tostring(lerr)) end
-    return nil
-  end
+  if not fn then return entryFailed(pkgName, tostring(lerr)) end
   local ok, result = pcall(fn)
-  if not ok or type(result) ~= "table" then
-    if log then log.warn("pkg", "entry failed in " .. pkgName .. ": " .. tostring(result)) end
-    return nil
-  end
+  if not ok or type(result) ~= "table" then return entryFailed(pkgName, tostring(result)) end
   -- #SEC — CAP SCOPE. Found in-game 2026-08-11, and it had been true of
   -- every peripheral cap since they were introduced.
   --
@@ -1174,6 +1182,7 @@ local function loadPkgEntry(pkgName, m, entryPath)
   end
   result.commands = scoped
 
+  entryError[pkgName] = nil
   pkgActive[pkgName] = result
   pkgUseTick = pkgUseTick + 1; pkgUse[pkgName] = pkgUseTick
   return result
@@ -1209,6 +1218,14 @@ function pkg.getCommand(name)
       end
     end
   end
+  return nil
+end
+
+--- Why `name` could not run, when it belongs to an enabled package and
+--- getCommand just came back empty; nil when no package provides it.
+function pkg.commandFailure(name)
+  local owner = pkg.ownerOfCommand(name)
+  if owner then return entryError[owner] or "its entry has no such command" end
   return nil
 end
 

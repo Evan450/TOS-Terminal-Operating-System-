@@ -82,7 +82,10 @@ local function makeFixture(opts)
     home = function() return "/home/tester" end,
     exists = function(p) return fx.files[p] ~= nil end,
     readFile = function(p) return fx.files[p] end,
-    writeFile = function(p, d) fx.files[p] = d; return true end,
+    writeFile = function(p, d)
+      if opts.writeError then error(opts.writeError, 0) end
+      fx.files[p] = d; return true
+    end,
   }
   local inventory = opts.inventory
 
@@ -332,6 +335,106 @@ do
   local W = fx.W
   test("fitKeys drops whole hints from the right, never the way out",
     W.fitKeys({ "aaaa", "bbbb", "cccc" }, "QUIT", 18) == "aaaa \194\183 bbbb \194\183 QUIT")
+end
+
+print()
+print("=== Pop-ups wear a frame ===")
+print()
+
+local function rowsOf(screen)
+  local rows = {}
+  for line in (screen .. "\n"):gmatch("(.-)\n") do rows[#rows + 1] = utf8chars(line) end
+  return rows
+end
+local function firstWith(fx, needle)
+  for _, s in ipairs(fx.screens) do if s:find(needle, 1, true) then return s end end
+end
+local function has(s, needle) return s ~= nil and s:find(needle, 1, true) ~= nil end
+
+do
+  -- The designer, Enter on a slot, and a filter that matches nothing.
+  local keys = script({ ENTER }, { ENTER }, typed("zzz"), { CTRL_Q }, { CTRL_Q }, { CTRL_Q })
+  local fx = makeFixture({ keys = keys })
+  pcall(fx.run, {})
+  local s = firstWith(fx, "ingredient for slot 1")
+  test("the pick list has a title tab", has(s, "╡ ingredient for slot 1 ╞"))
+  local rows = rowsOf(s or "")
+  local box = 73 - 6                      -- 80 wide: columns 6 to 73
+  test("...a top edge", rows[4] and rows[4][6] == "╔" and rows[4][73] == "╗")
+  test("...and a bottom edge", rows[21] and rows[21][6] == "╚" and rows[21][73] == "╝")
+  local sides = rows[4] ~= nil
+  for y = 5, 20 do
+    if not (rows[y] and rows[y][6] == "║" and rows[y][73] == "║") then sides = false end
+  end
+  test("...and both sides on every row, " .. box .. " columns apart", sides)
+  test("...with a drop shadow to the right", rows[5] and rows[5][74] == " ")
+  local blank = firstWith(fx, "Nothing matches.")
+  test("a filter that matches nothing says so", blank ~= nil)
+  local inside = rowsOf(blank or "")
+  local clean = #inside > 0
+  for y = 7, 18 do
+    for x = 7, 72 do if inside[y][x] ~= " " then clean = false end end
+  end
+  test("...and nothing from behind shows through the box", clean)
+  test("the key hints sit inside the frame", has(blank, "║ Type to filter · Enter pick"))
+end
+
+do
+  -- Best design, nuclear: a pick list, then a question too long for the
+  -- status row, which was cut there.
+  local keys = script({ ENTER }, { char("b") }, typed("thermo"), { ENTER }, { char("n") },
+    { CTRL_Q }, { CTRL_Q })
+  local fx = makeFixture({ keys = keys })
+  pcall(fx.run, {})
+  local q = firstWith(fx, "Fill the spare slots")
+  test("a question has a Confirm box", has(q, "╡ Confirm ╞"))
+  test("...with all of it readable", has(q, "(longer") and has(q, "fallout)?"))
+  test("...and no label column made up from its first word", has(q, "║ fallout)?"))
+  test("...and the keys it takes", has(q, "Y Yes · N No"))
+  test("the pick list before it is gone", q ~= nil and not has(q, "best design"))
+end
+
+do
+  -- A name longer than the box keeps its end in view, inside the frame.
+  local long = string.rep("a", 70) .. "END"
+  local keys = script({ ENTER }, { char("g") }, typed(long), { CTRL_Q }, { CTRL_Q }, { CTRL_Q })
+  local fx = makeFixture({ keys = keys })
+  pcall(fx.run, {})
+  local s = fx.screens[#fx.screens - 2]
+  test("a prompt has a titled box", has(s, "╡ Save design ╞"))
+  test("...and says how to get out", has(s, "Enter OK · ^Q cancel"))
+  test("a long entry shows its end, not its start", has(s, "END_"))
+  local rows = rowsOf(s or "")
+  local framed = false
+  for _, r in ipairs(rows) do
+    local line = table.concat(r)
+    if line:find("END_", 1, true) and r[11] == "║" and r[70] == "║" then framed = true end
+  end
+  test("...inside the frame", framed)
+end
+
+do
+  -- A status too long for its row becomes a box rather than being cut.
+  local why = "the disk has no room left for this file, and it was the last one you had free"
+  local keys = script({ ENTER }, { char("g") }, typed("big"), { ENTER }, { char("x") },
+    { CTRL_Q }, { CTRL_Q })
+  local fx = makeFixture({ keys = keys, writeError = why })
+  pcall(fx.run, {})
+  local s = firstWith(fx, "Any key to go on")
+  test("a long status opens a box", has(s, "╡ Warhead ╞"))
+  test("...with all of it readable", has(s, "NOT saved:") and has(s, "last one you had free"))
+  local after = fx.screens[#fx.screens - 1]
+  test("...and a key closes it", after ~= nil and not has(after, "Any key to go on"))
+end
+
+do
+  -- One bit: the frame is ASCII, like the rest of a mono screen.
+  local keys = script({ ENTER }, { ENTER }, { CTRL_Q }, { CTRL_Q }, { CTRL_Q })
+  local fx = makeFixture({ keys = keys, depth = 1 })
+  pcall(fx.run, {})
+  local s = firstWith(fx, "ingredient for slot 1")
+  test("monochrome: the frame is ASCII", has(s, "[ ingredient for slot 1 ]") and has(s, "+====="))
+  test("...and no shadow is painted", s ~= nil and not has(s, "╔"))
 end
 
 print()

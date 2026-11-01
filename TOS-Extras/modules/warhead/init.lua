@@ -83,11 +83,12 @@ function W.fitKeys(hints, out, width)
 end
 
 --- Word-wrap one report line. A line that opens with a label column
---- ("Blast     ...") continues under its text, not under the label.
-function W.wrap(text, width)
+--- ("Blast     ...") continues under its text, not under the label;
+--- `prose` says there is no label, whatever the first word looks like.
+function W.wrap(text, width, prose)
   if ulen(text) <= width then return { text } end
   local indent, body = 0, text
-  local lead = text:match("^(%u%l+ +)%S")
+  local lead = not prose and text:match("^(%u%l+ +)%S") or nil
   if lead and #lead <= 12 then
     -- The label column is kept as it is, spaces and all; only the text
     -- after it is re-flowed. Splitting the whole line on whitespace
@@ -671,12 +672,60 @@ local function ui(o)
     return y
   end
 
-  -- ── Prompts on the status row ──────────────────────────────────────
-  local function prompt(label, initial)
+  -- ── Pop-ups ───────────────────────────────────────────────────────
+  --! A pop-up was a blank rectangle laid over the screen with nothing to
+  --! say where it stopped, so the report beside it ran straight up to its
+  --! text and the two read as one mess (operator, on the published build);
+  --! a question sat on the status row and a long one was cut at the edge.
+  --! All of them now wear what the shell's dialogs wear: double line, title
+  --! tab, drop shadow (panels/dialogs.lua). Add-ons cannot reach that
+  --! module, so this is the same look drawn here. (test_warhead_cli.lua)
+  local draw                 -- defined with the views, below
+  local function box(title, x, y, w, h)
+    local mono = S.mono
+    local hz, vt = mono and "=" or "═", mono and "|" or "║"
+    if not mono then
+      S.set(x + 1, y + h, string.rep(" ", w), T.bg, 0x1A1A1A)
+      S.fill(x + w, y + 1, 1, h, " ", T.bg, 0x1A1A1A)
+    end
+    local inner = string.rep(hz, w - 2)
+    S.set(x, y, (mono and "+" or "╔") .. inner .. (mono and "+" or "╗"), T.border, T.bg)
+    S.set(x, y + h - 1, (mono and "+" or "╚") .. inner .. (mono and "+" or "╝"), T.border, T.bg)
+    S.fill(x, y + 1, 1, h - 2, vt, T.border, T.bg)
+    S.fill(x + w - 1, y + 1, 1, h - 2, vt, T.border, T.bg)
+    S.fill(x + 1, y + 1, w - 2, h - 2, " ", T.fg, T.bg)
+    local label = pad(title, math.min(ulen(title), w - 6))
+    S.set(x + math.floor((w - ulen(label) - 4) / 2), y,
+      (mono and "[ " or "╡ ") .. label .. (mono and " ]" or " ╞"), T.title, T.bg)
+  end
+
+  --- A box in the middle of the screen: the text, `rows` free rows under
+  --- it, and a hint along the bottom. Returns the box's x and the first
+  --- free row. The screen behind is repainted first, so a pop-up that
+  --- follows another never sits on the last one's remains.
+  local function popup(title, text, textTone, hint, rows)
+    draw()
+    local w = math.min(Wd - 12, 60)
+    local lines = W.wrap(text, w - 4, true)
+    local n = math.min(#lines, Ht - 8 - rows)
+    local h = n + rows + 4
+    local x, y = math.floor((Wd - w) / 2) + 1, math.floor((Ht - h) / 2) + 1
+    box(title, x, y, w, h)
+    for i = 1, n do S.set(x + 2, y + i, pad(lines[i], w - 4), tone(textTone), T.bg) end
+    S.set(x + 2, y + h - 2, pad(hint, w - 4), T.dim, T.bg)
+    return x, y + n + 1, w
+  end
+
+  local function prompt(title, label, initial)
     local buf = tostring(initial or "")
+    local x, y, w = popup(title, label, "fg",
+      "Enter OK · " .. quitLabel() .. " cancel", 1)
     while true do
-      S.fill(1, Ht - 1, Wd, 1, " ", T.fg, T.bg)
-      S.set(2, Ht - 1, pad(label .. " " .. buf .. "_", Wd - 2), T.title, T.bg)
+      -- Past the box's width it shows the end, where the typing is.
+      local line = buf .. "_"
+      local over = ulen(line) - (w - 4)
+      if over > 0 then line = usub(line, over + 1, ulen(line)) end
+      S.set(x + 2, y, pad(line, w - 4), T.title, T.bg)
       local ch, code = pullKey()
       if code == K.ENTER then return buf end
       if isQuit(ch, code) then return nil end
@@ -685,8 +734,7 @@ local function ui(o)
     end
   end
   local function yesNo(question)
-    S.fill(1, Ht - 1, Wd, 1, " ", T.fg, T.bg)
-    S.set(2, Ht - 1, pad(question .. "  (Y/N)", Wd - 2), T.warn, T.bg)
+    popup("Confirm", question, "warn", "Y Yes · N No", 0)
     while true do
       local ch, code = pullKey()
       if isQuit(ch, code) then return false end
@@ -697,6 +745,13 @@ local function ui(o)
       end
     end
   end
+  --- A status too long for its row, which would have been cut.
+  local function alert(msg, msgTone)
+    status = nil
+    popup("Warhead", msg, msgTone, "Any key to go on", 0)
+    local ch, code
+    repeat ch, code = pullKey() until ch or code
+  end
 
   -- ── A pick list in a box ───────────────────────────────────────────
   -- items: { { label, tone, value } }; typing filters; Enter picks.
@@ -704,26 +759,30 @@ local function ui(o)
     local filter = initialFilter or ""
     local i, top = 1, 1
     local bx, by, bw, bh = 6, 4, Wd - 12, Ht - 7
+    draw()
+    box(title, bx, by, bw, bh)
+    S.set(bx + 2, by + bh - 2, pad("Type to filter · Enter pick · " .. quitLabel() .. " cancel", bw - 4), T.dim, T.bg)
     while true do
       local shown = {}
       for _, it in ipairs(items) do
         if filter == "" or it[1]:lower():find(filter:lower(), 1, true) then shown[#shown + 1] = it end
       end
       if i > #shown then i = math.max(1, #shown) end
-      local rows = bh - 3
+      local rows = bh - 4
       if i < top then top = i end
       if i > top + rows - 1 then top = i - rows + 1 end
-      S.fill(bx, by, bw, bh, " ", T.fg, T.bg)
-      S.set(bx, by, pad("[ " .. title .. " ]  filter: " .. filter .. "_", bw), T.title, T.bg)
+      local count = (#shown == 0 and 0 or i) .. "/" .. #shown
+      S.set(bx + 2, by + 1, pad("Filter: " .. filter .. "_", bw - 5 - ulen(count)) .. " " .. count, T.title, T.bg)
+      S.fill(bx + 1, by + 2, bw - 2, rows, " ", T.fg, T.bg)
+      if #shown == 0 then S.set(bx + 2, by + 2, "Nothing matches.", T.dim, T.bg) end
       for r = 0, rows - 1 do
         local it = shown[top + r]
         if it then
           local isSel = (top + r == i)
-          S.set(bx + 1, by + 2 + r, pad(it[1], bw - 2), isSel and T.selfg or tone(it[2]),
+          S.set(bx + 1, by + 2 + r, pad(" " .. it[1], bw - 2), isSel and T.selfg or tone(it[2]),
             isSel and T.selbg or T.bg)
         end
       end
-      S.set(bx, by + bh - 1, pad("type to filter · Enter pick · " .. quitLabel() .. " cancel", bw), T.dim, T.bg)
       local ch, code = pullKey()
       if isQuit(ch, code) then return nil end
       if code == K.ENTER then return shown[i] and shown[i][3] end
@@ -874,7 +933,7 @@ local function ui(o)
   end
 
   local function saveDesign()
-    local name = prompt("Save design as:", designName or "")
+    local name = prompt("Save design", "Save design as:", designName or "")
     name = name and W.cleanName(name)
     if not name or name == "" then return end
     local copy = {}
@@ -1052,12 +1111,12 @@ local function ui(o)
   end
 
   local function addPlace()
-    local name = prompt("Place name:", "")
+    local name = prompt("New place", "Place name:", "")
     name = name and W.cleanName(name)
     if not name or name == "" then return end
-    local dx = tonumber(prompt("Blocks east of ground zero (west is negative):", "0") or "")
+    local dx = tonumber(prompt("New place", "Blocks east of ground zero (west is negative):", "0") or "")
     if not dx then return end
-    local dz = tonumber(prompt("Blocks south of ground zero (north is negative):", "0") or "")
+    local dz = tonumber(prompt("New place", "Blocks south of ground zero (north is negative):", "0") or "")
     if not dz then return end
     st.places[#st.places + 1] = { name = name, dx = math.floor(dx), dz = math.floor(dz) }
     local okS, err = saveSettings(st)
@@ -1136,7 +1195,7 @@ local function ui(o)
     if D.CONFIG_BOOL[k] then
       st.cfg[k] = not cfg[k]
     else
-      local v = tonumber(prompt(k .. ":", tostring(cfg[k])) or "")
+      local v = tonumber(prompt("Config", k .. ":", tostring(cfg[k])) or "")
       if not v or v < 0 then return end
       st.cfg[k] = v
     end
@@ -1147,7 +1206,7 @@ local function ui(o)
   end
 
   -- ── Loop ───────────────────────────────────────────────────────────
-  local function draw()
+  draw = function()
     if view == "list" then drawList()
     elseif view == "design" then drawDesign()
     elseif view == "map" then drawMap()
@@ -1213,6 +1272,7 @@ local function ui(o)
         elseif c == "r" then st.cfg[cfgKeys[cfgSel]] = nil; cfg = M.config(st.cfg); saveSettings(st); say("Reset.") end
       end
       draw()
+      if status and ulen(status) > Wd - 2 then alert(status, statusTone); draw() end
     end
   end
   S.fill(1, 1, Wd, Ht, " ", T.fg, T.bg)
