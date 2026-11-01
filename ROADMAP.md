@@ -8,8 +8,8 @@ What is actually open. Generated from our working notes, which are not published
 |---|---:|---|
 | Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 60 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 21 | Idea, no commitment. Discuss before building. |
+| Planned | 59 | Planned or under investigation. Most contributions belong here. |
+| Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
 **By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (13) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
 
@@ -912,12 +912,6 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
 
-### A prefab base designer
-
-*Planned* · from the round *Operator notes from testing the published build (2026-10-30)*
-
-A PREFAB BASE DESIGNER. Operator idea: like warhead, but for building. Geolyzer to read the site, robots and drones to build, and a designer for your own blueprints in a 2.5D style, with slices in the X, Y and Z directions. It would probably recommend the mouse driver (`recommends`, not `requires`). Needs its own design pass first: blueprint format, what a robot and a drone can each place, inventory supply, and how the geolyzer's noisy density readings are handled.
-
 ### The build stamp has been -dirty, so no build-\* tag has been pushed since at least…
 
 *Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
@@ -1022,3 +1016,17 @@ Same day, vault and deploy (both touched that day): E-305 ERR\_VAULT\_UNLOCK, ta
 2026-10-10, pkg's install copy (touched that day for the floor check): E-604 ERR\_PKG\_FILE\_MISSING and E-605 ERR\_PKG\_FILE\_UNREADABLE. The second is what an install that runs out of memory reading a file now carries. `why` tells it to free memory or add a stick.
 
 2026-10-16, federated slice 2's floor: E-606 ERR\_PKG\_UNTRUSTED\_SOURCE. Same day, the rest of pkg's install and upgrade gates: E-607 unverified (no hashes), E-608 hash mismatch, E-609 a signature that does not verify, E-610 `pkg trust require on`, E-611 the wrong publisher (a pin, or an upgrade's key change), E-612 a protected target, E-613 a conflict (test\_pkg\_refusal\_codes.lua drives each through the real pkg.install). Still untagged: the network layer proper, drive format/mount failures, hardware.
+
+### A prefab base designer
+
+*Idea / far future* · from the round *Operator notes from testing the published build (2026-10-30)*
+
+A PREFAB BASE DESIGNER. The design pass is done and the first slice is built: docs/PREFAB.md, and `prefab` 0.1.0 in TOS-Extras/modules/prefab, held off the pack because it is 0.x.
+
+BUILT: the blueprint file, the designer (slices along X, Y and Z with the one behind showing faintly, rectangles, copy and paste, undo, keyboard and mouse), and the planner (build order, floating blocks, materials, loads, moves). test\_prefab.lua (91). SEEN on the runner: a 9x4x7 hut drawn, reported, saved, read by `prefab info` and reopened through `open`. The mouse has only been driven in the fake sandbox.
+
+FOUND reading the OC 1.8.10 jar: a geolyzer leaves air at exactly 0 and only adds noise to real blocks, so "is something there?" has no noise at all. A drone holds 8 slots and 4 KB; a robot holds 64.
+
+DECIDED: robots build and drones come later as couriers. The robot gets a generated program on a floppy rather than a live link through rc-pilot, whose wireless setup is unfinished.
+
+NEXT, in order: prefab survey, prefab export with a simulated world to run it against, supply from a chest, clearing the site, drones, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc.
