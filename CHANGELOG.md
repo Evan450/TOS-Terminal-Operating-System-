@@ -14,14 +14,17 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 - **Networking:** two machines that trust each other agree a shared secret by themselves, and the mesh learns routes from its own traffic instead of always flooding. A reinstalled peer is flagged rather than silently failing.
 - **Packages:** a package is now its name and the key that signs it. Dependencies are found across disks and repositories, version constraints are enforced before anything is written, and `pkg fetch` brings what a package requires.
 - **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails.
-- **Add-ons:** a text-mode `web` browser, the `warhead` nuke designer, a Lotus-style `calc` 2.0, `rbmk-control` bound to the real console, and a cluster `cluster-storage` node.
+- **Add-ons:** a text-mode `web` browser, the `pic` picture viewer, the `warhead` nuke designer, a Lotus-style `calc` 2.0, `rbmk-control` bound to the real console, and a cluster `cluster-storage` node.
 - **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says.
 - **Size and speed:** the release and add-ons ship minified with local variables renamed, and the render path does less work per frame.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 64 rounds of work:
+Everything since v1.5.0, in 67 rounds of work:
 
+- [An add-on that will not load says so](#an-add-on-that-will-not-load-says-so)
+- [`pic` shows pictures](#pic-shows-pictures)
+- [`warhead`'s pop-ups have frames](#warheads-pop-ups-have-frames)
 - [The picker says what comes along, and Enter adds](#the-picker-says-what-comes-along-and-enter-adds)
 - [The docs are easier to find your way around](#the-docs-are-easier-to-find-your-way-around)
 - [Every command, run on a real machine](#every-command-run-on-a-real-machine)
@@ -86,6 +89,18 @@ Everything since v1.5.0, in 64 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### An add-on that will not load says so
+
+On a machine short of memory, `pkg install pic` said "Installed: pic" and `pic` then said "Unknown command", with nothing in the log. The command was there: its sandbox would not fit. It now reports `E-802` with the reason, and the log has it too. A real typo still gets "Unknown command".
+
+### `pic` shows pictures
+
+A new add-on, `pic` 1.0.0. It shows a MineOS `.pic` or a PNG on any GPU: 256 colours on tier 3, 16 on tier 2, and dithered black and white on tier 1. The PNG is unpacked on the machine in plain Lua, so `pic http://...` needs an internet card and nothing else. It opens directories, pans a picture bigger than the screen, works through `open`, and `pic convert` makes a `.pic`, which is what a small machine should carry: a `.pic` shows on 1.25 MB, and a 512x384 PNG needs 2 MB.
+
+### `warhead`'s pop-ups have frames
+
+`warhead` 1.0.1. A pick list was a blank rectangle laid over the report, with nothing to show where it stopped, so the two ran together. Questions and prompts sat on the status row, and a long one was cut at the edge. All of them are now boxes in the shell's dialog style: double line, title tab, drop shadow, ASCII on a one-bit screen. Long text wraps inside, and a status message too long for its row opens a box of its own.
 
 ### The picker says what comes along, and Enter adds
 
