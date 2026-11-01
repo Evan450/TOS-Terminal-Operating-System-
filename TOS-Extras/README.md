@@ -95,6 +95,7 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 | Path | What it is |
 |---|---|
 | [pane-ui/](pane-ui/README.md) | PaneUI, the TOS look and file manager for OpenOS machines. One file, copied by hand rather than installed with `pkg`. |
+| [prefab](modules/prefab/README.md) | A base designer: draw blueprints in slices along X, Y and Z, and count what a build takes. 0.1.0, held back until a robot can build one. |
 | [robot/](robot/README.md) | The program on the robot's own chip for `rc-pilot`. The rc-pilot package ships it ready to burn. |
 | [web/](web/README.md) | The fetch proxy, shared page cache and cluster back end for `web` (above) — steps 3-5 of its design. Design only; blocked on trust decisions (proxy discovery, cache-read defaults), not code. |
 

@@ -73,7 +73,7 @@ local EXPECTED = { "tetris", "tape", "rc-pilot", "mouse",
 -- half-finished package rejoining the disk would ship silently and an
 -- operator would tick it in the picker and get a skeleton.
 -- Move a name from here to EXPECTED when it reaches 1.0.0.
-local NOT_SHIPPED = {}
+local NOT_SHIPPED = { "prefab" }
 
 -- The pure SHA-256 the build uses; loaded from the sibling TOS-Dev tree so
 -- the test can independently recompute each hash.

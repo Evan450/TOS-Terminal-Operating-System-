@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 67 rounds of work:
+Everything since v1.5.0, in 68 rounds of work:
 
+- [`prefab`, a base designer, is started](#prefab-a-base-designer-is-started)
 - [An add-on that will not load says so](#an-add-on-that-will-not-load-says-so)
 - [`pic` shows pictures](#pic-shows-pictures)
 - [`warhead`'s pop-ups have frames](#warheads-pop-ups-have-frames)
@@ -89,6 +90,10 @@ Everything since v1.5.0, in 67 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `prefab`, a base designer, is started
+
+`prefab` 0.1.0 designs a building one slice at a time, looking along X, Y or Z, with the slice behind showing faintly. It counts the materials and the robot's loads, and finds any block with nothing to place against. Nothing builds a blueprint yet, so it stays off the pack: the survey and the robot are designed in `docs/PREFAB.md` on the `dev` branch.
 
 ### An add-on that will not load says so
 
