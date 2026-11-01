@@ -25,12 +25,14 @@ local diskmount = {}
 
 local fs, log = nil, nil
 local bootAddr = nil
+local layerAddr = nil      -- the overlay's write layer: see kernel/cowfs.lua
 -- address -> { mountPoint = ..., label = ... } for every disk mounted here.
 local mounted = {}
 
 function diskmount.init(deps)
   fs, log = deps.fs, deps.log
   bootAddr = deps.bootAddr
+  layerAddr = deps.layerAddr
   mounted = {}
 end
 
@@ -76,6 +78,7 @@ function diskmount.mount(addr, proxy)
   --! protected tree; and with no known boot address, mount nothing.
   if not bootAddr then return nil, "boot disk unknown" end
   if addr == bootAddr then return nil, "the boot disk" end
+  if addr == layerAddr then return nil, "the overlay's write layer" end
   if mounted[addr] then return mounted[addr].mountPoint, mounted[addr].label end
   --! No type() test on getLabel: an OpenComputers component method is a
   --! CALLABLE TABLE (machine.lua), so `type(proxy.getLabel) == "function"`

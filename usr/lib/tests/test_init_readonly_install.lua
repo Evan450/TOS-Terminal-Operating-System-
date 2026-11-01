@@ -63,7 +63,9 @@ local function fakeFS(address, files, opts)
     if opts.readOnly then return used() end
     return opts.capacity
   end
-  function fs.isReadOnly() return opts.readOnly == true end
+  -- Callable, not a function: this is what component.proxy really hands back,
+  -- and a plain function here hid that no real read-only disk was ever noticed.
+  fs.isReadOnly = setmetatable({}, { __call = function() return opts.readOnly == true end })
   function fs.exists(p) p = norm(p); return fs.files[p] ~= nil or fs.dirs[p] == true end
   function fs.isDirectory(p) return fs.dirs[norm(p)] == true end
   function fs.size(p) local c = fs.files[norm(p)]; return c and #c or 0 end

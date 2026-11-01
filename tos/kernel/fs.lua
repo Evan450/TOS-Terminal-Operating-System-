@@ -83,13 +83,16 @@ end
 -- code mounts "/" before any other path exists, so we explicitly allow
 -- "/" itself (it is always the first mount). Other paths must be empty
 -- or missing on the existing tree before the new proxy takes over.
-function fs.mount(path, proxy)
+function fs.mount(path, proxy, opts)
   path = fs.normalize(path)
   if not path then return false, "invalid mount path" end  -- #SEC M-1
   if mounts[path] then
     return false, "Already mounted at " .. path
   end
-  if path ~= "/" and fs.exists(path) then
+  --! opts.over is the one exception, for an overlay that keeps the directory's
+  --! contents in view, which is what the rule exists to protect. Only kernel
+  --! code holds this function: securefs.mount passes two arguments, always.
+  if path ~= "/" and fs.exists(path) and not (opts and opts.over) then
     if fs.isDirectory(path) then
       local items = fs.list(path)
       if type(items) == "table" and #items > 0 then
@@ -102,6 +105,9 @@ function fs.mount(path, proxy)
   mounts[path] = proxy
   return true
 end
+
+--- The root disk's proxy, for what has to reach the disk past a mount.
+function fs.rootProxy() return mounts["/"] end
 
 --- Unmount
 function fs.unmount(path)

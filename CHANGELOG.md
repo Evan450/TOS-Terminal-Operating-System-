@@ -20,8 +20,11 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 107 rounds of work:
+Everything since v1.5.0, in 110 rounds of work:
 
+- [A copy-on-write root](#a-copy-on-write-root)
+- [Read-only disks are noticed](#read-only-disks-are-noticed)
+- [Packages as archives](#packages-as-archives)
 - [a network install is what the publisher signed](#a-network-install-is-what-the-publisher-signed)
 - [the licence is on every source file](#the-licence-is-on-every-source-file)
 - [a compatibility number you can check](#a-compatibility-number-you-can-check)
@@ -129,6 +132,32 @@ Everything since v1.5.0, in 107 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A copy-on-write root
+
+`overlay on <disk>` makes `/` copy-on-write from the next boot: reads fall through to the real root, every write lands on the other disk, and the real root is not touched. That does three things TOS could not do. A loot disk now offers "Run from here, saving to the hard drive", and a root password set on a read-only disk was still there after a reboot. `overlay on <disk> --reset` forgets everything at every boot, which is the half kiosk mode was missing: `kiosk.cfg` gated commands while the filesystem stayed permanently mutable. And you can try something, read `overlay changes`, then `overlay merge` it to the real root or `overlay drop` it.
+
+A file named like a whiteout could hide another, so the name is refused on every path that creates anything. The second disk can replace the kernel, so it stops being mounted once it holds the overlay and `mount` refuses it: a disk at `/mnt` is one a user can write to. A disk that has gone missing boots the real root and `doctor` reports it as an error, which is also the way back from an overlay that broke something.
+
+### Read-only disks are noticed
+
+No real read-only disk was ever noticed. A loot disk has been meant to get a warning at boot and the offer to install to a hard drive since August, but the check asked whether `isReadOnly` was a function, and a component proxy's methods are callable tables. It was true of every test's fake and of nothing real. Booted from a read-only disk, TOS went straight to First Boot Setup and threw the password away. It now warns and offers, and the install runs: 175 of 175 files copied, the EEPROM updated, and the machine boots from the hard drive with `verify` at 170 OK and 0 damaged.
+
+`drive list` had the same check, so every raw drive read as "nothing TOS can read". It now says what the drive holds.
+
+The test fakes are callable tables now, and a check fails if the question is ever asked of a proxy again. The headless runner gained `--readonly-boot`, a locked disk that OC treats as it treats a loot disk, which is what found this.
+
+### Packages as archives
+
+`pkg compact` turns a package's files under `/usr` into one mtar archive, compressed if there is a data card, and serves them back from it. OC charges 512 bytes per file on top of the content, so one file is cheaper than seventy before anything is compressed. On the booted machine `pkg compact --all` took calc, printer, tape and write from 147 KB to 59 KB, which `df` showed as 38% going to 36% of a 4 MB disk. calc still opened afterwards, from the archive, and after a reboot. `pkg expand` undoes it.
+
+The package changes nothing: its paths read, it lists and sizes as before, and its signed manifest still describes it. The archive sits under `/usr` as the lower half of a copy-on-write overlay, with the disk's real `/usr` as the upper half, so everything else there still takes writes. A machine that never ran `pkg compact` does one `exists()` at boot and loads none of this.
+
+Nothing loose goes until every entry has read back byte for byte. A compact that fails, for a full disk or a data card that cannot give back what it took, leaves the package where it was with no archive behind it. A damaged archive at boot costs that package and no other, and is logged. An archive path that climbs out with `..` is refused.
+
+`pkg expand` keeps what happened since: an edit stays and a removal stays removed. Everything goes to a temp name first and moves together, because a failed write to the real name would leave an empty file that hides the good copy.
+
+`pkg uninstall` now takes the directories it emptied with it. It used to leave `/usr/modules/<name>` behind on every removal, at 512 bytes each.
 
 ### a network install is what the publisher signed
 

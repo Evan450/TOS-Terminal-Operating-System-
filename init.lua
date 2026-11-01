@@ -97,8 +97,13 @@ end
 --! first symptom was `Persist failed: read-only filesystem` in the
 --! middle of setting the root password — with no hint of which disk was
 --! at fault or that the disk was the fault at all.
+--!
+--! A component proxy's methods are callable tables (machine.lua), so this asks
+--! whether the method is there. It said type(...) == "function", which is true
+--! of a test's fake and of nothing real: until 2026-11-01 no real read-only
+--! disk got this warning, or the install offer below.
 local function safeReadOnly(px)
-  if type(px) ~= "table" or type(px.isReadOnly) ~= "function" then return false end
+  if type(px) ~= "table" or not px.isReadOnly then return false end
   local ok, ro = pcall(px.isReadOnly)
   return ok and ro == true
 end
@@ -231,7 +236,11 @@ do
         gp(7, "1. Install TOS to the hard drive (recommended)", 0x00FF00)
         gp(8, bootReadOnly and "2. Continue read-only (nothing is saved)"
           or "2. Continue booting from floppy (limited space)", 0xAAAAAA)
-        gp(10, "Press 1 or 2:", 0xFFFFFF)
+        --! The answer an overlay adds (kernel/cowfs.lua): run from this disk now,
+        --! with what changes kept on the other one, and install later or never.
+        local canOverlay = bootReadOnly and bootFS.exists("/tos/kernel/cowfs.lua")
+        if canOverlay then gp(9, "3. Run from here, saving to the hard drive", 0xAAAAAA) end
+        gp(10, canOverlay and "Press 1, 2 or 3:" or "Press 1 or 2:", 0xFFFFFF)
         -- Wait for keypress
         while true do
           local sig, _, char = computer.pullSignal(60)
@@ -414,6 +423,9 @@ do
               break
             elseif char == 50 then  -- "2"
               break  -- Continue booting from floppy
+            elseif char == 51 and canOverlay then  -- "3"
+              _G._TOS_OVERLAY_DISK = largerDisk.address
+              break
             end
           elseif not sig then
             break  -- Timeout: continue booting from floppy
@@ -695,6 +707,28 @@ if unicode then loaded["unicode"] = unicode end
 -- Expose loaded table as package.loaded for OpenOS compat
 _G.package.loaded = loaded
 _G.package.loadedFrom = loadedFrom
+
+-- ============================================================
+-- Stage 1a: a copy-on-write root
+-- ============================================================
+--! Here, before anything below reads or writes the disk, so that every layer
+--! above sees one root. A machine with no overlay does one exists(). The loader
+--! is the raw disk's until this runs, so cowfs itself never comes from the layer.
+if _G._TOS_OVERLAY_DISK or bootFS.exists("/etc/overlay.cfg") then
+  local okC, cowfs = pcall(require, "kernel.cowfs")
+  local okB, root, state
+  if okC then okB, root, state = pcall(cowfs.boot, bootFS, _G._TOS_OVERLAY_DISK, component.proxy) end
+  if okB then
+    _G._TOS.overlay = state
+    if root then
+      bootFS, _G._TOS.bootFS = root, root
+      _G._TOS_ROOT_READONLY = false
+    end
+  else
+    _G._TOS.overlay = { missing = _G._TOS_OVERLAY_DISK or "?",
+                        why = tostring(okC and root or cowfs) }
+  end
+end
 
 -- ============================================================
 -- Stage 1b: Boot configuration (the everything → nothing spectrum)

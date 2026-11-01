@@ -531,6 +531,7 @@ public class HeadlessTOS {
   static Path disk2Dir;
   static String disk2Address, disk2Tier = "2";
   static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
+  static boolean readOnlyBoot;
 
   /**
    * A floppy labelled `name` over host directory `dir`, at an address fixed
@@ -586,6 +587,8 @@ public class HeadlessTOS {
     HDDManaged bootHdd = new HDDManaged(tier(bootTier));
     bootHdd.address_$eq(Option.apply(bootAddr));
     bootHdd.customRealPath_$eq(Option.apply(bootDir));
+    // Locked is what makes OC hand back a read-only filesystem, as for a loot disk.
+    if (readOnlyBoot) bootHdd.setLocked("headless");
 
     EEPROM eeprom = new EEPROM();
     eeprom.codeBytes_$eq(Option.apply(bios));
@@ -1200,6 +1203,7 @@ public class HeadlessTOS {
     }
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
     withTape = flag(args, "--tape");
+    readOnlyBoot = flag(args, "--readonly-boot");
     withGeolyzer = flag(args, "--geolyzer");
     withRobot = flag(args, "--robot");
     withChest = flag(args, "--robot-chest");

@@ -185,6 +185,11 @@ end
 local function checkSecurity(R)
   -- First, and an error: every program on this machine is being refused.
   if _G._TOS_POLICY_FAILURE then R("security: " .. _G._TOS_POLICY_FAILURE, "err") end
+  local overlay = _G._TOS and _G._TOS.overlay
+  if overlay and overlay.missing then
+    R("overlay: disk " .. tostring(overlay.missing):sub(1, 8)
+      .. " is missing, so writes are landing on the real root", "err")
+  end
   local U = _G._TOS and _G._TOS.users
   if not U then R("security: users unavailable", "warn"); return end
   -- BIOS-anchored manifest hash (C1). Only meaningful if anchored.

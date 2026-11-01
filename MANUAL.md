@@ -89,6 +89,7 @@ same place.
   - [5.2 Trash, vault & keychain](#52-trash-vault--keychain)
   - [5.3 Disk pooling (JBOD, opt-in)](#53-disk-pooling-jbod-opt-in)
   - [5.4 Unmanaged (raw) drives — TBFS](#54-unmanaged-raw-drives--tbfs)
+  - [5.5 A copy-on-write root](#55-a-copy-on-write-root)
 - [6. Commands at a Glance](#6-commands-at-a-glance)
   - [6.1 Files & navigation](#61-files--navigation)
   - [6.2 Saying things](#62-saying-things)
@@ -916,6 +917,30 @@ still runs an older EEPROM, reflash with `flash /bios.lua` first. A `deploy
 drive` volume is also a complete, mountable TOS disk you can reach with
 `drive mount` at any time.
 
+### 5.5 A copy-on-write root
+
+With an overlay, `/` comes from two disks. Reads come from the second disk if it
+has the file and from the real root if it does not, and every write lands on the
+second disk, so the real root is not touched. `overlay on <disk>` sets it up and
+takes effect at the next boot. It is root's, and it gives you three things:
+
+- **Run from a read-only disk.** A loot disk cannot hold a password. Boot from it
+  with a hard drive in the machine and choose *Run from here, saving to the hard
+  drive*. You are asked at each boot, because a read-only disk has nowhere to
+  remember the answer.
+- **An appliance that resets.** `overlay on <disk> --reset` forgets everything at
+  every boot. `kiosk.cfg` decides which commands a visitor may run, and this is
+  the other half: whatever they did is gone at the next boot.
+- **Try something, then keep it or don't.** Install what you like, read `overlay
+  changes`, then `overlay merge` to write it all to the real root or `overlay
+  drop` to forget it.
+
+The second disk can replace any file on the system, the kernel included, so once
+it holds the overlay it is no longer mounted, and `mount` refuses it. If it is
+missing at boot the machine runs on the real root, every write is permanent, and
+`doctor` reports that as an error. That is also the way back from an overlay that
+broke something: take the disk out and boot. See `man overlay`.
+
 ## 6. Commands at a Glance
 
 `help` shows the lean, install-aware list; this chapter is a quick **catalog by
@@ -941,8 +966,8 @@ operator's face, every seat — see [§4.1.4](#414-two-ways-to-say-something))
 reports a POST fault the BIOS caught — see [§9.3](#93-srm--system-repair--maintenance).)
 
 ### 6.4 Administration
-`users` `useradd` `userdel` `usermod` `mount` `umount` `jbod` `flash` `lua` `run`
-`edit` `bootsettings` `service` `cron` `deploy` `backup` `kiosk`
+`users` `useradd` `userdel` `usermod` `mount` `umount` `jbod` `overlay` `flash`
+`lua` `run` `edit` `bootsettings` `service` `cron` `deploy` `backup` `kiosk`
 
 (`jbod` — disk pooling — appears only after you enable it with `bootsettings
 jbod on`; see Chapter 5 and `man jbod`.)
@@ -1360,6 +1385,9 @@ pkg outdated                  what has a newer version on the inserted disks
 pkg upgrade <name> [<name>…]  replace those
 pkg upgrade --all --yes       replace everything with a newer version
 pkg upgrade <name> --dry-run  print the plan, change nothing
+pkg compact <name>            one archive instead of a file each
+pkg compact --all             the same for every package
+pkg expand <name>             back to loose files
 ```
 
 An upgrade is not "install over the top". TOS verifies the candidate first
@@ -2890,6 +2918,12 @@ cost to about nothing (and is why the "screensaver" draws nothing — anything
 prettier would cost more than what it replaced), and the display buffer removes
 GPU writes outright. The one optimization that *costs* energy is swap: paging a
 cold tab out is a disk write. *See also:* `swap`, `battery`, `doctor`, `mem`.
+
+**overlay** — `overlay [on <disk> [--reset] | off | changes | merge | drop]` **(root)**
+A copy-on-write root: from the next boot, every write lands on `<disk>` and the
+real root is not touched. `--reset` forgets them at every boot, `changes` lists
+them, `merge` writes them to the real root and `drop` forgets them.
+*See also:* [§5.5](#55-a-copy-on-write-root), `man overlay`.
 
 ### P
 

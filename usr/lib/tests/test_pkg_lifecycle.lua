@@ -79,7 +79,7 @@ local function newFS()
       files[p] = c; return true
     end,
     writeFileAtomic = function(p, c) return F.writeFile(p, c) end,
-    remove = function(p) files[p] = nil; return true end,
+    remove = function(p) files[p] = nil; dirs[p] = nil; return true end,
     list = function(p)
       local out, seen = {}, {}
       p = tostring(p):gsub("/$", "")
@@ -276,6 +276,20 @@ do
   if not uOk then print("        " .. tostring(uErr)) end
   eq("...and lands the new version", "1.5.0", pkg.info("libx").version)
   test("the dependant is still installed", pkg.info("app") ~= nil)
+end
+
+do
+  -- `pkg remove` left /usr/modules/<name> behind, empty, on every removal.
+  local pkg, fs = newPkg()
+  local af = { ["/usr/modules/app/sub/init.lua"] = "return {}" }
+  putPkg(fs, "/usr/repo", "app", manifest({ name = "app", version = "1.0.0",
+    kind = "command", files = { "/usr/modules/app/sub/init.lua" } }, af), af)
+  pkg.install("/usr/repo/app", { session = ADMIN })
+  test("a package's directory is there", fs.isDirectory("/usr/modules/app/sub"))
+  pkg.uninstall("app", { session = ADMIN })
+  test("removing it takes the directories it emptied", not fs.exists("/usr/modules/app/sub")
+    and not fs.exists("/usr/modules/app"))
+  test("but not the system's", fs.isDirectory("/usr/modules"))
 end
 
 -- ============================================================

@@ -378,6 +378,32 @@ for _, f in ipairs(all) do
   print(("    %s:%d  %s.%s()  -- %s"):format(f.file, f.line, f.var, f.method, f.why))
 end
 
+-- A proxy's methods are callable tables (machine.lua), so type(px.x) is never
+-- "function" on anything real, and a mock proxy, whose methods are functions,
+-- cannot show that. Two shipped: read-only disks were never noticed, and every
+-- raw drive read as unreadable. Three here are tables of our own that really do
+-- hold functions: fs.lua's two are mounts, and no component has either method,
+-- and selftest's proxy.set is kernel.screen's displayProxy.
+do
+  local LOCAL = { ["proxy.unmount"] = true, ["proxy.openHandles"] = true, ["proxy.set"] = true }
+  local wrong = {}
+  for _, path in ipairs(files) do
+    local h = io.open(path, "rb")
+    local src = h and h:read("a") or ""
+    if h then h:close() end
+    for line in src:gmatch("[^\n]+") do
+      local code = line:gsub("%-%-.*$", "")
+      for var, method in code:gmatch('type%(%s*(%a+)%.([%w_]+)%s*%)%s*[~=]=%s*"function"') do
+        if (var == "px" or var == "proxy" or var == "prx") and not LOCAL[var .. "." .. method] then
+          wrong[#wrong + 1] = path .. ": type(" .. var .. "." .. method .. ")"
+        end
+      end
+    end
+  end
+  test("nothing asks whether a proxy's method is a function", #wrong == 0)
+  for _, w in ipairs(wrong) do print("    " .. w) end
+end
+
 print("")
 print("Table: " .. apiPath .. "  (" ..
       (API.sources and API.sources.opencomputers or "?") .. ", generated " ..

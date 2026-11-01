@@ -698,6 +698,12 @@ function securefs.mount(path, proxy, session)
   end
   local norm = fs.normalize(path)
   if not norm then return false, INVALID_PATH end
+  --! An admin who could write the overlay's layer could shadow the kernel, and
+  --! so would be root. kernel/cowfs.lua.
+  local overlay = _G._TOS and _G._TOS.overlay
+  if overlay and proxy and proxy.address == overlay.disk then
+    return false, "That disk holds the overlay's writes, and is not mounted."
+  end
   local hit = isProtectedTarget(norm, ok)
   if hit then
     if log then log.warn("securefs", "MOUNT denied (protected system path " .. hit .. "): " .. norm) end

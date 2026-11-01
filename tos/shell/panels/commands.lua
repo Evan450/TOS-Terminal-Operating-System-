@@ -220,6 +220,7 @@ local REGISTRY = {
   inv      = { category = "extras", tier = 1, help = "Inventory control", alias = "inventory" },
   component = { category = "extras", tier = 2, help = "Generic component invocation" },
   compat   = { category = "extras", tier = 0, help = "OpenOS compat layer status" },
+  overlay  = { category = "extras", tier = 3, help = "Copy-on-write root: keep writes on another disk, then merge or forget them" },
   disk     = { category = "extras", tier = 2, help = "Removable disks: list/info/eject (install from one = 'pkg install', pooling = 'jbod', space = 'df')" },
   drive    = { category = "extras", tier = 1, slow = true, help = "Unmanaged (raw) drives: list/info/format/mount/check/defrag (needs 'blockfs')" },
   tape     = { category = "extras", tier = 1, help = "Tape archive (via the tape package)" },

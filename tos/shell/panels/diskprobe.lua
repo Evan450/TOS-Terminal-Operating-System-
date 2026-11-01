@@ -63,7 +63,8 @@ end
 --- kind is tbfs | osdi | simplefs | ocgpt | mtpt | mbr | blank | unknown |
 --- unreadable, and text completes "It holds ...".
 function M.probe(px)
-  if type(px) ~= "table" or type(px.readSector) ~= "function" then
+  --! Is it there, not is it a function: a proxy's methods are callable tables.
+  if type(px) ~= "table" or not px.readSector then
     return { kind = "unreadable", text = "nothing TOS can read as a raw drive" }
   end
   local s1 = sector(px, 1)

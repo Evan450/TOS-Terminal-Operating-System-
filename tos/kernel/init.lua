@@ -158,7 +158,13 @@ function kernel.boot(opts)
   local okDM, diskmountMod = pcall(require, "kernel.diskmount")
   if okDM and type(diskmountMod) == "table" then
     diskmount = diskmountMod
-    diskmount.init({ fs = fs, log = log, bootAddr = bootAddr })
+    local overlay = _G._TOS.overlay
+    diskmount.init({ fs = fs, log = log, bootAddr = bootAddr,
+                     layerAddr = overlay and overlay.disk })
+    if overlay and overlay.missing then
+      log.error("kernel", "Overlay disk " .. tostring(overlay.missing):sub(1, 8)
+        .. " is not here: running on the real root, and every write is permanent")
+    end
     for _, entry in ipairs(hal.list("filesystem")) do
       if entry.address ~= bootAddr then
         if not entry.proxy then entry.proxy = component.proxy(entry.address) end
@@ -353,6 +359,18 @@ function kernel.boot(opts)
       local sum = string.format("Self-repair: %d fixed, %d warning(s)", fixed, warned)
       log.warn("repair", sum)
       bootEcho("  " .. sum, warned > 0 and 0xFFAA00 or 0x00FF00)
+    end
+  end
+
+  -- Package archives, under /usr before anything can want their files. On a
+  -- machine that never ran `pkg compact` this is one exists() and no module.
+  if fs.exists("/var/pkg/archive") then
+    local okP, pkgfsMod = pcall(require, "kernel.pkgfs")
+    if okP and type(pkgfsMod) == "table" then
+      local okB, errB = pcall(pkgfsMod.boot, { fs = fs, log = log })
+      if not okB then log.error("kernel", "Package archives: " .. tostring(errB)) end
+    else
+      log.error("kernel", "Package archives did not load: " .. tostring(pkgfsMod))
     end
   end
 

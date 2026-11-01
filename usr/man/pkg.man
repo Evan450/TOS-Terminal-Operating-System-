@@ -8,6 +8,8 @@ SYNOPSIS
     pkg enable <name> | disable <name>
     pkg outdated
     pkg upgrade <name>... | --all [--yes] [--dry-run]
+    pkg compact <name> | --all
+    pkg expand <name>
     pkg make-disk <mount> [name ...]
     pkg repo list | add <name> <url> | remove <name> | forget <n|url|all>
     pkg remote
@@ -57,6 +59,18 @@ SUBCOMMANDS
                    plan and changes nothing. (The old 'install-dir' and
                    'from-floppy' still work as hidden aliases.)
     uninstall <name>   Remove an installed package.
+    compact <name> One archive instead of a file each, for what the package
+                   keeps under /usr; --all does every package. OC charges
+                   512 bytes per file, and with a data card the content
+                   shrinks too: calc went from 89 KB to 35. The package runs
+                   as before and its paths still read. Bare `pkg compact`
+                   lists what is compact. Nothing goes until the archive has
+                   read back byte for byte. A compressed archive needs a data
+                   card to read, so keep one in the machine, and leave a
+                   package loose if it reads its own files in a hot loop.
+    expand <name>  Back to loose files. An edit made since is kept, and a file
+                   removed since stays removed. An upgrade or an uninstall
+                   needs neither: they deal with the archive themselves.
     enable <name>  Switch an installed package back on.
     disable <name> Switch it off without removing it (its commands and its
                    service stop; its files stay).

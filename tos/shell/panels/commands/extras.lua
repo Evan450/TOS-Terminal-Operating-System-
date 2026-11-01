@@ -1767,6 +1767,104 @@ return function(C, S, deps)
   C.share = C.scp
 
   -- ── Screen switching ──────────────────────────────────
+  --! Copy-on-write root. kernel/cowfs.lua has the mechanism, `man overlay` when
+  --! to want it. Root, all of it: this decides what `/` is.
+  C.overlay = function(args, o)
+    if not rootOnly(o) then return end
+    local okC, cowfs = pcall(require, "kernel.cowfs")
+    if not okC then o("Overlays are not on this install.", T.error); return end
+    local sub = (args[1] or "status"):lower()
+    local now = _G._TOS.overlay
+    local running = now and now.root
+    local real = running and now.lower or require("kernel.fs").rootProxy()
+
+    if sub == "status" then
+      if running then
+        local c = now.root.changes()
+        o(string.format("Root overlay: writes land on %s%s", now.disk:sub(1, 8),
+          now.reset and ", forgotten at every boot" or ""), T.highlight)
+        o(#c .. " change(s) so far. 'overlay changes' lists them.", T.dim)
+      elseif now and now.missing then
+        o("The overlay's disk " .. tostring(now.missing):sub(1, 8) .. " is not here.", T.error)
+        o("This is the real root, and every write is permanent.", T.warning)
+      else
+        o("No overlay: writes land on the real root.", T.fg)
+        o("Usage: overlay on <disk> [--reset] | off | changes | merge | drop", T.dim)
+      end
+
+    elseif sub == "on" then
+      local ref, reset
+      for i = 2, #args do
+        if args[i] == "--reset" then reset = true
+        elseif args[i]:sub(1, 1) == "-" then
+          o("Unknown option '" .. args[i] .. "'. Nothing was done.", T.error)
+          return
+        else ref = args[i] end
+      end
+      if not ref then o("Usage: overlay on <disk> [--reset]", T.dim); return end
+      local hits = {}
+      for addr in component.list("filesystem") do
+        local okP, px = pcall(component.proxy, addr)
+        if okP and px and (addr:sub(1, #ref) == ref or (px.getLabel and px.getLabel() == ref)) then
+          hits[#hits + 1] = addr
+        end
+      end
+      if #hits ~= 1 then
+        o(#hits == 0 and ("No disk matches: " .. ref) or ("Several disks match: " .. ref), T.error)
+        return
+      end
+      local px = component.proxy(hits[1])
+      if hits[1] == real.address or hits[1] == computer.tmpAddress() then
+        o("That disk cannot hold the writes: it is what they would change, or it is tmpfs.", T.error)
+      elseif px.isReadOnly() then
+        o("That disk is read-only.", T.error)
+      elseif real.isReadOnly and real.isReadOnly() then
+        o("The real root is read-only, so this is chosen at each boot instead.", T.warning)
+      else
+        local ok2, err2 = cowfs.saveConfig(real, hits[1], reset)
+        if not ok2 then o(tostring(err2), T.error); return end
+        o("From the next boot, writes land on " .. hits[1]:sub(1, 8)
+          .. (reset and " and are forgotten at every boot." or "."), T.highlight)
+        o("It is no longer mounted from then on: whoever can write it can change the kernel.", T.dim)
+      end
+
+    elseif sub == "off" then
+      if not real.exists(cowfs.CONFIG) then o("No overlay is set.", T.dim); return end
+      real.remove(cowfs.CONFIG)
+      o("From the next boot this is the real root. What is in the layer stays there.", T.highlight)
+
+    elseif not running then
+      o("There is no overlay running.", T.dim)
+
+    elseif sub == "changes" then
+      local list = now.root.changes()
+      for _, c in ipairs(list) do o((c.removed and "- " or "+ ") .. c.path, T.fg) end
+      o(#list .. " change(s).", T.dim)
+
+    elseif sub == "merge" then
+      if now.lower.isReadOnly and now.lower.isReadOnly() then
+        o("The real root is read-only, so there is nothing to merge into.", T.error)
+        o("Install to a writable disk from the boot offer instead.", T.dim)
+        return
+      end
+      local n, err3 = cowfs.merge(now)
+      if not n then
+        o("Stopped: " .. tostring(err3) .. ". Nothing was lost, and this can be run again.", T.error)
+        return
+      end
+      cowfs.drop(now)
+      o(n .. " change(s) written to the real root. Reboot to finish.", T.highlight)
+
+    elseif sub == "drop" then
+      local ok3, err4 = cowfs.drop(now)
+      if not ok3 then o(tostring(err4), T.error); return end
+      o("Everything in the layer goes at the next boot.", T.highlight)
+
+    else
+      o("Usage: overlay on <disk> [--reset] | off | changes | merge | drop", T.dim)
+    end
+  end
+
   C.screen = function(args, o)
     local ok2, screenMod = pcall(require, "kernel.screen")
     if not ok2 then o("Screen module unavailable", T.error); return end

@@ -1620,8 +1620,8 @@ pkg.PKG_WRITE_ROOTS      = PKG_WRITE_ROOTS
 OPS_NAMES = {}
 for n in ([[
 DEFAULT_REPO_ROOTS _loadAnyManifest _protectedTargetRefusal _signGate
-_verificationGate addRepo checkSignature computeLicenseHash
-describeConflicts describeContradictions discoveredPolicy exportDisk
+_verificationGate addRepo checkSignature compact computeLicenseHash
+describeConflicts describeContradictions discoveredPolicy expand exportDisk
 findConflicts findInRepos foreignDefaultCaps forgetModules forgetRepo
 install installByName installFromFloppy installRemote installWithDeps
 knownRepos listAllAvailable listRemoteAvailable listRepo outdated plan

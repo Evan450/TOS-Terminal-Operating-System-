@@ -681,6 +681,36 @@ function pkg.outdated(opts)
   return out
 end
 
+--- Turn a package's files under /usr into one archive (kernel/pkgfs.lua).
+--- Reversible with pkg.expand. Nothing about the package changes: its signed
+--- manifest is untouched, because the files read back the same.
+--- @tier admin
+function pkg.compact(name, opts)
+  local g, gErr = adminGate(opts)
+  if not g then return false, gErr end
+  local m = installed[name]
+  if not m then return false, "not installed: " .. tostring(name) end
+  local targets = {}
+  for _, t in ipairs(m.files or {}) do
+    if t:sub(1, 5) == "/usr/" and fs.exists(t) then targets[#targets + 1] = t end
+  end
+  if #targets == 0 then return false, "nothing of " .. name .. " is under /usr" end
+  local okP, pkgfs = pcall(require, "kernel.pkgfs")
+  if not okP then return false, "package archives are not on this install" end
+  pkgfs.init({ fs = fs, log = log })
+  return pkgfs.compact(name, targets)
+end
+
+--- Back to loose files. An edit made since stays, and so does a removal.
+--- @tier admin
+function pkg.expand(name, opts)
+  local g, gErr = adminGate(opts)
+  if not g then return false, gErr end
+  local pkgfs = package.loaded["kernel.pkgfs"]
+  if not (pkgfs and pkgfs.has(name)) then return false, "not compact: " .. tostring(name) end
+  return pkgfs.expand(name)
+end
+
 --- Upgrade one installed package to the newest version on offer.
 --- opts.force            proceed past conflicts / allow a downgrade
 --- opts.allowUnverified  same meaning as install's
@@ -1684,6 +1714,12 @@ function pkg.uninstall(name, opts)
     end
   end
 
+  -- A compact package's files are one archive.
+  do
+    local P = package.loaded["kernel.pkgfs"]
+    if P and P.has(name) then P.drop(name) end
+  end
+
   -- Remove the files this package owns. Best-effort: failures are
   -- logged but don't abort the uninstall, because the manifest is
   -- removed at the end and a half-removed package is still better
@@ -1692,6 +1728,17 @@ function pkg.uninstall(name, opts)
     local rmOk, rmErr = pcall(fs.remove, target)
     if not rmOk and log then
       log.warn("pkg", "Could not remove " .. target .. ": " .. tostring(rmErr))
+    end
+  end
+  -- The directories they emptied, which cost what a file does. Two levels
+  -- down and no further up: /usr/modules and /etc/rc.d are the system's.
+  for _, target in ipairs(m.files or {}) do
+    local d = tostring(target):match("^(.*)/[^/]*$")
+    while d and select(2, d:gsub("/", "")) > 2 do
+      local list = fs.isDirectory(d) and fs.list(d)
+      if not list or #list > 0 then break end
+      pcall(fs.remove, d)
+      d = d:match("^(.*)/[^/]*$")
     end
   end
   -- And forget the modules the kernel loader read from them. An upgrade is

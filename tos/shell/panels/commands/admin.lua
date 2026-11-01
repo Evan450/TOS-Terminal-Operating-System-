@@ -1246,6 +1246,39 @@ return function(C, S, deps)
         o("make-disk failed: " .. tostring(summary), T.error)
       end
 
+    elseif sub == "compact" or sub == "expand" then
+      --! One archive instead of a file each: OC charges 512 bytes per file, and
+      --! with a data card the content shrinks too. Packages under /usr only, so
+      --! anything in /etc stays loose. `expand` puts it back.
+      if not args[2] then
+        o("Usage: pkg " .. sub .. " <name>" .. (sub == "compact" and " | pkg compact --all" or ""), T.dim)
+        local P = package.loaded["kernel.pkgfs"]
+        if P and #P.list() > 0 then o("Compact now: " .. table.concat(P.list(), ", "), T.dim) end
+        return
+      end
+      local names = { args[2] }
+      if sub == "compact" and args[2] == "--all" then
+        names = {}
+        for _, e in ipairs(pkgMod.list() or {}) do names[#names + 1] = e.name end
+      end
+      local saved = 0
+      for _, n in ipairs(names) do
+        local fn = sub == "compact" and pkgMod.compact or pkgMod.expand
+        local ok2, r = fn(n, { session = helpers.sessionOf(S) })
+        if ok2 and sub == "expand" then
+          o("Expanded: " .. n, T.highlight)
+        elseif ok2 then
+          local kept = r.before - r.after
+          saved = saved + kept
+          o(string.format("Compact: %s, %d files, %.1f KB -> %.1f KB%s", n, r.files,
+            r.before / 1024, r.after / 1024, r.packed and "  (needs this data card to read)" or ""),
+            T.highlight)
+        else
+          o(n .. ": " .. tostring(r), #names > 1 and T.dim or T.error)
+        end
+      end
+      if #names > 1 then o(string.format("Saved %.1f KB.", saved / 1024), T.highlight) end
+
     elseif sub == "enable" or sub == "disable" then
       -- Folded in from the retired `mod` command (the legacy module manager was
       -- replaced by pkg in v1.3.1): toggle an installed package on/off without

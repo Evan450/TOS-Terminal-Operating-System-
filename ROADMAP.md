@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**56 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**53 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 32 | Planned or under investigation. Most contributions belong here. |
+| Planned | 29 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (8) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (7)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (7)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -210,36 +210,6 @@ THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major nu
 *Planned* · from the round *Federated package repos (2026-09-27)*
 
 SLICE 3: RESOLUTION. Winner order: one shared copy satisfies everyone &gt; higher trust &gt; newer &gt; less disk; a tie asks. Private copies when no shared copy works; consensus and freshness across mirrors (a signature cannot stop a mirror serving an OLD signed version; agreement between repos can).
-
-### Mount packages as read-only archives instead of extracting them
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-MOUNT PACKAGES AS READ-ONLY ARCHIVES INSTEAD OF EXTRACTING THEM. PsychOS' pkgfs (lib/pkgfs.lua) installs a package by REGISTERING its archive: a filesystem-component-shaped table over an mtar file, optionally lz16-compressed, with a path index, where write/rename/makeDirectory/seek return false. activatePackage is one line. Fuchas does the same at boot with nitrofs; Zorya reads arcfs/romfs/cpio from the BOOTLOADER.
-
-WHY IT IS WORTH MORE TO US THAN TO THEM: OC charges fileCost (512 B) per file on top of content, and a full install leaves \~260 KB free on an empty T2. Measured on TOS-Extras/dist/optional-utilities as shipped:
-
-```text
-  all 16 packages   76 files   745,015 B   38,912 B fileCost
-  cluster-master    13 files   140,631 B    6,656 B
-  blockfs            3 files    55,343 B    1,536 B
-```
-
-Archive-mounting all 16 recovers \~23 KB of pure fileCost before compression, and data-card deflate on Lua source usually halves the content. Call it 350-400 KB back on a disk with 260 KB to give: four installed packages becomes a dozen.
-
-WE ALREADY OWN THE THREE HARD PARTS:
-
-- fs.mount(path, proxy) takes anything filesystem-component- shaped, and netfs.lua and jbod.lua are existing producers of exactly that shape.
-- compress.lua already frames deflate as INDEPENDENTLY inflatable chunks (nChunks(u16), then cLen/cData pairs). That is random access at chunk granularity, which is what an archive mount needs. Written for swap and backups; the property generalises for free.
-- OC filesystem handles support seek (OpenOS 1.8.9: lib/devfs.lua:329, lib/core/full\_buffer.lua:12), so a mount seeks to a chunk instead of reading a 140 KB package whole on a 192 KB box.
-
-SIGNING GETS SIMPLER, NOT HARDER: pkgsign signs a manifest of per-file hashes today; one archive is one hash and one signature, the archive is immutable after install, and srm scan stops walking a package's files. Uninstall becomes one remove.
-
-COST, and compress.lua's own header already says it: a data- card call draws a per-tick budget and can sleep the machine a tick, so this is for COLD data. Package code is read once per require, which fits; a package whose data files are read in a hot loop does not. Per-package flag, not a global mode.
-
-No data card -&gt; compress.lua falls back to a stored blob, so the fileCost win survives without compression.
-
-securefs must still mediate the mount point, exactly as the jbod header says ("a TRANSPORT, not an access layer").
 
 ### Get listed in `oppm list`
 
@@ -462,30 +432,6 @@ NOT a gap, recorded so it isn't re-investigated: their "fastest VT100 in OC" is 
 
 ## Files and storage
 
-### If we build the archive mount, use mtar — do not invent a format
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-IF WE BUILD THE ARCHIVE MOUNT, USE mtar -- DO NOT INVENT A FORMAT. Refines MOUNT PACKAGES AS READ-ONLY ARCHIVES above. mtar is \~100 lines and the header is trivial:
-
-\\255\\255 &lt;version:u8&gt; &lt;nameLen&gt; &lt;name&gt; &lt;fileLen&gt; version 0 uses &gt;I2 for the length, version 1 &gt;I8. Entries stream, so an iterator walks the archive without loading it, and cleanPath strips . and .. segments AT PARSE TIME -- a traversal guard we would otherwise have to write.
-
-The reason beyond saving work: four implementations already read it (PsychOS' libmtar, ULOS 2's mtarldr boots FROM one, Zorya's reader, plus the writers), so a TOS package archive would be readable by other systems and we could read theirs. This is the one place we lose nothing by being compatible: a package archive has no trust properties of its own -- the Ed25519 signature over it is where the security lives, and that stays ours.
-
-### Copy-on-write overlay mounts
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-COPY-ON-WRITE OVERLAY MOUNTS. Plan9k's pipes/06\_cowfs.lua is \~120 lines: cowfs.new(readfs, writefs) returns one proxy, reads fall through to the read-only side unless the write side has the file, writes always land on the write side, and deletes are recorded as &lt;dir&gt;/.cfsdel.&lt;name&gt; whiteouts so a delete can shadow a file that exists only on the read-only side.
-
-Three things we cannot do today and would get:
-
-- RUN from read-only media. HEAD already offers to install from a read-only boot disk; an overlay is the other answer -- run NOW, writes on any writable disk, install later or never.
-- A kiosk or LOG WALL appliance that RESETS on reboot. Point the write side at a scratch volume and wipe it at boot. kiosk.cfg gates commands; the filesystem is still permanently mutable. This is the missing half.
-- TRY-BEFORE-COMMIT: pkg install or an srm experiment on an overlay, inspect, then merge or drop the write layer. A weaker form of `srm baseline --full`, reached without media.
-
-WHITEOUTS ARE A NAMESPACE HAZARD and Plan9k does not guard it: a real file named .cfsdel.x must not be able to hide x. fs.lua already refuses to mount over a non-empty directory (#SEC H27) and refuses to remove mount points, so naming and blocking this class is house style. Needs its own test.
-
 ### Still \~8 sector writes per tiny file
 
 *Planned* · from the round *TBFS: the cost was writes, and a second handle (2026-09-06)*
@@ -645,8 +591,8 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). DONE 2026-11-01: kernel/policy.lua, failing closed.
 7. SHARED getopt (OCOS \[\*\]). DONE 2026-11-01: helpers.getopt, on the commands where a flag could become a file name.
 8. LOCALISE THE INSTALLER (survey 10). DONE 2026-11-01.
-9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). Disk, not RAM; large; wants the floor (2) first.
-10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). Builds on 9.
+9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). DONE 2026-11-01: `pkg compact` / `pkg expand`, kernel/pkgfs.lua.
+10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). DONE 2026-11-01: the `overlay` command, on the root, and the read-only boot offer.
 11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]).
 12. /proc-STYLE READ-ONLY INTROSPECTION (Cynosure \[\*\]).
 13. FAR: RUN-THIS-ONCE CONFINEMENT (survey 11), "ASK" AS A THIRD STATE (KittenOS), LINE DISCIPLINES (survey 19), the LOG WALL appliance (settle its local-or-feed question first).

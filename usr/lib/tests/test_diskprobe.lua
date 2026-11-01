@@ -35,15 +35,20 @@ local SS, COUNT = 512, 256
 local writes = 0
 local function drive(sectors, opts)
   opts = opts or {}
+  -- Callable tables, as component.proxy hands back: the probe asked for a
+  -- function, so on real hardware it said every drive was unreadable.
+  local function method(fn)
+    return setmetatable({}, { __call = function(_, ...) return fn(...) end })
+  end
   local px = {
-    getSectorSize = function() return SS end,
-    getCapacity = function() return SS * COUNT end,
-    readSector = function(n)
+    getSectorSize = method(function() return SS end),
+    getCapacity = method(function() return SS * COUNT end),
+    readSector = method(function(n)
       if opts.raises then error("drive removed") end
       local s = sectors[n] or ""
       return s .. string.rep("\0", SS - #s)
-    end,
-    writeSector = function() writes = writes + 1; error("the probe must not write") end,
+    end),
+    writeSector = method(function() writes = writes + 1; error("the probe must not write") end),
   }
   return px
 end
