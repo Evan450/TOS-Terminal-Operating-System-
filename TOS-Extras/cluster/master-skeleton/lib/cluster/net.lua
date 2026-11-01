@@ -137,6 +137,7 @@ function netmod.sendAssignment(managerAddr, assignment)
     compute_profile = assignment.compute_profile or "mixed",
     tasks_inline    = assignment.tasks_inline,
     tasks_ref       = assignment.tasks_ref,
+    store_addr      = assignment.store_addr,
     inputs_inline   = assignment.inputs_inline,
     inputs_ref      = assignment.inputs_ref,
     result_sink     = assignment.result_sink or "inline",

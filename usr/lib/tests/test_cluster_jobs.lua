@@ -838,13 +838,14 @@ do
     local store = fakeStore({ addr = "addr-store" })
     jobs.setStore(store, ser)
     local st2 = freshState()
-    local job_id, a = submit(st2, { tasks = tasks(40) })  -- 8000 > 4096
+    local job_id, a = submit(st2, { tasks = tasks(25) })  -- 5000 > 4096
     test("big slice spills",            nil,     a[1].tasks_inline)
+    test("...and names the node",       "addr-store", a[1].store_addr)
     test("...ref names the job key",
       "public://job-" .. job_id .. "/tasks/assignment-1", a[1].tasks_ref)
     test("...lease is kept for release", "LEASE-1", a[1].tasks_lease)
     test("...exactly one write",         1,       #store.puts)
-    test("...of the whole slice",        8000,    store.puts[1].bytes)
+    test("...of the whole slice",        5000,    store.puts[1].bytes)
     -- §4.6: task lists go under job-<id>/, NOT domain-<id>/, so they
     -- outlive the Manager that was working on them.
     test("...under the job namespace", true,
@@ -857,10 +858,11 @@ do
     local store = fakeStore({ addr = "addr-store", failPut = true })
     jobs.setStore(store, ser)
     local st2 = freshState()
-    local _, a = submit(st2, { tasks = tasks(40) })
+    local _, a = submit(st2, { tasks = tasks(25) })
     test("failed write falls back to inline", "table", type(a[1].tasks_inline))
-    test("...with the tasks intact",          40,      #a[1].tasks_inline)
+    test("...with the tasks intact",          25,      #a[1].tasks_inline)
     test("...and no dangling ref",            nil,     a[1].tasks_ref)
+    test("...and no node named",              nil,     a[1].store_addr)
     test("...the job still has its work",     1,       #a)
   end
 
@@ -870,10 +872,10 @@ do
     local store, net = fakeStore({ addr = "addr-store" }), fakeNet()
     jobs.setStore(store, ser)
     local st2 = freshState()
-    -- 80 tasks = two FULL slices. 41 would give 40 + 1, and the tail of
-    -- one task is 200 bytes -- correctly under budget and correctly left
-    -- inline, which is a different case (and one (b) already covers).
-    local job_id, a = submit(st2, { tasks = tasks(80) })
+    -- 50 tasks = two FULL slices of 5000 bytes. 26 would give 25 + 1, and
+    -- the tail of one task is 200 bytes -- correctly under budget and
+    -- correctly left inline, which is a different case ((b) covers it).
+    local job_id, a = submit(st2, { tasks = tasks(50) })
     test("two full slices, both spilled", 2, #store.puts)
     for _, one in ipairs(a) do jobs.dispatch(one, "addr-mgr", st2, net) end
     for _, one in ipairs(a) do
@@ -887,6 +889,55 @@ do
       store.releases[1].key:find("^job%-" .. job_id .. "/") ~= nil)
   end
 
+  -- (g) A count cannot promise a size. 40 tasks of 200 bytes is 8 KB, which
+  -- fits no packet: with no node it must be cut, not left to go round the
+  -- scheduler for ever.
+  do
+    local store = fakeStore({ addr = nil })
+    jobs.setStore(store, ser)
+    local st2 = freshState()
+    local _, a = submit(st2, { tasks = tasks(40) })
+    test("no node: 40 tasks of 200 bytes are cut by size", 2, #a)
+    test("...the first slice fits the budget", 20, #a[1].tasks_inline)
+    test("...the second holds the rest",       20, #a[2].tasks_inline)
+    local store2 = fakeStore({ addr = "addr-store" })
+    jobs.setStore(store2, ser)
+    local _, b = submit(freshState(), { tasks = tasks(40) })
+    test("with a node the cut is at what one STORE_PUT carries", 2, #b)
+    test("...the full slice is a pointer", true, b[1].tasks_ref ~= nil)
+    test("...the short one stays inline", nil, b[2].tasks_ref)
+    test("...no write bigger than a packet", true, store2.puts[1].bytes <= 5120)
+  end
+
+  -- (h) One task cannot be cut, so it is refused at submit with its index.
+  do
+    local sized = { encode = function(t) return string.rep("x", t.size or 100) end }
+    jobs.setStore(fakeStore({ addr = nil }), sized)
+    local i, n, limit = jobs.oversizedTask({ tasks = { { size = 100 }, { size = 9000 } } })
+    test("the oversized task is named", 2, i)
+    test("...with its size",            9000, n)
+    test("...and the limit",            5120, limit)
+    test("a job that fits names none",  nil,
+      (jobs.oversizedTask({ tasks = { { size = 100 } } })))
+    jobs.setStore(fakeStore({ addr = nil }), ser)
+  end
+
+  -- (i) A packet that can never fit fails the job. It used to requeue, once a
+  -- tick, for ever: the job read "running" and the log filled.
+  do
+    jobs.setStore(fakeStore({ addr = nil }), ser)
+    local st2 = freshState()
+    local net = fakeNet()
+    local job_id, a = submit(st2, { tasks = tasks(1) })
+    net.sendAssignment = function() return false, "Packet too large" end
+    local ok, err = jobs.dispatch(a[1], "addr-mgr", st2, net)
+    test("too large is not a retry", false, ok)
+    test("...and says so", "packet_too_large", err)
+    test("...the assignment failed", "failed", st2.getJob(job_id).assignments[a[1].assignment_id].state)
+    test("...and the job finished", true, st2.getJob(job_id).state ~= "running"
+      and st2.getJob(job_id).state ~= "pending")
+  end
+
   -- (f) A release that throws must not stop the job finalizing. The key
   -- expires on its own TTL anyway; the job outcome is what matters.
   do
@@ -894,7 +945,7 @@ do
     store.release = function() error("storage node exploded") end
     jobs.setStore(store, ser)
     local st2, net = freshState(), fakeNet()
-    local job_id, a = submit(st2, { tasks = tasks(40) })
+    local job_id, a = submit(st2, { tasks = tasks(25) })
     jobs.dispatch(a[1], "addr-mgr", st2, net)
     jobs.onResult(a[1].assignment_id, { status = "ok" }, st2)
     test("a throwing release does not block finalize", "done",

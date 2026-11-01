@@ -156,6 +156,7 @@ function cluster.payload.assign(info)
     retry_policy  = info.retry_policy or "safe",
     tasks_inline  = info.tasks_inline,
     tasks_ref     = info.tasks_ref,
+    store_addr    = info.store_addr,
     inputs_inline = info.inputs_inline,
     inputs_ref    = info.inputs_ref,
     result_sink   = info.result_sink or "inline",

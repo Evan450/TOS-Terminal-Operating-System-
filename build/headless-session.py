@@ -26,7 +26,7 @@ only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 (the internet card out of its slot), `resolution W H` (resize the screen
 from outside, which raises the same screen_resized a real resize does),
 `seat N` (with --seats 2: type at and read screen N from then on),
-`machine N` (with --machines 2: the same, for the second computer), and
+`machine N` (with --machines 2 or 3: the same, for that computer), and
 `hostmv FROM TO` (rename a file on the boot disk from outside the machine,
 e.g. take the kernel away to see the BIOS's K4). Two more are expanded here:
 
@@ -284,13 +284,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="with --robot: starts empty, with an inventory controller and a chest")
     ap.add_argument("--robot-rubbish", action="store_true",
                     help="with --robot-chest: a pickaxe, and four blocks in the way of the test hut")
-    ap.add_argument("--machines", choices=["1", "2"], default="1",
-                    help="2 adds a second computer with its own fresh TOS, joined by "
-                         "network cards and a relay; `machine N` picks which one")
+    ap.add_argument("--machines", choices=["1", "2", "3"], default="1",
+                    help="2 or 3: more computers, each with its own fresh TOS, joined by "
+                         "network cards and one relay; `machine N` picks which one")
     ap.add_argument("--peer-disk", metavar="DIR",
-                    help="like --disk, a copy of DIR as a second disk in the SECOND machine")
+                    help="like --disk, a copy of DIR as a second disk in each EXTRA machine")
     ap.add_argument("--peer-put", action="append", metavar="PATH=TEXT",
-                    help="like --put, onto the SECOND machine's disk (repeatable)")
+                    help="like --put, onto each EXTRA machine's disk (repeatable)")
     ap.add_argument("--seats", choices=["1", "2"], default="1",
                     help="2 adds a second GPU, screen and keyboard: two seats, picked by `seat N`")
     ap.add_argument("--floppy", action="append", metavar="NAME=DIR",
@@ -339,16 +339,15 @@ def main(argv: list[str] | None = None) -> int:
                 shutil.copytree(disk_src, disk)
         else:
             boot, disk, work = stage(run, hs.RELEASE, disk_src, args.put)
-        peer_boot = None
-        if args.machines == "2":
+        peers = range(2, int(args.machines) + 1)
+        for n in peers:
             if args.os != "tos":
-                raise ValueError("--machines 2 boots TOS on both")
-            peer_boot = run / "boot2"
-            stage_boot(peer_boot, hs.RELEASE, args.peer_put)
+                raise ValueError("--machines boots TOS on every machine")
+            stage_boot(run / f"boot{n}", hs.RELEASE, args.peer_put)
             if args.peer_disk:
-                shutil.copytree(args.peer_disk, run / "disk2")
-        elif args.peer_disk or args.peer_put:
-            raise ValueError("--peer-disk and --peer-put need --machines 2")
+                shutil.copytree(args.peer_disk, run / f"disk{n}")
+        if not peers and (args.peer_disk or args.peer_put):
+            raise ValueError("--peer-disk and --peer-put need --machines 2 or 3")
     except (ValueError, KeyError) as e:
         shutil.rmtree(run, ignore_errors=True)
         print(f"error: {e}", file=sys.stderr)
@@ -397,10 +396,10 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--transposer")
     if args.seats != "1":
         cmd += ["--seats", args.seats]
-    if peer_boot is not None:
-        cmd += ["--peer-boot", str(peer_boot)]
+    for n in peers:
+        cmd += ["--peer-boot", str(run / f"boot{n}")]
         if args.peer_disk:
-            cmd += ["--peer-disk", str(run / "disk2")]
+            cmd += ["--peer-disk", str(run / f"disk{n}")]
     cmd += floppy_args
     if args.trace:
         cmd.append("--trace")

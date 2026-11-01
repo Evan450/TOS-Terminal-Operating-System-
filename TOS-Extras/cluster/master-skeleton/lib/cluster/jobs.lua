@@ -42,6 +42,14 @@ end
 -- below would have corrupted the spec kept for retry.
 local MAX_TASKS_PER_ASSIGNMENT = 40 -- per §9 / §4.3 (fits < ~5 KB typical)
 
+-- A count cannot promise a size. Forty tasks of 200 bytes each is 8 KB, which
+-- fits neither an assignment nor a STORE_PUT, so a job like that went round
+-- the scheduler once a second for ever with "Packet too large". A slice is
+-- therefore also cut by bytes. With a Storage Node one may run to this; the
+-- part over INLINE_TASK_BUDGET is what spills. One task alone cannot be cut,
+-- so anything bigger is refused at submit (jobs.oversizedTask).
+local STORED_TASK_BUDGET = 5120
+
 -- Retry budgets by policy. "safe" gets multiple attempts because the
 -- work is idempotent by declaration; "once" gets exactly one retry;
 -- "none" gets zero retries beyond the initial dispatch.
@@ -79,6 +87,22 @@ local LOG_TAG = "cluster.jobs"
 -- ============================================================
 -- Job intake
 -- ============================================================
+
+-- Bytes one task takes on the wire, or nil if nothing here can measure it.
+local function taskBytes(task)
+  if not (serializeRef and serializeRef.encode) then return nil end
+  local ok, blob = pcall(serializeRef.encode, task)
+  return ok and type(blob) == "string" and #blob or nil
+end
+
+--- The first task too big for any packet: its index and size, or nil.
+function jobs.oversizedTask(jobSpec)
+  if type(jobSpec) ~= "table" or type(jobSpec.tasks) ~= "table" then return nil end
+  for i, task in ipairs(jobSpec.tasks) do
+    local n = taskBytes(task)
+    if n and n > STORED_TASK_BUDGET then return i, n, STORED_TASK_BUDGET end
+  end
+end
 
 function jobs.splitIntoAssignments(job_id, jobSpec, stateRef)
   stateRef = stateRef or require("cluster.state")
@@ -120,6 +144,8 @@ function jobs.splitIntoAssignments(job_id, jobSpec, stateRef)
 
   local function mkAssignment(task_slice, idx)
     local inline, ref, lease = placeTasks(task_slice, idx)
+    -- The Manager reads a pointer back from the node, so it needs to be told
+    -- which node. It holds no storage config of its own.
     return {
       job_id          = job_id,
       priority        = priority,
@@ -130,6 +156,7 @@ function jobs.splitIntoAssignments(job_id, jobSpec, stateRef)
       tasks_inline    = inline,         -- nil when the slice went to Public
       tasks_ref       = ref,
       tasks_lease     = lease,          -- needed to release it at finalize
+      store_addr      = ref and storeRef.address and storeRef.address() or nil,
       inputs_inline   = jobSpec.inputs, -- only safe to copy when small
       inputs_ref      = jobSpec.inputs_ref,
       result_sink     = result_sink,
@@ -157,21 +184,24 @@ function jobs.splitIntoAssignments(job_id, jobSpec, stateRef)
     -- one chunk falls out of the tail as a single assignment, which is
     -- why there is no small-job branch — see the note on sizing above.
     -- Each slice is a fresh table, so no assignment aliases jobSpec.tasks.
-    local slice = {}
+    local haveStore = storeRef and storeRef.available and storeRef.available()
+    local byteLimit = haveStore and STORED_TASK_BUDGET or INLINE_TASK_BUDGET
+    local slice, bytes = {}, 0
     local idx = 1
-    for i = 1, n_tasks do
-      slice[#slice + 1] = tasks[i]
-      if #slice >= MAX_TASKS_PER_ASSIGNMENT then
-        local aid = stateRef.addAssignment(job_id, mkAssignment(slice, idx))
-        if aid then created[#created + 1] = aid end
-        slice = {}
-        idx = idx + 1
-      end
-    end
-    if #slice > 0 then
+    local function flush()
       local aid = stateRef.addAssignment(job_id, mkAssignment(slice, idx))
       if aid then created[#created + 1] = aid end
+      slice, bytes = {}, 0
+      idx = idx + 1
     end
+    for i = 1, n_tasks do
+      local n = taskBytes(tasks[i]) or 0
+      if #slice > 0 and bytes + n > byteLimit then flush() end
+      slice[#slice + 1] = tasks[i]
+      bytes = bytes + n
+      if #slice >= MAX_TASKS_PER_ASSIGNMENT then flush() end
+    end
+    if #slice > 0 then flush() end
   end
 
   log.info(LOG_TAG, string.format("job %d split into %d assignment(s)", job_id, #created))
@@ -246,6 +276,21 @@ function jobs.dispatch(assignment, managerAddr, stateRef, netRef)
   if not ok then
     -- Roll back to pending; the scheduler will pick a different Manager
     -- next tick (or this same one if it was a transient failure).
+    -- Too large for a packet is not a transient failure: no Manager can ever
+    -- take it, and requeuing would try once a tick for ever. It has already
+    -- been cut to fit, so this is a job whose `inputs` ride every assignment.
+    if tostring(err):find("too large", 1, true) then
+      log.error(LOG_TAG, string.format("asn %d cannot fit in a packet; failing it",
+        assignment.assignment_id))
+      stateRef.setAssignmentState(assignment.job_id, assignment.assignment_id, "failed", {
+        assigned_to = stateRef.CLEAR, attempts = prior_attempts,
+        reason = "packet_too_large", completed_at = computer.uptime(),
+      })
+      if job and _allAssignmentsTerminal(job) then
+        jobs.finalizeJob(assignment.job_id, stateRef)
+      end
+      return false, "packet_too_large"
+    end
     log.warn(LOG_TAG, string.format("send failed to %s: %s; requeuing asn %d",
       tostring(managerAddr), tostring(err), assignment.assignment_id))
     -- Roll the attempt back too. A packet that never left the Master is

@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**80 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**79 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 56 | Planned or under investigation. Most contributions belong here. |
+| Planned | 55 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (12)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (12)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -185,16 +185,6 @@ Run a verification round in REAL Minecraft OpenComputers: the Ocelot emulator ha
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE DISTRIBUTED STORAGE POOL WAITS ON FIVE OPERATOR DECISIONS. cluster-storage shipped 1.0.0 on 2026-10-23 as ONE node; the pool, inputs\_ref and result\_sink = "public" are not built. TOS-Extras/cluster/storage-spec-draft.md section 10 holds the questions: a coordinator or none; shared/ replication to all members or a quorum; capacity in a contributing Manager's heartbeat; what happens to a lease when its member leaves; and whether netfs read-only exports may go to PAIRED-but-untrusted peers.
-
-### Still not run on the runner, from see the 2026-10-17..24 work run
-
-*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-STILL NOT RUN ON THE RUNNER, from SEE THE 2026-10-17..24 WORK RUN: cluster-storage on two machines. Chat's wrapped lines ARE seen: a 150-character message arrived on three rows, continuations aligned under the text, on both machines.
-
-BOOTSTRAP SEEN END TO END, 2026-10-31, against published main 78f96a3 on OpenOS 1.8.9 with a real internet card: wget, 166 files downloaded and hashed in about 125 s, install.lua's questions, 165 files verified, the BIOS flashed, OpenOS removed, the reboot, First Boot Setup, and a working `pkg fetch snake` from the live repo with "signature: valid". It worked; it found one thing, the BIOS digest (CHANGELOG, "The installer shows the BIOS fingerprint"). Pin the branch argument to a SHA, as the session did: the raw CDN can serve a mix of builds.
-
-PANEUI SEEN, 2026-10-31, on OpenOS 1.8.9: browser, help, mkdir, new file, editor, save, view, copy, move, delete, command line, cd, F9 and back, themes, a resize to 60x20. Four bugs, all fixed (CHANGELOG, "PaneUI keeps your work"); test\_paneui\_session.lua now runs the real program on a fake OpenOS.
 
 ### Optional Utilities candidates from the pack's own components
 
@@ -841,8 +831,8 @@ THE CHECK IS BUILT, 2026-10-26: build/check\_lootdisk.py, a step of `tos.py chec
 SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be checked on the headless runner:
 
 - Diffie-Hellman (e2f2445): SEEN 2026-10-26, once something sent a HELLO (AUTOMATIC DIFFIE-HELLMAN NEVER RAN, above). On the runner's T2 APU both sides had derived, and the sealed send was accepted, within 5 s of the second `net trust`: two X25519s and the HELLO round trip. One X25519 alone is untimed.
-- the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes, and the runner does two. Grow it to three, or accept test\_meshctl's three-node simulation.
-- cluster-storage (d6963fb): a Master and a Storage Node on two machines exchanging STORE\_PUT and PUB frames -- that commit's own "not verified". The node needs a wired or Tier-2 modem.
+- the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes in a LINE. The runner does three now, but one relay joins all of them, so each hears the others directly. That needs two networks and two cards in the middle machine; test\_meshctl's three-node simulation stands until then.
+- cluster-storage (d6963fb): SEEN 2026-11-01 on three machines, see FOUND RUNNING THE 2026-10 WORK.
 - chat's wrapped lines and mail's Sent: line (49dec7a): both SEEN, see FOUND RUNNING THE 2026-10 WORK.
 - the browser (web 1.0.0): SEEN 2026-10-26, and it had never worked. Its first fetch died: "pkg:web:36: attempt to call a nil value (field 'get')". web took require("internet"), which in the sandbox is OpenOS's library (request/socket/open); the kernel wrapper with get() is the `internet` GLOBAL. Its tests stubbed require("internet") with a get. Fixed in web 1.0.1 (pending re-sign); test\_web\_ui.lua's fake sandbox now has the real shape and fails 10 of 14 on 1.0.0. Then, from an unsigned scratch pack with --internet: http://info.cern.ch/ rendered with its heading, four numbered links and the references list; 1 + Enter opened TheProject.html, b came back, ^Q left. A LOCAL http server is not reachable: the card's filteringRules deny private addresses, and adding "allow 127.0.0.1" to a copy of the config disabled HTTP altogether in this Ocelot build -- so the run used a public page.
 - PaneUI (c8a76b9) on OpenOS 1.8.9: SEEN 2026-10-31, see FOUND RUNNING THE 2026-10 WORK.

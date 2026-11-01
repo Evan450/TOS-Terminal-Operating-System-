@@ -534,6 +534,7 @@ per-job storage descriptor — that would be job-derived and would break the loc
   -- Tasks: either inline (if small) or a reference to Public storage
   tasks_inline  = { ... },        -- list of task descriptors, if fits
   tasks_ref     = nil,            -- OR "public://job-104/tasks/assignment-17"
+  store_addr    = nil,            -- the Storage Node holding it; set with tasks_ref
   
   -- Inputs: same pattern
   inputs_inline = { ... },

@@ -38,13 +38,16 @@ Run from the `TOS-Extras` root: `lua cluster/storage-skeleton/test_storage_wire.
    `could not open ports ... (a Tier-1 wireless card holds only one)` and an error saying
    nothing can reach the node, and starts anyway in case there is a second NIC.
 2. `pkg install cluster-storage`. It pulls in `cluster-manager`, because that package ships
-   `cluster.protocol` (see the manifest for why this is a bandage and not an answer).
+   `cluster.protocol` (see the manifest for why this is a bandage and not an answer). A Manager
+   beside its own node reads tasks straight from the store, since no modem can send to itself.
 3. Edit `/etc/cluster-storage.cfg`: put the **Master's modem address** in `master`, and any
    Manager allowed to write its own `domain-<id>/` scratch in `managers`. An address that is
    not listed is refused as `unknown_writer`, by design — the namespace rules turn entirely on
    who is writing, so believing a peer's own claim would leave no isolation.
 4. `service start cluster-storaged`, then on the Master set `storage_node_address` to this
-   node's modem address in `/etc/cluster-master.cfg` and restart `clusterd`.
+   node's modem address in `/etc/cluster-master.cfg` and restart `clusterd`. `lsdev --full` on
+   the node shows that address. The Master and the node must trust each other (`net trust`
+   on both), because writes are TOS traffic at TRUSTED.
 
 ## Things worth knowing before you change anything here
 

@@ -266,10 +266,24 @@ end
 -- Called by every mutating function that changes persistent state.
 -- Consolidated here so we can add debouncing later if disk I/O becomes
 -- a cost concern.
+--
+-- A save can fail on memory that is only garbage: OC gives no way to force a
+-- collection, and a big table.concat fails rather than waits for one. Seen on
+-- a 2 MB Master at 90% used, on every save with a job in it. The last save of
+-- a job is the one that says it finished, and nothing follows it, so a failed
+-- one is remembered and retried from the scheduler tick (state.flush): OC
+-- collects every ten resumes, so a second later there is room.
+local _unsaved = false
 local function persist()
   if not _statePath then return end
   local ok, err = pcall(state.save, _statePath)
-  if not ok then log.error(LOG_TAG, "persist failed: " .. tostring(err)) end
+  if not ok and not _unsaved then log.warn(LOG_TAG, "save deferred: " .. tostring(err)) end
+  _unsaved = not ok
+end
+
+--- Retry a save that failed. Cheap when there is nothing to do.
+function state.flush()
+  if _unsaved then persist() end
 end
 
 -- ============================================================

@@ -502,6 +502,7 @@ do
       -- of the next signing.
       ["cluster-master"] = "1.1.0: the CLI runs, through clusterd's ipc endpoint",
       ["cluster-manager"] = "1.3.0: the CLI runs, through the daemon's ipc endpoint",
+      ["cluster-storage"] = "1.0.1: it installs on a fresh machine",
     }
 
     if nShipped == 0 then

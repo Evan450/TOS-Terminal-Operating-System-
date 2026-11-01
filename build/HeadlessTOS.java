@@ -208,9 +208,10 @@ public class HeadlessTOS {
   // ── The machine ───────────────────────────────────────────────────
   static Screen screen;   // the one the script is typing at and reading
   static final List<Screen> screens = new ArrayList<>();   // by seat, for `seat N`
-  static Machine peer;          // --peer-boot: the second computer
-  static Screen peerScreen;     // ...and its screen, for `machine 2`
-  static Path peerDiskDir;      // --peer-disk: a second disk in it
+  // --peer-boot, once per extra computer: `machine 2` is the first of these.
+  static final List<Machine> peers = new ArrayList<>();
+  static final List<Screen> peerScreens = new ArrayList<>();
+  static List<String> peerDiskDirs = new ArrayList<>();  // --peer-disk, by peer
   static boolean withTape;      // --tape
   static boolean withGeolyzer;  // --geolyzer
   static boolean withRobot;     // --robot
@@ -567,7 +568,7 @@ public class HeadlessTOS {
 
   static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram,
                     String bootTier, String diskAddress, List<String> floppySpecs, String floppyIn,
-                    int seats, Path peerBoot) {
+                    int seats, List<String> peerBoots) {
     boolean t1 = profile.equals("t1");
     String[] sticks = (ram != null ? ram : t1 ? "192" : "1024,1024").split(",");
     if (sticks.length > 2) throw new IllegalArgumentException("at most two memory sticks");
@@ -685,12 +686,12 @@ public class HeadlessTOS {
       System.out.println("[headless] transposer " + transposer.node().address());
     }
 
-    // A second computer (--peer-boot): its own case, disk, screen and
-    // keyboard, a network card in each machine, and a RELAY between them --
+    // More computers (--peer-boot): each with its own case, disk, screen and
+    // keyboard, a network card in every machine, and a RELAY joining them --
     // the block a player puts between two computers so that packets cross
     // and components do not. One cable would merge their component
     // networks, and each would see (and bind) the other's screen.
-    if (peerBoot != null) {
+    if (!peerBoots.isEmpty()) {
       // The card slot nothing else took: t3's APU leaves slot 1 free, t1's
       // GPU is IN slot 1 and leaves slot 0 (no data card), and a second
       // seat's GPU takes that one, which leaves slot 2. Slot 1 for both
@@ -700,37 +701,41 @@ public class HeadlessTOS {
       if (slot == 2 && internet)
         throw new IllegalArgumentException("--peer-boot with --seats 2 and --internet: no free card slot");
       pc.inventory().apply(slot).put(new NetworkCard());
-      Case pc2 = ws.add(new Case(Tier.Three()));
-      String addr2 = UUID.randomUUID().toString();
-      HDDManaged hdd2 = new HDDManaged(tier(bootTier));
-      hdd2.address_$eq(Option.apply(addr2));
-      hdd2.customRealPath_$eq(Option.apply(peerBoot));
-      EEPROM eeprom2 = new EEPROM();
-      eeprom2.codeBytes_$eq(Option.apply(bios));
-      eeprom2.label_$eq("Lua BIOS");
-      eeprom2.volatileData_$eq(addr2.getBytes(StandardCharsets.UTF_8));
-      pc2.inventory().apply(0).put(new DataCard.Tier3());
-      pc2.inventory().apply(1).put(new NetworkCard());
-      pc2.inventory().apply(3).put(new Memory(stick("1024")));
-      pc2.inventory().apply(4).put(new Memory(stick("1024")));
-      pc2.inventory().apply(5).put(hdd2);
-      if (peerDiskDir != null) {
-        HDDManaged disk2 = new HDDManaged(Tier.Two());
-        disk2.address_$eq(Option.apply("5e550000-0000-4000-8000-000000000002"));
-        disk2.customRealPath_$eq(Option.apply(peerDiskDir));
-        pc2.inventory().apply(6).put(disk2);
-      }
-      pc2.inventory().apply(8).put(new APU(Tier.Two()));
-      pc2.inventory().apply(9).put(eeprom2);
-      peerScreen = ws.add(new Screen(Tier.Three()));
-      Keyboard keyboard3 = ws.add(new Keyboard());
-      pc2.connect(peerScreen);
-      peerScreen.connect(keyboard3);
       Relay relay = ws.add(new Relay());
       relay.connect(Direction$.MODULE$.North(), pc);
-      relay.connect(Direction$.MODULE$.South(), pc2);
-      peer = pc2.machine();
-      System.out.println("[headless] peer: T3 case, 1024+1024K, boot disk " + addr2 + ", via a relay");
+      for (int i = 0; i < peerBoots.size(); i++) {
+        Path peerBoot = Paths.get(peerBoots.get(i)).toAbsolutePath();
+        Case pc2 = ws.add(new Case(Tier.Three()));
+        String addr2 = UUID.randomUUID().toString();
+        HDDManaged hdd2 = new HDDManaged(tier(bootTier));
+        hdd2.address_$eq(Option.apply(addr2));
+        hdd2.customRealPath_$eq(Option.apply(peerBoot));
+        EEPROM eeprom2 = new EEPROM();
+        eeprom2.codeBytes_$eq(Option.apply(bios));
+        eeprom2.label_$eq("Lua BIOS");
+        eeprom2.volatileData_$eq(addr2.getBytes(StandardCharsets.UTF_8));
+        pc2.inventory().apply(0).put(new DataCard.Tier3());
+        pc2.inventory().apply(1).put(new NetworkCard());
+        pc2.inventory().apply(3).put(new Memory(stick("1024")));
+        pc2.inventory().apply(4).put(new Memory(stick("1024")));
+        pc2.inventory().apply(5).put(hdd2);
+        if (i < peerDiskDirs.size()) {
+          HDDManaged disk2 = new HDDManaged(Tier.Two());
+          disk2.address_$eq(Option.apply("5e550000-0000-4000-8000-00000000000" + (i + 2)));
+          disk2.customRealPath_$eq(Option.apply(Paths.get(peerDiskDirs.get(i)).toAbsolutePath()));
+          pc2.inventory().apply(6).put(disk2);
+        }
+        pc2.inventory().apply(8).put(new APU(Tier.Two()));
+        pc2.inventory().apply(9).put(eeprom2);
+        Screen peerScreen = ws.add(new Screen(Tier.Three()));
+        Keyboard keyboard3 = ws.add(new Keyboard());
+        pc2.connect(peerScreen);
+        peerScreen.connect(keyboard3);
+        relay.connect(i == 0 ? Direction$.MODULE$.South() : Direction$.MODULE$.East(), pc2);
+        peers.add(pc2.machine());
+        peerScreens.add(peerScreen);
+        System.out.println("[headless] peer: T3 case, 1024+1024K, boot disk " + addr2 + ", via a relay");
+      }
     }
 
     machine = pc.machine();
@@ -1063,8 +1068,8 @@ public class HeadlessTOS {
         case "machine": {
           int n = w.length > 1 ? Integer.parseInt(w[1]) : 0;
           if (n == 1) screen = screens.get(0);
-          else if (n == 2 && peerScreen != null) screen = peerScreen;
-          else { failure = "machine: no machine " + n + (peerScreen == null ? " (needs --peer-boot)" : ""); break; }
+          else if (n >= 2 && n - 2 < peerScreens.size()) screen = peerScreens.get(n - 2);
+          else { failure = "machine: no machine " + n + (peerScreens.isEmpty() ? " (needs --peer-boot)" : ""); break; }
           done = true;
           break;
         }
@@ -1175,8 +1180,7 @@ public class HeadlessTOS {
       disk2Address = opt(args, "--disk2-address", null);
       disk2Tier = opt(args, "--disk2-tier", "2");
     }
-    if (opt(args, "--peer-disk", null) != null)
-      peerDiskDir = Paths.get(opt(args, "--peer-disk", null)).toAbsolutePath();
+    peerDiskDirs = opts(args, "--peer-disk");
     if (seats != 1 && seats != 2) {
       System.err.println("--seats is 1 or 2");
       System.exit(64);
@@ -1195,13 +1199,13 @@ public class HeadlessTOS {
     build(profile, bootDir, diskDir, bios, flag(args, "--internet"), opt(args, "--ram", null),
         opt(args, "--boot-tier", "3"), opt(args, "--disk-address", null),
         opts(args, "--floppy"), opt(args, "--floppy-in", null), seats,
-        opt(args, "--peer-boot", null) != null ? Paths.get(opt(args, "--peer-boot", null)).toAbsolutePath() : null);
+        opts(args, "--peer-boot"));
     System.out.println("[headless] power on: " + (machine.start() ? "ok" : "refused"));
-    if (peer != null) System.out.println("[headless] peer power on: " + (peer.start() ? "ok" : "refused"));
+    for (Machine peer : peers) System.out.println("[headless] peer power on: " + (peer.start() ? "ok" : "refused"));
 
     int code = script != null ? runScript(Paths.get(script), timeout, work) : runUntilOff(timeout, work);
     if (machine.isRunning()) machine.stop();
-    if (peer != null && peer.isRunning()) peer.stop();
+    for (Machine peer : peers) if (peer.isRunning()) peer.stop();
     Ocelot.shutdown();
     System.exit(code);
   }

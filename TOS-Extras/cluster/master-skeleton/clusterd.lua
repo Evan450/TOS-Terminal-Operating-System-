@@ -320,6 +320,7 @@ function clusterd._onHeartbeatSweep()
 end
 
 function clusterd._onSchedulerTick()
+  state.flush()
   if not cfg then return end
   local now = computer.uptime()
 

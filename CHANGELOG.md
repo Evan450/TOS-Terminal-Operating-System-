@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 82 rounds of work:
+Everything since v1.5.0, in 83 rounds of work:
 
+- [A job too big for one packet now runs](#a-job-too-big-for-one-packet-now-runs)
 - [A stray test edit no longer marks every build `-dirty`](#a-stray-test-edit-no-longer-marks-every-build--dirty)
 - [The `cluster` commands work](#the-cluster-commands-work)
 - [`cluster-setup` works from the CLI](#cluster-setup-works-from-the-cli)
@@ -104,6 +105,14 @@ Everything since v1.5.0, in 82 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A job too big for one packet now runs
+
+The cluster's storage tier had never worked, and running it on three machines showed why. A job too big for one packet was written to the Storage Node, and then the Manager ignored the pointer, ran none of its tasks and reported success, so the job read `done` with nothing done. Without a node, a slice over about 6 KB went round the scheduler once a second for ever with `Packet too large`.
+
+Slices are now cut by size as well as count, and a Manager follows the pointer. A task too big for any packet is refused at submit with its number and size, and a packet that can never fit fails its job. A pointer that can't be followed fails the assignment and says why. Seen on three machines: the Master wrote 5,148 bytes to the node, the Manager read them back, and the job finished `ok=2 fail=0`.
+
+Also fixed: `pkg install cluster-storage` failed on a fresh machine, jobs now show who submitted them, and a Master whose save fails on a full heap tries again a second later. `lsdev --full` shows whole addresses, which setting up a node needs. The runner takes `--machines 3`. `cluster-storage` is 1.0.1, and these reach the published pack with the next signing.
 
 ### A stray test edit no longer marks every build `-dirty`
 

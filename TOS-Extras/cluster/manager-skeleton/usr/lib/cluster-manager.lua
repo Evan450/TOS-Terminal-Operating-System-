@@ -306,6 +306,9 @@ local function validateAssignment(p)
   if p.tasks_inline and #p.tasks_inline > 100 then
     return false, "too many tasks_inline (>100)"
   end
+  if p.tasks_ref ~= nil and (type(p.tasks_ref) ~= "string" or type(p.store_addr) ~= "string") then
+    return false, "tasks_ref needs a store_addr"
+  end
   return true
 end
 
@@ -520,6 +523,70 @@ local function workerResultToErr(result)
   return result.output, result.err or s or "worker error"
 end
 
+-- A task list the Master put on the Storage Node (tasks_ref, §4.3). Read back
+-- over §3.2's plain framing on the read port, chunk by chunk.
+--! Until 2026-11-01 nothing did this. dispatchAssignment took
+--! `p.tasks_inline or {}`, so a job that spilled ran no tasks at all, and the
+--! assignment reported ok, with zero tasks, and the job read "done". A pointer
+--! that cannot be followed has to be a failure.
+local FETCH_TIMEOUT = 15
+
+local function fetchTasks(p, done)
+  local cproto = firstRequire("cluster.protocol")
+  local serialize = firstRequire("kernel.serialize")
+  local component = firstRequire("component")
+  local addr = component and component.list and component.list("modem")()
+  local modem = addr and component.proxy(addr)
+  if not (cproto and serialize and modem) then return done(nil, "no_modem") end
+
+  local port = cproto.PORT.PUBLIC_READ
+  local key = p.tasks_ref:gsub("^public://", "")
+  local reqId = p.assignment_id
+
+  -- cluster-storage pulls a Manager onto the node's own box, and a modem
+  -- cannot send to itself, so a node on this machine is read directly.
+  for a in component.list("modem") do
+    if a == p.store_addr then
+      local store = firstRequire("cluster.store")
+      if not store then return done(nil, "no local store") end
+      local data, err = store.get(key)
+      if not data then return done(nil, "store: " .. tostring(err)) end
+      local okT, tasks = pcall(serialize.decode, data)
+      if okT and type(tasks) == "table" then return done(tasks) end
+      return done(nil, "tasks did not decode")
+    end
+  end
+  local opened = false
+  if modem.isOpen and not modem.isOpen(port) then opened = modem.open(port) end
+
+  local parts, got, listener, timer = {}, 0, nil, nil
+  local function finish(tasks, err)
+    if listener then event.off("modem_message", listener); listener = nil end
+    if timer then event.cancelTimer(timer); timer = nil end
+    if opened then pcall(modem.close, port); opened = false end
+    done(tasks, err)
+  end
+  listener = event.on("modem_message", function(_, _, from, msgPort, _, data)
+    if msgPort ~= port or from ~= p.store_addr then return end
+    local ok, msg = pcall(serialize.decode, data, { maxBytes = 8192 })
+    if not ok or type(msg) ~= "table" or msg.magic ~= cproto.PUB_MAGIC
+       or msg.op ~= "RES" or msg.req_id ~= reqId then
+      return
+    end
+    if msg.err then return finish(nil, "store: " .. tostring(msg.err)) end
+    if type(msg.data) ~= "string" or parts[msg.chunk or 1] then return end
+    parts[msg.chunk or 1] = msg.data
+    got = got + 1
+    if got < (msg.total or 1) then return end
+    local okT, tasks = pcall(serialize.decode, table.concat(parts))
+    if okT and type(tasks) == "table" then return finish(tasks) end
+    finish(nil, "tasks did not decode")
+  end, "cluster-mgr.tasks")
+  timer = event.timer(FETCH_TIMEOUT, function() timer = nil; finish(nil, "timed out") end)
+  local okS, errS = pcall(modem.send, p.store_addr, port, serialize.encode(cproto.pubGet(key, reqId)))
+  if not okS then finish(nil, tostring(errS)) end
+end
+
 local function dispatchAssignment(p)
   local id = p.assignment_id
   local tasks = p.tasks_inline or {}
@@ -636,7 +703,20 @@ local function onAssign(packet, from)
                                  pending = true, bridgeTids = {} }
   -- Run in a separate event-loop cycle so this handler returns fast
   -- (the spec mandates an ACK within a heartbeat interval).
-  event.timer(0.1, function() pcall(dispatchAssignment, p) end)
+  event.timer(0.1, function()
+    if not p.tasks_ref then return pcall(dispatchAssignment, p) end
+    fetchTasks(p, function(tasks, err)
+      if tasks then
+        p.tasks_inline = tasks
+        return pcall(dispatchAssignment, p)
+      end
+      log.warn(LOG_TAG, "assignment " .. tostring(p.assignment_id)
+        .. ": cannot read its tasks: " .. tostring(err))
+      _inflight[p.assignment_id] = nil
+      sendResult(p.assignment_id, "failed", nil, { "cannot read tasks: " .. tostring(err) },
+        { duration = 0, task_count = 0, error_count = 1, cancelled_count = 0 })
+    end)
+  end)
 end
 
 local function onCancel(packet, from)

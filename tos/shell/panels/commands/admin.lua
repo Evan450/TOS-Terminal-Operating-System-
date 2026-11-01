@@ -3033,6 +3033,9 @@ return function(C, S, deps)
     end
   end
   C.lsdev = function(args, o)
+    -- --full, because some setups need a modem's whole address typed into a
+    -- config file, and nothing else on the machine showed it.
+    local full = args[1] == "--full"
     o(string.format(" %-16s %-10s %s", "Type", "Address", "Info"), T.title)
     o(string.rep("-", 46), T.dim)
     local count = 0
@@ -3077,7 +3080,7 @@ return function(C, S, deps)
                .. "/" .. lvl(px.getColorInkLevel)
         end
       end
-      o(string.format(" %-16s %s  %s", ctype, addr:sub(1,8).."...", cinfo), T.fg)
+      o(string.format(" %-16s %s  %s", ctype, full and addr or (addr:sub(1, 8) .. "..."), cinfo), T.fg)
       count = count + 1
     end
     if count == 0 then o("  (no peripherals detected)", T.dim) end

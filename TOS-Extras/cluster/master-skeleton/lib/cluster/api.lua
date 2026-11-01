@@ -185,6 +185,12 @@ function api.submit(jobSpec)
     return nil, "no_eligible_manager: no active managers with free workers"
   end
 
+  local bad, size, limit = _jobs.oversizedTask(jobSpec)
+  if bad then
+    return nil, string.format("task_too_large: task %d is %d bytes; the most one can be is %d",
+      bad, size, limit)
+  end
+
   -- Fill in who submitted this for audit, if caller didn't set it.
   local okUsers, users = pcall(require, "users")
   if okUsers and users and not jobSpec.submitted_by then
@@ -416,6 +422,8 @@ function api.endpoint(caller, fn, ...)
   if fn == "may" then return allowed(caller, (...)) end
   local ok, why = allowed(caller, fn)
   if not ok then return false, why end
+  -- Who asked is known here and only here; a spec cannot name someone else.
+  if fn == "submit" and type((...)) == "table" then (...).submitted_by = caller.user end
   return true, api[fn](...)
 end
 
