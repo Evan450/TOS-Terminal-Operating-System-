@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- How big an input can this machine actually hash?
 --
 -- The bug that motivated this check: sha256.lua built its padded message

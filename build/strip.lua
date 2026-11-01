@@ -677,6 +677,27 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
       io.write("\nWARNING: kernel/sha256.lua not loadable - manifest ships WITHOUT\n")
       io.write("         digests, so `verify` will only check that files exist.\n")
     else
+      --! bootstrap.lua carries the digests of the code that checks a release
+      --! signature, because that code comes from the same server as the
+      --! release. Taken here, over what actually ships. Before the manifest
+      --! pass, so that bootstrap's own digest is of the finished file.
+      local boot = readAll(dst .. "/bootstrap.lua")
+      if boot then
+        local pins = {}
+        for _, p in ipairs({ "/tos/kernel/sha512.lua", "/tos/kernel/curve25519field.lua",
+                             "/tos/kernel/ed25519.lua" }) do
+          local data = readAll(dst .. p)
+          if data then pins[#pins + 1] = string.format("[%q]=%q", p, sha.hex(data)) end
+        end
+        local n
+        boot, n = boot:gsub('"@VERIFIER_PINS@"', function() return "{" .. table.concat(pins, ",") .. "}" end)
+        if n == 1 and #pins == 3 then
+          writeAll(dst .. "/bootstrap.lua", boot)
+        else
+          io.write("\nWARNING: could not pin the verifier into bootstrap.lua\n")
+        end
+      end
+
       local body = readAll(manifestPath)
       local out, hashed, absent = {}, 0, 0
       for line in body:gmatch("([^\n]*)\n?") do

@@ -3268,14 +3268,13 @@ Explain the last refusal or error, in plain English, with the fix.
   manifest too, so run `verify anchor` again after one. A machine running
   straight from the source tree has no digests to check: the source manifest
   stays digest-free, so that editing a file does not dirty it.
-- **`bootstrap.lua` trusts the repository, not the publisher.** It checks every
-  download against the release manifest's digests before writing it, and
-  refuses the whole install on any mismatch. But the manifest and the files come
-  from the same host over the same connection, so this proves "these are the
-  bytes that repository serves", not "these are the bytes Strata published".
-  A signature checked against a key pinned in `bootstrap.lua` would close the
-  gap; it is not done. Installing from a disk you made yourself avoids the
-  dependency.
+- **A network install is what the publisher signed.** `bootstrap.lua` carries the
+  publisher's public key, so a compromised repository cannot ship code to a
+  machine installing from `main`: it refuses, before anything is downloaded. A
+  fork or another branch has no such signature, and it says so and goes on. It
+  then checks every download against the signed manifest's digests before
+  writing it, and refuses the whole install on any mismatch. A hostile server can
+  stop an install, but it cannot change one.
 
 - **No preemption.** OpenComputers keeps `debug.sethook` for its own "too long
   without yielding" watchdog and does not give it to the OS, so TOS cannot

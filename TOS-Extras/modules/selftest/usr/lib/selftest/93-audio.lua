@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- Beeps, on a machine that really plays them (AUDIT 5: "every beep stops
 -- the machine, and the gaps between them busy-spin"; fermi import da2b01e).
 --

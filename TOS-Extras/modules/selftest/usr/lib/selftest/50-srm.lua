@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- SRM: baseline -> drift -> restore, against real files and real crypto.
 --
 -- Ports three items from TODO.txt's SRM emulator checklist:

@@ -86,10 +86,8 @@ if bootstrap then
   -- moment it loads) and cannot be required into a harness.
   test("reads the manifest's hash field",
     bootstrap:find("entry.hash", 1, true) ~= nil)
-  test("fetches the hasher before the payload",
-    bootstrap:find("/tos/kernel/sha256.lua", 1, true) ~= nil)
-  test("checks the hasher against its own manifest entry",
-    bootstrap:find("does not match its own manifest entry", 1, true) ~= nil)
+  test("carries its own hasher: a downloaded one proves nothing",
+    bootstrap:find("local function sha256hex", 1, true) ~= nil)
   test("verifies BEFORE writing to the staging tree",
     bootstrap:find("Verify BEFORE writing", 1, true) ~= nil)
   test("treats a digest mismatch as refusal, not a warning",
@@ -97,11 +95,10 @@ if bootstrap then
       and bootstrap:find("Refusing to install", 1, true) ~= nil)
   test("degrades honestly when a release ships no digests",
     bootstrap:find("ships no digests", 1, true) ~= nil)
-  -- The claim has to stay calibrated: verifying downloads against a
-  -- manifest fetched from the same host proves consistency, not
-  -- provenance. If that ever gets overstated in the file, this fails.
+  -- The claim has to stay calibrated: a hostile server can stop an install,
+  -- and the file should say that as well as what it can prevent.
   test("does not overstate what verification proves",
-    bootstrap:find("does NOT prove the release is genuine", 1, true) ~= nil)
+    bootstrap:find("A hostile server can stop an install", 1, true) ~= nil)
   test("passes the staging directory as install.lua's override arg",
     bootstrap:find("pcall(chunk, stagingDir)", 1, true) ~= nil)
 end
@@ -144,11 +141,11 @@ do
 
   if bootstrapSrc and shaSrc then
     -- %b{} matches the balanced braces, so a nested table cannot truncate it.
-    local envExpr = bootstrapSrc:match("local HASHER_ENV = (%b{})")
-    test("bootstrap declares a named HASHER_ENV the suite can reuse", envExpr ~= nil)
+    local envExpr = bootstrapSrc:match("local VERIFIER_ENV = (%b{})")
+    test("bootstrap declares a named VERIFIER_ENV the suite can reuse", envExpr ~= nil)
 
     if envExpr then
-      local envChunk = load("return " .. envExpr, "=HASHER_ENV", "t")
+      local envChunk = load("return " .. envExpr, "=VERIFIER_ENV", "t")
       test("the environment table parses", envChunk ~= nil)
       local okEnv, env = false, nil
       if envChunk then okEnv, env = pcall(envChunk) end
@@ -336,12 +333,6 @@ do
     test("a tick failure cannot take the install down",
       bootstrapSrc:find("pcall(onWait)", 1, true) ~= nil)
 
-    -- The guard that turns a broken hasher into a refusal rather than a crash.
-    test("bootstrap known-answer-tests the hasher before trusting it",
-      bootstrapSrc:find("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        1, true) ~= nil)
-    test("and the first hex() call is pcall-guarded",
-      bootstrapSrc:find("pcall(mod.hex", 1, true) ~= nil)
   end
 end
 

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - colors
 local colors = {
   white      = 0, orange   = 1, magenta    = 2, lightblue  = 3,

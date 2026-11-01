@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- compat.term on real OpenComputers (AUDIT 5, H-04 / H-06 / H-07).
 --
 -- H-04: term.read used to pull straight off the machine's signal queue.

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS BIOS
 -- Byte budget: the flashable copy is TOS-Release/bios.lua (this file run
 -- through build/strip.lua --minify, which removes ALL comments) and must

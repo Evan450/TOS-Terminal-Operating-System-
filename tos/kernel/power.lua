@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════╗
 -- ║  TOS Kernel - Power Monitor          ║
 -- ║  Battery tracking & power saving     ║

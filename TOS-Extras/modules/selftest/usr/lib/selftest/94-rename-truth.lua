@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- What a rename onto an existing file really does on this disk, and
 -- whether the answer it gives is the truth (fermi import, d918beb).
 --

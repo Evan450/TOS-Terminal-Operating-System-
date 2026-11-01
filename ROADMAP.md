@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**61 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**56 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 37 | Planned or under investigation. Most contributions belong here. |
+| Planned | 32 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (10) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (10)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (8) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (7)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -205,26 +205,6 @@ ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MIN
 
 THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major number is 0 (preRelease), suffix or not, beside the SKIP list; the picker drops the "v" when a version would not fit its 8 cells, so 1.10.0-b shows whole; blockfs's \_VERSION matches (blockfs 1.2.2, pending re-sign), and so do mail's and intercom's, which today's quit-key bumps had made drift too. No package is 0.x today, so the pack's contents do not change. build/ test\_addon\_versions.lua (22; 6 fail on the old files) checks all three and every modules/&lt;pkg&gt;/usr/lib/&lt;pkg&gt;.lua \_VERSION against its manifest. STILL OPEN: the notes rule -- there is no per-package release notes file yet for a `tos.py check` step to look in, so where the notes live comes first; and whether a SUFFIXED pre-1.0 package may ship labelled (operator; held back for now, as every 0.x is).
 
-### The keychain is not within a package's reach — operator decision
-
-*Planned* · from the round *The command fuzz and workflow pass (2026-10-31)*
-
-THE KEYCHAIN IS NOT WITHIN A PACKAGE'S REACH -- OPERATOR DECISION. rc-pilot is the only package that wants a stored secret. It cannot have one: `_G._TOS` is nil in a package's sandbox (seen on a real machine), and the keychain's name rule refuses the `:` in its `rc:<addr>` slot. Its code still looks, so a decision only has to open the door. Options:
-
-(a) a `keychain` capability scoped to slots named after the
-
-package, so it reads its own and nothing else. The name rule
-
-takes `:` or the slot becomes rc-pilot.&lt;addr&gt;. Narrow, but a
-
-package's capability then reaches a user's unlocked secrets,
-
-which the sandbox has never allowed;
-
-(b) leave it closed: `rc` asks every time, or takes --secret.
-
-Honest and working, and what 1.2.1 documents. Do not fix the name rule alone: the secret would then save happily and never be read.
-
 ### Slice 3: resolution
 
 *Planned* · from the round *Federated package repos (2026-09-27)*
@@ -266,12 +246,6 @@ securefs must still mediate the mount point, exactly as the jbod header says ("a
 *Planned* · from the round *Planned (near future)*
 
 Get listed in `oppm list`: a PR adding this repo to OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS show up for people who never heard of it.
-
-### Anchor the network install to a key, not the transport
-
-*Planned* · from the round *Planned (near future)*
-
-Anchor the network install to a KEY, not the transport. bootstrap.lua verifies every download against the manifest, but the manifest comes from the same host, so it proves "these are the bytes that repository is serving" -- not "these are the bytes the publisher released". Its own comment block says exactly that. Pin an Ed25519 public key in bootstrap.lua and sign the release manifest with the machinery `pkg` already has: the root of trust moves from the transport to the one file an operator can read before running it. Every part is in the tree already (2026-09-10 review, §2).
 
 ### Slice 4: discovery and revocation
 
@@ -625,14 +599,6 @@ Translate TOS to other languages by the following priority table:
 
 ## The project
 
-### The release has shipped without its `--!` comments since 2026-10-17, the MIT credit…
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS SINCE 2026-10-17, THE MIT CREDIT INCLUDED. Found by this sweep. build/strip.lua's contract is "--! Preserve this comment in dist", for #SEC notes, cross-file invariants and licence / attribution headers. --minify-vars (bb6b2e4, the release default) re-emits each file through LuaMinify's formatter, which writes no comments at all, and that commit does not mention it. The shipped sources hold 3,560 `--!` lines (\~217 KB); today's TOS-Release holds 7, all in the rc.d scripts that get the whitespace pass only. So tos/compat/internet.lua's PROVENANCE note -- parts follow OpenOS's lib/internet.lua (MIT licence) line for line, credited for that reason -- is gone from the release and from the published main. test\_provenance.py cannot see it: it checks that the SOURCE carries a `--!` credit, which was enough while `--!` survived. The add-on pack (092df1e) goes through the same pass. This also settles, silently, the operator decision the RAM and storage entries below still list as open ("dropping the --! comments from the release (219 KB)"). OPERATOR DECISION, in effect made by accident: either keep `--!` through the renamer (the release is 1,292 KB raw, so \~217 KB more still fits the 1,920 KB budget), or accept that the release carries no comments, and then move the MIT credit somewhere that ships (a NOTICE file beside LICENSE.txt, or a string) and say so in strip.lua. Either way, a test on the BUILT tree that the credit is there.
-
-THE CREDIT IS FIXED, 2026-10-26; the rest is still the decision. minify\_vars.noticesOf puts back, at the top of the file, every `--!` paragraph whose first word is PROVENANCE., Copyright or SPDX-License-Identifier: (read from the unstripped file -- from the stripped one the credit ran on into the #SEC note after it). strip.lua's marker convention says so. internet.lua's 425 bytes are the only notice shipped today. test\_release\_credits.lua (14) checks the built TOS-Release; its built-tree checks fail on the old build. So the decision left is only whether #SEC notes and invariants ship (\~217 KB), no longer a licence question. Marked \[ \], not \[!\]: nothing is broken while it waits.
-
 ### The loot disk is whatever TOS-Release was when the mod last built
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
@@ -661,7 +627,7 @@ SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be 
 
 GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green on dev (Actions API, 2026-10-26).
 
-- OPERATOR DECISION: no branch is protected (dev, main, master, optional-utilities all "protected": false, 2026-10-26). The triage round left that for after CI had proved green on GitHub, and it has.
+- DONE 2026-11-01, the operator's call: main and dev refuse force pushes and deletion. No pull requests or status checks are required, because publish.ps1 pushes directly and that must keep working. master and optional-utilities are unprotected, as asked.
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
 
@@ -687,29 +653,11 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 
 NOT ON THIS LIST, because they are the operator's to decide, not to build: the boot battery in CI (it runs on the headless runner today; the CI host is the open question), and PUT THE COMPAT NUMBER IN THE README (an editorial call).
 
-### Licence headers — operator decision
-
-*Planned* · from the round *The open queue, worked through (2026-10-01)*
-
-LICENCE HEADERS -- OPERATOR DECISION. The provenance lint's other half (A PROVENANCE LINT, below) wanted every shipped .lua to carry a licence header. Today 0 of the 197 shipped files do; LICENSE.txt at the root is the whole statement. Two calls are the licence holder's, not a session's: (1) GPL-3.0-only or GPL-3.0-or-later; (2) whether the RELEASE carries it. strip.lua keeps `--!` lines (licence headers are one of the three things it keeps), so a one-line `--! SPDX-License-Identifier: GPL-3.0-or-later` costs 46 bytes in each of the 138 release files: about 6.2 KB on a Tier 2 disk the 2026-09 audit already found tight. A plain `--` header would cost nothing in the release and carry the notice in source only. Once decided, the header goes in mechanically and test\_provenance.py grows the check.
-
 ### OpenOS's own bin/ does not run, and the compat number should say so
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
 
 OPENOS'S OWN bin/ DOES NOT RUN, AND THE COMPAT NUMBER SHOULD SAY SO. Found 2026-11-01, running Reference/OpenOS/openos/bin under `run`: cat and grep stop at require("tty") ("not on the allowed list"), ls and edit at a nil loadfile, and lua at /lib/core/lua\_shell.lua. Not a bug to chase, since TOS replaces those programs with its own commands, and the two corpora below are third-party code. But it bounds the claim: a program written against OpenOS's tty or loadfile will not load. If a real program ever needs it, the cheap half is a tty shim over compat.term and a sandbox loadfile behind the `load` cap.
-
-### Put the compat number in the README, or decide not to
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-PUT THE COMPAT NUMBER IN THE README, or decide not to. The shims above make the measured failure rate zero on both corpora, so "OpenOS compatibility, so much of what already exists still runs" can become a number. It is an EDITORIAL call, deliberately left to the operator, because the number needs its caveats alongside it or it overstates:
-
-- a require() that resolves is not a program that works — caps, paths and terminal behaviour still differ;
-- the corpora are the nine loot disks (80 programs) and three OpenPrograms repos (60 files), which is what exists and is still not everything;
-- some community code targets PLAN9K, not OpenOS (magik6k's process.rt / process.globalSignals calls are Plan9k's API). Those files were never going to run here and are not counted as compat gaps.
-
-Honest phrasing is something like "every program on the nine OpenComputers loot disks loads; the OpenOS names we do not provide were required by none of them". Then re-run the scan when the claim is made, so the number in the README is one somebody can reproduce.
 
 ### Error registry: the rest of the migration
 

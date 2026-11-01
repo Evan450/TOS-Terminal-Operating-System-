@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════╗
 -- ║  TOS Module — Tape Authenticator                           ║
 -- ║  Keycard identity + encrypted personal log on one tape     ║

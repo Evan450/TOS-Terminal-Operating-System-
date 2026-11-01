@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════╗
 -- ║  TOS Shell - Panels Mouse Input                      ║
 -- ║  Click/scroll handling via the optional mouse driver ║

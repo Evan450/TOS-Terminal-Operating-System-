@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════╗
 -- ║  OpenOS RBMK Display Satellite                       ║
 -- ║  Renders the SKALA core map from the controller's    ║

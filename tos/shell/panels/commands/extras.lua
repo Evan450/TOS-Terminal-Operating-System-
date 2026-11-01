@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════╗
 -- ║  TOS Shell - Commands subfile                            ║
 -- ║  Auto-extracted from commands.lua during the v1.3 split  ║

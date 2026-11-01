@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════╗
 -- ║  OpenOS TOS-Cluster Worker Daemon    ║
 -- ║  Talks to a TOS Manager over raw     ║

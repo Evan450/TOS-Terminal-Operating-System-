@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- Does the glass hold what we think we drew?
 --
 -- Three bugs reported from real hardware resisted static reading: a

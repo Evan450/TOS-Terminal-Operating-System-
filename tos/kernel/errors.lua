@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════╗
 -- ║  TOS Kernel - Error registry                              ║
 -- ║  One table; three spellings of every error                ║

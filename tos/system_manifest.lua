@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS System Manifest - Single source of truth for system files.
 -- Used by:
 --   /init.lua (boot verification, critical files only)

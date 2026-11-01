@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  TOS Kernel - Curve25519 field arithmetic, pure Lua 5.3        ║
 -- ║                                                              ║

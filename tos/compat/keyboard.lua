@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - keyboard
 -- Key scan codes matching OpenOS keyboard library.
 local keyboard = {}

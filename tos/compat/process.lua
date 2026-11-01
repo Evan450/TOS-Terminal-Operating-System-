@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - process
 -- The read-only half of OpenOS's lib/process: info() and running().
 --

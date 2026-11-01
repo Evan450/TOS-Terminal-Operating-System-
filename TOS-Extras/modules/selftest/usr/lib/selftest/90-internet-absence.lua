@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- kernel.internet's absence path and kill switch, on a real boot.
 --
 -- Ports the two bullets from the INTERNET CARD + REMOTE PKG round's

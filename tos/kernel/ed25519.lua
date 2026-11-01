@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  TOS Kernel - Ed25519 (RFC 8032), pure Lua 5.3               ║
 -- ║                                                              ║

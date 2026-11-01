@@ -18,8 +18,10 @@ things about that are easy to get wrong and hard to repair after the fact
 
 Skipped when Reference/OpenOS is not beside TOS-Dev (a dev-branch clone has
 no Reference tree; the check belongs to the maintainer's checkout).
-The licence-HEADER half of the TODO item is an operator decision and is not
-checked here.
+
+  3. Every shipped source says its licence: GPL-3.0-or-later, in a plain
+     comment so that it costs the release nothing (the operator's call,
+     2026-11-01). Manifests and tests are not shipped source.
 """
 
 from __future__ import annotations
@@ -116,6 +118,17 @@ def main() -> int:
                   for p, src in hits.items() if not credited(p)]
     check(f"every {RUN_LINES}-line verbatim run from OpenOS is credited "
           f"({len(hits)} file(s) carry one)", not uncredited, "; ".join(uncredited))
+
+    # 3. Every shipped source says its licence, in a comment strip removes.
+    bare_files = []
+    for p in files:
+        if p.name == "package.lua" or p.name.startswith("test_"):
+            continue
+        head = p.read_text(encoding="utf-8", errors="replace").splitlines()[:3]
+        if not any(l.startswith("-- SPDX-License-Identifier: GPL-3.0-or-later") for l in head):
+            bare_files.append(str(p.relative_to(ROOT)))
+    check("every shipped source carries its licence header", not bare_files,
+          ", ".join(bare_files[:6]))
 
     # The lint must be able to fail. A file that copies a window of OpenOS's
     # lib/internet.lua is flagged without a credit line and passes with one.

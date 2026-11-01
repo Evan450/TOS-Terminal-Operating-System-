@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- The capability sandbox, on a real booted kernel.
 --
 -- Ports the item TODO.txt's PKG COMPLETENESS checklist calls out as the

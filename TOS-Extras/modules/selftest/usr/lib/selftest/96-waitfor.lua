@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- net.waitFor from kernel context, on the real machine.
 --
 -- The first round's note answered the question 92-term was written to

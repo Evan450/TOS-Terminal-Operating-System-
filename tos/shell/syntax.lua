@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS Lua Syntax Highlighter
 -- Line-based tokenizer for syntax-highlighted editing
 -- Lazy-loaded only when editing .lua files on T2/T3 GPUs

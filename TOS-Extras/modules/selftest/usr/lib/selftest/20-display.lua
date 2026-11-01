@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- The GPU colour cache, on a real GPU.
 --
 -- display._setBg skips the gpu call when the requested colour matches the

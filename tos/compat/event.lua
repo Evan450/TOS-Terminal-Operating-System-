@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - event API
 -- Wraps TOS kernel.event to provide the OpenOS event interface.
 -- OpenOS programs use require("event") for event handling.

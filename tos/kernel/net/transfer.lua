@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════╗
 -- ║  TOS Network - File Transfer         ║
 -- ║  FILE_REQ / FILE_RES / FILE_DENY     ║

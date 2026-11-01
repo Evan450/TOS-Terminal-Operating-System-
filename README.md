@@ -58,7 +58,7 @@ The installer asks which drive TOS goes on when the machine has more than one (`
 - **Signed packages** — `pkg` installs from a floppy, a folder or over the network, checking an Ed25519 signature and a hash for every file on arrival.
 - **A zero-trust mesh** — peers are unknown until paired; trusted traffic is encrypted and authenticated, with replay protection.
 - **A tile Desktop and a file browser**, nine colour themes, and a full reference manual — [`MANUAL.md`](MANUAL.md), *The Book of TOS*.
-- **OpenOS compatibility** — 15 of OpenOS's libraries, so much of what already exists still runs, and OPPM packages install.
+- **OpenOS compatibility** — 15 of OpenOS's libraries, so OPPM packages install and much of what already exists runs. 30 of the 31 Lua files on OpenComputers' 11 loot disks find every library they ask for (`python build/compat_scan.py` counts them). That says a program loads, not that it works: its capabilities, paths and terminal handling can still differ.
 
 ## Why not just use OpenOS?
 
@@ -97,7 +97,7 @@ Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. 
 
 ## Known limitations
 
-- **OpenOS programs run on a best-effort basis.** A program that reaches for raw components or the global environment runs into the sandbox. Programs that use OpenOS's documented libraries generally work.
+- **OpenOS programs run on a best-effort basis.** A program that reaches for raw components or the global environment runs into the sandbox. Programs that use OpenOS's documented libraries generally work, but OpenOS's own `bin/` does not: it needs `tty` and `loadfile`, which TOS does not provide, and TOS has its own commands in their place.
 - **One theme for every seat.** The last person to log in, or to change the theme, sets the colours everyone sees.
 - **The remote shell is off by default.** `rshd` is registered but not started; `service start 20-rshd` turns it on, and even then only TRUSTED peers can use it.
 - **An unverified package needs a deliberate yes.** `pkg install` refuses a package that does not list a SHA-256 for every file, unless you add `--allow-unverified`. A *service* package's setup runs with the authority it declares, so installing one trusts its author with the machine.
@@ -121,7 +121,7 @@ Or insert an Optional Utilities disk and run `pkg install` to pick from a menu. 
 
 ## License
 
-TOS is licensed under the **GNU General Public License v3.0** — see [`LICENSE.txt`](LICENSE.txt) for the full text.
+TOS is licensed under the **GNU General Public License, version 3 or (at your option) any later version** (GPL-3.0-or-later) — see [`LICENSE.txt`](LICENSE.txt) for the full text.
 
 Copyright © 2026 Discover! Interactive. This program is free software: you may redistribute it and/or modify it under the terms of the GPLv3. It comes with ABSOLUTELY NO WARRANTY (see sections 15–16 of the license).
 

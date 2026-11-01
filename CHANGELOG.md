@@ -20,8 +20,11 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 104 rounds of work:
+Everything since v1.5.0, in 107 rounds of work:
 
+- [a network install is what the publisher signed](#a-network-install-is-what-the-publisher-signed)
+- [the licence is on every source file](#the-licence-is-on-every-source-file)
+- [a compatibility number you can check](#a-compatibility-number-you-can-check)
 - [the REPL remembers, and date tells the time](#the-repl-remembers-and-date-tells-the-time)
 - [the installer speaks your language](#the-installer-speaks-your-language)
 - [a minimal install, for a 1 MB drive](#a-minimal-install-for-a-1-mb-drive)
@@ -126,6 +129,18 @@ Everything since v1.5.0, in 104 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### a network install is what the publisher signed
+
+A network install is now what the publisher signed. `bootstrap.lua` carries the publisher's key and checks a signature on the release, so a compromised repository can't ship code to a machine installing from `main`. A release that isn't signed is refused before anything downloads. Forks and other branches aren't signed by this key, and bootstrap says so and carries on.
+
+### the licence is on every source file
+
+TOS's licence is now stated in full: GPL-3.0-or-later, in a header on every source file. The headers are source-only comments, so the release and the signed pack are unchanged.
+
+### a compatibility number you can check
+
+The README now gives a number for OpenOS compatibility that anyone can reproduce: 30 of the 31 Lua files on OpenComputers' loot disks find every library they ask for. `build/compat_scan.py` counts them. It also says plainly that OpenOS's own `bin/` doesn't run here. On GitHub, `main` and `dev` now refuse force-pushes and deletion.
 
 ### the REPL remembers, and date tells the time
 

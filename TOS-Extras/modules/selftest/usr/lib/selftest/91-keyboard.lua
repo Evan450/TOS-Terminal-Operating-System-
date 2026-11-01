@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- compat.keyboard on a machine that HAS a keyboard (AUDIT 5, H-03).
 --
 -- The bug: compat.keyboard.isKeyDown called component.keyboard.isKeyDown,

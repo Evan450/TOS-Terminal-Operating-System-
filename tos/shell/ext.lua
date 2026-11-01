@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS Shell Extensions (lazy-loaded)
 -- Commands here are loaded on-demand by panels.lua for: net, ping, hostname, config, battery, audio
 local computer=require("computer")

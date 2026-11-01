@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- The other "am I in a process?" callers, from kernel context, on the real
 -- machine.
 --

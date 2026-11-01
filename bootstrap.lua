@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════╗
 -- ║  TOS Network Bootstrap               ║
 -- ║  Terminal Operating System           ║
@@ -137,6 +139,17 @@ local DEFAULT_REPO  = "TOS-Terminal-Operating-System-"
 -- both the "main" and older "master" default-branch conventions without
 -- the operator needing to know which this repo uses.
 local BRANCH_CANDIDATES = { "main", "master" }
+
+--! THE ROOT OF TRUST: this file, which is short enough to read before it runs.
+--! The publisher's Ed25519 public key is pinned here, and so are the digests
+--! of the code that checks a signature, so neither comes from the server the
+--! download does. Compare RELEASE_KEY with the key in the README of the
+--! repository's optional-utilities branch, which is the same one.
+local RELEASE_KEY = "dcdafa5342333048be0ad519911a6bd1ecffefcffde73879a4e246fc20d7fd8b"
+--! Filled in by build/strip.lua: a digest for each verifier file, over the
+--! bytes this release ships. Still this string in the source tree, which is
+--! how a copy that did not come from a build knows it cannot vouch for anything.
+local VERIFIER_PINS = "@VERIFIER_PINS@"
 
 -- Subdirectory inside the repo that holds the install-disk root
 -- (install.lua + bios.lua + tos/ + etc/ + usr/ + init.lua). "" means the
@@ -292,6 +305,8 @@ local function classifyArgs(args)   --[[TEST-EXTRACT]]
   for _, a in ipairs(args) do
     if a == "-h" or a == "--help" or a == "-?" or a == "/?" then
       out.help = true
+    elseif a == "--allow-unsigned" then
+      out.allowUnsigned = true
     elseif type(a) == "string" and a:sub(1, 1) == "-" then
       out.unknown = out.unknown or a
     else
@@ -476,25 +491,54 @@ print()
 -- ============================================================
 -- Download integrity
 -- ============================================================
---! WHAT THIS DOES AND DOES NOT PROVE. The release manifest carries a
---! SHA-256 for every file it lists, so once the manifest is in hand every
---! subsequent download can be checked against it. That turns a truncated
---! transfer, a proxy that mangles line endings, or a file swapped in
---! flight into a loud refusal instead of a machine that boots something
---! subtly wrong.
+--! WHAT THIS PROVES, as a chain with one end here. This file holds the
+--! publisher's key and a hasher of its own. The hasher checks the verifier
+--! files against digests pinned in this file, the verifier checks the
+--! publisher's signature over the manifest, and the manifest holds a SHA-256
+--! for every file. So a release is what the publisher signed, whoever serves
+--! it. A hostile server can stop an install. It cannot change one.
 --!
---! It does NOT prove the release is genuine. The manifest and the files
---! come from the same place over the same connection: whoever can rewrite
---! one can rewrite the other. Verifying downloads against it means "these
---! are the bytes that repository is serving", not "these are the bytes
---! Strata published". Closing that gap needs a signature checked against
---! a key pinned HERE, in this file, rather than fetched alongside the
---! thing it vouches for -- tracked, not done.
---!
---! Bootstrapping the hasher is the ordering problem: sha256.lua is itself
---! one of the downloads. It is fetched first and checked against its own
---! manifest entry, which catches corruption but is obviously circular
---! against a hostile server. Stated plainly rather than dressed up.
+--! The hasher used to be a download, checked against the manifest it was about
+--! to be used on, which proved nothing against a hostile server and said so.
+
+--- SHA-256, as hex. Lives in this file so that it is not a download.
+local function sha256hex(msg)                  --[[TEST-EXTRACT]]
+  local K = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  }
+  local M = 0xFFFFFFFF
+  local function rr(x, n) return ((x >> n) | (x << (32 - n))) & M end
+  local len = #msg
+  msg = msg .. "\128" .. string.rep("\0", (55 - len) % 64) .. string.pack(">I8", len * 8)
+  local h = { 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+              0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19 }
+  local w = {}
+  for p = 1, #msg, 64 do
+    for i = 0, 15 do w[i + 1] = string.unpack(">I4", msg, p + i * 4) end
+    for i = 17, 64 do
+      local x, y = w[i - 15], w[i - 2]
+      w[i] = (w[i - 16] + (rr(x, 7) ~ rr(x, 18) ~ (x >> 3)) + w[i - 7]
+        + (rr(y, 17) ~ rr(y, 19) ~ (y >> 10))) & M
+    end
+    local a, b, c, d, e, f, g, t = h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]
+    for i = 1, 64 do
+      local t1 = (t + (rr(e, 6) ~ rr(e, 11) ~ rr(e, 25)) + ((e & f) ~ (~e & g)) + K[i] + w[i]) & M
+      local t2 = ((rr(a, 2) ~ rr(a, 13) ~ rr(a, 22)) + ((a & b) ~ (a & c) ~ (b & c))) & M
+      t, g, f, e, d, c, b, a = g, f, e, (d + t1) & M, c, b, a, (t1 + t2) & M
+    end
+    h[1], h[2], h[3], h[4] = (h[1] + a) & M, (h[2] + b) & M, (h[3] + c) & M, (h[4] + d) & M
+    h[5], h[6], h[7], h[8] = (h[5] + e) & M, (h[6] + f) & M, (h[7] + g) & M, (h[8] + t) & M
+  end
+  return (string.format("%08x%08x%08x%08x%08x%08x%08x%08x", table.unpack(h)))
+end                                            --[[/TEST-EXTRACT]]
+
 local hashes = {}
 for _, entry in ipairs(manifest) do
   if type(entry) == "table" and type(entry.path) == "string"
@@ -503,97 +547,98 @@ for _, entry in ipairs(manifest) do
   end
 end
 
---! The sandbox the downloaded hasher runs in. Deliberately small: enough
---! for pure computation over strings, and nothing that reaches the
---! machine. No load/loadstring (it must not fetch more code), no
---! require, no os/io/fs, no component or computer. `math` is not needed
---! by sha256.lua today and is included only because a pure hasher may
---! reasonably want it; if that stops being true, drop it rather than
---! grow this list. NAMED so the test suite can load the real thing with
---! the real environment instead of grepping for it.
-local HASHER_ENV = {
+--! What the verifier runs in. Pure computation over strings: no load, no os,
+--! io or filesystem, no component or computer. The files were checked against
+--! pinned digests before they get here, and they still get no more than this.
+local VERIFIER_ENV = {
   string = string, table = table, math = math,
   tonumber = tonumber, tostring = tostring, type = type,
-  select = select, ipairs = ipairs, pairs = pairs,
+  select = select, ipairs = ipairs, pairs = pairs, pcall = pcall,
   error = error, assert = assert, setmetatable = setmetatable,
 }
 
-local sha256, verifyOn = nil, false
+--- Is this manifest what the publisher signed? True, or nil and why. `get`
+--- fetches a path of the release; everything else comes from this file.
+--! `yield` is not a nicety. Ed25519 in pure Lua takes seconds on a real
+--! machine, and curve25519field stays alive by asking kernel.process to yield.
+--! There is no kernel.process on OpenOS, so without this it asks nobody, and
+--! OC kills a machine that goes 5 seconds without yielding.
+local function verifyRelease(manifestSrc, get, key, pins, env, hash, yield)   --[[TEST-EXTRACT]]
+  if type(pins) ~= "table" then
+    return nil, "this copy of bootstrap.lua is not from a release build"
+  end
+  local raw = get("/tos/system_manifest.sig")
+  if not raw then return nil, "the release has no signature" end
+  local fn = load(raw, "=signature", "t", {})
+  local okS, sig = false, nil
+  if fn then okS, sig = pcall(fn) end
+  if not okS or type(sig) ~= "table" or type(sig.sig) ~= "string" then
+    return nil, "its signature cannot be read"
+  end
+  if sig.key ~= key then return nil, "it is signed with a different key" end
+
+  local mods = { ["kernel.process"] = { yieldCooperative = yield or function() end } }
+  local venv = { require = function(name)
+    return mods[name] or error("verifier wants " .. tostring(name))
+  end }
+  for k, v in pairs(env) do venv[k] = v end
+  for _, m in ipairs({ { "kernel.sha512", "/tos/kernel/sha512.lua" },
+                       { "kernel.curve25519field", "/tos/kernel/curve25519field.lua" },
+                       { "kernel.ed25519", "/tos/kernel/ed25519.lua" } }) do
+    local body = get(m[2])
+    if not body then return nil, "could not fetch " .. m[2] end
+    if hash(body) ~= pins[m[2]] then
+      return nil, m[2] .. " is not the file this bootstrap was built with"
+    end
+    local chunk = load(body, "=" .. m[2], "t", venv)
+    local okM, mod = false, nil
+    if chunk then okM, mod = pcall(chunk) end
+    if not okM or type(mod) ~= "table" then return nil, "the verifier did not load" end
+    mods[m[1]] = mod
+  end
+
+  local function bin(hex)
+    return (hex:gsub("%x%x", function(c) return string.char(tonumber(c, 16)) end))
+  end
+  local okV, good = pcall(mods["kernel.ed25519"].verify, manifestSrc, bin(sig.sig), bin(key))
+  if okV and good then return true end
+  return nil, "its signature does not match its manifest"
+end                                            --[[/TEST-EXTRACT]]
+
 do
+  local official = owner == DEFAULT_OWNER and repoName == DEFAULT_REPO and baseBranch == "main"
+  io.write("  checking the publisher's signature... ")
+  local signed, why = verifyRelease(manifestSrc, function(path)
+    return httpGet(card, rawUrl(owner, repoName, baseBranch, baseSubdir, path))
+  end, RELEASE_KEY, VERIFIER_PINS, VERIFIER_ENV, sha256hex,
+    function() computer.pullSignal(0) end)
+  if signed then
+    color(0x00FF00); print("valid"); color(0xFFFFFF)
+    ok("This release is the one the publisher signed.")
+  elseif official and not parsed.allowUnsigned then
+    color(0xFF0000); print("REFUSED"); color(0xFFFFFF)
+    fail("This release cannot be trusted: " .. tostring(why) .. ".")
+    fail("Nothing was downloaded or installed. Try again later: a release")
+    fail("is signed by hand. --allow-unsigned goes ahead anyway, and then")
+    fail("nothing vouches for what this machine runs.")
+    return
+  else
+    color(0xFFFF00); print("none"); color(0xFFFFFF)
+    warn("Not the publisher's signed release: " .. tostring(why) .. ".")
+    warn("Nothing vouches for this code but the place it came from.")
+  end
+  print()
+end
+
+local sha256, verifyOn = { hex = sha256hex }, next(hashes) ~= nil
+if verifyOn then
   local declared = 0
   for _ in pairs(hashes) do declared = declared + 1 end
-  if declared == 0 then
-    warn("This release ships no digests — downloads cannot be verified.")
-    warn("Older releases predate them; the install will still work, but a")
-    warn("corrupted transfer will not be caught here.")
-    print()
-  else
-    io.write("  fetching the hasher ")
-    local SHA_PATH = "/tos/kernel/sha256.lua"
-    -- Same throttled ticker as the probe: this is a ~14 KB fetch that is
-    -- usually instant and occasionally is not.
-    local hDots, hLast = 0, computer.uptime()
-    local body = httpGet(card, rawUrl(owner, repoName, baseBranch, baseSubdir, SHA_PATH),
-      nil, function()
-        local now = computer.uptime()
-        if now - hLast >= 0.3 and hDots < 40 then
-          hLast = now; hDots = hDots + 1; io.write(".")
-        end
-      end)
-    io.write(" ")
-    if not body then
-      color(0xFFFF00); print("unavailable"); color(0xFFFFFF)
-      warn("Could not fetch " .. SHA_PATH .. "; downloads will NOT be verified.")
-      print()
-    else
-      --! sha256.lua is code fetched from the internet, so it runs in a
-      --! sandbox: no load, no require, no os/io, no component/computer/fs.
-      --! But the sandbox was EMPTY, and a pure-Lua hasher still needs
-      --! `string` and `table`. The module body is nothing but local
-      --! function definitions, so it loaded and returned a table quite
-      --! happily; the failure only arrived when hex() was first CALLED,
-      --! as "attempt to index a nil value (global 'string')". Found on a
-      --! real OpenComputers machine -- the off-box tests only grep this
-      --! file's TEXT, and no amount of reading source finds a missing
-      --! global. Keep this table minimal, but never empty again.
-      local chunk = load(body, "=sha256", "t", HASHER_ENV)
-      local okS, mod = false, nil
-      if chunk then okS, mod = pcall(chunk) end
-
-      --! KNOWN-ANSWER TEST before trusting it, because "loads and returns
-      --! a table" turned out not to mean "works". FIPS 180-4's own
-      --! one-block vector: SHA-256("abc"). A hasher that cannot reproduce
-      --! it is not one, whatever it claims to be, and every digest below
-      --! would otherwise be checked with a broken tool.
-      if okS and type(mod) == "table" and type(mod.hex) == "function" then
-        local okK, got = pcall(mod.hex, "abc")
-        if not (okK and got ==
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") then
-          okS = false
-          mod = nil
-        end
-      end
-
-      if okS and type(mod) == "table" and mod.hex then
-        -- Circular by construction; see the note above.
-        if hashes[SHA_PATH] and mod.hex(body) ~= hashes[SHA_PATH] then
-          color(0xFF0000); print("CORRUPT"); color(0xFFFFFF)
-          fail("sha256.lua does not match its own manifest entry.")
-          fail("Refusing to install from a repository that is inconsistent")
-          fail("with itself. Retry; if it persists, the release is broken.")
-          return
-        end
-        sha256, verifyOn = mod, true
-        color(0x00FF00); print("ok"); color(0xFFFFFF)
-        ok(declared .. " of " .. #manifest .. " files carry a digest and will be verified")
-        print()
-      else
-        color(0xFFFF00); print("unusable"); color(0xFFFFFF)
-        warn("sha256.lua did not load; downloads will NOT be verified.")
-        print()
-      end
-    end
-  end
+  ok(declared .. " of " .. #manifest .. " files carry a digest and will be verified")
+  print()
+else
+  warn("This release ships no digests, so downloads cannot be verified.")
+  print()
 end
 
 -- ── Staging directory, chosen by FREE SPACE ────────────────────────

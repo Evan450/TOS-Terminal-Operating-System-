@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - Terminal API
 -- Maps OpenOS term calls to TOS kernel.display and kernel.event
 

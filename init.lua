@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════╗
 -- ║  TOS init.lua - System Bootstrap     ║
 -- ║  Terminal Operating System v1.5.0    ║

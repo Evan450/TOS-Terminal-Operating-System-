@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  ttt — PURE tic-tac-toe logic (no component, no I/O)         ║
 -- ║                                                              ║

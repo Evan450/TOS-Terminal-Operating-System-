@@ -244,6 +244,16 @@ def cmd_key(args) -> int:
                cwd=extras, env=passphrase_env())
 
 
+def cmd_sign_release(args) -> int:
+    need("lua", "install with:  winget install DEVCOM.Lua")
+    return run(["lua", "build/release_sig.lua", "sign"], cwd=DEV, env=passphrase_env())
+
+
+def cmd_verify_release(args) -> int:
+    need("lua", "install with:  winget install DEVCOM.Lua")
+    return run(["lua", "build/release_sig.lua", "verify"], cwd=DEV)
+
+
 def cmd_check(args) -> int:
     """The checks that catch a generated artifact drifting from its source.
 
@@ -389,6 +399,12 @@ def main() -> int:
 
     y = sub.add_parser("key", help="print the public key you sign as")
     y.set_defaults(fn=cmd_key)
+
+    g = sub.add_parser("sign-release", help="sign TOS-Release, so main can be published")
+    g.set_defaults(fn=cmd_sign_release)
+
+    v = sub.add_parser("verify-release", help="is TOS-Release signed, and valid?")
+    v.set_defaults(fn=cmd_verify_release)
 
     c = sub.add_parser("check", help="fast drift checks (generated vs source)")
     c.set_defaults(fn=cmd_check)

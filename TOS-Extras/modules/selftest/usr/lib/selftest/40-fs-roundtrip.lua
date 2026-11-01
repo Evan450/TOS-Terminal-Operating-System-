@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- The filesystem, on a real managed disk.
 --
 -- Every off-box test in the tree mocks kernel.fs -- exists/list/open all

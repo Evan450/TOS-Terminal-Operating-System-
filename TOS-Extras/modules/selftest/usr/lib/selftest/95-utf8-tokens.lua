@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- The syntax highlighter's tokens, painted on the real glass (fermi import
 -- 350fd87; AUDIT 5, "THE EDITOR COUNTS BYTES WHERE THE SCREEN COUNTS
 -- CHARACTERS", the code-position half).

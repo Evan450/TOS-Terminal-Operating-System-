@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- Signed manifests, against real ed25519 and the real trust store.
 --
 -- Ports the automatable half of the SIGNED MANIFESTS round's emulator

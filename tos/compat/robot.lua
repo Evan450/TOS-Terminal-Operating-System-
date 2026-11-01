@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - robot
 -- The OpenOS `robot` library, spelled onto kernel.peripheral.robot.
 --

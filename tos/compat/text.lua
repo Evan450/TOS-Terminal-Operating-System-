@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - text
 -- Lightweight text manipulation utilities matching the OpenOS text API.
 local text = {}

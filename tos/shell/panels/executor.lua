@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════╗
 -- ║  TOS Shell - Panels Command Executor                 ║
 -- ║  Parse and run commands, handle pipes and redirects  ║

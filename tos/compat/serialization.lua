@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - serialization
 -- Wraps kernel.serialize to provide the OpenOS serialization API.
 local ser = require("kernel.serialize")

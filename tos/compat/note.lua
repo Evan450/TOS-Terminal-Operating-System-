@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - note
 -- Musical note names <-> MIDI codes <-> frequencies, for programs that
 -- play tunes through computer.beep or a note block.

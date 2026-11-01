@@ -44,6 +44,18 @@ python tos.py sign --all               every discovered source package
 
 Signing writes `package.sig` beside each `package.lua`. `programs.cfg` advertises every `package.sig`, so signatures travel over `pkg fetch` as well as on a floppy. That matters: `pkgremote` downloads only what the index lists, so an unadvertised signature means a package that is signed on the disk and arrives **unsigned** over the network. With `pkg trust require on`, that is the difference between installing and being refused.
 
+## Signing a release
+
+The network install is signed too, with the same key. `bootstrap.lua` pins your public key and refuses a `main` that your key did not sign, so a compromised repository cannot ship code to a machine that installs from it.
+
+```
+python tos.py build            build the release
+python tos.py sign-release     sign exactly that build
+pwsh -File publish.ps1 -Push   publish it (from Working_Dir/tos-repo-push)
+```
+
+`publish.ps1` stops if the build is unsigned, because publishing it would break every network install. A new build wipes the signature, so it can never outlive the manifest it covers. `sign-release` refuses a passphrase that does not give the pinned key, rather than signing something no bootstrap will accept. `dev` needs none of this.
+
 ## Signing on a TOS machine
 
 ```

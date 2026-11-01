@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - shell API
 -- Provides the OpenOS shell interface for program resolution and execution.
 -- OpenOS programs use require("shell") for path resolution and program execution.

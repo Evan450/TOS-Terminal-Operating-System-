@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- TOS OpenOS Compatibility - Buffered Streams
 -- Minimal buffer wrapper compatible with OpenOS stream interface
 -- Wraps a raw stream (with read/write/close/seek) into a buffered handle

@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- Boot invariants. The class of failure the off-box suite structurally
 -- cannot see: hundreds of pure-Lua tests, not one of which catches
 -- "the kernel did not actually come up on this machine".

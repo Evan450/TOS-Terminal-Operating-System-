@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  TOS Module: ttt — tic-tac-toe vs an unbeatable AI (or 2P)   ║
 -- ║                                                              ║

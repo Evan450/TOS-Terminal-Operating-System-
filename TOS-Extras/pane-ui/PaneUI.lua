@@ -1,3 +1,5 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Discover! Interactive
 -- ╔════════════════════════════════════════════════════════════════════╗
 -- ║  PaneUI — a TOS-style environment for OpenOS  v0.4                 ║
 -- ║                                                                    ║
