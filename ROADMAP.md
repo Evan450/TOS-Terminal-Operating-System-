@@ -1021,7 +1021,7 @@ Same day, vault and deploy (both touched that day): E-305 ERR\_VAULT\_UNLOCK, ta
 
 *Idea / far future* · from the round *Operator notes from testing the published build (2026-10-30)*
 
-A PREFAB BASE DESIGNER. The design pass is done and the first slice is built: docs/PREFAB.md, and `prefab` 0.1.0 in TOS-Extras/modules/prefab, held off the pack because it is 0.x.
+A PREFAB BASE DESIGNER. The design pass is done and the first slices are built: docs/PREFAB.md, and `prefab` 0.2.0 in TOS-Extras/modules/prefab, held off the pack because it is 0.x.
 
 BUILT: the blueprint file, the designer (slices along X, Y and Z with the one behind showing faintly, rectangles, copy and paste, undo, keyboard and mouse), and the planner (build order, floating blocks, materials, loads, moves). test\_prefab.lua (91). SEEN on the runner: a 9x4x7 hut drawn, reported, saved, read by `prefab info` and reopened through `open`. The mouse has only been driven in the fake sandbox.
 
@@ -1029,4 +1029,6 @@ FOUND reading the OC 1.8.10 jar: a geolyzer leaves air at exactly 0 and only add
 
 DECIDED: robots build and drones come later as couriers. The robot gets a generated program on a floppy rather than a live link through rc-pilot, whose wireless setup is unfinished.
 
-NEXT, in order: prefab survey, prefab export with a simulated world to run it against, supply from a chest, clearing the site, drones, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc.
+SURVEY BUILT 2026-10-31 (test\_prefab.lua 91 -&gt; 142): reads in 4x4x4 cubes and prices a floor at every height. CORRECTED against the bytecode: scan costs 10 energy a CALL, not a block as the config comment and the first draft of the doc said; and its answer is always 64 long, with raw noise past the box. A cave first came out cheapest, so blocks above the building now count against a level. SEEN on the runner through the real sandbox, proxy and Lua VM, against a stand-in geolyzer (--geolyzer) that follows the bytecode: the report matched the Lua simulation line for line. A real geolyzer has not been tried.
+
+NEXT, in order: prefab export with a simulated world to run it against, supply from a chest, clearing the site, drones, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc.
