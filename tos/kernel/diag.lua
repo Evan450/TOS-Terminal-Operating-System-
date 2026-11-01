@@ -57,10 +57,12 @@ ipairs(f)do
 if g.level and g.level>=3 then b=b+1 elseif g.level==2 then c=c+1 end end;local e="ok"
 if b>0 then e="err"elseif c>0 then e="warn"end
 a(string.format("log: %d errors, %d warnings in last 50 entries",b,c),e)end
-local function D(a)local d=_G._TOS and _G._TOS.users;if not d then
-a("security: users unavailable","warn")return end
-local b=_G._TOS and _G._TOS.kernel
-if b and b.verifyManifestHash then local f,e=b.verifyManifestHash()
+local function D(a)if _G._TOS_POLICY_FAILURE then
+a("security: ".._G._TOS_POLICY_FAILURE,"err")end
+local d=_G._TOS and _G._TOS.users
+if not d then a("security: users unavailable","warn")return end;local b=_G._TOS and _G._TOS.kernel
+if b and b.verifyManifestHash then
+local f,e=b.verifyManifestHash()
 if f then
 a("security: manifest hash matches EEPROM anchor","ok")elseif e and e:find("no anchored hash")then
 a("security: manifest hash not anchored in EEPROM "..

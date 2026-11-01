@@ -16,9 +16,9 @@ if f and e then local g,h=pcall(d.proxy,e)if g then b.eeprom=h end end end end;r
 local function u()local a=_G._TOS and _G._TOS.kernel
 if a and a.gc then pcall(a.gc)return end;if type(collectgarbage)=="function"then
 pcall(collectgarbage,"collect")end end;local t=nil
-local function r()if t==nil then local b,a=pcall(require,"kernel.process")
-t=(b and a and
-a.yieldCooperative)and a or false end;if t then
+local function r()if n.beat then return n.beat()end;if t==nil then
+local b,a=pcall(require,"kernel.process")
+t=(b and a and a.yieldCooperative)and a or false end;if t then
 t.yieldCooperative()end end;local function s(a)
 return{title=a,findings={},counts={ok=0,info=0,warn=0,err=0},fixed=0}end;n.newReport=s
 local function o(a,c,b)b=b or"info"a.findings[

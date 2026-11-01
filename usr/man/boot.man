@@ -20,7 +20,7 @@ THE BOOT SPECTRUM (/etc/boot.cfg)
 
 THE POST SCREEN AND BOOT SETTINGS
     Each non-silent boot briefly shows the System Configuration screen (installed
-    hardware with tiers). While it shows "Press DEL for Boot Settings...", press
+    hardware with tiers). While it shows "DEL Boot Settings...", press
     DELETE to open the visual editor. Missed it? Run 'bootsettings' in the shell.
 
 FALLBACK & ONE-TIME BOOT

@@ -180,7 +180,15 @@ if o.liveTier(a)<3 then
 local c=o.fail(a,"Permission denied: root only  [E-403 ERR_TIER_REQUIRED]",b)a.lastDenial={cmd=a.curCmd,need=3,have=o.liveTier(a)}return c end;return true end
 function o.adminOnly(a,b)
 if o.liveTier(a)<2 then
-local c=o.fail(a,"Permission denied: admin access required  [E-403 ERR_TIER_REQUIRED]",b)a.lastDenial={cmd=a.curCmd,need=2,have=o.liveTier(a)}return c end;return true end;function o.tierName(a)a=tonumber(a)or 0
+local c=o.fail(a,"Permission denied: admin access required  [E-403 ERR_TIER_REQUIRED]",b)a.lastDenial={cmd=a.curCmd,need=2,have=o.liveTier(a)}return c end;return true end
+function o.getopt(a,c,d,b,e)local h,g,f={},{},1
+while f<=#a do local i=tostring(a[f])local j=c[i]
+if i=="--"then for k=f+1,#a do
+g[#g+1]=a[k]end;break elseif type(j)=="table"then f=f+1;h[j[1]]=a[f]elseif j then h[j]=true elseif c.number and
+i:match("^%-%d+$")then h[c.number]=tonumber(i:sub(2))elseif
+i:sub(1,1)=="-"and#i>1 then d("Unknown option '"..i.."'. Nothing was done.",b and
+b.error)if e then
+d(e,b and b.dim)end;return nil else g[#g+1]=a[f]end;f=f+1 end;return h,g end;function o.tierName(a)a=tonumber(a)or 0
 return
 ({[0]="GUEST",[1]="USER",[2]="ADMIN",[3]="ROOT"})[a]or("tier "..a)end
 function o.whyExplain(b,a,c,d)local f={}local function e(g,h)

@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**70 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**62 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 46 | Planned or under investigation. Most contributions belong here. |
+| Planned | 38 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (12) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (6) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (10) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (11)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (11) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (10)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -157,21 +157,6 @@ Emulator checklist (needs OpenPrinter installed):
 - put `.title` at the top and confirm the rule does NOT move (the directive prints nothing; this is the drift regression the unit tests pin)
 - print from `write` (F3) and from `printer file` on the same document -&gt; byte-identical pages
 
-### Emulator checklist: Stock add-on
-
-*Planned* · from the round *Stock add-on (2026-08-04)*
-
-Emulator checklist:
-
-- transposer + 2 chests: `stock sides` lists both; `stock` totals across them and WHERE names both sides
-- put the same item in both chests, confirm ONE row
-- rename an item on an anvil, confirm it still merges
-- W a threshold as root -&gt; persists across a reboot; as a plain USER -&gt; refused out loud, not silently
-- empty the watched chest entirely -&gt; the row must still be there, at 0, red, at the top
-- L toggles low-only; / filters by both label and mod id
-- ^B backgrounds it and the chip comes back with fresh numbers (drowsy, rescans on its 10s timer)
-- a BIG inventory (drawers/barrel with many slots): confirm the getAllStacks fast path doesn't stall the seat, and that a component WITHOUT getAllStacks still works
-
 ### Run a verification round in real Minecraft OpenComputers
 
 *Planned* · from the round *Planned (near future)*
@@ -300,14 +285,6 @@ securefs must still mediate the mount point, exactly as the jbod header says ("a
 
 Get listed in `oppm list`: a PR adding this repo to OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS show up for people who never heard of it.
 
-### Install profiles: `install.lua --profile minimal|standard|full`, each writing a trimmed…
-
-*Planned* · from the round *Planned (near future)*
-
-Install profiles: `install.lua --profile minimal|standard|full`, each writing a trimmed system\_manifest.lua. From the 2026-09-10 follow-up review, which measured the release at 1,619 KB of content (1,695 KB on disk with fileCost) and \~353 KB free on a Tier 2 disk -- down \~102 KB in six days with the file count flat, so this is content growth, not new files. The architecture already allows it (41 pcall(require) sites in kernel/init.lua, an 11-file critical set) and it composes with `deploy drive`, which copies exactly what the manifest lists. Their measured cut -- drop the installer, docs, networking, remote pkg, the package manager, compat, peripherals and the `extras` commands -- leaves the full Commander UI at \~1,060 KB. Not urgent this week; the growth curve decides when it becomes so, and this turns a deadline into a knob.
-
-2026-10-09: the curve got there. The release was 2,068.5 KB on disk and a 2 MB drive could not finish First Boot Setup. Minify now drops indentation (1,874 KB, \~150 KB left after first boot) and test\_release\_budget.lua fails past 1,920 KB (1b32fc9) -- the deadline is a test now, but \~46 KB of growth from it. The next lever after this one is the --! comments the release keeps (219 KB), an operator decision; then profiles.
-
 ### Anchor the network install to a key, not the transport
 
 *Planned* · from the round *Planned (near future)*
@@ -384,16 +361,6 @@ That is the safe way to tighten a sandbox on a live base: turn enforcement off, 
 
 SECOND, SMALLER IDEA from the same file: their caps are namespaced and GLOB-MATCHED -- syscall:write:/var/log/\*, component:&lt;type&gt;:&lt;addr&gt; -- so a service is granted write access to a PATH PREFIX rather than to the filesystem. Ours are flat booleans and write scoping is securefs per USER, which is the better answer for humans. For a sandboxed DAEMON with no human behind it, a path-scoped write cap is strictly tighter than "can write as this user". First use is rc.d services, whose caps are already declared and already gated (ALLOWED\_SERVICE\_CAPS).
 
-### Consolidate the security policy into one file
-
-*Planned* · from the round *From the KittenOS Neo survey (2026-08-10)*
-
-CONSOLIDATE THE SECURITY POLICY INTO ONE FILE. Theirs is a single readable function returning "allow" / "deny" / "ask", prefix-matched over namespaced permission strings, and its own header declares it CRITICAL: break it and a failsafe leaves the system unable to run user applications at all. Ours is correct but SCATTERED — ALLOWED\_MODULE\_PREFIXES and the BASE/GATED component sets in sandbox.lua, adminGate in pkg.lua, ALLOWED\_SERVICE\_CAPS in rc.lua. Each is fine alone; together they mean "what is this system allowed to do?" takes three files and knowing where to look.
-
-- Move the DECISIONS into one auditable function. Leave the ENFORCEMENT points exactly where they are — this is a refactor of policy, not of mechanism, and the enforcement sites are where the #SEC history lives.
-- Attach the fail-closed property explicitly: a policy file that won't load must deny everything non-kernel, loudly. That is a security PROPERTY, so it needs its own test.
-- This is the one place our security STORY is quieter than our security POSTURE. The posture is good; you just can't read it in one sitting.
-
 ### Run-this-once confinement
 
 *Idea / far future* · from the round *What the rest of the field does better (2026-09-20)*
@@ -469,52 +436,6 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 - BOOT PROFILES AND STRIPPING ARE DIFFERENT LAYERS and now interact: a profile gates what LOADS, stripping removes what EXISTS. A profile that would load a stripped feature must degrade with a clear line in the boot log, never panic. Today the load paths pcall-and-warn, which is most of the way there — but it has never been tested against a file that is genuinely absent rather than merely skipped.
 - NOT a package. `pkg uninstall` already covers add-ons; this is about the BASE IMAGE, which pkg does not own.
 
-### Split the BIOS: minimal EEPROM, recovery UI in stage 2
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-SPLIT THE BIOS: MINIMAL EEPROM, RECOVERY UI IN STAGE 2. Refines the item above and the 2026-09-06 BIOS pair. MineOS proves a full menu FITS in 4 KiB; OCOS argues you should not put it there anyway. Their EFI is 4,164 B of source, 3,109 B minified, and its own comment says the boot-mode menu, recovery flows and splash "live in /sys/boot.lua, where they have room to breathe". The EEPROM does the minimum: find a medium, read config, load stage 2, and on ANY failure draw a full-screen panic naming the reason.
-
-Nearly the shape we already have -- bios.lua is a POST + loader, /init.lua is stage 2. The split:
-
-- EEPROM: timed hotkey, BOOT-DEVICE chooser, panic screen that names the reason. Small enough to keep the manifest anchor.
-- Stage 2: the rich recovery menu -- boot profiles, safe mode, srm restore, doctor, disk utility -- using the kernel's own modules.
-- THE SPLIT'S WEAKNESS, stated plainly: if the DISK is what broke, stage 2 is gone and only the EEPROM half is left. Which is exactly why the EEPROM half must still be able to pick a DIFFERENT disk, and why the emergency terminal stays. Today K4, I5 and I6 end in "any key reboots" on the same saved disk: a loop. /init.lua's missing-files screen got its way out on 2026-10-02 (bootElsewhere); these are the rest. DONE 2026-10-16, in the EEPROM itself. On K4, I5 or I6 the fault screen offers "d: other disk". d makes the data field "SKP:&lt;that disk&gt;", and the next boot's scan passes it over for any other bootable disk, which goes through H1's approval. If it is the only disk it is offered again, never lost to D2. 156 bytes; the BIOS is 3,966 of 4,096 bytes and keeps test\_bios's 128-byte headroom. Off-box: test\_bios.lua, 10 new checks (4 fail on the old BIOS). Seen on the headless machine: a second bootable disk attached, the kernel moved away from outside, a powercycle, K4, then d. "Boot drive changed: d15c0000", y, and the other disk's TOS reached First Boot Setup.
-
-Two behaviours from the small bootloaders, both cheap: GEBL's QUICK BOOT (exactly one bootable OS found -&gt; boot it, no prompt) and its INIT FINDER (config missing or unreadable -&gt; search the filesystem root for a bootable file instead of giving up). Zorya adds the third: a SELECTION TIMEOUT that falls through to the default.
-
-### A 4 KiB EEPROM fits a recovery menu, and MineOS proves it
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-A 4 KiB EEPROM FITS A RECOVERY MENU, AND MineOS PROVES IT. This is evidence for the two entries in THE BIOS REFUSED TO BOOT ANYTHING BUT TOS (2026-09-06), not a new item: the objection there was byte budget, and the objection is wrong. MineOS' EFI/Minified.lua is 3,865 bytes -- inside the 4 KiB limit with 231 to spare -- and it holds ALL of:
-
-- a TIMED hotkey (hold Alt for one second) so the recovery path costs a healthy boot nothing;
-- a boot-source menu listing every filesystem component with label, HDD/FDD/SYS class, read-only flag, used-percent and address;
-- per-disk set-bootable / rename / erase;
-- internet recovery and URL boot, both gated on a card;
-- a candidate boot-file list (/OS.lua, then /init.lua) so it boots its own OS or an OpenOS-shaped one, and a fallback that walks every filesystem when the committed address is gone, re-scanning on component\_added.
-
-Fuchas' dualboot\_init.lua is the /init.lua half in \~40 lines and is the cheaper thing to copy first: a stub that checks for /lib/core/boot.lua and /Fuchas/Kernel/boot.lua, boots whichever exists ALONE with no prompt, and asks only when both are there.
-
-OUR CONSTRAINT THEY DO NOT HAVE: the EEPROM data field is already spoken for. bios.lua keeps the boot address on line 1 and the kernel anchors its manifest hash after a newline (#SEC C1). A menu that writes the data field must preserve line 2+.
-
-Internet recovery inherits the pkgsign question -- fetching and running a script from a URL is exactly what signing exists to stop. Scope it to "download bootstrap.lua and stop", which is the documented network install path anyway, or check a signature.
-
-OTHER ROUTE, decide one and not both: ship a loader\_tos module for Zorya NEO (Extras) instead of growing bios.lua. Their loaders are \~40 lines (mods/loader\_openos/init.lua returns function(addr) that builds an env and loads the OS's init) and they already carry loader\_openos, loader\_fuchas, loader\_cynosure, loader\_monolith, loader\_tsuki. But Zorya then owns the EEPROM, runs the OS in its own thread under a synthesized \_G, and offers virtual components -- and our boot chain has opinions about all three (the Lua-5.3 feature probe, the manifest anchor, component\_caps).
-
-### A driver registry with per-device probing
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-A DRIVER REGISTRY WITH PER-DEVICE PROBING. Fuchas resolves a device to a driver instead of hardcoding one: drivers live at Drivers/&lt;component type&gt;/&lt;name&gt;.lua along a DRV\_PATH search path, each returns a spec with isCompatible(addr), findBestDriver(type, addr) probes candidates, changeDriver pins a specific driver to a specific address, and in SAFE\_MODE only a basicDrivers set (drive, gpu) may load at all. Two printer drivers ship side by side -- openprinter.lua and ccprinter.lua -- which is the whole point.
-
-WE ARE ALREADY HAND-ROLLING THE SPECIAL CASES THIS GENERALISES. The printer checklist in the PRINTER round says "a 1.7-era printer: width/maxWidth absent, printer must say 'older build: no width' and still print" -- that is isCompatible(addr) written by hand inside one module. `rbmk survey` ("does anything bind") is the same shape again. Third instance is coming; the second is where the abstraction gets built.
-
-A NEW DEVICE NEEDS A KERNEL EDIT today: hal.lua is a fixed type -&gt; {address, proxy, tier, label} registry and tos/peripheral/ is three kernel modules. Extras ships mouse and printer as ordinary libraries in a "drivers" category, outside the cap system. A pkg-installed driver the kernel FINDS is strictly better, and etc/component\_caps.cfg + `component reload-caps` is already the authority half of the design.
-
-DO NOT COPY THEIR AUTHORITY RULE: "a process must use drivers unless it is admin" means root bypasses the abstraction. Our sandbox has no such escape and must not grow one. A driver is a BINDING mechanism (which code drives this device); the cap check stays where peripheral/redstone.lua:requireCap puts it.
-
 ### Next if still tight: i18n catalogs, and the display-layer work already queued in the OC…
 
 *Planned* · from the round *Memory round (2026-07-24)*
@@ -548,6 +469,20 @@ THREE OF OUR PROBLEMS ARE ONE PROBLEM IN THAT FRAMING:
 This is NOT a proposal to rewrite the terminal layer. It is a note that the next time one of those is patched, the patch should move TOWARD one input-stream abstraction with a discipline, instead of adding a fourth special case to compat.term.
 
 OTHER ROUND-2 NOT-GAPS, recorded so they are not re-investigated: OCOS' SEMVER PACKAGE DEPS -- pkg.lua already takes { name = ..., version = "&gt;=1.0", optional = ... } and has compareVersion (:1072, :1157). OCOS' DOUBLE-BUFFERED COMPOSITOR -- our shadow buffer; their README names MineOS as the source. Cynosure 2's PLUGGABLE BINFMT (src/exec/{lua,cle,shebang}.lua) -- we run .lua and that is the whole population. ULOS 2's LUAPOSIX COMPATIBILITY PUSH -- their target is \*nix programs; ours is OpenOS programs, which is the population that actually exists.
+
+### A driver registry with per-device probing
+
+*Idea / far future* · from the round *What the rest of the field does better (2026-09-20)*
+
+A DRIVER REGISTRY WITH PER-DEVICE PROBING. Fuchas resolves a device to a driver instead of hardcoding one: drivers live at Drivers/&lt;component type&gt;/&lt;name&gt;.lua along a DRV\_PATH search path, each returns a spec with isCompatible(addr), findBestDriver(type, addr) probes candidates, changeDriver pins a specific driver to a specific address, and in SAFE\_MODE only a basicDrivers set (drive, gpu) may load at all. Two printer drivers ship side by side -- openprinter.lua and ccprinter.lua -- which is the whole point.
+
+WE ARE ALREADY HAND-ROLLING THE SPECIAL CASES THIS GENERALISES. The printer checklist in the PRINTER round says "a 1.7-era printer: width/maxWidth absent, printer must say 'older build: no width' and still print" -- that is isCompatible(addr) written by hand inside one module. `rbmk survey` ("does anything bind") is the same shape again. Third instance is coming; the second is where the abstraction gets built.
+
+A NEW DEVICE NEEDS A KERNEL EDIT today: hal.lua is a fixed type -&gt; {address, proxy, tier, label} registry and tos/peripheral/ is three kernel modules. Extras ships mouse and printer as ordinary libraries in a "drivers" category, outside the cap system. A pkg-installed driver the kernel FINDS is strictly better, and etc/component\_caps.cfg + `component reload-caps` is already the authority half of the design.
+
+DO NOT COPY THEIR AUTHORITY RULE: "a process must use drivers unless it is admin" means root bypasses the abstraction. Our sandbox has no such escape and must not grow one. A driver is a BINDING mechanism (which code drives this device); the cap check stays where peripheral/redstone.lua:requireCap puts it.
+
+PARKED 2026-11-01, by this entry's own rule that the second instance is where the abstraction gets built. There is one printer driver, and printer.lua's feature probe already handles the old builds. A kernel that finds package drivers runs package code with kernel authority, which needs a sandbox answer first, and the disk budget is 330 KB over. Back on the list the day a second driver for one device type exists. Yours to reverse.
 
 ### Build-time feature config
 
@@ -631,14 +566,6 @@ SMALLER, NOTED IN PASSING.
 - DONE 2026-11-01: the 297 test files that reported failure by marker alone exit non-zero now. test\_install\_preinit.lua is the one left: it carries the operator's uncommitted edit, so it was not touched.
 - check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
 
-### Localise the installer, not just the OS
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-LOCALISE THE INSTALLER, NOT JUST THE OS. MineOS ships \~20 Localizations/\*.lang packs AND a separate Installer/Localizations/ set, and the installer asks for a language as step one. Their format is what makes community translation happen: one file per language, a flat Lua table of short keys, no tooling to contribute. Ours (usr/lang/, i18n.lua) is already that shape and holds exactly one pack, ru.lang.
-
-The transferable half is the installer: install.lua and bootstrap.lua are English-only and they are the first, and sometimes only, screens a new operator reads. Routing their strings through i18n and asking for a language first is bounded, and it is what turns one ru.lang into a reason for someone to send a second pack.
-
 ### The shadow buffer is tuned for TUI redraw
 
 *Planned* · from the round *Log wall / streaming-console appliance (2026-08-10)*
@@ -678,12 +605,6 @@ Open question worth settling first: is the feed LOCAL (this machine's own events
 *Idea / far future* · from the round *From the OCOS survey (2026-08-10)*
 
 SHELL LEXER + PARSER. Only if we ever want `&&`, `||` or `$?`. Today the executor string-parses through kernel.pipe.parse, which is fine for `|` and redirects and will not stretch to conjunction or exit-status expansion. A real lexer/parser is the honest way to get there. Filed as far-future because nothing is currently ASKING for it — don't build it on spec.
-
-### Shared getopt
-
-*Idea / far future* · from the round *From the OCOS survey (2026-08-10)*
-
-SHARED getopt. \~50 commands each parse their own flags. One helper would shrink all of them. Low value, low risk, good filler work for a quiet round.
 
 ### Split tabs — two or more tabs sharing one screen
 
@@ -730,12 +651,6 @@ THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS SINCE 2026-10-17, THE MIT CRE
 
 THE CREDIT IS FIXED, 2026-10-26; the rest is still the decision. minify\_vars.noticesOf puts back, at the top of the file, every `--!` paragraph whose first word is PROVENANCE., Copyright or SPDX-License-Identifier: (read from the unstripped file -- from the stripped one the credit ran on into the #SEC note after it). strip.lua's marker convention says so. internet.lua's 425 bytes are the only notice shipped today. test\_release\_credits.lua (14) checks the built TOS-Release; its built-tree checks fail on the old build. So the decision left is only whether #SEC notes and invariants ship (\~217 KB), no longer a licence question. Marked \[ \], not \[!\]: nothing is broken while it waits.
 
-### The tier 1 gap, re-measured (the floor below it is 488 KB, 2026-11-01
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-THE TIER 1 GAP, RE-MEASURED (the floor below it is 488 KB, 2026-11-01: see BUILD THE SURVEY SUGGESTIONS). AUDIT 2 put a full install 773 KB over a 1,024 KB drive (1,797 KB on a managed disk). Dedenting and renaming have since happened: today it is 1,354 KB (1,292 KB of files plus 512 B of fileCost for each of 170 files and 15 dirs), so 330 KB over. What is left is profiles (Install profiles, below) and fileCost (the 21 man pages are 49 KB plus 10.5 KB of fileCost). The `--!` lever is spent, see above.
-
 ### The loot disk is whatever TOS-Release was when the mod last built
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
@@ -777,11 +692,11 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). DONE 2026-11-01 (kernel/ipc.lua); the cluster CLIs use it. rc-pilot hearing its robot still waits on its own decision.
 2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). DONE 2026-11-01: 33 of 167 files carry floor = true, test\_manifest\_floor.lua proves them closed under require, and build/floorboot.py deletes the other 134 and boots: password set, a file written and read, doctor run. 472 KB, 488 KB on a managed disk, so the floor fits the 1 MB drive a full install is 330 KB over. The UI and the strip itself come later.
 3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). THE LOG HALF DONE 2026-11-01: sandbox refusals reach `log` once per program and refusal, capped so a program cannot fill it. A mode that logs instead of refusing is the other half, and how that is exposed is the operator's.
-4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). The split (minimal EEPROM, recovery UI in stage 2) is the shape that fits the 4 KiB budget bios.lua already strains. Needs a real-Minecraft or runner boot round to land.
-5. A DRIVER REGISTRY WITH PER-DEVICE PROBING (survey 4).
-6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). component\_caps.cfg and pkg\_caps.cfg already exist; this is one place that says who may do what.
-7. SHARED getopt (OCOS \[\*\]). \~50 commands parse their own flags; pkg's unknownOption refusal is the model to share.
-8. LOCALISE THE INSTALLER (survey 10). install.lua has no i18n at all today; the OS has catalogs.
+4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). DONE 2026-11-01 in stage 2 (kernel/recovery.lua), seen restoring a machine that could not boot.
+5. A DRIVER REGISTRY WITH PER-DEVICE PROBING (survey 4). PARKED 2026-11-01 until a second driver exists: see its entry.
+6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). DONE 2026-11-01: kernel/policy.lua, failing closed.
+7. SHARED getopt (OCOS \[\*\]). DONE 2026-11-01: helpers.getopt, on the commands where a flag could become a file name.
+8. LOCALISE THE INSTALLER (survey 10). DONE 2026-11-01.
 9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). Disk, not RAM; large; wants the floor (2) first.
 10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). Builds on 9.
 11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]).

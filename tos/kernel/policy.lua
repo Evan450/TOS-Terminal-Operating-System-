@@ -1,0 +1,15 @@
+
+local i,j,l,m,k,n="cluster","component","fs.read","fs.write","peripheral.inventory","peripheral.modem"local h={}
+function h.isAdmin(a)if type(a)~="table"then return false end;if
+a.isKernel or a.isLogin then return true end;return
+type(a.tier)=="number"and a.tier>=2 end;h.MODULE_PREFIXES={"compat.","peripheral."}
+h.MODULE_NAMES={compat=true,["shell.keys"]=true}
+h.BLOCKED_MODULES={["debug"]=true,["package"]=true,["os"]=true,["io"]=true,[j]=true,["computer"]=true,["filesystem"]=true,["shell.init"]=true,["shell.ext"]=true,["shell.panels.init"]=true,["shell.panels.commands"]=true,["shell.panels.events"]=true,["shell.panels.executor"]=true,["shell.panels.state"]=true,["shell.panels.draw"]=true,["shell.panels.helpers"]=true,["shell.panels.filebrowser"]=true,["shell.panels.editor"]=true,["shell.panels.menus"]=true,["shell.panels.dialogs"]=true,["shell.panels.context"]=true,["shell.panels.keymap"]=true,["shell.panels.tabs"]=true,["shell.panels.widgets"]=true,["shell.panels.mouse"]=true,["shell.panels.ui"]=true,["shell.panels.desktop"]=true,["shell.panels.settingsapp"]=true,["shell.panels.apps"]=true,["shell.panels.monitorapp"]=true,["shell.panels.chatapp"]=true,["mail"]=true,["mailui"]=true,["mailapp"]=true,["rbmk-cmd"]=true,["rbmk-controld"]=true,["rbmk.core"]=true,["rbmk-skala"]=true,["rbmk.skala"]=true,["rbmk.wall"]=true,["shell.panels.takeover"]=true,["shell.login"]=true,["shell.chat"]=true,["shell.tutorial"]=true,["shell.syntax"]=true,["shell.panels"]=true,["shell"]=true,["bios"]=true,["init"]=true,["install"]=true,["system_manifest"]=true}
+h.BASE_COMPONENTS={gpu=true,screen=true,keyboard=true,crafting=true,navigation=true,geolyzer=true,note_block=true,sign=true}
+h.GATED_COMPONENTS={modem=n,tunnel=n,redstone="peripheral.redstone",robot="peripheral.robot",inventory_controller=k,transposer=k,tank_controller=k,tape_drive="peripheral.tape",internet="internet",tractor_beam="peripheral.tractor",piston="peripheral.piston",hologram="peripheral.hologram",openprinter="peripheral.printer"}
+h.SERVICE_PORTS={[2001]=i,[2002]=i,[2003]=i,[2004]=i,[2100]=i,[2101]=i,[2200]="rbmk telemetry"}
+h.PKG_RUN_CAPS={[l]=true,[m]=true,component=true,["compat.io"]=true,load=true,net=true,swap=true,internet=true,vault=true,crypto=true,notify=true,ipc=true,[n]=true,["peripheral.redstone"]=true,["peripheral.robot"]=true,[k]=true,["peripheral.tape"]=true,["peripheral.tractor"]=true,["peripheral.piston"]=true,["peripheral.hologram"]=true,["peripheral.printer"]=true}
+h.SERVICE_DEFAULT_CAPS={[l]=true,[m]=true,[j]=true,["net"]=true}
+h.SERVICE_CAPS={[l]=true,[m]=true,[j]=true,["compat.io"]=true,["load"]=true,["net"]=true}
+h.KERNEL_REQUIRE_ALLOW={["computer"]=true,[j]=true,["kernel.event"]=true,["kernel.log"]=true,["kernel.serialize"]=true,["kernel.config"]=true}
+h.KERNEL_SERVICES={["10-discoveryd"]=true,["20-chatrelay"]=true,["20-fileshare"]=true,["20-rshd"]=true}return h
