@@ -402,6 +402,11 @@ function cli.watch(args)
   if interval < 0.2 then interval = 0.2 end
   if interval > 60 then interval = 60 end
 
+  -- print goes to the shell, one line at a time, and term.clear does not. A
+  -- dashboard owns the screen, so its frames go straight to the terminal.
+  local shellPrint = print
+  print = function(s) term.write(tostring(s or "") .. "\n") end
+
   -- CLUSTER-4 — render a compact dashboard frame. Sections are
   -- ASCII-rule-separated so it reads on T1 monochrome too.
   local function rule(label)
@@ -475,6 +480,7 @@ function cli.watch(args)
     end
     if quit then break end
   end
+  print = shellPrint
   if term and term.clear then term.clear() end
 end
 

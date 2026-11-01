@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**79 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**78 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 55 | Planned or under investigation. Most contributions belong here. |
+| Planned | 54 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (12)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (13) · [Networking](#networking) (7) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (12)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -246,15 +246,18 @@ Honest and working, and what 1.2.1 documents. Do not fix the name rule alone: th
 
 SMALLER, FOUND BY THE SAME PASS. None loses data.
 
-- `rc`'s "Shared secret for ..." line is buffered with the rest of its output, so the masked prompt shows nothing until it returns. Seen through `run`, which behaves the same; a package that prompts is a blank line on the CLI.
-- `du /nonexistent` answers "0B" rather than saying it is not there.
-- `touch` on a directory says "Touched".
-- `mv f /dir/nothere/f` makes the missing directory without saying.
-- `compress` on a tiny file says "(-113% smaller: 8B -&gt; 17B)".
-- keychain.lua's header says logout clears the unlocked map through a users hook. There is no hook: users.logout never calls keychain.lock, so the map lives until the weak key is collected. Unreachable, but the login password is in it until then.
-- extras.lua falls back to reading /etc/hostname, which nothing writes.
-- `cat < file` is parsed and then ignored, so it prints a usage line. The MANUAL does not promise `<`.
-- 20-chatrelay.lua indexes a payload that is neither string nor table. The listener's pcall catches it, so a peer gets a log line and no more, but it is the one rc.d service with no test.
+- `rc`'s "Shared secret for ..." line is buffered with the rest of its output, so the masked prompt shows nothing until it returns. PATH programs and `run` are fixed (below); a PACKAGE COMMAND still gets the executor's buffering `o` and a sandbox with no beforeRead, so this is the one left. rc is the only package that prompts, and --secret works. The fix: hand package commands S.programIO too.
+
+DONE 2026-11-01, each seen on the machine or tested off-box:
+
+- A program's output is live, and a program can ask a question. This started as the rc line and was much wider: PATH programs and `run` held everything until they ended, so a long job looked dead, and a question written with no newline sat unseen while the read waited. S.programIO is the one route now. SEEN in both shells: `step 1` while the job ran, "Name:" and a masked "Secret:" answered, and the output whole at the end. Inside a pipe or a redirect the buffer is still the output.
+- event.pull("key\_down") answered nil at once. key\_down is on compat event's sensitive list, which exists to stop a LISTENER seeing other seats' keys, and it also blocked a program reading its own. Every OpenOS program waiting for a key was broken, and a timed wait did not wait. Inside a process it now takes the seat-routed path, the one computer.pullSignal already gives, so no new authority. listen keeps the ban. SEEN: 30 one-second waits used to take 3 s; now each waits, and q is heard. Found by running `cluster watch`, which spun, redrawing faster than a frame could finish.
+- A shell repaints when a program cleared the screen (term.\_screenTaken).
+- `du /nonexistent` says so; `touch` on a directory says what it is; `mv f /dir/nothere/f` refuses, since a disk's rename makes parents; `compress` on a tiny file says "no smaller" (test\_command\_honesty).
+- users.logout locks the keychain, so keychain.lua's header is true at last (test\_keychain\_rekey).
+- extras.lua's /etc/hostname fallback is gone.
+- `<` works: `cat < f`, `grep word < f`, `wc < f`, and with a pipe or a `>` after it. The MANUAL says so now.
+- 20-chatrelay.lua takes any payload a peer sends (test\_chatrelay).
 
 ### Slice 3: resolution
 
@@ -361,14 +364,6 @@ THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) i
 *Planned* · from the round *The Keller import, and the battery's first round (2026-09-25)*
 
 SSH AND SHARE HAVE NEVER WORKED. They look for the network where it does not exist inside their sandbox and always print "Network not available". Deliberately left alone: making them work as they stand would let non-admins run remote commands and transfers that rsh / scp keep admin-only. Decide: alias them to rsh / scp, remove them, or document them. (keller session)
-
-### The packet MAC has no length framing
-
-*Planned* · from the round *Audit 5: kernel &amp; compat, off-box (2026-09-18)*
-
-THE PACKET MAC HAS NO LENGTH FRAMING. net/init.lua:482 (send) and :669 (receive) tag a \\0-joined concat of variable-length, attacker-influenced fields: type, to, enc, epoch, seq, nonce, payload. Adjacent fields can be re-split without changing the joined string, so a captured packet can be reshaped across the type/to or nonce/payload boundary and keep a valid tag; moving one byte out of nonce into payload defeats the nonce ring.
-
-NOT currently exploitable -- the H-3 sequence check refuses the replay, which is precisely the defence-in-depth it was added for. Recorded because the nonce ring is documented as a second layer and this quietly removes it. Fix: length-prefix each field. Severity LOW, and it rises the day the seq check is relaxed.
 
 ### The canonical number format is still architecture-dependent
 
@@ -706,8 +701,8 @@ ADD-ON HALF BUILT 2026-10-26, AWAITING THE RE-SIGN: mail 1.0.1, intercom 1.0.2 a
 SMALLER, NOTED IN PASSING.
 
 - The chat tab repaints in full on every keystroke (handleKey returns 3): about 16 keys a second on the runner's T2 APU. Past human speed, so not a bug, but a pasted line lags.
-- desktop.keys still says "^Q Shell" after `keys set quit`: it is an i18n string, and every catalog would change with it.
-- The CLI path's quit tests (test\_keys\_readers.lua's exceptions) wait on a floorcheck run.
+- DONE 2026-11-01: desktop.keys says the bound key, swapped in where it is drawn, so no catalog changed.
+- DONE 2026-11-01: the CLI path follows the key table. shell/quitkey.lua answers ^Q until a keys file exists, and only then loads shell.keys, so a machine that never bound quit pays almost nothing. Floorcheck: every README claim holds, 67K free at 1024K against \~65K. SEEN in CLI mode: after `keys set quit F4` ^Q left "abcdef" on the line and F4 cleared it; after `keys reset` ^Q did. kernel/init.lua's notice viewer stays as it is: `q` closes it whatever quit is bound to.
 - 289 test files report failure by marker only and exit 0. run\_tests.py reads the markers, so the suite is right, but anything that reads the exit code alone is told they passed; that is how `tos.py check` went wrong.
 - check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
 

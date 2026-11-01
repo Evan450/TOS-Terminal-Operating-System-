@@ -283,6 +283,7 @@ function M.build(S, deps)
     local args = {}
     for i = 2, #parts do args[#args + 1] = parts[i] end
 
+    S._plainPath = allowHandOff
     local buf = {}
     local function o(text, color)
       buf[#buf + 1] = { tostring(text), color or T.fg }
@@ -303,7 +304,10 @@ function M.build(S, deps)
 
     -- If there's piped input, make it available for stdin-consuming commands
     if inputData and #inputData > 0 then
-      if name == "grep" and #args >= 1 and not args[2] then
+      if name == "cat" and #args == 0 then
+        for line in (inputData .. "\n"):gmatch("(.-)\n") do o(line, T.fg) end
+        return buf
+      elseif name == "grep" and #args >= 1 and not args[2] then
         local pat = args[1]
         for line in inputData:gmatch("([^\n]*)\n?") do
           if line:find(pat, 1, true) then o(line, T.fg) end
@@ -473,8 +477,9 @@ function M.build(S, deps)
           if okPk and type(pkgMod) == "table" and pkgMod.capsForFile then
             pkgCaps, pkgOwner = pkgMod.capsForFile(resolved)
           end
+          local stdout, beforeRead = S.programIO(o)
           local progEnv = makeProgramEnv{ name = resolved, pkgName = pkgOwner,
-            caps = pkgCaps, stdout = function(line) o(line, T.fg) end }
+            caps = pkgCaps, stdout = stdout, beforeRead = beforeRead }
           local fn2, err2 = load(data, "=" .. resolved, "t", progEnv)
           if fn2 then
             local ok2, result = pcall(fn2, table.unpack(args))
@@ -574,6 +579,35 @@ function M.build(S, deps)
     return buf
   end
 
+  --! Where a program started from the prompt sends its output, for both ways
+  --! of starting one. On the plain path it reaches the screen as it happens:
+  --! buffered to the end, a long job showed nothing until it finished and a
+  --! question showed nothing until it was answered. Inside a pipeline or a
+  --! redirect the buffer IS the output.
+  function S.programIO(o)
+    local plain = S._plainPath
+    local live = plain and deps.liveLine or nil
+    local echo = plain and deps.echoLine or nil
+    local function stdout(line)
+      if live then
+        live(line)
+        coopYield()
+      else
+        o(line, S.T.fg)
+        if echo then echo(line) end
+      end
+    end
+    local beforeRead = nil
+    if plain and deps.inputRow then
+      beforeRead = function(partial)
+        if partial ~= "" then stdout(partial) end
+        local okT, term = pcall(require, "compat.term")
+        if okT and type(term) == "table" then term.setCursor(1, deps.inputRow()) end
+      end
+    end
+    return stdout, beforeRead
+  end
+
   local function exec(input)
     S.lastOut = nil
     local hasPipe = input:find("|", 1, true)
@@ -586,6 +620,21 @@ function M.build(S, deps)
         local prevOutput = nil
         local finalBuf = {}
         for i, seg in ipairs(segments) do
+          -- `cmd < file`: the file is what a pipe would have delivered. This
+          -- was parsed and then dropped.
+          if seg.stdin and seg.stdin.type == "file" then
+            local inPath = rp(seg.stdin.path)
+            if not helpers.canRead(S, inPath) then
+              S.lastOut = { "Cannot read: " .. seg.stdin.path, T.error }
+              return
+            end
+            prevOutput = F.exists(inPath) and F.readFile(inPath) or nil
+            if not prevOutput then
+              S.lastOut = { "No such file: " .. seg.stdin.path, T.error }
+              return
+            end
+            prevOutput = prevOutput:gsub("\n$", "")
+          end
           local buf = execSingle(seg.cmd, prevOutput)
           local textParts = {}
           for _, e in ipairs(buf) do
@@ -636,6 +685,8 @@ function M.build(S, deps)
     local before = S._program
     local buf = execSingle(input, nil, true)
     if S._program and S._program ~= before then return end   -- it owns the seat now
+    local term = package.loaded["compat.term"]
+    if deps.repaint and term and term._screenTaken and term._screenTaken() then deps.repaint() end
     showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
   end
 

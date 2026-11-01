@@ -221,10 +221,6 @@ return function(C, S, deps)
     ctx.hostname = function()
       local NMx = _G._TOS and _G._TOS.net
       if NMx and NMx.getHostname then return NMx.getHostname() end
-      if fsMod and fsMod.exists("/etc/hostname") then
-        local h = fsMod.readFile("/etc/hostname")
-        if type(h) == "string" then return (h:match("^[^\n]*")) end
-      end
     end
 
     ctx.startPairing = function()

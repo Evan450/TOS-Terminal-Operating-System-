@@ -335,7 +335,9 @@ local function drawFooter(S, tab)
   local parts = (hint ~= "") and { { label = ufit(hint, W - 8) } } or {}
   ui.drawRail(D, T, H - 1, W, parts)
 
+  -- The catalogs say ^Q; the quit key is whatever `keys` says it is.
   local keys = t("desktop.keys", "Enter Open · Arrows Move · 1-9 Quick · F2 Tabs · ^Q Shell")
+    :gsub("%^Q", (require("shell.keys").quitHint(S.who)))
   local right = (pages > 1) and (page .. "/" .. pages) or nil
   ui.drawRampBar(D, T, H, W, keys, right, T.statusbar_fg or T.bar_fg, T.statusbar_bg or T.bar_bg)
 end

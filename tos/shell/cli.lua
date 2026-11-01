@@ -204,7 +204,7 @@ function M.run(ctx)
             D.c("dim"), D.c("bg"))
           cy = row + 1
           return buf
-        elseif code == 1 or ch == 17 then               -- ^Q / Esc
+        elseif code == 1 or require("shell.quitkey").is(ch, code, true) then  -- ^Q / Esc
           -- #FIX (real Minecraft, 2026-08-11) — ^Q, because Esc closes
           -- the screen GUI and never reaches the computer. On a masked
           -- read (a passphrase) this is the only way to back out, so
@@ -390,6 +390,16 @@ function M.run(ctx)
     -- The TUI picks between the status row, an inline region and a view
     -- tab; a teletype has one surface and everything goes to it.
     showOutput     = function(wrapped, _label) viewBuffer(wrapped, nil) end,
+    -- A running program's lines go straight to the teletype, and its typing
+    -- gets the next row.
+    liveLine       = function(text) o(text) end,
+    repaint        = function() redraw() end,
+    inputRow       = function()
+      scroll()
+      local row = cy
+      cy = cy + 1
+      return row
+    end,
   })
 
   -- ── CLI-local verbs ────────────────────────────────────────────

@@ -171,11 +171,9 @@ local ALLOWED = {
   ["tos/shell/panels/dialogs.lua"] = 1, ["tos/shell/pkgpicker.lua"] = 1,
   -- the takeover dialogue reads ^C and ^Q as a refusal, deliberately
   ["tos/shell/panels/takeover.lua"] = 1,
-  -- [known gap] CLI-path surfaces: shell.keys is not loaded in CLI mode,
-  -- and requiring it there costs heap on the 1 MB floor. Not changed
-  -- without a floorcheck run (TODO: SIX SURFACES STILL IGNORE THE KEY TABLE).
-  ["tos/shell/cli.lua"] = 1, ["tos/shell/chat.lua"] = 1,
-  ["tos/shell/login.lua"] = 2, ["tos/shell/tutorial.lua"] = 1,
+  -- what it answers when no keys file exists, so the CLI path can stay off
+  -- shell.keys on the 1 MB floor
+  ["tos/shell/quitkey.lua"] = 1,
 }
 local listing = io.popen(package.config:sub(1, 1) == "\\"
   and 'dir /s /b tos\\shell\\*.lua 2>nul' or "find tos/shell -name '*.lua' 2>/dev/null")

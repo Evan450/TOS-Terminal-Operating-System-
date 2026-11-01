@@ -492,6 +492,21 @@ local BROADCAST_PACKET_TYPES = {
   mesh = true, mesh_ack = true,
 }
 
+--! #SEC (AUDIT 5) — what the packet MAC covers. A \0-joined concat of
+--! variable fields let a captured packet be reshaped across a boundary and
+--! keep its tag: a byte moved out of the nonce and into the payload joined to
+--! the same string, which beat the nonce ring. Every field carries its
+--! length now, and the leading name keeps this input from ever equalling the
+--! old form. (test_net_mac_framing.lua)
+local function framedMacInput(...)
+  local parts = { "tosmac2" }
+  for i = 1, select("#", ...) do
+    local f = tostring((select(i, ...)) or "")
+    parts[#parts + 1] = #f .. ":" .. f
+  end
+  return table.concat(parts)
+end
+
 function net.send(address, packet, port)
   if not modem and not tunnel then return false, "No modem" end
 
@@ -551,10 +566,9 @@ function net.send(address, packet, port)
       packet.epoch = net._bootEpoch
       packet.seq   = net._sendSeq[address]
       packet.nonce = crypto.salt(16)
-      packet.mac   = crypto.hmac(secret, table.concat({
-        packet.type or "", packet.to or "", method or "",
-        packet.epoch, tostring(packet.seq), packet.nonce, encrypted
-      }, "\0"))
+      packet.macv  = 2
+      packet.mac   = crypto.hmac(secret, framedMacInput(packet.type, packet.to, method,
+        packet.epoch, packet.seq, packet.nonce, encrypted))
     elseif packet.payload and not secret then
       -- #47 — Sensitive packet, TRUSTED peer, no secret. Plaintext
       -- would silently downgrade the security the operator asked
@@ -784,11 +798,21 @@ function net.handleIncoming(remoteAddr, port, distance, rawData)
       else
         -- #SEC H-3 — epoch + seq are bound into the MAC, so they can't be
         -- stripped or rewritten by a replayer without invalidating the tag.
-        local expected = crypto.hmac(secret, table.concat({
-          packet.type or "", packet.to or "", packet.enc or "",
-          tostring(packet.epoch or ""), tostring(packet.seq or ""),
-          nonce, (packet.payload or "")
-        }, "\0"))
+        -- A tag without macv = 2 is from a peer on an older build. Dropping
+        -- the marker from a framed packet gains nothing: its tag was made
+        -- over a different string. Retire this branch at the next VERSION.
+        local input
+        if packet.macv == 2 then
+          input = framedMacInput(packet.type, packet.to, packet.enc,
+            packet.epoch, packet.seq, nonce, packet.payload)
+        else
+          input = table.concat({
+            packet.type or "", packet.to or "", packet.enc or "",
+            tostring(packet.epoch or ""), tostring(packet.seq or ""),
+            nonce, (packet.payload or "")
+          }, "\0")
+        end
+        local expected = crypto.hmac(secret, input)
         if not crypto.ctEquals(expected, mac) then
           dropWhy = "MAC mismatch"
         end

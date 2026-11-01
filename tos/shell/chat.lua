@@ -278,7 +278,8 @@ function chat.run(kernel, sessionToken)
   local function drawHeader()
     D.fill(1, HEADER_ROW, W, 1, " ", T.menubar_fg, T.menubar_bg)
     local title = " TOS Chat - " .. hostname .. " "
-    local help  = " peers:" .. trustedPeerCount() .. "  /help  ^Q=Exit "
+    local help  = " peers:" .. trustedPeerCount() .. "  /help  "
+      .. require("shell.quitkey").hint() .. "=Exit "
     D.set(1, HEADER_ROW, title, T.menubar_fg, T.menubar_bg)
     D.set(W - #help + 1, HEADER_ROW, help, T.dim, T.menubar_bg)
   end
@@ -383,7 +384,7 @@ function chat.run(kernel, sessionToken)
   addMessage("Chat started. Send messages to TRUSTED peers.", T.title)
   addMessage("  peer:message   to one peer (addr prefix or hostname)", T.dim)
   addMessage("  message        broadcast to all trusted peers", T.dim)
-  addMessage("  /who  /mail peer text  /clear  /help   ^Q=exit", T.dim)
+  addMessage("  /who  /mail peer text  /clear  /help   " .. require("shell.quitkey").hint() .. "=exit", T.dim)
   addMessage("", T.dim)
 
   -- List available TRUSTED peers
@@ -421,7 +422,7 @@ function chat.run(kernel, sessionToken)
     end
 
     if sig == "key_down" then
-      if char == 17 then  -- Ctrl+Q = exit
+      if require("shell.quitkey").is(char, code, true) then  -- Ctrl+Q = exit
         running = false
 
       elseif code == 28 then  -- Enter = send message
@@ -440,7 +441,7 @@ function chat.run(kernel, sessionToken)
               addMessage("  msg               broadcast to all trusted peers", T.dim)
               addMessage("  /who              list trusted peers", T.dim)
               addMessage("  /mail peer text   send a store-and-forward mesh mail", T.dim)
-              addMessage("  /clear  /help  ^Q exit", T.dim)
+              addMessage("  /clear  /help  " .. require("shell.quitkey").hint() .. " exit", T.dim)
             elseif name == "who" then
               local n = 0
               for _, p in ipairs(trustMgr.listPeers()) do

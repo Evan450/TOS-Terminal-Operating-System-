@@ -179,6 +179,11 @@ function M.run(ctx)
 
   -- ── Build command executor ──
   local exec = executorMod.build(S, {
+    -- A running program's latest line on the output row, and its typing on
+    -- the command row. Its whole output still opens when it ends.
+    echoLine = function(text) drawMod.outRow(S, text) end,
+    inputRow = function() return S.CMD_ROW end,
+    repaint = function() drawMod.all(S, widgetDefs) end,
     rp             = function(p) return helpers.resolvePath(S, p) end,
     makeProgramEnv = makeProgramEnv,
     C              = C,

@@ -1116,6 +1116,12 @@ local function makeSafeRequire(opts, prebound, envRef)
          and type(real._gpuForCaps) == "function" then
         local sbCaps = opts and opts.caps
         mod.gpu = function() return real._gpuForCaps(sbCaps) end
+        -- See flushForRead in sandbox.build.
+        local realRead = real.read
+        mod.read = function(...)
+          if opts and opts.flushForRead then opts.flushForRead() end
+          return realRead(...)
+        end
       end
       --! Bind compat.process to THIS program. An OpenOS program calls
       --! process.running() for one reason — to find the directory its own
@@ -1540,6 +1546,22 @@ function sandbox.build(opts)
         end,
       }, { __index = real, __metatable = false })
       printSink = function(line) emit(line .. "\n") end
+      --! A program that asks a question has written it with no newline, so
+      --! it sat in `pending` while the read waited: on the shell's screen,
+      --! nothing at all, and the machine looked hung. Before a read the
+      --! partial line goes out, and the runner is told so that it can say
+      --! where the typing should appear.
+      opts.flushForRead = function()
+        local partial = pending
+        pending = ""
+        if opts.beforeRead then opts.beforeRead(partial)
+        elseif partial ~= "" then stdout(partial) end
+      end
+      local plainRead = env.io.read
+      env.io.read = function(...)
+        opts.flushForRead()
+        return plainRead(...)
+      end
       finishers[env] = function()
         if pending ~= "" then
           local last = pending

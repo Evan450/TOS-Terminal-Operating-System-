@@ -45,6 +45,9 @@ local SENSITIVE_SIGNALS = {
   tos_shell_exited   = true,
 }
 
+-- Input the scheduler routes to one seat's foreground.
+local ROUTED_INPUT = { key_down = true, key_up = true, clipboard = true }
+
 local function isSensitive(name)
   return type(name) == "string" and SENSITIVE_SIGNALS[name] == true
 end
@@ -80,6 +83,29 @@ function event.pull(...)
   end
   if args.n >= argStart and type(args[argStart]) == "string" then
     filterName = args[argStart]
+  end
+
+  --! Inside a process, input comes the way computer.pullSignal gives it: the
+  --! scheduler delivers a key only to this seat's foreground, so it is the
+  --! program's own and nothing else's (sandbox.lua's PULL_DROP says so). The
+  --! bans below are about the machine-wide queue and listeners, and they
+  --! answered event.pull("key_down") with nil at once, so an OpenOS program
+  --! waiting for a key never saw one, and a timed wait for one did not wait.
+  local proc = package.loaded["kernel.process"]
+  local sandbox = package.loaded["kernel.sandbox"]
+  if proc and proc.inProcess and proc.inProcess() and sandbox and sandbox._safePullSignal
+     and (filterName == nil or ROUTED_INPUT[filterName]) then
+    local deadline = (timeout ~= math.huge) and (computer.uptime() + timeout) or nil
+    while true do
+      local left = deadline and (deadline - computer.uptime()) or math.huge
+      if left < 0 then return nil end
+      local sig = table.pack(sandbox._safePullSignal(left))
+      if sig[1] == nil then return nil end
+      if (filterName == nil or sig[1] == filterName)
+         and (ROUTED_INPUT[sig[1]] or not isSensitive(sig[1])) then
+        return table.unpack(sig, 1, sig.n)
+      end
+    end
   end
 
   if filterName then

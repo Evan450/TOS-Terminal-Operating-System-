@@ -2281,7 +2281,9 @@ return function(C, S, deps)
     if refused then o(refused, T.error); return end
     local data = F.readFile(path)
     if not data then o("Cannot read: " .. args[1], T.error); return end
-    local runEnv = makeProgramEnv{name=args[1], stdout=function(line) o(line, T.fg) end}
+    local stdout, beforeRead = function(line) o(line, T.fg) end, nil
+    if S.programIO then stdout, beforeRead = S.programIO(o) end
+    local runEnv = makeProgramEnv{ name = args[1], stdout = stdout, beforeRead = beforeRead }
     local fn2, err2 = load(data, "=" .. args[1], "t", runEnv)
     if not fn2 then o("Compile error: " .. tostring(err2), T.error); return end
     local runArgs = {}

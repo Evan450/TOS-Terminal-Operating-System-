@@ -223,7 +223,7 @@ local function readInput(boxX, boxY, boxW, field, maxLen)
         if #value > 0 then
           value = value:sub(1, -2)
         end
-      elseif char == 17 then  -- Ctrl+Q = cancel
+      elseif require("shell.quitkey").is(char, code, true) then  -- Ctrl+Q = cancel
         return nil
       elseif char and char >= 32 and char < 127 and #value < maxLen then
         value = value .. string.char(char)
@@ -591,7 +591,7 @@ function login.run(modules)
           break
         elseif code == 14 then  -- Backspace
           if #value > 0 then value = value:sub(1, -2) end
-        elseif char == 17 then  -- Ctrl+Q
+        elseif require("shell.quitkey").is(char, code, true) then  -- Ctrl+Q
           cancelRequested = true
           break
         elseif code == 60 and guestOk then  -- F2 = guest login

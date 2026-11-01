@@ -74,6 +74,7 @@ function M.builder(S)
       session = (S.U and S.U.currentSession and S.U.currentSession()) or nil,
       caps    = caps,
       stdout  = opts.stdout,
+      beforeRead = opts.beforeRead,
     }
   end
 end

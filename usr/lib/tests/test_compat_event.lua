@@ -186,6 +186,37 @@ eq("listen with a non-function is refused", false, (event.listen("touch", "nope"
 eq("listen with a non-string name is refused", false, (event.listen(42, f)))
 eq("ignore with a non-function is refused", false, (event.ignore("touch", "nope")))
 
+-- ── A program's own keys, through the scheduler's routing ────────────
+-- event.pull("key_down") answered nil at once, so an OpenOS program waiting
+-- for a key never saw one and a timed wait did not wait: `cluster watch`
+-- spun, redrawing before a frame could finish, and never heard q.
+print()
+print("-- a process gets its seat's input --")
+do
+  local queue = {}
+  package.loaded["kernel.process"] = { inProcess = function() return true end }
+  package.loaded["kernel.sandbox"] = { _safePullSignal = function()
+    return table.unpack(table.remove(queue, 1) or {})
+  end }
+  queue = { { "key_down", "kb", 113, 16 } }
+  local name, _, ch = event.pull(1, "key_down")
+  eq("a key reaches the program that asked", "key_down", name)
+  eq("...with its character", 113, ch)
+  queue = { { "key_up", "kb", 113, 16 }, { "touch", "s", 1, 1 }, { "key_down", "kb", 97, 30 } }
+  eq("another signal does not answer a filter", 97, select(3, event.pull(1, "key_down")))
+  queue = {}
+  eq("a wait with nothing to read ends empty", nil, (event.pull(1, "key_down")))
+  queue = { { "tos_logout" }, { "my_signal", 7 } }
+  eq("an unfiltered pull still hides what is not input", "my_signal", (event.pull(1)))
+  queue = { { "key_down", "kb", 97, 30 } }
+  eq("an unfiltered pull sees a key", "key_down", (event.pull(1)))
+  queue = { { "modem_message", "x" } }
+  eq("a filter for the network still answers nothing", nil, (event.pull(1, "modem_message")))
+  package.loaded["kernel.process"] = nil
+  package.loaded["kernel.sandbox"] = nil
+  eq("outside a process the old answer stands", nil, (event.pull(0, "key_down")))
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); return false

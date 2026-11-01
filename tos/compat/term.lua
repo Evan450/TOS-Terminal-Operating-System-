@@ -162,7 +162,17 @@ function term.clear()
   target().clear()
   local c = cursor()
   c.x, c.y = 1, 1
+  c.taken = true
   markGlassDirty()
+end
+
+--- Did a program clear this seat's screen since the shell last asked? A
+--- shell has to repaint then, because what it last drew is gone.
+function term._screenTaken()
+  local c = cursor()
+  local taken = c.taken == true
+  c.taken = nil
+  return taken
 end
 
 function term.setCursor(x, y)
@@ -397,7 +407,7 @@ local function nextSignal()
   return computer.pullSignal(0.5)
 end
 
-function term.read(history, dobreak, hint, pwchar)
+local function readLine(history, dobreak, hint, pwchar)
   if dobreak == nil then dobreak = true end
   local line = ""
   local c = cursor()
@@ -494,6 +504,14 @@ function term.read(history, dobreak, hint, pwchar)
       end
     end
   end
+end
+
+-- What it drew went behind the seat proxy's shadow, so the shell's next
+-- repaint of that row could be skipped and leave the typing on screen.
+function term.read(history, dobreak, hint, pwchar)
+  local line = readLine(history, dobreak, hint, pwchar)
+  markGlassDirty()
+  return line
 end
 
 return term

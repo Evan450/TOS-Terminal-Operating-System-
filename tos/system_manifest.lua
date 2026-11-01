@@ -127,6 +127,7 @@ return {
   -- this has lost both of its shells and is down to the emergency
   -- terminal.
   { path = "/tos/shell/cli.lua",              critical = true  },
+  { path = "/tos/shell/quitkey.lua",          critical = true  },
   -- The sandbox-environment builder both shells hand to every program
   -- they run. Not critical to REACH a prompt, but a shell that cannot
   -- build a program env cannot run anything from it.

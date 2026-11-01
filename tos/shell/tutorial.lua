@@ -389,13 +389,14 @@ function tutorial.run(ctx)
 
     -- Navigation bar at bottom of box — adaptive to available width
     local navW = boxW - 4
+    local quit = require("shell.quitkey").hint()
     local nav
     if navW >= 44 then
-      nav = cur .. "/" .. total .. " Enter:next Bksp:prev ^Q:skip"
+      nav = cur .. "/" .. total .. " Enter:next Bksp:prev " .. quit .. ":skip"
     elseif navW >= 28 then
-      nav = cur .. "/" .. total .. " Ent/Bksp:nav ^Q:skip"
+      nav = cur .. "/" .. total .. " Ent/Bksp:nav " .. quit .. ":skip"
     else
-      nav = cur .. "/" .. total .. " Ent/Bk/^Q"
+      nav = cur .. "/" .. total .. " Ent/Bk/" .. quit
     end
     if #nav > navW then nav = nav:sub(1, navW) end
     local navX = boxX + math.floor((boxW - #nav) / 2)
@@ -410,7 +411,7 @@ function tutorial.run(ctx)
     if sig == "key_down" then
       -- Ctrl+Q: char value 17. #SEC H18 — require y/N confirm so a
       -- stray Ctrl+Q doesn't silently mark the tutorial complete.
-      if ch == 17 then
+      if require("shell.quitkey").is(ch, code, false) then
         local T = D.getTheme()
         local prompt = "Skip tutorial? [y/N]"
         local px = math.max(1, math.floor((W - #prompt) / 2))

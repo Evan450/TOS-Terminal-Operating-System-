@@ -226,6 +226,23 @@ do
   end)())
 end
 
+print("=== logging out locks the keychain ===")
+do
+  -- The unlocked map holds the login password. keychain.lua's header said a
+  -- users hook cleared it at logout; there was no hook.
+  CURRENT = users.kernelSession()
+  assert(users.create("root", "dan", "danpass12", 1))
+  CURRENT = nil
+  local tok = users.login("dan", "danpass12", { setCurrent = false })
+  local sess = users.getSession(tok)
+  CURRENT = sess
+  assert(keychain.unlock("danpass12", sess))
+  test("it is unlocked", keychain.isUnlocked(sess) == true)
+  users.logout(tok)
+  test("logging out locks it", not keychain.isUnlocked(sess))
+  CURRENT = users.kernelSession()
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)

@@ -20,8 +20,12 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 83 rounds of work:
+Everything since v1.5.0, in 87 rounds of work:
 
+- [A running program shows its output](#a-running-program-shows-its-output)
+- [`keys set quit` reaches the CLI](#keys-set-quit-reaches-the-cli)
+- [Commands say what actually happened](#commands-say-what-actually-happened)
+- [A sealed packet can't be reshaped](#a-sealed-packet-cant-be-reshaped)
 - [A job too big for one packet now runs](#a-job-too-big-for-one-packet-now-runs)
 - [A stray test edit no longer marks every build `-dirty`](#a-stray-test-edit-no-longer-marks-every-build--dirty)
 - [The `cluster` commands work](#the-cluster-commands-work)
@@ -105,6 +109,26 @@ Everything since v1.5.0, in 83 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A running program shows its output
+
+A program started from the prompt now shows its output as it happens. Before, nothing appeared until it finished, so a long job looked dead and a program asking a question looked hung, since the question sat unseen while it waited for an answer. In the CLI the lines scroll by live; in the panels the latest line shows on the output row and the whole output opens at the end. Typing goes to the prompt row, and when a program takes over the screen the shell repaints as it exits.
+
+`event.pull` also gives a program its own keys. It used to answer `key_down` with nothing at once, so an OpenOS program waiting for a key never got one and a timed wait didn't wait. Listening for other seats' keys stays refused. `cluster watch` now draws its dashboard and quits on `q`, which needs the next pack signing.
+
+### `keys set quit` reaches the CLI
+
+`keys set quit` now reaches the CLI too: the prompt, CLI chat, login, the tutorial and the desktop's key bar all follow it. A machine that has never bound quit doesn't pay for it, and every README memory floor still holds.
+
+### Commands say what actually happened
+
+`du` on a path that isn't there says so instead of `0B`. `touch` on a directory says what it is. `mv` into a directory that doesn't exist refuses, where it used to build the whole path without a word. `compress` on a tiny file says `no smaller`, not `-113% smaller`.
+
+`cat < file` works, and so do `grep word < file` and `wc < file`, alone or with a pipe or `>` after them. Logging out locks your keychain, and the chat service copes with any payload a peer sends.
+
+### A sealed packet can't be reshaped
+
+The tag on a sealed network packet now records each field's length. Someone who could hear and send could reshape a captured packet so its tag still passed; it then failed to decrypt, but it had already used up that sequence number, so the real packet was refused as stale. A peer on an older build keeps working.
 
 ### A job too big for one packet now runs
 

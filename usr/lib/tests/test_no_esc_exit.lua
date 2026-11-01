@@ -129,6 +129,7 @@ ok("found files to check (" .. checked .. ")", checked >= 10)
 -- tested code == 1 in three places and had no other exit anywhere.
 local function acceptsAnAlternative(src)
   return src:find("== 17", 1, true) ~= nil        -- ^Q
+      or src:find("shell.quitkey", 1, true) ~= nil
       or src:find("== 68", 1, true) ~= nil        -- F10
       or src:find("F10", 1, true) ~= nil
       or src:find('== 113', 1, true) ~= nil       -- 'q'

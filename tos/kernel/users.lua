@@ -1186,6 +1186,10 @@ function users.logout(token)
   token = token or currentSession
   if token and sessions[token] then
     local username = sessions[token].user
+    -- An unlocked keychain holds the master password for its session. Only
+    -- when the module is loaded: nothing unlocked one otherwise.
+    local keychain = package.loaded["kernel.keychain"]
+    if keychain and keychain.lock then pcall(keychain.lock, sessions[token]) end
     sessions[token] = nil
     if token == currentSession then
       currentSession = nil

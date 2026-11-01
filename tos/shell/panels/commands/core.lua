@@ -803,6 +803,7 @@ return function(C, S, deps)
 
   local function touchOne(arg, o)
     local p = rp(arg)
+    if F.isDirectory(p) then o("Is a directory: " .. arg, T.dim); return false end
     if not canWrite(p, o) then return false end
     if not F.exists(p) then
       local okW, errW = F.writeFile(p, "")
@@ -851,8 +852,10 @@ return function(C, S, deps)
     if not keep and out ~= src then pcall(F.remove, src) end
     refreshBrowser()
     local pct = (orig > 0) and math.floor((orig - packed) * 100 / orig) or 0
-    o(string.format("%s -> %s  (%d%% smaller: %s -> %s)",
-      files[1], (out:gsub("^.*/", "")), pct, fmtSz(orig), fmtSz(packed)),
+    -- The container has a header, so a tiny file comes out bigger.
+    local change = packed < orig and (pct .. "% smaller") or "no smaller"
+    o(string.format("%s -> %s  (%s: %s -> %s)",
+      files[1], (out:gsub("^.*/", "")), change, fmtSz(orig), fmtSz(packed)),
       method == "deflate" and T.highlight or T.warning)
     if method == "stored" then
       o("(stored uncompressed — data didn't shrink)", T.dim)
@@ -1413,8 +1416,15 @@ return function(C, S, deps)
   C.mv = function(args, o)
     if not args[2] then o("Usage: mv <src> <dst>", T.dim); return end
     local src, dst = rp(args[1]), rp(args[2])
+    if not F.exists(src) then o("No such file: " .. args[1], T.error); return end
     -- #REV — Unix semantics: moving onto a directory moves INTO it.
     if F.isDirectory(dst) then dst = F.join(dst, src:match("[^/]+$") or src) end
+    -- A disk's rename makes missing parents without saying so, so a typo in
+    -- the path quietly built a directory tree.
+    local parent = dst:match("^(.*)/[^/]+/?$")
+    if parent and parent ~= "" and not F.isDirectory(parent) then
+      o("No such directory: " .. parent, T.error); return
+    end
     if not canWrite(src, o) then return end
     if not canWrite(dst, o) then return end
     -- #REV — fall back to copy+remove for cross-filesystem moves (OC's
@@ -1868,6 +1878,7 @@ return function(C, S, deps)
   C.du = function(args, o)
     local target = rp(args[1] or (S.cwd or "/"))
     if not canRead(target, o) then return end
+    if not F.exists(target) then o("No such file or directory: " .. tostring(args[1]), T.error); return end
     local function join(a, b) return a:sub(-1) == "/" and (a .. b) or (a .. "/" .. b) end
     local function sizeOf(path)
       if F.isDirectory(path) then
