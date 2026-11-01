@@ -89,8 +89,8 @@ local J=tonumber(p("Choice: ",false,4)or"")return(J and H[J])and J or#H end
 local I=p((G.prompt or"OK?").." [y/N]: ",false,4)return
 (I~=nil and I:lower():sub(1,1)=="y")and 1 or 2 end,drawAll=function()
 o()end,drawOutRow=function(G,H)if G then d(G,H)end end}local y=B.build(c,t)t.C=y
-local D=C.build(c,{rp=t.rp,makeProgramEnv=x,C=y,showOutput=function(G,H)q(G,nil)end,liveLine=function(G)d(G)end,repaint=function()o()end,inputRow=function()
-u()local G=f;f=f+1;return G end})local r=nil
+local D=C.build(c,{rp=t.rp,makeProgramEnv=x,C=y,showOutput=function(G,H)q(G,nil)end,liveLine=function(G,H)d(G,H)end,repaint=function()
+o()end,inputRow=function()u()local G=f;f=f+1;return G end})local r=nil
 local E={tui=function()r="tui"end,exit=function()r="logout"end,cls=function()o()end,clear=function()o()end}o()d("TOS CLI",b.c("title"))
 d("Every command the full interface has, loaded as you use them.",b.c("dim"))
 d("'help' lists them · 'tui' returns to the full interface · 'exit' logs out",b.c("dim"))local s=a.autoCLI

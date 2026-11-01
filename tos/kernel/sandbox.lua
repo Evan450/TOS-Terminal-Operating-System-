@@ -1,15 +1,15 @@
 
-local bg,aF,bh,aB,bi,bj,aL,bk,bl,ax,bm,aT,aM,bn,aG,bo,ay="access denied","cluster","compat.filesystem","compat.io","compat.process","compat.term","component","computer","fs.write","function","internet","kernel.fs","kernel.process","legacy","number","peripheral.inventory","string"local az={}local aU="kernel."local bp={"compat.","peripheral."}
+local bg,aF,bh,aB,bi,bj,aL,bk,bl,ax,bm,aU,aM,bn,aG,bo,ay="access denied","cluster","compat.filesystem","compat.io","compat.process","compat.term","component","computer","fs.write","function","internet","kernel.fs","kernel.process","legacy","number","peripheral.inventory","string"local az={}local aV="kernel."local bp={"compat.","peripheral."}
 local bq={compat=true,["shell.keys"]=true}
-local br={["debug"]=true,["package"]=true,["os"]=true,["io"]=true,[aL]=true,[bk]=true,["filesystem"]=true,["shell.init"]=true,["shell.ext"]=true,["shell.panels.init"]=true,["shell.panels.commands"]=true,["shell.panels.events"]=true,["shell.panels.executor"]=true,["shell.panels.state"]=true,["shell.panels.draw"]=true,["shell.panels.helpers"]=true,["shell.panels.filebrowser"]=true,["shell.panels.editor"]=true,["shell.panels.menus"]=true,["shell.panels.dialogs"]=true,["shell.panels.context"]=true,["shell.panels.keymap"]=true,["shell.panels.tabs"]=true,["shell.panels.widgets"]=true,["shell.panels.mouse"]=true,["shell.panels.ui"]=true,["shell.panels.desktop"]=true,["shell.panels.settingsapp"]=true,["shell.panels.apps"]=true,["shell.panels.monitorapp"]=true,["shell.panels.chatapp"]=true,["mail"]=true,["mailui"]=true,["mailapp"]=true,["rbmk-cmd"]=true,["rbmk-controld"]=true,["rbmk.core"]=true,["rbmk-skala"]=true,["rbmk.skala"]=true,["rbmk.wall"]=true,["shell.panels.takeover"]=true,["shell.login"]=true,["shell.chat"]=true,["shell.tutorial"]=true,["shell.syntax"]=true,["shell.panels"]=true,["shell"]=true,["bios"]=true,["init"]=true,["install"]=true,["system_manifest"]=true}local aV,aN={},0;local bs=128
+local br={["debug"]=true,["package"]=true,["os"]=true,["io"]=true,[aL]=true,[bk]=true,["filesystem"]=true,["shell.init"]=true,["shell.ext"]=true,["shell.panels.init"]=true,["shell.panels.commands"]=true,["shell.panels.events"]=true,["shell.panels.executor"]=true,["shell.panels.state"]=true,["shell.panels.draw"]=true,["shell.panels.helpers"]=true,["shell.panels.filebrowser"]=true,["shell.panels.editor"]=true,["shell.panels.menus"]=true,["shell.panels.dialogs"]=true,["shell.panels.context"]=true,["shell.panels.keymap"]=true,["shell.panels.tabs"]=true,["shell.panels.widgets"]=true,["shell.panels.mouse"]=true,["shell.panels.ui"]=true,["shell.panels.desktop"]=true,["shell.panels.settingsapp"]=true,["shell.panels.apps"]=true,["shell.panels.monitorapp"]=true,["shell.panels.chatapp"]=true,["mail"]=true,["mailui"]=true,["mailapp"]=true,["rbmk-cmd"]=true,["rbmk-controld"]=true,["rbmk.core"]=true,["rbmk-skala"]=true,["rbmk.skala"]=true,["rbmk.wall"]=true,["shell.panels.takeover"]=true,["shell.login"]=true,["shell.chat"]=true,["shell.tutorial"]=true,["shell.syntax"]=true,["shell.panels"]=true,["shell"]=true,["bios"]=true,["init"]=true,["install"]=true,["system_manifest"]=true}local aW,aN={},0;local bs=128
 local function aA(a,b)
-local d=tostring(a).."|"..tostring(b)if aV[d]or aN>=bs then return end;aV[d]=true;aN=aN+1
+local d=tostring(a).."|"..tostring(b)if aW[d]or aN>=bs then return end;aW[d]=true;aN=aN+1
 local c=package.loaded["kernel.log"]if c and c.warn then
 pcall(c.warn,"sandbox","denied: "..
 tostring(a).." wanted "..tostring(b))end end
-local function aW()local a=package.loaded[aM]
+local function aX()local a=package.loaded[aM]
 local b=a and a.current and a.current()return b and b.name or"?"end
-local function bt(a)return type(a)==ay and a:sub(1,#aU)==aU end;local function bu(a)
+local function bt(a)return type(a)==ay and a:sub(1,#aV)==aV end;local function bu(a)
 for c,b in ipairs(bp)do if a:sub(1,#b)==b then return true end end;return false end;local function bv(a)if
 a:find("[^%w_.-]")then return false end
 if a:sub(1,1)=="."then return false end;return true end;local function aC(a)local b={}for c,d in
@@ -18,7 +18,7 @@ do
 local b,a=pcall(require,"unicode")if b and type(a)=="table"then aO=a end end
 local function bw(b,a,...)a=type(a)
 for c=1,select("#",...)do if a==select(c,...)then return end end
-error(string.format("bad argument #%d (%s expected, got %s)",b,table.concat({...}," or "),a),3)end;local aX={}local aP=setmetatable({},{__mode="k"})
+error(string.format("bad argument #%d (%s expected, got %s)",b,table.concat({...}," or "),a),3)end;local aY={}local aP=setmetatable({},{__mode="k"})
 local bx={__tostring=function(a)return"exit "..
 tostring(rawget(a,"code"))end,__metatable=false}
 local function by()
@@ -27,17 +27,17 @@ return
 c and type(b)=="table"and type(b.sleep)==ax then return
 b.sleep(tonumber(a)or 0)end
 error("os.sleep: the process scheduler is unavailable",2)end,exit=function(a)
-error(setmetatable({[aX]=true,code=a},bx),0)end}end;local aH=nil
+error(setmetatable({[aY]=true,code=a},bx),0)end}end;local aH=nil
 local function bz(a)if aH==nil then local c,b=pcall(require,"kernel.event")
 aH=(c and
 type(b)=="table"and type(b.reservedSignal)==ax and
 b.reservedSignal)or
 false end;if
 not aH then return true end;return aH(a)end
-local bA={modem_message=true,tos_shutdown=true,tos_logout=true,tos_login_complete=true,tos_seat_changed=true,tos_shell_exited=true}local aY;local function aZ()local a=package.loaded[aM]
+local bA={modem_message=true,tos_shutdown=true,tos_logout=true,tos_login_complete=true,tos_seat_changed=true,tos_shell_exited=true}local aZ;local function aQ()local a=package.loaded[aM]
 return
-a and type(a.current)==ax and a.current()or nil end;local function bB(a,b)local d=aZ()local c;if d then
-c=d.modemPorts else c=aY end;local e=c and c[a]
+a and type(a.current)==ax and a.current()or nil end;local function bB(a,b)local d=aQ()local c;if d then
+c=d.modemPorts else c=aZ end;local e=c and c[a]
 return e~=nil and e[b]~=nil end
 local function a_(a)local b=a[1]if not
 bA[b]then return false end;return not
@@ -66,8 +66,8 @@ return
 {uptime=a.uptime,freeMemory=a.freeMemory,totalMemory=a.totalMemory,address=a.address,pullSignal=ba,pushSignal=function(b,...)if bz(b)then return end;return
 a.pushSignal(b,...)end,energy=a.energy,maxEnergy=a.maxEnergy}end;az._safePullSignal=ba
 local bb={gpu=true,screen=true,keyboard=true,crafting=true,navigation=true,geolyzer=true,note_block=true,sign=true}
-local bE={modem="peripheral.modem",tunnel="peripheral.modem",redstone="peripheral.redstone",robot="peripheral.robot",inventory_controller=bo,transposer=bo,tank_controller=bo,tape_drive="peripheral.tape",internet=bm,tractor_beam="peripheral.tractor",piston="peripheral.piston",hologram="peripheral.hologram",openprinter="peripheral.printer"}local aI={}local aJ={}local aQ=false
-local function bc()if aQ then return end;aQ=true;local e,c=pcall(require,aT)
+local bE={modem="peripheral.modem",tunnel="peripheral.modem",redstone="peripheral.redstone",robot="peripheral.robot",inventory_controller=bo,transposer=bo,tank_controller=bo,tape_drive="peripheral.tape",internet=bm,tractor_beam="peripheral.tractor",piston="peripheral.piston",hologram="peripheral.hologram",openprinter="peripheral.printer"}local aI={}local aJ={}local aR=false
+local function bc()if aR then return end;aR=true;local e,c=pcall(require,aU)
 local f,g=pcall(require,"kernel.serialize")if not(e and f)then return end;local d="/etc/component_caps.cfg"if
 not c.exists(d)then return end;local b=c.readFile(d)if not b or#b==0 or#b>8192 then
 return end
@@ -81,16 +81,16 @@ for i,j in pairs(a.gated)do if
 type(i)==ay and#i<=64 and
 i:match("^[%w_]+$")and type(j)==ay and#j<=64 and j:match("^[%w_%.]+$")then
 aJ[i]=j end end end end
-function az.reloadComponentConfig()aI={}aJ={}aQ=false;bc()return aI,aJ end
+function az.reloadComponentConfig()aI={}aJ={}aR=false;bc()return aI,aJ end
 local function aD(a,b)if not a then return false end;bc()if bb[a]or aI[a]then return true end;local c=
-bE[a]or aJ[a]if c and b and b[c]then return true end;return false end;local bT=bb;local aR={gpu=true,screen=true,keyboard=true}
-local function aS()
+bE[a]or aJ[a]if c and b and b[c]then return true end;return false end;local bT=bb;local aS={gpu=true,screen=true,keyboard=true}
+local function aT()
 local d,b=pcall(require,"kernel.screen")if not d or type(b)~="table"or not b.callerDevices then return
 nil end
 local e,a=pcall(b.callerDevices)if not e or type(a)~="table"then return nil end;if not a.gpu then
 return nil end;local c={[a.gpu]=true}
 if a.screen then c[a.screen]=true end;for g,f in ipairs(a.keyboards or{})do c[f]=true end;return c,a end
-local function bF(a)local c,b=aS()if not c then return nil end;if a=="gpu"then return b.gpu end;if
+local function bF(a)local c,b=aT()if not c then return nil end;if a=="gpu"then return b.gpu end;if
 a=="screen"then return b.screen end;if a=="keyboard"then return
 (b.keyboards or{})[1]end;return nil end
 local bd={[2001]=aF,[2002]=aF,[2003]=aF,[2004]=aF,[2100]=aF,[2101]=aF,[2200]="rbmk telemetry"}
@@ -99,7 +99,7 @@ if
 b and type(b.kernelPorts)==ax then return b.kernelPorts()[a]==true end;return a==42 end
 local function bH(a,b,c)local g=a.address;local d=b[g]if not d then d={}b[g]=d end;local f={}
 for h,i in pairs(a)do f[h]=i end
-local function e(h,i)aA(aW(),"modem port "..tostring(h))return nil,"port "..
+local function e(h,i)aA(aX(),"modem port "..tostring(h))return nil,"port "..
 tostring(h).." "..i end
 function f.open(h)
 if type(h)~=aG then return e(h,"is not a number")end;h=math.floor(h)
@@ -107,7 +107,7 @@ if bG(h)then return e(h,"is the kernel's")end
 if not c and bd[h]then return e(h,"belongs to "..bd[h])end;if d[h]then return a.open(h)end;if a.isOpen(h)then
 return e(h,"is already in use")end;local i,j=a.open(h)
 if i then
-local k=not c and aZ()or nil;d[h]=k or true;if k then k.modemPorts=b elseif not c then aY=b end end;return i,j end
+local k=not c and aQ()or nil;d[h]=k or true;if k then k.modemPorts=b elseif not c then aZ=b end end;return i,j end
 function f.close(h)if h==nil then local i=false
 for j in pairs(d)do d[j]=nil;a.close(j)i=true end;return i end;if type(h)~=aG then return
 e(h,"is not a number")end;h=math.floor(h)if not d[h]then return
@@ -115,13 +115,13 @@ e(h,"is not yours")end;d[h]=nil;return a.close(h)end;return f end
 local function bI(a,b)a=a or{}local c=require(aL)local d={}local h,f={},{}
 local function e(i)
 if not i or not i.address then return i end;local j=f[i.address]if not j then j=bH(i,h,b and b.service)
-f[i.address]=j end;return j end;local function g(i,j)if not aR[j]then return false end;local k=aS()if not k then return false end;return
+f[i.address]=j end;return j end;local function g(i,j)if not aS[j]then return false end;local k=aT()if not k then return false end;return
 not k[i]end
 function d.list(i,j)
-local l=c.list(i,j)local k=aS()
+local l=c.list(i,j)local k=aT()
 return function()
 while true do local m,n=l()if m==nil then return nil end
-local o=k and aR[n]and not k[m]if aD(n,a)and not o then return m,n end end end end
+local o=k and aS[n]and not k[m]if aD(n,a)and not o then return m,n end end end end
 function d.proxy(i)local j=c.type(i)if not aD(j,a)then return nil,bg end;if g(i,j)then
 return nil,"not your seat"end
 if j=="modem"then return e(c.proxy(i))end;return c.proxy(i)end;function d.type(i)return c.type(i)end
@@ -129,14 +129,14 @@ function d.slot(i)return c.slot(i)end;function d.get(i,j)local k=c.get(i,j)
 if k then local l=c.type(k)if aD(l,a)then return k end end;return nil,bg end
 function d.invoke(i,j,...)
 local k=c.type(i)if not aD(k,a)then
-aA(aW(),"component "..tostring(k))
+aA(aX(),"component "..tostring(k))
 error("sandbox: access denied to "..tostring(k))end;if g(i,k)then
 error("sandbox: "..tostring(k)..
 " belongs to another seat")end
 if k=="modem"and
 (j=="open"or j=="close")then return e(c.proxy(i))[j](...)end;return c.invoke(i,j,...)end
 function d.isAvailable(i)if not aD(i,a)then return false end;return c.isAvailable(i)end
-function d.getPrimary(i)if not aD(i,a)then return nil,bg end;if aR[i]then local j=bF(i)if j then
+function d.getPrimary(i)if not aD(i,a)then return nil,bg end;if aS[i]then local j=bF(i)if j then
 return c.proxy(j)end end;if i=="modem"then return
 e(c.getPrimary(i))end;return c.getPrimary(i)end;return d end
 local function bJ(a)
@@ -150,7 +150,7 @@ c,d=next(a,c)return c,d end end,__newindex=function()
 error("component view is read-only",2)end,__metatable=false})end;local bK={"/usr/lib","/usr/modules"}
 local function bL(a)local b=a:gsub("%.","/")return{b..".lua",
 b.."/init.lua"}end
-local function be(a)local b=nil;local c,d=pcall(require,aT)if c then b=d end;if not b then return nil end;for f,e in
+local function be(a)local b=nil;local c,d=pcall(require,aU)if c then b=d end;if not b then return nil end;for f,e in
 ipairs(bK)do
 for f,g in ipairs(bL(a))do local h=e.."/"..g;if b.exists(h)then return h end end end;return nil end
 local function aE(a,b)if type(a)~="table"then return a end;local c=a
@@ -258,8 +258,9 @@ if
 g==bj and type(i)=="table"and type(i._gpuForCaps)==ax then
 local k=a and a.caps;j.gpu=function()return i._gpuForCaps(k)end
 local l=i.read
-j.read=function(...)if a and a.flushForRead then a.flushForRead()end
-return l(...)end end
+j.read=function(...)
+if a and a.flushForRead then a.flushForRead()else local m=aQ()if m and m.beforeRead then
+m.beforeRead("")end end;return l(...)end end
 if
 g==bi and type(i)=="table"and type(i._forProgram)==ax then local k=i._forProgram(a and a.name,b and b.env)if type(k)==
 "table"then j.info=k.info;j.running=k.running end end;d[g]=j;return j end
@@ -271,7 +272,7 @@ error(
 "sandbox: access denied loading user lib '"..g.."'",2)end end;if a.allowUserLibs then local s=require(g)d[g]=s;return s end
 local m=b and b.env;if type(m)~="table"then
 error("sandbox: no environment to load user lib '"..g.."' into",2)end;if e[g]then
-error("sandbox: circular require of '"..g.."'",2)end;local p,l=pcall(require,aT)
+error("sandbox: circular require of '"..g.."'",2)end;local p,l=pcall(require,aU)
 local n=p and
 type(l)=="table"and l.readFile and l.readFile(i)if type(n)~=ay then
 error("sandbox: cannot read user lib '"..g.."'",2)end;local o,q=load(n,"="..i,"t",m)if not o then
@@ -391,7 +392,7 @@ local H=_G._TOS and _G._TOS.users
 if not H then local I,J=pcall(require,"kernel.users")if I then H=J end end;if H and H.currentSession then w=H.currentSession()end end
 local D=w and(w.isKernel or w.isLogin or
 (type(w.tier)==aG and w.tier>=2))
-if not D then return nil,"crypto.secret requires an admin session"end;local E,x=pcall(require,aT)
+if not D then return nil,"crypto.secret requires an admin session"end;local E,x=pcall(require,aU)
 if not E or not x then return nil,"fs unavailable"end;local z="/var/pkg/secrets"local A=z.."/"..v
 if x.exists(A)then local H=x.readFile(A)if H and
 #H>=16 then return H end;return nil,"secret unreadable"end;if not x.exists(z)then x.makeDirectory(z)end
@@ -401,7 +402,7 @@ function az.run(a,b,c,...)local e=az.build(c)local d,f=load(a,b,"t",e)if not d t
 "compile error: "..tostring(f)end;return pcall(d,...)end
 function az.finish(a)local b=aP[a]if b then aP[a]=nil;pcall(b)end end
 function az.exitStatus(a)
-if type(a)=="table"and rawget(a,aX)==true then
+if type(a)=="table"and rawget(a,aY)==true then
 local b=rawget(a,"code")if b==nil then return true end;return b end;return nil end
 function az.describeEnd(b,a)
 if b then local d=type(a)if d==ay or d==aG or d=="boolean"then return tostring(a),
