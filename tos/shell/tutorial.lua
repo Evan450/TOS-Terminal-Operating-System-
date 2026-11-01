@@ -28,24 +28,25 @@ while#x>y do local A=y;local B=false
 for C=y,math.max(1,y-20),-1 do if
 x:sub(C,C)==" "then A=C-1;B=true;break end end;z[#z+1]=x:sub(1,A)
 x=x:sub(A+ (B and 2 or 1))end;if#x>0 then z[#z+1]=x end;return z end
-local function k()local x=c.getTheme()local F=d[b]local A=math.min(l-2,60)
+local function k()local x=c.getTheme()local G=d[b]local A=math.min(l-2,60)
 local B=math.min(m-2,20)local C=math.floor((l-A)/2)+1;local E=
 math.floor((m-B)/2)+1;c.clear(x.bg)
-c.dbox(C,E,A,B,F.title,{bg=x.panel_bg,border=x.border,title=x.title})local G=C+2;local H=E+2;local I=A-4;local J=B-4;local z={}
-for M,L in ipairs(F.lines)do if#L==0 then z[#z+1]=""else for M,N in
-ipairs(w(L,I))do z[#z+1]=N end end end;for L=1,math.min(#z,J)do
-c.set(G,H+ (L-1),z[L],x.fg,x.panel_bg)end;local D=A-4;local y
-if D>=44 then y=b.."/"..
-e.." Enter:next Bksp:prev ^Q:skip"elseif D>=28 then y=b.."/"..e..
-" Ent/Bksp:nav ^Q:skip"else y=b.."/"..
-e.." Ent/Bk/^Q"end;if#y>D then y=y:sub(1,D)end
-local K=C+math.floor((A-#y)/2)
-c.set(math.max(C+1,K),E+B-1,y,x.dim,x.panel_bg)end;k()
+c.dbox(C,E,A,B,G.title,{bg=x.panel_bg,border=x.border,title=x.title})local H=C+2;local I=E+2;local J=A-4;local K=B-4;local z={}
+for N,M in ipairs(G.lines)do if#M==0 then z[#z+1]=""else for N,O in
+ipairs(w(M,J))do z[#z+1]=O end end end;for M=1,math.min(#z,K)do
+c.set(H,I+ (M-1),z[M],x.fg,x.panel_bg)end;local D=A-4
+local F=require("shell.quitkey").hint()local y
+if D>=44 then y=b..
+"/"..e.." Enter:next Bksp:prev "..F..":skip"elseif D>=28 then
+y=b.."/"..e..
+" Ent/Bksp:nav "..F..":skip"else y=b.."/"..e.." Ent/Bk/"..F end;if#y>D then y=y:sub(1,D)end
+local L=C+math.floor((A-#y)/2)
+c.set(math.max(C+1,L),E+B-1,y,x.dim,x.panel_bg)end;k()
 while true do local y,A,z,x=i.pullSignal(0.5)
 if y=="key_down"then
-if z==17 then local B=c.getTheme()
-local C="Skip tutorial? [y/N]"local E=math.max(1,math.floor((l-#C)/2))c.set(E,m,C,
-B.warning or B.fg,B.bg)local D=false
+if
+require("shell.quitkey").is(z,x,false)then local B=c.getTheme()local C="Skip tutorial? [y/N]"
+local E=math.max(1,math.floor((l-#C)/2))c.set(E,m,C,B.warning or B.fg,B.bg)local D=false
 repeat
 local G,A,F=i.pullSignal(10)if G=="key_down"then if F==121 or F==89 then D=true;break elseif F~=0 then break end elseif G==
 nil then break end until false;if D then v()return else k()end end;if x==28 or x==208 then if b>=e then v()return end;b=b+1;k()elseif x==14 or x==200 then if b>1 then b=b-1

@@ -37,7 +37,8 @@ return c.loadFiles(b,u)end,createTab=function(u,v,w)return
 require("shell.panels.tabs").create(b,u,v,w)end,tabs=b.tabs,pullSignal=function()if
 coroutine.isyieldable and coroutine.isyieldable()then
 return coroutine.yield()end;return d.pullSignal(0.05)end})
-local t=q.build(b,{rp=function(u)return c.resolvePath(b,u)end,makeProgramEnv=l,C=n})local i=_G._TOS and _G._TOS.kernel;if i and i.setMonitorHost then
+local t=q.build(b,{echoLine=function(u)g.outRow(b,u)end,inputRow=function()return b.CMD_ROW end,repaint=function()
+g.all(b,h)end,rp=function(u)return c.resolvePath(b,u)end,makeProgramEnv=l,C=n})local i=_G._TOS and _G._TOS.kernel;if i and i.setMonitorHost then
 pcall(i.setMonitorHost,true)end
 local o=s.run(b,{C=n,exec=t,makeProgramEnv=l,widgetDefs=h})if b.sudoDrop then pcall(b.sudoDrop)end;if o~="cli"then
 local v,u=pcall(require,"kernel.clipboard")

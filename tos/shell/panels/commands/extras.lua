@@ -74,10 +74,7 @@ if
 am and al and al.isWireless and al.isWireless()then ai=ai+1 end end end;return ah,ai end
 _.myModemAddress=function()return(q.list("modem")())end
 _.hostname=function()local ah=_G._TOS and _G._TOS.net;if ah and ah.getHostname then return
-ah.getHostname()end
-if
-aa and aa.exists("/etc/hostname")then local ai=aa.readFile("/etc/hostname")if type(ai)==s then return
-(ai:match("^[^\n]*"))end end end
+ah.getHostname()end end
 _.startPairing=function()local aj,ah=pcall(require,"cluster.api")
 if not aj or not ah or not
 ah.startPairing then return nil,"the Master daemon is not up yet"end;local ak,ai,al=pcall(ah.startPairing)

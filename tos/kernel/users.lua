@@ -256,9 +256,10 @@ b.passwordChangeOnly then return false,"Session is not first-boot"end;local c=al
 "First-boot password still required"end
 b.tier=b.realTier or c.tier;b.passwordChangeOnly=nil;b.firstBoot=nil;return true end
 function ak.logout(a)a=a or ao
-if a and ap[a]then local b=ap[a].user;ap[a]=nil;if a==ao then ao=nil end
-if
-ai then ai.info("auth",aN..b.."' logged out")end;return true end;return false end
+if a and ap[a]then local c=ap[a].user
+local b=package.loaded["kernel.keychain"]if b and b.lock then pcall(b.lock,ap[a])end;ap[a]=nil;if a==ao then ao=
+nil end;if ai then
+ai.info("auth",aN..c.."' logged out")end;return true end;return false end
 function ak.currentSession()local b,a=pcall(require,"kernel.process")
 if
 b and a and a.currentSession then local c=a.currentSession()

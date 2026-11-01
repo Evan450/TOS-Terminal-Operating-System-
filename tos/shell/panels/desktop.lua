@@ -82,7 +82,7 @@ local d=f and
 if a.dropped and a.dropped>0 then d=d..
 m("desktop.more","   (+%d more via the prompt)",a.dropped)end
 local p=(d~="")and{{label=C(d,e-8)}}or{}s.drawRail(g,c,h-1,e,p)
-local q=m("desktop.keys","Enter Open · Arrows Move · 1-9 Quick · F2 Tabs · ^Q Shell")local I=(k>1)and(n.."/"..k)or nil
+local q=m("desktop.keys","Enter Open · Arrows Move · 1-9 Quick · F2 Tabs · ^Q Shell"):gsub("%^Q",(require("shell.keys").quitHint(b.who)))local I=(k>1)and(n.."/"..k)or nil
 s.drawRampBar(g,c,h,e,q,I,
 c.statusbar_fg or c.bar_fg,c.statusbar_bg or c.bar_bg)end
 function r.draw(a,b)local d,c,e,j=a.D,a.T,a.W,a.H;if not b.apps then r.refresh(a,b)end;local h=

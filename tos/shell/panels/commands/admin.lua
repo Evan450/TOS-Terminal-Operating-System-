@@ -958,14 +958,15 @@ av("Started background task: "..ay..
 aF.cycleKeyLabel(a)or"F2"
 av(
 "Switch to its tab with "..aJ..", or use 'kill "..aA.."' to stop.",d.dim)end
-b.run=function(E,av)if not f(av)then return end;if not E[1]then
-av("Usage: run <file.lua>",d.dim)return end;local ax=u(E[1])
-local ay=J.safeModeRefusal(ax)if ay then av(ay,d.error)return end;local az=e.readFile(ax)if not az then av(af..
-E[1],d.error)return end
-local aA=v{name=E[1],stdout=function(aF)av(aF,d.fg)end}local aB,aC=load(az,"="..E[1],"t",aA)if not aB then
-av("Compile error: "..tostring(aC),d.error)return end;local aw={}
-for aF=2,#E do aw[#aw+1]=E[aF]end;local aD,aE=pcall(aB,table.unpack(aw))
-J.reportProgramEnd(a,av,aD,aE,"Runtime error: ",aA)end
+b.run=function(av,E)if not f(E)then return end;if not av[1]then
+E("Usage: run <file.lua>",d.dim)return end;local ax=u(av[1])
+local ay=J.safeModeRefusal(ax)if ay then E(ay,d.error)return end;local az=e.readFile(ax)if not az then
+E(af..av[1],d.error)return end;local aA,aB=function(aH)E(aH,d.fg)end,nil;if
+a.programIO then aA,aB=a.programIO(E)end
+local aC=v{name=av[1],stdout=aA,beforeRead=aB}local aD,aE=load(az,"="..av[1],"t",aC)if not aD then
+E("Compile error: "..tostring(aE),d.error)return end;local aw={}
+for aH=2,#av do aw[#aw+1]=av[aH]end;local aF,aG=pcall(aD,table.unpack(aw))
+J.reportProgramEnd(a,E,aF,aG,"Runtime error: ",aC)end
 b.lua=function(av,E)if not o(E)then return end
 pcall(function()local aC=require(aa)if aC and aC.info then
 aC.info("repl",

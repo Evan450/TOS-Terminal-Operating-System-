@@ -206,7 +206,10 @@ error("sandbox: module '"..g.."' is not available to sandboxed code",2)end end
 if aW[g]or aZ(g)then local i=require(g)local j=aq(i,bm[g])
 if
 g==aO and type(i)=="table"and type(i._gpuForCaps)==ak then
-local k=a and a.caps;j.gpu=function()return i._gpuForCaps(k)end end
+local k=a and a.caps;j.gpu=function()return i._gpuForCaps(k)end
+local l=i.read
+j.read=function(...)if a and a.flushForRead then a.flushForRead()end
+return l(...)end end
 if
 g==aN and type(i)=="table"and type(i._forProgram)==ak then local k=i._forProgram(a and a.name,b and b.env)if type(k)==
 "table"then j.info=k.info;j.running=k.running end end;d[g]=j;return j end
@@ -267,24 +270,27 @@ if c[an]and not c[aT]and type(a.stdout)==ak and type(b.io)==
 "table"then
 local u,t=pcall(require,"compat.buffer")
 if u and type(t)=="table"and type(t.new)==ak then
-local z,v=a.stdout,""
-local function A(F)v=v..F;local G=1;while true do local H=v:find("\n",G,true)if not H then break end
-z(v:sub(G,H-1))G=H+1 end;v=v:sub(G)end
+local y,v=a.stdout,""
+local function A(G)v=v..G;local H=1;while true do local I=v:find("\n",H,true)if not I then break end
+y(v:sub(H,I-1))H=I+1 end;v=v:sub(H)end
 local function B()return
-t.new("w",{write=function(G,F)A(F)end,close=function()end})end;local x=b.io;local y,C=B(),B()local w={input=x.stdin,output=y}local function D(F)return
-F==y or F==C or F==x.stdin end
-local function E(G,F,H)if type(F)==al then
-local J,K=x.open(F,H)if not J then error(K,3)end;F=J end
-local I=w[G]
-if I~=F and not D(I)and type(I)=="table"and
-type(I.close)==ak then pcall(I.close,I)end;w[G]=F end
-b.io=setmetatable({stdout=y,stderr=C,output=function(F)if F then E("output",F,"w")end;return w.output end,input=function(F)if
-F then E("input",F,"r")end;return w.input end,write=function(...)return
-w.output:write(...)end,read=function(...)return w.input:read(...)end,lines=function(F,...)if
-F==nil then return w.input:lines()end
-return x.lines(F,...)end,close=function(F)F=F or w.output
-if D(F)then return true end;return F:close()end},{__index=x,__metatable=false})i=function(F)A(F.."\n")end;aw[b]=function()
-if v~=""then local F=v;v=""z(F)end end end end;if c[aA]then b.component=g;b.computer=h end
+t.new("w",{write=function(H,G)A(G)end,close=function()end})end;local x=b.io;local z,C=B(),B()local w={input=x.stdin,output=z}local function D(G)return
+G==z or G==C or G==x.stdin end
+local function E(H,G,I)if type(G)==al then
+local K,L=x.open(G,I)if not K then error(L,3)end;G=K end
+local J=w[H]
+if J~=G and not D(J)and type(J)=="table"and
+type(J.close)==ak then pcall(J.close,J)end;w[H]=G end
+b.io=setmetatable({stdout=z,stderr=C,output=function(G)if G then E("output",G,"w")end;return w.output end,input=function(G)if
+G then E("input",G,"r")end;return w.input end,write=function(...)return
+w.output:write(...)end,read=function(...)return w.input:read(...)end,lines=function(G,...)if
+G==nil then return w.input:lines()end
+return x.lines(G,...)end,close=function(G)G=G or w.output
+if D(G)then return true end;return G:close()end},{__index=x,__metatable=false})i=function(G)A(G.."\n")end
+a.flushForRead=function()local G=v;v=""if a.beforeRead then
+a.beforeRead(G)elseif G~=""then y(G)end end;local F=b.io.read
+b.io.read=function(...)a.flushForRead()return F(...)end
+aw[b]=function()if v~=""then local G=v;v=""y(G)end end end end;if c[aA]then b.component=g;b.computer=h end
 if c["load"]then b.load=function(t,u,v,w)
 return load(t,u,"t",b)end;b.loadstring=b.load end
 if c["notify"]then local u,t=pcall(require,"kernel.notify")

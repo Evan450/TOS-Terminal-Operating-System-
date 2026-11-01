@@ -47,8 +47,8 @@ return
 end
 local text = ""
 if packet.payload then
-text = type(packet.payload) == "string" and packet.payload
-or (packet.payload.text or tostring(packet.payload))
+text = type(packet.payload) == "table" and packet.payload.text
+or packet.payload
 end
 if type(text) ~= "string" then text = tostring(text or "") end
 if #text > MAX_TEXT_LEN then text = text:sub(1, MAX_TEXT_LEN) end

@@ -11,4 +11,4 @@ local g={["fs.read"]=true,["fs.write"]=true,["compat.io"]=true}if e.caps then fo
 return
 f.build{name=
 e.name or"shell:program",pkgName=e.pkgName,cwd=a.cwd,session=
-(a.U and a.U.currentSession and a.U.currentSession())or nil,caps=g,stdout=e.stdout}end end;return b
+(a.U and a.U.currentSession and a.U.currentSession())or nil,caps=g,stdout=e.stdout,beforeRead=e.beforeRead}end end;return b

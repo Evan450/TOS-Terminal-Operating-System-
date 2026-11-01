@@ -736,7 +736,8 @@ than two names.
 
 ### 4.2 The command line
 
-Supports pipes (`cmd1 | cmd2`), redirect (`> file`), append (`>> file`), command
+Supports pipes (`cmd1 | cmd2`), redirect (`> file`), append (`>> file`), input
+(`cat < file`, `grep word < file`), command
 history (up/down), and per-process environment variables (`env`, `export KEY=VAL`).
 Unqualified program names resolve only against system bin dirs (`/bin`,
 `/usr/bin`, `/tos/shell`) and *safe* `PATH` entries — a disk under `/mnt` can't

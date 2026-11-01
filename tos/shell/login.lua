@@ -46,11 +46,12 @@ local Q=F and K.input_fg or K.dim;a.fill(N,M,O,1," ",Q,P)local L=E
 if H==p then L=string.rep("*",#E)end;L=a.fit(L,O-1)a.set(N,M,L,Q,P)if F then
 local S=N+math.min(#E,O-1)a.set(S,M,"_",K.highlight,P)end end
 local function z(F,G,H,I,E)E=E or 20;local J=""
-while true do j(F,G,H,I,J,true)local L,N,K,M=m(0.5)
-if L==o then
-if M==28 then return J elseif M==14 then if#J>0 then J=J:sub(1,
--2)end elseif K==17 then return nil elseif
-K and K>=32 and K<127 and#J<E then J=J..string.char(K)end elseif L=="clipboard"then local O=K
+while true do j(F,G,H,I,J,true)local M,N,K,L=m(0.5)
+if M==o then
+if L==28 then return J elseif L==14 then if#J>0 then J=J:sub(1,
+-2)end elseif
+require("shell.quitkey").is(K,L,true)then return nil elseif K and K>=32 and K<127 and#J<E then
+J=J..string.char(K)end elseif M=="clipboard"then local O=K
 if type(O)==n then J=J..O:sub(1,E-#J)end end end end
 local function A(E,F)
 E=(type(E)==n and E~="")and E or"root"F=type(F)==n and F or""local G=a.getTheme()local T=G.bg
@@ -138,8 +139,9 @@ local T=false;local O=""
 while true do j(P,Q,R,q,O,true)local W,X,U,V=m(0.5)
 if W==o then
 if V==28 then N=O;break elseif V==14 then if#O>0 then
-O=O:sub(1,-2)end elseif U==17 then T=true;break elseif V==60 and K then S=true;break elseif
-U and U>=32 and U<127 and#O<20 then O=O..string.char(U)end elseif W=="clipboard"then
+O=O:sub(1,-2)end elseif require("shell.quitkey").is(U,V,true)then
+T=true;break elseif V==60 and K then S=true;break elseif U and U>=32 and U<127 and#O<20 then O=O..
+string.char(U)end elseif W=="clipboard"then
 if type(U)==n then O=O..U:sub(1,20-#O)end end end
 if S then
 e(d("login.guest_auth","Logging in as Guest..."),false)local U,V=b.guestLogin()
