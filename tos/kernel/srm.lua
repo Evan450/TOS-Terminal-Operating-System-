@@ -156,6 +156,10 @@ end
 --! (test_srm_yields.lua)
 local coopProc = nil
 local function coopYield()
+  --! Before the kernel there is no scheduler to yield to, so the recovery
+  --! menu sets this: it pulls a signal, which is what keeps OC from stopping
+  --! the machine, and counts the file. (kernel/recovery.lua)
+  if srm.beat then return srm.beat() end
   if coopProc == nil then
     local okP, m = pcall(require, "kernel.process")
     coopProc = (okP and m and m.yieldCooperative) and m or false

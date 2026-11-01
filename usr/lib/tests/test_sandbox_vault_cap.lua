@@ -13,6 +13,7 @@
 -- three pure data-in/data-out vault functions through a new "vault"
 -- capability; this test pins down both the exposure and its bounds.
 
+package.path = package.path .. ";tos/?.lua;TOS-Dev/tos/?.lua;../TOS-Dev/tos/?.lua"  -- kernel.policy
 local passed, failed = 0, 0
 local function test(name, expected, actual)
   if expected == actual then

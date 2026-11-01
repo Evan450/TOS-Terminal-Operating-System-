@@ -335,8 +335,8 @@ else
       if not pe:find('["' .. c .. '"]', 1, true) then okPath = false end
     end
     test("a PATH program's caps match progenv.lua", okPath)
-    local rc = readText(root .. "tos/kernel/rc.lua") or ""
-    local dflt = rc:match("local DEFAULT_SERVICE_CAPS = (%b{})") or ""
+    local rc = readText(root .. "tos/kernel/policy.lua") or ""
+    local dflt = rc:match("policy%.SERVICE_DEFAULT_CAPS = (%b{})") or ""
     local okRc = dflt ~= ""
     for _, c in ipairs(RC_DEFAULT_CAPS) do
       if not (dflt:find('["' .. c .. '"]', 1, true) or dflt:find("\n%s*" .. c .. "%s*=")) then okRc = false end

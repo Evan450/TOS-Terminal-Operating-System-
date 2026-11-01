@@ -55,7 +55,7 @@ local function listRcd()
   return out
 end
 
-local rcSource = readFile("tos/kernel/rc.lua")
+local rcSource = readFile("tos/kernel/policy.lua")
 local services = listRcd()
 
 if not rcSource or not services then
@@ -67,7 +67,7 @@ end
 -- table rather than a copy of it that would drift.
 local allow = {}
 do
-  local block = rcSource:match("KERNEL_SERVICE_ALLOWLIST%s*=%s*{(.-)}")
+  local block = rcSource:match("policy%.KERNEL_SERVICES%s*=%s*{(.-)}")
   if block then
     for name in block:gmatch('%["([^"]+)"%]%s*=%s*true') do allow[name] = true end
   end

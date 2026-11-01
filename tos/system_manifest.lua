@@ -79,6 +79,9 @@ return {
   { path = "/tos/kernel/bootcfg.lua",         critical = false, floor = true },
   { path = "/tos/kernel/bootsettings.lua",    critical = false },
   { path = "/tos/kernel/bootsteps.lua",       critical = false },
+  { path = "/tos/kernel/recovery.lua",        critical = false },
+  { path = "/tos/kernel/policy.lua",          critical = false, floor = true },
+  { path = "/tos/kernel/policyload.lua",      critical = false, floor = true },
   { path = "/tos/kernel/repair.lua",          critical = false },
   { path = "/tos/kernel/netrepair.lua",       critical = false },
   { path = "/tos/kernel/srm.lua",             critical = false },
@@ -258,5 +261,5 @@ return {
   { path = "/usr/lang/ru.lang",               critical = false },
 
   -- ── Self-reference ───────────────────────────────────────
-  { path = "/tos/system_manifest.lua",        critical = false },
+  { path = "/tos/system_manifest.lua",        critical = false, floor = true },
 }

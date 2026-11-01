@@ -720,6 +720,7 @@ local function ui(o)
 
   local function prompt(title, label, initial)
     local buf = tostring(initial or "")
+    local fresh = buf ~= ""              -- the first letter typed replaces it
     local x, y, w = popup(title, label, "fg",
       "Enter OK · " .. quitLabel() .. " cancel", 1)
     while true do
@@ -732,7 +733,11 @@ local function ui(o)
       if code == K.ENTER then return buf end
       if isQuit(ch, code) then return nil end
       if code == K.BACK then buf = buf:sub(1, -2)
-      elseif ch and ch >= 32 and ch < 127 then buf = buf .. string.char(ch) end
+      elseif ch and ch >= 32 and ch < 127 then
+        if fresh then buf = "" end
+        buf = buf .. string.char(ch)
+      end
+      fresh = false
     end
   end
   local function yesNo(question)

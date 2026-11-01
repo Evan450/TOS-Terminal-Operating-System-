@@ -32,117 +32,17 @@ local sandbox = {}
 --                 ported OpenOS programs; default OFF)
 -- ============================================================
 
+--! WHAT IS ALLOWED IS DECIDED IN kernel/policy.lua; this file enforces it. A
+--! policy that will not load denies everything: see policy.closed().
+local POLICY = require("kernel.policyload")("sandbox")
+
 local KERNEL_MODULE_PREFIX = "kernel."
 
--- Modules whose names have any of these prefixes are allowed through
--- makeSafeRequire without per-name vetting. Everything else must match
--- one of the exact names in ALLOWED_MODULE_NAMES, or be installed under
--- /usr/lib or /usr/modules (user-installed libraries, already gated by
--- securefs when the install happens).
-local ALLOWED_MODULE_PREFIXES = {
-  "compat.",
-  "peripheral.",
-}
+local ALLOWED_MODULE_PREFIXES = POLICY.MODULE_PREFIXES
 
--- Narrow whitelist of bare module names sandboxed programs may require.
--- Extend with care — anything added here runs OUTSIDE the sandbox with
--- full unsandboxed require, so it must be safe to expose unconditionally.
-local ALLOWED_MODULE_NAMES = {
-  compat        = true,
-  -- The shared keybind table. Exposed to package code deliberately: a
-  -- standard that only the base image can read standardises nothing, and
-  -- the whole point is that a bundled package and the shell agree on
-  -- what ^Q means and follow the operator when they change it.
-  -- Safe to hand out — it reads two keybind config files and returns key
-  -- MATCHERS. No filesystem handle, no component, no authority of any
-  -- kind passes through it.
-  ["shell.keys"] = true,
-}
+local ALLOWED_MODULE_NAMES = POLICY.MODULE_NAMES
 
--- require names that must be rejected outright even if they'd otherwise
--- fall under a user-lib path. Loading any of these gives the caller the
--- real kernel.* surface via their own require.
-local BLOCKED_MODULE_NAMES = {
-  -- #SEC H5 — `debug` exposes sethook, getlocal, getupvalue, and the
-  -- whole introspection surface. A sandboxed program with require()
-  -- access to it can rip out any upvalue in the calling closure
-  -- (including the secret-bound `fs` proxy or the `caps` table),
-  -- bypassing every other guard. The OC Lua stdlib ships `debug`
-  -- so it's reachable via the host's package.loaded["debug"]; block
-  -- it explicitly here so the user-lib resolver also refuses.
-  ["debug"]                   = true,
-  ["package"]                 = true,  -- and the package resolver itself
-  ["os"]                      = true,  -- raw os.execute/remove/exit
-  ["io"]                      = true,  -- raw io.popen/io.open
-  ["component"]               = true,  -- raw component (sandbox shadows it)
-  ["computer"]                = true,  -- raw computer.shutdown/eeprom
-  ["filesystem"]              = true,  -- raw FS bypasses securefs
-  ["shell.init"]              = true,
-  --! #SEC (pentest, Sep 2026) — shell.ext is not an extension API; it is
-  --! the lazy-loaded body of the net/ping/hostname/config/audio commands,
-  --! and the unsandboxed shell (commands/extras.lua) is its only caller.
-  --! It sat on the ALLOWED list under a stale description, and parts of it
-  --! reach _G._TOS directly (the peer-alias table, audio) instead of going
-  --! through a capability the program was granted. The alias writers do
-  --! re-check the live principal's tier; nothing else about it belongs in
-  --! a sandbox either.
-  ["shell.ext"]               = true,
-  ["shell.panels.init"]       = true,
-  ["shell.panels.commands"]   = true,
-  ["shell.panels.events"]     = true,
-  ["shell.panels.executor"]   = true,
-  ["shell.panels.state"]      = true,
-  ["shell.panels.draw"]       = true,
-  ["shell.panels.helpers"]    = true,
-  ["shell.panels.filebrowser"] = true,
-  ["shell.panels.editor"]     = true,
-  ["shell.panels.menus"]      = true,
-  ["shell.panels.dialogs"]    = true,
-  ["shell.panels.context"]    = true,
-  ["shell.panels.keymap"]     = true,
-  ["shell.panels.tabs"]       = true,
-  ["shell.panels.widgets"]    = true,
-  ["shell.panels.mouse"]      = true,
-  ["shell.panels.ui"]         = true,
-  ["shell.panels.desktop"]    = true,
-  ["shell.panels.settingsapp"] = true,
-  ["shell.panels.apps"]       = true,
-  ["shell.panels.monitorapp"] = true,
-  ["shell.panels.chatapp"]    = true,
-  -- Stage 5 — the mail ADD-ON's libraries live in /usr/lib, which the
-  -- user-lib resolver below would otherwise load through the REAL
-  -- require (that's how a full-priv add-on works). Blocking them by name
-  -- preserves the exact posture mail had as a kernel module: sandboxed
-  -- package code can't reach the mesh transport (bypassing its `net`
-  -- capability) or another user's mailbox through it.
-  ["mail"]                    = true,
-  ["mailui"]                  = true,
-  ["mailapp"]                 = true,
-  -- The RBMK controller's libraries, for the same reason and then some:
-  -- they hold raw console access and the SCRAM path. A sandboxed package
-  -- must not be able to require its way to a reactor.
-  ["rbmk-cmd"]                = true,
-  ["rbmk-controld"]           = true,
-  ["rbmk.core"]               = true,
-  -- The SKALA panel is only a renderer, but it is blocked with the
-  -- rest anyway: it reaches kernel.screen and can paint every seat on
-  -- the machine, which is not something sandboxed package code should
-  -- be able to require its way into.
-  ["rbmk-skala"]              = true,
-  ["rbmk.skala"]              = true,
-  ["rbmk.wall"]               = true,
-  ["shell.panels.takeover"]   = true,
-  ["shell.login"]             = true,
-  ["shell.chat"]              = true,
-  ["shell.tutorial"]          = true,
-  ["shell.syntax"]            = true,
-  ["shell.panels"]            = true,
-  ["shell"]                   = true,
-  ["bios"]                    = true,
-  ["init"]                    = true,
-  ["install"]                 = true,
-  ["system_manifest"]         = true,
-}
+local BLOCKED_MODULE_NAMES = POLICY.BLOCKED_MODULES
 
 --! What the sandbox refused, in the log. securefs has always said when it
 --! refused a path; a capability the sandbox withheld went out as an error the
@@ -467,46 +367,9 @@ sandbox._safePullSignal = safePullSignal
 -- proxying a modem and sniffing all network traffic) is closed: every
 -- module needs an explicit `peripheral.modem` grant to even open a
 -- proxy on the modem type.
-local BASE_COMPONENT_TYPES = {
-  gpu = true, screen = true, keyboard = true,
-  crafting = true, navigation = true, geolyzer = true,
-  note_block = true, sign = true,
-}
+local BASE_COMPONENT_TYPES = POLICY.BASE_COMPONENTS
 
-local GATED_COMPONENT_TYPES = {
-  modem                = "peripheral.modem",
-  tunnel               = "peripheral.modem",
-  redstone             = "peripheral.redstone",
-  robot                = "peripheral.robot",
-  inventory_controller = "peripheral.inventory",
-  transposer           = "peripheral.inventory",
-  tank_controller      = "peripheral.inventory",
-  tape_drive           = "peripheral.tape",
-  --! An internet card reaches OUTSIDE the Minecraft world: it is both an
-  --! exfiltration channel for anything the program can read and an inbound
-  --! channel of bytes a stranger wrote. Gated behind its own cap rather
-  --! than folded into the generic `component` grant, so a package that
-  --! wants a screen and a keyboard does not silently get the network.
-  internet             = "internet",
-  tractor_beam         = "peripheral.tractor",
-  piston               = "peripheral.piston",
-  hologram             = "peripheral.hologram",
-  --! OpenPrinter (PC-Logix) — the ONLY non-vanilla component type named in
-  --! this file, and it is here on purpose rather than left to
-  --! /etc/component_caps.cfg below. FEAT-5's config exists so an operator
-  --! can add types WE do not ship code for; TOS ships a first-party
-  --! `printer` driver package, and a package capability has to clear
-  --! pkg.lua's PKG_RUN_CAPS allowlist as well as this table. A cap an
-  --! operator can add to one side but not the other is a cap that silently
-  --! does nothing (see the package-cap overrides in pkg.lua, which close
-  --! that asymmetry for every OTHER mod). Costs nothing on a world without
-  --! the mod: the type simply never appears in component.list.
-  --! GATED, not base: a printer WRITES to the world — it consumes the
-  --! player's paper and ink and drops physical pages into a chest. That is
-  --! real-world actuation with a consumable cost, which is the same reason
-  --! piston and robot are gated.
-  openprinter          = "peripheral.printer",
-}
+local GATED_COMPONENT_TYPES = POLICY.GATED_COMPONENTS
 
 -- FEAT-5 — operator-extensible component allowlist.
 -- /etc/component_caps.cfg lets an admin add component types (HBM
@@ -627,15 +490,7 @@ local function seatOwnAddress(ctype)
   return nil
 end
 
---! Ports the add-on daemons listen on: cluster's workers and storage tier, and
---! rbmk telemetry. Reserved even while nothing has them open, because a
---! program that got there first would hear that traffic and stop the daemon
---! starting. rc.d services may open them: an admin installed those, and the
---! ports are theirs.
-local SERVICE_PORTS = {
-  [2001] = "cluster", [2002] = "cluster", [2003] = "cluster", [2004] = "cluster",
-  [2100] = "cluster", [2101] = "cluster", [2200] = "rbmk telemetry",
-}
+local SERVICE_PORTS = POLICY.SERVICE_PORTS
 
 local function isKernelPort(port)
   local net = _G._TOS and _G._TOS.net
@@ -1242,7 +1097,7 @@ local function makeSafeRequire(opts, prebound, envRef)
     --! that every real-`os` caller shares, and setProcSleep() does it
     --! outright, so a sandbox could make its function run inside whichever
     --! process next slept. A sandbox gets the read-only part: has(), list().
-    if name == "compat" then
+    if name == "compat" and ALLOWED_MODULE_NAMES.compat then
       local okC, cm = pcall(require, "compat")
       if not okC or type(cm) ~= "table" then
         error("sandbox: the compat layer is unavailable", 2)

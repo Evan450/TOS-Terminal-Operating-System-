@@ -21,39 +21,13 @@ local fs = nil
 local log = nil
 local proc = nil  -- optional, for restart supervisor
 
--- Default caps granted to a service whose rc.d script doesn't declare
--- any. Mirrors modules.lua defaults: session-bound fs + filtered component.
--- Services that need more (net, compat.io, load) must opt in explicitly.
-local DEFAULT_SERVICE_CAPS = {
-  ["fs.read"]  = true,
-  ["fs.write"] = true,
-  ["component"] = true,
-  ["net"] = true,  -- most rc.d services are network-facing (sshd, dhcpd)
-}
+local POLICY = require("kernel.policyload")("rc")
 
-local ALLOWED_SERVICE_CAPS = {
-  ["fs.read"] = true, ["fs.write"] = true, ["component"] = true,
-  ["compat.io"] = true, ["load"] = true, ["net"] = true,
-  -- "legacy" intentionally excluded.
-}
+local DEFAULT_SERVICE_CAPS = POLICY.SERVICE_DEFAULT_CAPS
 
--- #SEC CR-6 — kernel-tier services get a GATED require, not the raw one.
--- The previous code set `require = require` in the kernel env while the
--- comment claimed "the require check below already gates via the safe
--- list" — but no such gate existed. A kernel-tier service could
--- `require("kernel.process")` / `require("kernel.users")` /
--- `require("kernel.sandbox")` and drive the whole kernel. We allow ONLY
--- the modules a legitimate boot service needs (the shipped services use
--- just kernel.event + computer; net/users/etc. come via the read-only
--- `_TOS` table) and fail closed on everything else.
-local KERNEL_REQUIRE_ALLOW = {
-  ["computer"]         = true,
-  ["component"]        = true,
-  ["kernel.event"]     = true,
-  ["kernel.log"]       = true,
-  ["kernel.serialize"] = true,
-  ["kernel.config"]    = true,
-}
+local ALLOWED_SERVICE_CAPS = POLICY.SERVICE_CAPS
+
+local KERNEL_REQUIRE_ALLOW = POLICY.KERNEL_REQUIRE_ALLOW
 local function gatedKernelRequire(modName)
   if type(modName) ~= "string" then
     error("require: module name must be a string", 2)
@@ -290,16 +264,7 @@ local NEEDS = {
   },
 }
 
--- #SEC C2 — hardcoded allowlist of services that may run as `_kernel_`.
--- A regex match on the source can be made to fire from inside a comment
--- or string literal; without this list, any admin who drops a file into
--- /etc/rc.d gains code execution at root in the next boot.
-local KERNEL_SERVICE_ALLOWLIST = {
-  ["10-discoveryd"] = true,
-  ["20-chatrelay"]  = true,
-  ["20-fileshare"]  = true,
-  ["20-rshd"]       = true,
-}
+local KERNEL_SERVICE_ALLOWLIST = POLICY.KERNEL_SERVICES
 
 -- Returns true iff the literal `_kernel_` token appears outside of any
 -- comment in `src`. Cheap line-by-line scan that strips comments first.

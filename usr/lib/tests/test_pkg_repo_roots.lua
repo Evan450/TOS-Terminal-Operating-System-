@@ -20,6 +20,7 @@
 -- ╚══════════════════════════════════════════════════════════╝
 -- Run: lua usr/lib/tests/test_pkg_repo_roots.lua
 
+package.path = package.path .. ";tos/?.lua;TOS-Dev/tos/?.lua;../TOS-Dev/tos/?.lua"  -- kernel.policy
 local passed, failed = 0, 0
 local function test(name, expected, actual)
   if expected == actual then

@@ -49,13 +49,14 @@ local installed = {}
 -- is wired (early boot / standalone tests) the gate is inert.
 local ADMIN_TIER = 2
 local ROOT_TIER  = 3
+local POLICY = require("kernel.policyload")("pkg")
+
 local function adminGate(opts)
   if not users then return true end
   local session = (type(opts) == "table" and opts.session) or nil
   if not session and users.currentSession then session = users.currentSession() end
   if not session then return false, "Insufficient privileges: admin required" end
-  if session.isKernel or session.isLogin then return true end
-  if type(session.tier) == "number" and session.tier >= ADMIN_TIER then return true end
+  if POLICY.isAdmin(session) then return true end
   return false, "Insufficient privileges: admin required"
 end
 
@@ -852,35 +853,7 @@ local function trimCache(limit)
   for i = limit + 1, #names do pkgActive[names[i]] = nil; pkgUse[names[i]] = nil end
 end
 
--- #SEC — capability allowlist for package-run code. ONLY these facets may be
--- requested by a manifest; anything else (notably "legacy", which unlocks raw
--- os/io and is "do anything") is silently dropped. Mirrors the old
--- kernel.modules ALLOWED_MANIFEST_CAPS exactly so the pivot doesn't reopen the
--- hole that allowlist closed.
-local PKG_RUN_CAPS = {
-  ["fs.read"] = true, ["fs.write"] = true, component = true,
-  ["compat.io"] = true, load = true, net = true, swap = true,
-  -- Outbound access to the real world (internet card). Allowed to be
-  -- REQUESTED by a manifest — a package that fetches anything needs it —
-  -- but it is not implied by `component`, so an operator installing a game
-  -- is not also granting it the network. See sandbox.lua's threat note.
-  internet = true,
-  vault = true,  -- narrow passphrase-crypto surface (encrypt/decrypt/isEncrypted)
-  crypto = true, -- hash/hmac/ctEquals/random + the per-package machine secret
-  notify = true, -- raise a modal dialog box (post/result only; kernel.notify
-                 -- rate-limits it and stamps the source from the pkg name)
-  ipc = true,    -- "ipc:<name>": call one service's endpoint (kernel/ipc.lua).
-                 -- The service still decides what the caller's user may do.
-  ["peripheral.modem"] = true, ["peripheral.redstone"] = true,
-  ["peripheral.robot"] = true, ["peripheral.inventory"] = true,
-  ["peripheral.tape"] = true, ["peripheral.tractor"] = true,
-  ["peripheral.piston"] = true, ["peripheral.hologram"] = true,
-  -- OpenPrinter, for the first-party `printer` driver package. Paired with
-  -- sandbox.lua's `openprinter` gated component type — see the note there
-  -- for why this one mod type is coded rather than left to config.
-  ["peripheral.printer"] = true,
-  -- "legacy" deliberately excluded — a manifest can never opt into raw os/io.
-}
+local PKG_RUN_CAPS = POLICY.PKG_RUN_CAPS
 
 -- ============================================================
 -- OVERRIDES AS DATA, DEFAULTS AS CODE — /etc/pkg_caps.cfg

@@ -631,6 +631,44 @@ function M.adminOnly(S, o)
 end
 
 -- Pure: the human name of a tier number (0..3). Used by `why`.
+--! Flags and operands, for a command that takes paths. A word starting with
+--! `-` that the spec does not know is refused, and nothing happens. It used
+--! to fall through and become a file name, so `mkdir --parent a` made a
+--! directory called --parent and `rm --hrad x` looked for a file of that name.
+--! Refused rather than warned past, as pkg's verbs do: the flag was there to
+--! change what happens. `--` ends the flags, for a name that starts with a
+--! dash; a lone `-` is an operand.
+--!   spec["-r"] = "recursive"          sets opts.recursive
+--!   spec["-n"] = { "count" }          takes the next word as opts.count
+--!   spec.number = "count"             `-5` sets opts.count to 5
+--! Returns opts, operands, or nil when it refused. (test_getopt.lua)
+function M.getopt(args, spec, o, T, usage)
+  local opts, rest, i = {}, {}, 1
+  while i <= #args do
+    local a = tostring(args[i])
+    local want = spec[a]
+    if a == "--" then
+      for j = i + 1, #args do rest[#rest + 1] = args[j] end
+      break
+    elseif type(want) == "table" then
+      i = i + 1
+      opts[want[1]] = args[i]
+    elseif want then
+      opts[want] = true
+    elseif spec.number and a:match("^%-%d+$") then
+      opts[spec.number] = tonumber(a:sub(2))
+    elseif a:sub(1, 1) == "-" and #a > 1 then
+      o("Unknown option '" .. a .. "'. Nothing was done.", T and T.error)
+      if usage then o(usage, T and T.dim) end
+      return nil
+    else
+      rest[#rest + 1] = args[i]
+    end
+    i = i + 1
+  end
+  return opts, rest
+end
+
 function M.tierName(n)
   n = tonumber(n) or 0
   return ({ [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" })[n]

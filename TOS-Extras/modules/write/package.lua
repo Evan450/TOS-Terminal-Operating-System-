@@ -30,7 +30,7 @@
 -- modules/write/test_write.lua.
 return {
   name        = "write",
-  version     = "1.1.1",
+  version     = "1.1.2",
   kind        = "command",
   category    = "productivity",
   description = "Word processor: live page breaks, ink/paper cost, dot-command formatting, prints via the printer driver.",

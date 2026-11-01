@@ -92,6 +92,7 @@ local function lift(m)
     ipairs = ipairs, pairs = pairs, pcall = pcall, type = type, tostring = tostring,
     tonumber = tonumber, string = string, table = table, math = math,
     color = function() end,
+    t = function(_, english) return english end,
     print = function(s) out[#out + 1] = tostring(s or "") end,
     warn = function(s) out[#out + 1] = "WARN " .. tostring(s) end,
     fail = function(s) out[#out + 1] = "FAIL " .. tostring(s) end,

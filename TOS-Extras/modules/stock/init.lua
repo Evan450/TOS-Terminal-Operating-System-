@@ -277,7 +277,7 @@ local function monitor(o)
 
   -- Prompt for a number, inline on the status row.
   local function promptNumber(label, default)
-    local buf = tostring(default or "")
+    local buf, fresh = tostring(default or ""), true
     while true do
       D.fill(1, H - 1, W, 1, " ", T.fg, T.bg)
       D.set(2, H - 1, label .. " " .. buf .. "_", T.title, T.bg)
@@ -286,8 +286,7 @@ local function monitor(o)
         local k = keyName(e[3], e[4])
         if k == "enter" then return tonumber(buf) end
         if k == "esc" then return nil end
-        if k == "back" then buf = buf:sub(1, -2)
-        elseif k and k:match("^%d$") then buf = buf .. k end
+        buf, fresh = S.numberKey(buf, fresh, k)
       elseif e[1] == "interrupted" then
         return nil
       end
@@ -342,22 +341,27 @@ local function monitor(o)
           local n = promptNumber("Warn when '" .. row.label .. "' drops below:",
             row.min or 64)
           if n then
+            local oldMin, oldLabel = watches[row.key], labels[row.key]
             watches[row.key] = n
             labels[row.key] = row.label
             local ok, sErr = saveWatches(watches, labels)
             status = ok and ("Watching " .. row.label .. " (min " .. n .. ").")
               or ("Not saved (needs admin): " .. tostring(sErr))
+            -- A refused save changes nothing, on screen either.
+            if not ok then watches[row.key], labels[row.key] = oldMin, oldLabel end
             refresh()
           end
         end
       elseif k == "u" then
         local row = visible()[cursor]
         if row and watches[row.key] then
+          local oldMin, oldLabel = watches[row.key], labels[row.key]
           watches[row.key] = nil
           labels[row.key] = nil
           local ok, sErr = saveWatches(watches, labels)
           status = ok and ("Stopped watching " .. row.label .. ".")
             or ("Could not save: " .. tostring(sErr))
+          if not ok then watches[row.key], labels[row.key] = oldMin, oldLabel end
           refresh()
         end
       end

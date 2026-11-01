@@ -172,6 +172,18 @@ function S.totals(rows)
 end
 
 -- ============================================================
+-- The number prompt
+--- One key at a number prompt. It opens showing the current value, and the
+--- first digit REPLACES that rather than landing after it: typing 50 over a
+--- shown 64 used to set a threshold of 6450, with no sign anything was wrong.
+--- Backspace means the value is being edited, so digits append from there.
+--- Returns the new text and whether it is still untouched.
+function S.numberKey(buf, fresh, k)
+  if k == "back" then return buf:sub(1, -2), false end
+  if k and k:match("^%d$") then return (fresh and "" or buf) .. k, false end
+  return buf, fresh
+end
+
 -- Watch persistence (pure encode/decode; init.lua does the file I/O)
 -- ============================================================
 --- Watches are stored as plain lines so the file stays hand-editable and

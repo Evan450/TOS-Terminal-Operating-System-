@@ -203,7 +203,7 @@ do
   -- A keybind table only the base image could read would standardise
   -- nothing — the whole point is that a bundled package and the shell
   -- agree on ^Q and both follow an operator rebind.
-  local h = io.open("tos/kernel/sandbox.lua", "rb")
+  local h = io.open("tos/kernel/policy.lua", "rb")
   local src = h and h:read("*a") or ""
   if h then h:close() end
   ok("sandboxed code may require shell.keys",

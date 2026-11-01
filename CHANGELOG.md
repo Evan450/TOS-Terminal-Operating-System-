@@ -20,8 +20,13 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 98 rounds of work:
+Everything since v1.5.0, in 103 rounds of work:
 
+- [the installer speaks your language](#the-installer-speaks-your-language)
+- [a minimal install, for a 1 MB drive](#a-minimal-install-for-a-1-mb-drive)
+- [a flag a command doesn't know is refused](#a-flag-a-command-doesnt-know-is-refused)
+- [the security policy is one file, and fails closed](#the-security-policy-is-one-file-and-fails-closed)
+- [a recovery menu that runs before the kernel](#a-recovery-menu-that-runs-before-the-kernel)
 - [package commands speak while they run](#package-commands-speak-while-they-run)
 - [programs hear their own modem ports](#programs-hear-their-own-modem-ports)
 - [users can look, admins can power off](#users-can-look-admins-can-power-off)
@@ -120,6 +125,26 @@ Everything since v1.5.0, in 98 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### the installer speaks your language
+
+The installer now asks for a language first when the install disk has a catalog, and asks its questions in that language. The choice carries over, so TOS starts in it too. Russian is the first, with the installer's prompts translated.
+
+### a minimal install, for a 1 MB drive
+
+TOS now fits on a 1 MB drive. `install.lua --profile minimal` installs the command line and the core, about 520 KB, with 430 KB left once it's running, and the installer offers it when no drive can hold the full system. `verify` checks only what was installed. The full interface isn't part of it, and `tui` now says so plainly.
+
+### a flag a command doesn't know is refused
+
+`mkdir`, `rm`, `cp`, `grep`, `head`, `tail`, `compress` and `decompress` now refuse a flag they don't know, and do nothing. An unknown flag used to fall through as a file name, so `mkdir --parent a` made a directory called `--parent`. Put `--` first for a name that really starts with a dash.
+
+### the security policy is one file, and fails closed
+
+What TOS allows now lives in one readable file, `/tos/kernel/policy.lua`: what a sandboxed program may load and touch, what a package may ask for, and what a service gets. Nothing about the rules changed. If that file ever fails to load, TOS denies everything non-kernel and `doctor` reports it as an error, rather than opening anything up.
+
+### a recovery menu that runs before the kernel
+
+Press **R** at the POST screen for a recovery menu, which also opens by itself when a system file is missing. It can check every file against your `srm baseline`, restore what changed, start Safe Mode or Boot Settings, or boot another disk, all before the kernel loads. A machine that can't find a system file used to offer only a reboot or another disk, even when `srm` held a verified copy. Restoring needs a baseline taken with `srm baseline --full`.
 
 ### package commands speak while they run
 

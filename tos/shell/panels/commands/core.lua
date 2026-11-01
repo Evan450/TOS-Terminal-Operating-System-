@@ -791,13 +791,13 @@ return function(C, S, deps)
   C.mkdir = function(args, o)
     -- -p / --parents is OpenOS's spelling; it used to become a directory
     -- literally named "-p".
-    local parents, paths = false, {}
-    for _, a in ipairs(args) do
-      if a == "-p" or a == "--parents" then parents = true else paths[#paths + 1] = a end
-    end
-    if not paths[1] then o("Usage: mkdir [-p] <dir...>", T.dim); return end
+    local usage = "Usage: mkdir [-p] <dir...>"
+    local opts, paths = helpers.getopt(args, { ["-p"] = "parents", ["--parents"] = "parents" },
+      o, T, usage)
+    if not opts then return end
+    if not paths[1] then o(usage, T.dim); return end
     local made = false
-    for _, a in ipairs(paths) do made = mkdirOne(a, parents, o) or made end
+    for _, a in ipairs(paths) do made = mkdirOne(a, opts.parents, o) or made end
     if made then refreshBrowser() end
   end
 
@@ -822,16 +822,15 @@ return function(C, S, deps)
   -- Disk compression (data-card deflate/inflate). Writes a self-describing
   -- .tcz container; only actually compresses when a data card is present
   -- (otherwise it tells you, rather than storing something that saves nothing).
-  local function parseKeep(args)
-    local keep, files = false, {}
-    for _, a in ipairs(args) do
-      if a == "-k" or a == "--keep" then keep = true else files[#files + 1] = a end
-    end
-    return keep, files
+  local function parseKeep(args, o)
+    local opts, files = helpers.getopt(args, { ["-k"] = "keep", ["--keep"] = "keep" }, o, T)
+    if not opts then return nil end
+    return opts.keep, files
   end
 
   C.compress = function(args, o)
-    local keep, files = parseKeep(args)
+    local keep, files = parseKeep(args, o)
+    if not files then return end
     if not files[1] then o("Usage: compress <file> [out]   (-k keeps original)", T.dim); return end
     local cz = K.getCompress and K.getCompress()
     if not cz or not cz.available() then
@@ -863,7 +862,8 @@ return function(C, S, deps)
   end
 
   C.decompress = function(args, o)
-    local keep, files = parseKeep(args)
+    local keep, files = parseKeep(args, o)
+    if not files then return end
     if not files[1] then o("Usage: decompress <file.tcz> [out]   (-k keeps original)", T.dim); return end
     local src = rp(files[1])
     if not canRead(src, o) then return end
@@ -1013,14 +1013,13 @@ return function(C, S, deps)
     -- recursive delete of directories; without it, rm refuses to touch
     -- a non-empty directory so `rm /etc` doesn't nuke /etc in one go.
     -- --hard skips the trash (FEAT-1) and unlinks immediately.
-    local recursive, hard = false, false
-    local targets = {}
-    for _, a in ipairs(args) do
-      if a == "-r" or a == "-rf" or a == "-R" then recursive = true
-      elseif a == "--hard" or a == "-H" then hard = true
-      else targets[#targets + 1] = a end
-    end
-    if #targets == 0 then o("Usage: rm [-r] [--hard] <path...>", T.dim); return end
+    local usage = "Usage: rm [-r] [--hard] <path...>"
+    local opts, targets = helpers.getopt(args, {
+      ["-r"] = "recursive", ["-rf"] = "recursive", ["-R"] = "recursive",
+      ["--hard"] = "hard", ["-H"] = "hard" }, o, T, usage)
+    if not opts then return end
+    local recursive, hard = opts.recursive or false, opts.hard or false
+    if #targets == 0 then o(usage, T.dim); return end
     --! Every path given is removed, each on its own terms: a guard or a
     --! trash refusal on one says so and moves to the next. This took
     --! targets[1] and dropped the rest without a word -- `rm a b c` said
@@ -1402,7 +1401,10 @@ return function(C, S, deps)
 
   C.cp = function(args, o)
     -- -r is what a hand types for a directory, and cp does that anyway.
-    if args[1] == "-r" or args[1] == "-R" then table.remove(args, 1) end
+    local opts, paths = helpers.getopt(args, { ["-r"] = "r", ["-R"] = "r" }, o, T,
+      "Usage: cp <src> <dst>")
+    if not opts then return end
+    args = paths
     if not args[2] then o("Usage: cp <src> <dst>", T.dim); return end
     local src, dst = rp(args[1]), rp(args[2])
     -- #REV — Unix semantics: copying onto a directory copies INTO it.
@@ -1537,8 +1539,11 @@ return function(C, S, deps)
   end
 
   C.grep = function(args, o)
-    local fold = args[1] == "-i"
-    if fold then table.remove(args, 1) end
+    local opts, words = helpers.getopt(args, { ["-i"] = "fold" }, o, T,
+      "Usage: grep [-i] <pattern> <file...>   (-- before a pattern that starts with -)")
+    if not opts then return end
+    local fold = opts.fold
+    args = words
     if not args[2] then o("Usage: grep [-i] <pattern> <file...>", T.dim); return end
     local pat = fold and args[1]:lower() or args[1]
     -- With several files each hit says which, as every grep does. The rest of
@@ -1587,17 +1592,11 @@ return function(C, S, deps)
   -- or a trailing count (what they used to take, kept). They took their
   -- first word as the file, so `head -n 2 log` answered "Cannot read: -n".
   -- (test_head_tail_args.lua)
-  local function linesArgs(args)
-    local file, n = nil, 10
-    local i = 1
-    while i <= #args do
-      local a = args[i]
-      if a == "-n" and args[i + 1] then n = tonumber(args[i + 1]) or n; i = i + 1
-      elseif a:match("^%-%d+$") then n = tonumber(a:sub(2))
-      elseif not file then file = a
-      elseif tonumber(a) then n = tonumber(a) end
-      i = i + 1
-    end
+  local function linesArgs(args, o)
+    local opts, words = helpers.getopt(args, { ["-n"] = { "n" }, number = "n" }, o, T)
+    if not opts then return false end
+    local file, n = words[1], tonumber(opts.n) or 10
+    if words[2] and tonumber(words[2]) then n = tonumber(words[2]) end
     return file, n
   end
   -- Why a read failed, in words: "Cannot read: x" alone hid that the file
@@ -1608,7 +1607,8 @@ return function(C, S, deps)
   end
 
   C.head = function(args, o)
-    local file, n = linesArgs(args)
+    local file, n = linesArgs(args, o)
+    if file == false then return end
     if not file then o("Usage: head [-n N] <file>", T.dim); return end
     local p = rp(file)
     if not canRead(p, o) then return end
@@ -1626,7 +1626,8 @@ return function(C, S, deps)
   -- "just use more": `watch tail /var/log/kernel.log` is how you follow the
   -- log, and without this the obvious phrasing of that could not be typed.
   C.tail = function(args, o)
-    local file, n = linesArgs(args)
+    local file, n = linesArgs(args, o)
+    if file == false then return end
     if not file then o("Usage: tail [-n N] <file>", T.dim); return end
     local p = rp(file)
     if not canRead(p, o) then return end

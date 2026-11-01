@@ -882,6 +882,134 @@ end   -- drawBootHeader
 
 drawBootHeader()
 
+--! THE WAY OUT OF A BOOT LOOP. The EEPROM boots its saved disk without
+--! asking, so a disk whose install is broken was booted, refused below,
+--! rebooted and booted again -- recoverable only by moving the disk to
+--! another machine or reflashing from one. From this screen the operator
+--! can pick another bootable disk (the TOS installer floppy, an OpenOS
+--! disk) and the EEPROM is pointed at it: the same commit the BIOS's own
+--! "Save it? Y" makes, chosen with two deliberate keys at the console.
+--! Any other key reboots, as before. The BIOS's own halts (K4 and the
+--! like) loop the same way and need the EEPROM's own escape; that is the
+--! split-BIOS item, not this. Returns the address chosen, or nil.
+--! (test_boot_elsewhere.lua)
+local function bootElsewhere(comp, skip, say, pull, setBoot)   --[[TEST-EXTRACT]]
+  -- Only a real key: component and network signals would otherwise act
+  -- for the operator (#118/#99/#101).
+  local function key()
+    while true do
+      local ev, _, ch = pull()
+      if ev == "key_down" then return tonumber(ch) or 0 end
+    end
+  end
+  if type(setBoot) ~= "function" then
+    say("Press any key to reboot...")
+    key()
+    return nil
+  end
+  -- What the BIOS can boot: a filesystem with an /init.lua, or a raw
+  -- drive carrying a TBFS superblock. Never the disk that just failed.
+  local function scan()
+    local out = {}
+    local function add(addr, px)
+      local okL, lbl = pcall(px.getLabel)
+      out[#out + 1] = { addr = addr, label = (okL and type(lbl) == "string") and lbl or "" }
+    end
+    for addr in comp.list("filesystem") do
+      if not skip[addr] then
+        local okP, px = pcall(comp.proxy, addr)
+        if okP and px then
+          local okE, has = pcall(px.exists, "/init.lua")
+          if okE and has then add(addr, px) end
+        end
+      end
+    end
+    for addr in comp.list("drive", true) do
+      if not skip[addr] then
+        local okP, px = pcall(comp.proxy, addr)
+        if okP and px and px.readSector then
+          local okS, sec = pcall(px.readSector, 1)
+          if okS and type(sec) == "string" and sec:sub(1, 4) == "TBFS" then add(addr, px) end
+        end
+      end
+    end
+    return out
+  end
+  say("Any key reboots. B: boot another disk instead.")
+  local ch = key()
+  while ch == 66 or ch == 98 do                    -- B / b
+    local disks = scan()
+    if #disks == 0 then
+      say("No other bootable disk. Insert one (the TOS")
+      say("installer floppy will do), then press B.")
+    else
+      for i = 1, math.min(#disks, 9) do
+        say(" " .. i .. ") " .. disks[i].addr:sub(1, 8) .. " " .. disks[i].label:sub(1, 30))
+      end
+      say("Its number boots it from now on. B rescans.")
+    end
+    say("Any other key reboots.")
+    ch = key()
+    local n = ch - 48
+    if n >= 1 and n <= 9 and disks[n] then
+      setBoot(disks[n].addr)
+      say("Boot disk set to " .. disks[n].addr:sub(1, 8) .. ". Rebooting.")
+      return disks[n].addr
+    end
+  end
+  return nil
+end                                                              --[[/TEST-EXTRACT]]
+
+--! The way to another disk, as the menu and the failure screen both use it.
+--! Whatever is chosen, this ends in a reboot.
+local function otherDisk()
+  local skip = {}
+  if bootFS.address then skip[bootFS.address] = true end
+  if _G._TBFS_BOOT_DRIVE then skip[_G._TBFS_BOOT_DRIVE] = true end
+  pcall(function() skip[computer.tmpAddress()] = true end)
+  pcall(bootElsewhere, component, skip,
+    function(t) earlyPrint(t, tc(0xAAAAAA)) end,
+    function() return computer.pullSignal(math.huge) end,
+    computer.setBootAddress)
+  computer.shutdown(true)
+end
+
+--! The recovery menu (kernel/recovery.lua). Returns its action, or nil when
+--! it could not run, and the caller then does what it did before the menu
+--! existed. Nothing in here is allowed to stop a boot.
+local function runRecovery(failed, why)
+  if not gpu then return nil end
+  local okR, rec = pcall(require, "kernel.recovery")
+  if not okR or type(rec) ~= "table" then return nil end
+  local roles = { title = 0x00FFFF, value = 0xFFFFFF, dim = 0xAAAAAA,
+    ok = 0x00FF00, warn = 0xFFAA00 }
+  local okM, action = pcall(rec.run, {
+    W = screenW, H = screenH, px = bootFS, component = component,
+    failed = failed, why = why, otherDisk = otherDisk,
+    clear = earlyClear,
+    color = function(role) return tc(roles[role] or 0xFFFFFF) end,
+    set = function(x, y, text, fg)
+      gpu.setForeground(fg or 0xFFFFFF)
+      gpu.set(x, y, text)
+    end,
+    tick = function() computer.pullSignal(0) end,
+    readKey = function()
+      while true do
+        local e, _, ch, code = computer.pullSignal(math.huge)
+        if e == "key_down" then return e, ch, code end
+      end
+    end,
+  })
+  if not okM then
+    earlyClear()
+    earlyPrint("Recovery stopped: " .. tostring(action), tc(0xFF6600))
+    return nil
+  end
+  if action == "reboot" then computer.shutdown(true) end
+  if action == "off" then computer.shutdown(false) end
+  return action
+end
+
 -- ── System Configuration POST screen + DEL-to-setup (#3/#5) ──
 -- Shown briefly when showConfig is on (default) — the TOS-ified AMIBIOS
 -- screen: installed hardware + tiers. Press DEL during the window to enter
@@ -936,23 +1064,31 @@ if ((bootCfg and bootCfg.showConfig) or verbosity == "verbose") and gpu then
     local after = sysinfo.render(inv, { W = screenW, H = screenH, color = postColor,
       set = gset, title = cfgTitle })
     gset(2, math.min(screenH, (after or screenH) + 1),
-      "Press DEL for Boot Settings, S for Safe Mode (once)...", tc(0xFFAA00))
+      "DEL Boot Settings, S Safe Mode (once), R Recovery...", tc(0xFFAA00))
 
     -- Wait up to 3s for a key. DEL (code 211) opens setup; S boots Safe
     -- Mode for THIS session only (config untouched — the operator's way
     -- to get a trustworthy shell after installing something that breaks
-    -- boot, without editing anything first); any other key skips ahead;
-    -- non-key signals are ignored until the deadline.
+    -- boot, without editing anything first); R opens the recovery menu;
+    -- any other key skips ahead; non-key signals are ignored until the
+    -- deadline.
     local enterSetup = false
     local safeOnce = false
+    local recover = false
     local deadline = computer.uptime() + 3
     while computer.uptime() < deadline do
       local ev, _, ch, code = computer.pullSignal(deadline - computer.uptime())
       if ev == "key_down" then
         if code == 211 then enterSetup = true
-        elseif ch == 115 or ch == 83 then safeOnce = true end
+        elseif ch == 115 or ch == 83 then safeOnce = true
+        elseif ch == 114 or ch == 82 then recover = true end
         break
       end
+    end
+    if recover then
+      local action = runRecovery(false)
+      if action == "safe" then safeOnce = true
+      elseif action == "settings" then enterSetup = true end
     end
     earlyClear()
     -- The POST screen owned the whole display; put the branded header back
@@ -1127,83 +1263,6 @@ for _, path in ipairs(criticalFiles) do
   end
 end
 
---! THE WAY OUT OF A BOOT LOOP. The EEPROM boots its saved disk without
---! asking, so a disk whose install is broken was booted, refused below,
---! rebooted and booted again -- recoverable only by moving the disk to
---! another machine or reflashing from one. From this screen the operator
---! can pick another bootable disk (the TOS installer floppy, an OpenOS
---! disk) and the EEPROM is pointed at it: the same commit the BIOS's own
---! "Save it? Y" makes, chosen with two deliberate keys at the console.
---! Any other key reboots, as before. The BIOS's own halts (K4 and the
---! like) loop the same way and need the EEPROM's own escape; that is the
---! split-BIOS item, not this. Returns the address chosen, or nil.
---! (test_boot_elsewhere.lua)
-local function bootElsewhere(comp, skip, say, pull, setBoot)   --[[TEST-EXTRACT]]
-  -- Only a real key: component and network signals would otherwise act
-  -- for the operator (#118/#99/#101).
-  local function key()
-    while true do
-      local ev, _, ch = pull()
-      if ev == "key_down" then return tonumber(ch) or 0 end
-    end
-  end
-  if type(setBoot) ~= "function" then
-    say("Press any key to reboot...")
-    key()
-    return nil
-  end
-  -- What the BIOS can boot: a filesystem with an /init.lua, or a raw
-  -- drive carrying a TBFS superblock. Never the disk that just failed.
-  local function scan()
-    local out = {}
-    local function add(addr, px)
-      local okL, lbl = pcall(px.getLabel)
-      out[#out + 1] = { addr = addr, label = (okL and type(lbl) == "string") and lbl or "" }
-    end
-    for addr in comp.list("filesystem") do
-      if not skip[addr] then
-        local okP, px = pcall(comp.proxy, addr)
-        if okP and px then
-          local okE, has = pcall(px.exists, "/init.lua")
-          if okE and has then add(addr, px) end
-        end
-      end
-    end
-    for addr in comp.list("drive", true) do
-      if not skip[addr] then
-        local okP, px = pcall(comp.proxy, addr)
-        if okP and px and px.readSector then
-          local okS, sec = pcall(px.readSector, 1)
-          if okS and type(sec) == "string" and sec:sub(1, 4) == "TBFS" then add(addr, px) end
-        end
-      end
-    end
-    return out
-  end
-  say("Any key reboots. B: boot another disk instead.")
-  local ch = key()
-  while ch == 66 or ch == 98 do                    -- B / b
-    local disks = scan()
-    if #disks == 0 then
-      say("No other bootable disk. Insert one (the TOS")
-      say("installer floppy will do), then press B.")
-    else
-      for i = 1, math.min(#disks, 9) do
-        say(" " .. i .. ") " .. disks[i].addr:sub(1, 8) .. " " .. disks[i].label:sub(1, 30))
-      end
-      say("Its number boots it from now on. B rescans.")
-    end
-    say("Any other key reboots.")
-    ch = key()
-    local n = ch - 48
-    if n >= 1 and n <= 9 and disks[n] then
-      setBoot(disks[n].addr)
-      say("Boot disk set to " .. disks[n].addr:sub(1, 8) .. ". Rebooting.")
-      return disks[n].addr
-    end
-  end
-  return nil
-end                                                              --[[/TEST-EXTRACT]]
 
 if #missingFiles > 0 then
   earlyPrint("MISSING " .. #missingFiles .. " FILES:", tc(0xFF0000))
@@ -1211,15 +1270,11 @@ if #missingFiles > 0 then
     earlyPrint("  " .. path, tc(0xFF6600))
   end
   computer.beep(400, 0.5)
-  local skip = {}
-  if bootFS.address then skip[bootFS.address] = true end
-  if _G._TBFS_BOOT_DRIVE then skip[_G._TBFS_BOOT_DRIVE] = true end
-  pcall(function() skip[computer.tmpAddress()] = true end)
-  pcall(bootElsewhere, component, skip,
-    function(t) earlyPrint(t, tc(0xAAAAAA)) end,
-    function() return computer.pullSignal(math.huge) end,
-    computer.setBootAddress)
-  computer.shutdown(true)
+  -- The menu first: srm may hold a verified copy of what is gone, which the
+  -- old screen could only reboot past. Should the menu itself be among the
+  -- missing, or fail to load, this is the screen there always was.
+  runRecovery(true, #missingFiles .. " system file(s) are missing.")
+  otherDisk()
 end
 
 if verbosity ~= "silent" then

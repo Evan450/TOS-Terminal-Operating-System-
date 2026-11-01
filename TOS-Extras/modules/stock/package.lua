@@ -29,7 +29,7 @@
 -- plain Q did. test_stock.lua runs the real command and feeds it the key.
 return {
   name        = "stock",
-  version     = "1.0.2",
+  version     = "1.0.3",
   kind        = "command",
   category    = "automation",
   description = "Inventory monitor: totals every adjacent chest, warns on low stock.",

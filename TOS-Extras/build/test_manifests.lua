@@ -14,6 +14,7 @@
 -- ╚══════════════════════════════════════════════════════════╝
 -- Run: lua build/test_manifests.lua   (from the TOS-Extras root)
 
+package.path = package.path .. ";../TOS-Dev/tos/?.lua;tos/?.lua"  -- kernel.policy
 local passed, failed = 0, 0
 local function test(name, cond)
   if cond then passed = passed + 1; print("  PASS: " .. name)

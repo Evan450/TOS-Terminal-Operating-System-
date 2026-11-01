@@ -53,6 +53,35 @@ local function fail(msg)
   color(0xFF0000); print("  X " .. msg); color(0xFFFFFF)
 end
 
+--! The installer speaks the catalogs the OS ships. /usr/lang/<code>.lang is
+--! the format a translator already knows: a missing key keeps its English
+--! default, so a partial catalog is a valid one. It is read here as data, in
+--! an empty environment, off the disk this whole installer came from. Only
+--! the questions and the headings go through it: the rest is detail, and
+--! someone who can answer the questions gets through the install.
+local catalog = {}
+local function t(key, english) return catalog[key] or english end
+
+--- The languages on a disk, English first. (test_install_language.lua)
+local function readCatalogs(dir, list, read)   --[[TEST-EXTRACT]]
+  local out = { { code = "en", name = "English" } }
+  local names = {}
+  for name in list(dir) do names[#names + 1] = name end
+  table.sort(names)
+  for _, name in ipairs(names) do
+    local code = name:match("^(%a+)%.lang$")
+    local src = code and read(dir .. "/" .. name)
+    local fn = src and load(src, "=" .. name, "t", {})
+    local okL, data = false, nil
+    if fn then okL, data = pcall(fn) end
+    if okL and type(data) == "table" and type(data.strings) == "table" then
+      local meta = type(data.meta) == "table" and data.meta or {}
+      out[#out + 1] = { code = code, name = tostring(meta.name or code), strings = data.strings }
+    end
+  end
+  return out
+end                                            --[[/TEST-EXTRACT]]
+
 local function ask(question, options, default)
   color(0xFFFF00)
   io.write(question)
@@ -501,19 +530,57 @@ end                                  --[[/TEST-EXTRACT]]
 --- thing got a confusing warning instead of help.
 local function classifyArgs(args)   --[[TEST-EXTRACT]]
   local out = { positional = {} }
-  for _, a in ipairs(args) do
+  local i = 1
+  while i <= #args do
+    local a = args[i]
     if a == "-h" or a == "--help" or a == "-?" or a == "/?" then
       out.help = true
     elseif a == "--configure" then
       out.configure = true
+    elseif a == "--profile" then
+      i = i + 1
+      if args[i] == "minimal" or args[i] == "full" then out.profile = args[i]
+      else out.unknown = out.unknown or ("--profile " .. tostring(args[i])) end
     elseif type(a) == "string" and a:sub(1, 1) == "-" then
       out.unknown = out.unknown or a
     else
       out.positional[#out.positional + 1] = a
     end
+    i = i + 1
   end
   return out
 end                                 --[[/TEST-EXTRACT]]
+
+--! What a profile installs. `minimal` is the floor: the manifest's floor =
+--! true entries, closed under require (test_manifest_floor.lua) and booted
+--! by build/floorboot.py. A command line and no panels, on a disk a full
+--! install cannot fit. There is no middle profile: the panels and their
+--! commands are most of the difference, and nothing else is big enough to be
+--! worth a third list to keep closed. (test_install_profile.lua)
+local function forProfile(manifest, profile)   --[[TEST-EXTRACT]]
+  if profile ~= "minimal" then return manifest end
+  local kept = {}
+  for _, entry in ipairs(manifest) do
+    if entry.floor then kept[#kept + 1] = entry end
+  end
+  return kept
+end                                            --[[/TEST-EXTRACT]]
+
+--- The manifest as a trimmed install should hold it, or `verify` reports
+--- everything the profile left out as missing. Data, and nothing but.
+local function manifestText(entries)           --[[TEST-EXTRACT]]
+  local lines = { "-- Written by install.lua: the files this profile installed.",
+    "return {" }
+  for _, e in ipairs(entries) do
+    local parts = { string.format("path = %q", e.path),
+      "critical = " .. tostring(e.critical == true) }
+    if e.floor then parts[#parts + 1] = "floor = true" end
+    if e.hash then parts[#parts + 1] = string.format("hash = %q", e.hash) end
+    lines[#lines + 1] = "  { " .. table.concat(parts, ", ") .. " },"
+  end
+  lines[#lines + 1] = "}"
+  return table.concat(lines, "\n") .. "\n"
+end                                            --[[/TEST-EXTRACT]]
 
 -- Every path the mounted drives are reachable at, by component address.
 -- OpenOS's fs.mounts() yields (proxy, path); findInstallDisk below read the
@@ -610,7 +677,7 @@ local function chooseTarget(srcDisk, manifest)
   local default, fits = rankTargets(cands)
   if #cands == 1 and default == 1 then return cands[1] end
 
-  color(0x00AAFF); print("--- Where should TOS go? ---"); color(0xFFFFFF)
+  color(0x00AAFF); print(t("install.where", "--- Where should TOS go? ---")); color(0xFFFFFF)
   for _, c in ipairs(cands) do
     if c.isBoot and c.free and c.free < c.need then
       warn(string.format("The boot drive has %s free; TOS needs %s.",
@@ -642,7 +709,7 @@ local function chooseTarget(srcDisk, manifest)
   end
   print()
   while true do
-    local pick = ask("Install on which drive? (0 = cancel)", nil, tostring(default))
+    local pick = ask(t("install.which_drive", "Install on which drive? (0 = cancel)"), nil, tostring(default))
     local n = tonumber(pick)
     if n == 0 then return nil end
     if n and cands[n] then
@@ -718,7 +785,7 @@ local function copyFromDisk(srcDisk, root, preloaded)
   -- on the boot proxy creates parents but io.open does not, so we walk
   -- the manifest paths and ensure the dirname of each is present
   -- before the copy.
-  color(0x00AAFF); print("--- Creating directories ---"); color(0xFFFFFF)
+  color(0x00AAFF); print(t("install.dirs", "--- Creating directories ---")); color(0xFFFFFF)
   local dirSeen = {}
   for _, entry in ipairs(manifest) do
     local dir = entry.path:match("^(.+)/[^/]+$")
@@ -738,7 +805,7 @@ local function copyFromDisk(srcDisk, root, preloaded)
 
   -- Copy every manifest entry. Track failures explicitly — on any
   -- failure the BIOS flash gate later refuses to proceed.
-  color(0x00AAFF); print("--- Copying system files ---"); color(0xFFFFFF)
+  color(0x00AAFF); print(t("install.copying", "--- Copying system files ---")); color(0xFFFFFF)
   local copied, failed = 0, 0
   local errs = {}
   for _, entry in ipairs(manifest) do
@@ -767,7 +834,7 @@ local function copyFromDisk(srcDisk, root, preloaded)
   -- Post-copy size verification. Catches truncated writes that
   -- copyFileChunked thought succeeded.
   if failed == 0 then
-    color(0x00AAFF); print("--- Verifying copy ---"); color(0xFFFFFF)
+    color(0x00AAFF); print(t("install.verifying", "--- Verifying copy ---")); color(0xFFFFFF)
     local missing, sized = verifyCopy(srcDisk, manifest, root)
     if #missing == 0 and #sized == 0 then
       ok("All " .. #manifest .. " files verified")
@@ -945,16 +1012,16 @@ local function runQuestionnaire(hw)
   local cfg = {}
 
   color(0x00AAFF)
-  print("--- Device Setup ---")
+  print(t("install.device", "--- Device Setup ---"))
   color(0xFFFFFF)
   print()
-  print("What type of device is this?")
+  print(t("install.device_q", "What type of device is this?"))
   color(0xAAAAAA)
-  print("  1. Computer  (desktop, tower with screen)")
-  print("  2. Tablet    (portable, battery-powered)")
-  print("  3. Server    (rack blade, typically headless)")
+  print(t("install.device_1", "  1. Computer  (desktop, tower with screen)"))
+  print(t("install.device_2", "  2. Tablet    (portable, battery-powered)"))
+  print(t("install.device_3", "  3. Server    (rack blade, typically headless)"))
   color(0xFFFFFF)
-  local dc = ask("Choice", {"1", "2", "3"}, "1")
+  local dc = ask(t("install.choice", "Choice"), {"1", "2", "3"}, "1")
   if dc == "2" then
     cfg.device = "tablet"
     cfg.showBattery = true
@@ -992,22 +1059,22 @@ local function runQuestionnaire(hw)
   print()
 
   math.randomseed(math.floor(computer.uptime() * 1000) + computer.freeMemory())
-  cfg.hostname = ask("Hostname", nil, "tos-" .. string.format("%04x", math.random(0, 0xFFFF)))
+  cfg.hostname = ask(t("install.hostname", "Hostname"), nil, "tos-" .. string.format("%04x", math.random(0, 0xFFFF)))
   ok("Hostname: " .. cfg.hostname)
   print()
 
   -- Security
   color(0x00AAFF)
-  print("--- Security ---")
+  print(t("install.security", "--- Security ---"))
   color(0xFFFFFF)
   print()
-  print("Security level:")
+  print(t("install.security_q", "Security level:"))
   color(0xAAAAAA)
-  print("  1. Standard  (login + lockout after 5 failures)")
-  print("  2. Relaxed   (login, no lockout)")
-  print("  3. Open      (allows guest access)")
+  print(t("install.security_1", "  1. Standard  (login + lockout after 5 failures)"))
+  print(t("install.security_2", "  2. Relaxed   (login, no lockout)"))
+  print(t("install.security_3", "  3. Open      (allows guest access)"))
   color(0xFFFFFF)
-  local sc = ask("Choice", {"1", "2", "3"}, "1")
+  local sc = ask(t("install.choice", "Choice"), {"1", "2", "3"}, "1")
   if sc == "3" then
     cfg.guestAccess = true; cfg.autoLockout = false; cfg.maxAttempts = 999
     ok("Security: Open")
@@ -1023,12 +1090,12 @@ local function runQuestionnaire(hw)
   -- Network
   if hw.hasModem or hw.hasTunnel then
     color(0x00AAFF)
-    print("--- Network ---")
+    print(t("install.network", "--- Network ---"))
     color(0xFFFFFF)
     print()
-    cfg.encryptComms = confirm("Encrypt network communications?")
+    cfg.encryptComms = confirm(t("install.encrypt", "Encrypt network communications?"))
     ok("Encryption: " .. (cfg.encryptComms and "on" or "off"))
-    local port = ask("Listen port", nil, "42")
+    local port = ask(t("install.port", "Listen port"), nil, "42")
     cfg.listenPort = tonumber(port) or 42
     ok("Port: " .. cfg.listenPort)
     print()
@@ -1049,7 +1116,7 @@ local function runQuestionnaire(hw)
     print()
   end
 
-  cfg.verbose = confirm("Verbose boot? (shows debug messages)")
+  cfg.verbose = confirm(t("install.verbose", "Verbose boot? (shows debug messages)"))
   print()
 
   return cfg
@@ -1102,7 +1169,7 @@ if parsed.help or parsed.unknown then
   print("offers to flash the TOS BIOS.")
   print()
   print("Usage:")
-  print("  install.lua [source-dir]")
+  print("  install.lua [source-dir] [--profile minimal|full]")
   print("  install.lua --configure")
   print("  install.lua --help")
   print()
@@ -1116,6 +1183,10 @@ if parsed.help or parsed.unknown then
   print()
   print("source-dir  a directory holding a TOS release, for")
   print("            scripted installs. Normally found by itself.")
+  print()
+  print("--profile   full is everything. minimal is the command line")
+  print("            and the core, for a small drive. If no drive")
+  print("            can hold the full system it offers this anyway.")
   print()
   print("--configure  only change the settings of a TOS that")
   print("            is already installed, on whichever drive")
@@ -1135,6 +1206,28 @@ printHardwareReport(hw)
 local srcDisk = (not parsed.configure) and findInstallDisk(parsed.positional[1]) or nil
 local diskMode = srcDisk ~= nil
 
+-- Asked only when there is a choice, and before anything that needs reading.
+local language
+if diskMode and fs.exists(srcDisk .. "/usr/lang") then
+  local langs = readCatalogs(srcDisk .. "/usr/lang", fs.list, function(path)
+    local h = io.open(path, "r")
+    if not h then return nil end
+    local text = h:read("*a")
+    h:close()
+    return text
+  end)
+  if #langs > 1 then
+    print()
+    for i, l in ipairs(langs) do print("  " .. i .. ". " .. l.name) end
+    local pick = langs[tonumber(ask("Language", nil, "1")) or 1] or langs[1]
+    if pick.strings then
+      catalog = pick.strings
+      language = pick.code
+    end
+    print()
+  end
+end
+
 -- The drive TOS goes on: "" is the drive OpenOS booted from (root "/"),
 -- anything else is the mount point of another drive (set in disk mode).
 local TARGET, targetDrive = "", nil
@@ -1144,6 +1237,8 @@ local preloadedManifest
 -- Set true only when the file copy AND the post-copy size verification
 -- both pass. Gates the BIOS flash later — no opt-out.
 local copyOk = false
+-- full unless asked, or unless the only way TOS fits is the minimal system.
+local profile = parsed.profile
 -- Clean-install intent: when set, shed OpenOS's /bin + /lib at the very
 -- end so TOS doesn't inherit the bootstrap host's filesystem. Captured
 -- only in disk mode, only after a verified copy, only with leftovers present.
@@ -1155,9 +1250,24 @@ if diskMode then
 
   -- Which drive? Asked only when there is a choice to make (see
   -- chooseTarget); a one-drive machine goes straight on as before.
-  preloadedManifest = loadManifest(srcDisk)
+  local wholeManifest = loadManifest(srcDisk)
+  preloadedManifest = wholeManifest and forProfile(wholeManifest, profile)
   local chooseWhy
   targetDrive, chooseWhy = chooseTarget(srcDisk, preloadedManifest)
+  -- Nothing fits the full system. The minimal one may, and "get a bigger
+  -- drive" should not be the whole answer on a machine with a Tier 1 disk.
+  if not targetDrive and chooseWhy == "space" and not profile and wholeManifest then
+    print()
+    color(0x00AAFF); print("--- A smaller install ---"); color(0xFFFFFF)
+    print("The minimal system is the command line and the core of TOS, with")
+    print("no panels, and takes about 520 KB.")
+    if confirm(t("install.minimal_q", "Try the minimal system instead?")) then
+      profile = "minimal"
+      preloadedManifest = forProfile(wholeManifest, profile)
+      print()
+      targetDrive, chooseWhy = chooseTarget(srcDisk, preloadedManifest)
+    end
+  end
   if not targetDrive then
     print()
     if chooseWhy ~= "space" then print("Cancelled.") end
@@ -1179,7 +1289,7 @@ if diskMode then
   end
   color(0xFFFFFF)
   print()
-  if not confirm("Continue?") then print("Cancelled."); return end
+  if not confirm(t("install.continue", "Continue?")) then print("Cancelled."); return end
   print()
 
   -- #SEC H3 — refuse to overwrite an existing install without typed
@@ -1196,6 +1306,23 @@ if diskMode then
   local copyWhy
   copyOk, copyWhy = copyFromDisk(srcDisk, TARGET, preloadedManifest)
   if copyWhy == "space" then print(); return end
+  -- After the copy is verified, because that check compares this file with
+  -- the source's. Temp first: a failed write must not take the one that is
+  -- there with it.
+  if copyOk and profile == "minimal" then
+    local path = TARGET .. "/tos/system_manifest.lua"
+    local h = io.open(path .. ".tmp", "w")
+    local wrote = h and h:write(manifestText(preloadedManifest))
+    if h then h:close() end
+    if wrote and fs.size(path .. ".tmp") > 0 then
+      fs.remove(path)
+      fs.rename(path .. ".tmp", path)
+      ok("Minimal system: " .. #preloadedManifest .. " files")
+    else
+      warn("Could not trim the manifest, so `verify` will list the rest as missing.")
+    end
+    print()
+  end
   if not copyOk then
     fail("Install file copy/verify did NOT fully succeed.")
     warn("BIOS flash will be skipped to avoid bricking the boot.")
@@ -1231,7 +1358,7 @@ else
   TARGET = targetDrive.prefix
   print("Configuring the TOS on " .. describeTarget(targetDrive) .. ".")
   print()
-  if not confirm("Continue?") then print("Cancelled."); return end
+  if not confirm(t("install.continue", "Continue?")) then print("Cancelled."); return end
   print()
 end
 
@@ -1241,6 +1368,7 @@ end
 -- install and no /etc/tos.cfg. Reordered so the point-of-no-return
 -- (BIOS flash) is the very last action.
 local cfg = runQuestionnaire(hw)
+cfg.language = language
 
 -- Summary
 color(0x00AAFF)
@@ -1347,14 +1475,14 @@ if diskMode and copyOk then
   if targetDrive and not targetDrive.isBoot and not switchedBoot then
     print("TOS is installed, but this machine still boots from another drive.")
   else
-    print("TOS is installed! Reboot to start.")
+    print(t("install.done", "TOS is installed! Reboot to start."))
   end
 elseif diskMode then
   print("Partial install — re-run from the install disk to retry.")
 else
   print("Configuration applied!")
 end
-print("First boot asks you to set the root password before anything else.")
+print(t("install.first_boot", "First boot asks you to set the root password before anything else."))
 if cleanInstall then
   color(0xFFFF00)
   print("Clean install: reboot now — OpenOS libraries were removed.")
@@ -1362,6 +1490,6 @@ if cleanInstall then
 end
 color(0xFFFFFF)
 print()
-if confirm("Reboot now?") then
+if confirm(t("install.reboot_q", "Reboot now?")) then
   computer.shutdown(true)
 end

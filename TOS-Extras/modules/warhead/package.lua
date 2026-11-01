@@ -21,7 +21,7 @@
 -- so `pkg info` says so, and why this file says it does not use it.
 return {
   name        = "warhead",
-  version     = "1.0.2",
+  version     = "1.0.3",
   kind        = "command",
   category    = "hbm",
   description = "HBM Nuclear Tech nuke designer + simulator: best custom nuke, blast/fallout/radiation, shelters.",

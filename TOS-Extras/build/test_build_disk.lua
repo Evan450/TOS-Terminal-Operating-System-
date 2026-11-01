@@ -504,6 +504,10 @@ do
       ["cluster-manager"] = "1.3.0: the CLI runs, through the daemon's ipc endpoint",
       ["cluster-storage"] = "1.0.1: it installs on a fresh machine",
       ["rc-pilot"] = "1.3.0: rc hears its robot, and `rc scan` finds one",
+      ["stock"] = "1.0.3: typing a threshold replaces the one shown",
+      ["calc"] = "2.0.2: typing at a prompt replaces its default",
+      ["warhead"] = "1.0.3: typing at a prompt replaces its default",
+      ["write"] = "1.1.2: typing at a prompt replaces its default",
     }
 
     if nShipped == 0 then

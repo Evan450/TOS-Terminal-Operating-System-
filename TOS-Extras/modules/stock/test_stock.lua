@@ -167,6 +167,18 @@ do
   eq("millions abbreviate", "1.5M", S.fmtCount(1500000))
   eq("nil counts as zero", "0", S.fmtCount(nil))
 
+  do
+    local buf, fresh = "64", true
+    buf, fresh = S.numberKey(buf, fresh, "5")
+    eq("the first digit replaces the value the prompt opened with", "5", buf)
+    buf, fresh = S.numberKey(buf, fresh, "0")
+    eq("the next one appends", "50", buf)
+    buf, fresh = S.numberKey("64", true, "back")
+    eq("backspace edits what is there", "6", buf)
+    buf = S.numberKey(buf, fresh, "5")
+    eq("and digits append from then on", "65", buf)
+    eq("other keys change nothing", "64", (S.numberKey("64", true, "q")))
+  end
   eq("under a stack shows the raw count", "30", S.fmtStacks(30, 64))
   eq("exact stacks show no remainder", "2s", S.fmtStacks(128, 64))
   eq("stacks plus remainder", "2s+2", S.fmtStacks(130, 64))

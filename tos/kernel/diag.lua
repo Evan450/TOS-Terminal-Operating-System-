@@ -181,6 +181,8 @@ local function checkLog(R)
 end
 
 local function checkSecurity(R)
+  -- First, and an error: every program on this machine is being refused.
+  if _G._TOS_POLICY_FAILURE then R("security: " .. _G._TOS_POLICY_FAILURE, "err") end
   local U = _G._TOS and _G._TOS.users
   if not U then R("security: users unavailable", "warn"); return end
   -- BIOS-anchored manifest hash (C1). Only meaningful if anchored.

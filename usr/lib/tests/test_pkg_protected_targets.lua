@@ -21,6 +21,7 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 -- Run: lua usr/lib/tests/test_pkg_protected_targets.lua
 
+package.path = package.path .. ";tos/?.lua;TOS-Dev/tos/?.lua;../TOS-Dev/tos/?.lua"  -- kernel.policy
 local passed, failed = 0, 0
 local function test(name, cond)
   if cond then passed = passed + 1; print("  PASS: " .. name)
@@ -167,9 +168,9 @@ do
 end
 do
   -- THE SEAM: rc.lua's own allowlist, read out of rc.lua, against pkg's check.
-  local rcSrc = readSrc("tos/kernel/rc.lua")
-  local block = rcSrc and rcSrc:match("KERNEL_SERVICE_ALLOWLIST%s*=%s*(%b{})")
-  test("rc.lua's KERNEL_SERVICE_ALLOWLIST is found", block ~= nil)
+  local rcSrc = readSrc("tos/kernel/policy.lua")
+  local block = rcSrc and rcSrc:match("policy%.KERNEL_SERVICES%s*=%s*(%b{})")
+  test("the policy's KERNEL_SERVICES is found", block ~= nil)
   local pkg = newPkg()
   local n = 0
   for stem in (block or ""):gmatch('%["([^"]+)"%]') do

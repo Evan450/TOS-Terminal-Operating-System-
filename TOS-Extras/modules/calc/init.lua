@@ -539,9 +539,13 @@ local function run(args, o)
 
   -- ── Prompts on the second line ─────────────────────────────────
   --- Text, with an optional list Up/Down cycles through (file names,
-  --- range names). Returns the text, or nil when cancelled.
-  local function promptText(label, initial, choices)
+  --- range names). Returns the text, or nil when cancelled. The first key
+  --- typed replaces what the prompt opened with, as in Lotus: typing 4 over a
+  --- default of 2 used to read 24 and fail the range check. `typed` says the
+  --- text is already the operator's, and typing carries on from it.
+  local function promptText(label, initial, choices, typed)
     local buf = tostring(initial or "")
+    local fresh = buf ~= "" and not typed
     local ci = 0
     local saveMode = mode
     mode = "EDIT"
@@ -553,7 +557,9 @@ local function run(args, o)
       end
       redraw()
       local kind, ch, code = pull()
-      if kind == "paste" then buf = buf .. ch:gsub("[\r\n\t]", " ")
+      if kind == "paste" then
+        buf = (fresh and "" or buf) .. ch:gsub("[\r\n\t]", " ")
+        fresh = false
       elseif kind == "key" then
         if code == 28 then mode = saveMode; line2 = nil; line3 = nil; return buf end
         if stdQuit(ch, code) then mode = saveMode; line2 = nil; line3 = nil; return nil end
@@ -561,14 +567,17 @@ local function run(args, o)
         elseif (code == 200 or code == 208) and choices and #choices > 0 then
           ci = (code == 208) and (ci % #choices + 1) or ((ci - 2) % #choices + 1)
           buf = choices[ci]
-        elseif ch and ch >= 32 and ch < 127 then buf = buf .. string.char(ch) end
+        elseif ch and ch >= 32 and ch < 127 then
+          buf = (fresh and "" or buf) .. string.char(ch)
+        end
+        fresh = false
       end
     end
   end
 
-  local function promptNumber(label, default, lo, hi)
+  local function promptNumber(label, default, lo, hi, typed)
     while true do
-      local t = promptText(label, tostring(default))
+      local t = promptText(label, tostring(default), nil, typed)
       if t == nil then return nil end
       local n = tonumber(t)
       if n and (not lo or n >= lo) and (not hi or n <= hi) then return n end
@@ -1109,7 +1118,7 @@ local function run(args, o)
         if code == 203 then w = math.max(1, w - 1)
         elseif code == 205 then w = math.min(60, w + 1)
         elseif ch and ch >= 48 and ch <= 57 then
-          local n = promptNumber("Enter column width (1..60):", string.char(ch), 1, 60)
+          local n = promptNumber("Enter column width (1..60):", string.char(ch), 1, 60, true)
           if n then w = math.floor(n) end
           break
         end

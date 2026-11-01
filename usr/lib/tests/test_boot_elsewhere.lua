@@ -155,12 +155,14 @@ end
 -- The missing-files screen is where it is used, with the real setter.
 do
   local block = src:match("if #missingFiles > 0 then(.-)\nend\n")
-  test("the missing-files screen offers it, with computer.setBootAddress",
-    block ~= nil and block:find("pcall(bootElsewhere", 1, true) ~= nil
-    and block:find("computer.setBootAddress", 1, true) ~= nil)
+  local other = src:match("local function otherDisk%(%)(.-)\nend\n")
+  test("the missing-files screen reaches it, with computer.setBootAddress",
+    block ~= nil and block:find("otherDisk()", 1, true) ~= nil
+    and other ~= nil and other:find("pcall(bootElsewhere", 1, true) ~= nil
+    and other:find("computer.setBootAddress", 1, true) ~= nil)
   test("...skipping the disk that failed and the tmpfs",
-    block ~= nil and block:find("skip[bootFS.address] = true", 1, true) ~= nil
-    and block:find("computer.tmpAddress()", 1, true) ~= nil)
+    other ~= nil and other:find("skip[bootFS.address] = true", 1, true) ~= nil
+    and other:find("computer.tmpAddress()", 1, true) ~= nil)
 end
 
 print()

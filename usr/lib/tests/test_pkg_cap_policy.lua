@@ -18,6 +18,7 @@
 -- more importantly, pin the thing the fix must NOT become: there is no
 -- way to hand a package a capability its manifest never declared.
 
+package.path = package.path .. ";tos/?.lua;TOS-Dev/tos/?.lua;../TOS-Dev/tos/?.lua"  -- kernel.policy
 local passed, failed = 0, 0
 local function test(name, expected, actual)
   if expected == actual then

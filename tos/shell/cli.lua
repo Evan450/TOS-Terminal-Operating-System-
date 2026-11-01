@@ -434,8 +434,16 @@ function M.run(ctx)
   -- The full interface was asked for and would not load. Its own
   -- warning is gone in two seconds; this one stays in the scrollback.
   if ctx.tuiFailed then
-    o("The full interface could not start: " .. tostring(ctx.tuiFailed), D.c("error"))
-    o("This is the command line instead · 'tui' tries again", D.c("dim"))
+    -- A minimal install has no panels on purpose. That is not a failure, and
+    -- the module search path says nothing to someone who chose it.
+    local F = ctx.F
+    if F and F.exists and not F.exists("/tos/shell/panels.lua") then
+      o("This is a minimal install, so the full interface is not on this disk.",
+        D.c("warning"))
+    else
+      o("The full interface could not start: " .. tostring(ctx.tuiFailed), D.c("error"))
+      o("This is the command line instead · 'tui' tries again", D.c("dim"))
+    end
   end
   o("")
 

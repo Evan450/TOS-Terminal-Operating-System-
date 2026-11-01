@@ -69,7 +69,7 @@ same place.
 - [2. Booting](#2-booting)
   - [2.1 The boot spectrum (`/etc/boot.cfg`)](#21-the-boot-spectrum-etcbootcfg)
   - [2.2 The System Configuration screen (POST)](#22-the-system-configuration-screen-post)
-  - [2.3 Boot Settings (press DEL) & one-time Safe Mode (press S)](#23-boot-settings-press-del--one-time-safe-mode-press-s)
+  - [2.3 Boot Settings (press DEL), one-time Safe Mode (press S) and Recovery (press R)](#23-boot-settings-press-del-one-time-safe-mode-press-s-and-recovery-press-r)
   - [2.4 Fallback boot & one-time boot (security)](#24-fallback-boot--one-time-boot-security)
   - [2.5 What happens during boot, in order](#25-what-happens-during-boot-in-order)
 - [3. Logging In, Users & Tiers](#3-logging-in-users--tiers)
@@ -238,6 +238,13 @@ onto it. Move that drive to the OpenOS machine and run
 `/mnt/<drive>/install.lua`. (A release built from the source with
 `python tos.py build`, copied onto a drive, works the same way.)
 
+**On a small drive.** `install.lua --profile minimal` installs the command line
+and the core of TOS, about 520 KB, with no panels. A 1 MB drive holds it with
+OpenOS still on the drive during the install, and has about 430 KB left once
+TOS is running. If no drive can hold the full system the installer offers this
+anyway. `verify` checks the files that were installed, not the ones that were
+left out.
+
 #### 1.2.1 What the installer asks
 
 | Step | What happens |
@@ -364,14 +371,15 @@ off. If TOS can't read your data card's tier (some OC builds/emulators report a
 bare `data` proxy), set it manually with `dataTier` ([§2.3](#23-boot-settings-press-del--one-time-safe-mode-press-s)), exactly like the CPU
 tier — the POST line then shows your confirmed tier with a `*`.
 
-### 2.3 Boot Settings (press DEL) & one-time Safe Mode (press S)
+### 2.3 Boot Settings (press DEL), one-time Safe Mode (press S) and Recovery (press R)
 
-While the POST screen shows `Press DEL for Boot Settings, S for Safe Mode
-(once)...`:
+While the POST screen shows `DEL Boot Settings, S Safe Mode (once), R
+Recovery...`:
 
 - **Delete** opens the visual editor: arrow keys to select, Left/Right (or
   Space) to change a value, **S** to save, **R** to save and reboot, **A** to
   reveal the advanced overrides, **H** to view hardware, **Q** to cancel.
+- **R** opens the recovery menu ([Chapter 17](#17-recovery--troubleshooting)).
 - **S** boots **Safe Mode for this session only** — services, cron, packages,
   net, and themes stay off, but `/etc/boot.cfg` is untouched and the next boot
   is completely normal. This is the fastest way to a trustworthy shell after
@@ -3228,6 +3236,13 @@ Explain the last refusal or error, in plain English, with the fix.
   thousands-of-rounds KDF is far faster in pure Lua than calling the card per
   round. A software-only box gets the same KDF plus a documented crypto
   fallback (and a one-time "degraded RNG" warning).
+- **The rules are in one file.** `/tos/kernel/policy.lua` says what a sandboxed
+  program may load and touch, what a package may ask for and what a service
+  gets, so the whole policy can be read in one sitting. If it will not load, TOS
+  still boots and denies everything non-kernel: no program runs until it is
+  repaired, `doctor` says so as an error, and the shell is still there to repair
+  it with. Your own additions stay in `/etc/component_caps.cfg` and
+  `/etc/pkg_caps.cfg`.
 - **Known limits (honest):** the boot chain (`/init.lua`, the manifest,
   `critical.bak`) is loaded as Lua at boot and is not yet cryptographically
   anchored — anyone with write access to those paths (ADMIN+) has code execution
@@ -3325,6 +3340,17 @@ Explain the last refusal or error, in plain English, with the fix.
 
 ## 17. Recovery & Troubleshooting
 
+**The recovery menu** runs before the kernel, so it works when the kernel will
+not. Press **R** at the POST screen ([§2.3](#23-boot-settings-press-del-one-time-safe-mode-press-s-and-recovery-press-r)), or
+let it open by itself: a machine missing a system file goes straight to it. It
+can carry on booting, start Safe Mode or Boot Settings, **check** the system
+files against your baseline, **restore** what changed, or **boot another disk**.
+Check and restore are `srm scan` and `srm repair --restore`, so a restore puts
+back only copies whose hash matches the baseline. They need a baseline taken
+with `srm baseline --full` while the machine was healthy
+([§9.3](#93-srm--system-repair--maintenance)); take one before you need it. The
+POST screen, and so R, appears when `showConfig` is on or the boot is verbose.
+
 - **Forgot the root password / locked out:** boot to the emergency shell (still
   requires authentication) or, as a last resort, reflash a recovery `/init.lua`.
   The `root` account never permanently auto-locks (it throttles instead).
@@ -3332,10 +3358,11 @@ Explain the last refusal or error, in plain English, with the fix.
   repaired any interrupted critical write at boot. Run `doctor` to review.
 - **Won't boot / missing files:** the BIOS POST lists missing critical files;
   `verify` checks the manifest; `critical.bak` and the hardcoded fallback list
-  guard the boot file set. The "MISSING n FILES" screen would reboot into the
-  same broken disk forever, so press **B** there instead: it lists the other
-  disks the BIOS can boot, and a disk's number makes it the boot disk. Insert
-  the TOS installer floppy first (B looks again) to reinstall.
+  guard the boot file set. A machine missing a file opens the recovery menu
+  above. **Boot another disk** there lists the other disks the BIOS can boot,
+  and a disk's number makes it the boot disk; insert the TOS installer floppy
+  first (B looks again) to reinstall. If the menu itself is among the missing
+  files, the old screen appears instead, and **B** does the same.
 - **A blue STOP screen:** the kernel hit an error it could not recover from. The
   `*** STOP:` line names it with an `E-` code and an `ERR_` symbol; the hex under
   it is a machine reference you can ignore. The crash report is saved to

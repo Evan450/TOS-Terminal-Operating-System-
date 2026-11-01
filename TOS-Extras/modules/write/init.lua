@@ -349,6 +349,7 @@ local function run(path, o, composed)
   -- ── Modal helpers ──────────────────────────────────────────────────
   local function prompt(label, default)
     local s = tostring(default or "")
+    local fresh = s ~= ""                -- the first letter typed replaces it
     while true do
       Dv.fill(1, H - 1, W, 1, " ", T.fg, T.bg)
       Dv.set(1, H - 1, pad(label .. " " .. s .. "_", W), T.title, T.bg)
@@ -357,7 +358,11 @@ local function run(path, o, composed)
       -- ^Q cancels, not Esc: Esc never arrives (see the key block above).
       if isQuit(ch, code) then return nil end
       if code == K.BACK then s = s:sub(1, -2)
-      elseif ch and ch >= 32 and ch < 127 then s = s .. string.char(ch) end
+      elseif ch and ch >= 32 and ch < 127 then
+        if fresh then s = "" end
+        s = s .. string.char(ch)
+      end
+      fresh = false
     end
   end
 
@@ -661,7 +666,7 @@ end
 -- saved. A caller checks for `api` before using it: an older write has
 -- none.
 local api = {
-  VERSION = "1.1.0",
+  VERSION = "1.1.2",
   --- Open `text` as an unsaved document that F2 would save at `path`.
   open = function(path, text, o)
     o = o or print

@@ -300,7 +300,7 @@ do
   test("write's module loads off-box", true, okW and type(W) == "table")
   local api = okW and W.api
   test("it exports api.open", "function", api and type(api.open))
-  test("api says which version it is", "1.1.0", api and api.VERSION)
+  test("api says which version it is", "1.1.2", api and api.VERSION)
   if api then
     test("a relative path is refused", false,
       api.open("report.txt", "x", function(t) said[#said + 1] = t end))
