@@ -112,8 +112,7 @@ local function check(src, label)
                       or lines[j]:match("^function ")) then break end
         body = body .. lines[j] .. "\n"
       end
-      if body:find("component%.proxy%s*%(") or body:find("hal%.proxy%s*%(")
-         or body:find("hal%.get%s*%(") then
+      if body:find("[%a_][%w_]*%.proxy%s*%(") or body:find("hal%.get%s*%(") then
         for t in body:gmatch("component%.list%s*%(%s*[\"']([%a_]+)[\"']") do
           types[t] = true
         end
@@ -143,6 +142,22 @@ local function check(src, label)
       end
       for var, t in line:gmatch("([%a_][%w_]*)%s*=%s*component%.([%a_]+)%s*$") do
         if API.types[t] then typed[var] = t; loose[var] = nil end
+      end
+      --! Several bound at once from a helper that takes the type, the way a
+      --! chip written for its size does: `local m,r=f("modem"),f("robot")`.
+      --! rc-pilot's chip called r.forward() for years behind one of these.
+      local names, exprs = line:match("^%s*local%s+([%a_][%w_,%s]*)=%s*(.+)$")
+      if names then
+        local types, i = {}, 0
+        for fn, t in exprs:gmatch("([%a_][%w_]*)%s*%(%s*[\"']([%a_]+)[\"']%s*%)") do
+          types[#types + 1] = factory[fn] and t or false
+        end
+        for name in names:gmatch("[%a_][%w_]*") do
+          i = i + 1
+          if types[i] and API.types[types[i]] then
+            typed[name] = types[i]; loose[name] = nil
+          end
+        end
       end
       -- A binding from a proxy whose type this file does not name.
       for var in line:gmatch("([%a_][%w_]*)%s*=%s*[%a_][%w_.]*[Pp]roxy%s*%(") do
@@ -265,6 +280,20 @@ gpu.set(1, 1, "hello")
 gpu.fill(1, 1, 10, 2, " ")
 ]])
   test("and stays quiet on correct calls", n == 0)
+
+  n, why = flags([[
+local function f(t)for a in C.list(t)do return C.proxy(a)end end
+local m,r=f("modem"),f("robot")
+r.forward()
+]])
+  test("catches the library's name on the raw component (rc-pilot's chip)", n == 1)
+  test("...through a binding built for size", why:find("'robot' method") ~= nil, why)
+
+  n = flags([[
+local robot = require("robot")
+robot.forward()
+]])
+  test("and leaves OpenOS's robot library alone", n == 0)
 end
 
 -- ── The real tree ──────────────────────────────────────────────────
@@ -281,7 +310,11 @@ end
 --! `find` is a text search and there is no `ls`, so `dir /b /s` is the only
 --! form that works whichever shell launched the suite. It prints absolute
 --! paths, so the working directory is stripped back off.
-local ROOTS = { "tos", "../TOS-Extras/modules" }
+--! Everything that ships. This was tos and modules only, so a chip, cluster,
+--! rbmk, web and every rc.d script went unchecked.
+local ROOTS = { "tos", "etc", "../TOS-Extras/modules", "../TOS-Extras/robot",
+  "../TOS-Extras/cluster", "../TOS-Extras/rbmk", "../TOS-Extras/web",
+  "../TOS-Extras/pane-ui" }
 local ROOT_FILES = { "init.lua", "bios.lua", "bootstrap.lua", "install.lua" }
 local files = {}
 for _, r in ipairs(ROOTS) do
