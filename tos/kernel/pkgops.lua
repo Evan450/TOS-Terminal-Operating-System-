@@ -441,7 +441,7 @@ end
 -- ============================================================
 --! #SEC (pentest, Sep 2026) — findConflicts protects one PACKAGE's files
 --! from another. Nothing protected the SYSTEM's: no package owns
---! /usr/bin/ssh.lua or /etc/rc.d/20-netfsd.lua, so writing over them was
+--! /usr/man/boot.man or /etc/rc.d/20-netfsd.lua, so writing over them was
 --! not a conflict at all and needed no --force. This refusal has no
 --! --force; an admin who means to replace a system file has an editor.
 --! Refused, for every target:

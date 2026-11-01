@@ -36,6 +36,7 @@ import totoro.ocelot.brain.entity.NetworkCard;
 import totoro.ocelot.brain.entity.Relay;
 import totoro.ocelot.brain.entity.Screen;
 import totoro.ocelot.brain.entity.TapeDrive;
+import totoro.ocelot.brain.entity.WirelessNetworkCard;
 import totoro.ocelot.brain.entity.tape.Tape;
 import totoro.ocelot.brain.network.Network;
 import totoro.ocelot.brain.network.Node;
@@ -214,6 +215,8 @@ public class HeadlessTOS {
   static List<String> peerDiskDirs = new ArrayList<>();  // --peer-disk, by peer
   static boolean withTape;      // --tape
   static boolean withGeolyzer;  // --geolyzer
+  static String chipFile, chipData;   // --chip, --chip-data
+  static StandInRobot chipRobot;
   static boolean withRobot;     // --robot
   static boolean withChest;     // --robot-chest
   static boolean withRubbish;   // --robot-rubbish
@@ -738,6 +741,33 @@ public class HeadlessTOS {
       }
     }
 
+    // A robot of its own (--chip): no OS, no disk, no screen, only the chip
+    // the operator burned, a wireless card and a robot to drive. Both ends get
+    // a wireless card, so nothing here is a stand-in for the modem. The robot
+    // says where it ended up as the run ends: that is what a keypress did.
+    if (chipFile != null) {
+      pc.inventory().apply(1).put(new WirelessNetworkCard.Tier2());
+      Case body = ws.add(new Case(Tier.Three()));
+      EEPROM chip = new EEPROM();
+      try {
+        chip.codeBytes_$eq(Option.apply(Files.readAllBytes(Paths.get(chipFile))));
+      } catch (java.io.IOException e) {
+        throw new java.io.UncheckedIOException(e);
+      }
+      chip.label_$eq("rc-pilot");
+      chip.volatileData_$eq(chipData == null ? new byte[0]
+          : chipData.getBytes(StandardCharsets.UTF_8));
+      body.inventory().apply(1).put(new WirelessNetworkCard.Tier2());
+      body.inventory().apply(3).put(new Memory(stick("1024")));
+      body.inventory().apply(8).put(new APU(Tier.Two()));
+      body.inventory().apply(9).put(chip);
+      chipRobot = ws.add(new StandInRobot());
+      body.connect(chipRobot);
+      peers.add(body.machine());
+      System.out.println("[headless] chip machine: " + chipFile + ", robot "
+          + chipRobot.node().address() + ", wireless on both ends");
+    }
+
     machine = pc.machine();
     System.out.println("[headless] profile " + profile + ", RAM " + String.join("+", sticks)
         + "K, boot disk " + bootAddr);
@@ -1175,6 +1205,8 @@ public class HeadlessTOS {
     withChest = flag(args, "--robot-chest");
     withRubbish = flag(args, "--robot-rubbish");
     withTransposer = flag(args, "--transposer");
+    chipFile = opt(args, "--chip", null);
+    chipData = opt(args, "--chip-data", null);
     if (opt(args, "--disk2", null) != null) {
       disk2Dir = Paths.get(opt(args, "--disk2", null)).toAbsolutePath();
       disk2Address = opt(args, "--disk2-address", null);
@@ -1204,6 +1236,10 @@ public class HeadlessTOS {
     for (Machine peer : peers) System.out.println("[headless] peer power on: " + (peer.start() ? "ok" : "refused"));
 
     int code = script != null ? runScript(Paths.get(script), timeout, work) : runUntilOff(timeout, work);
+    if (chipRobot != null) {
+      System.out.println("[headless] chip robot ended at " + chipRobot.x + "," + chipRobot.y
+          + "," + chipRobot.z + ", slot " + chipRobot.selected());
+    }
     if (machine.isRunning()) machine.stop();
     for (Machine peer : peers) if (peer.isRunning()) peer.stop();
     Ocelot.shutdown();

@@ -151,7 +151,7 @@ do
     local env = { computer = computer, coroutine = coroutine, package = package,
                   type = type, table = table, math = math,
                   require = function(n) return package.loaded[n] end,
-                  PULL_DROP = { modem_message = true } }
+                  pullDrops = function(sig) return sig[1] == "modem_message" end }
     local spull = assert(load(helper .. "\n" .. body .. "\nreturn safePullSignal",
       "=safePullSignal", "t", env))()
 

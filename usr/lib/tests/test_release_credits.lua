@@ -72,7 +72,7 @@ end
 
 local CREDITED = {}
 local p = io.popen(package.config:sub(1, 1) == "\\"
-  and 'dir /s /b tos\\*.lua usr\\bin\\*.lua etc\\*.lua 2>nul'
+  and '(for %d in (tos usr\\bin etc) do @if exist %d dir /s /b %d\\*.lua) 2>nul'
   or "find tos usr/bin etc -name '*.lua' 2>/dev/null")
 for line in p:lines() do
   local rel = line:gsub("\\", "/"):match("(tos/.*)$") or line:gsub("\\", "/"):match("(usr/bin/.*)$")

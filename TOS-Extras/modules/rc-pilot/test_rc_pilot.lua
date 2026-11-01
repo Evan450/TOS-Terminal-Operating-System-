@@ -58,6 +58,7 @@ print()
 -- ============================================================
 -- Host side
 -- ============================================================
+local hostClock = 0                              -- the sandbox copies uptime once
 local sent = {}                                  -- frames the host sent
 local hostQueue = {}                             -- signals the host will pull
 local hostOut = {}
@@ -65,6 +66,7 @@ local modemStub = {
   isWireless = function() return true end,
   open = function() return true end, close = function() return true end,
   send = function(to, port, data) sent[#sent + 1] = { to = to, port = port, data = data } end,
+  broadcast = function(port, data) sent[#sent + 1] = { port = port, data = data, broadcast = true } end,
 }
 package.loaded["component"] = {
   list = function(t) local done = false
@@ -72,7 +74,7 @@ package.loaded["component"] = {
   proxy = function() return modemStub end,
 }
 package.loaded["computer"] = {
-  uptime = function() return 0 end,
+  uptime = function() return hostClock end,
   freeMemory = function() return 200000 end, totalMemory = function() return 262144 end,
   address = function() return "host-computer" end,
   pullSignal = function()
@@ -151,62 +153,27 @@ do
 end
 
 -- ============================================================
--- [known gap] the robot's replies never reach `rc` for real
--- ============================================================
--- Everything above hands the host a RAW pullSignal. A real `rc` runs in
--- the package sandbox, whose pullSignal drops every modem_message so a
--- program cannot sniff the network (kernel/sandbox.lua, PULL_DROP). The
--- `net` capability carries only TOS-protocol messages, and the robot does
--- not speak that. So on a real machine the pong is never shown, and no
--- reply from a robot can be heard at all -- which is also what blocks an
--- `rc scan` to find a robot's address. Whether a package may hear raw
--- frames on a port it opened is a sandbox decision for the operator (TODO:
--- RC-PILOT CANNOT BE SET UP FROM ITS OWN INSTRUCTIONS). This pins today's
--- behaviour through the REAL sandbox pullSignal, so the fix fails it.
-do
-  local okS, sandbox = pcall(require, "kernel.sandbox")
-  test("the real sandbox loads", okS and type(sandbox) == "table"
-    and type(sandbox._safePullSignal) == "function")
-  if okS and type(sandbox) == "table" and type(sandbox._safePullSignal) == "function" then
-    local hostComputer = package.loaded["computer"]
-    local rawPull = hostComputer.pullSignal
-    -- The sandbox's pull reads the hardware through require("computer");
-    -- give it the raw queue while the host's own table points at it.
-    local raw = { uptime = hostComputer.uptime, pullSignal = rawPull }
-    hostComputer.pullSignal = function(timeout)
-      local saved = package.loaded["computer"]
-      package.loaded["computer"] = raw
-      local r = table.pack(pcall(sandbox._safePullSignal, timeout))
-      package.loaded["computer"] = saved
-      if not r[1] then error(r[2], 0) end
-      return table.unpack(r, 2, r.n)
-    end
-    sent = {}; hostOut = {}
-    hostQueue = {
-      key(112, 25),                                -- P: ping
-      { n = 6, "modem_message", "modem-host", ROBOT, 7777, 3.0, '{magic="RCPILOT1",op="pong",arg=42}' },
-      key(17, 16),                                 -- ^Q
-    }
-    rc({ ROBOT, "--secret", SECRET }, o)
-    hostComputer.pullSignal = rawPull
-    local text = table.concat(hostOut, "\n")
-    test("through the real sandbox the ping still goes out", #sent == 1
-      and sent[1].data:find('op="ping"', 1, true) ~= nil)
-    test("[known gap] ...and the robot's pong never reaches rc",
-      text:find("pong @", 1, true) == nil)
-    test("the pilot still exits on the quit key", text:find("exited", 1, true) ~= nil)
-  end
-end
-
--- ============================================================
 -- Robot side: the real EEPROM, driven by the host's frames
 -- ============================================================
 local function makeRobot(secretOnChip)
   local R = { calls = {}, sentBack = {}, queue = {} }
   local function rec(name) return function(...) R.calls[#R.calls + 1] = name .. (select("#", ...) > 0 and ("(" .. tostring((...)) .. ")") or "") return true end end
-  local robot = { forward = rec("forward"), back = rec("back"), turnLeft = rec("turnLeft"),
-    turnRight = rec("turnRight"), up = rec("up"), down = rec("down"), use = rec("use"),
-    swing = rec("swing"), place = rec("place"), select = rec("select") }
+  -- The real component: what machine.lua's proxy gives a bare EEPROM. The
+  -- forward()/turnLeft() names are OpenOS's robot LIBRARY, which a chip does
+  -- not have. This fake used to offer them, so these tests passed while every
+  -- real robot sat still: the calls errored inside the chip's pcall.
+  local SIDE = { [3] = "forward", [2] = "back", [1] = "up", [0] = "down" }
+  local function front(name)
+    return function(side)
+      if side ~= 3 then error(name .. " is asked of the front") end
+      R.calls[#R.calls + 1] = name
+    end
+  end
+  local robot = {
+    move = function(side) R.calls[#R.calls + 1] = SIDE[side] or error("bad side") end,
+    turn = function(clockwise) R.calls[#R.calls + 1] = clockwise and "turnRight" or "turnLeft" end,
+    use = front("use"), swing = front("swing"), place = front("place"), select = rec("select"),
+  }
   local modem = { open = function() return true end,
     send = function(to, port, data) R.sentBack[#R.sentBack + 1] = { to = to, port = port, data = data } end }
   local eeprom = { getData = function() return secretOnChip end }
@@ -243,6 +210,126 @@ local function makeRobot(secretOnChip)
     return (not ok and e == "halt"), e
   end
   return R
+end
+
+-- ============================================================
+-- Through the real sandbox: rc hears its robot
+-- ============================================================
+-- Everything above hands the host a RAW pullSignal and a raw modem. A real
+-- `rc` runs in the package sandbox, whose pullSignal drops every
+-- modem_message except on a port the program opened through its gated proxy.
+-- That is what made the pong invisible, so this goes through the real one:
+-- the env's component and computer, and the rc-pilot package's capabilities.
+do
+  local okS, sandbox = pcall(require, "kernel.sandbox")
+  test("the real sandbox loads", okS and type(sandbox) == "table"
+    and type(sandbox.build) == "function")
+  if okS and type(sandbox) == "table" and type(sandbox.build) == "function" then
+    local hostComponent = package.loaded["component"]
+    local hostComputer  = package.loaded["computer"]
+    local realProxy, realList = hostComponent.proxy, hostComponent.list
+    local card = { address = "modem-host", ports = {}, isWireless = modemStub.isWireless,
+      send = modemStub.send, broadcast = modemStub.broadcast }
+    function card.open(p) if card.ports[p] then return false end; card.ports[p] = true; return true end
+    function card.isOpen(p) return card.ports[p] == true end
+    function card.close(p) card.ports[p] = nil; return true end
+    card.ports[42] = true                         -- the kernel is listening
+    hostComponent.type = function() return "modem" end
+    hostComponent.proxy = function() return card end
+    hostComponent.list = function(t)
+      local done = false
+      return function()
+        if not done and (not t or t == "modem") then done = true; return "modem-host", "modem" end
+      end
+    end
+
+    local caps = {}
+    for _, c in ipairs({ "fs.read", "fs.write", "component", "peripheral.modem", "crypto" }) do
+      caps[c] = true
+    end
+    local env = sandbox.build({ caps = caps })
+    -- Its require hands back the same views, as the sandbox's does.
+    local chunk = loadfile(HOST, "t", setmetatable({
+      component = env.component, computer = env.computer, crypto = _G.crypto,
+      require = function(n)
+        if n == "component" then return env.component end
+        if n == "computer" then return env.computer end
+        return require(n)
+      end,
+    }, { __index = _G }))
+    local sandboxedRc = chunk().commands.rc
+
+    sent = {}; hostOut = {}
+    hostQueue = {
+      key(112, 25),                                -- P: ping
+      { n = 6, "modem_message", "modem-host", ROBOT, 42, 3.0, 'kernel traffic, op="pong",arg=1' },
+      { n = 6, "modem_message", "modem-host", ROBOT, 7777, 3.0, '{magic="RCPILOT1",op="pong",arg=42}' },
+      key(17, 16),                                 -- ^Q
+    }
+    rc = sandboxedRc
+    rc({ ROBOT, "--secret", SECRET }, o)
+    local text = table.concat(hostOut, "\n")
+    test("through the real sandbox the ping still goes out", #sent == 1
+      and sent[1].data:find('op="ping"', 1, true) ~= nil)
+    test("...and the robot's pong reaches rc", text:find("pong @ uptime=42", 1, true) ~= nil, text)
+    test("...and the kernel's port does not", text:find("pong @ uptime=1\n", 1, true) == nil
+      and select(2, text:gsub("pong @", "")) == 1, text)
+    test("the pilot still exits on the quit key", text:find("exited", 1, true) ~= nil)
+    test("and it closed its port on the way out", card.ports[7777] == nil)
+    test("leaving the kernel's alone", card.ports[42] == true)
+
+    -- The address nobody could get: both real sides, frames passed by hand.
+    local R = makeRobot(SECRET)
+    local D = makeRobot(nil)
+    sent = {}; hostOut = {}
+    local answers = {}
+    local realPull = hostComputer.pullSignal
+    hostComputer.pullSignal = function()
+      hostClock = hostClock + 0.5
+      if #sent > 0 and not answers.asked then
+        answers.asked = true
+        R.feed(sent[1].data, "modem-host"); R.run()
+        D.feed(sent[1].data, "modem-host"); D.run()
+        for i, robot in ipairs({ R, D }) do
+          local back = robot.sentBack[1]
+          answers[#answers + 1] = { n = 6, "modem_message", "modem-host",
+            "robot-address-" .. i, back and back.port, 2.0, back and back.data }
+        end
+        -- The same robot answering twice is one robot.
+        answers[#answers + 1] = answers[1]
+        answers[#answers + 1] = { n = 6, "modem_message", "modem-host", "x", 7777, 2.0, "noise" }
+      end
+      local s = table.remove(answers, 1)
+      if s then return table.unpack(s, 1, s.n) end
+      return nil
+    end
+    rc({ "scan" }, o)
+    hostComputer.pullSignal = realPull
+    text = table.concat(hostOut, "\n")
+    test("`rc scan` asks everyone, unsigned", #sent == 1 and sent[1].broadcast
+      and sent[1].data:find('op="who"', 1, true) ~= nil
+      and sent[1].data:find("mac=", 1, true) == nil)
+    test("a keyed robot is listed with its full address",
+      text:find("robot-address-1  robot\n", 1, true) ~= nil
+      or text:find("robot-address-1  robot$") ~= nil, text)
+    test("a chip with no secret says so", text:find("robot-address-2  robot  (no secret", 1, true) ~= nil, text)
+    test("each one once", select(2, text:gsub("robot%-address%-1", "")) == 1, text)
+    test("the scan closes its port", card.ports[7777] == nil)
+
+    card.ports[7777] = true                       -- someone else has it
+    hostOut = {}
+    hostComputer.pullSignal = function() hostClock = hostClock + 0.5; return nil end
+    rc({ "scan" }, o)
+    hostComputer.pullSignal = realPull
+    text = table.concat(hostOut, "\n")
+    test("a port someone else holds is said, not ignored",
+      text:find("Cannot listen on port 7777", 1, true) ~= nil
+      and text:find("in use", 1, true) ~= nil, text)
+    card.ports[7777] = nil
+
+    hostComponent.proxy, hostComponent.list, hostComponent.type = realProxy, realList, nil
+    rc = host.commands.rc
+  end
 end
 
 print()

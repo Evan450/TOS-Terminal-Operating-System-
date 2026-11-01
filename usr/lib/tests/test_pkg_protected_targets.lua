@@ -113,7 +113,7 @@ local function newPkg(opts)
   fs.writeFile("/etc/rc.d/20-netfsd.lua", "-- shipped netfsd\n")
   fs.writeFile("/etc/rc.d/local-admin.lua", "-- the operator's own script\n")
   fs.writeFile("/etc/site.cfg", "{ mine = true }")
-  fs.writeFile("/usr/bin/ssh.lua", "-- shipped ssh\n")
+  fs.writeFile("/usr/man/boot.man", "-- shipped page\n")
   package.loaded["kernel.pkg"] = nil
   local pkg = loadMod("pkg.lua")
   pkg.init({ fs = fs, log = nil, users = usersMock })
@@ -209,7 +209,7 @@ end
 for _, t in ipairs({ "/usr/LIB/MailApp.lua", "/usr/modules/mouse/init.lua",
     "/usr/modules/mailapp.lua", "/usr/lib/kernel/users.lua",
     "/usr/modules/shell/panels/desktop.lua", "/usr/lib/compat/init.lua",
-    "/usr/lib/system_manifest.lua", "/usr/bin/ssh.lua" }) do
+    "/usr/lib/system_manifest.lua", "/usr/man/boot.man" }) do
   local pkg, fs = newPkg()
   test("refused: " .. t, not tryInstall(pkg, fs, "zz-other", "command", { [t] = "-- x" }))
 end

@@ -76,20 +76,23 @@ local out, ok, err = run("dump", "/usr/lang/xx.lang")
 test("`lang dump /usr/lang/xx.lang` runs", ok, err)
 test("...says the write failed", out:find("Write failed: /usr/lang/xx.lang", 1, true) ~= nil, out)
 test("...and shows the refusal's reason", out:find(REFUSAL, 1, true) ~= nil, out)
-test("...and the route that works", out:find("protect off", 1, true) ~= nil
-  and out:find("package", 1, true) ~= nil, out)
+test("...and sends nobody to `protect off`, which /usr/lang no longer needs",
+  not out:find("protect off", 1, true), out)
 
 out = run("dump", "/home/root/x.lang")
 test("a writable path writes the template", files["/home/root/x.lang"] ~= nil, out)
-test("...which names the protected path and protect off for /usr/lang",
-  files["/home/root/x.lang"] and files["/home/root/x.lang"]:find("protect off", 1, true) ~= nil)
+test("...which says where a catalog goes and who can put it there",
+  files["/home/root/x.lang"]
+  and files["/home/root/x.lang"]:find("/usr/lang/<code>.lang", 1, true) ~= nil
+  and files["/home/root/x.lang"]:find("An admin can write there", 1, true) ~= nil
+  and not files["/home/root/x.lang"]:find("protect off", 1, true))
 test("...and carries the keys seen", files["/home/root/x.lang"]
   and files["/home/root/x.lang"]:find('["login.username"] = "Username:"', 1, true) ~= nil)
 
 out = run("dump")
 test("the default target is /tmp, and it succeeds", files["/tmp/lang-template.lang"] ~= nil
   and out:find("-> /tmp/lang-template.lang", 1, true) ~= nil, out)
-test("...with no hint when nothing went wrong", not out:find("protect off", 1, true), out)
+test("...with no complaint when nothing went wrong", not out:find("Write failed", 1, true), out)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))

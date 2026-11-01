@@ -87,6 +87,18 @@ test("an unknown name is passed on, for the trust check to refuse", asked.scp ==
 out = run(C.rsh, "two", "ls")
 test("rsh with an alias runs the command on that peer", asked.rsh == FULL, asked.rsh)
 
+-- ssh and share were /usr/bin programs that printed "Network not available"
+-- from inside their sandbox. They are the same commands now, gate included.
+test("ssh is rsh, and share is scp", C.ssh == C.rsh and C.share == C.scp)
+local reg = require("shell.panels.commands")
+local ssh, share = reg.entry("ssh"), reg.entry("share")
+test("both are tier 2, as their targets are",
+  ssh and ssh.tier == 2 and share and share.tier == 2)
+test("and both need the network, as their targets do",
+  reg.NEEDS.ssh == "net" and reg.NEEDS.share == "net")
+test("help folds them onto the canonical row",
+  ssh.alias == "rsh" and share.alias == "scp")
+
 out = run(C.scp)
 test("scp's usage no longer offers an upload", not out:find("<local_path> <", 1, true)
   and out:find("scp <peer>:<remote_path> <local_path>", 1, true) ~= nil, out)

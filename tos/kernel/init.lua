@@ -1083,6 +1083,13 @@ function kernel.boot(opts)
     log.warn("kernel", "LOW MEMORY: " .. math.floor(freeNow / 1024) .. "KB free!")
   end
 
+  do
+    local why = kernel.manifestAnchorWarning()
+    if why then
+      log.warn("kernel", "Manifest does not match its EEPROM anchor: " .. why)
+    end
+  end
+
   bootEcho(string.format("  Boot complete: %.1fs, %dK free",
     bootDuration, math.floor(freeNow / 1024)), 0x00FF00)
 
@@ -3247,11 +3254,11 @@ end
 -- this system's manifest hash once an operator runs `verify anchor`, and
 -- kernel.verifyManifestHash() compares the live manifest with it.
 --
--- NOTHING CALLS IT AT BOOT (checked 2026-10-03). This comment used to say
--- boot refuses on a mismatch, "unless a held-key recovery override is
--- asserted" -- neither exists. `doctor` and the network repair call it,
--- so the anchor is a check an operator runs, not one boot enforces.
--- Whether boot should is open: TODO, THE MANIFEST ANCHOR IS NOT ENFORCED.
+-- BOOT WARNS, IT DOES NOT REFUSE. An upgrade changes the manifest as well, so
+-- refusing would stop a machine for an update, and the held-key override that
+-- would make that safe does not exist. A mismatch reaches the POST screen and
+-- the boot log (kernel.manifestAnchorWarning); `doctor` and the network repair
+-- call the check too. TODO, THE MANIFEST ANCHOR IS NOT ENFORCED.
 
 local function readManifestSource()
   -- Manifest lives at /tos/system_manifest.lua. Read raw bytes (not
@@ -3345,6 +3352,19 @@ function kernel.verifyManifestHash()
   if cryptoMod.ctEquals(live, anchored) then return true end
   return false, "manifest hash mismatch (live=" .. live:sub(1, 12) ..
     " anchored=" .. anchored:sub(1, 12) .. ")"
+end
+
+--- What boot has to say about the anchor: the reason when it is wrong, nil
+--- when it matches or the machine has none. An unanchored machine leaves
+--- verifyManifestHash before it hashes anything, so this costs it nothing.
+function kernel.manifestAnchorWarning()
+  local okV, ok, why = pcall(kernel.verifyManifestHash)
+  if not okV or ok then return nil end
+  why = tostring(why)
+  if why:find("mismatch", 1, true) or why:find("malformed", 1, true) then
+    return why
+  end
+  return nil
 end
 
 -- ============================================================
@@ -3506,13 +3526,14 @@ end
 function kernel.headlessMain()
   running = true
 
-  local usersmod = _G._TOS.users
-
-  -- Bind the kernel session so all service processes inherit root
-  -- permissions (securefs, securefs.forSession, etc.)
-  if usersmod then
-    _G._TOS.bootSession = usersmod.kernelSession()
-  end
+  -- Boot is over here too, and the screen path's rule applies (#134/#122
+  -- in loginAndStartShell). This used to bind the kernel session for the
+  -- whole uptime, so on a machine with no screen a caller with no process
+  -- principal was the kernel, where on one with a screen it is nobody.
+  -- Services don't lean on it: rc and cron ask for kernelSession() when
+  -- bootSession is gone, on both paths.
+  _G._TOS.bootSession   = nil
+  _G._TOS.bootCompleted = true
 
   log.info("kernel", "Entering headless service loop")
 

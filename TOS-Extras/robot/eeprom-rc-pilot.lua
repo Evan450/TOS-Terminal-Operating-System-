@@ -11,6 +11,9 @@
 -- ║    mac = HMAC-SHA256(secret, op.."|"..arg.."|"..nonce)   ║
 -- ║  ops: move:f/b/l/r turn:l/r up down use:f swing:f        ║
 -- ║       place:f select(arg=slot) stop ping (-> pong)       ║
+-- ║  `rc scan` sends {magic="RCPILOT1",op="who"} unsigned,   ║
+-- ║  and gets {op="here",keyed=bool,kind="robot"|"drone"}:   ║
+-- ║  presence only, so it needs no MAC and proves nothing.   ║
 -- ║                                                          ║
 -- ║  Security: constant-time MAC check; a 64-nonce replay    ║
 -- ║  window; no secret configured means NOTHING moves. Seed  ║
@@ -30,7 +33,7 @@ local m,r,d,e=f("modem"),f("robot"),f("drone"),f("eeprom")
 if not m then M.beep(200,1.5)while true do M.pullSignal(60)end end
 -- Secret from the EEPROM data field; too short means unset, fail closed.
 local S=e and e.getData and e.getData()
-if type(S)~="string"or #S<16 then S=nil end
+if type(S)~="string"or #S<16 then S=nil M.beep(400,.3)end
 -- SHA-256 round constants as one hex string (half the bytes of a table).
 local KS="428a2f9871374491b5c0fbcfe9b5dba53956c25b59f111f1923f82a4ab1c5ed5d807aa9812835b01243185be550c7dc372be5d7480deb1fe9bdc06a7c19bf174e49b69c1efbe47860fc19dc6240ca1cc2de92c6f4a7484aa5cb0a9dc76f988da983e5152a831c66db00327c8bf597fc7c6e00bf3d5a7914706ca63511429296727b70a852e1b21384d2c6dfc53380d13650a7354766a0abb81c2c92e92722c85a2bfe8a1a81a664bc24b8b70c76c51a3d192e819d6990624f40e3585106aa07019a4c1161e376c082748774c34b0bcb5391c0cb34ed8aa4a5b9cca4f682e6ff3748f82ee78a5636f84c878148cc7020890befffaa4506cebbef9a3f7c67178f2"
 local K={}for i=1,64 do K[i]=tonumber(KS:sub(i*8-7,i*8),16)end
@@ -80,29 +83,37 @@ end
 -- Drone moves are vectors; robot moves are calls. Anything missing (a
 -- drone asked to swing, a robot asked to select with no arg) errors
 -- inside the pcall and is simply not done.
+-- This is the raw robot COMPONENT, not OpenOS's robot library: no forward(),
+-- no turnLeft(), and a side on everything. 3 front, 2 back, 1 up, 0 down.
+-- It called the library's names for years, and that pcall hid that no robot
+-- ever moved.
 local V={["move:f"]={0,0,1},["move:b"]={0,0,-1},["move:l"]={-1,0,0},["move:r"]={1,0,0},up={0,1,0},down={0,-1,0},["turn:l"]={0,0,0},["turn:r"]={0,0,0},stop={0,0,0}}
 local function go(op,g)pcall(function()
 if op=="select"then r.select(math.max(1,math.min(g,16)))
 elseif d then local v=V[op]if v then d.move(v[1],v[2],v[3])end
-elseif op=="move:f"then r.forward()elseif op=="move:b"then r.back()
-elseif op=="move:l"then r.turnLeft()r.forward()r.turnRight()
-elseif op=="move:r"then r.turnRight()r.forward()r.turnLeft()
-elseif op=="turn:l"then r.turnLeft()elseif op=="turn:r"then r.turnRight()
-elseif op=="up"then r.up()elseif op=="down"then r.down()
-elseif op=="use:f"then r.use()elseif op=="swing:f"then r.swing()
-elseif op=="place:f"then r.place()end end)end
+elseif op=="move:f"then r.move(3)elseif op=="move:b"then r.move(2)
+elseif op=="move:l"then r.turn(false)r.move(3)r.turn(true)
+elseif op=="move:r"then r.turn(true)r.move(3)r.turn(false)
+elseif op=="turn:l"then r.turn(false)elseif op=="turn:r"then r.turn(true)
+elseif op=="up"then r.move(1)elseif op=="down"then r.move(0)
+elseif op=="use:f"then r.use(3)elseif op=="swing:f"then r.swing(3)
+elseif op=="place:f"then r.place(3)end end)end
 m.open(7777)
 while true do
 local s,_,from,port,_,x=M.pullSignal()
-if s=="modem_message"and port==7777 and type(x)=="string"and S then
+if s=="modem_message"and port==7777 and type(x)=="string"and x:match('magic="([^"]+)"')=="RCPILOT1"then
+if x:find('op="who"',1,true)then
+m.send(from,port,'{magic="RCPILOT1",op="here",keyed='..tostring(S~=nil)..',kind="'..(d and"drone"or"robot")..'"}')
+elseif S then
 local op=x:match('op="([^"]+)"')
 local g=tonumber(x:match('arg=([%-%d]+)')or"")
 local n=x:match('nonce="([^"]+)"')
 local c=x:match('mac="(%x+)"')
-if x:match('magic="([^"]+)"')=="RCPILOT1"and op and n and c
+if op and n and c
 and Q(X(S,op.."|"..tostring(g or"").."|"..n),c)and not seen(n)then
 go(op,g)
 if op=="ping"then m.send(from,port,'{magic="RCPILOT1",op="pong",arg='..math.floor(M.uptime())..'}')end
+end
 end
 end
 end

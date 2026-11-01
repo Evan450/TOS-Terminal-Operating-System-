@@ -142,8 +142,10 @@ local REGISTRY = {
   -- you want available when the full one is misbehaving.
   cli      = { category = "core", tier = 0, help = "Drop to the command-line shell (same commands, no panels)" },
   tui      = { category = "core", tier = 0, help = "Return to the full panels interface" },
-  reboot   = { category = "core", tier = 2, help = "Reboot the system" },
-  shutdown = { category = "core", tier = 2, help = "Shut the system down" },
+  -- Tier 0 on purpose: helpers.canPowerOff is the rule, and it has to be
+  -- reachable by a lone operator of any tier (the low-memory rescue).
+  reboot   = { category = "core", tier = 0, help = "Reboot the system" },
+  shutdown = { category = "core", tier = 0, help = "Shut the system down" },
   -- `which` answers "three things could own this name — which one runs?"
   -- (built-in vs package command vs /usr/bin program). Sibling to `why`,
   -- which answers "and why was I refused?".
@@ -168,7 +170,7 @@ local REGISTRY = {
   verify   = { category = "admin", tier = 2, slow = true, help = "File integrity vs the manifest (vs 'doctor' = runtime health)" },
   doctor   = { category = "admin", tier = 1, slow = true, help = "Runtime health: memory/disk/services/power/security ('verify' = files)" },
   backup   = { category = "admin", tier = 2, slow = true, help = "Snapshot/inspect/restore a directory tree" },
-  pkg      = { category = "admin", tier = 2, slow = true, help = "Package manager: list/search/install/upgrade/outdated/uninstall/enable/disable/make-disk" },
+  pkg      = { category = "admin", tier = 1, slow = true, help = "Package manager: list/search/install/upgrade/outdated/uninstall/enable/disable/make-disk" },
   install  = { category = "admin", tier = 2, help = "Install a package (shortcut for 'pkg install')", alias = "pkg" },
   uninstall = { category = "admin", tier = 2, help = "Remove a package (shortcut for 'pkg uninstall')", alias = "pkg" },
   diag     = { category = "admin", tier = 1, help = "Runtime health", alias = "doctor" },
@@ -205,7 +207,7 @@ local REGISTRY = {
   netfs    = { category = "admin", tier = 2, help = "Remote shares: mount a directory exported by another TOS machine" },
   theme    = { category = "admin", tier = 1, help = "Pick a preset theme for yourself (custom colours admin-only)" },
   colors   = { category = "admin", tier = 1, help = "Pick a theme", alias = "theme" },
-  service  = { category = "admin", tier = 2, help = "Start/stop/list rc.d services" },
+  service  = { category = "admin", tier = 1, help = "Start/stop/list rc.d services" },
   cron     = { category = "admin", tier = 2, help = "Manage cron jobs" },  -- #SEC M-9 — matches in-body adminOnly gate (was 1)
 
   -- ── extras: rare / heavy commands + aliases ──────────────
@@ -231,6 +233,11 @@ local REGISTRY = {
   rbmk     = { category = "extras", tier = 1, help = "RBMK reactor supervisor (needs the 'rbmk-control' add-on): survey/status/limits/scram/skala/wall" },
   rsh      = { category = "extras", tier = 2, help = "Remote shell client" },
   scp      = { category = "extras", tier = 2, help = "Network file copy" },
+  -- Second names, and tier 2 like the commands they name. These were
+  -- /usr/bin programs that never reached the network; working as they stood
+  -- they would have given remote execution to users `rsh` keeps it from.
+  ssh      = { category = "extras", tier = 2, help = "Remote shell client", alias = "rsh" },
+  share    = { category = "extras", tier = 2, help = "Network file copy", alias = "scp" },
   screen   = { category = "extras", tier = 1, help = "Seat/screen info; 'screen res <auto|max|WxH>' sets resolution" },
   -- ext stubs (lazy-load via shell.ext on first use):
   net      = { category = "extras", tier = 1, help = "Network admin (trust, peers, servers, ports)" },
@@ -256,6 +263,7 @@ local REGISTRY = {
 --   "inventory"         — any inventory-ish peripheral
 local NEEDS = {
   net = "net", ping = "net", chat = "net", rsh = "net", scp = "net",
+  ssh = "net", share = "net",
   -- Mail is an ADD-ON. The base image keeps only the privileged stub that
   -- hands the package the shell's display and session (see extras.lua), and
   -- must not ADVERTISE mail until the package is actually installed — no

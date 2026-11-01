@@ -58,6 +58,10 @@ test("/tos node blocked", "/tos", guard("/tos"))
 test("/tos/kernel/init.lua blocked", "/tos", guard("/tos/kernel/init.lua"))
 test("/etc/users.dat... still guarded subtree-wise except exempt",
   nil, guard("/etc/users.dat"))   -- exempt (admins add accounts)
+-- A catalog is data, so admins may add one. The rest of /usr stays closed.
+test("/usr/lang/xx.lang writable", nil, guard("/usr/lang/xx.lang"))
+test("/usr/lib/x.lua still blocked", "/usr", guard("/usr/lib/x.lua"))
+test("/usr/langs/x.lua is not /usr/lang", "/usr", guard("/usr/langs/x.lua"))
 test("/etc/secret.dat blocked", "/etc", guard("/etc/secret.dat"))
 -- (returns the FIRST matching root, so a nested system path reports its
 -- top-level root — still "blocked", which is what matters.)

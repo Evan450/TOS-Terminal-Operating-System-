@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**79 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**70 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 55 | Planned or under investigation. Most contributions belong here. |
+| Planned | 46 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (13) · [Networking](#networking) (7) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (12) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (6) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (10) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (11)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -295,12 +295,6 @@ No data card -&gt; compress.lua falls back to a stored blob, so the fileCost win
 
 securefs must still mediate the mount point, exactly as the jbod header says ("a TRANSPORT, not an access layer").
 
-### Operator decision: `pkg` and `service` read-only subcommands are admin-only
-
-*Planned* · from the round *Planned (near future)*
-
-OPERATOR DECISION: `pkg` AND `service` READ-ONLY SUBCOMMANDS ARE ADMIN-ONLY. The registry gives both tier 2, enforced at dispatch, so `pkg list/search/info` and `service list` refuse a user; the manual used to say only the changing subcommands needed admin. `srm` and `optimize` show the other pattern (tier 1, mutating subcommands gate themselves in-body). Documented as admin now; a deliberate choice either way.
-
 ### Get listed in `oppm list`
 
 *Planned* · from the round *Planned (near future)*
@@ -347,65 +341,17 @@ Later: teach `pkg install` to refresh the baseline for files it replaces, so an 
 
 ## Networking
 
-### Remote exec can still reach string.dump — operator decision
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-REMOTE EXEC CAN STILL REACH string.dump -- OPERATOR DECISION. AUDIT 1, same source. net/remote.lua:356 copies `string` without dump, but ("").dump reaches the real one through the string metatable, which remote.lua does not touch. Harmless while TOS is open source and `load` is not exposed there; both premises can change. Decide: shadow the metatable's \_\_index in the remote environment, or record that the two premises are load-bearing.
-
 ### The browser's later steps wait on five operator decisions
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
 
-### SSH and share have never worked
-
-*Planned* · from the round *The Keller import, and the battery's first round (2026-09-25)*
-
-SSH AND SHARE HAVE NEVER WORKED. They look for the network where it does not exist inside their sandbox and always print "Network not available". Deliberately left alone: making them work as they stand would let non-admins run remote commands and transfers that rsh / scp keep admin-only. Decide: alias them to rsh / scp, remove them, or document them. (keller session)
-
 ### The canonical number format is still architecture-dependent
 
 *Planned* · from the round *Extras sweep 2: the packaging seam (2026-09-06)*
 
 THE CANONICAL NUMBER FORMAT IS STILL ARCHITECTURE-DEPENDENT. The fix above removes the only float that crosses the wire; it does not make the FORMAT safe for the next one. A field carrying an integral float still canonicalizes differently on 5.2 and 5.3. The fix is one line in each half -- render numbers with a subtype-independent rule ("%d" when the value is integral, else "%.14g") -- but it changes the MAC for every frame, so both sides must be upgraded together AND the OpenOS worker is hand-copied to each worker box. Worth doing at the next protocol version bump, not on its own.
-
-### Operator decision, deliberately not made here
-
-*Planned* · from the round *The budgets that do not exist (2026-08-24)*
-
-OPERATOR DECISION, deliberately not made here: should `rsh` REFUSE to execute when the step budget cannot be installed?
-
-FOR: it is arbitrary code from the network with no CPU or
-
-allocation bound. What actually stops a runaway is OC's machine
-
-watchdog, which kills the WHOLE COMPUTER -- a far worse outcome
-
-than the clean "step budget exceeded" this module was written to
-
-return, and on a multi-seat box it takes everyone down.
-
-AGAINST: it would disable rsh outright on the only platform TOS
-
-ships for. The feature already requires a TRUSTED peer AND
-
-challenge-response per request AND rshd running (default off),
-
-and CMD\_LIMIT / OUTPUT\_LIMIT / the entry-time MIN\_FREE\_MEM check
-
-all still hold. This is a deliberate, gated feature, not an
-
-accident.
-
-A middle option: keep it enabled but make `service start rshd`
-
-print the loss once, so nobody enables it believing in a budget
-
-that is not there. The warning added above is the log-level
-
-version of that; whether it should be louder is the call.
 
 ### Operator idea (raised 2026-08-04, deferred)
 
@@ -429,14 +375,6 @@ WHO MAY MANAGE ACCOUNTS, READ THE LOG, USE SCP. Found 2026-10-03 walking the REA
 
 DECISION NEEDED, if any should be LOOSER: kernel users.create already accepts an ADMIN creator (effective tier &gt;= ADMIN), so admin account management is a one-word change in admin.lua -- but usermod's admin/root promotions and userdel need checking against users.setTier/delete's own guards first. `log` "filtered by tier" implies a user-visible log that the body has never allowed.
 
-### The manifest anchor is not enforced at boot
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-THE MANIFEST ANCHOR IS NOT ENFORCED AT BOOT. `verify anchor` writes the manifest's hash into the EEPROM's data field and `doctor` (and netrepair) compare it with the live manifest -- but nothing calls kernel.verifyManifestHash at boot. Its own comment said boot refused on a mismatch "unless a held-key recovery override is asserted"; found 2026-10-03 while correcting MANUAL 15 that neither the refusal nor the override exists. Comment fixed, MANUAL says `doctor` reports it. Not a new hole: MANUAL 15 already says an admin who can write the boot files runs code before login.
-
-DECISION NEEDED before building it: enforcing means a machine whose manifest legitimately changed (an upgrade, `pkg` touching a system path, a repair) stops booting until someone clears the anchor -- so it needs (a) every legitimate manifest writer to re-anchor or clear, (b) a recovery path that is not itself a bypass (the held-key idea: a key held at POST, like S for Safe Mode, that boots past a mismatch with a loud warning), and (c) a choice of refuse vs warn. Warn-only at boot (a POST line + the boot log) is cheap and safe; refuse is the real protection and the real cost.
-
 ### Dry-run capability enforcement
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
@@ -456,12 +394,6 @@ CONSOLIDATE THE SECURITY POLICY INTO ONE FILE. Theirs is a single readable funct
 - Move the DECISIONS into one auditable function. Leave the ENFORCEMENT points exactly where they are — this is a refactor of policy, not of mechanism, and the enforcement sites are where the #SEC history lives.
 - Attach the fail-closed property explicitly: a policy file that won't load must deny everything non-kernel, loudly. That is a security PROPERTY, so it needs its own test.
 - This is the one place our security STORY is quieter than our security POSTURE. The posture is good; you just can't read it in one sitting.
-
-### Operator decision: who may power off
-
-*Planned* · from the round *Planned (near future)*
-
-OPERATOR DECISION: WHO MAY POWER OFF. helpers.canPowerOff (the #REV #9 policy, 2026-07) lets a SOLE logged-in operator reboot or shut down without being admin; with others logged in it wants admin. But the registry gives reboot and shutdown tier 2, and since b39f4d0 (2026-09-11) dispatch enforces that first, so the sole-operator branch is unreachable and the manual now says admin. b39f4d0 also tightened another power-off path to admin on purpose, so admin-only may be the intent. Either lower reboot/shutdown to tier 1 (users; guests stay out) and let canPowerOff decide, or delete its sole-operator branch as dead code.
 
 ### Run-this-once confinement
 
@@ -537,12 +469,6 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 - THE MANIFEST MUST BE UPDATED BY THE SAME OPERATION, or `verify` and `srm scan` cry deletion about every removed file forever and the operator learns to ignore them — which costs more than the disk saved. Stripped entries get marked, not deleted, so the difference between "removed on purpose" and "missing" survives.
 - BOOT PROFILES AND STRIPPING ARE DIFFERENT LAYERS and now interact: a profile gates what LOADS, stripping removes what EXISTS. A profile that would load a stripped feature must degrade with a clear line in the boot log, never panic. Today the load paths pcall-and-warn, which is most of the way there — but it has never been tested against a file that is genuinely absent rather than merely skipped.
 - NOT a package. `pkg uninstall` already covers add-ons; this is about the BASE IMAGE, which pkg does not own.
-
-### A headless machine keeps its boot session — operator decision
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-A HEADLESS MACHINE KEEPS ITS BOOT SESSION -- OPERATOR DECISION. AUDIT 1, from the pentest's "Still recorded, not changed". kernel.headlessMain (kernel/init.lua \~L3487) sets bootSession to the kernel session and never sets bootCompleted (only the screen path does, \~L1690). So on a machine with no screen, securefs.sessionOf() and users.currentSession() answer "kernel" to a caller with no process principal for the whole uptime. Nothing found runs user code there: a missing line of defence, not a hole. Decide: set bootCompleted in headlessMain and make the two agree, or record why not.
 
 ### Split the BIOS: minimal EEPROM, recovery UI in stage 2
 
@@ -871,45 +797,6 @@ NOT ON THIS LIST, because they are the operator's to decide, not to build: the b
 
 LICENCE HEADERS -- OPERATOR DECISION. The provenance lint's other half (A PROVENANCE LINT, below) wanted every shipped .lua to carry a licence header. Today 0 of the 197 shipped files do; LICENSE.txt at the root is the whole statement. Two calls are the licence holder's, not a session's: (1) GPL-3.0-only or GPL-3.0-or-later; (2) whether the RELEASE carries it. strip.lua keeps `--!` lines (licence headers are one of the three things it keeps), so a one-line `--! SPDX-License-Identifier: GPL-3.0-or-later` costs 46 bytes in each of the 138 release files: about 6.2 KB on a Tier 2 disk the 2026-09 audit already found tight. A plain `--` header would cost nothing in the release and carry the notice in source only. Once decided, the header goes in mechanically and test\_provenance.py grows the check.
 
-### Rc-pilot cannot be set up from its own instructions
-
-*Planned* · from the round *The open queue, worked through (2026-10-01)*
-
-RC-PILOT CANNOT BE SET UP FROM ITS OWN INSTRUCTIONS. Found 2026-10-03 writing the add-on READMEs. Three gaps at the seam between `rc` and the robot's chip, none of them visible to test\_rc\_pilot.lua, which hands the chip its secret directly:
-
-- The chip reads its secret from the EEPROM DATA field, and nothing on TOS wrote that field: `flash` wrote only the code, `component eeprom setData` is refused (flash is the one EEPROM write path), and the sandbox hides the EEPROM from every program, the root `lua` prompt included. DONE 2026-10-03: `flash <file> --data` asks for it twice, masked, before anything is written, and refuses a BIOS, whose boot address and manifest anchor live in that field. test\_flash\_data.lua drives the real flash: 20 checks, 14 fail on the old code.
-- The robot never says its wireless card's address, and `rc` needs it in full. A robot runs no OS and usually has no screen, so the operator has no way to read it.
-- A chip with no secret ignores every frame without a sound, so a robot set up wrong looks exactly like one out of range.
-- `rc` can never HEAR the robot, which blocks the obvious fix for both of the above. Found 2026-10-03 designing it: the package sandbox's pullSignal drops every modem\_message (kernel/sandbox.lua PULL\_DROP, the anti-sniffing rule), and the `net` capability carries only TOS-protocol message types, which a bare-EEPROM robot does not speak. So the pong after `P` has never been shown on a real machine -- test\_rc\_pilot handed the host a raw pullSignal and could not see it -- and a discovery reply would be dropped the same way. Pinned as a \[known gap\] in test\_rc\_pilot.lua through the REAL sandbox pullSignal, so a fix fails that line and it gets rewritten.
-
-OPERATOR DECISION, deliberately not made here, because it changes what a sandboxed package may hear:
-
-(a) a program holding peripheral.modem receives modem\_message
-
-for ports IT opened through its gated modem proxy, and only
-
-those, with every port the kernel uses (TOS net, mesh,
-
-cluster, rbmk telemetry) refused at open(). Narrow, and the
-
-shape OpenOS programs expect; the sandbox must track opens
-
-per process and close them on exit;
-
-(b) the same through ADDRESSABLE LOCAL IPC when that exists (WHAT
-
-THE REST OF THE FIELD DOES BETTER, below);
-
-(c) leave raw receive closed: `rc` stays send-only, the pong
-
-display goes, and the address has to come from the world
-
-(whether an Analyzer shows a robot's network card, or a card
-
-keeps its address when moved from a computer into the
-
-Assembler, is an in-game check). Recommendation: (a). Then, as one pack change riding one signing: the chip answers an unauthenticated {op="who"} broadcast with {op="here", keyed=true|false, kind="robot"|"drone"}, presence only and never a secret; it beeps once at start when it has no secret; and `rc scan` lists what answers. Budget: the image is 3,683 of 4,096 bytes.
-
 ### OpenOS's own bin/ does not run, and the compat number should say so
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
@@ -927,12 +814,6 @@ PUT THE COMPAT NUMBER IN THE README, or decide not to. The shims above make the 
 - some community code targets PLAN9K, not OpenOS (magik6k's process.rt / process.globalSignals calls are Plan9k's API). Those files were never going to run here and are not counted as compat gaps.
 
 Honest phrasing is something like "every program on the nine OpenComputers loot disks loads; the OpenOS names we do not provide were required by none of them". Then re-run the scan when the claim is made, so the number in the README is one somebody can reproduce.
-
-### Operator decision: should /usr/lang be admin-writable
-
-*Planned* · from the round *Planned (near future)*
-
-OPERATOR DECISION: SHOULD /usr/lang BE ADMIN-WRITABLE? Language catalogs live there, and /usr is a protected system path, so adding one by hand takes root and `protect off` (found 2026-10-16: `lang dump /usr/lang/xx.lang` was refused for root; the refusal and the route are now shown, 5d62fad). Catalogs are DATA, parsed by the safe decoder and never run, and a bad %-spec falls back to English, so securefs's TREE\_EXEMPT could take "/usr/lang/" the way it takes "/etc/widgets/": admins could then write catalogs and nobody below admin could. The cost is that a tampered admin session could reword the login screen. Either add the exemption, or keep `protect off` and packages as the only routes in.
 
 ### Error registry: the rest of the migration
 

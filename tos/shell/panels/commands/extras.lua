@@ -1729,6 +1729,7 @@ return function(C, S, deps)
     if result then o(result, T.fg)
     else o("Error: " .. tostring(err), T.error) end
   end
+  C.ssh = C.rsh
 
   -- ── File transfer ─────────────────────────────────────
   C.scp = function(args, o)
@@ -1761,6 +1762,7 @@ return function(C, S, deps)
       o("Usage: scp <peer>:<remote_path> <local_path>", T.dim)
     end
   end
+  C.share = C.scp
 
   -- ── Screen switching ──────────────────────────────────
   C.screen = function(args, o)

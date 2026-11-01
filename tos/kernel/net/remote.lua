@@ -318,6 +318,13 @@ function remote.handleExec(packet, fromAddr)
   -- Shallow-copy shared libraries so the sandbox cannot poison the host.
   -- `deny` lets us drop entries we don't want inside the sandbox (string.dump
   -- can exfiltrate bytecode; debug.* would defeat the step-budget hook).
+  --! ("").dump still reaches the real one, and on OpenComputers that cannot
+  --! be helped: machine.lua answers getmetatable(<string>) with nil and has
+  --! no debug.setmetatable, so nothing in TOS can touch the string metatable,
+  --! and it is one table for the whole machine anyway. What makes that safe
+  --! is that this env has no `load` to feed bytecode to and that dumping can
+  --! only reach TOS's own published functions. Keep `load` out.
+  --! (test_remote_env.lua)
   local function copyLib(lib, deny)
     local c = {}
     for k, v in pairs(lib) do

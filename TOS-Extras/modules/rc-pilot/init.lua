@@ -112,7 +112,8 @@ mod.commands = {
     o = o or print
     local target = args[1]
     if not target then
-      o("Usage: rc <robot-address>")
+      o("Usage: rc <robot-address> | rc scan")
+      o("  `rc scan` lists the robots in range, with their addresses.")
       o("  The robot must be running the rc-pilot EEPROM. rc asks for the")
       o("  shared secret, or takes it from 'rc <addr> --secret <secret>'.")
       o("  The robot's chip image is /usr/share/rc-pilot/eeprom-rc-pilot.lua:")
@@ -126,6 +127,49 @@ mod.commands = {
     local modem = component.proxy(modemAddr)
     if not modem.isWireless or not modem.isWireless() then
       o("Modem is not wireless. RC pilot needs a wireless modem.")
+      return
+    end
+
+    -- A refused open comes back as nil and a reason; false only means this
+    -- program already had it.
+    local function listen()
+      local okO, whyO = modem.open(PORT)
+      if okO == nil then
+        o("Cannot listen on port " .. PORT .. ": " .. tostring(whyO))
+        return false
+      end
+      return true
+    end
+
+    --! Who is out there. A robot runs no OS and usually has no screen, so
+    --! this is how anyone learns the address the rest of `rc` needs. Asked
+    --! with no MAC and answered with presence only: no secret changes hands,
+    --! and an answer proves nothing about who sent it.
+    if target == "scan" then
+      if not listen() then return end
+      modem.broadcast(PORT, '{magic="RCPILOT1",op="who"}')
+      o("Asking who is in range...")
+      local seen, found = {}, 0
+      local deadline = computer.uptime() + 3
+      while true do
+        local left = deadline - computer.uptime()
+        if left <= 0 then break end
+        local sig, _, from, port, _, data = computer.pullSignal(left)
+        if sig == "modem_message" and port == PORT and type(data) == "string"
+           and not seen[from] then
+          local keyed, kind = data:match('op="here",keyed=(%a+),kind="(%a+)"')
+          if keyed then
+            seen[from] = true
+            found = found + 1
+            o("  " .. from .. "  " .. kind
+              .. (keyed == "true" and "" or "  (no secret on its chip: it will ignore you)"))
+          end
+        end
+      end
+      modem.close(PORT)
+      if found == 0 then
+        o("Nothing answered. Is the robot on, in range, and running the rc-pilot chip?")
+      end
       return
     end
 
@@ -181,7 +225,7 @@ mod.commands = {
       return
     end
 
-    modem.open(PORT)
+    if not listen() then return end
     o("RC pilot active. Target: " .. full:sub(1, 12) .. "...")
     o("Keys: WASD/arrows | Q/E turn | Space/Shift up/down | F use | X break | B place | 1-9 slot | P ping | "
       .. quitLabel() .. " quit")

@@ -445,9 +445,12 @@ end
 -- Tree-exempt prefixes. Any of these covers writes ANYWHERE under
 -- the listed directory — for things where the directory itself is
 -- admin-managed but per-file paths are arbitrary (log rotation,
--- session/pid files, per-app cluster state, etc.).
+-- session/pid files, per-app cluster state, etc.). /usr/lang is here because
+-- a catalog is data for the safe decoder and never runs: admins can add one
+-- directly, and the ordinary ACL still keeps everyone below admin out.
 local TREE_EXEMPT = {
   "/var/log/", "/var/run/", "/var/lib/", "/var/cluster/", "/etc/widgets/",
+  "/usr/lang/",
 }
 
 local function protectedHit(path)

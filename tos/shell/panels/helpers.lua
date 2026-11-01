@@ -995,6 +995,11 @@ end
 -- killing every seat's session, so a non-admin may only do it when they are
 -- the SOLE active operator. ADMIN+ may always power off. Returns (ok,
 -- reason). Logout is per-seat and not gated by this.
+--! This is the whole rule, for every route. reboot and shutdown sit at tier 0
+--! in the registry so that dispatch cannot stop anyone before they get here:
+--! at tier 2 it did, and a lone user on a box too short of RAM to load `core`
+--! was told to reboot and then refused, which is the trap the rescue commands
+--! exist to prevent. (test_power_off_policy.lua, test_lowmem_rescue.lua)
 function M.canPowerOff(S)
   if M.liveTier(S) >= 2 then return true end  -- admin/root always may
   -- Count seats with a live shell (active operators).

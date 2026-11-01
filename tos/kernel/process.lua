@@ -1196,6 +1196,10 @@ function proc.tick(signal)
       if not p._purged then
         p._purged = true
         if okEv == nil then okEv, evMod = pcall(require, "kernel.event") end
+        if p.modemPorts then
+          local sb = package.loaded["kernel.sandbox"]
+          if type(sb) == "table" and sb.releasePorts then pcall(sb.releasePorts, p) end
+        end
         if okEv and type(evMod) == "table" and evMod.purgeOwner then
           evMod.purgeOwner(pid)
         end

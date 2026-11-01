@@ -184,8 +184,12 @@ return function(C, S, deps)
         .. "programs, or reboot, and try again.", T.dim)
     end
   end
+  -- Looking changes nothing, so a user may, the way `srm` and `optimize` gate
+  -- only what changes something. Named here rather than the other way round,
+  -- so a verb added later is admin until someone says otherwise.
+  local PKG_READ_ONLY = { list = true, search = true, available = true, info = true }
   C.pkg = function(args, o)
-    if not adminOnly(o) then return end
+    if args[1] and not PKG_READ_ONLY[args[1]] and not adminOnly(o) then return end
     local okP, pkgMod = helpers.requireRoomy(S, "kernel.pkg", "admin")
     if not okP or not pkgMod then
       local line = helpers.loadFailure("pkg", pkgMod)
@@ -3637,7 +3641,7 @@ return function(C, S, deps)
   end
   C.colors = C.theme
   C.service = function(args, o)
-    if not adminOnly(o) then return end
+    if args[1] and args[1] ~= "list" and not adminOnly(o) then return end
     local ok2, rcMod = helpers.requireRoomy(S, "kernel.rc", "admin")
     if not ok2 then o(helpers.loadFailure("service", rcMod), T.error); return end
     if not args[1] or args[1] == "list" then
@@ -3664,6 +3668,17 @@ return function(C, S, deps)
         if okP and type(pkgMod) == "table" and pkgMod.noteServiceStarted then
           local owner = pkgMod.noteServiceStarted(args[2], { session = helpers.sessionOf(S) })
           if owner then o("Package '" .. owner .. "' enabled with it.", T.dim) end
+        end
+        -- Said here as well as in the log, because this is where someone
+        -- decides to run it believing in a budget OC has no way to enforce.
+        if args[2]:find("rshd", 1, true) then
+          local okR, remoteMod = pcall(require, "kernel.net.remote")
+          if okR and type(remoteMod) == "table" and remoteMod.stepBudgetAvailable
+             and not remoteMod.stepBudgetAvailable() then
+            o("OpenComputers gives remote commands no CPU or memory limit:",
+              T.warning)
+            o("a runaway one stops this whole machine.", T.warning)
+          end
         end
       end
     elseif args[1] == "stop" and args[2] then

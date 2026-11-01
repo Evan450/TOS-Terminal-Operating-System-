@@ -16,6 +16,7 @@ answers off the real screen.
         [--floppy NAME=DIR]... [--floppy-in NAME]
         [--trace] [--keep] [--internet] [--geolyzer] [--transposer]
         [--robot [--robot-chest [--robot-rubbish]]]
+        [--chip FILE [--chip-data TEXT]]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
 A script is one step per line (HeadlessTOS.java's runScript lists them):
@@ -278,6 +279,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="a stand-in geolyzer over a small built-in site")
     ap.add_argument("--robot", action="store_true",
                     help="a stand-in robot component, printing each block it places")
+    ap.add_argument("--chip", metavar="FILE",
+                    help="a robot with no OS, booting FILE from its EEPROM, wireless on both "
+                         "ends; it says where it ended up as the run ends")
+    ap.add_argument("--chip-data", metavar="TEXT",
+                    help="with --chip: the EEPROM's data field, as `flash --data` leaves it")
     ap.add_argument("--transposer", action="store_true",
                     help="a stand-in transposer with a small chest to the north")
     ap.add_argument("--robot-chest", action="store_true",
@@ -398,6 +404,10 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--robot-rubbish")
     if args.transposer:
         cmd.append("--transposer")
+    if args.chip:
+        cmd += ["--chip", str(Path(args.chip).resolve())]
+        if args.chip_data:
+            cmd += ["--chip-data", args.chip_data]
     if args.seats != "1":
         cmd += ["--seats", args.seats]
     for n in peers:

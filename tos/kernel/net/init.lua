@@ -115,6 +115,14 @@ local REGISTERED_PORTS = {
 net.REGISTERED_PORTS = REGISTERED_PORTS
 --- Whose port `port` is in the ecosystem registry, or nil.
 function net.portOwner(port) return REGISTERED_PORTS[port] end
+--- The ports the kernel itself listens on, as a set. Asked per call, because
+--- listenPort is the operator's to change. The sandbox refuses these to
+--- anything opening a port through a modem proxy.
+function net.kernelPorts()
+  local set = { [listenPort] = true }
+  if broadcastPort then set[broadcastPort] = true end
+  return set
+end
 local encryptComms  = true
 local hostname      = "tos"
 

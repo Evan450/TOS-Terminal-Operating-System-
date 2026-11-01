@@ -78,7 +78,8 @@ local exec = executorMod.build(S, {
   rp = function(p) return p end,
   makeProgramEnv = function() return {} end,
   C = { drive = cmd("drive"), ls = cmd("ls"), bootsettings = cmd("bootsettings"),
-        flash = cmd("flash"), rs = cmd("rs"), hello = cmd("hello") },
+        flash = cmd("flash"), rs = cmd("rs"), hello = cmd("hello"),
+        reboot = cmd("reboot"), shutdown = cmd("shutdown") },
 })
 
 local function tryAs(tok, line, name)
@@ -98,6 +99,10 @@ test("GUEST still runs a tier-0 command (ls)", tryAs("g", "ls", "ls"))
 test("GUEST still runs an unregistered built-in", tryAs("g", "hello", "hello"))
 test("GUEST still runs a package command (sandboxed; not in the registry)",
   tryAs("g", "fakegame", "fakegame"))
+-- canPowerOff is the rule. Dispatch refusing first is what stranded a lone
+-- user on a box too short of RAM to load `core`: told to reboot, then refused.
+test("GUEST's reboot reaches the command, whose own gate decides", tryAs("g", "reboot", "reboot"))
+test("USER's shutdown does too", tryAs("u", "shutdown", "shutdown"))
 test("USER runs a tier-1 command", tryAs("u", "drive list", "drive"))
 test("USER cannot run a tier-2 command (bootsettings)", not tryAs("u", "bootsettings show", "bootsettings"))
 test("ADMIN runs a tier-2 command", tryAs("a", "bootsettings show", "bootsettings"))

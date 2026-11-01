@@ -224,8 +224,6 @@ return {
   { path = "/etc/rc.d/20-rshd.disabled",      critical = false },
 
   -- ── /usr/bin tools ───────────────────────────────────────
-  { path = "/usr/bin/share.lua",              critical = false },
-  { path = "/usr/bin/ssh.lua",                critical = false },
 
   -- (Bundled modules moved to the optional cluster/Optional-Utilities
   --  packages in v1.3.1 — they are no longer part of the base image and

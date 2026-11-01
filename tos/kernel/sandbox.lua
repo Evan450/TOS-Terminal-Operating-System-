@@ -309,6 +309,56 @@ local PULL_DROP = {
   tos_shell_exited   = true,
 }
 
+--! MODEM PORTS. A program that opened a port through its gated modem proxy
+--! (gatedModem, below) hears modem_message on that port, and PULL_DROP still
+--! drops the rest, so this is one door per port and no way to sniff. It is
+--! how `rc` hears its robot, which speaks no TOS protocol and so can never
+--! come in through the `net` capability.
+--!
+--! A port belongs to the ENV that opened it, not to a pid. A package command
+--! runs inline in the shell, its env cached between runs, and a service's
+--! start() runs in whichever process said `service start`. Only a program's
+--! ports are also noted on its process, for hearing and to close at its exit:
+--! a service outlives the shell that started it. (test_sandbox_modem_ports.lua)
+local outsideProcess                       -- what off-box and pre-init callers hold
+
+local function callerProcess()
+  local P = package.loaded["kernel.process"]
+  return P and type(P.current) == "function" and P.current() or nil
+end
+
+local function hearsPort(modemAddr, port)
+  local p = callerProcess()
+  local held
+  if p then held = p.modemPorts else held = outsideProcess end
+  local mine = held and held[modemAddr]
+  return mine ~= nil and mine[port] ~= nil
+end
+
+local function pullDrops(sig)
+  local name = sig[1]
+  if not PULL_DROP[name] then return false end
+  return not (name == "modem_message" and hearsPort(sig[2], sig[4]))
+end
+
+--- Close what a dead process still held. kernel.process calls this once, from
+--- its reaper. Nothing is opened on a program's behalf by anyone else, so
+--- nothing here can be another program's.
+function sandbox.releasePorts(p)
+  local held = p and p.modemPorts
+  if not held then return end
+  p.modemPorts = nil
+  local comp = require("component")
+  for addr, mine in pairs(held) do
+    for port, owner in pairs(mine) do
+      if owner == p then
+        mine[port] = nil
+        pcall(comp.invoke, addr, "close", port)
+      end
+    end
+  end
+end
+
 -- #SEC — the old sandbox handed out `computer.pullSignal` raw. That drains
 -- the GLOBAL hardware queue: a sandboxed program could steal another seat's
 -- keystrokes, sniff every modem packet, block the whole machine inside one
@@ -343,7 +393,7 @@ local function safePullSignal(timeout)
     while true do
       local sig = table.pack(coroutine.yield())
       local name = sig[1]
-      if name ~= nil and not PULL_DROP[name] then
+      if name ~= nil and not pullDrops(sig) then
         return table.unpack(sig, 1, sig.n)
       end
       -- Dropped signal or idle (nil) resume: honour the deadline, else keep
@@ -362,7 +412,7 @@ local function safePullSignal(timeout)
     local sig = table.pack(computer.pullSignal(remaining))
     local name = sig[1]
     if name == nil then return nil end
-    if not PULL_DROP[name] then return table.unpack(sig, 1, sig.n) end
+    if not pullDrops(sig) then return table.unpack(sig, 1, sig.n) end
   end
 end
 
@@ -577,10 +627,99 @@ local function seatOwnAddress(ctype)
   return nil
 end
 
-local function makeSafeComponent(caps)
+--! Ports the add-on daemons listen on: cluster's workers and storage tier, and
+--! rbmk telemetry. Reserved even while nothing has them open, because a
+--! program that got there first would hear that traffic and stop the daemon
+--! starting. rc.d services may open them: an admin installed those, and the
+--! ports are theirs.
+local SERVICE_PORTS = {
+  [2001] = "cluster", [2002] = "cluster", [2003] = "cluster", [2004] = "cluster",
+  [2100] = "cluster", [2101] = "cluster", [2200] = "rbmk telemetry",
+}
+
+local function isKernelPort(port)
+  local net = _G._TOS and _G._TOS.net
+  if net and type(net.kernelPorts) == "function" then
+    return net.kernelPorts()[port] == true
+  end
+  return port == 42
+end
+
+--! What a sandbox gets instead of the raw modem. open and close are the only
+--! change. The raw close() with no port shuts every port on the card, the
+--! kernel's included, so one call from any holder of peripheral.modem took
+--! the machine off the network. `held` is the env's own table: see MODEM PORTS.
+local function gatedModem(px, held, service)
+  local addr = px.address
+  local mine = held[addr]
+  if not mine then mine = {}; held[addr] = mine end
+  local g = {}
+  for k, v in pairs(px) do g[k] = v end
+
+  local function refuse(port, why)
+    noteDenial(currentProgram(), "modem port " .. tostring(port))
+    return nil, "port " .. tostring(port) .. " " .. why
+  end
+
+  function g.open(port)
+    if type(port) ~= "number" then return refuse(port, "is not a number") end
+    -- Whole numbers only past this point: the card truncates, and 42.5 must
+    -- not get past a check for 42.
+    port = math.floor(port)
+    if isKernelPort(port) then return refuse(port, "is the kernel's") end
+    if not service and SERVICE_PORTS[port] then
+      return refuse(port, "belongs to " .. SERVICE_PORTS[port])
+    end
+    if mine[port] then return px.open(port) end
+    if px.isOpen(port) then return refuse(port, "is already in use") end
+    local ok, why = px.open(port)
+    if ok then
+      local p = not service and callerProcess() or nil
+      mine[port] = p or true
+      if p then
+        p.modemPorts = held
+      elseif not service then
+        outsideProcess = held
+      end
+    end
+    return ok, why
+  end
+
+  function g.close(port)
+    if port == nil then
+      local closed = false
+      for p in pairs(mine) do
+        mine[p] = nil
+        px.close(p)
+        closed = true
+      end
+      return closed
+    end
+    if type(port) ~= "number" then return refuse(port, "is not a number") end
+    port = math.floor(port)
+    if not mine[port] then return refuse(port, "is not yours") end
+    mine[port] = nil
+    return px.close(port)
+  end
+
+  return g
+end
+
+local function makeSafeComponent(caps, opts)
   caps = caps or {}
   local comp = require("component")
   local safe = {}
+
+  local held, gated = {}, {}
+  local function modemView(px)
+    if not px or not px.address then return px end
+    local g = gated[px.address]
+    if not g then
+      g = gatedModem(px, held, opts and opts.service)
+      gated[px.address] = g
+    end
+    return g
+  end
 
   -- Resolved per call, not once at build time: seats come and go with
   -- hot-plug, and a sandbox env outlives any single screen.
@@ -615,6 +754,7 @@ local function makeSafeComponent(caps)
       return nil, "access denied"
     end
     if seatDenies(addr, ctype) then return nil, "not your seat" end
+    if ctype == "modem" then return modemView(comp.proxy(addr)) end
     return comp.proxy(addr)
   end
 
@@ -639,6 +779,9 @@ local function makeSafeComponent(caps)
     if seatDenies(addr, ctype) then
       error("sandbox: " .. tostring(ctype) .. " belongs to another seat")
     end
+    if ctype == "modem" and (method == "open" or method == "close") then
+      return modemView(comp.proxy(addr))[method](...)
+    end
     return comp.invoke(addr, method, ...)
   end
 
@@ -657,6 +800,7 @@ local function makeSafeComponent(caps)
       local mine = seatOwnAddress(ctype)
       if mine then return comp.proxy(mine) end
     end
+    if ctype == "modem" then return modemView(comp.getPrimary(ctype)) end
     return comp.getPrimary(ctype)
   end
 
@@ -1384,7 +1528,7 @@ function sandbox.build(opts)
   -- returned both as globals and via require("component") / require("computer").
   local safeComp, safeCompr
   if caps["component"] then
-    safeComp  = componentFieldView(makeSafeComponent(caps))
+    safeComp  = componentFieldView(makeSafeComponent(caps, opts))
     safeCompr = makeSafeComputer()
   end
   local prebound = {}

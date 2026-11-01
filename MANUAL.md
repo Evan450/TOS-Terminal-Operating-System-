@@ -2125,10 +2125,10 @@ English — partial translations are valid by design.
 Currently translated surfaces: the login screen and the Desktop (a Russian
 starter catalog ships in the base image). Command output, `help`, and man
 pages are English for now. Rarer languages can ship as ordinary packages
-that just install a file into `/usr/lang`. Copying one in by hand takes root,
-because `/usr` is a protected system path ([§5.1](#51-layout--permissions)): `lang dump` to `/tmp`,
-translate, then `protect off`, copy the file to `/usr/lang/<code>.lang`, and
-`protect on`.
+that just install a file into `/usr/lang`. An admin can also put one there by
+hand: `lang dump`, translate, and save it as `/usr/lang/<code>.lang`. `/usr` is
+a protected system path ([§5.1](#51-layout--permissions)), but a catalog is data that never runs, so
+`/usr/lang` is left out of that protection and needs no `protect off`.
 
 ## 11. Peripherals
 
@@ -2894,7 +2894,7 @@ peer can be a full address, an alias, or an index from `net scan`.
 With no argument, broadcasts a discovery ping; `net peers` lists who answered.
 *See also:* `net`, `hostname`.
 
-**pkg** — `pkg <list|search|info <name>|install [name|dir]|uninstall <name>|enable <name>|disable <name>|commands|make-disk <mount>>` **(admin)**
+**pkg** — `pkg <list|search|info <name>|install [name|dir]|uninstall <name>|enable <name>|disable <name>|commands|make-disk <mount>>` **(user for `list`, `search`, `info`; admin for the rest)**
 Top-level `install <name>` / `uninstall <name>` are shortcuts for the same.
 The package manager — the one way to add or remove add-ons ([Chapter 7](#7-packages)). `enable`/
 `disable` toggle an installed package without removing it. Installs are sandboxed
@@ -2939,7 +2939,7 @@ Supervise an RBMK reactor console. Needs the `rbmk-control` add-on from the
 Optional Utilities pack: it is a service, so installing it takes root. Run `rbmk
 survey` before starting the service.
 
-**reboot** — `reboot` **(admin)**
+**reboot** — `reboot` **(alone on the machine, or admin)**
 Cleanly restart the machine (writes the clean-shutdown marker first, so the next
 boot won't warn of an unsafe shutdown). *See also:* `shutdown`, [Chapter 9](#9-power--resilience).
 
@@ -2994,7 +2994,7 @@ Capture exactly what's on this seat's screen to a text file (default
 report. Reads the display buffer when active, else the GPU directly. *See also:*
 `crash`, `log`.
 
-**service** — `service [start|stop|list] <name>` **(admin)**
+**service** — `service [start|stop|list] <name>` **(user to list; admin to change)**
 Manage `/etc/rc.d/` services ([Chapter 12](#12-services--scheduling)). *See also:* `cron`.
 
 **settings** — `settings`
@@ -3002,12 +3002,11 @@ Open (or focus) the **Settings app** tab: Appearance (theme, live preview),
 Status Bar (widgets), Home (login landing), System (admin shortcuts).
 *See also:* `theme`, `profile`, `bootsettings`, [§4.4](#44-the-tiles-view--the-settings-app).
 
-**share** — `share <host> [path]` **(tier: modem)**
-Meant to fetch a file from a peer's `/public`, but it does not work at present:
-it cannot see the network from the sandbox it runs in, so it prints `Network not
-available`. Use `scp`. *See also:* `scp`, `net servers`.
+**share** — `share <peer>:<path> <local>` **(admin; needs a modem and a TRUSTED peer)**
+Another name for `scp`, and the same admin-only download. *See also:* `scp`,
+`net servers`.
 
-**shutdown** — `shutdown` **(admin)**
+**shutdown** — `shutdown` **(alone on the machine, or admin)**
 Cleanly power off (writes the clean-shutdown marker). *See also:* `reboot`,
 [Chapter 9](#9-power--resilience).
 
@@ -3017,11 +3016,9 @@ boot-time repair pass and backups. With no argument it reports what it knows,
 including a fault the BIOS parked in the EEPROM. *See also:* `man srm`,
 [Chapter 17](#17-recovery--troubleshooting).
 
-**ssh** — `ssh <host> <command...>` **(tier: modem; TRUSTED peer)**
-Meant to run a command on a TRUSTED machine, but it does not work at present: it
-cannot see the network from the sandbox it runs in, so it prints `Network not
-available`. There is no interactive remote shell. Use `rsh`, which runs Lua on
-the peer. *See also:* `rsh`, `scp`.
+**ssh** — `ssh <peer> <lua>` **(admin; tier: modem; TRUSTED peer)**
+Another name for `rsh`: it runs Lua on the peer, not a shell line, and there is
+no interactive remote shell. *See also:* `rsh`, `scp`.
 
 **sudo** — `sudo <command>` | `sudo -s` | `sudo -k` | `sudo setup [admin|root]` |
 `sudo off` **(USER+; guests cannot elevate)**
@@ -3250,10 +3247,11 @@ Explain the last refusal or error, in plain English, with the fix.
   actually ships), and `verify` — and the boot self-check, when the profile
   runs it ([§2.1](#21-the-boot-spectrum-etcbootcfg)) — compares every installed file against it, counting a
   mismatch as damage. The manifest itself can be pinned too: `verify anchor`
-  records its hash in the EEPROM, and `doctor` then reports if it ever
-  changes. A machine running straight from the source tree has no digests to
-  check: the source manifest stays digest-free, so that editing a file does not
-  dirty it.
+  records its hash in the EEPROM, and from then on boot warns and `doctor`
+  reports if it ever changes. Boot does not refuse: an update changes the
+  manifest too, so run `verify anchor` again after one. A machine running
+  straight from the source tree has no digests to check: the source manifest
+  stays digest-free, so that editing a file does not dirty it.
 - **`bootstrap.lua` trusts the repository, not the publisher.** It checks every
   download against the release manifest's digests before writing it, and
   refuses the whole install on any mismatch. But the manifest and the files come

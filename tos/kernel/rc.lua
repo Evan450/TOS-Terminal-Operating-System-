@@ -446,10 +446,11 @@ local function loadService(name)
         -- lifts the blocklist for names that resolve under /usr/lib or
         -- /usr/modules, and rc.d services already carry `net` in their
         -- default caps, so it widens nothing else. See the note in
-        -- sandbox.lua's makeSafeRequire.
+        -- sandbox.lua's makeSafeRequire. service: its modem ports outlive
+        -- whichever process said `service start`.
         svcEnv = require("kernel.sandbox").build({
           caps = caps, session = session,
-          allowUserLibs = true })
+          allowUserLibs = true, service = true })
       end
       local fn, err = load(source, "=" .. path, "t", svcEnv)
       if fn then
