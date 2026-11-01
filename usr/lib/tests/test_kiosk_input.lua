@@ -75,7 +75,7 @@ package.loaded["shell.panels.commands"] = {
 
 local src, path = readSource("tos/shell/kiosk.lua")
 test("kiosk.lua is readable", src ~= nil)
-if not src then print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false end
+if not src then print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1) end
 local kiosk = assert(load(src, "@" .. path))()
 
 -- `cfg` is what /etc/kiosk.cfg holds; `typed` is what the user types.
@@ -148,5 +148,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false end
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end
 print("All tests passed."); return true

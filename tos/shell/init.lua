@@ -122,6 +122,13 @@ function S.run(k, token)
   if U and st then local s = U.getSession(st); if s then who = s.user end end
   cwd = "/home/" .. who
   if not F.exists(cwd) then cwd = "/" end
+  -- This user's HOME, not the system default of /. Children inherit it.
+  do
+    local okE, envMod = pcall(require, "kernel.env")
+    if okE and type(envMod) == "table" and envMod.write and P and P.current then
+      envMod.write(P.current(), "HOME", who == "root" and "/root" or ("/home/" .. who))
+    end
+  end
 
   -- Operator startup-interface knob (Boot Settings → Interface): "cli"
   -- boots every seat straight to the command line — no panels parse or

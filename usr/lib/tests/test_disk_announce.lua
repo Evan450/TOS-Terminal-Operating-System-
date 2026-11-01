@@ -67,5 +67,5 @@ eq("...and the output is left alone", "kept", S.outLines and S.outLines[1][1])
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

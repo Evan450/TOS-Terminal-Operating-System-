@@ -163,5 +163,5 @@ if failed > 0 then
   print("  require(\"kernel.display\").invalidateColors()")
   print("  require(\"kernel.screen\").invalidateAll()")
   print("or add a `GPURAW-OK:` comment saying why no cache can be affected.")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

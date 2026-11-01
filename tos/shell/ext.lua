@@ -91,6 +91,8 @@ local function resolvePeer(s)
   return s
 end
 
+X.resolvePeer = resolvePeer
+
 function X.net(a,ctx)
   local NM=ctx.K.getNet() if not NM then ctx.o("No network",0xFF0000) return end
   if not a[1] then

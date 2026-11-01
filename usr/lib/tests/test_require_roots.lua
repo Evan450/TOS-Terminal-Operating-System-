@@ -49,7 +49,7 @@ test("init.lua readable", initSrc ~= nil)
 test("kernel/sandbox.lua readable", sandboxSrc ~= nil)
 if not (initSrc and sandboxSrc) then
   print(); print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ── Extract both lists from source ─────────────────────────────────
@@ -141,5 +141,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

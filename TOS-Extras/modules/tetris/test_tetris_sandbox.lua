@@ -188,7 +188,7 @@ test("entry loads under sandbox env", "table", type(mod))
 if not mod then
   print("  load error: " .. tostring(lerr))
   print(string.format("Results: %d passed, %d failed", passed, failed + 1))
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 test("exports commands.tetris", "function", type(mod.commands and mod.commands.tetris))
 
@@ -398,5 +398,5 @@ test("a binding too long to name falls back to plain Q", "P:pause Q:quit", foote
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

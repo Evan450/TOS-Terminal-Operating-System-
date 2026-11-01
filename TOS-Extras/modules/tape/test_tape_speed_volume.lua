@@ -77,7 +77,7 @@ for _, p in ipairs({ base .. "init.lua", "modules/tape/init.lua",
 end
 if not src then
   print("FAIL: could not read tape/init.lua"); print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 
 local fsStub = { exists = function() return false end }
@@ -86,13 +86,13 @@ local env = setmetatable({ require = stubRequire, fs = fsStub },
 local chunk = load(src, "=tape/init.lua", "t", env)
 if not chunk then
   print("FAIL: tape/init.lua does not parse"); print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 local mod = chunk()
 local tape = mod.commands and mod.commands.tape
 if not tape then
   print("FAIL: no tape command"); print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 end
 
 local out = {}

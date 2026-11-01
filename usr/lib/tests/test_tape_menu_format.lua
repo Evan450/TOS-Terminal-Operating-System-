@@ -36,7 +36,7 @@ for _, p in ipairs({
 end
 if not mod or not mod._format then
   print("FAIL: could not load tape-authenticator / _format missing")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 local F = mod._format
 local MAC = string.rep("a", 64)              -- a 64-hex MAC placeholder
@@ -90,5 +90,5 @@ test("legacy has no menu", 0, legacy and legacy.menuLen)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

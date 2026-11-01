@@ -40,7 +40,7 @@ print()
 
 local biosSrc = findUp("bios.lua")
 test("bios.lua readable", biosSrc ~= nil)
-if not biosSrc then print(); print("*** TESTS FAILED ***"); return false end
+if not biosSrc then print(); print("*** TESTS FAILED ***"); os.exit(1) end
 
 -- ── 1. Compile + byte budget ───────────────────────────────────────
 test("bios.lua compiles (text mode)", (load(biosSrc, "=bios.lua", "t")) ~= nil)
@@ -91,7 +91,7 @@ local blockfs
 do
   local src = findUp("TOS-Extras/modules/blockfs/usr/lib/blockfs.lua")
   test("blockfs.lua readable (TOS-Extras)", src ~= nil)
-  if not src then print(); print("*** TESTS FAILED ***"); return false end
+  if not src then print(); print("*** TESTS FAILED ***"); os.exit(1) end
   blockfs = assert(load(src, "=blockfs.lua", "t"))()
   blockfs._SRC = src
 end
@@ -609,5 +609,5 @@ _G._TBFS_BOOT_DRIVE, _G._TOS_UNMANAGED_ROOT, _G._TEST_BOOTED = nil, nil, nil
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")
-else print("*** TESTS FAILED ***") end
+else print("*** TESTS FAILED ***"); os.exit(1) end
 return failed == 0

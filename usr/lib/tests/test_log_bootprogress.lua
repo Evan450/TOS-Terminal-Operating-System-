@@ -80,5 +80,5 @@ eq("Boot complete snaps the bar to full", 1.0, seen / EST)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

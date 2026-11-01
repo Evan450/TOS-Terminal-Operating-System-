@@ -48,7 +48,7 @@ for _, p in ipairs({ base .. "../../../", "", "TOS-Dev/" }) do
 end
 if not root then
   print("FAIL: could not find tos/system_manifest.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ============================================================
@@ -88,12 +88,12 @@ local ALLOWED = {
 local chunk = loadfile(root .. "tos/system_manifest.lua")
 if not chunk then
   print("FAIL: could not load the manifest")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 local okM, manifest = pcall(chunk)
 if not okM or type(manifest) ~= "table" then
   print("FAIL: the manifest did not return a table")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local files = {}
@@ -173,5 +173,5 @@ test("string.format is present (the surface is not empty)", SANDBOX.string.forma
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

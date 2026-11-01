@@ -39,7 +39,7 @@ for _, p in ipairs({ "../TOS-Dev/tos/kernel/serialize.lua", "../tos/kernel/seria
 end
 if not serialize then
   print("FAIL: could not load TOS-Dev's kernel/serialize.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 package.loaded["kernel.serialize"] = serialize
 
@@ -392,5 +392,5 @@ eq("Ctrl+Q closes the mail tab", 1, #S.tabs)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

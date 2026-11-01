@@ -33,7 +33,7 @@ end
 local src = assert(readSrc("install.lua"), "install.lua")
 local fn = src:match("(local function printHardwareReport%(hw%).-\nend\n)")
 test("printHardwareReport is in install.lua", fn ~= nil)
-if not fn then print("*** TESTS FAILED ***"); return false end
+if not fn then print("*** TESTS FAILED ***"); os.exit(1) end
 
 -- The warnings a machine gets, joined; everything else is dropped.
 local function warningsFor(memKB, card)
@@ -84,5 +84,5 @@ test("the floor check boots 1 MB with a card and expects no command to load",
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

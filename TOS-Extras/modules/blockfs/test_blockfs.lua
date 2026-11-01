@@ -28,7 +28,7 @@ for _, p in ipairs({ base .. "usr/lib/blockfs.lua",
     "TOS-Extras/modules/blockfs/usr/lib/blockfs.lua" }) do
   chunk = loadfile(p); if chunk then blockfsPath = p; break end
 end
-if not chunk then print("FAIL: could not load blockfs.lua"); print("*** TESTS FAILED ***"); return false end
+if not chunk then print("FAIL: could not load blockfs.lua"); print("*** TESTS FAILED ***"); os.exit(1) end
 local blockfs = chunk()
 
 -- ── Fake unmanaged drive: 1-indexed sectors, backed by a table ─────
@@ -423,5 +423,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

@@ -56,7 +56,7 @@ package.loaded["kernel.errors"] = loadMod("errors.lua")
 local srm = loadMod("srm.lua")
 if not (srm and serialize and sha256 and repairMod) then
   print("FAIL: could not load srm/serialize/sha256/repair")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== kernel.srm Tests ===")
@@ -721,5 +721,5 @@ end
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")
-else print("*** TESTS FAILED ***") end
+else print("*** TESTS FAILED ***"); os.exit(1) end
 return failed == 0

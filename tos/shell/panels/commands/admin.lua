@@ -3404,7 +3404,6 @@ return function(C, S, deps)
           o("    allow (none) — this export is unreachable", T.warning)
         end
       end
-      o("Changes take effect on: service restart netfsd", T.dim)
 
     elseif sub == "mount" then
       if not adminOnly(o) then return end
@@ -3419,7 +3418,9 @@ return function(C, S, deps)
 
       -- Resolve a hostname or address prefix the same way `share` does.
       local addr = host
-      local peer = NM.findPeer and NM.findPeer(host)
+      local okE, ext = pcall(require, "shell.ext")
+      if okE and type(ext) == "table" and ext.resolvePeer then addr = ext.resolvePeer(host) end
+      local peer = NM.findPeer and NM.findPeer(addr)
       if peer and peer.addr then addr = peer.addr end
 
       -- The server refuses anything below TRUSTED, but failing here with
@@ -3639,7 +3640,7 @@ return function(C, S, deps)
     if not adminOnly(o) then return end
     local ok2, rcMod = helpers.requireRoomy(S, "kernel.rc", "admin")
     if not ok2 then o(helpers.loadFailure("service", rcMod), T.error); return end
-    if not args[1] then
+    if not args[1] or args[1] == "list" then
       local svcs = rcMod.list()
       if #svcs == 0 then o("No services registered", T.dim); return end
       o(string.format(" %-16s %s", "Service", "Status"), T.title)
@@ -3669,7 +3670,7 @@ return function(C, S, deps)
       local ok3, err = rcMod.stop(args[2])
       o(ok3 and "Stopped: " .. args[2] or tostring(err), ok3 and T.highlight or T.error)
     else
-      o("Usage: service [start|stop <name>]", T.dim)
+      o("Usage: service [list | start <name> | stop <name>]", T.dim)
     end
   end
 

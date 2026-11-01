@@ -27,7 +27,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/rc.lua", "tos/kernel/rc.lua",
 end
 if not rc or not rc._gatedKernelRequire then
   print("FAIL: could not load rc.lua / test hook missing")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local greq  = rc._gatedKernelRequire
@@ -66,7 +66,7 @@ print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 else
   print("All tests passed.")
   return true

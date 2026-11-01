@@ -63,7 +63,7 @@ local sw = freshCrypto({
 })
 if not sw then
   print("FAIL: could not load crypto.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 test("software-only: hasHardware false", false, sw.hasHardware())
@@ -153,4 +153,4 @@ test("one-shot crypto.hash still uses the card", true, shaCalls > 0)
 print()
 print("Results: " .. passed .. " passed, " .. failed .. " failed")
 if failed == 0 then print("*** ALL TESTS PASSED ***"); return true
-else print("*** TESTS FAILED ***"); return false end
+else print("*** TESTS FAILED ***"); os.exit(1) end

@@ -40,7 +40,7 @@ print("=== lint: and-nil-or / and-false-or ===")
 print()
 if not root then
   print("FAIL: could not find tos/system_manifest.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- Code with every comment and string literal removed. Newlines inside what
@@ -140,5 +140,5 @@ test("no `and nil or` / `and false or` anywhere it ships", #bad == 0)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

@@ -20,8 +20,11 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 87 rounds of work:
+Everything since v1.5.0, in 90 rounds of work:
 
+- [The shell reads its own variables](#the-shell-reads-its-own-variables)
+- [`find` works](#find-works)
+- [Network commands agree on what a peer is](#network-commands-agree-on-what-a-peer-is)
 - [A running program shows its output](#a-running-program-shows-its-output)
 - [`keys set quit` reaches the CLI](#keys-set-quit-reaches-the-cli)
 - [Commands say what actually happened](#commands-say-what-actually-happened)
@@ -109,6 +112,18 @@ Everything since v1.5.0, in 87 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The shell reads its own variables
+
+The shell expands `$NAME` and `${NAME}`. `export` could set a variable, but nothing on a command line could read it. Single quotes keep it literal, and a name that isn't set stays as typed. `HOME` is now your home directory rather than `/`. `cp -r` and `grep -i` work, in a pipe too.
+
+### `find` works
+
+`find` works. The form the manual gives, `find /home notes`, searched for a path called `notes`, and every result it did print ended in `/0`, which also meant it never went into a subdirectory. It now searches the tree and takes the pattern either way.
+
+### Network commands agree on what a peer is
+
+`rsh`, `scp` and `netfs mount` now take the numbers `net scan` prints, as its own tip says they do, where a number used to answer `not TRUSTED`. `net peers` shows a peer's current trust rather than what it was when first heard. `service start netfsd` works as the man page says (the real name has a `20-` prefix), and `service list` works. All of it was checked by running `rsh`, `scp` and a read-write `netfs` mount between two machines.
 
 ### A running program shows its output
 

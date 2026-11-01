@@ -34,7 +34,7 @@ package.loaded["kernel.serialize"] = serialize
 local swap = loadMod("swap.lua")
 if not serialize or not swap then
   print("FAIL: could not load swap.lua / serialize.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ── Minimal in-memory fs (high-level kernel.fs API surface swap uses) ──
@@ -153,7 +153,7 @@ print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 else
   print("All tests passed.")
   return true

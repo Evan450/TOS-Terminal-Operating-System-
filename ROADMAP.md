@@ -703,7 +703,7 @@ SMALLER, NOTED IN PASSING.
 - The chat tab repaints in full on every keystroke (handleKey returns 3): about 16 keys a second on the runner's T2 APU. Past human speed, so not a bug, but a pasted line lags.
 - DONE 2026-11-01: desktop.keys says the bound key, swapped in where it is drawn, so no catalog changed.
 - DONE 2026-11-01: the CLI path follows the key table. shell/quitkey.lua answers ^Q until a keys file exists, and only then loads shell.keys, so a machine that never bound quit pays almost nothing. Floorcheck: every README claim holds, 67K free at 1024K against \~65K. SEEN in CLI mode: after `keys set quit F4` ^Q left "abcdef" on the line and F4 cleared it; after `keys reset` ^Q did. kernel/init.lua's notice viewer stays as it is: `q` closes it whatever quit is bound to.
-- 289 test files report failure by marker only and exit 0. run\_tests.py reads the markers, so the suite is right, but anything that reads the exit code alone is told they passed; that is how `tos.py check` went wrong.
+- DONE 2026-11-01: the 297 test files that reported failure by marker alone exit non-zero now. test\_install\_preinit.lua is the one left: it carries the operator's uncommitted edit, so it was not touched.
 - check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
 
 ### Localise the installer, not just the OS

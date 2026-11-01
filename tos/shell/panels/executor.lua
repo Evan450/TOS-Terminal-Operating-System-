@@ -54,6 +54,36 @@ M.LIVE_SHORT = LIVE_SHORT
 -- with table.concat once, per token. Same external behaviour, verified
 -- against the original byte-by-byte version across quoting/escaping/
 -- unterminated-input cases. (test_executor_tokenize.lua)
+--- $NAME and ${NAME} from this process's environment. Not inside single
+--- quotes, and a name that is not set stays as typed, so a stray $ in a
+--- message is left alone.
+local function expandVars(cmdStr, read)
+  if not cmdStr:find("$", 1, true) then return cmdStr end
+  local out, i, n, quoted = {}, 1, #cmdStr, false
+  while i <= n do
+    local c = cmdStr:sub(i, i)
+    if c == "'" then quoted = not quoted end
+    local name, stop
+    if c == "$" and not quoted then
+      name = cmdStr:match("^%$([%a_][%w_]*)", i)
+      if name then stop = i + #name
+      else
+        name = cmdStr:match("^%${([%a_][%w_]*)}", i)
+        if name then stop = i + #name + 2 end
+      end
+    end
+    local value = name and read(name)
+    if value ~= nil then
+      out[#out + 1] = tostring(value)
+      i = stop + 1
+    else
+      out[#out + 1] = c
+      i = i + 1
+    end
+  end
+  return table.concat(out)
+end
+
 local function tokenize(cmdStr)
   local parts, curParts = {}, nil
   local i, n = 1, #cmdStr
@@ -249,6 +279,14 @@ function M.build(S, deps)
   end
 
   local function execSingle(cmdStr, inputData, allowHandOff)
+    do
+      local okE, envMod = pcall(require, "kernel.env")
+      local okP, P = pcall(require, "kernel.process")
+      if okE and type(envMod) == "table" and envMod.read then
+        local cur = okP and type(P) == "table" and P.current and P.current() or nil
+        cmdStr = expandVars(cmdStr, function(name) return envMod.read(cur, name) end)
+      end
+    end
     local parts = tokenize(cmdStr)
     if #parts == 0 then return "" end
     -- Per-user aliases, expanded before dispatch so the expansion meets the
@@ -307,10 +345,11 @@ function M.build(S, deps)
       if name == "cat" and #args == 0 then
         for line in (inputData .. "\n"):gmatch("(.-)\n") do o(line, T.fg) end
         return buf
-      elseif name == "grep" and #args >= 1 and not args[2] then
-        local pat = args[1]
+      elseif name == "grep" and #args >= 1 and (not args[2] or (args[1] == "-i" and not args[3])) then
+        local fold = args[1] == "-i"
+        local pat = fold and args[2]:lower() or args[1]
         for line in inputData:gmatch("([^\n]*)\n?") do
-          if line:find(pat, 1, true) then o(line, T.fg) end
+          if (fold and line:lower() or line):find(pat, 1, true) then o(line, T.fg) end
         end
         return buf
       elseif name == "wc" and #args == 0 then

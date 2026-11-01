@@ -101,7 +101,7 @@ test("core.lua registers its commands", okR)
 if not okR then
   print("  registration error: " .. tostring(rerr))
   print(string.format("Results: %d passed, %d failed", passed, failed + 1))
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 test("C.sudo exists", type(C.sudo) == "function")
 
@@ -150,5 +150,5 @@ eq("the shell token is restored after success too", "LOGINTOKEN", S.st)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

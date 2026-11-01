@@ -52,7 +52,7 @@ for _, p in ipairs({ base .. "PaneUI.lua", "pane-ui/PaneUI.lua",
 end
 if not (themeSrc and paneSrc) then
   print("FAIL: could not read " .. (themeSrc and "PaneUI.lua" or "kernel/theme.lua"))
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- Lift each PRESETS literal out of its file and load it as data. Neither
@@ -80,7 +80,7 @@ test("the TOS preset table was found", type(TOS) == "table" and next(TOS) ~= nil
 test("PaneUI's copy was found", type(PANE) == "table" and next(PANE) ~= nil)
 if not (TOS and PANE) then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local names = {}
@@ -134,5 +134,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

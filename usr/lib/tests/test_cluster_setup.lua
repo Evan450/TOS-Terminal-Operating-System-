@@ -40,7 +40,7 @@ for _, p in ipairs({ base .. "../../../tos/shell/clustersetup.lua",
 end
 if not wiz then
   print("FAIL: could not load clustersetup.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local FULL_ADDR = "3f8a1c2d-44b5-4e0a-9c11-77aa0099bbcd"   -- 36 chars
@@ -360,5 +360,5 @@ end
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")
-else print("*** TESTS FAILED ***") end
+else print("*** TESTS FAILED ***"); os.exit(1) end
 return failed == 0

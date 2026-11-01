@@ -160,14 +160,14 @@ for _, p in ipairs({ base .. "init.lua", "modules/tape/init.lua",
   local f = io.open(p, "rb")
   if f then src = f:read("a"); f:close(); break end
 end
-if not src then print("FAIL: could not read tape/init.lua"); print("*** TESTS FAILED ***"); return false end
+if not src then print("FAIL: could not read tape/init.lua"); print("*** TESTS FAILED ***"); os.exit(1) end
 
 local env = setmetatable({ require = stubRequire, fs = FS }, { __index = _G })
 local chunk = load(src, "=tape/init.lua", "t", env)
-if not chunk then print("FAIL: tape/init.lua does not parse"); print("*** TESTS FAILED ***"); return false end
+if not chunk then print("FAIL: tape/init.lua does not parse"); print("*** TESTS FAILED ***"); os.exit(1) end
 local mod = chunk()
 local tape = mod.commands and mod.commands.tape
-if not tape then print("FAIL: no tape command"); print("*** TESTS FAILED ***"); return false end
+if not tape then print("FAIL: no tape command"); print("*** TESTS FAILED ***"); os.exit(1) end
 
 local out = {}
 local function o(s) out[#out + 1] = tostring(s) end
@@ -283,5 +283,5 @@ test("...and the bytes are still written (with the warning)", "HELLO", FS.readFi
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

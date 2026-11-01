@@ -77,7 +77,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/screen.lua",
 end
 if not screen or not screen._spanMatches then
   print("FAIL: could not load screen.lua / _spanMatches missing")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== displayProxy shadow buffer Tests ===")
@@ -493,5 +493,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

@@ -44,7 +44,7 @@ end
 local nf = loadMod("notify.lua")
 if not nf then
   print("FAIL: could not load notify.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== kernel.notify Tests ===")
@@ -437,5 +437,5 @@ end
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")
-else print("*** TESTS FAILED ***") end
+else print("*** TESTS FAILED ***"); os.exit(1) end
 return failed == 0

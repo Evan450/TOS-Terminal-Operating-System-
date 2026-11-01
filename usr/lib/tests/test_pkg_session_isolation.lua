@@ -106,7 +106,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/pkg.lua", "tos/kernel/pkg.lua"
 end
 if not pkg then
   print("FAIL: could not load pkg.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 pkg.init({ fs = fsMock, log = nil, users = usersStub })
 
@@ -134,5 +134,5 @@ test("no live session -> no implicit privileged session", nil, who2)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

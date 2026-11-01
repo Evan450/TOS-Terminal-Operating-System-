@@ -48,7 +48,7 @@ local function firstOf(paths) for _, p in ipairs(paths) do if readFile(p) then r
 local HOST   = firstOf({ base .. "init.lua", "modules/rc-pilot/init.lua" })
 local EEPROM = firstOf({ ROOT .. "robot/eeprom-rc-pilot.lua", "robot/eeprom-rc-pilot.lua" })
 local STRIP  = firstOf({ ROOT .. "../TOS-Dev/build/strip.lua", "../TOS-Dev/build/strip.lua" })
-if not (HOST and EEPROM) then print("FAIL: sources not found"); print("*** TESTS FAILED ***"); return false end
+if not (HOST and EEPROM) then print("FAIL: sources not found"); print("*** TESTS FAILED ***"); os.exit(1) end
 
 local SECRET = "a-shared-secret-of-decent-length"
 
@@ -85,7 +85,7 @@ package.loaded["computer"] = {
 -- kernel module so the MAC is the one a real seat would compute. Required
 -- only now: kernel.crypto probes `component` for a data card at load.
 local okC, kcrypto = pcall(require, "kernel.crypto")
-if not okC then print("FAIL: kernel.crypto not loadable: " .. tostring(kcrypto)); print("*** TESTS FAILED ***"); return false end
+if not okC then print("FAIL: kernel.crypto not loadable: " .. tostring(kcrypto)); print("*** TESTS FAILED ***"); os.exit(1) end
 _G.crypto = { hmac = kcrypto.hmac, random = kcrypto.salt or kcrypto.random }
 _G._TOS = { users = { currentSession = function() return nil end } }
 
@@ -360,5 +360,5 @@ end
 _G.crypto, _G._TOS = nil, nil
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

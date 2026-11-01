@@ -71,7 +71,7 @@ test("remote exposes stepBudgetAvailable",
 if type(proc.preemptionAvailable) ~= "function"
    or type(remote.stepBudgetAvailable) ~= "function" then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ── This host DOES have sethook, so both must say yes ──────────────
@@ -198,5 +198,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

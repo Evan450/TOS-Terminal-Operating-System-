@@ -75,7 +75,7 @@ local card = newFakeCard()
 local cz = freshCompress(card)
 if not cz then
   print("FAIL: could not load compress.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 test("available with card", true, cz.available())
 
@@ -209,4 +209,4 @@ end
 print()
 print("Results: " .. passed .. " passed, " .. failed .. " failed")
 if failed == 0 then print("*** ALL TESTS PASSED ***"); return true
-else print("*** TESTS FAILED ***"); return false end
+else print("*** TESTS FAILED ***"); os.exit(1) end

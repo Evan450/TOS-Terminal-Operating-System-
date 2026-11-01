@@ -155,7 +155,7 @@ screen.init()
 local p = screen.displayProxy(1)
 if not p then
   print("FAIL: no display proxy")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- Read the GLASS (page 0) — what the operator is actually looking at.
@@ -318,5 +318,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

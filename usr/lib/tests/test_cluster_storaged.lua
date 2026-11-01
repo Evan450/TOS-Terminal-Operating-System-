@@ -55,7 +55,7 @@ local storaged = loadRel("storage-skeleton/usr/lib/cluster-storaged.lua")
 if not (cproto and storaged) then
   print("FAIL: could not load modules (cproto=" .. tostring(cproto ~= nil)
     .. " storaged=" .. tostring(storaged ~= nil) .. ")")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local MASTER, MGR3, MGR7, STRANGER = "addr-master", "addr-m3", "addr-m7", "addr-who"
@@ -155,5 +155,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

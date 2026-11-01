@@ -49,7 +49,7 @@ if crypto then package.loaded["kernel.crypto"] = crypto end
 local vault = loadMod("vault.lua")
 if not crypto or not vault then
   print("FAIL: could not load crypto.lua / vault.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 crypto.init()
 
@@ -116,7 +116,7 @@ print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 else
   print("All tests passed.")
   return true

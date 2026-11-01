@@ -37,7 +37,7 @@ for _, p in ipairs({ "pane-ui/PaneUI.lua", "PaneUI.lua", "../pane-ui/PaneUI.lua"
 end
 if not src then
   print("FAIL: PaneUI.lua not found")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ── Load TOS's real ui.lua (the source of truth) ───────────────────
@@ -50,7 +50,7 @@ for _, p in ipairs({ "../TOS-Dev/tos/shell/panels/ui.lua", "../tos/shell/panels/
 end
 if not ui or not ui.fileGlyph then
   print("FAIL: could not load TOS-Dev's shell/panels/ui.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== PaneUI ↔ TOS visual-grammar parity ===")
@@ -191,5 +191,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

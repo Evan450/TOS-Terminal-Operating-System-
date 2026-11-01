@@ -28,7 +28,7 @@ local kw   = src and src:match("\n(local SYN_KEYWORDS = %b{})\n")
 local body = src and src:match("\n(local function synTokenize%(line%).-\nend)\n")
 if not (kw and body) then
   print("FAIL: could not find synTokenize in PaneUI.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 local synTokenize = assert(load(kw .. "\n" .. body .. "\nreturn synTokenize",
   "=synTokenize", "t", { math = math }))()
@@ -61,5 +61,5 @@ check("plain ASCII is unchanged", "for i = 1, 10 do print(i) end")
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

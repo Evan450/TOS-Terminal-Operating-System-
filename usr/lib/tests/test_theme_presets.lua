@@ -41,7 +41,7 @@ local theme   = tryload("tos/kernel/theme.lua")()
 local profileChunk = tryload("tos/kernel/profile.lua")
 if not (display and theme and profileChunk) then
   print("FAIL: could not load display/theme/profile modules")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== theme preset Tests ===")
@@ -189,5 +189,5 @@ test("profile defaults leave theme unset", nil, d.theme)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

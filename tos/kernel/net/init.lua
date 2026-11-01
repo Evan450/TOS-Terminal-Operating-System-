@@ -1547,7 +1547,11 @@ end
 --- Return the current discovered-peer table as a sorted list.
 function net.peers()
   local result = {}
-  for _, peer in pairs(discoveredPeers) do
+  for addr, peer in pairs(discoveredPeers) do
+    -- The record keeps the level from when it was heard, so a peer trusted
+    -- since then still read UNK in `net peers`.
+    local rec = trustMgr and trustMgr.getPeer and trustMgr.getPeer(addr)
+    if rec and rec.level ~= nil then peer.trust = rec.level end
     result[#result + 1] = peer
   end
   table.sort(result, function(a, b) return (a.hostname or "") < (b.hostname or "") end)

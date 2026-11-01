@@ -32,7 +32,7 @@ end
 local src = assert(readSrc("tos/kernel/init.lua"), "tos/kernel/init.lua")
 local block = src:match("(  local bootMem = .-\n  end\n)")
 test("memMark is in tos/kernel/init.lua", block ~= nil)
-if not block then print("*** TESTS FAILED ***"); return false end
+if not block then print("*** TESTS FAILED ***"); os.exit(1) end
 
 -- Build memMark in an env holding a fake computer and the given boot.cfg.
 local function build(bootCfg, withGC)
@@ -110,5 +110,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

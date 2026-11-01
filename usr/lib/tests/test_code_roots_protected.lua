@@ -44,7 +44,7 @@ test("init.lua readable", initSrc ~= nil)
 test("shell/panels/helpers.lua readable", helpersSrc ~= nil)
 if not (initSrc and helpersSrc) then
   print(); print(string.format("Results: %d passed, %d failed", passed, failed))
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local roots, seen = {}, {}
@@ -120,5 +120,5 @@ securefs.setOperatorOverride(root, false)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

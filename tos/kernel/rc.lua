@@ -571,7 +571,18 @@ function rc.stopAll()
 end
 
 --- Start a specific service by name
+-- The shipped services carry a load-order prefix (20-netfsd), and the man
+-- pages and anyone typing call them netfsd.
+local function fullName(name)
+  if services[name] then return name end
+  for known in pairs(services) do
+    if known:match("^%d+%-(.+)$") == name then return known end
+  end
+  return name
+end
+
 function rc.start(name)
+  name = fullName(name)
   local svc = services[name]
   if svc and svc.running then return false, "Already running" end
   -- Start what is on DISK now. Services were loaded only at boot, so one a
@@ -620,6 +631,7 @@ end
 
 --- Stop a specific service
 function rc.stop(name)
+  name = fullName(name)
   local svc = services[name]
   if not svc then return false, "Unknown service: " .. name end
   if not svc.running then return false, "Not running" end

@@ -44,7 +44,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/process.lua",
 end
 if not proc or not proc.setForeground then
   print("FAIL: could not load process.lua / setForeground missing")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== setForeground Target-Ownership Tests ===")
@@ -162,5 +162,5 @@ test("same call WITHOUT the flag is still denied (bypass is opt-in)",
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

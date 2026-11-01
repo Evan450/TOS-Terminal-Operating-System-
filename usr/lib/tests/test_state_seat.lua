@@ -55,6 +55,6 @@ eq("no source -> nil, no crash", nil, S.displayIdx)
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed.") end
 return true

@@ -72,7 +72,7 @@ if not (api and scheduler and jobs and freshState()) then
   print("FAIL: could not load cluster modules (api=" .. tostring(api ~= nil)
     .. " scheduler=" .. tostring(scheduler ~= nil)
     .. " jobs=" .. tostring(jobs ~= nil) .. ")")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- A stub daemon. `pairing` controls whether the pairing subsystem is
@@ -425,7 +425,7 @@ print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 else
   print("All tests passed.")
   return true

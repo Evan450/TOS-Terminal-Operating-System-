@@ -1704,6 +1704,9 @@ return function(C, S, deps)
   -- named "two", while its full address worked. An unknown name is passed
   -- on unchanged, for the trust check to refuse. (test_scp_rsh_alias.lua)
   local function peerAddress(s)
+    -- The numbers `net scan` prints, too: its own tip offers them.
+    local okE, ext = pcall(require, "shell.ext")
+    if okE and type(ext) == "table" and ext.resolvePeer then return ext.resolvePeer(s) end
     local A = _G._TOS and _G._TOS.net and _G._TOS.net.aliases
     if type(s) == "string" and A and A.resolve then
       local addr = A.resolve(s)

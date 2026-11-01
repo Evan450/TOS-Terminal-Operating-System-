@@ -34,7 +34,7 @@ package.loaded["computer"] = { uptime = function() return 0 end }
 local okD, draw = pcall(require, "shell.panels.draw")
 if not okD then
   print("FAIL: could not load shell.panels.draw: " .. tostring(draw))
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 --- Render one row and report the set of columns actually written.
@@ -124,5 +124,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

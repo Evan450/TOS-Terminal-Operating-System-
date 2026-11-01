@@ -48,7 +48,7 @@ for _, p in ipairs({ base .. "../../../tos/compat/term.lua", "tos/compat/term.lu
 end
 if not term then
   print("FAIL: could not load term.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== term.gpu() Capability Gating Tests ===")
@@ -94,7 +94,7 @@ print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 else
   print("All tests passed.")
   return true

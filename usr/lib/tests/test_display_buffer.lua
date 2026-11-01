@@ -53,5 +53,5 @@ test("unknown mode treated as auto",       screen._shadowWanted("???", plenty, b
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

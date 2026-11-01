@@ -1401,6 +1401,8 @@ return function(C, S, deps)
   -- (v1.4.0 consolidation: `restore` moved to `trash restore`.)
 
   C.cp = function(args, o)
+    -- -r is what a hand types for a directory, and cp does that anyway.
+    if args[1] == "-r" or args[1] == "-R" then table.remove(args, 1) end
     if not args[2] then o("Usage: cp <src> <dst>", T.dim); return end
     local src, dst = rp(args[1]), rp(args[2])
     -- #REV — Unix semantics: copying onto a directory copies INTO it.
@@ -1443,15 +1445,26 @@ return function(C, S, deps)
     end
   end
   C.find = function(args, o)
+    -- `find [path] <pattern>`, or -name <pattern>. Every bare word used to be
+    -- a root, so the documented form searched the pattern as a path. One bare
+    -- word is a path if there is such a directory, else what to look for.
     local root    = "/"
     local pattern = nil
+    local bare    = {}
     local i = 1
     while i <= #args do
       if args[i] == "-name" and args[i+1] then
         pattern = args[i+1]; i = i + 2
       else
-        root = rp(args[i]); i = i + 1
+        bare[#bare + 1] = args[i]; i = i + 1
       end
+    end
+    if bare[2] then
+      root = rp(bare[1])
+      pattern = pattern or bare[2]
+    elseif bare[1] then
+      if pattern or F.isDirectory(rp(bare[1])) then root = rp(bare[1])
+      else pattern = bare[1] end
     end
     -- Validate the user-supplied pattern up front. Lua's string.match
     -- errors on malformed patterns like "%" or "[" — without this pcall
@@ -1497,7 +1510,9 @@ return function(C, S, deps)
       for _, n in ipairs(fitems) do
         if #results >= MAX_RESULTS then break end
         coopYield()   -- big trees: give other seats a slice
-        local full = F.join(dir, n:gsub("/$",""))
+        -- The parentheses matter: gsub answers a count too, and join takes
+        -- every argument, so each path ended /0 and no directory was entered.
+        local full = F.join(dir, (n:gsub("/$", "")))
         local isDir = n:sub(-1) == "/"
         local matched = false
         if pattern then
@@ -1522,21 +1537,30 @@ return function(C, S, deps)
   end
 
   C.grep = function(args, o)
-    if not args[2] then o("Usage: grep <pattern> <file>", T.dim); return end
-    local pat = args[1]
-    local path    = rp(args[2])
-    if not canRead(path, o) then return end
-    -- Streamed a line at a time (#MEM — see helpers.eachLine).
+    local fold = args[1] == "-i"
+    if fold then table.remove(args, 1) end
+    if not args[2] then o("Usage: grep [-i] <pattern> <file...>", T.dim); return end
+    local pat = fold and args[1]:lower() or args[1]
+    -- With several files each hit says which, as every grep does. The rest of
+    -- the list used to be ignored, as mkdir and cat once ignored theirs.
+    local many = args[3] ~= nil
     local count = 0
-    local ln    = 0
-    local okR = helpers.eachLine(F, path, function(line)
-      ln = ln + 1
-      if line:find(pat, 1, true) then
-        o(string.format("%4d: %s", ln, line), T.fg)
-        count = count + 1
+    for i = 2, #args do
+      local path = rp(args[i])
+      if canRead(path, o) then
+        -- Streamed a line at a time (#MEM — see helpers.eachLine).
+        local ln = 0
+        local okR = helpers.eachLine(F, path, function(line)
+          ln = ln + 1
+          if (fold and line:lower() or line):find(pat, 1, true) then
+            if many then o(args[i] .. ":" .. ln .. ": " .. line, T.fg)
+            else o(string.format("%4d: %s", ln, line), T.fg) end
+            count = count + 1
+          end
+        end)
+        if not okR then o("Cannot read: " .. args[i], T.error) end
       end
-    end)
-    if not okR then o("Cannot read: " .. args[2], T.error); return end
+    end
     o(count > 0 and (count .. " match(es)") or "No matches", T.dim)
   end
 
@@ -1886,7 +1910,7 @@ return function(C, S, deps)
         if type(list) == "table" then
           for _, name in ipairs(list) do
             coopYield()   -- big trees: give other seats a slice
-            total = total + sizeOf(join(path, name:gsub("/$", "")))
+            total = total + sizeOf(join(path, (name:gsub("/$", ""))))
           end
         end
         return total

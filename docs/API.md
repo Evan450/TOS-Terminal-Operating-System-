@@ -1246,7 +1246,6 @@ body calls, and every gate against a mark.
 - `rc.stopAll()`
   Stop all running services (called on shutdown)
 - `rc.start(name)`
-  Start a specific service by name
 - `rc.stop(name)`
   Stop a specific service
 - `rc.list()`

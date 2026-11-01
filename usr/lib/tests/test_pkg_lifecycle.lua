@@ -646,5 +646,5 @@ end
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")
-else print("*** TESTS FAILED ***") end
+else print("*** TESTS FAILED ***"); os.exit(1) end
 return failed == 0

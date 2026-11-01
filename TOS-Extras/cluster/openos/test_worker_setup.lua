@@ -41,7 +41,7 @@ for _, p in ipairs({ base .. "cluster-worker-setup.lua",
 end
 if not M then
   print("FAIL: could not load cluster-worker-setup.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== OpenOS worker setup Tests ===")
@@ -325,5 +325,5 @@ end
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed == 0 then print("*** ALL TESTS PASSED ***")
-else print("*** TESTS FAILED ***") end
+else print("*** TESTS FAILED ***"); os.exit(1) end
 return failed == 0

@@ -30,7 +30,7 @@ local function readFile(name)
 end
 local install, bootstrap = readFile("install.lua"), readFile("bootstrap.lua")
 test("install.lua and bootstrap.lua readable", install ~= nil and bootstrap ~= nil)
-if not (install and bootstrap) then print("*** TESTS FAILED ***"); return false end
+if not (install and bootstrap) then print("*** TESTS FAILED ***"); os.exit(1) end
 
 -- ── A fake machine ────────────────────────────────────────────────────
 local BOOT, TMP = "boot-0000", "tmp-0000"
@@ -339,6 +339,6 @@ end
 
 print()
 print("Results: " .. passed .. " passed, " .. failed .. " failed")
-if failed > 0 then print("*** TESTS FAILED ***"); return false end
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end
 print("All tests passed.")
 return true

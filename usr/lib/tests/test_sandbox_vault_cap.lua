@@ -58,7 +58,7 @@ print()
 local sandboxChunk = tryload("tos/kernel/sandbox.lua")
 if not sandboxChunk then
   print("FAIL: could not load sandbox.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 local sandbox = sandboxChunk()
 
@@ -146,5 +146,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

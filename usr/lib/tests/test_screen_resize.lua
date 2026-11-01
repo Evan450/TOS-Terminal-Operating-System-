@@ -120,7 +120,7 @@ end
 test("screen.onResized exists", type(screen.onResized) == "function")
 if type(screen.onResized) ~= "function" then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local changed = screen.onResized("screen-resize", 50, 16)
@@ -227,5 +227,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

@@ -32,7 +32,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/net/init.lua",
 end
 if not net or not net._seqCheck then
   print("FAIL: could not load net/init.lua / _seqCheck missing")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 local seqCheck = net._seqCheck
@@ -93,7 +93,7 @@ print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then
   print("*** TESTS FAILED ***")
-  return false
+  os.exit(1)
 else
   print("All tests passed.")
   return true

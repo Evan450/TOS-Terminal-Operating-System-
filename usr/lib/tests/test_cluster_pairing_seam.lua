@@ -47,7 +47,7 @@ local apiSrc = readFirst({ "../TOS-Extras/cluster/master-skeleton/lib/cluster/ap
 local wizSrc = readFirst({ "tos/shell/clustersetup.lua" })
 if not (apiSrc and wizSrc) then
   print("  FAIL: could not read cluster/api.lua (TOS-Extras) or tos/shell/clustersetup.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 local function newApi() return assert(load(apiSrc, "=cluster/api.lua"))() end
 local wiz = assert(load(wizSrc, "=clustersetup.lua"))()
@@ -123,5 +123,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

@@ -142,7 +142,7 @@ end
 local chunk, lerr = load(src or "", "=pkg:tape-authenticator", "t", env)
 if not chunk then
   print("FAIL: load error: " .. tostring(lerr))
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 local okRun, mod = pcall(chunk)
 
@@ -153,7 +153,7 @@ local cmd = mod and mod.commands and mod.commands["tape-auth"]
 test("commands map uses the proper name->fn shape", "function", type(cmd))
 if type(cmd) ~= "function" then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ── help / blank tape ────────────────────────────────────────
@@ -460,5 +460,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

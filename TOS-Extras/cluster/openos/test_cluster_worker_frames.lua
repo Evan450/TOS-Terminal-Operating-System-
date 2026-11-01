@@ -59,7 +59,7 @@ local WRK_SRC = firstOf({ EXTRAS .. "cluster/openos/cluster-worker.lua",
                           "cluster/openos/cluster-worker.lua" })
 if not (TOS_SRC and WRK_SRC) then
   print("FAIL: could not read both sides of the bridge")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- Lift a function out of a file's real source. Neither file can simply be
@@ -93,7 +93,7 @@ test("the OpenOS side's canonicalFrame was found", type(canonWRK) == "function")
 test("the OpenOS side's crypto was found", type(wrkCrypto) == "table")
 if not (canonTOS and canonWRK and wrkCrypto) then
   print("Results: " .. passed .. " passed, " .. (failed + 1) .. " failed")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- ── 1. The two canonicalizers ────────────────────────────────────
@@ -222,5 +222,5 @@ end
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

@@ -34,7 +34,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/process.lua",
 end
 if not proc or not proc.kill then
   print("FAIL: could not load process.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 -- proc.list() excludes DEAD processes, so it tells us alive/dead.
@@ -71,5 +71,5 @@ test("explicit kernel kill reaps it", false, listed(v2))
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
-if failed > 0 then print("*** TESTS FAILED ***"); return false
+if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end

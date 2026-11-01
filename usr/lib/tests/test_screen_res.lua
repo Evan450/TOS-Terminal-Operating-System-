@@ -34,7 +34,7 @@ for _, p in ipairs({ base .. "../../../tos/kernel/screen.lua",
 end
 if not screen then
   print("FAIL: could not load screen.lua")
-  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); return false
+  print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1)
 end
 
 print("=== Screen Resolution Policy Tests ===")
@@ -118,4 +118,4 @@ end
 print()
 print("Results: " .. passed .. " passed, " .. failed .. " failed")
 if failed == 0 then print("*** ALL TESTS PASSED ***"); return true
-else print("*** TESTS FAILED ***"); return false end
+else print("*** TESTS FAILED ***"); os.exit(1) end

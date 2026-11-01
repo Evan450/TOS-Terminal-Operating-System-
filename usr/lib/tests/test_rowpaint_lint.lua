@@ -119,5 +119,5 @@ if failed > 0 then
   print("A flagged line paints part of a row and leaves the rest as it was.")
   print("Fix by padding:  D.set(1, y, (line .. S.padW):sub(1, W), fg, bg)")
   print("or clear first:  D.fill(1, y, W, 1, \" \", fg, bg)")
-  print("*** TESTS FAILED ***"); return false
+  print("*** TESTS FAILED ***"); os.exit(1)
 else print("All tests passed."); return true end
