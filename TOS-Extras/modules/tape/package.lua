@@ -1,5 +1,12 @@
 -- FEAT-7 native package manifest for tape.
 return {
+  -- 2.3.2 — `tape restore` says when it failed. It counted every file whatever
+  -- the write returned, so a user with no write access was told "Restored: 1
+  -- files" and got nothing. Its default was /home, which only root can write,
+  -- so that was the normal case for everyone else: the default is your own
+  -- home now. A file that fails its checksum no longer replaces a good one: it
+  -- lands as <name>.damaged. (Seen on a booted machine; test_tape_archive.lua)
+  --
   -- 2.2.1 — `tape decrypt` can read what `tape encrypt` writes again.
   -- kernel.vault has written TVAULT2 since the CR-7 split while still
   -- reading TVAULT1; the tape format sniffer only matched TVAULT1, so
@@ -21,7 +28,7 @@ return {
   -- in-place reinstalls, and the old build's files live at the old
   -- install path.)
   name        = "tape",
-  version     = "2.3.1",
+  version     = "2.3.2",
   kind        = "command",
   category    = "storage",
   description = "General Computronics tape control: data archive/restore + audio playback + raw I/O + device state.",

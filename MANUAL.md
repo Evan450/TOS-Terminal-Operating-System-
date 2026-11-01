@@ -2730,7 +2730,9 @@ Terminate a job by id. *See also:* `ps`, `fg`, `bg`.
 Explain kiosk mode: the locked, guest-facing menu (an allow-list, read-only)
 that runs when someone logs in as an account named `kiosk`. No such account
 ships, so make it first with `useradd kiosk`, then log out and log in as it.
-Its allow-list and menu live in `/etc/kiosk.cfg`.
+Its allow-list and menu live in `/etc/kiosk.cfg`. A file that cannot be understood
+allows nothing and shows *This kiosk is out of order*, with the reason in the
+log. To reset it at every boot as well, see [§5.5](#55-a-copy-on-write-root).
 
 ### L
 

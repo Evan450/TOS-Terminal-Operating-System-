@@ -22,7 +22,7 @@ tape label [name]                  read or set the tape's label
 ```
 tape store <path> [--overwrite]    add a file or folder to the tape's archive
 tape list                          what the archive holds
-tape restore [path]                restore it all, under /home unless you say where
+tape restore [path]                restore it all, under your home unless you say where
 ```
 
 `store` adds to whatever the archive already holds; `--overwrite` starts the archive again from the beginning of the tape.

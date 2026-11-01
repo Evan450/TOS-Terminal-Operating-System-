@@ -25,6 +25,7 @@ import totoro.ocelot.brain.entity.FloppyDiskDrive;
 import totoro.ocelot.brain.entity.FloppyManaged;
 import totoro.ocelot.brain.entity.GraphicsCard;
 import totoro.ocelot.brain.entity.HDDManaged;
+import totoro.ocelot.brain.entity.HDDUnmanaged;
 import totoro.ocelot.brain.entity.InternetCard;
 import totoro.ocelot.brain.entity.Keyboard;
 import totoro.ocelot.brain.entity.Memory;
@@ -532,6 +533,7 @@ public class HeadlessTOS {
   static String disk2Address, disk2Tier = "2";
   static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
   static boolean readOnlyBoot;
+  static boolean rawDrive;
 
   /**
    * A floppy labelled `name` over host directory `dir`, at an address fixed
@@ -614,6 +616,12 @@ public class HeadlessTOS {
       hdd2.customRealPath_$eq(Option.apply(disk2Dir));
       pc.inventory().apply(7).put(hdd2);
       System.out.println("[headless] third disk " + hdd2.address().get());
+    }
+    // Unmanaged: no filesystem, just sectors, for TBFS. Takes the third disk's slot.
+    if (rawDrive) {
+      HDDUnmanaged raw = new HDDUnmanaged(Tier.Two());
+      pc.inventory().apply(7).put(raw);
+      System.out.println("[headless] raw drive " + raw.node().address());
     }
     if (t1) {
       pc.inventory().apply(1).put(new GraphicsCard(Tier.One()));
@@ -1204,6 +1212,7 @@ public class HeadlessTOS {
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
     withTape = flag(args, "--tape");
     readOnlyBoot = flag(args, "--readonly-boot");
+    rawDrive = flag(args, "--raw-drive");
     withGeolyzer = flag(args, "--geolyzer");
     withRobot = flag(args, "--robot");
     withChest = flag(args, "--robot-chest");

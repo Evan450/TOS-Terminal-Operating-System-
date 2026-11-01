@@ -273,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
     ap.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    ap.add_argument("--raw-drive", action="store_true",
+                    help="an unmanaged drive in the third disk's slot, sectors and no filesystem")
     ap.add_argument("--readonly-boot", action="store_true",
                     help="boot from a locked disk, which is read-only the way a loot disk is")
     ap.add_argument("--tape", action="store_true",
@@ -396,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--internet")
     if args.readonly_boot:
         cmd.append("--readonly-boot")
+    if args.raw_drive:
+        cmd.append("--raw-drive")
     if args.tape:
         cmd.append("--tape")
     if args.geolyzer:

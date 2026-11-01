@@ -3,8 +3,10 @@
 -- /etc/kiosk.cfg (or falls back to defaults) when a user named "kiosk"
 -- logs in.
 --
--- Schema is documented in tos/shell/kiosk.lua. Every field is optional;
--- missing or malformed entries fall back to safe defaults.
+-- Schema is documented in tos/shell/kiosk.lua. Every field is optional, and
+-- one left out takes its default. A file that cannot be understood allows
+-- nothing and says "This kiosk is out of order", with the reason in the log:
+-- a typo must not hand a guest more than you meant to.
 return {
   banner  = "Welcome to the front-desk kiosk — type 'help' or pick a number.",
 

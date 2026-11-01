@@ -279,7 +279,34 @@ local bad = good:sub(1, #good - 5) .. "HELLO"     -- data changed, checksum not
 loadTape(bad .. "TOS\x00")
 reset(); tape({ "restore", "/corrupt" }, o)
 test("a checksum mismatch is reported", true, said("CHECKSUM MISMATCH"))
-test("...and the bytes are still written (with the warning)", "HELLO", FS.readFile("/corrupt/a.txt"))
+test("...the damaged bytes are kept, under their own name", "HELLO", FS.readFile("/corrupt/a.txt.damaged"))
+test("...and it says what it did", true, said("damaged on the tape"))
+
+FS.makeDirectory("/keep")
+FS.writeFile("/keep/a.txt", "the good copy")
+reset(); tape({ "restore", "/keep" }, o)
+test("a damaged copy never replaces a good file", "the good copy", FS.readFile("/keep/a.txt"))
+
+-- ── A restore that could not write ──────────────────
+print()
+print("-- a restore that cannot write --")
+local realWrite, realHome = FS.writeFile, FS.home
+loadTape(entry("a.txt", "hello") .. "TOS\x00")
+FS.writeFile = function() return false, "Permission denied" end
+reset(); tape({ "restore", "/nowhere" }, o)
+FS.writeFile = realWrite
+test("it does not count what never landed", true, said("Restored: 0 files"))
+test("it says so, and why", true, said("1 NOT restored: Permission denied"))
+test("and what to do about it", true, said("tape restore <path>"))
+
+reset(); tape({ "restore", "/ok" }, o)
+test("a restore that works says nothing of the kind", false, said("NOT restored"))
+test("and counts its file", true, said("Restored: 1 files"))
+
+FS.home = function() return "/home/alice" end
+reset(); tape({ "restore" }, o)
+test("with no path it restores to your own home", "hello", FS.readFile("/home/alice/a.txt"))
+FS.home = realHome
 
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))

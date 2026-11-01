@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 110 rounds of work:
+Everything since v1.5.0, in 112 rounds of work:
 
+- [A broken kiosk config allows nothing](#a-broken-kiosk-config-allows-nothing)
+- [A tape restore that failed says so](#a-tape-restore-that-failed-says-so)
 - [A copy-on-write root](#a-copy-on-write-root)
 - [Read-only disks are noticed](#read-only-disks-are-noticed)
 - [Packages as archives](#packages-as-archives)
@@ -132,6 +134,18 @@ Everything since v1.5.0, in 110 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A broken kiosk config allows nothing
+
+A `/etc/kiosk.cfg` that could not be parsed fell back to the defaults, and the defaults are wider than most configs: one missing brace in a file allowing only `date` gave a guest `cat`, `ls` and the rest, with nothing said anywhere. It now allows nothing, shows *This kiosk is out of order*, and logs the reason. Ctrl+D still gets out. A missing file still means the defaults, as documented.
+
+Everything else about the kiosk held up on a booted machine. `/etc/users.dat`, another user's home, a `../..` path, `pkg` and `lua` were all refused, `echo x > file` wrote nothing, a crash goes back to the login screen, and rsh authenticates machines, not accounts, so there is no way round the menu that way.
+
+### A tape restore that failed says so
+
+`tape restore` told an ordinary user it had restored their files when it had written nothing: it counted every file without looking at the result, and its default was `/home`, which only root can write. It now restores to your own home, counts only what landed, and reports anything else in red with the reason. A file that fails its checksum no longer replaces a good one: it lands as `<name>.damaged`.
+
+The runner gained `--raw-drive`, and TBFS passed a full round trip on a real sector device with nothing to fix: format, files, check, clean unmount, reboot, read back, defrag, remount.
 
 ### A copy-on-write root
 

@@ -567,7 +567,9 @@ end
 
 --- tape restore [path] [--addr=X] — restore archived files from tape
 local function cmdRestore(args, o)
-  local destBase = args[2] or "/home"
+  --! Your own home, not /home: only root can write there, so this default was
+  --! a restore that failed for everyone else.
+  local destBase = args[2] or (fs.home and fs.home()) or "/home"
   destBase = fs.normalize(destBase)
 
   local drive, err = findDrive(nil)
@@ -584,6 +586,7 @@ local function cmdRestore(args, o)
   local fileCount = 0
   local dirCount = 0
   local totalBytes = 0
+  local failed, firstErr, damaged = 0, nil, 0
 
   while true do
     -- Read magic
@@ -678,10 +681,12 @@ local function cmdRestore(args, o)
     end
 
     if isDir then
-      if not fs.exists(fullPath) then
-        fs.makeDirectory(fullPath)
+      if fs.exists(fullPath) or fs.makeDirectory(fullPath) then
+        dirCount = dirCount + 1
+      else
+        failed = failed + 1
+        firstErr = firstErr or ("cannot make " .. fullPath)
       end
-      dirCount = dirCount + 1
     else
       -- Read file data
       local data = ""
@@ -696,10 +701,15 @@ local function cmdRestore(args, o)
 
       -- Verify checksum
       local actualSum = checksum(data)
+      local target = fullPath
       if actualSum ~= expectedSum then
         o("CHECKSUM MISMATCH: " .. relPath, 0xFF6600)
         o("  Expected: " .. expectedSum .. " Got: " .. actualSum, 0xFF6600)
-        -- Still write it, but warn
+        --! Kept, because a damaged copy can be all there is, but under its own
+        --! name: written to the real one, it replaced whatever good file was
+        --! already there.
+        target = fullPath .. ".damaged"
+        damaged = damaged + 1
       end
 
       -- Ensure parent directory exists
@@ -708,8 +718,15 @@ local function cmdRestore(args, o)
         fs.makeDirectory(parentDir)
       end
 
-      fs.writeFile(fullPath, data)
-      fileCount = fileCount + 1
+      --! Counted only if it landed. This counted every file whatever writeFile
+      --! said, so a restore nothing could be written by reported success.
+      local okW, werr = fs.writeFile(target, data)
+      if okW then
+        fileCount = fileCount + 1
+      else
+        failed = failed + 1
+        firstErr = firstErr or werr
+      end
     end
 
     -- Yield periodically
@@ -721,7 +738,15 @@ local function cmdRestore(args, o)
   rewind(drive)
   local tapeSize = drive.getSize()
   o(string.format("Restored: %d files, %d dirs (%s read from %s tape)",
-    fileCount, dirCount, fmtSize(totalBytes), fmtCapacity(tapeSize)), 0x00FF00)
+    fileCount, dirCount, fmtSize(totalBytes), fmtCapacity(tapeSize)),
+    failed > 0 and 0xFF6600 or 0x00FF00)
+  if failed > 0 then
+    o(string.format("%d NOT restored: %s", failed, tostring(firstErr)), 0xFF0000)
+    o("Name a folder you can write to: tape restore <path>", 0xAAAAAA)
+  end
+  if damaged > 0 then
+    o(damaged .. " damaged on the tape, kept as <name>.damaged. Nothing was replaced by them.", 0xFF6600)
+  end
 end
 
 --- tape list — list files in a TOS tape archive

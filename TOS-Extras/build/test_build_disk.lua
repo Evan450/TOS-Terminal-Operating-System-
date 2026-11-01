@@ -508,6 +508,7 @@ do
       ["calc"] = "2.0.2: typing at a prompt replaces its default",
       ["warhead"] = "1.0.3: typing at a prompt replaces its default",
       ["write"] = "1.1.2: typing at a prompt replaces its default",
+      ["tape"] = "2.3.2: a restore that failed says so, and goes to your own home",
     }
 
     if nShipped == 0 then

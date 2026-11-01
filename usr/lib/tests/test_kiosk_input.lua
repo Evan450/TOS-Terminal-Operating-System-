@@ -78,15 +78,23 @@ test("kiosk.lua is readable", src ~= nil)
 if not src then print("Results: 0 passed, 1 failed"); print("*** TESTS FAILED ***"); os.exit(1) end
 local kiosk = assert(load(src, "@" .. path))()
 
--- `cfg` is what /etc/kiosk.cfg holds; `typed` is what the user types.
-local function session_of(cfg, typed)
+local logged = {}
+package.loaded["kernel.log"] = { error = function(_, m) logged[#logged + 1] = m end }
+-- `cfg` is what /etc/kiosk.cfg holds; `typed` is what the user types. `rawText`
+-- is the file's bytes instead, or false for a file that cannot be read.
+local function session_of(cfg, typed, rawText)
   ran, loggedOut, keys = {}, false, {}
   for ch in typed:gmatch(".") do keys[#keys + 1] = keyOf(ch) end
   keys[#keys + 1] = keyOf("\4")
-  local raw = cfg and require("kernel.serialize").encode(cfg) or nil
+  local raw = rawText or (cfg and require("kernel.serialize").encode(cfg)) or nil
+  local exists = raw ~= nil
+  if rawText == false then raw, exists = nil, true end
   _G._TOS = { users = USERS, display = DISPLAY, net = {}, config = {},
+    -- A function, as on a machine: _TOS.log is a write-only adapter, and the
+    -- module is kernel.log. A table here hid a crash the runner found.
+    log = function() end,
     securefs = {
-      exists = function() return raw ~= nil end,
+      exists = function() return exists end,
       readFile = function() return raw end,
     } }
   local kernel = { getDisplay = function() return DISPLAY end }
@@ -119,6 +127,30 @@ test("on an empty line, a digit with no menu item starts the line",
 ok, err = session_of(everything, "echo 123\r")
 test("every digit of a number reaches the line",
   ok and ran[1] == "echo 123", ran[1] or err)
+
+-- ── A config it cannot use ───────────────────────
+-- These fell back to the defaults, which are wider than most configs: one
+-- missing brace gave a guest `cat`. Seen on a booted machine.
+print("=== A broken config allows nothing ===")
+ok, err = session_of(nil, "cat x\r", '{ allowed = { "date" ')
+test("a file that does not parse runs nothing", ok and #ran == 0, ran[1] or err)
+test("and says why, in the log", #logged > 0 and logged[#logged]:find("kiosk.cfg", 1, true), logged[#logged])
+logged = {}
+ok, err = session_of(nil, "cat x\r", false)
+test("nor does one that cannot be read", ok and #ran == 0 and #logged == 1, ran[1] or err)
+logged = {}
+ok, err = session_of(nil, "cat x\r", string.rep(" ", 9000))
+test("nor one too large to read", ok and #ran == 0 and #logged == 1, ran[1] or err)
+ok, err = session_of(nil, "cat x\r", '{ allowed = "cat" }')
+test("nor one whose allow-list is not a list", ok and #ran == 0, ran[1] or err)
+ok, err = session_of(nil, "date\r", '{ allowed = "date" }')
+test("Ctrl+D still logs out of it", ok and loggedOut, err)
+
+logged = {}
+ok, err = session_of(nil, "cat x\r")
+test("with no file at all the defaults still apply", ok and ran[1] == "cat x" and #logged == 0, ran[1] or err)
+ok, err = session_of({ banner = "Hello" }, "cat x\r")
+test("and so they do for a field left out", ok and ran[1] == "cat x", ran[1] or err)
 
 -- ── kernel/init.lua's own block, run rather than read ────────────
 print("=== Kiosk fails closed ===")

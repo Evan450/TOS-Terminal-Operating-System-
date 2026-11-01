@@ -61,6 +61,18 @@ local MAX_CFG_BYTES = 8192
 -- Config loading
 -- ============================================================
 
+--! A config that is there and cannot be used fails closed. These returned the
+--! defaults, and the defaults are wider than most configs: one missing brace in
+--! a file allowing only `date` gave a guest `cat`, `ls` and the rest, silently.
+--! Nothing here is allowed but Ctrl+D, and the log says why. A missing file is
+--! different: it has restricted nothing, and the defaults are what it documents.
+local function brokenConfig(why)
+  local okL, log = pcall(require, "kernel.log")
+  if okL then pcall(log.error, "kiosk", CONFIG_PATH .. ": " .. why) end
+  return { allowed = {}, menu = {}, idleSeconds = DEFAULT_CFG.idleSeconds,
+           banner = "This kiosk is out of order" }
+end
+
 local function loadConfig(securefs, session)
   local cfg = {}
   for k, v in pairs(DEFAULT_CFG) do cfg[k] = v end
@@ -68,12 +80,16 @@ local function loadConfig(securefs, session)
     return cfg
   end
   local raw = securefs.readFile(CONFIG_PATH, session)
-  if not raw or #raw == 0 or #raw > MAX_CFG_BYTES then return cfg end
+  if not raw then return brokenConfig("cannot be read") end
+  if #raw == 0 or #raw > MAX_CFG_BYTES then return brokenConfig("empty or too large") end
   local serialize = require("kernel.serialize")
   local ok, parsed = pcall(serialize.decode, raw, { maxBytes = MAX_CFG_BYTES })
-  if not ok or type(parsed) ~= "table" then return cfg end
+  if not ok or type(parsed) ~= "table" then return brokenConfig("not a config table") end
 
   -- Validate fields.
+  if parsed.allowed ~= nil and type(parsed.allowed) ~= "table" then
+    return brokenConfig("`allowed` is not a list")
+  end
   if type(parsed.allowed) == "table" then
     cfg.allowed = {}
     for _, name in ipairs(parsed.allowed) do
