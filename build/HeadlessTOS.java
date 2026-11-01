@@ -213,6 +213,87 @@ public class HeadlessTOS {
   static Path peerDiskDir;      // --peer-disk: a second disk in it
   static boolean withTape;      // --tape
   static boolean withGeolyzer;  // --geolyzer
+  static boolean withRobot;     // --robot
+
+  /**
+   * A stand-in for the robot component, for what a prefab export does on a
+   * real OpenOS. It keeps the shape of OpenComputers 1.8.10's Robot and Agent:
+   * move and place return nil and a reason, and a block needs a neighbour of
+   * its cell. A robot's turns are its own, starting facing +X. Every block
+   * placed is printed as "[headless] robot placed x y z", in cells from where it began,
+   * so a run can be checked against the blueprint. A NoteBlock for the reason
+   * Geolyzer below is.
+   */
+  public static class StandInRobot extends NoteBlock {
+    private Node robotNode;
+    private int x = 0, y = 0, z = 0, facing = 0, selected = 1;
+    private final int[] items = new int[17];
+    private final Map<String, Integer> cells = new HashMap<>();
+    private static final int[] DX = { 1, 0, -1, 0 }, DZ = { 0, 1, 0, -1 };
+
+    public StandInRobot() { java.util.Arrays.fill(items, 64); }
+
+    @Override public Node node() {
+      if (robotNode == null) {
+        robotNode = Network.newNode(this, Visibility.Network(), Network.newNode$default$3())
+            .withComponent("robot").create();
+      }
+      return robotNode;
+    }
+
+    private boolean solid(int cx, int cy, int cz) {
+      return cy < 0 || cells.containsKey(cx + "," + cy + "," + cz);
+    }
+
+    @Callback public Object[] move(Context context, Arguments args) {
+      int side = args.checkInteger(0);
+      int nx = x, ny = y, nz = z;
+      if (side == 0) ny--;
+      else if (side == 1) ny++;
+      else if (side == 3) { nx += DX[facing]; nz += DZ[facing]; }
+      else if (side == 2) { nx -= DX[facing]; nz -= DZ[facing]; }
+      else throw new IllegalArgumentException("invalid side");
+      if (solid(nx, ny, nz)) return new Object[] { null, "solid" };
+      x = nx; y = ny; z = nz;
+      return new Object[] { true };
+    }
+
+    @Callback public Object[] turn(Context context, Arguments args) {
+      facing = (facing + (args.checkBoolean(0) ? 1 : 3)) % 4;
+      return new Object[] { true };
+    }
+
+    @Callback public Object[] select(Context context, Arguments args) {
+      if (args.count() > 0) selected = args.checkInteger(0);
+      return new Object[] { selected };
+    }
+
+    @Callback public Object[] count(Context context, Arguments args) {
+      return new Object[] { items[args.count() > 0 ? args.checkInteger(0) : selected] };
+    }
+
+    @Callback public Object[] inventorySize(Context context, Arguments args) {
+      return new Object[] { 16 };
+    }
+
+    @Callback public Object[] detect(Context context, Arguments args) {
+      boolean there = solid(x, y - 1, z);
+      return new Object[] { there, there ? "solid" : "air" };
+    }
+
+    @Callback public Object[] place(Context context, Arguments args) {
+      if (args.checkInteger(0) != 0) throw new IllegalArgumentException("only down here");
+      if (items[selected] == 0) return new Object[] { false, "nothing selected" };
+      int ty = y - 1;
+      if (solid(x, ty, z)) return new Object[] { false };
+      if (!(solid(x - 1, ty, z) || solid(x + 1, ty, z) || solid(x, ty, z - 1)
+          || solid(x, ty, z + 1) || solid(x, ty - 1, z))) return new Object[] { false };
+      cells.put(x + "," + ty + "," + z, selected);
+      items[selected]--;
+      System.out.println("[headless] robot placed " + x + " " + ty + " " + z + " slot " + selected);
+      return new Object[] { true };
+    }
+  }
 
   /**
    * Ocelot Brain has no geolyzer, and a headless machine has no world, so
@@ -424,6 +505,13 @@ public class HeadlessTOS {
       Geolyzer geo = ws.add(new Geolyzer());
       pc.connect(geo);
       System.out.println("[headless] geolyzer " + geo.node().address());
+    }
+
+    // A robot (--robot): this machine answers as one, for an exported build.
+    if (withRobot) {
+      StandInRobot robot = ws.add(new StandInRobot());
+      pc.connect(robot);
+      System.out.println("[headless] robot " + robot.node().address());
     }
 
     // A second computer (--peer-boot): its own case, disk, screen and
@@ -907,6 +995,7 @@ public class HeadlessTOS {
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
     withTape = flag(args, "--tape");
     withGeolyzer = flag(args, "--geolyzer");
+    withRobot = flag(args, "--robot");
     if (opt(args, "--disk2", null) != null) {
       disk2Dir = Paths.get(opt(args, "--disk2", null)).toAbsolutePath();
       disk2Address = opt(args, "--disk2-address", null);

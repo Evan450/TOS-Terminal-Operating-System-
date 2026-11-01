@@ -1,8 +1,8 @@
 # prefab — design a base, a slice at a time
 
-A blueprint designer. A screen is flat and a building isn't, so you draw one slice of the building at a time, looking along X, Y or Z, with the slice behind it showing faintly under the one you're drawing. It also counts what a build takes, finds any block a robot couldn't place, and reads a real site with a geolyzer to find the best place for the floor.
+A blueprint designer. A screen is flat and a building isn't, so you draw one slice of the building at a time, looking along X, Y or Z, with the slice behind it showing faintly under the one you're drawing. It also counts what a build takes, finds any block a robot couldn't place, reads a real site with a geolyzer to find the best place for the floor, and writes a program for a robot to build it.
 
-**Not on the pack yet.** This is 0.2.0: the designer, the planner and the survey work, but nothing builds a blueprint in a world so far. `docs/PREFAB.md` on the `dev` branch has the design for the robot, and what was checked against OpenComputers itself.
+**Not on the pack yet.** This is 0.3.0: it has been tested against simulations of a geolyzer and a robot, but never in a real world. `docs/PREFAB.md` on the `dev` branch has what was checked against OpenComputers itself, and what's left.
 
 ## Use
 
@@ -13,6 +13,7 @@ prefab new 9 5 7 Starter hut    a new one of that size, with a name
 prefab info hut.bp 32           what it takes, for a robot with 32 slots
 prefab survey hut.bp            find the best floor for it, with a geolyzer
 prefab survey 9 7 --height 4    the same, for a size
+prefab export hut.bp build.lua  a program for a robot to build it
 ```
 
 `open hut.bp` works too, once `prefab` is installed. A box can be up to 64 on each side.
@@ -68,6 +69,29 @@ The site sits around the geolyzer unless `--at X Z` places its north-west corner
 - **It can't see grass or snow-thin things.** Tall grass and anything else replaceable reads as empty, which is right: a block can go straight in.
 - **It can't see unloaded chunks.** They read as empty, so `?` across part of the map usually means you're too far away.
 - **Bedrock is only recognised close to the geolyzer.** Further out it counts as an ordinary block.
+
+## Building it
+
+`prefab export hut.bp build.lua` writes the program and tells you what to load:
+
+```
+Wrote build.lua: 42 steps, 57 moves, about 48 s and 905 energy.
+Load the robot:
+  slot 1     40  Cobblestone
+  slot 2     2  Glass
+Stand it in the corner of the first layer, at the floor the survey found.
+The building goes ahead of it and to its right. On OpenOS, run the file.
+```
+
+The robot needs an inventory upgrade and OpenOS. Carry the file over on a floppy, load the slots, stand it in the corner, and run the file. `--slots N` says how many inventory slots it has, 16 by default.
+
+- **No compass needed.** The building goes ahead of the robot and to its right, whichever way it's facing.
+- **Running out:** it walks back to the corner, says what it wants, and carries on once you've loaded it.
+- **An inventory controller** lets it check each item, so the wrong block in a slot is refused rather than built.
+- **If it stops,** it says why and saves its place. Fix the problem and run the file again. Run it with `fresh` to start over.
+- **It can't dig yet.** Clear the site first: anything solid in its way stops it.
+- **A power cut loses its place.** It only saves when it stops itself, so after one, stand it back in the corner and run it with `fresh`.
+- **Stairs and doors** may come out facing the wrong way, because a blueprint doesn't record facing yet.
 
 ## The file
 

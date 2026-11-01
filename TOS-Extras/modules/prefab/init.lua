@@ -16,6 +16,7 @@ local computer  = require("computer")
 local B = require("prefab.blueprint")
 local P = require("prefab.plan")
 local G = require("prefab.survey")
+local E = require("prefab.export")
 
 local V = {}   -- exported for test_prefab.lua
 
@@ -627,6 +628,62 @@ local function cliSurvey(args, o)
   for _, l in ipairs(V.surveyLines(site, opt.height)) do o(l[1], colours[l[2]]) end
 end
 
+-- ── Export ─────────────────────────────────────────────────────────────
+--- `prefab export`'s words. Returns in, out and slots, or nil and why.
+function V.parseExport(args)
+  local pos, slots = {}, 16
+  local i = 2
+  while i <= #args do
+    local a = args[i]
+    if a == "--slots" then
+      slots = tonumber(args[i + 1])
+      if not slots or slots < 1 or slots > 64 then return nil, "--slots is 1 to 64" end
+      slots = math.floor(slots)
+      i = i + 2
+    elseif a:sub(1, 2) == "--" then
+      return nil, "unknown option " .. a
+    else
+      pos[#pos + 1] = a
+      i = i + 1
+    end
+  end
+  if #pos ~= 2 then return nil, "prefab export <file.bp> <out.lua> [--slots N]" end
+  return pos[1], pos[2], slots
+end
+
+--- What to tell whoever is about to carry the program to a robot.
+function V.exportLines(path, info)
+  local lines = { { string.format("Wrote %s: %d steps, %d moves, about %d s and %d energy.", path,
+    info.steps, info.moves, info.seconds, math.ceil(info.energy)), "hi" } }
+  lines[#lines + 1] = { "Load the robot:", "fg" }
+  for _, l in ipairs(info.sheet) do
+    lines[#lines + 1] = { string.format("  slot %-5s %d  %s", l.slots, l.count, l.label), "fg" }
+  end
+  if info.loads > 1 then
+    lines[#lines + 1] = { string.format("That is %d loads: it walks back to the corner and waits for each.", info.loads), "warn" }
+  end
+  if info.hover then
+    lines[#lines + 1] = { string.format("Needs a hover upgrade from step %d: there is nothing near enough to fly over.", info.hover), "warn" }
+  end
+  lines[#lines + 1] = { "Stand it in the corner of the first layer, at the floor the survey found.", "dim" }
+  lines[#lines + 1] = { "The building goes ahead of it and to its right. On OpenOS, run the file.", "dim" }
+  return lines
+end
+
+local function cliExport(args, o)
+  local colours = { hi = 0x55FF55, fg = 0xFFFFFF, dim = 0xAAAAAA, warn = 0xFF5555 }
+  local src, dest, slots = V.parseExport(args)
+  if not src then o(dest, 0xFF5555); return end
+  local bp, err = loadFile(src)
+  if not bp then o(tostring(err), 0xFF5555); return end
+  local program, info = E.program(bp, { slots = slots })
+  if not program then o("Cannot export: " .. tostring(info), 0xFF5555); return end
+  if not (fs and fs.writeFile) then o("Nothing here can write a file.", 0xFF5555); return end
+  local ok, wErr = pcall(fs.writeFile, dest, program)
+  if not ok or wErr == false then o("Not saved: " .. tostring(wErr), 0xFF5555); return end
+  for _, l in ipairs(V.exportLines(dest, info)) do o(l[1], colours[l[2]]) end
+end
+
 -- ── Command line ───────────────────────────────────────────────────────
 local function help(o)
   o("prefab — design a base, a slice at a time", 0xFFFF55)
@@ -636,6 +693,7 @@ local function help(o)
   o("  prefab info <file.bp> [slots]  what it takes to build", 0xFFFFFF)
   o("  prefab survey <file.bp>      read the site with a geolyzer", 0xFFFFFF)
   o("  prefab survey <w> <d> [--height N] [--at X Z] [--down N] [--up N]", 0xFFFFFF)
+  o("  prefab export <file.bp> <out.lua> [--slots N]   a program for a robot", 0xFFFFFF)
   o("  In the designer: Space paint, X Y Z change the view, PgUp/PgDn change the slice.", 0xAAAAAA)
 end
 
@@ -654,6 +712,7 @@ local function prefabCmd(args, o)
     return
   end
   if a == "survey" then cliSurvey(args, o); return end
+  if a == "export" then cliExport(args, o); return end
   if a == "new" then
     local x, y, z = tonumber(args[2]), tonumber(args[3]), tonumber(args[4])
     local function side(n) return n and n >= 1 and n <= B.MAX_SIDE and n == math.floor(n) end

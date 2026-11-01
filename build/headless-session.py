@@ -14,7 +14,7 @@ answers off the real screen.
         [--os tos|openos] [--install-disk] [--boot-tier N]
         [--extra-disk DIR] [--extra-disk-tier N]
         [--floppy NAME=DIR]... [--floppy-in NAME]
-        [--trace] [--keep] [--internet] [--geolyzer]
+        [--trace] [--keep] [--internet] [--geolyzer] [--robot]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
 A script is one step per line (HeadlessTOS.java's runScript lists them):
@@ -275,6 +275,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="a tape drive beside the (first) machine, with a blank tape in it")
     ap.add_argument("--geolyzer", action="store_true",
                     help="a stand-in geolyzer over a small built-in site")
+    ap.add_argument("--robot", action="store_true",
+                    help="a stand-in robot component, printing each block it places")
     ap.add_argument("--machines", choices=["1", "2"], default="1",
                     help="2 adds a second computer with its own fresh TOS, joined by "
                          "network cards and a relay; `machine N` picks which one")
@@ -378,6 +380,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--tape")
     if args.geolyzer:
         cmd.append("--geolyzer")
+    if args.robot:
+        cmd.append("--robot")
     if args.seats != "1":
         cmd += ["--seats", args.seats]
     if peer_boot is not None:

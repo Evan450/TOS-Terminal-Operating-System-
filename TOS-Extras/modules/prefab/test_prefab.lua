@@ -613,6 +613,27 @@ do
 end
 
 do
+  -- Export, through the real command. test_prefab_export.lua runs what it
+  -- writes; this is the words around it.
+  local fx = machine({ files = { ["/hut.bp"] = HUT } })
+  local out = fx.run({ "export", "/hut.bp", "/build.lua", "--slots", "4" })
+  test("export writes a program", fx.files["/build.lua"] ~= nil and has(out, "Wrote /build.lua: 27 steps"), out)
+  test("...that parses", load(fx.files["/build.lua"] or "") ~= nil)
+  test("...and gives the load sheet", has(out, "slot 1") and has(out, "Cobblestone"), out)
+  test("...and says where the robot stands", has(out, "corner of the first layer"))
+  test("--slots is checked", has(fx.run({ "export", "/hut.bp", "/x.lua", "--slots", "0" }), "1 to 64"))
+  test("an unknown option is named", has(fx.run({ "export", "/hut.bp", "/x.lua", "--fast" }), "--fast"))
+  test("it says what it needs", has(fx.run({ "export", "/hut.bp" }), "prefab export <file.bp>"))
+  test("a missing blueprint says so", has(fx.run({ "export", "/no.bp", "/x.lua" }), "no such file"))
+  test("too few slots says so", has(fx.run({ "export", "/hut.bp", "/x.lua", "--slots", "1" }), "Cannot export"))
+  local tall = "PREFAB1\nsize 2 3 1\nblock a m:a 0 A\nlayer 1\na.\nlayer 2\n..\nlayer 3\n.a\n"
+  local fx2 = machine({ files = { ["/t.bp"] = tall } })
+  test("a floating block refuses the export", has(fx2.run({ "export", "/t.bp", "/x.lua" }), "float"))
+  local fx3 = machine({ files = { ["/hut.bp"] = HUT }, writeError = "disk full" })
+  test("a failed write says so", has(fx3.run({ "export", "/hut.bp", "/x.lua" }), "Not saved: disk full"))
+end
+
+do
   -- A failed save says so, and keeps the work.
   local keys = script({ SPACE }, { char("s") }, typed("/x.bp"), { ENTER }, { QUIT }, { char("y") })
   local fx = machine({ keys = keys, writeError = "disk full" })

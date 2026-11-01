@@ -2,7 +2,7 @@
 
 The operator's idea: like `warhead`, but for building. Read the site with a geolyzer, draw your own blueprints a slice at a time in a 2.5D designer, and have robots and drones build them.
 
-Status: the blueprint format, the designer, the build planner and the survey exist as `prefab` 0.2.0 in `TOS-Extras/modules/prefab`. The robot is designed here and not built. A 0.x package stays off the Optional Utilities pack by rule, so nothing here needs signing yet.
+Status: the blueprint format, the designer, the build planner, the survey and the robot program exist as `prefab` 0.3.0 in `TOS-Extras/modules/prefab`. Supply and site clearing are designed here and not built. A 0.x package stays off the Optional Utilities pack by rule, so nothing here needs signing yet.
 
 ## What the hardware can do
 
@@ -29,7 +29,7 @@ The code also settles a few limits. An unloaded chunk reads as air. A block with
 
 **Robots build, drones don't, at first.** A drone carries 8 stacks and has 4 KB to know the whole job in. A robot carries 64 stacks and can run a real program. Drones come back later as couriers, because their speed and height suit fetching.
 
-**The robot gets a program, not a remote control.** `prefab export` will write one self-contained Lua file holding the build, to run on the robot's own OpenOS from a floppy. Driving it live through `rc-pilot` would need its wireless setup, which isn't finished (see RC-PILOT CANNOT BE SET UP in the TODO), a shared secret, and a machine in range for the whole build. A file needs none of those, and it can be tested off-box by running the generated program against a simulated world.
+**The robot gets a program, not a remote control.** `prefab export` writes one self-contained Lua file holding the build, to run on the robot's own OpenOS from a floppy. Driving it live through `rc-pilot` would need its wireless setup, which isn't finished (see RC-PILOT CANNOT BE SET UP in the TODO), a shared secret, and a machine in range for the whole build. A file needs none of those, and it can be tested off-box by running the generated program against a simulated world.
 
 **The survey asks one question exactly.** Each cell needs one reading, because "is something there?" has no noise in it. Only liquids and bedrock use the hardness at all.
 
@@ -81,16 +81,40 @@ aaaaa
 
 The map shows the site from above against the chosen floor: `.` is ready, a digit stands that far too high, a letter is that far too low, `~` is liquid and `?` read nothing.
 
+## The robot program
+
+`prefab export hut.bp build.lua` writes one Lua file holding the build order and a small builder. It needs OpenOS and `component.robot`, and nothing else.
+
+**There's no compass.** Stand the robot in the corner of the first layer, at the floor the survey found. The building goes ahead of it and to its right, whichever way it's facing.
+
+**It walks one block above the layer it's laying**, so it never meets the building. Up first, then along X, then along Z.
+
+**Loading:** export prints which slots to fill. Each block gets a slot, and the rest go to whatever needs the most. When a block runs out the robot walks back to the corner, says what it wants, and waits. With an inventory controller it also checks each item's name and damage, so the wrong thing in a slot is refused rather than built.
+
+**When it can't go on:** a player or a flat battery gets 30 seconds of patience. After that, or for a block in the way or nothing to place against, it stops, says where, and saves its place in `/home/.prefab-state`. Running the file again carries on from there, and `fresh` as an argument starts over. A block already standing in a target cell is left alone and counted.
+
+**A hover problem is known in advance.** Export walks the same path as the robot, under OpenComputers' flight rule, and names the step that would need a hover upgrade.
+
+**What a stranger's blueprint can do:** nothing. The generator is the one place a blueprint becomes code, so every string goes through `%q`, and comments have control characters taken out, because a bare carriage return would end the comment and turn the rest of the line into code.
+
+How it was tested: `test_prefab_export.lua` runs the generated program against a simulated world, in all four facings, through refills, wrong items, blocked paths, flat batteries and resuming. Then a file exported on a real TOS machine ran on real OpenOS against the runner's stand-in robot (`--robot`): all 42 blocks of the test hut landed in the right cells from the right slots, none twice. The stand-in and the simulator are both my reading of OpenComputers, so neither proves a real robot behaves this way.
+
+Limits for now:
+
+- It has no tool, so it can't clear anything. A block in its path stops it.
+- Its place is only saved when it stops itself. If the power dies or the chunk unloads, it has lost its position, and the only recovery is standing it back in the corner with `fresh`.
+- After a finished build, running the file again builds again from wherever the robot is.
+- Blocks are placed facing however the robot's facing lands them, which is the open question below.
+
 ## Still to build, in order
 
-1. **`prefab export`:** the robot program, with a simulated world to run it against. It takes the floor the survey found.
-2. **Supply:** the robot fetching from a chest with an inventory controller, finding each item by name and damage.
-3. **Clearing the site**, before anything is placed.
-4. **Drones as couriers.**
-5. **In a real world:** nothing above reaches 1.0.0 until a robot has built something in one.
+1. **Supply:** the robot fetching from a chest with an inventory controller, finding each item by name and damage.
+2. **Clearing the site**, before anything is placed.
+3. **Drones as couriers.**
+4. **In a real world:** nothing above reaches 1.0.0 until a robot has built something in one.
 
 ## Open questions
 
 - Stairs, doors and anything else with an orientation: a blueprint's damage value doesn't say which way a block faces when it's placed. The robot's facing decides that, so these need their own step, and probably a facing column on `block`.
 - Does `robot.place(down)` work on the first layer of a site that isn't flat? The survey now gives the floor, but filling under it is still untested.
-- Does a real geolyzer match the bytecode? Nothing has checked that yet.
+- Does a real geolyzer match the bytecode, and a real robot? Nothing has checked either yet.

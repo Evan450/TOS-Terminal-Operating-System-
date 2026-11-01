@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 69 rounds of work:
+Everything since v1.5.0, in 70 rounds of work:
 
+- [`prefab export` writes a program for a robot](#prefab-export-writes-a-program-for-a-robot)
 - [`prefab survey` reads a building site](#prefab-survey-reads-a-building-site)
 - [`prefab`, a base designer, is started](#prefab-a-base-designer-is-started)
 - [An add-on that will not load says so](#an-add-on-that-will-not-load-says-so)
@@ -91,6 +92,10 @@ Everything since v1.5.0, in 69 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `prefab export` writes a program for a robot
+
+`prefab` 0.3.0. `prefab export hut.bp build.lua` writes one Lua file for a robot on OpenOS, and says what to load into which slot. The building goes ahead of the robot and to its right, so it needs no compass. It comes back to the corner for more blocks, and when something stops it, it says why and saves its place, so running the file again carries on. It has only been tested against simulations so far, so it stays off the pack until a robot has built something in a real world.
 
 ### `prefab survey` reads a building site
 
