@@ -1,6 +1,6 @@
 local x="kernel.users"local A=require("computer")
 local y=require("kernel.serialize")local r={}local z="/etc/cron.dat"local q={}local v=1;local t=nil;local p=nil;local s=nil;local u=nil
-local B={["fs.read"]=true,["fs.write"]=true,["component"]=true}
+local B={["fs.read"]=true,["fs.write"]=true,["compat.io"]=true,["component"]=true}
 local function C(a)if not a then return nil end;local b=nil;local c,d=pcall(require,x)if c then b=d end
 if
 a.user and b then

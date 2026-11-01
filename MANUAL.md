@@ -2513,9 +2513,10 @@ full path of a `.lua` file; a shell line is refused when you add it. *Example:*
 ### D
 
 **date** — `date [fmt]` | `date tz <hours>`
-Print the real host wall-clock time (Lua `os.time`/`os.date`), not in-game time —
-OpenComputers' own `os.time()` returns in-game ticks, not a wall clock, so
-`date` deliberately bypasses it. `fmt` is an optional `os.date`-style format
+Print the real host time, not in-game time. OpenComputers' own `os.time()` is
+the in-game clock, so `date` reads the time from a file's modification stamp
+on the RAM disk, the one real clock OC lets out, and falls back to `os.time()`
+if it cannot. `fmt` is an optional `os.date`-style format
 string (default `%Y-%m-%d %H:%M:%S`). `date tz <hours>` sets a cosmetic
 timezone offset (-23..23) applied to the *displayed* time only — there is no
 settable real-time clock to adjust. *Example:* `date tz -5`. *See also:* `time`
@@ -2588,7 +2589,7 @@ Shift+Delete/^X cut, Shift+Insert/^V paste (`^C` is the kernel interrupt and
 never reaches the editor — [§4.3](#43-the-editor)).
 *See also:* `man edit`, [§4.3](#43-the-editor).
 
-**env** / **export** — `env [KEY | KEY=VALUE]` (also `set`)
+**env** / **export** — `env [KEY | KEY=VALUE | KEY value]` (also `set`)
 With no argument, list this session's environment variables; with `KEY`, print
 one; with `KEY=VALUE`, set it for this session. The shell expands `$KEY` and
 `${KEY}` on any command line, except inside single quotes; a name that is not set

@@ -1085,22 +1085,23 @@ E(string.format("Uptime: %dh %dm %ds (%.1fs total)",aA,aB,aC,az),d.fg)end
 b.date=function(ay,E)
 local az=h.getConfig and h.getConfig()or nil
 if ay[1]=="tz"or ay[1]==ab or ay[1]=="set"then
-local aG=(
-az and az.get and az.get(ab))or 0;local aF=tonumber(ay[2])
-if not aF then
-E("Timezone offset: "..aG.."h",d.fg)
+local aI=(
+az and az.get and az.get(ab))or 0;local aH=tonumber(ay[2])
+if not aH then
+E("Timezone offset: "..aI.."h",d.fg)
 E("Usage: date tz <hours>   e.g. 'date tz -5'",d.dim)
 E("OpenComputers has no settable clock; this only shifts the",d.dim)
-E("DISPLAYED time relative to the world/host clock.",d.dim)return end;if aF<-23 or aF>23 then
+E("DISPLAYED time relative to the world/host clock.",d.dim)return end;if aH<-23 or aH>23 then
 E("Offset must be between -23 and 23.",d.error)return end;if not r(E)then return end
 if not
-(az and az.set)then E("No writable config available.",d.error)return end;az.set(ab,aF)if az.save then az.save()end
-E("Timezone offset set to "..aF.."h. (was "..
-aG.."h)",d.highlight)return end;local aB=ay[1]or"%Y-%m-%d %H:%M:%S"local aC=
+(az and az.set)then E("No writable config available.",d.error)return end;az.set(ab,aH)if az.save then az.save()end
+E("Timezone offset set to "..aH.."h. (was "..
+aI.."h)",d.highlight)return end;local aC=ay[1]or"%Y-%m-%d %H:%M:%S"local aD=
 (az and az.get and az.get(ab))or 0
-local aD=os.time()+ (aC*3600)local aE,aA=pcall(os.date,aB,aD)if aE and aA then
-E(tostring(aA),d.fg)else
-E(tostring(aA or"date error"),d.error)end end;b.time=b.date
+local aA=_G._TOS and _G._TOS.fs;local aE=aA and aA.hostTime and aA.hostTime()local aF=(aE or
+os.time())+ (aD*3600)
+local aG,aB=pcall(os.date,aC,aF)if aG and aB then E(tostring(aB),d.fg)else
+E(tostring(aB or"date error"),d.error)end end;b.time=b.date
 b.keys=function(ay,E)local aH,az=pcall(require,aa)if not aH or not az then
 E("Keybind module unavailable.",d.error)return end
 local aA=(ay[1]or"list"):lower()local aB=false;for aJ=2,#ay do
@@ -1313,11 +1314,14 @@ b.env=function(E,ay)local aC,az=pcall(require,"kernel.env")if not aC then
 ay("Env module unavailable",d.error)return end;local aB=h.getProc()local aA=
 aB and aB.current()or nil
 if E[1]then
-local aD,aE=E[1]:match("^([%w_]+)=(.*)$")if aD then az.write(aA,aD,aE)ay(aD.."="..aE,d.highlight)else
-local aF=az.read(aA,E[1])
-ay(E[1].."="..tostring(aF or""),d.fg)end else
-local aD=az.list(aA)for aE,aF in pairs(aD)do
-ay("  "..aE.."="..tostring(aF),d.fg)end end end;b.export=b.env;b.set=b.env
+local aD,aE=E[1]:match("^([%w_]+)=(.*)$")if not aD and E[2]and E[1]:match("^[%w_]+$")then
+aD,aE=E[1],table.concat(E," ",2)end;if aD then az.write(aA,aD,aE)ay(aD..
+"="..aE,d.highlight)else local aF=az.read(aA,E[1])
+ay(E[1].."="..tostring(
+aF or""),d.fg)end else
+local aE,aD=az.list(aA),{}for aF in pairs(aE)do aD[#aD+1]=aF end;table.sort(aD)for aG,aF in
+ipairs(aD)do
+ay("  "..aF.."="..tostring(aE[aF]),d.fg)end end end;b.export=b.env;b.set=b.env
 b["tape-menu"]=function(ay,E)
 local aG,aA=pcall(require,"shell.launcher")if not aG or not aA then
 E("Menu engine unavailable (low RAM?)",d.error)return end;if not n or not n.getSize then

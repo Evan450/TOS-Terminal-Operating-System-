@@ -541,7 +541,8 @@ E("Usage: backup inspect <file.bak>",d.dim)return end
 local aA,aB=ax.inspect(aw[2],{session=az})if not aA then
 E("Inspect failed: "..tostring(aB),d.error)return end
 E(string.format(" magic:    %s",aA.magic),d.fg)
-E(string.format(" created:  %d",aA.created),d.fg)
+E(string.format(" created:  %s",aA.created>978307200 and
+os.date("%Y-%m-%d %H:%M:%S UTC",aA.created)or tostring(aA.created)),d.fg)
 E(string.format(" entries:  %d",aA.entries),d.fg)
 E(string.format(" root:     %s",aA.root),d.fg)
 E(string.format(" metaHash: %s...",aA.metaHash:sub(1,24)),d.fg)
@@ -871,17 +872,19 @@ if aB then
 E("Display buffer set "..az.." (applied now).",d.highlight)else E(tostring(aC)or"invalid",d.error)end;return end
 E("Usage: optimize [show | power <off|balanced|save> | buffer <on|off|auto>".." | swap <on|off|auto>]",d.dim)
 E("       `swap` on its own is the same as `optimize swap`.",d.dim)end
-b.programs=function(aw,E)local ax={"/bin","/usr/bin","/home/"..a.who}
-E("Executables:",d.title)
-for az,ay in ipairs(ax)do
-if e.isDirectory(ay)then local aB,aA=pcall(e.list,ay)
-if aB and aA then local aC={}
-if type(aA)==
-"table"then aC=aA elseif type(aA)=="function"then for aE in aA do aC[#aC+1]=aE end end;local aD={}
-for az,aE in ipairs(aC)do if aE:match("%.lua$")then aD[#aD+1]=aE end end
-if#aD>0 then E(" "..ay..":",d.dim)for az,aE in ipairs(aD)do
-E("   "..aE,
-d.file_lua or d.file_exec or d.highlight)end end end end end end
+b.programs=function(aw,E)local ay={"/bin","/usr/bin","/home/"..a.who}
+E("Executables:",d.title)local ax=false
+for aA,az in ipairs(ay)do
+if e.isDirectory(az)then local aC,aB=pcall(e.list,az)
+if aC and aB then
+local aD={}if type(aB)=="table"then aD=aB elseif type(aB)=="function"then
+for aF in aB do aD[#aD+1]=aF end end;local aE={}for aA,aF in ipairs(aD)do if
+aF:match("%.lua$")then aE[#aE+1]=aF end end
+if#
+aE>0 then ax=true;E(" "..az..":",d.dim)for aA,aF in ipairs(aE)do
+E("   "..aF,d.file_lua or
+d.file_exec or d.highlight)end end end end end;if not ax then
+E(" None yet. `help` lists the built-in commands.",d.dim)end end
 b.log=function(aw,E)if not f(E)then return end;local ax=h.getLog()if not ax then
 E("Logger unavailable",d.error)return end
 local ay=
@@ -969,50 +972,53 @@ E("Compile error: "..tostring(aF),d.error)return end;local ax={}
 for aI=2,#aw do ax[#ax+1]=aw[aI]end;local aG,aH=pcall(aE,table.unpack(ax))
 J.reportProgramEnd(a,E,aG,aH,"Runtime error: ",aD)end
 b.lua=function(aw,E)if not o(E)then return end
-pcall(function()local aD=require(aa)if aD and aD.info then
-aD.info("repl",
-"REPL session opened by "..tostring(a.who or"?"))end end)local aB=M.uptime()j.fill(1,1,l,k," ",d.fg,d.bg)
+pcall(function()local aH=require(aa)if aH and aH.info then
+aH.info("repl",
+"REPL session opened by "..tostring(a.who or"?"))end end)local aD=M.uptime()j.fill(1,1,l,k," ",d.fg,d.bg)
 j.fill(1,1,l,1," ",d.bar_fg,d.bar_bg)
 j.set(1,1," Lua REPL  type 'exit' to quit",d.bar_fg,d.bar_bg)
 j.set(1,1," Lua REPL  'exit' to quit | blank line runs/cancels a block",d.bar_fg,d.bar_bg)local ax=2;local ay={}
-local function aA(aD,aE)if ax>k-1 then local aF=j.getGpu()if aF and aF.copy then
-aF.copy(1,3,l,k-3,0,-1)end;j.fill(1,k-1,l,1," ",d.fg,d.bg)
-ax=k-1 end;j.set(1,ax,tostring(aD):sub(1,l),
-aE or d.fg,d.bg)ax=ax+1 end;local function aC(aD)
-return type(aD)==L and aD:find("<eof>",1,true)~=nil end;local az={}
-while true do if ax>k-1 then j.getGpu().copy(1,3,l,k-3,0,-
-1)
-j.fill(1,k-1,l,1," ",d.fg,d.bg)ax=k-1 end;local aF=#az>0
-local aH=aF and">> "or"> "j.fill(1,ax,l,1," ",d.fg,d.bg)
-j.set(1,ax,aH,d.highlight,d.bg)local aD=""local aE=#ay+1;local aG=#aH+1
+local function aA(aH,aI)if ax>k-1 then local aJ=j.getGpu()if aJ and aJ.copy then
+aJ.copy(1,3,l,k-3,0,-1)end;j.fill(1,k-1,l,1," ",d.fg,d.bg)
+ax=k-1 end;j.set(1,ax,tostring(aH):sub(1,l),
+aI or d.fg,d.bg)ax=ax+1 end;local function aE(aH)
+return type(aH)==L and aH:find("<eof>",1,true)~=nil end;local az={}local aB
+local aF,aG=pcall(require,"shell.quitkey")local aC=false
 while true do
-j.fill(aG,ax,l-aG+1,1," ",d.fg,d.bg)j.set(aG,ax,aD.."_",d.fg,d.bg)
-local aK,aL,aI,aJ=c.pullSignal()
-if aK=="key_down"then
-if aJ==28 then break elseif aJ==14 then if#aD>0 then aD=aD:sub(1,-2)end elseif aJ==200 then if
-aE>1 then aE=aE-1;aD=ay[aE]or""end elseif aJ==208 then if aE<#ay then aE=aE+1
-aD=ay[aE]or""else aE=#ay+1;aD=""end elseif aI and aI>=32 and aI<127 then aD=
-aD..string.char(aI)end elseif aK=="clipboard"and type(aI)==L then
-aD=aD..aI:gsub("\r","")local aM=aD:find("\n",1,true)
-if aM then aD=aD:gsub("\n"," ")end end end;ax=ax+1
-if(aD=="exit"or aD=="quit")and not aF then break end
-if aD==""and not aF then elseif aD==""and aF then az={}aA("(cancelled)",d.dim)else
-az[#az+1]=aD;local aI=table.concat(az,"\n")
-local aK,aL=load("return "..aI,"=repl","t")if not aK then aK,aL=load(aI,"=repl","t")end;if
-not aK and aC(aL)then goto repl_continue end;az={}ay[#ay+1]=aI
-pcall(function()
-local aO=require(aa)if aO and aO.info then
-aO.info("repl","["..tostring(a.who or"?").."] "..
-aI:gsub("\n"," ; "):sub(1,120))end end)
-local aM=v{name="repl",caps={["fs.read"]=true,["fs.write"]=true,["compat.io"]=true,["component"]=true,["load"]=true,["net"]=true,["peripheral.modem"]=true,["peripheral.redstone"]=true,["peripheral.robot"]=true,["peripheral.inventory"]=true,["peripheral.tape"]=true},stdout=function(aO)
-aA(aO,d.fg)end}local aJ,aN=load("return "..aI,"=repl","t",aM)if not aJ then
-aJ,aN=load(aI,"=repl","t",aM)end
-if aJ then local aP,aO=pcall(aJ)
-if aP then if aO~=nil then
-aA(tostring(aO),d.highlight)end else aA(tostring(aO),d.error)end else aA(ag..tostring(aN),d.error)end end::repl_continue::end
-pcall(function()local aD=require(aa)if aD and aD.info then
-aD.info("repl",string.format("REPL session closed by %s (%.1fs, %d cmds)",tostring(
-a.who or"?"),M.uptime()-aB,#ay))end end)end
+if ax>k-1 then j.getGpu().copy(1,3,l,k-3,0,-1)j.fill(1,
+k-1,l,1," ",d.fg,d.bg)ax=k-1 end;local aJ=#az>0;local aL=aJ and">> "or"> "
+j.fill(1,ax,l,1," ",d.fg,d.bg)j.set(1,ax,aL,d.highlight,d.bg)local aH=""local aI=#ay+1
+local aK=#aL+1
+while true do j.fill(aK,ax,l-aK+1,1," ",d.fg,d.bg)
+j.set(aK,ax,aH.."_",d.fg,d.bg)local aO,aP,aM,aN=c.pullSignal()
+if aO=="key_down"then
+if aF and aG.is(aM,aN,true)then
+aC=true;break elseif aN==28 then break elseif aN==14 then if#aH>0 then aH=aH:sub(1,-2)end elseif aN==200 then if aI>1 then aI=aI-1;aH=
+ay[aI]or""end elseif aN==208 then if aI<#ay then aI=aI+1;aH=ay[aI]or""else aI=#ay+
+1;aH=""end elseif aM and aM>=32 and aM<127 then aH=aH..
+string.char(aM)end elseif aO=="clipboard"and type(aM)==L then
+aH=aH..aM:gsub("\r","")local aQ=aH:find("\n",1,true)
+if aQ then aH=aH:gsub("\n"," ")end end end;ax=ax+1;if aC or
+((aH=="exit"or aH=="quit")and not aJ)then break end
+if aH==""and not aJ then elseif
+aH==""and aJ then az={}aA("(cancelled)",d.dim)else az[#az+1]=aH
+local aM=table.concat(az,"\n")local aO,aP=load("return "..aM,"=repl","t")if not aO then
+aO,aP=load(aM,"=repl","t")end;if not aO and aE(aP)then goto repl_continue end
+az={}ay[#ay+1]=aM
+pcall(function()local aR=require(aa)if aR and aR.info then
+aR.info("repl","["..
+
+tostring(a.who or"?").."] "..aM:gsub("\n"," ; "):sub(1,120))end end)
+aB=aB or
+v{name="repl",caps={["fs.read"]=true,["fs.write"]=true,["compat.io"]=true,["component"]=true,["load"]=true,["net"]=true,["peripheral.modem"]=true,["peripheral.redstone"]=true,["peripheral.robot"]=true,["peripheral.inventory"]=true,["peripheral.tape"]=true},stdout=function(aR)
+aA(aR,d.fg)end}local aN,aQ=load("return "..aM,"=repl","t",aB)if not aN then
+aN,aQ=load(aM,"=repl","t",aB)end
+if aN then local aS,aR=pcall(aN)
+if aS then if aR~=nil then
+aA(tostring(aR),d.highlight)end else aA(tostring(aR),d.error)end else aA(ag..tostring(aQ),d.error)end end::repl_continue::end
+pcall(function()local aH=require(aa)if aH and aH.info then
+aH.info("repl",string.format("REPL session closed by %s (%.1fs, %d cmds)",tostring(
+a.who or"?"),M.uptime()-aD,#ay))end end)end
 b.edit=function(E,aw)if not f(aw)then return end;if not E[1]then
 aw("Usage: edit <file>",d.dim)return end;local ax=u(E[1])C(ax)end
 b.protect=function(aw,E)if not o(E)then return end

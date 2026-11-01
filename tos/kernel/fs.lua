@@ -62,7 +62,11 @@ local c,e=o(a)local f,g=o(b)if not c then return false,"Source not found"end;if 
 local h,d=pcall(c.rename,e,g)if not h then return false,tostring(d)end;return d end;function n.size(a)local b,c=o(a)if not b then return 0 end;local d,e=pcall(b.size,c)
 return d and e or 0 end
 function n.lastModified(a)local b,c=o(a)if not b then
-return 0 end;local d,e=pcall(b.lastModified,c)return d and e or 0 end;local s=nil
+return 0 end;local d,e=pcall(b.lastModified,c)return d and e or 0 end
+function n.hostTime()local a="/tmp/.host-time"
+if not n.exists("/tmp")then return nil end;local c=pcall(n.writeFile,a,"")if not c then return nil end
+local b=n.lastModified(a)pcall(n.remove,a)if type(b)=="number"and b>978307200000 then return math.floor(
+b/1000)end;return nil end;local s=nil
 local function w()if s==nil then local b,a=pcall(require,"kernel.process")
 s=(b and a and
 a.yieldCooperative)and a or false end;if s then

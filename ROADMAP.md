@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**62 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**61 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 38 | Planned or under investigation. Most contributions belong here. |
+| Planned | 37 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (11) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (10)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (10) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (10)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -224,24 +224,6 @@ which the sandbox has never allowed;
 (b) leave it closed: `rc` asks every time, or takes --secret.
 
 Honest and working, and what 1.2.1 documents. Do not fix the name rule alone: the secret would then save happily and never be read.
-
-### Smaller, found by the same pass
-
-*Planned* · from the round *The command fuzz and workflow pass (2026-10-31)*
-
-SMALLER, FOUND BY THE SAME PASS. None loses data.
-
-DONE 2026-11-01, each seen on the machine or tested off-box:
-
-- A package command is heard while it runs. Its `o` was the executor's buffer, so rc's "Shared secret for ..." never showed while it waited, and its key legend and every pong stayed hidden until the pilot quit. It gets S.programIO now, with the read hook on the shell's process for the length of the call: a package's env is built once and shared, and the CLI's inputRow takes a row, so it can only run at a real read. SEEN with --chip: prompt, masked secret, legend and `pong` all on screen mid-flight, and W moved the robot. (test\_package\_output\_live)
-- A program's output is live, and a program can ask a question. This started as the rc line and was much wider: PATH programs and `run` held everything until they ended, so a long job looked dead, and a question written with no newline sat unseen while the read waited. S.programIO is the one route now. SEEN in both shells: `step 1` while the job ran, "Name:" and a masked "Secret:" answered, and the output whole at the end. Inside a pipe or a redirect the buffer is still the output.
-- event.pull("key\_down") answered nil at once. key\_down is on compat event's sensitive list, which exists to stop a LISTENER seeing other seats' keys, and it also blocked a program reading its own. Every OpenOS program waiting for a key was broken, and a timed wait did not wait. Inside a process it now takes the seat-routed path, the one computer.pullSignal already gives, so no new authority. listen keeps the ban. SEEN: 30 one-second waits used to take 3 s; now each waits, and q is heard. Found by running `cluster watch`, which spun, redrawing faster than a frame could finish.
-- A shell repaints when a program cleared the screen (term.\_screenTaken).
-- `du /nonexistent` says so; `touch` on a directory says what it is; `mv f /dir/nothere/f` refuses, since a disk's rename makes parents; `compress` on a tiny file says "no smaller" (test\_command\_honesty).
-- users.logout locks the keychain, so keychain.lua's header is true at last (test\_keychain\_rekey).
-- extras.lua's /etc/hostname fallback is gone.
-- `<` works: `cat < f`, `grep word < f`, `wc < f`, and with a pipe or a `>` after it. The MANUAL says so now.
-- 20-chatrelay.lua takes any payload a peer sends (test\_chatrelay).
 
 ### Slice 3: resolution
 
