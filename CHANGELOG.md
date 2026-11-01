@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 68 rounds of work:
+Everything since v1.5.0, in 69 rounds of work:
 
+- [`prefab survey` reads a building site](#prefab-survey-reads-a-building-site)
 - [`prefab`, a base designer, is started](#prefab-a-base-designer-is-started)
 - [An add-on that will not load says so](#an-add-on-that-will-not-load-says-so)
 - [`pic` shows pictures](#pic-shows-pictures)
@@ -91,9 +92,13 @@ Everything since v1.5.0, in 68 rounds of work:
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
 
+### `prefab survey` reads a building site
+
+`prefab` 0.2.0. With a geolyzer attached, `prefab survey hut.bp` reads the site and finds the best height for the floor: what's in the way, what's above it, what has to be filled in, and where the liquid is, with a map of the site from above. A geolyzer's noise only touches what a block is, never whether one is there, so each cell needs one reading. It stays off the pack until a robot can build what it finds.
+
 ### `prefab`, a base designer, is started
 
-`prefab` 0.1.0 designs a building one slice at a time, looking along X, Y or Z, with the slice behind showing faintly. It counts the materials and the robot's loads, and finds any block with nothing to place against. Nothing builds a blueprint yet, so it stays off the pack: the survey and the robot are designed in `docs/PREFAB.md` on the `dev` branch.
+`prefab` 0.1.0 designs a building one slice at a time, looking along X, Y or Z, with the slice behind showing faintly. It counts the materials and the robot's loads, and finds any block with nothing to place against. Nothing builds a blueprint yet, so it stays off the pack: the robot is designed in `docs/PREFAB.md` on the `dev` branch.
 
 ### An add-on that will not load says so
 

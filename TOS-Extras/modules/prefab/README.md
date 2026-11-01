@@ -1,8 +1,8 @@
 # prefab — design a base, a slice at a time
 
-A blueprint designer. A screen is flat and a building isn't, so you draw one slice of the building at a time, looking along X, Y or Z, with the slice behind it showing faintly under the one you're drawing. It also counts what a build takes and finds any block a robot couldn't place.
+A blueprint designer. A screen is flat and a building isn't, so you draw one slice of the building at a time, looking along X, Y or Z, with the slice behind it showing faintly under the one you're drawing. It also counts what a build takes, finds any block a robot couldn't place, and reads a real site with a geolyzer to find the best place for the floor.
 
-**Not on the pack yet.** This is 0.1.0: the designer and the planner work, but nothing builds a blueprint in a world so far. `docs/PREFAB.md` on the `dev` branch has the design for the survey and the robot, and what was checked against OpenComputers itself.
+**Not on the pack yet.** This is 0.2.0: the designer, the planner and the survey work, but nothing builds a blueprint in a world so far. `docs/PREFAB.md` on the `dev` branch has the design for the robot, and what was checked against OpenComputers itself.
 
 ## Use
 
@@ -11,6 +11,8 @@ prefab                          a new blueprint, 16x8x16
 prefab hut.bp                   open one
 prefab new 9 5 7 Starter hut    a new one of that size, with a name
 prefab info hut.bp 32           what it takes, for a robot with 32 slots
+prefab survey hut.bp            find the best floor for it, with a geolyzer
+prefab survey 9 7 --height 4    the same, for a size
 ```
 
 `open hut.bp` works too, once `prefab` is installed. A box can be up to 64 on each side.
@@ -39,6 +41,33 @@ prefab info hut.bp 32           what it takes, for a robot with 32 slots
 - **Loads:** how many times a robot has to fill up. It takes a stack as 64, so doors and the like will need more.
 - **Moves** along the build order.
 - **Floating blocks:** a robot places each block from above and needs something beside or under it, so a block touching nothing can't go in. It needs an angel upgrade, or a change to the blueprint.
+
+## Reading a site
+
+Attach a geolyzer and run `prefab survey`. It says what it's about to spend, reads the site, and reports the best height for the floor as an offset from the geolyzer:
+
+```
+Reading 9x7x21: 36 scans, about 2 s and 360 energy.
+Best floor: Y 0 from the geolyzer
+12 block(s) in the way, 4 to fill under the floor
+9 more above the building, in a robot's way down
+Next best: Y -1, 64 in the way, 2 to fill
+The site from above, X east and Z south, corner at -4,-3:
+.........
+.~.......
+.........
+.........
+.....555.
+...c.555.
+.....555.
+. ready  1-9 too high  a-i too low  ~ liquid  ? nothing read
+```
+
+The site sits around the geolyzer unless `--at X Z` places its north-west corner. `--down N` and `--up N` set how far it reads, 8 down and the building's height plus 8 up by default. `--height N` gives the building's height when you survey by size. A geolyzer reaches 32 blocks each way.
+
+- **It can't see grass or snow-thin things.** Tall grass and anything else replaceable reads as empty, which is right: a block can go straight in.
+- **It can't see unloaded chunks.** They read as empty, so `?` across part of the map usually means you're too far away.
+- **Bedrock is only recognised close to the geolyzer.** Further out it counts as an ordinary block.
 
 ## The file
 

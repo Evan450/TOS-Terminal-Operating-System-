@@ -33,7 +33,7 @@ pic convert in.png out.pic      make a .pic
 A cell is `▀` with one colour above and one below, so a picture gets two square pixels per cell. A full tier 3 screen is 160x100 pixels, tier 2 is 80x50 and tier 1 is 50x32.
 
 - **Photographs** look best on tier 3. Tier 2 has only 16 fixed colours, so a photograph comes out grainy, and flat artwork fares better there.
-- **A big PNG takes time**, because it's unpacked in Lua. A 512x384 picture took about 3 seconds on an emulated tier 3 machine. Keep `.pic` for anything you open often: it needs no unpacking.
+- **A big PNG takes time**, because it's unpacked in Lua. A 512x384 picture took about 3 seconds on an emulated machine with a tier 2 APU. Keep `.pic` for anything you open often: it needs no unpacking.
 - **Memory**: a `.pic` showed on 1.25 MB, the least an add-on runs on. A 512x384 PNG needed 2 MB: at 1.25 MB it says there isn't enough memory and goes back to the shell. Unpacking holds a 32 KB window, and Lua stores that a number at a time. On a small machine, convert the picture on a bigger one and bring the `.pic`.
 - **Interlaced PNGs and JPEGs** aren't read. Save as a plain PNG.
 - **Transparency** shows the dark behind the picture.

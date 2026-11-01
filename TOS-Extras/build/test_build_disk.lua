@@ -497,11 +497,9 @@ do
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
     local PENDING_RESIGN = {
-      -- The operator re-signed the pack on 2026-10-31 at 15:19, minified the
+      -- The operator re-signed the pack on 2026-10-31 at 19:00, minified the
       -- way the release is. Name a package here when a fix to it lands ahead
       -- of the next signing.
-      ["warhead"] = "1.0.1: pop-ups wear a frame, and a long message wraps",
-      ["pic"] = "1.0.0: new, the picture viewer",
     }
 
     if nShipped == 0 then

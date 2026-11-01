@@ -15,6 +15,7 @@ local component = require("component")
 local computer  = require("computer")
 local B = require("prefab.blueprint")
 local P = require("prefab.plan")
+local G = require("prefab.survey")
 
 local V = {}   -- exported for test_prefab.lua
 
@@ -516,6 +517,116 @@ local function ui(o, bp, path)
   S.fill(1, 1, Wd, Ht, " ", T.fg, T.bg)
 end
 
+-- ── Survey ─────────────────────────────────────────────────────────────
+--- `prefab survey`'s words: a blueprint or a size, then options. Returns
+--- { path, w, d, height, at = { x, z }, down, up }, or nil and why.
+function V.parseSurvey(args)
+  local opt = { down = 8 }
+  local pos = {}
+  local i = 2
+  while i <= #args do
+    local a = args[i]
+    if a == "--at" then
+      local x, z = tonumber(args[i + 1]), tonumber(args[i + 2])
+      if not x or not z then return nil, "--at needs an X and a Z" end
+      opt.at = { x = math.floor(x), z = math.floor(z) }
+      i = i + 3
+    elseif a == "--down" or a == "--up" or a == "--height" then
+      local n = tonumber(args[i + 1])
+      if not n or n < 0 then return nil, a .. " needs a number" end
+      opt[a:sub(3)] = math.floor(n)
+      i = i + 2
+    elseif a:sub(1, 2) == "--" then
+      return nil, "unknown option " .. a
+    else
+      pos[#pos + 1] = a
+      i = i + 1
+    end
+  end
+  if #pos == 1 then opt.path = pos[1]
+  elseif #pos == 2 and tonumber(pos[1]) and tonumber(pos[2]) then
+    opt.w, opt.d = math.floor(tonumber(pos[1])), math.floor(tonumber(pos[2]))
+  else
+    return nil, "prefab survey <file.bp>, or prefab survey <width> <depth>"
+  end
+  return opt
+end
+
+--- The box a survey reads. With no --at the site sits around the geolyzer.
+function V.surveyBox(opt)
+  local at = opt.at or { x = -math.floor(opt.w / 2), z = -math.floor(opt.d / 2) }
+  local up = opt.up or (opt.height + 8)
+  return { x = at.x, z = at.z, y = -opt.down, w = opt.w, d = opt.d, h = opt.down + up + 1 }
+end
+
+--- A signed height, the way a player reads an offset.
+local function signed(n) return (n > 0 and "+" or "") .. n end
+
+--- The survey's report: what the best floor costs, and the site from above.
+function V.surveyLines(site, height)
+  local lines = {}
+  local levels = G.fit(site, height)
+  local L = levels[1]
+  if not L then
+    return { { "That band is too thin to fit a floor and " .. height .. " layers: raise --up or --down.", "warn" } }
+  end
+  lines[1] = { string.format("Best floor: Y %s from the geolyzer", signed(L.y)), "title" }
+  lines[#lines + 1] = { string.format("%d block(s) in the way, %d to fill under the floor", L.clear, L.fill), "fg" }
+  if L.over > 0 then
+    lines[#lines + 1] = { string.format("%d more above the building, in a robot's way down", L.over), "fg" }
+  end
+  if L.liquid > 0 then
+    lines[#lines + 1] = { string.format("%d cell(s) of liquid in the building's space", L.liquid), "warn" }
+  end
+  if L.fixed > 0 then
+    lines[#lines + 1] = { string.format("%d cell(s) that cannot be broken", L.fixed), "warn" }
+  end
+  if L.open > 0 then
+    lines[#lines + 1] = { string.format(
+      "%d column(s) with nothing under them in the scan: a deep hole, or an unloaded chunk",
+      L.open), "warn" }
+  end
+  if levels[2] then
+    local n = levels[2]
+    lines[#lines + 1] = { string.format("Next best: Y %s, %d in the way, %d to fill",
+      signed(n.y), n.clear, n.fill), "dim" }
+  end
+  lines[#lines + 1] = { string.format("The site from above, X east and Z south, corner at %s,%s:",
+    signed(site.x), signed(site.z)), "dim" }
+  for _, row in ipairs(G.map(site, L.y)) do lines[#lines + 1] = { row, "fg" } end
+  lines[#lines + 1] = { ". ready  1-9 too high  a-i too low  ~ liquid  ? nothing read", "dim" }
+  return lines
+end
+
+local function cliSurvey(args, o)
+  local colours = { title = 0xFFFF55, fg = 0xFFFFFF, dim = 0xAAAAAA, warn = 0xFF5555 }
+  local opt, err = V.parseSurvey(args)
+  if not opt then o(err, 0xFF5555); return end
+  if opt.path then
+    local bp, bErr = loadFile(opt.path)
+    if not bp then o(tostring(bErr), 0xFF5555); return end
+    opt.w, opt.d = bp.sx, bp.sz
+    opt.height = opt.height or bp.sy
+  end
+  opt.height = opt.height or 8
+  local box = V.surveyBox(opt)
+  local bad = G.check(box)
+  if bad then o(bad, 0xFF5555); return end
+  local addr = component.list and component.list("geolyzer")()
+  if not addr then
+    o("No geolyzer: this needs one attached, or in a robot or tablet running it.", 0xFF5555)
+    return
+  end
+  local geo = component.proxy(addr)
+  local calls = G.calls(box.w, box.d, box.h)
+  o(string.format("Reading %dx%dx%d: %d scans, about %d s and %d energy.", box.w, box.d, box.h,
+    calls, math.ceil(calls / G.RATE), calls * G.COST), 0xAAAAAA)
+  local site
+  site, err = G.survey(geo.scan, box, { wait = function() computer.pullSignal(1) end })
+  if not site then o("The survey stopped: " .. tostring(err), 0xFF5555); return end
+  for _, l in ipairs(V.surveyLines(site, opt.height)) do o(l[1], colours[l[2]]) end
+end
+
 -- ── Command line ───────────────────────────────────────────────────────
 local function help(o)
   o("prefab — design a base, a slice at a time", 0xFFFF55)
@@ -523,6 +634,8 @@ local function help(o)
   o("  prefab <file.bp>             open one", 0xFFFFFF)
   o("  prefab new <x> <y> <z> [name]  a new one of that size", 0xFFFFFF)
   o("  prefab info <file.bp> [slots]  what it takes to build", 0xFFFFFF)
+  o("  prefab survey <file.bp>      read the site with a geolyzer", 0xFFFFFF)
+  o("  prefab survey <w> <d> [--height N] [--at X Z] [--down N] [--up N]", 0xFFFFFF)
   o("  In the designer: Space paint, X Y Z change the view, PgUp/PgDn change the slice.", 0xAAAAAA)
 end
 
@@ -540,6 +653,7 @@ local function prefabCmd(args, o)
     for _, l in ipairs(V.reportLines(bp, slots)) do o(l[1], colours[l[2]]) end
     return
   end
+  if a == "survey" then cliSurvey(args, o); return end
   if a == "new" then
     local x, y, z = tonumber(args[2]), tonumber(args[3]), tonumber(args[4])
     local function side(n) return n and n >= 1 and n <= B.MAX_SIDE and n == math.floor(n) end

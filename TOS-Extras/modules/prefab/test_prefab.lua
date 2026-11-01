@@ -20,6 +20,7 @@ end
 package.path = "modules/?.lua;" .. package.path
 local B = require("prefab.blueprint")
 local P = require("prefab.plan")
+local G = require("prefab.survey")
 
 print("=== the blueprint ===")
 print()
@@ -163,6 +164,165 @@ do
   test("stacks and loads", stacks == 4 and trips == 2, stacks .. "," .. trips)
 end
 
+-- ── A geolyzer, to the letter of OC 1.8.10 ─────────────────────────────
+-- Read from Geolyzer.scan and EventHandlerVanilla.onGeolyzerScan:
+--   * all of y, w, d, h or none; at most 64 cells; every corner within 32
+--   * the answer is always 64 long, filled with noise first: only the box
+--     is written over, so anything past it is NOT zero
+--   * air, replaceable blocks and unloaded chunks are written as exactly 0
+--   * a real block is noise * distance * 2 + hardness, noise in +-1/33
+--   * one charge a call, however big
+local function geolyzer(world, opts)
+  opts = opts or {}
+  local g = { calls = 0, energy = opts.energy or math.huge, spent = 0 }
+  local seed = 12345
+  local function byte()
+    seed = (seed * 1103515245 + 12345) % 2147483648
+    return (seed >> 16) % 256 - 128
+  end
+  function g.scan(x, z, y, w, d, h)
+    if not (y and w and d and h) then error("the fake only takes all six") end
+    if w * d * h > 64 then error("volume too large (maximum is 64)") end
+    local maxX, maxY, maxZ = x + w - 1, y + h - 1, z + d - 1
+    for _, n in ipairs({ x, y, z, maxX, maxY, maxZ }) do
+      if math.abs(n) > 32 then error("location out of bounds") end
+    end
+    if g.energy < 10 then return nil, "not enough energy" end
+    g.energy = g.energy - 10
+    g.spent = g.spent + 10
+    g.calls = g.calls + 1
+    local data = {}
+    for i = 1, 64 do data[i] = byte() / 128 / 33 end
+    for ry = y, maxY do
+      for rz = z, maxZ do
+        for rx = x, maxX do
+          local i = (rx - x) + ((rz - z) + (ry - y) * d) * w
+          local hard = world(rx, ry, rz)
+          if hard == nil then data[i + 1] = 0.0
+          else data[i + 1] = data[i + 1] * math.sqrt(rx * rx + ry * ry + rz * rz) * 2 + hard end
+        end
+      end
+    end
+    return data
+  end
+  return g
+end
+
+print()
+print("=== the survey ===")
+print()
+
+do
+  test("an empty cell is read as air, whatever the distance", G.classify(0, 50) == G.AIR)
+  test("a soft block far away is still there", G.classify(0.01, 50) == G.SOLID)
+  test("a noisy reading below zero far away is a block, not bedrock", G.classify(-1.5, 50) == G.SOLID)
+  test("bedrock close to is bedrock", G.classify(-1, 3) == G.FIXED)
+  test("water stands clear of the noise at the far corner", G.classify(100 - 55 * G.NOISE, 55) == G.LIQUID)
+  test("obsidian is not water at the far corner", G.classify(50 + 55 * G.NOISE, 55) == G.SOLID)
+  test("4x4x4 cubes: a call's 64 cells used in full", G.calls(4, 4, 4) == 1 and G.calls(9, 7, 25) == 3 * 2 * 7)
+  test("a site past the range is refused", G.check({ x = 30, z = 0, y = 0, w = 9, d = 1, h = 1 }) ~= nil)
+  test("a height past the range is refused", G.check({ x = 0, z = 0, y = -40, w = 1, d = 1, h = 1 }) ~= nil)
+  test("the edge of the range is fine", G.check({ x = -32, z = -32, y = -32, w = 65, d = 65, h = 65 }) == nil)
+end
+
+-- A site: grass at y -1 (hardness 0.6), stone under it, a pond, a tree,
+-- a pit, and tall grass that a scan cannot see.
+local function world(x, y, z)
+  if x == 2 and z == 2 and y >= 0 and y <= 3 then return 2 end        -- a trunk
+  if x >= 1 and x <= 3 and z >= 1 and z <= 3 and y >= 3 and y <= 4 then return 0.2 end  -- its leaves
+  if x == -3 and z == -2 then                                         -- a pond
+    if y == -1 then return 100 end
+    if y == -2 then return 0.6 end
+  end
+  if x == -1 and z == 2 and y >= -3 and y <= -1 then return nil end   -- a pit
+  if y == -1 then return 0.6 end
+  if y < -1 then return 1.5 end
+  return nil
+end
+
+do
+  local g = geolyzer(world)
+  local box = { x = -4, z = -3, y = -8, w = 9, d = 7, h = 25 }
+  local site, err = G.survey(g.scan, box)
+  test("a survey runs", site ~= nil, err)
+  test("...in the calls it said it would", g.calls == G.calls(9, 7, 25) and site.calls == g.calls, g.calls)
+  test("...charged by the call", g.spent == g.calls * G.COST)
+  local wrong = 0
+  for cz = 1, 7 do
+    for cx = 1, 9 do
+      for y = -8, 16 do
+        local want = world(box.x + cx - 1, y, box.z + cz - 1)
+        local got = G.at(site, cx, cz, y)
+        if (want == nil) ~= (got == G.AIR) then wrong = wrong + 1 end
+      end
+    end
+  end
+  test("every one of 1,575 cells reads true, with noise on each block", wrong == 0, wrong)
+  test("the pond is liquid", G.at(site, 2, 2, -1) == G.LIQUID)
+  local top, kind = G.top(site, 1, 1)
+  test("a column's top is its highest block", top == -1 and kind == G.SOLID, top)
+  local rows = G.map(site, 0)
+  test("flat ground reads ready", rows[1]:sub(1, 1) == ".", rows[1])
+  test("the pond shows", rows[2]:sub(2, 2) == "~", rows[2])
+  test("the pit shows how far short it is", rows[6]:sub(4, 4) == "c", rows[6])
+  test("the tree shows how high it stands", rows[6]:sub(7, 7) == "5", rows[6])
+
+  local levels = G.fit(site, 4)
+  test("the best floor sits on the ground, tree or no tree", levels[1].y == 0, levels[1].y)
+  test("...counting the tree as blocks in the way", levels[1].clear == 4 + 8, levels[1].clear)
+  test("...and the pit and the pond as blocks to fill",
+    levels[1].fill == 3 + 1, levels[1].fill)
+  test("...and the canopy over it as above the building", levels[1].over == 9, levels[1].over)
+  test("a thinner building clears less", G.fit(site, 3)[1].clear == 3, G.fit(site, 3)[1].clear)
+  test("a band with no room for the building has no levels", #G.fit(site, 25) == 0)
+end
+
+do
+  -- A scan may not be read past its box: the tail is noise, not zeros.
+  local g = geolyzer(function() return nil end)
+  local site = G.survey(g.scan, { x = 0, z = 0, y = 0, w = 1, d = 1, h = 1 })
+  test("noise past the end of a small scan is never read as blocks", site and #site.cols[1] == 0)
+  local out = g.scan(0, 0, 0, 1, 1, 1)
+  test("...and the fake really does put noise there", #out == 64 and out[64] ~= 0)
+end
+
+do
+  -- A cave costs nothing to clear, and a robot working from above would
+  -- have to dig through its roof. The floor stays on the surface, even
+  -- with something to clear there.
+  local cave = function(x, y, z)
+    if y == 0 then return 1.5 end
+    if y < 0 and y > -4 then return nil end
+    if y <= -4 then return 1.5 end
+  end
+  local site = G.survey(geolyzer(cave).scan, { x = 0, z = 0, y = -6, w = 2, d = 2, h = 12 })
+  test("a cave under the surface does not move the floor", G.fit(site, 3)[1].y == 1, G.fit(site, 3)[1].y)
+  local stump = function(x, y, z)
+    if x == 0 and z == 0 and y == 1 then return 2 end
+    return cave(x, y, z)
+  end
+  local site2 = G.survey(geolyzer(stump).scan, { x = 0, z = 0, y = -6, w = 2, d = 2, h = 12 })
+  test("...not even when the surface has something on it", G.fit(site2, 3)[1].y == 1, G.fit(site2, 3)[1].y)
+end
+
+do
+  -- Short of power: it waits, and carries on.
+  local waits = 0
+  local g = geolyzer(function() return nil end, { energy = 10 })
+  local site = G.survey(g.scan, { x = 0, z = 0, y = 0, w = 8, d = 4, h = 4 },
+    { wait = function() waits = waits + 1; g.energy = g.energy + 10 end })
+  test("no power: it waits for more, and finishes", site ~= nil and waits == 1, waits)
+  local dead = geolyzer(function() return nil end, { energy = 0 })
+  local none, err = G.survey(dead.scan, { x = 0, z = 0, y = 0, w = 1, d = 1, h = 1 }, { wait = function() end })
+  test("no power at all stops, and says so", none == nil and tostring(err):find("energy", 1, true) ~= nil, err)
+  local _, why = G.survey(function() error("location out of bounds") end, { x = 0, z = 0, y = 0, w = 1, d = 1, h = 1 })
+  test("a scan that throws is reported, not raised", tostring(why):find("out of bounds", 1, true) ~= nil, why)
+  local _, short = G.survey(function() return {} end, { x = 0, z = 0, y = 0, w = 1, d = 1, h = 1 })
+  test("a short answer is refused", short == "a scan came back short", short)
+  local _, cut = G.survey(function() return nil, "scan was canceled" end, { x = 0, z = 0, y = 0, w = 1, d = 1, h = 1 })
+  test("a canceled scan says so, without waiting for power", cut == "scan was canceled", cut)
+end
+
 -- ── The real init.lua, on a GPU that remembers ─────────────────────────
 print()
 print("=== the designer ===")
@@ -206,12 +366,15 @@ local function machine(opts)
     list = function(kind)
       local done = false
       return function()
-        if done or kind ~= "gpu" then return nil end
+        if done or (kind ~= "gpu" and not (kind == "geolyzer" and opts.geolyzer)) then return nil end
         done = true
-        return "gpu-1", "gpu"
+        return kind .. "-1", kind
       end
     end,
-    proxy = function() return gpu end,
+    proxy = function(addr)
+      if addr == "geolyzer-1" then return opts.geolyzer end
+      return gpu
+    end,
   }
   local queue = {}
   for _, e in ipairs(opts.keys or {}) do queue[#queue + 1] = e end
@@ -416,6 +579,37 @@ do
   local tall = "PREFAB1\nsize 2 3 1\nblock a m:a 0 A\nlayer 1\na.\nlayer 2\n..\nlayer 3\n.a\n"
   local fx2 = machine({ files = { ["/t.bp"] = tall } })
   test("info names what floats, and where", has(fx2.run({ "info", "/t.bp" }), "1 floating: nothing to place against, first at 2,3,1"))
+end
+
+do
+  -- The survey, through the real command.
+  local g = geolyzer(world)
+  local fx = machine({ geolyzer = g, files = { ["/hut.bp"] = HUT } })
+  local out = fx.run({ "survey", "9", "7", "--height", "4", "--at", "-4", "-3" })
+  test("survey says what it is about to spend", has(out, "Reading 9x7x21: 36 scans, about 2 s and 360 energy."), out)
+  test("...and spends exactly that", g.calls == 36 and g.spent == 360, g.calls)
+  test("survey names the best floor", has(out, "Best floor: Y 0 from the geolyzer"), out)
+  test("...and what it costs", has(out, "12 block(s) in the way, 4 to fill under the floor"), out)
+  test("...and what is over it", has(out, "9 more above the building"), out)
+  test("...and draws the site", has(out, ".~.......") and has(out, "? nothing read"), out)
+  local ok, err = pcall(fx.run, { "survey", "/hut.bp" })
+  test("a blueprint gives the site its size", ok, err)
+  test("...and its height", has(fx.run({ "survey", "/hut.bp" }), "Reading 5x3x19"), fx.run({ "survey", "/hut.bp" }))
+  local noGeo = machine({})
+  test("no geolyzer says so", has(noGeo.run({ "survey", "9", "7" }), "No geolyzer"))
+  test("a site out of range says so before reading anything",
+    has(fx.run({ "survey", "9", "7", "--at", "30", "0" }), "past the geolyzer's range"))
+  test("a bad option is named", has(fx.run({ "survey", "9", "7", "--zoom" }), "--zoom"))
+  test("nothing to survey says what it wants", has(fx.run({ "survey" }), "prefab survey <file.bp>"))
+  test("--at wants two numbers", has(fx.run({ "survey", "9", "7", "--at", "1" }), "--at needs"))
+  test("a band with no room says what to change",
+    has(fx.run({ "survey", "2", "2", "--height", "9", "--up", "2", "--down", "1" }), "too thin"))
+  local wet = geolyzer(function(_, y) if y <= 0 then return 100 end end)
+  local wetOut = machine({ geolyzer = wet }).run({ "survey", "2", "2", "--height", "2" })
+  test("liquid in the way is pointed out", has(wetOut, "liquid"), wetOut)
+  local none = geolyzer(function() return nil end)
+  local noneOut = machine({ geolyzer = none }).run({ "survey", "2", "2" })
+  test("nothing read says it may be an unloaded chunk", has(noneOut, "unloaded chunk"), noneOut)
 end
 
 do

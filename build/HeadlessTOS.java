@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Random;
 import java.util.regex.Pattern;
 
 import scala.Option;
@@ -27,11 +28,18 @@ import totoro.ocelot.brain.entity.HDDManaged;
 import totoro.ocelot.brain.entity.InternetCard;
 import totoro.ocelot.brain.entity.Keyboard;
 import totoro.ocelot.brain.entity.Memory;
+import totoro.ocelot.brain.entity.NoteBlock;
+import totoro.ocelot.brain.entity.machine.Arguments;
+import totoro.ocelot.brain.entity.machine.Callback;
+import totoro.ocelot.brain.entity.machine.Context;
 import totoro.ocelot.brain.entity.NetworkCard;
 import totoro.ocelot.brain.entity.Relay;
 import totoro.ocelot.brain.entity.Screen;
 import totoro.ocelot.brain.entity.TapeDrive;
 import totoro.ocelot.brain.entity.tape.Tape;
+import totoro.ocelot.brain.network.Network;
+import totoro.ocelot.brain.network.Node;
+import totoro.ocelot.brain.network.Visibility;
 import totoro.ocelot.brain.entity.machine.Machine;
 import totoro.ocelot.brain.util.Direction$;
 import totoro.ocelot.brain.event.BeepEvent;
@@ -204,6 +212,69 @@ public class HeadlessTOS {
   static Screen peerScreen;     // ...and its screen, for `machine 2`
   static Path peerDiskDir;      // --peer-disk: a second disk in it
   static boolean withTape;      // --tape
+  static boolean withGeolyzer;  // --geolyzer
+
+  /**
+   * Ocelot Brain has no geolyzer, and a headless machine has no world, so
+   * this stands in for both. scan follows OpenComputers 1.8.10 to the letter
+   * (Geolyzer.scan, EventHandlerVanilla.onGeolyzerScan): 64 floats whatever
+   * is asked, filled with noise first so anything past the box is NOT zero,
+   * then exactly 0 for air and noise * distance * 2 + hardness for a block.
+   * What it is for is the part a fake in Lua cannot show: a real component
+   * through TOS's real sandbox and proxy, on the real Lua VM.
+   *
+   * It is a NoteBlock because Ocelot's traits carry state a Java class cannot
+   * implement; node() is swapped so the machine sees a geolyzer.
+   */
+  public static class Geolyzer extends NoteBlock {
+    private Node geoNode;
+    private final Random random = new Random(1);
+
+    @Override public Node node() {
+      if (geoNode == null) {
+        geoNode = Network.newNode(this, Visibility.Network(), Network.newNode$default$3())
+            .withComponent("geolyzer").create();
+      }
+      return geoNode;
+    }
+
+    /** Hardness at an offset from the geolyzer, or null for air: grass at
+     *  y -1 over stone, a pond, a tree, and a pit. */
+    static Float world(int x, int y, int z) {
+      if (x == 2 && z == 2 && y >= 0 && y <= 3) return 2f;
+      if (x >= 1 && x <= 3 && z >= 1 && z <= 3 && y >= 3 && y <= 4) return 0.2f;
+      if (x == -3 && z == -2 && y == -1) return 100f;
+      if (x == -1 && z == 2 && y >= -3 && y <= -1) return null;
+      if (y == -1) return 0.6f;
+      return y < -1 ? 1.5f : null;
+    }
+
+    @Callback(doc = "function(x:number, z:number, y:number, w:number, d:number, h:number):table")
+    public Object[] scan(Context context, Arguments args) {
+      int x = args.checkInteger(0), z = args.checkInteger(1), y = args.checkInteger(2);
+      int w = args.checkInteger(3), d = args.checkInteger(4), h = args.checkInteger(5);
+      if (w * d * h > 64) throw new IllegalArgumentException("volume too large (maximum is 64)");
+      int maxX = x + w - 1, maxY = y + h - 1, maxZ = z + d - 1;
+      for (int n : new int[] { x, y, z, maxX, maxY, maxZ }) {
+        if (Math.abs(n) > 32) throw new IllegalArgumentException("location out of bounds");
+      }
+      byte[] noise = new byte[64];
+      random.nextBytes(noise);
+      float[] data = new float[64];
+      for (int i = 0; i < 64; i++) data[i] = noise[i] / 128f / 33f;
+      for (int ry = y; ry <= maxY; ry++) {
+        for (int rz = z; rz <= maxZ; rz++) {
+          for (int rx = x; rx <= maxX; rx++) {
+            int i = (rx - x) + ((rz - z) + (ry - y) * d) * w;
+            Float hard = world(rx, ry, rz);
+            float dist = (float) Math.sqrt(rx * rx + ry * ry + rz * rz);
+            data[i] = hard == null ? 0f : data[i] * dist * 2f + hard;
+          }
+        }
+      }
+      return new Object[] { data };
+    }
+  }
   static Machine machine;
   static Workspace ws;
   static Case pcCase;      // for `pullcard`
@@ -346,6 +417,13 @@ public class HeadlessTOS {
       pc.connect(drive);
       drive.inventory().apply(0).put(new Tape(Tape.Kind$.MODULE$.Iron(), Option.apply("intercom")));
       System.out.println("[headless] tape drive with a blank iron tape");
+    }
+
+    // A geolyzer (--geolyzer), over the small site in Geolyzer.world.
+    if (withGeolyzer) {
+      Geolyzer geo = ws.add(new Geolyzer());
+      pc.connect(geo);
+      System.out.println("[headless] geolyzer " + geo.node().address());
     }
 
     // A second computer (--peer-boot): its own case, disk, screen and
@@ -828,6 +906,7 @@ public class HeadlessTOS {
     }
     int seats = Integer.parseInt(opt(args, "--seats", "1"));
     withTape = flag(args, "--tape");
+    withGeolyzer = flag(args, "--geolyzer");
     if (opt(args, "--disk2", null) != null) {
       disk2Dir = Paths.get(opt(args, "--disk2", null)).toAbsolutePath();
       disk2Address = opt(args, "--disk2-address", null);
