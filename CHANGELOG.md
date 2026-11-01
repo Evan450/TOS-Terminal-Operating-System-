@@ -20,8 +20,14 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 76 rounds of work:
+Everything since v1.5.0, in 82 rounds of work:
 
+- [A stray test edit no longer marks every build `-dirty`](#a-stray-test-edit-no-longer-marks-every-build--dirty)
+- [The `cluster` commands work](#the-cluster-commands-work)
+- [`cluster-setup` works from the CLI](#cluster-setup-works-from-the-cli)
+- [`pkg search` takes a word](#pkg-search-takes-a-word)
+- [PaneUI keeps your work](#paneui-keeps-your-work)
+- [The installer shows the BIOS fingerprint](#the-installer-shows-the-bios-fingerprint)
 - [`prefab` builds bases from hallways and rooms](#prefab-builds-bases-from-hallways-and-rooms)
 - [A `prefab` robot can clear its own site](#a-prefab-robot-can-clear-its-own-site)
 - [`prefab` works with `stock`, `printer` and `calc`](#prefab-works-with-stock-printer-and-calc)
@@ -98,6 +104,34 @@ Everything since v1.5.0, in 76 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A stray test edit no longer marks every build `-dirty`
+
+The build stamp only says `-dirty` when a file the release ships has changed. One stray edit to a test had marked every build `-dirty` for a week, and the publisher doesn't tag a dirty build, so no `build-*` tag had gone up since 2026-10-26.
+
+### The `cluster` commands work
+
+The `cluster` and `cluster-manager` commands work. They had never run since the September sandbox hardening: each gave a stack trace, including the `cluster pair start`, `cluster status` and `cluster-manager status` that `cluster-setup` tells you to use.
+
+A program now reaches its own service through addressable local IPC. A service registers a named endpoint, and a package that declares `ipc:<name>` may call it. Only plain data crosses, copied both ways, and the service decides what the caller's user may do, so the tier checks moved out of the CLI into the daemon. `cluster-master` is 1.1.0 and `cluster-manager` 1.3.0, and both dropped the network capabilities the CLI no longer needs. `cluster-manager` had no tier checks at all, so `status` now needs ADMIN and `drain`, `undrain` and `pair` need ROOT. `cluster submit` asks the daemon before it evaluates a job file, and `cluster-setup` now enables the package when it starts the service.
+
+Seen on two machines: the wizard paired a Manager, it registered as domain 1, and `cluster submit` ran a job through it to `1 done`. The two packages need the next signing to reach the published pack.
+
+### `cluster-setup` works from the CLI
+
+In CLI mode a question with choices showed none of them: `cluster-setup` asked "What is this machine?" and offered only `OK? [y/N]`, and every answer cancelled it. The wizard could not be used from the CLI at all. A dialog with buttons now lists them and takes a number, and its message keeps its line breaks.
+
+### `pkg search` takes a word
+
+`pkg search` took no term and ignored one, so `pkg search snake` printed every package in the pack. A word now narrows the list by name, description or category, and a word that matches nothing says so.
+
+### PaneUI keeps your work
+
+PaneUI ran on real OpenOS for the first time, and running it found four bugs that reading its source never could. `^Q` on the help screen quit the whole program, because Ctrl counted as "any key" and the Q then reached the file list. `^Q` at "Save changes?" threw the work away, when it should back out, and the dialog now says `^Q Cancel`. F10 from the file list quit straight past an unsaved editor tab; every way out now asks about every unsaved tab. On a full disk the editor said "Saved" and a copy said it had worked; both now say what failed, and a failed copy leaves nothing behind. The file list also refreshes after a command, so `mkdir` shows up. A new test runs the real program on a fake OpenOS.
+
+### The installer shows the BIOS fingerprint
+
+The installer shows a fingerprint of the BIOS before you type `flash`, and on every install so far it has read `SHA-256: (unavailable)`, because it asked for a kernel module that doesn't exist on OpenOS. It now asks the data card, or the disk's own hasher when there's no card. On the headless machine it printed `1d7ba11928062ca1...`, the same digest as hashing `bios.lua` off the machine. Found by running `bootstrap.lua` end to end for the first time.
 
 ### `prefab` builds bases from hallways and rooms
 

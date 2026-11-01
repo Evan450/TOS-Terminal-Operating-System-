@@ -56,97 +56,103 @@ if ay<z then
 E(string.format("%s needs %d KB of RAM; this machine has %d KB.",aw,z,ay),d.dim)else
 E("Something else is holding the memory it needs: close other tabs or ".."programs, or reboot, and try again.",d.dim)end end
 b.pkg=function(av,E)if not f(E)then return end
-local aB,aw=J.requireRoomy(a,"kernel.pkg","admin")if not aB or not aw then local aC=J.loadFailure("pkg",aw)E(aC,d.error)
-w(aC,E,"The package manager")return end;local ax=av[1]
-local function az(aC)
-for aE,aD in
-ipairs(aC or{})do local aF=aw.info and aw.info(aD)
-if type(aF)=="table"and
-aF.kind=="service"then local aG={}
-for aE,aH in ipairs(aF.files or{})do
-local aI=tostring(aH):match("^/etc/rc%.d/(.+)%.lua$")if aI then aG[#aG+1]=aI end end
-if#aG>0 then
-local aH=type(aF.service)=="table"and aF.service.defaultState==ak
+local aB,aw=J.requireRoomy(a,"kernel.pkg","admin")if not aB or not aw then local aD=J.loadFailure("pkg",aw)E(aD,d.error)
+w(aD,E,"The package manager")return end;local ax=av[1]
+local function az(aD)
+for aF,aE in
+ipairs(aD or{})do local aG=aw.info and aw.info(aE)
+if type(aG)=="table"and
+aG.kind=="service"then local aH={}
+for aF,aI in ipairs(aG.files or{})do
+local aJ=tostring(aI):match("^/etc/rc%.d/(.+)%.lua$")if aJ then aH[#aH+1]=aJ end end
+if#aH>0 then
+local aI=type(aG.service)=="table"and aG.service.defaultState==ak
 E(string.format(
-aH and"  %s's service is installed switched off. To start it: service start %s"or"  %s runs as a service from the next boot. To start it now: service start %s",aD,table.concat(aG,", ")),d.dim)end end end end
-local function aA()local aC={}
-for aE,aD in
+aI and"  %s's service is installed switched off. To start it: service start %s"or"  %s runs as a service from the next boot. To start it now: service start %s",aE,table.concat(aH,", ")),d.dim)end end end end
+local function aA()local aD={}
+for aF,aE in
 ipairs((aw.list and aw.list())or{})do
-local aF=type(aD)=="table"and aD.name or aD;if type(aF)==L then aC[aF]=true end end;return aC end
-local function ay(aC,aD)local aE=2
-while aE<=#av do local aF=tostring(av[aE])
-if aC[aF]=="value"then aE=aE+1 elseif
-aF:sub(1,2)=="--"and not aC[aF]then
-E(string.format("pkg %s: unknown option '%s' -- nothing was done.",tostring(ax),aF),d.error)E("Options: "..aD,d.dim)return true end;aE=aE+1 end;return false end
-if not ax or ax=="list"then local aC=aw.list()if#aC==0 then
+local aG=type(aE)=="table"and aE.name or aE;if type(aG)==L then aD[aG]=true end end;return aD end
+local function aC(aD,aE)
+local aF=((aD.name or"").." ".. (aD.description or"")..
+" ".. (aD.category or"")):lower()return aF:find(aE:lower(),1,true)~=nil end
+local function ay(aD,aE)local aF=2
+while aF<=#av do local aG=tostring(av[aF])
+if aD[aG]=="value"then aF=aF+1 elseif
+aG:sub(1,2)=="--"and not aD[aG]then
+E(string.format("pkg %s: unknown option '%s' -- nothing was done.",tostring(ax),aG),d.error)E("Options: "..aE,d.dim)return true end;aF=aF+1 end;return false end
+if not ax or ax=="list"then local aD=aw.list()if#aD==0 then
 E("No packages installed.",d.dim)return end
-E(string.format(" %-24s %-10s %s","name",aq,"kind"),d.title)for aE,aD in ipairs(aC)do
-E(string.format(" %-24s %-10s %s",aD.name:sub(1,24),(aD.version or"?"):sub(1,10),
-aD.kind or"?"),d.fg)end elseif
+E(string.format(" %-24s %-10s %s","name",aq,"kind"),d.title)for aF,aE in ipairs(aD)do
+E(string.format(" %-24s %-10s %s",aE.name:sub(1,24),(aE.version or"?"):sub(1,10),
+aE.kind or"?"),d.fg)end elseif
 ax=="search"or ax=="available"then
-local aC=aw.listAllAvailable({includeRemote=true})
-if#aC==0 then E("No packages available.",d.dim)
-E("Looked on disk under /usr/repo, /var/repo and /mnt/*",d.dim)local aE=aw.repos and aw.repos()or{}
-if#aE==0 then
+local aD=aw.listAllAvailable({includeRemote=true})
+if#aD==0 then E("No packages available.",d.dim)
+E("Looked on disk under /usr/repo, /var/repo and /mnt/*",d.dim)local aG=aw.repos and aw.repos()or{}
+if#aG==0 then
 E("No remote repos are configured — add one with:",d.dim)
 E("  pkg repo add <name> <https://host/path>",d.dim)else
-E(#aE.." remote repo(s) configured but none answered.",d.dim)
+E(#aG.." remote repo(s) configured but none answered.",d.dim)
 E("That usually means no internet card, or the host is",d.dim)
-E("unreachable. `pkg repo list` shows what is configured.",d.dim)end;return end
-table.sort(aC,function(aE,aF)
+E("unreachable. `pkg repo list` shows what is configured.",d.dim)end;return end;local aE=av[2]
+if aE then local aG={}
+for aI,aH in ipairs(aD)do if aC(aH,aE)then aG[#aG+1]=aH end end;if#aG==0 then
+E("Nothing available matches '"..aE.."'. `pkg search` lists everything.",d.dim)return end;aD=aG end
+table.sort(aD,function(aG,aH)
 if
-(aE.category or"misc")~= (aF.category or"misc")then return
-(aE.category or"misc")< (aF.category or"misc")end;return(aE.name or"")< (aF.name or"")end)
-E(string.format(" %-20s %-10s %s","name",aq,"source"),d.title)local aD=nil
-for aF,aE in ipairs(aC)do local aG=aE.category or"misc"if aG~=aD then aD=aG
-E("  ["..aG.."]",d.dim)end
-local aH=aE.remote and
-("repo:"..tostring(aE.repo or"?"))or tostring(aE.root or"?")
-E(string.format(" %-20s %-10s %s",(aE.name or"?"):sub(1,20),(aE.version or"?"):sub(1,10),aH),d.fg)end elseif ax=="trust"then local aC=(av[2]or"list"):lower()
+(aG.category or"misc")~= (aH.category or"misc")then return
+(aG.category or"misc")< (aH.category or"misc")end;return(aG.name or"")< (aH.name or"")end)
+E(string.format(" %-20s %-10s %s","name",aq,"source"),d.title)local aF=nil
+for aH,aG in ipairs(aD)do local aI=aG.category or"misc"if aI~=aF then aF=aI
+E("  ["..aI.."]",d.dim)end
+local aJ=aG.remote and
+("repo:"..tostring(aG.repo or"?"))or tostring(aG.root or"?")
+E(string.format(" %-20s %-10s %s",(aG.name or"?"):sub(1,20),(aG.version or"?"):sub(1,10),aJ),d.fg)end elseif ax=="trust"then local aD=(av[2]or"list"):lower()
 if
-aC=="list"then local aD=aw.trustList()
-if#aD==0 then
+aD=="list"then local aE=aw.trustList()
+if#aE==0 then
 E("No publisher keys are trusted on this machine.",d.dim)
 E("Every package therefore reads as unsigned or as signed-by-an-",d.dim)
 E("unknown-key, and your admin privilege is the only gate.",d.dim)
 E("Add one:  pkg trust add <name> <64-hex-key>",d.dim)else
-E(string.format(U,"name","fingerprint"),d.title)for aF,aE in ipairs(aD)do
-E(string.format(U,aE.label:sub(1,16),aE.fingerprint),d.fg)end;E("",d.dim)
+E(string.format(U,"name","fingerprint"),d.title)for aG,aF in ipairs(aE)do
+E(string.format(U,aF.label:sub(1,16),aF.fingerprint),d.fg)end;E("",d.dim)
 E("Compare a fingerprint with the publisher over a channel that is",d.dim)
 E("NOT the disk it came on. A key that arrives with the package it",d.dim)E("signs proves nothing at all.",d.dim)end
 E(string.format("Unsigned packages are currently %s.",aw.trustRequired()and"REFUSED"or
 "allowed (admin gate only)"),
 aw.trustRequired()and d.highlight or d.dim)
-E(ah..p[aw.discoveredPolicy()].."  (pkg trust discovered)",d.dim)elseif aC=="discovered"then local aD=(av[3]or""):lower()if aD==""then E(ah..
+E(ah..p[aw.discoveredPolicy()].."  (pkg trust discovered)",d.dim)elseif aD=="discovered"then local aE=(av[3]or""):lower()if aE==""then E(ah..
 p[aw.discoveredPolicy()],d.fg)
 E("Usage: pkg trust discovered tofu|trusted|off",d.dim)return end
-if not p[aD]then
+if not p[aE]then
 E("Usage: pkg trust discovered tofu|trusted|off",d.dim)E("  tofu     "..p.tofu,d.dim)
 E("  trusted  "..p.trusted,d.dim)E("  off      "..p.off,d.dim)return end
-local aE,aF=aw.trustDiscovered(aD,{session=J.sessionOf(a)})
-if not aE then E(R..tostring(aF),d.error)return end;E(ah..p[aD],d.highlight)elseif aC=="add"then
+local aF,aG=aw.trustDiscovered(aE,{session=J.sessionOf(a)})
+if not aF then E(R..tostring(aG),d.error)return end;E(ah..p[aE],d.highlight)elseif aD=="add"then
 if
 not(av[3]and av[4])then
 E("Usage: pkg trust add <name> <64-hex-public-key>",d.dim)
 E("<name> is YOUR label for the publisher — it is how you will",d.dim)
 E("refer to them locally, and has nothing to do with whatever",d.dim)E("name their disk claims.",d.dim)return end
-local aD,aE=aw.trustAdd(av[3],av[4],{session=J.sessionOf(a)})
-if not aD then E(R..tostring(aE),d.error)return end;E("Trusted '"..av[3].."'.",d.highlight)
+local aE,aF=aw.trustAdd(av[3],av[4],{session=J.sessionOf(a)})
+if not aE then E(R..tostring(aF),d.error)return end;E("Trusted '"..av[3].."'.",d.highlight)
 E("Packages signed by this key will now install without a fresh",d.dim)
-E("judgement call. That is the point, and the cost.",d.dim)elseif aC==ac or aC=="rm"then if not av[3]then
+E("judgement call. That is the point, and the cost.",d.dim)elseif aD==ac or aD=="rm"then if not av[3]then
 E("Usage: pkg trust remove <name>",d.dim)return end
-local aD,aE=aw.trustRemove(av[3],{session=J.sessionOf(a)})
-if not aD then E(R..tostring(aE),d.error)return end
+local aE,aF=aw.trustRemove(av[3],{session=J.sessionOf(a)})
+if not aE then E(R..tostring(aF),d.error)return end
 E("Removed '"..av[3].."'. Already-installed packages are",d.highlight)
-E("unaffected — this changes what will be accepted from now on.",d.dim)elseif aC=="require"then local aD=(av[3]or""):lower()
+E("unaffected — this changes what will be accepted from now on.",d.dim)elseif aD=="require"then local aE=(av[3]or""):lower()
 if
-aD~="on"and aD~="off"then E("Usage: pkg trust require on|off",d.dim)
+aE~="on"and aE~="off"then E("Usage: pkg trust require on|off",d.dim)
 E("`on` refuses unsigned packages outright. Consider what is on",d.dim)
 E("your Optional Utilities disks before turning it on.",d.dim)return end
-local aE,aF=aw.trustRequire(aD=="on",{session=J.sessionOf(a)})
-if not aE then E(R..tostring(aF),d.error)return end
+local aF,aG=aw.trustRequire(aE=="on",{session=J.sessionOf(a)})
+if not aF then E(R..tostring(aG),d.error)return end
 E("Unsigned packages are now "..
-(aD=="on"and"REFUSED."or"allowed."),d.highlight)elseif aC=="key"then
+(aE=="on"and"REFUSED."or"allowed."),d.highlight)elseif aD=="key"then
 if not av[3]then
 E("Usage: pkg trust key <publisher-label>",d.dim)
 E("Prints the public key you sign as under that label, and asks",d.dim)
@@ -158,358 +164,358 @@ E("Too many arguments. Only the publisher label goes here — the",d.error)
 E("passphrase is asked for separately, and must never be typed",d.dim)
 E("on the command line where it is echoed and recalled.",d.dim)return end;if not i then
 E("This needs an interactive prompt for the passphrase.",d.error)return end
-local aD=i("Signing passphrase: ",96,true)if not aD or aD==""then E(Q,d.dim)return end
-local aE,aG=aw.signingKey(aD,av[3])if not aE then E(tostring(aG),d.error)return end
-E(aE,d.highlight)local aH,aF=pcall(require,T)if aH and aF then
-E("fingerprint "..aF.fingerprint(aE),d.dim)
-E("signing as '"..tostring(aF.normalizeLabel(av[3])).."'",d.dim)end else
+local aE=i("Signing passphrase: ",96,true)if not aE or aE==""then E(Q,d.dim)return end
+local aF,aH=aw.signingKey(aE,av[3])if not aF then E(tostring(aH),d.error)return end
+E(aF,d.highlight)local aI,aG=pcall(require,T)if aI and aG then
+E("fingerprint "..aG.fingerprint(aF),d.dim)
+E("signing as '"..tostring(aG.normalizeLabel(av[3])).."'",d.dim)end else
 E("Usage: pkg trust [list|add|remove|require|key] ...",d.dim)end elseif ax=="verify-sig"or ax=="checksig"then if not av[2]then
 E("Usage: pkg verify-sig <directory>",d.dim)
 E("Says who signed a package WITHOUT installing it.",d.dim)return end
-local aC,aD=aw.checkSignature(av[2])if not aC then E(tostring(aD),d.error)return end
+local aD,aE=aw.checkSignature(av[2])if not aD then E(tostring(aE),d.error)return end
 E(
-"Package: "..tostring(aD and aD.name or"?"),d.title)local aF,aE=pcall(require,T)
-if aF and aE then for aH,aG in ipairs(aE.describe(aC))do
-E(aG,aC.state==
-"trusted"and d.highlight or(aC.state=="invalid"and d.error or
+"Package: "..tostring(aE and aE.name or"?"),d.title)local aG,aF=pcall(require,T)
+if aG and aF then for aI,aH in ipairs(aF.describe(aD))do
+E(aH,aD.state==
+"trusted"and d.highlight or(aD.state=="invalid"and d.error or
 d.warning))end end elseif ax=="sign"then
 if not av[2]then
 E("Usage: pkg sign <directory> --as <publisher-name>",d.dim)
 E("Signs the package's manifest with a key derived from a",d.dim)
 E("passphrase you will be asked for. The signature covers the",d.dim)
 E("MANIFEST, which covers the file hashes, which cover the files —",d.dim)
-E("so sign AFTER the hashes are final, not before.",d.dim)return end;local aC
-for aI=3,#av do if av[aI]=="--as"then aC=av[aI+1]end end
-if not aC or aC==""then
+E("so sign AFTER the hashes are final, not before.",d.dim)return end;local aD
+for aJ=3,#av do if av[aJ]=="--as"then aD=av[aJ+1]end end
+if not aD or aD==""then
 E("Usage: pkg sign <directory> --as <publisher-name>",d.error)
 E("--as is required: the label salts your signing key, so the same",d.dim)
 E("passphrase under a different label is a different identity.",d.dim)
 E("Use the same label every time — it is part of who you are.",d.dim)return end;if not i then
 E("Signing needs an interactive prompt for the passphrase.",d.error)return end
-local aD=i("Signing passphrase: ",96,true)
-if not aD or aD==""then local aJ,aI=pcall(require,T)
+local aE=i("Signing passphrase: ",96,true)
+if not aE or aE==""then local aK,aJ=pcall(require,T)
 E(string.format("Aborted. A signing passphrase is required (%d+ characters).",
-aJ and aI and aI.KDF_MIN_PASS or 20),d.dim)
+aK and aJ and aJ.KDF_MIN_PASS or 20),d.dim)
 E("It IS the private key — the same passphrase always produces the",d.dim)
 E("same key, on any machine, so make it long and keep it.",d.dim)return end
-local aE,aF=aw.signPackage(av[2],aD,{session=J.sessionOf(a),signer=aC})if not aE then
-E("Signing failed: "..tostring(aF),d.error)return end
-E("Signed. Wrote "..tostring(aF),d.highlight)E("public key "..aE,d.fg)local aH,aG=pcall(require,T)if
-aH and aG then
-E("fingerprint "..aG.fingerprint(aE),d.dim)end elseif ax=="repo"or ax=="repos"then
-local aC=(av[2]or"list"):lower()
-if aC=="list"then local aD=aw.repos()
-if#aD==0 then
+local aF,aG=aw.signPackage(av[2],aE,{session=J.sessionOf(a),signer=aD})if not aF then
+E("Signing failed: "..tostring(aG),d.error)return end
+E("Signed. Wrote "..tostring(aG),d.highlight)E("public key "..aF,d.fg)local aI,aH=pcall(require,T)if
+aI and aH then
+E("fingerprint "..aH.fingerprint(aF),d.dim)end elseif ax=="repo"or ax=="repos"then
+local aD=(av[2]or"list"):lower()
+if aD=="list"then local aE=aw.repos()
+if#aE==0 then
 E("No remote repositories configured.",d.dim)
 E("Add one:  pkg repo add <name> <https://host/path>",d.dim)
 E("The URL is the directory holding the repo's programs.cfg.",d.dim)else
 E(string.format(" %-14s %s","name","url"),d.title)
-for aG,aF in ipairs(aD)do
-E(string.format(" %-14s %s",aF.name:sub(1,14),aF.url),d.fg)if aF.description then
-E("                "..aF.description,d.dim)end end;E("",d.dim)
-E("This list is the allowlist: what these serve installs like a disk.",d.dim)end;local aE=aw.knownRepos()
-if#aE>0 then E("",d.dim)
+for aH,aG in ipairs(aE)do
+E(string.format(" %-14s %s",aG.name:sub(1,14),aG.url),d.fg)if aG.description then
+E("                "..aG.description,d.dim)end end;E("",d.dim)
+E("This list is the allowlist: what these serve installs like a disk.",d.dim)end;local aF=aw.knownRepos()
+if#aF>0 then E("",d.dim)
 E("Known (named by installed packages; not trusted):",d.title)
-for aG,aF in ipairs(aE)do
-E(string.format(" %2d %s",aG,aF.url),d.fg)if#aF.from>0 then
-E("      from "..table.concat(aF.from,", "),d.dim)end end
+for aH,aG in ipairs(aF)do
+E(string.format(" %2d %s",aH,aG.url),d.fg)if#aG.from>0 then
+E("      from "..table.concat(aG.from,", "),d.dim)end end
 E("Read only for what configured repos lack (pkg trust",d.dim)
-E("discovered). Forget:  pkg repo forget <number|url|all>",d.dim)end elseif aC=="add"then
+E("discovered). Forget:  pkg repo forget <number|url|all>",d.dim)end elseif aD=="add"then
 if not av[3]or not av[4]then
 E("Usage: pkg repo add <name> <url> [description]",d.dim)
 E("  url = the directory containing programs.cfg",d.dim)return end
-local aD=#av>=5 and table.concat(av," ",5)or nil
-local aE,aF=aw.addRepo(av[3],av[4],aD,{session=J.sessionOf(a)})
-if aE then
+local aE=#av>=5 and table.concat(av," ",5)or nil
+local aF,aG=aw.addRepo(av[3],av[4],aE,{session=J.sessionOf(a)})
+if aF then
 E("Repo '"..av[3].."' added.",d.highlight)
 E("It is now an accepted source of executable code for this",d.warning)
-E("machine. 'pkg repo remove "..av[3].."' undoes that.",d.warning)else E(tostring(aF),d.error)end elseif aC==ac or aC=="rm"then if not av[3]then
+E("machine. 'pkg repo remove "..av[3].."' undoes that.",d.warning)else E(tostring(aG),d.error)end elseif aD==ac or aD=="rm"then if not av[3]then
 E("Usage: pkg repo remove <name>",d.dim)return end
-local aD,aE=aw.removeRepo(av[3],{session=J.sessionOf(a)})
-if aD then
-E("Repo '"..av[3].."' removed.",d.highlight)else E(tostring(aE),d.error)end elseif aC=="forget"then if not av[3]then
-E("Usage: pkg repo forget <number|url|all>",d.dim)return end
-local aE,aD=aw.forgetRepo(av[3],{session=J.sessionOf(a)})
+local aE,aF=aw.removeRepo(av[3],{session=J.sessionOf(a)})
 if aE then
-E(("Forgot %d known repo(s)."):format(aD or 0),d.highlight)else E(tostring(aD),d.error)end else
-E("Usage: pkg repo [list|add <name> <url>|remove <name>|forget <n|url|all>]",d.dim)end elseif ax=="remote"then local aC=_G._TOS and _G._TOS.internet
-if aC and not
-aC.available()then
-E(aC.status().reason or"internet is not available",d.warning)E("'internet' shows the details.",d.dim)return end;E("Contacting configured repositories...",d.dim)
-local aD=aw.searchRemote({refresh=
-av[2]=="--refresh"})if#aD==0 then
+E("Repo '"..av[3].."' removed.",d.highlight)else E(tostring(aF),d.error)end elseif aD=="forget"then if not av[3]then
+E("Usage: pkg repo forget <number|url|all>",d.dim)return end
+local aF,aE=aw.forgetRepo(av[3],{session=J.sessionOf(a)})
+if aF then
+E(("Forgot %d known repo(s)."):format(aE or 0),d.highlight)else E(tostring(aE),d.error)end else
+E("Usage: pkg repo [list|add <name> <url>|remove <name>|forget <n|url|all>]",d.dim)end elseif ax=="remote"then local aD=_G._TOS and _G._TOS.internet
+if aD and not
+aD.available()then
+E(aD.status().reason or"internet is not available",d.warning)E("'internet' shows the details.",d.dim)return end;E("Contacting configured repositories...",d.dim)
+local aE=aw.searchRemote({refresh=
+av[2]=="--refresh"})if#aE==0 then
 E("Nothing available. Check 'pkg repo list'.",d.dim)return end
 E(string.format(" %-22s %-10s %s","name",aq,"repo"),d.title)
-for aF,aE in ipairs(aD)do
-E(string.format(" %-22s %-10s %s",(aE.name or"?"):sub(1,22),(
-aE.version or"-"):sub(1,10),tostring(aE.repo)),d.fg)if aE.description then
-E("   "..tostring(aE.description):sub(1,60),d.dim)end end;E("",d.dim)
+for aG,aF in ipairs(aE)do
+E(string.format(" %-22s %-10s %s",(aF.name or"?"):sub(1,22),(
+aF.version or"-"):sub(1,10),tostring(aF.repo)),d.fg)if aF.description then
+E("   "..tostring(aF.description):sub(1,60),d.dim)end end;E("",d.dim)
 E("Install one with:  pkg fetch <name>",d.dim)elseif ax=="fetch"then if ay({[P]=true,[O]=true},"--allow-unverified --allow-unsigned")then
-return end;local aD,aE,aF=nil,false,false
-for aI=2,#av do
-local aJ=tostring(av[aI])if aJ==P then aE=true elseif aJ==O then aF=true elseif not aD then aD=aJ end end
-if not aD then
+return end;local aE,aF,aG=nil,false,false
+for aJ=2,#av do
+local aK=tostring(av[aJ])if aK==P then aF=true elseif aK==O then aG=true elseif not aE then aE=aK end end
+if not aE then
 E("Usage: pkg fetch <name> [--allow-unverified] [--allow-unsigned]",d.dim)
-E("Downloads from a configured repo, then installs it.",d.dim)return end;E("Fetching '"..aD.."'...",d.dim)
-local function aG(aI)if
+E("Downloads from a configured repo, then installs it.",d.dim)return end;E("Fetching '"..aE.."'...",d.dim)
+local function aH(aJ)if
 not(r and i)then return nil end
-local aK="'"..
-tostring(aI.name)..
+local aL="'"..
+tostring(aJ.name)..
 "' is only in a repo this machine was not "..
 "configured with:\n  "..
 
-tostring(aI.repo)..
+tostring(aJ.repo)..
 "\n"..
 (
-aI.by and(tostring(aI.by).." requires it.\n")or"")..
+aJ.by and(tostring(aJ.by).." requires it.\n")or"")..
 
 "\nIts signature is valid, but its key is not trusted here:\n  key "..
-tostring(aI.fingerprint)..
+tostring(aJ.fingerprint)..
 "\n"..
 
-(aI.signer and
-('It calls its publisher "'..tostring(aI.signer)..
+(aJ.signer and
+('It calls its publisher "'..tostring(aJ.signer)..
 '" -- its own word, not proof.\n')or"")..
 "\nCompare the fingerprint with the publisher somewhere that is NOT this repo. ".."Trusted, anything signed with this key installs from now on."
 if not
-r(aK,"trust",{title="A new publisher key",style="warning",yes="Trust",no="Refuse"})then
+r(aL,"trust",{title="A new publisher key",style="warning",yes="Trust",no="Refuse"})then
 E("Refused the key "..
 
-tostring(aI.fingerprint).." for '"..tostring(aI.name).."'.",d.dim)return nil end;local aJ=i("Name this publisher (Enter refuses): ",48)if aJ and
-aJ~=""then
+tostring(aJ.fingerprint).." for '"..tostring(aJ.name).."'.",d.dim)return nil end;local aK=i("Name this publisher (Enter refuses): ",48)if aK and
+aK~=""then
 E("Trusted the key "..
-tostring(aI.fingerprint).." as '"..aJ.."' (from "..
-tostring(aI.repo)..").",d.highlight)end;return aJ end
-local aH,aC=aw.installRemote(aD,{session=J.sessionOf(a),allowUnverified=aE,allowUnsigned=aF,confirmKey=aG})
-if aH then
-local aI=aC and aC.discovered and
-(tostring(aC.discovered)..", a repo nobody configured")or("repo '"..
-tostring(aC and aC.repo).."'")
-E(string.format("Installed '%s' from %s (%d files, %d bytes).",aD,aI,(aC and aC.files)or 0,
-(aC and aC.bytes)or 0),d.highlight)local c=aC and aC.dependencies;if type(c)=="table"and#c>0 then
+tostring(aJ.fingerprint).." as '"..aK.."' (from "..
+tostring(aJ.repo)..").",d.highlight)end;return aK end
+local aI,aD=aw.installRemote(aE,{session=J.sessionOf(a),allowUnverified=aF,allowUnsigned=aG,confirmKey=aH})
+if aI then
+local aJ=aD and aD.discovered and
+(tostring(aD.discovered)..", a repo nobody configured")or("repo '"..
+tostring(aD and aD.repo).."'")
+E(string.format("Installed '%s' from %s (%d files, %d bytes).",aE,aJ,(aD and aD.files)or 0,
+(aD and aD.bytes)or 0),d.highlight)local c=aD and aD.dependencies;if type(c)=="table"and#c>0 then
 E(
 "  ...and what it requires: "..table.concat(c,", "),d.highlight)end else
-E(tostring(aC),d.error)
-if tostring(aC):find("hash",1,true)or
-tostring(aC):find("unverified",1,true)then E("",d.dim)
+E(tostring(aD),d.error)
+if tostring(aD):find("hash",1,true)or
+tostring(aD):find("unverified",1,true)then E("",d.dim)
 E("That repo ships no file hashes, so TOS cannot check what it",d.dim)
-E("sent. Re-run with --allow-unverified if you trust it.",d.dim)end end elseif ax=="outdated"or ax=="updates"then local aC=aw.outdated()
-if#aC==0 then
+E("sent. Re-run with --allow-unverified if you trust it.",d.dim)end end elseif ax=="outdated"or ax=="updates"then local aD=aw.outdated()
+if#aD==0 then
 E("Everything is up to date (against what's mounted right now).",d.highlight)
 E("Insert another disk and re-run to check against it too.",d.dim)return end
 E(string.format(" %-20s %-10s %-10s %s","name","installed","available","from"),d.title)
-for aE,aD in ipairs(aC)do
-E(string.format(" %-20s %-10s %-10s %s",aD.name:sub(1,20),tostring(aD.from):sub(1,10),tostring(aD.to):sub(1,10),tostring(
-aD.root or"?")),d.fg)end;E("",d.dim)
+for aF,aE in ipairs(aD)do
+E(string.format(" %-20s %-10s %-10s %s",aE.name:sub(1,20),tostring(aE.from):sub(1,10),tostring(aE.to):sub(1,10),tostring(
+aE.root or"?")),d.fg)end;E("",d.dim)
 E("pkg upgrade <name>   or   pkg upgrade --all --yes",d.dim)elseif ax=="upgrade"then
 if
-ay({["--all"]=true,["--yes"]=true,[S]=true,[V]=true,[W]=true,[P]=true,[O]=true},"--all --yes/-y --force --dry-run --allow-unverified --allow-unsigned")then return end;local aG,aH,aI,aJ=false,false,false,false;local aK,aL=false,false;local aD={}
-for aM=2,#av do
-local aN=tostring(av[aM])
-if aN=="--all"then aG=true elseif aN=="--yes"or aN=="-y"then aH=true elseif aN==S then aI=true elseif
-aN==V or aN==W then aJ=true elseif aN==P then aK=true elseif aN==O then aL=true elseif aN:sub(1,2)~="--"then aD[#aD+1]=aN end end;local aC={}
-if aG then
-for aN,aM in ipairs(aw.outdated())do aC[#aC+1]=aM end elseif#aD>0 then local aM={}
-for aO,aN in ipairs(aw.outdated())do aM[aN.name]=aN end;for aO,aN in ipairs(aD)do
-aC[#aC+1]=aM[aN]or{name=aN,from="?",to="?"}end else
+ay({["--all"]=true,["--yes"]=true,[S]=true,[V]=true,[W]=true,[P]=true,[O]=true},"--all --yes/-y --force --dry-run --allow-unverified --allow-unsigned")then return end;local aH,aI,aJ,aK=false,false,false,false;local aL,aM=false,false;local aE={}
+for aN=2,#av do
+local aO=tostring(av[aN])
+if aO=="--all"then aH=true elseif aO=="--yes"or aO=="-y"then aI=true elseif aO==S then aJ=true elseif
+aO==V or aO==W then aK=true elseif aO==P then aL=true elseif aO==O then aM=true elseif aO:sub(1,2)~="--"then aE[#aE+1]=aO end end;local aD={}
+if aH then
+for aO,aN in ipairs(aw.outdated())do aD[#aD+1]=aN end elseif#aE>0 then local aN={}
+for aP,aO in ipairs(aw.outdated())do aN[aO.name]=aO end;for aP,aO in ipairs(aE)do
+aD[#aD+1]=aN[aO]or{name=aO,from="?",to="?"}end else
 E("Usage: pkg upgrade <name>… | --all [--yes] [--force] [--dry-run]",d.dim)
 E("                   [--allow-unverified] [--allow-unsigned]",d.dim)
 E("       pkg outdated   shows what has a newer version available",d.dim)return end
-if#aC==0 then E("Nothing to upgrade.",d.highlight)return end
-if aJ then
-E(string.format("Would upgrade %d package(s):",#aC),d.title)for aN,aM in ipairs(aC)do
-E(string.format(ad,aM.name,tostring(aM.from),tostring(aM.to)),d.fg)end;E(ae,d.dim)return end
-if aG and not aH then
-E(string.format("--all would upgrade %d package(s):",#aC),d.warning)for aN,aM in ipairs(aC)do
-E(string.format(ad,aM.name,tostring(aM.from),tostring(aM.to)),d.fg)end
-E("Add --yes to proceed.",d.dim)return end;local aE,aF=0,0
-for aN,aM in ipairs(aC)do
-local aP,aO=aw.upgrade(aM.name,{session=J.sessionOf(a),force=aI,allowUnverified=aK,allowUnsigned=aL})
-if aP then aE=aE+1
-E(string.format(ad,aM.name,tostring(aO.from),tostring(aO.to)),d.highlight)if aO.dropped and#aO.dropped>0 then
+if#aD==0 then E("Nothing to upgrade.",d.highlight)return end
+if aK then
+E(string.format("Would upgrade %d package(s):",#aD),d.title)for aO,aN in ipairs(aD)do
+E(string.format(ad,aN.name,tostring(aN.from),tostring(aN.to)),d.fg)end;E(ae,d.dim)return end
+if aH and not aI then
+E(string.format("--all would upgrade %d package(s):",#aD),d.warning)for aO,aN in ipairs(aD)do
+E(string.format(ad,aN.name,tostring(aN.from),tostring(aN.to)),d.fg)end
+E("Add --yes to proceed.",d.dim)return end;local aF,aG=0,0
+for aO,aN in ipairs(aD)do
+local aQ,aP=aw.upgrade(aN.name,{session=J.sessionOf(a),force=aJ,allowUnverified=aL,allowUnsigned=aM})
+if aQ then aF=aF+1
+E(string.format(ad,aN.name,tostring(aP.from),tostring(aP.to)),d.highlight)if aP.dropped and#aP.dropped>0 then
 E(string.format("      %d file(s) no longer shipped, removed",#
-aO.dropped),d.dim)end
+aP.dropped),d.dim)end
 if
-aO.enabled==false then E("      (was disabled; left disabled)",d.dim)end else aF=aF+1
-E(string.format("  %-20s FAILED: %s",aM.name,tostring(aO)),d.error)end end
-E(string.format("%d upgraded, %d failed.",aE,aF),aF>0 and d.warning or d.highlight)
-if aE>0 then
+aP.enabled==false then E("      (was disabled; left disabled)",d.dim)end else aG=aG+1
+E(string.format("  %-20s FAILED: %s",aN.name,tostring(aP)),d.error)end end
+E(string.format("%d upgraded, %d failed.",aF,aG),aG>0 and d.warning or d.highlight)
+if aF>0 then
 E("Services keep their enabled/disabled state; restart them to run the",d.dim)
 E("new code ('service stop <svc>' then 'service start <svc>').",d.dim)end elseif ax=="info"then
-if not av[2]then E("Usage: pkg info <name>",d.dim)return end;local aC=aw.info(av[2])if not aC then
+if not av[2]then E("Usage: pkg info <name>",d.dim)return end;local aD=aw.info(av[2])if not aD then
 E("Not installed: "..av[2],d.error)return end
-E(string.format(" name:        %s",aC.name),d.title)
-E(string.format(" version:     %s",aC.version or"?"),d.fg)
-E(string.format(" kind:        %s",aC.kind or"?"),d.fg)
-if aC.lua or aC.tos then
+E(string.format(" name:        %s",aD.name),d.title)
+E(string.format(" version:     %s",aD.version or"?"),d.fg)
+E(string.format(" kind:        %s",aD.kind or"?"),d.fg)
+if aD.lua or aD.tos then
 E(string.format(" needs:       %s%s%s",
-aC.lua and("Lua "..aC.lua.."+")or"",(aC.lua and aC.tos)and", "or"",
-aC.tos and("TOS "..aC.tos)or""),d.fg)end;if aC.category then
-E(string.format(" category:    %s",aC.category),d.fg)end;if aC.description then
-E(string.format(" description: %s",aC.description),d.fg)end;if aC.author then
-E(string.format(" author:      %s",aC.author),d.fg)end
+aD.lua and("Lua "..aD.lua.."+")or"",(aD.lua and aD.tos)and", "or"",
+aD.tos and("TOS "..aD.tos)or""),d.fg)end;if aD.category then
+E(string.format(" category:    %s",aD.category),d.fg)end;if aD.description then
+E(string.format(" description: %s",aD.description),d.fg)end;if aD.author then
+E(string.format(" author:      %s",aD.author),d.fg)end
 E(string.format(" status:      %s",
-aw.isEnabled(aC.name)and"enabled"or ak),
-aw.isEnabled(aC.name)and d.highlight or d.dim)
-if type(aC.commands)=="table"then local aD={}for aE in pairs(aC.commands)do
-aD[#aD+1]=aE end
-if#aD>0 then table.sort(aD)E(" commands:    "..
-table.concat(aD,", "),d.fg)end end
-if aC.requires and#aC.requires>0 then E(" requires:",d.fg)
-for aE,aD in
-ipairs(aC.requires)do local aF,aG;if type(aD)=="table"then aF,aG=aD.name,aD.version else
-aF,aG=aD:match("^(%S+)%s*(.*)$")end
-E(string.format("   %s %s",aF,aG or""),d.dim)end end;if aC.provides and#aC.provides>0 then
+aw.isEnabled(aD.name)and"enabled"or ak),
+aw.isEnabled(aD.name)and d.highlight or d.dim)
+if type(aD.commands)=="table"then local aE={}for aF in pairs(aD.commands)do
+aE[#aE+1]=aF end
+if#aE>0 then table.sort(aE)E(" commands:    "..
+table.concat(aE,", "),d.fg)end end
+if aD.requires and#aD.requires>0 then E(" requires:",d.fg)
+for aF,aE in
+ipairs(aD.requires)do local aG,aH;if type(aE)=="table"then aG,aH=aE.name,aE.version else
+aG,aH=aE:match("^(%S+)%s*(.*)$")end
+E(string.format("   %s %s",aG,aH or""),d.dim)end end;if aD.provides and#aD.provides>0 then
 E(" provides:    "..
-table.concat(aC.provides,", "),d.fg)end;if aC.recommends and
-#aC.recommends>0 then
-E(" recommends:  "..table.concat(aC.recommends,", "),d.dim)end;if aC.conflicts and
-#aC.conflicts>0 then
-E(" conflicts:   "..table.concat(aC.conflicts,", "),d.warning)end
-if aC.origin=="openos"then
-E(" origin:      OpenOS/OPPM package (runs on the compat layer)",d.warning)if aC.capsFromCompat then
+table.concat(aD.provides,", "),d.fg)end;if aD.recommends and
+#aD.recommends>0 then
+E(" recommends:  "..table.concat(aD.recommends,", "),d.dim)end;if aD.conflicts and
+#aD.conflicts>0 then
+E(" conflicts:   "..table.concat(aD.conflicts,", "),d.warning)end
+if aD.origin=="openos"then
+E(" origin:      OpenOS/OPPM package (runs on the compat layer)",d.warning)if aD.capsFromCompat then
 E("              declared no capabilities — granted: "..
-table.concat(aC.capabilities or{},", "),d.warning)end end
-do local n=aC._sigState or"unsigned"
+table.concat(aD.capabilities or{},", "),d.warning)end end
+do local n=aD._sigState or"unsigned"
 if n=="trusted"then
-E(string.format(" signature:   signed by trusted publisher '%s'",tostring(aC._sigLabel)),d.highlight)elseif n=="unknown"then
+E(string.format(" signature:   signed by trusted publisher '%s'",tostring(aD._sigLabel)),d.highlight)elseif n=="unknown"then
 E(" signature:   valid, but the key was not trusted at install time",d.warning)else E(" signature:   none (unsigned)",d.dim)end
-if aC._sigKey then local aE,aD=pcall(require,T)
-local aF=
-(aE and aD and aD.fingerprint)and aD.fingerprint(aC._sigKey)or
-aC._sigKey:sub(1,16)E("              key "..aF,d.dim)end
+if aD._sigKey then local aF,aE=pcall(require,T)
+local aG=
+(aF and aE and aE.fingerprint)and aE.fingerprint(aD._sigKey)or
+aD._sigKey:sub(1,16)E("              key "..aG,d.dim)end
 E(string.format(" integrity:   %s",
-aC._unverified and"NOT verified (installed with --allow-unverified)"or"all files matched their declared hashes"),
-aC._unverified and d.warning or d.dim)end elseif ax==am or ax=="install-dir"or ax=="from-floppy"or ax==
+aD._unverified and"NOT verified (installed with --allow-unverified)"or"all files matched their declared hashes"),
+aD._unverified and d.warning or d.dim)end elseif ax==am or ax=="install-dir"or ax=="from-floppy"or ax==
 "fromfloppy"then
 if
 ay({[P]=true,[O]=true,[S]=true,["--all"]=true,["--yes"]=true,[V]=true,[W]=true,["--key"]="value",["--prompts"]=true,["--classic"]=true},
-"--all --yes/-y --dry-run --force --allow-unverified --allow-unsigned ".."--key <key> --prompts")then return end;local aE,aK,aL,aH=false,false,false,false;local aF,aD=false,false;local aI={}
-for aN=2,#av do
-local aO=tostring(av[aN])
-if aO==P then aE=true elseif aO==O then aF=true elseif aO==S then aD=true elseif aO=="--all"then aK=true elseif
-aO=="--yes"or aO=="-y"then aL=true elseif aO==V or aO==W then aH=true elseif aO=="--key"then elseif av[aN-1]=="--key"then elseif
-aO:sub(1,2)~="--"then aI[#aI+1]=aO end end;local aG=aI[1]local function aM(aN)return
-type(aN)==L and aN:find("/",1,true)~=nil end;local aC
-if aK then aC="all"elseif ax==
-"install-dir"then aC="dir"elseif ax=="from-floppy"or ax=="fromfloppy"then aC=al elseif not aG then
-aC=al elseif aM(aG)then aC="dir"elseif#aI>1 then aC="many"else aC="name"end
-local function aJ(aN)
-if#aN==0 then E("Nothing to install.",d.dim)return end
-if aH then
-E(string.format("Would install %d package(s):",#aN),d.title)local aQ=0
-for aS,aR in ipairs(aN)do local aT,aU
-if aw.planByName then aT,aU=aw.planByName(aR)end
-if not aT then E("  "..aR,d.fg)if aU then aQ=aQ+1
-E("    would fail: "..tostring(aU),d.error)end else E("  "..aR,d.fg)local aV={}for aS,aW in
-ipairs(aT.order or{})do
-aV[#aV+1]=(aw.info and aw.info(aW))and
-(aW.." (installed)")or aW end
-if#aV>1 then E("    order: "..
-table.concat(aV,", "),d.dim)end;for aS,aW in ipairs(aT.contradictions or{})do
-E("    ! "..tostring(aW.text),d.warning)end
+"--all --yes/-y --dry-run --force --allow-unverified --allow-unsigned ".."--key <key> --prompts")then return end;local aF,aL,aM,aI=false,false,false,false;local aG,aE=false,false;local aJ={}
+for aO=2,#av do
+local aP=tostring(av[aO])
+if aP==P then aF=true elseif aP==O then aG=true elseif aP==S then aE=true elseif aP=="--all"then aL=true elseif
+aP=="--yes"or aP=="-y"then aM=true elseif aP==V or aP==W then aI=true elseif aP=="--key"then elseif av[aO-1]=="--key"then elseif
+aP:sub(1,2)~="--"then aJ[#aJ+1]=aP end end;local aH=aJ[1]local function aN(aO)return
+type(aO)==L and aO:find("/",1,true)~=nil end;local aD
+if aL then aD="all"elseif ax==
+"install-dir"then aD="dir"elseif ax=="from-floppy"or ax=="fromfloppy"then aD=al elseif not aH then
+aD=al elseif aN(aH)then aD="dir"elseif#aJ>1 then aD="many"else aD="name"end
+local function aK(aO)
+if#aO==0 then E("Nothing to install.",d.dim)return end
+if aI then
+E(string.format("Would install %d package(s):",#aO),d.title)local aR=0
+for aT,aS in ipairs(aO)do local aU,aV
+if aw.planByName then aU,aV=aw.planByName(aS)end
+if not aU then E("  "..aS,d.fg)if aV then aR=aR+1
+E("    would fail: "..tostring(aV),d.error)end else E("  "..aS,d.fg)local aW={}for aT,aX in
+ipairs(aU.order or{})do
+aW[#aW+1]=(aw.info and aw.info(aX))and
+(aX.." (installed)")or aX end
+if#aW>1 then E("    order: "..
+table.concat(aW,", "),d.dim)end;for aT,aX in ipairs(aU.contradictions or{})do
+E("    ! "..tostring(aX.text),d.warning)end
 if#
-(aT.contradictions or{})>0 then
-if aD then
+(aU.contradictions or{})>0 then
+if aE then
 E("    --force: would install past "..
-#aT.contradictions.." contradiction(s)",d.warning)else aQ=aQ+1
-E("    would be refused (--force overrides)",d.error)end end end end;if aQ>0 then
-E(string.format("%d of %d would not install as things stand.",aQ,#aN),d.warning)end;E(ae,d.dim)return end;local aP,aO=0,0
-for aR,aQ in ipairs(aN)do
-local aT,aS=aw.installByName(aQ,{session=J.sessionOf(a),allowUnverified=aE,allowUnsigned=aF,force=aD})
-if aT then aP=aP+1
-E(string.format("  %-20s installed%s",aQ,
-(#aS.skipped>0)and(" (deps present: "..
-table.concat(aS.skipped,", ")..")")or""),d.highlight)else aO=aO+1
-E(string.format("  %-20s FAILED: %s",aQ,tostring(aS)),d.error)end end
-E(string.format("%d installed, %d failed.",aP,aO),aO>0 and d.warning or d.highlight)end
-if aH and(aC=="name"or aC=="dir")then aJ({aG})return elseif aH and
-aC==al then local aN={}for aP,aO in ipairs(aw.listAllAvailable()or{})do
+#aU.contradictions.." contradiction(s)",d.warning)else aR=aR+1
+E("    would be refused (--force overrides)",d.error)end end end end;if aR>0 then
+E(string.format("%d of %d would not install as things stand.",aR,#aO),d.warning)end;E(ae,d.dim)return end;local aQ,aP=0,0
+for aS,aR in ipairs(aO)do
+local aU,aT=aw.installByName(aR,{session=J.sessionOf(a),allowUnverified=aF,allowUnsigned=aG,force=aE})
+if aU then aQ=aQ+1
+E(string.format("  %-20s installed%s",aR,
+(#aT.skipped>0)and(" (deps present: "..
+table.concat(aT.skipped,", ")..")")or""),d.highlight)else aP=aP+1
+E(string.format("  %-20s FAILED: %s",aR,tostring(aT)),d.error)end end
+E(string.format("%d installed, %d failed.",aQ,aP),aP>0 and d.warning or d.highlight)end
+if aI and(aD=="name"or aD=="dir")then aK({aH})return elseif aI and
+aD==al then local aO={}for aQ,aP in ipairs(aw.listAllAvailable()or{})do
 if not(aw.info and
-aw.info(aO.name))then aN[#aN+1]=aO.name end end
-table.sort(aN)
-if#aN==0 then E("Nothing to install.",d.dim)return end
-E(string.format("Would offer %d package(s) to choose from:",#aN),d.title)for aP,aO in ipairs(aN)do E("  "..aO,d.fg)end;E(ae,d.dim)
+aw.info(aP.name))then aO[#aO+1]=aP.name end end
+table.sort(aO)
+if#aO==0 then E("Nothing to install.",d.dim)return end
+E(string.format("Would offer %d package(s) to choose from:",#aO),d.title)for aQ,aP in ipairs(aO)do E("  "..aP,d.fg)end;E(ae,d.dim)
 return end
-if aC=="all"then
-if not(aL or aH)then
+if aD=="all"then
+if not(aM or aI)then
 E("--all installs EVERY package on every inserted disk and repo.",d.warning)
-E("Add --yes to confirm, or --dry-run to see the list first.",d.dim)return end;local aN={}for aP,aO in ipairs(aw.listAllAvailable()or{})do
+E("Add --yes to confirm, or --dry-run to see the list first.",d.dim)return end;local aO={}for aQ,aP in ipairs(aw.listAllAvailable()or{})do
 if not(aw.info and
-aw.info(aO.name))then aN[#aN+1]=aO.name end end
-table.sort(aN)aJ(aN)return elseif aC=="many"then aJ(aI)return end
-if aC=="name"then local aO;for aQ=3,#av do
-if av[aQ]=="--key"and av[aQ+1]then aO=av[aQ+1]end end
-local aP,aN=aw.installByName(aG,{licenseKey=aO,session=J.sessionOf(a),allowUnverified=aE,allowUnsigned=aF,force=aD})
-if aP then
-E(string.format("Installed: %s",table.concat(aN.installed,", ")),d.highlight)az(aN.installed)if#aN.skipped>0 then
-E(string.format("Skipped (already present): %s",table.concat(aN.skipped,", ")),d.dim)end else
-E("Install failed: "..tostring(aN),d.error)w(aN,E,"Installing packages")end elseif aC=="dir"then
-if not aG then E("Usage: pkg install <dir>",d.dim)return end;local aO=aA()
-local aP,aN=aw.install(aG,{session=J.sessionOf(a),allowUnverified=aE,allowUnsigned=aF,force=aD})
-if aP then local aQ={}
-for aR in pairs(aA())do if not aO[aR]then aQ[#aQ+1]=aR end end;table.sort(aQ)
+aw.info(aP.name))then aO[#aO+1]=aP.name end end
+table.sort(aO)aK(aO)return elseif aD=="many"then aK(aJ)return end
+if aD=="name"then local aP;for aR=3,#av do
+if av[aR]=="--key"and av[aR+1]then aP=av[aR+1]end end
+local aQ,aO=aw.installByName(aH,{licenseKey=aP,session=J.sessionOf(a),allowUnverified=aF,allowUnsigned=aG,force=aE})
+if aQ then
+E(string.format("Installed: %s",table.concat(aO.installed,", ")),d.highlight)az(aO.installed)if#aO.skipped>0 then
+E(string.format("Skipped (already present): %s",table.concat(aO.skipped,", ")),d.dim)end else
+E("Install failed: "..tostring(aO),d.error)w(aO,E,"Installing packages")end elseif aD=="dir"then
+if not aH then E("Usage: pkg install <dir>",d.dim)return end;local aP=aA()
+local aQ,aO=aw.install(aH,{session=J.sessionOf(a),allowUnverified=aF,allowUnsigned=aG,force=aE})
+if aQ then local aR={}
+for aS in pairs(aA())do if not aP[aS]then aR[#aR+1]=aS end end;table.sort(aR)
 E("Installed: "..
-(#aQ>0 and
-(table.concat(aQ,", ").." (")or"")..
-tostring(aN).. (#aQ>0 and")"or""),d.highlight)az(aQ)else
-E("Install failed: "..tostring(aN),d.error)w(aN,E,"Installing packages")end else local aO=false;for aR=2,#av do if av[aR]=="--prompts"or av[aR]=="--classic"then
-aO=true end end
-local aP=false
-if not aO and aw.runInstaller then
-local aS,aR=aw.runInstaller({session=J.sessionOf(a),allowUnverified=aE,allowUnsigned=aF,force=aD})
-if aS then aP=true
-if a.D and a.D.invalidate then pcall(a.D.invalidate)end;if c.drawAll then pcall(c.drawAll)end elseif aR then
-E("Menu installer unavailable ("..tostring(aR)..
-") — using prompts.",d.dim)end end;if aP then return end
-local aQ,aN=aw.installFromFloppy({session=J.sessionOf(a),allowUnverified=aE,allowUnsigned=aF,force=aD,confirm=function(aU,aT,aS,aR)
+(#aR>0 and
+(table.concat(aR,", ").." (")or"")..
+tostring(aO).. (#aR>0 and")"or""),d.highlight)az(aR)else
+E("Install failed: "..tostring(aO),d.error)w(aO,E,"Installing packages")end else local aP=false;for aS=2,#av do if av[aS]=="--prompts"or av[aS]=="--classic"then
+aP=true end end
+local aQ=false
+if not aP and aw.runInstaller then
+local aT,aS=aw.runInstaller({session=J.sessionOf(a),allowUnverified=aF,allowUnsigned=aG,force=aE})
+if aT then aQ=true
+if a.D and a.D.invalidate then pcall(a.D.invalidate)end;if c.drawAll then pcall(c.drawAll)end elseif aS then
+E("Menu installer unavailable ("..tostring(aS)..
+") — using prompts.",d.dim)end end;if aQ then return end
+local aR,aO=aw.installFromFloppy({session=J.sessionOf(a),allowUnverified=aF,allowUnsigned=aG,force=aE,confirm=function(aV,aU,aT,aS)
 if q then
-local aY={title="Install from media",severity=am,yes="Install",no="Skip",progress=
-(aS and aR and aR>1)and{index=aS,total=aR}or nil}if aS and aR and aS<aR then aY.redraw=false end;return
-q("Install  "..aU.."?".."\n\n".."From:"..
-"\n  "..aT,aY)end;if not i then return false end
-local aW=aT:match("^(/mnt/[^/]+)")or aT;local aX=
-(aS and aR and aR>1)and string.format(" (%d/%d)",aS,aR)or""local aV=
-i("Install "..aU..
-" from "..aW..aX.."? [y/N]: ",4)or""return
-aV:lower()=="y"or aV:lower()=="yes"end})
-if aQ then if#aN.installed>0 then
-E(string.format("Installed from media: %s",table.concat(aN.installed,", ")),d.highlight)end;if
-#aN.skipped>0 then
-E(string.format("Skipped: %s",table.concat(aN.skipped,", ")),d.dim)end;if#aN.installed==0 and
-#aN.skipped==0 then
+local aZ={title="Install from media",severity=am,yes="Install",no="Skip",progress=
+(aT and aS and aS>1)and{index=aT,total=aS}or nil}if aT and aS and aT<aS then aZ.redraw=false end;return
+q("Install  "..aV.."?".."\n\n".."From:"..
+"\n  "..aU,aZ)end;if not i then return false end
+local aX=aU:match("^(/mnt/[^/]+)")or aU;local aY=
+(aT and aS and aS>1)and string.format(" (%d/%d)",aT,aS)or""local aW=
+i("Install "..aV..
+" from "..aX..aY.."? [y/N]: ",4)or""return
+aW:lower()=="y"or aW:lower()=="yes"end})
+if aR then if#aO.installed>0 then
+E(string.format("Installed from media: %s",table.concat(aO.installed,", ")),d.highlight)end;if
+#aO.skipped>0 then
+E(string.format("Skipped: %s",table.concat(aO.skipped,", ")),d.dim)end;if#aO.installed==0 and
+#aO.skipped==0 then
 E("No packages found on mounted media. Insert a package disk and retry.",d.dim)end else E("Media scan failed: "..
-tostring(aN),d.error)end end elseif ax=="license-hash"then if not av[2]or not av[3]then
+tostring(aO),d.error)end end elseif ax=="license-hash"then if not av[2]or not av[3]then
 E("Usage: pkg license-hash <package-name> <license-key>",d.dim)return end
-local aC,aD=aw.computeLicenseHash(av[2],av[3])
-if aC then E(aC,d.fg)else E(ag..tostring(aD),d.error)end elseif ax=="uninstall"or ax==ac then if not av[2]then
+local aD,aE=aw.computeLicenseHash(av[2],av[3])
+if aD then E(aD,d.fg)else E(ag..tostring(aE),d.error)end elseif ax=="uninstall"or ax==ac then if not av[2]then
 E("Usage: pkg uninstall <name>",d.dim)return end
-local aC,aD=aw.uninstall(av[2],{session=J.sessionOf(a)})if aC then E("Uninstalled: "..av[2],d.highlight)else
+local aD,aE=aw.uninstall(av[2],{session=J.sessionOf(a)})if aD then E("Uninstalled: "..av[2],d.highlight)else
 E(
-"Uninstall failed: "..tostring(aD),d.error)end elseif ax=="make-disk"or
+"Uninstall failed: "..tostring(aE),d.error)end elseif ax=="make-disk"or
 ax=="export-disk"then
 if not av[2]then
 E("Usage: pkg make-disk <mount> [name ...]",d.dim)
 E("  Builds an Optional Utilities disk from your INSTALLED add-ons so",d.dim)
 E("  you can install them on another TOS machine without a dev box.",d.dim)
 E("  Name args limit the export; omit to include every add-on.",d.dim)E("  e.g. pkg make-disk /mnt/floppy",d.dim)return end;if not aw.exportDisk then
-E("This TOS build has no make-disk support.",d.error)return end;local aD=nil;if av[3]then aD={}for aF=3,#av do
-aD[#aD+1]=av[aF]end end
-local aE,aC=aw.exportDisk(av[2],{only=aD,session=J.sessionOf(a)})
-if aE then
-E(string.format("Built add-on disk on %s: %d package(s), %d file(s)",aC.target,#aC.packages,aC.files),d.highlight)if#aC.packages>0 then
-E("  "..table.concat(aC.packages,", "),d.fg)end;if#aC.problems>0 then
+E("This TOS build has no make-disk support.",d.error)return end;local aE=nil;if av[3]then aE={}for aG=3,#av do
+aE[#aE+1]=av[aG]end end
+local aF,aD=aw.exportDisk(av[2],{only=aE,session=J.sessionOf(a)})
+if aF then
+E(string.format("Built add-on disk on %s: %d package(s), %d file(s)",aD.target,#aD.packages,aD.files),d.highlight)if#aD.packages>0 then
+E("  "..table.concat(aD.packages,", "),d.fg)end;if#aD.problems>0 then
 E("  Warnings:",d.warning)
-for aG,aF in ipairs(aC.problems)do E("   ! "..aF,d.warning)end end
+for aH,aG in ipairs(aD.problems)do E("   ! "..aG,d.warning)end end
 E("On the target machine, insert the disk and run 'pkg install'.",d.dim)else
-E("make-disk failed: "..tostring(aC),d.error)end elseif ax=="enable"or ax=="disable"then if not av[2]then
-E("Usage: pkg "..ax.." <name>",d.dim)return end;local aC=(ax=="enable")
-local aD,aE=aw.setEnabled(av[2],aC,{session=J.sessionOf(a)})
-if aD then
-E((aC and"Enabled: "or"Disabled: ")..av[2],d.highlight)else E("Failed: "..tostring(aE),d.error)end elseif ax=="commands"then local aD=aw.commands()local aC={}
-for aE in pairs(aD)do aC[#aC+1]=aE end;if#aC==0 then
-E("No commands provided by installed packages.",d.dim)return end;table.sort(aC)
-E("Commands provided by packages:",d.title)for aF,aE in ipairs(aC)do E("  "..aE,d.fg)end else
+E("make-disk failed: "..tostring(aD),d.error)end elseif ax=="enable"or ax=="disable"then if not av[2]then
+E("Usage: pkg "..ax.." <name>",d.dim)return end;local aD=(ax=="enable")
+local aE,aF=aw.setEnabled(av[2],aD,{session=J.sessionOf(a)})
+if aE then
+E((aD and"Enabled: "or"Disabled: ")..av[2],d.highlight)else E("Failed: "..tostring(aF),d.error)end elseif ax=="commands"then local aE=aw.commands()local aD={}
+for aF in pairs(aE)do aD[#aD+1]=aF end;if#aD==0 then
+E("No commands provided by installed packages.",d.dim)return end;table.sort(aD)
+E("Commands provided by packages:",d.title)for aG,aF in ipairs(aD)do E("  "..aF,d.fg)end else
 E("Usage: pkg [list | search | info <name> | install [name|dir] | uninstall <name>",d.dim)
 E("           | enable <name> | disable <name> | commands | make-disk <mnt>]",d.dim)
 E("  install: a name installs by name; a path installs that dir; no arg",d.dim)

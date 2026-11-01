@@ -227,10 +227,10 @@ error(
 e[g]=nil;if not r then
 error("sandbox: user lib '"..g.."' failed: "..tostring(j),2)end;if j==nil then j=true end;d[g]=j;return j end end
 error("sandbox: module '"..g.."' is not on the allowed list",2)end;return f end
-function am.build(a)a=a or{}local c=a.caps or{}local m=a.session
+function am.build(a)a=a or{}local c=a.caps or{}local l=a.session
 local e=_G._TOS and _G._TOS.securefs
 if not e then local t,u=pcall(require,"kernel.securefs")if t then e=u end end;local d=nil;if e and(c["fs.read"]or c[aQ])then
-d=e.forSession(m)end
+d=e.forSession(l)end
 local function n(t)
 local v={"exists","isDirectory","list","readFile","size","lastModified","normalize","split","join","spaceTotal","spaceUsed","spaceFree","mounts","home","resolve"}local u={}
 for x,w in ipairs(v)do local y=t[w]if type(y)==ak then
@@ -254,9 +254,9 @@ if
 f(u)or
 f(rawget(u,"__index"))or f(rawget(u,"__newindex"))or f(rawget(u,"__metatable"))then
 error("setmetatable: metatable referencing protected library denied",2)end end;return setmetatable(v,u)end;local s=ao(string)local g,h;if c[aA]then g=bj(bi(c))h=bf()end;local k={}if g then
-k.component=g end;if h then k.computer=h end;local l={}
+k.component=g end;if h then k.computer=h end;local m={}
 local b={assert=assert,error=error,pcall=pcall,xpcall=xpcall,type=type,tostring=tostring,tonumber=tonumber,pairs=pairs,ipairs=ipairs,next=next,select=select,unpack=table.unpack,rawequal=rawequal,rawlen=rawlen,setmetatable=r,getmetatable=q,math=ao(math),string=s,table=ao(table),utf8=
-utf8 and ao(utf8)or nil,coroutine=ao(coroutine),unicode=av and ao(av)or nil,checkArg=ba,print=o,require=bs(a,k,l)}l.env=b;b._G=b;b._ENV=b;b._VERSION=_VERSION;if d then
+utf8 and ao(utf8)or nil,coroutine=ao(coroutine),unicode=av and ao(av)or nil,checkArg=ba,print=o,require=bs(a,k,m)}m.env=b;b._G=b;b._ENV=b;b._VERSION=_VERSION;if d then
 if c[aQ]then b.fs=d else b.fs=n(d)end end
 if c[an]then local t,u=pcall(require,an)
 if t then b.io=aq(u)end;b.os=bc()local v,w=pcall(require,aM)if v then b.filesystem=aq(w)end end
@@ -297,6 +297,13 @@ y:match("^[%w][%w%-]*$"))and y or"package"local z,A=t.post(x)if z~=nil then v[z]
 not v[w]then return nil end;return t.result(w)end}end end
 if c["net"]then local u,t=pcall(require,"kernel.net")if u then b.net=
 a.allowUserLibs and aq(t)or bp(t)end end
+do local t=nil
+for w in pairs(c)do
+local x=type(w)==al and w:match("^ipc:(.+)$")if x then t=t or{}t[x]=true end end;local v,u=false,nil
+if t then v,u=pcall(require,"kernel.ipc")end
+if v and u then
+b.ipc={call=function(w,...)if not t[w]then
+return nil,"this program may not reach '"..tostring(w).."'"end;return u.call(w,l,...)end}end end
 if c[aR]then local u,t=pcall(require,"kernel.internet")
 if u and t then
 b.internet={get=function(v,w)

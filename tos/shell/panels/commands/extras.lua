@@ -58,10 +58,12 @@ ai.installByName(ah,{session=r.sessionOf(a)})end
 _.writeFile=function(ah,ai)if not aa then return false,"filesystem unavailable"end;if
 aa.writeFileAtomic then return aa.writeFileAtomic(ah,ai)end;return
 aa.writeFile(ah,ai)end
-_.startService=function(ah)local al,ai=pcall(require,"kernel.rc")if not
-(al and ai and ai.start)then return false,"rc unavailable"end
-local aj,ak=ai.start(ah)if
-not aj and tostring(ak):find("Already running",1,true)then return true end;return aj,ak end
+_.startService=function(ah)local am,ai=pcall(require,"kernel.rc")if not
+(am and ai and ai.start)then return false,"rc unavailable"end
+local aj,al=ai.start(ah)if
+not aj and tostring(al):find("Already running",1,true)then return true end;local ak=ac()if
+aj and ak and ak.noteServiceStarted then
+ak.noteServiceStarted(ah,{session=r.sessionOf(a)})end;return aj,al end
 _.setBootStart=function(ah,ai)if not aa then return false,"filesystem unavailable"end;local aj=
 "/etc/rc.d/"..ah..".disabled"if ai then if aa.exists(aj)then return
 aa.remove(aj)end;return true end;if

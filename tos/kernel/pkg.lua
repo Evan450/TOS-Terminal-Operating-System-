@@ -267,7 +267,7 @@ local function bv(a)local b={}for c in
 pairs(au)do b[#b+1]=c end;if#b<=a then return end
 table.sort(b,function(c,d)return(av[c]or 0)> (
 av[d]or 0)end)for c=a+1,#b do au[b[c]]=nil;av[b[c]]=nil end end
-local bb={["fs.read"]=true,["fs.write"]=true,component=true,["compat.io"]=true,load=true,net=true,swap=true,internet=true,vault=true,crypto=true,notify=true,["peripheral.modem"]=true,["peripheral.redstone"]=true,["peripheral.robot"]=true,["peripheral.inventory"]=true,["peripheral.tape"]=true,["peripheral.tractor"]=true,["peripheral.piston"]=true,["peripheral.hologram"]=true,["peripheral.printer"]=true}local bc="/etc/pkg_caps.cfg"local aD={}local as={}local aN=false
+local bb={["fs.read"]=true,["fs.write"]=true,component=true,["compat.io"]=true,load=true,net=true,swap=true,internet=true,vault=true,crypto=true,notify=true,ipc=true,["peripheral.modem"]=true,["peripheral.redstone"]=true,["peripheral.robot"]=true,["peripheral.inventory"]=true,["peripheral.tape"]=true,["peripheral.tractor"]=true,["peripheral.piston"]=true,["peripheral.hologram"]=true,["peripheral.printer"]=true}local bc="/etc/pkg_caps.cfg"local aD={}local as={}local aN=false
 local function bd()if aN then return end;aN=true
 if not ap or not
 ap.exists or not ap.exists(bc)then return end;local b=ap.readFile(bc)
@@ -295,10 +295,12 @@ local function be(a,b)local c={}
 if type(b.capabilities)=="table"then
 for e,d in ipairs(b.capabilities)do
 local f=am.parseCap(d)
-if f and f.facet then local g,h=am.capAllowed(a,f.facet)if g then c[f.facet]=true elseif ao then
-ao.warn("pkg",
-"capability '"..
-f.facet.."' refused for "..a..": "..tostring(h))end end end end;return c end
+if f and f.facet then local g,h=am.capAllowed(a,f.facet)
+if g then c[f.facet]=true
+if
+f.facet=="ipc"and f.scope then c["ipc:"..f.scope]=true end elseif ao then
+ao.warn("pkg","capability '"..f.facet..
+"' refused for "..a..": "..tostring(h))end end end end;return c end
 function am.capsForFile(a)local b=am.ownerOfFile(a)if b and am.isEnabled(b)then
 return be(b,aq[b]),b end;return nil end
 function am.ownerOfFile(a)if type(a)~=an or a==""then return nil end

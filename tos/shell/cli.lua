@@ -27,11 +27,11 @@ b.set(2,1,(" TOS CLI  ·  "..c.who..
 "  ·  type 'tui' for the full interface"):sub(1,
 e-2),b.c(i),b.c(h))b.fill(1,n,e,1," ",b.c(i),b.c(h))
 b.set(2,n,(" [tui] TUI   [help] Commands   [exit] Log out"):sub(1,
-e-2),b.c(i),b.c(h))end;local function o()b.clear(b.c("bg"))A()f=3 end;local u
+e-2),b.c(i),b.c(h))end;local function p()b.clear(b.c("bg"))A()f=3 end;local u
 local function w()if
 coroutine.isyieldable and coroutine.isyieldable()then
 return coroutine.yield()end;return k.pullSignal(0.25)end
-local function p(H,G,I)I=I or 256;local J,K="",1;local L=#c.cmdHistory+1
+local function o(H,G,I)I=I or 256;local J,K="",1;local L=#c.cmdHistory+1
 local M=math.min(f,n-1)
 local function N()v()M=math.min(f,n-1)
 local R=G and string.rep("*",#J)or J;local P=H..R;local O=0;if#P>=e then O=#P-e+1 end
@@ -52,7 +52,7 @@ J=c.cmdHistory[L]or""K=#J+1 end elseif O==15 and not G then
 local T=require("shell.panels.commands")
 local S=m.completeCmdline(J,T.commandNames(),function(U)return z.list(U)end)if S and S~=J then J=S;K=#J+1 end elseif
 P and P>=32 and P<127 and#J<I then
-J=J:sub(1,K-1)..string.char(P)..J:sub(K)K=K+1 end;N()elseif Q=="tos_focus"then o()if u then u()end;N()elseif Q=="interrupted"then return nil end end end;local B=require("shell.panels.commands")
+J=J:sub(1,K-1)..string.char(P)..J:sub(K)K=K+1 end;N()elseif Q=="tos_focus"then p()if u then u()end;N()elseif Q=="interrupted"then return nil end end end;local B=require("shell.panels.commands")
 local C=require("shell.panels.executor")
 local x=require("shell.progenv").builder(c)
 local function q(H,G)if G and G~="output"then
@@ -69,22 +69,27 @@ d("(one-shot: live views need the TUI — 'watch "..
 tostring(G).."' repeats it here)",b.c("dim"))end,openEditTab=function(G)
 d(
 "The editor needs the full interface. Type 'tui' then 'edit "..tostring(G).."'.",b.c(g))end,createTab=function()
-d("Tabs need the full interface — type 'tui'.",b.c(g))return nil end,promptInput=function(G,H,I)return p(tostring(G or"> "),I and true or
+d("Tabs need the full interface — type 'tui'.",b.c(g))return nil end,promptInput=function(G,H,I)return o(tostring(G or"> "),I and true or
 false,H)end,alert=function(G)
 d(tostring(G),b.c(g))return true end,confirm=function(G)
-local H=p(tostring(G).." [y/N]: ",false,4)
+local H=o(tostring(G).." [y/N]: ",false,4)
 return H~=nil and H:lower():sub(1,1)=="y"end,confirmTyped=function(G,H)if G then
 d(tostring(G),b.c(g))end
-local I=p('Type "'..tostring(H)..'" to confirm: ',false,32)return I==H end,dialog=function(G)
+local I=o('Type "'..tostring(H)..'" to confirm: ',false,32)return I==H end,dialog=function(G)
 G=G or{}
-if G.title then d(tostring(G.title),b.c("title"))end;for J,I in ipairs(G.lines or{})do d(tostring(I))end;if
-G.text then d(tostring(G.text))end;local H=p(
-(G.prompt or"OK?").." [y/N]: ",false,4)return
-(H~=nil and
-H:lower():sub(1,1)=="y")and 1 or 2 end,drawAll=function()
-o()end,drawOutRow=function(G,H)if G then d(G,H)end end}local y=B.build(c,t)t.C=y
+if G.title then d(tostring(G.title),b.c("title"))end;for K,J in ipairs(G.lines or{})do d(tostring(J))end;if
+G.text then d(tostring(G.text))end;if G.message then for J in(
+tostring(G.message).."\n"):gmatch("(.-)\n")do
+d(J)end end
+local H=G.buttons
+if type(H)=="table"and#H>0 then for K,L in ipairs(H)do
+d("  "..K..". "..tostring(L))end
+local J=tonumber(o("Choice: ",false,4)or"")return(J and H[J])and J or#H end
+local I=o((G.prompt or"OK?").." [y/N]: ",false,4)return
+(I~=nil and I:lower():sub(1,1)=="y")and 1 or 2 end,drawAll=function()
+p()end,drawOutRow=function(G,H)if G then d(G,H)end end}local y=B.build(c,t)t.C=y
 local D=C.build(c,{rp=t.rp,makeProgramEnv=x,C=y,showOutput=function(G,H)q(G,nil)end})local r=nil
-local E={tui=function()r="tui"end,exit=function()r="logout"end,cls=function()o()end,clear=function()o()end}o()d("TOS CLI",b.c("title"))
+local E={tui=function()r="tui"end,exit=function()r="logout"end,cls=function()p()end,clear=function()p()end}p()d("TOS CLI",b.c("title"))
 d("Every command the full interface has, loaded as you use them.",b.c("dim"))
 d("'help' lists them · 'tui' returns to the full interface · 'exit' logs out",b.c("dim"))local s=a.autoCLI
 if s and s.haveKB and s.needKB then
@@ -100,7 +105,7 @@ if c.lastOut then
 if type(c.lastOut)=="table"then
 d(c.lastOut[1],c.lastOut[2])else d(tostring(c.lastOut))end;c.lastOut=nil end end
 while true do local H=(c._sudo and"[sudo] "or"")..
-c.who..":"..c.cwd.."$ "local G=p(H,false)if G==
+c.who..":"..c.cwd.."$ "local G=o(H,false)if G==
 nil then G=""end;G=G:match("^%s*(.-)%s*$")
 if G~=""then c.cmdHistory[
 #c.cmdHistory+1]=G;c.lastOut=nil;c.outLines=nil

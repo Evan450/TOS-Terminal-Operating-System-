@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**85 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**80 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
-| Open bug | 1 | Known broken. Fixing one of these is the most valuable thing you can do. |
+| Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 60 | Planned or under investigation. Most contributions belong here. |
+| Planned | 56 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (14) · [Networking](#networking) (10) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (12) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (6) · [Packages](#packages) (13) · [Networking](#networking) (8) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (12)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -180,47 +180,21 @@ Run a verification round in REAL Minecraft OpenComputers: the Ocelot emulator ha
 
 ## Add-ons
 
-### The cluster CLIs cannot run in the sandbox they are given
-
-*Open bug* · from the round *The open queue, worked through (2026-10-01)*
-
-THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX THEY ARE GIVEN. Found by the widened global lint (AUDIT 5's TOS-Extras item, below) and then proven by running the real files in the real sandbox. /usr/bin/cluster.lua (cluster-master) and /usr/bin/cluster-manager.lua are PATH programs, so the shell runs them through progenv in a sandbox with fs.read, fs.write and compat.io. Neither loads:
-
-cluster status -&gt; user lib 'cluster.api' failed: api.lua:14:
-
-module 'computer' is not available to sandboxed code
-
-cluster-manager status -&gt; user lib 'cluster-manager' failed:
-
-cluster-manager.lua:38: (the same refusal) THE CAUSE IS A DESIGN CONFLICT, not a typo. Since 8f7b12b (2026-09-11, "every module is the program's own") a library a sandboxed program requires loads INSIDE that sandbox, one instance each. cluster.api's own header says it is "an in-process API ... they share address space" with the running clusterd. So granting the CLI `component` only moves the failure: its private cluster.api is a fresh copy no daemon ever bound ("cluster daemon is not running"). Also dead in the CLI regardless: `cluster submit` uses loadfile, which no sandbox has, and die()/usage() call os.exit, which the sandbox's os omits. THE SERVICES ARE FINE: an rc.d service loads its libraries through the kernel loader (allowUserLibs), into the real \_G, and so clusterd and the manager daemon start. Only the operator CLIs are dead -- which includes `cluster pair start`, so a Manager can only be paired through the base `cluster-setup` wizard. OPERATOR DECISION, deliberately not made here, because it is about what a trusted package may reach:
-
-(a) a SERVICE package's own /usr/bin program gets allowUserLibs,
-
-so its libraries load through the kernel loader and share the
-
-daemon's state. Consistent with "a service package is trusted
-
-with the machine" (installing one is ROOT), but it runs user
-
-input through kernel-loaded code, so the tier checks must move
-
-into cluster.api itself (today they are in the sandboxed CLI);
-
-(b) build ADDRESSABLE LOCAL IPC (WHAT THE REST OF THE FIELD DOES
-
-BETTER, below) and have the CLI talk to the daemon through a
-
-registered, cap-gated endpoint -- the designed answer, and
-
-the larger job. Recommendation: (a) now, with api-side tier checks, and (b) when IPC exists. Pinned as \[known gap\] in test\_cluster\_cli\_sandbox.lua and in test\_global\_leaks.lua's TOS-Extras half, so either fix fails those lines and they get rewritten. Shipping now: cluster-master 1.0.1 and cluster-manager in the published pack carry this.
-
-STILL SAYS OTHERWISE ON SCREEN (found 2026-10-31, doc pass): tos/shell/clustersetup.lua's closing notes tell the operator to run `cluster pair start`, `cluster pair status`, `cluster status`, `cluster managers` and `cluster-manager status`, and launcher.lua offers "Manager status". All of them fail while this entry stands. MANUAL Appendix B and the installer guide say so; the wizard does not. Fix it with this entry, or change the wizard's wording first.
-
 ### The distributed storage pool waits on five operator decisions
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE DISTRIBUTED STORAGE POOL WAITS ON FIVE OPERATOR DECISIONS. cluster-storage shipped 1.0.0 on 2026-10-23 as ONE node; the pool, inputs\_ref and result\_sink = "public" are not built. TOS-Extras/cluster/storage-spec-draft.md section 10 holds the questions: a coordinator or none; shared/ replication to all members or a quorum; capacity in a contributing Manager's heartbeat; what happens to a lease when its member leaves; and whether netfs read-only exports may go to PAIRED-but-untrusted peers.
+
+### Still not run on the runner, from see the 2026-10-17..24 work run
+
+*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
+
+STILL NOT RUN ON THE RUNNER, from SEE THE 2026-10-17..24 WORK RUN: cluster-storage on two machines. Chat's wrapped lines ARE seen: a 150-character message arrived on three rows, continuations aligned under the text, on both machines.
+
+BOOTSTRAP SEEN END TO END, 2026-10-31, against published main 78f96a3 on OpenOS 1.8.9 with a real internet card: wget, 166 files downloaded and hashed in about 125 s, install.lua's questions, 165 files verified, the BIOS flashed, OpenOS removed, the reboot, First Boot Setup, and a working `pkg fetch snake` from the live repo with "signature: valid". It worked; it found one thing, the BIOS digest (CHANGELOG, "The installer shows the BIOS fingerprint"). Pin the branch argument to a SHA, as the session did: the raw CDN can serve a mix of builds.
+
+PANEUI SEEN, 2026-10-31, on OpenOS 1.8.9: browser, help, mkdir, new file, editor, save, view, copy, move, delete, command line, cd, F9 and back, themes, a resize to 60x20. Four bugs, all fixed (CHANGELOG, "PaneUI keeps your work"); test\_paneui\_session.lua now runs the real program on a fake OpenOS.
 
 ### Optional Utilities candidates from the pack's own components
 
@@ -255,12 +229,6 @@ Tape "personal menu" ecosystem polish.
 ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MINOR.PATCH, an optional two-character stage suffix (-a, -b), release notes per package, no codenames. pkg already accepts and orders suffixes (validVersion, compareVersion). Left: build-disk.lua's SKIP (L528) is still a table of NAMES, empty today, so a new 0.x package ships unless someone lists it -- make it compareVersion(v, "1.0.0") &lt; 0, and decide whether a suffixed pre-1.0 package may ship labelled; the picker fits "v" .. version into 8 columns (pkgpicker.lua:584-588), so v1.10.0-b is cut; a `tos.py check` rule that a version bump carries a notes entry; blockfs.lua still says \_VERSION = "1.2.0" against its manifest's 1.2.1. Full write-up on the audit branch.
 
 THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major number is 0 (preRelease), suffix or not, beside the SKIP list; the picker drops the "v" when a version would not fit its 8 cells, so 1.10.0-b shows whole; blockfs's \_VERSION matches (blockfs 1.2.2, pending re-sign), and so do mail's and intercom's, which today's quit-key bumps had made drift too. No package is 0.x today, so the pack's contents do not change. build/ test\_addon\_versions.lua (22; 6 fail on the old files) checks all three and every modules/&lt;pkg&gt;/usr/lib/&lt;pkg&gt;.lua \_VERSION against its manifest. STILL OPEN: the notes rule -- there is no per-package release notes file yet for a `tos.py check` step to look in, so where the notes live comes first; and whether a SUFFIXED pre-1.0 package may ship labelled (operator; held back for now, as every 0.x is).
-
-### Publish.ps1 -Utils calls the pack stale over a 0.x package
-
-*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-publish.ps1 -Utils CALLS THE PACK STALE OVER A 0.x PACKAGE. Its guard compares file times across modules/, and a 0.x package never reaches the pack, so an edit to prefab after signing refuses the publish with "built pack is OLDER" (2026-10-31, init.lua). -Force is safe there, since test\_build\_disk.lua compares the pack byte for byte, but a guard that teaches -Force is the thing its own comment warns about. Skip any module whose package.lua says 0.x, or the same rule as preRelease.
 
 ### The keychain is not within a package's reach — operator decision
 
@@ -397,18 +365,6 @@ REMOTE EXEC CAN STILL REACH string.dump -- OPERATOR DECISION. AUDIT 1, same sour
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
-
-### Still not run on the runner, from see the 2026-10-17..24 work run
-
-*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-STILL NOT RUN ON THE RUNNER, from SEE THE 2026-10-17..24 WORK RUN: bootstrap.lua end to end (the session is designed: OpenOS, --internet, wget bootstrap.lua, then pin the branch argument to main's commit SHA so the raw CDN cannot serve a mix of builds), PaneUI on OpenOS 1.8.9, cluster-storage on two machines. Chat's wrapped lines ARE seen: a 150-character message arrived on three rows, continuations aligned under the text, on both machines.
-
-### Publish.ps1's live check fails on a fresh-push 404
-
-*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-publish.ps1's LIVE CHECK FAILS ON A FRESH-PUSH 404. Once, right after a push, /usr/bin/share.lua read 404 by SHA and the dev check failed, so main was not attempted; a minute later the same URL was 200. Retry a 404 once or twice with a delay before calling it a problem. (That run also lost main for a second reason: an edit made while it ran tripped "release build is OLDER". Do not edit TOS-Dev during a publish.)
 
 ### SSH and share have never worked
 
@@ -648,22 +604,6 @@ WE ARE ALREADY HAND-ROLLING THE SPECIAL CASES THIS GENERALISES. The printer chec
 A NEW DEVICE NEEDS A KERNEL EDIT today: hal.lua is a fixed type -&gt; {address, proxy, tier, label} registry and tos/peripheral/ is three kernel modules. Extras ships mouse and printer as ordinary libraries in a "drivers" category, outside the cap system. A pkg-installed driver the kernel FINDS is strictly better, and etc/component\_caps.cfg + `component reload-caps` is already the authority half of the design.
 
 DO NOT COPY THEIR AUTHORITY RULE: "a process must use drivers unless it is admin" means root bypasses the abstraction. Our sandbox has no such escape and must not grow one. A driver is a BINDING mechanism (which code drives this device); the cap check stays where peripheral/redstone.lua:requireCap puts it.
-
-### Addressable local IPC
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-ADDRESSABLE LOCAL IPC. Fuchas' Libraries/ipc.lua (OETF #18) gives a process a socket to another PID -- ipc.socket(target, id) with write/read/closed, async in write, sync in read, built on per-process signals rather than the global queue. Plan9k has pipes/17\_ipc.lua.
-
-We have two things and neither is this: pipe.create() is an anonymous in-memory stream handed to a child at spawn (shell pipelines and redirection, 64 KB cap, #SEC M2), and notify.post is one-way to whichever human is looking. An rc.d service and an unrelated process cannot talk at all -- which is why the LOG WALL item has to ask "is the feed LOCAL or REMOTE?", and why the mesh gets reached for when both ends are on one machine. cluster-manager and mail's inbox tab are the same shape.
-
-event.lua is most of the way there: it already records the registering PID and spawn generation (#SEC H13, H31, M-11) and fires each listener under that PID's context. A targeted push is a small addition to machinery that already thinks in PIDs.
-
-IT MUST BE CAPABILITY-GATED, which theirs is not. "Send to any PID" is authority a sandboxed program should not have: unsolicited messages to a privileged service are an injection surface and PID scanning is an information leak. Shape: a service REGISTERS a named endpoint, callers hold an ipc.connect(&lt;name&gt;) cap. Never raw PIDs.
-
-Do not build it on the compat event queue: compat/event.lua deliberately blocks sensitive signal names, and IPC must not become the way around that filter.
-
-NOT A GAP, recorded so it is not re-investigated: Fuchas' PER-PROCESS SIGNAL QUEUES (computer.pushProcessSignal). The security half -- one process reading another's events -- is already handled at a different layer, where compat/event.lua blocks sensitive names outright and names keystroke-logging other seats and clipboard sniffing as the attacks. Only the addressable-IPC half above is missing.
 
 ### Next if still tight: i18n catalogs, and the display-layer work already queued in the OC…
 
@@ -905,8 +845,8 @@ SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be 
 - cluster-storage (d6963fb): a Master and a Storage Node on two machines exchanging STORE\_PUT and PUB frames -- that commit's own "not verified". The node needs a wired or Tier-2 modem.
 - chat's wrapped lines and mail's Sent: line (49dec7a): both SEEN, see FOUND RUNNING THE 2026-10 WORK.
 - the browser (web 1.0.0): SEEN 2026-10-26, and it had never worked. Its first fetch died: "pkg:web:36: attempt to call a nil value (field 'get')". web took require("internet"), which in the sandbox is OpenOS's library (request/socket/open); the kernel wrapper with get() is the `internet` GLOBAL. Its tests stubbed require("internet") with a get. Fixed in web 1.0.1 (pending re-sign); test\_web\_ui.lua's fake sandbox now has the real shape and fails 10 of 14 on 1.0.0. Then, from an unsigned scratch pack with --internet: http://info.cern.ch/ rendered with its heading, four numbered links and the references list; 1 + Enter opened TheProject.html, b came back, ^Q left. A LOCAL http server is not reachable: the card's filteringRules deny private addresses, and adding "allow 127.0.0.1" to a copy of the config disabled HTTP altogether in this Ocelot build -- so the run used a public page.
-- PaneUI (c8a76b9) on OpenOS 1.8.9; the runner booted OpenOS for e33d25c. PaneUI's tests check source grammar only, so its event loop and the new wrapText have never run.
-- bootstrap.lua end to end ("nothing ran bootstrap.lua end to end", e33d25c) from a local http server serving a TOS-Release tree.
+- PaneUI (c8a76b9) on OpenOS 1.8.9: SEEN 2026-10-31, see FOUND RUNNING THE 2026-10 WORK.
+- bootstrap.lua end to end (e33d25c): SEEN 2026-10-31 from the real GitHub, not a local server, see the same entry.
 
 ### GitHub, now that CI has run
 
@@ -918,19 +858,13 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
 
-### The build stamp has been -dirty, so no build-\* tag has been pushed since at least…
-
-*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-THE BUILD STAMP HAS BEEN -dirty, SO NO build-\* TAG HAS BEEN PUSHED SINCE AT LEAST 2026-10-26. usr/lib/tests/test\_install\_preinit.lua carries an uncommitted box-alignment edit from 2026-10-23, and buildStamp marks any uncommitted change under TOS-Dev. It is a test file the release does not ship, so the shipped code is the commit it names. Commit or drop the edit (the operator's; the session that made it is unknown) and the tags resume.
-
 ### Build the survey suggestions in this order, after the bugs
 
 *Planned* · from the round *The os-survey suggestions, scheduled (2026-10-26)*
 
 BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this list only once the open \[!\] entries and the bug entries in WHAT NOBODY WROTE DOWN are done or waiting on the operator. Each line points at the entry that holds the design; the design stays there, this is only the order and the reason. Ordered by what each unblocks, then by value to an operator against its cost.
 
-1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). First because two open bugs wait on it: the cluster CLIs' option (b) (\[!\] THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX) and rc-pilot hearing its robot (RC-PILOT CANNOT BE SET UP). A registered, cap-gated endpoint per service.
+1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). DONE 2026-11-01 (kernel/ipc.lua); the cluster CLIs use it. rc-pilot hearing its robot still waits on its own decision.
 2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). The floor: system\_manifest `floor = true` and the test that the floor is closed under require. Buildable and safe on its own (it deletes nothing), and it is what the Tier 1 gap (330 KB over a 1 MB drive, re-measured above) needs before any stripping UI can be honest. The UI and the strip itself come later.
 3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). One piece of work: log what the sandbox refuses, then a mode that logs instead of refusing. How the audit mode is exposed is an operator decision already batched; the log half needs none.
 4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). The split (minimal EEPROM, recovery UI in stage 2) is the shape that fits the 4 KiB budget bios.lua already strains. Needs a real-Minecraft or runner boot round to land.
