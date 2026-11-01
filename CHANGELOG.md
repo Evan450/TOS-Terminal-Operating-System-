@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 97 rounds of work:
+Everything since v1.5.0, in 98 rounds of work:
 
+- [package commands speak while they run](#package-commands-speak-while-they-run)
 - [programs hear their own modem ports](#programs-hear-their-own-modem-ports)
 - [users can look, admins can power off](#users-can-look-admins-can-power-off)
 - [boot checks the manifest anchor](#boot-checks-the-manifest-anchor)
@@ -119,6 +120,10 @@ Everything since v1.5.0, in 97 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### package commands speak while they run
+
+A package's command now shows its output as it runs. It used to appear all at once when the command ended, so `rc` asked for its secret with nothing on screen, and hid its key legend until you quit.
 
 ### programs hear their own modem ports
 

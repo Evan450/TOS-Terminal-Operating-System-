@@ -480,7 +480,22 @@ function M.build(S, deps)
           end
         end
       end
-      local ok2, err2 = pcall(fn, args, o)
+      --! A package command gets S.programIO as well. Its `o` was this buffer,
+      --! so everything it said appeared when it ended: rc's "Shared secret
+      --! for..." never showed while it waited for the secret, nor did its key
+      --! legend or a single pong until the pilot quit. Its env is built once
+      --! and shared, so the read hook goes on this shell's process for the
+      --! length of the call rather than in the env.
+      local out, me = o, nil
+      if foreignDraw and S._plainPath and S.programIO then
+        local stdout, beforeRead = S.programIO(o)
+        out = stdout
+        local okP, procMod = pcall(require, "kernel.process")
+        me = okP and type(procMod) == "table" and procMod.current and procMod.current() or nil
+        if me then me.beforeRead = beforeRead end
+      end
+      local ok2, err2 = pcall(fn, args, out)
+      if me then me.beforeRead = nil end
       if not ok2 then o("Error: " .. tostring(err2), T.error) end
       if foreignDraw then invalidateDisplay() end
       if fitted then
@@ -627,12 +642,12 @@ function M.build(S, deps)
     local plain = S._plainPath
     local live = plain and deps.liveLine or nil
     local echo = plain and deps.echoLine or nil
-    local function stdout(line)
+    local function stdout(line, color)
       if live then
-        live(line)
+        live(line, color)
         coopYield()
       else
-        o(line, S.T.fg)
+        o(line, color or S.T.fg)
         if echo then echo(line) end
       end
     end

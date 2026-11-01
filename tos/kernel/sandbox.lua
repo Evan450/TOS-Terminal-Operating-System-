@@ -1294,7 +1294,13 @@ local function makeSafeRequire(opts, prebound, envRef)
         -- See flushForRead in sandbox.build.
         local realRead = real.read
         mod.read = function(...)
-          if opts and opts.flushForRead then opts.flushForRead() end
+          if opts and opts.flushForRead then
+            opts.flushForRead()
+          else
+            -- A package command: its shell set this for the call.
+            local p = callerProcess()
+            if p and p.beforeRead then p.beforeRead("") end
+          end
           return realRead(...)
         end
       end

@@ -246,10 +246,9 @@ Honest and working, and what 1.2.1 documents. Do not fix the name rule alone: th
 
 SMALLER, FOUND BY THE SAME PASS. None loses data.
 
-- `rc`'s "Shared secret for ..." line is buffered with the rest of its output, so the masked prompt shows nothing until it returns. PATH programs and `run` are fixed (below); a PACKAGE COMMAND still gets the executor's buffering `o` and a sandbox with no beforeRead, so this is the one left. rc is the only package that prompts, and --secret works. The fix: hand package commands S.programIO too.
-
 DONE 2026-11-01, each seen on the machine or tested off-box:
 
+- A package command is heard while it runs. Its `o` was the executor's buffer, so rc's "Shared secret for ..." never showed while it waited, and its key legend and every pong stayed hidden until the pilot quit. It gets S.programIO now, with the read hook on the shell's process for the length of the call: a package's env is built once and shared, and the CLI's inputRow takes a row, so it can only run at a real read. SEEN with --chip: prompt, masked secret, legend and `pong` all on screen mid-flight, and W moved the robot. (test\_package\_output\_live)
 - A program's output is live, and a program can ask a question. This started as the rc line and was much wider: PATH programs and `run` held everything until they ended, so a long job looked dead, and a question written with no newline sat unseen while the read waited. S.programIO is the one route now. SEEN in both shells: `step 1` while the job ran, "Name:" and a masked "Secret:" answered, and the output whole at the end. Inside a pipe or a redirect the buffer is still the output.
 - event.pull("key\_down") answered nil at once. key\_down is on compat event's sensitive list, which exists to stop a LISTENER seeing other seats' keys, and it also blocked a program reading its own. Every OpenOS program waiting for a key was broken, and a timed wait did not wait. Inside a process it now takes the seat-routed path, the one computer.pullSignal already gives, so no new authority. listen keeps the ban. SEEN: 30 one-second waits used to take 3 s; now each waits, and q is heard. Found by running `cluster watch`, which spun, redrawing faster than a frame could finish.
 - A shell repaints when a program cleared the screen (term.\_screenTaken).

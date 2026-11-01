@@ -392,7 +392,7 @@ function M.run(ctx)
     showOutput     = function(wrapped, _label) viewBuffer(wrapped, nil) end,
     -- A running program's lines go straight to the teletype, and its typing
     -- gets the next row.
-    liveLine       = function(text) o(text) end,
+    liveLine       = function(text, color) o(text, color) end,
     repaint        = function() redraw() end,
     inputRow       = function()
       scroll()
