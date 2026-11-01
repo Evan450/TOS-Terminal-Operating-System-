@@ -2,7 +2,7 @@
 
 The operator's idea: like `warhead`, but for building. Read the site with a geolyzer, draw your own blueprints a slice at a time in a 2.5D designer, and have robots and drones build them.
 
-Status: the blueprint format, the designer, the build planner, the survey and the robot program exist as `prefab` 0.5.0 in `TOS-Extras/modules/prefab`. Site clearing is designed here and not built. A 0.x package stays off the Optional Utilities pack by rule, so nothing here needs signing yet.
+Status: the blueprint format, the designer, the build planner, the survey and the robot program exist as `prefab` 0.6.0 in `TOS-Extras/modules/prefab`. A 0.x package stays off the Optional Utilities pack by rule, so nothing here needs signing yet.
 
 ## What the hardware can do
 
@@ -93,6 +93,8 @@ The map shows the site from above against the chosen floor: `.` is ready, a digi
 
 **Fetching from a chest:** with `--chest` the robot starts empty, and a chest goes right behind where it starts. It stands on the chest and reads every slot, taking only what the rest of the build needs, by name and damage, so a chest shared with anything else is safe. It goes back whenever it runs out, and at the end it returns any leftovers and parks on the chest. The chest is outside the building, so the way there is clear at any height. This needs an inventory controller. If the chest runs short the robot waits on it and says what it wants. Export counts the trips by walking the same route, taking a stack as 64: anything that stacks lower only makes more trips.
 
+**Clearing the site:** with `--clear` as well, the robot empties the building's space first, top down, standing a block above each layer so it's always in cells it has already cleared. What `detect` calls solid or passable gets dug; tall grass and water stay, because a block can go straight in. Anything in its way on the route is dug through too, which is safe because the route is outside the building or above it. Debris goes in the same chest, so that should be a double chest, and it walks back to empty itself whenever its last slot is in use. When its tool wears out it takes anything named a pickaxe from the chest and equips it. This needs `--chest`: debris has to go somewhere, and a robot loaded by hand can't tell what it dug from what it was given.
+
 **When it can't go on:** a player or a flat battery gets 30 seconds of patience. After that, or for a block in the way or nothing to place against, it stops, says where, and saves its place in `/home/.prefab-state`. Running the file again carries on from there, and `fresh` as an argument starts over. A block already standing in a target cell is left alone and counted.
 
 **A hover problem is known in advance.** Export walks the same path as the robot, under OpenComputers' flight rule, and names the step that would need a hover upgrade.
@@ -103,10 +105,36 @@ How it was tested: `test_prefab_export.lua` runs the generated program against a
 
 Limits for now:
 
-- It has no tool, so it can't clear anything. A block in its path stops it.
+- It clears the building's space and its route, not the ground under the floor: a gap there still has to be filled by hand, or the floor chosen to avoid it.
+- Blocks over the building's top are left, so a tree's canopy stays until it decays.
 - Its place is only saved when it stops itself. If the power dies or the chunk unloads, it has lost its position, and the only recovery is standing it back in the corner with `fresh`.
 - After a finished build, running the file again builds again from wherever the robot is.
 - Blocks are placed facing however the robot's facing lands them, which is the open question below.
+
+## Building from parts
+
+Drawing is right for one building and wrong for a base. Nobody wants to draw the twelfth corridor, and two things drawn apart have no reason to line up. So `parts.lua` fixes a grid, and `base.lua` is a layout on it.
+
+**The grid:** a tile is 7 by 7 by 5 high. A doorway is the middle 3 cells of a tile's edge. That one rule is the whole design: any door meets any door, and because tiles are square a part can be turned and still sit on the grid.
+
+**A built-in part is only its plan,** the cells you can walk in. Walls are whatever touches the plan, and floor and roof run under and over both. So a new part is a few lines, and it can't disagree with the others about where a door is. Walls are one block thick and belong to their own part, so two rooms side by side stand wall to wall.
+
+**Your own blueprint is a part** if its footprint is whole tiles. Its doors are found by looking: air at door height, over a floor, at the middle of a tile's edge. Nothing has to be declared, so drawing a door is enough. A part you add is stored in the layout by its absolute path.
+
+**A layout compiles to one blueprint.** This is the decision that keeps the rest simple: the survey, the planner, the robot program, the chest and the links never learn that a base was assembled. `.base` files are recognised where a blueprint is loaded, in one place.
+
+```
+PREFABBASE1
+name Camp
+size 3 3
+block w minecraft:cobblestone 0 Cobblestone
+part cross 2 2 0
+part end 2 1 2
+```
+
+`part` is a name, the tile, and clockwise quarter turns. `block` overrides a role (`w` walls, `f` floor, `r` roof, `g` windows) for the built-in parts. A layout comes from other people, so like a blueprint it's parsed by hand and never executed. A part named by path is read as a blueprint, which is also only parsed.
+
+**The check** finds a door into a wall, a part cut off from the first one, and a base with no way in. A door with nothing past it counts as a way in.
 
 ## With the rest of the pack
 
@@ -121,8 +149,8 @@ A library from another package runs inside prefab's sandbox with prefab's capabi
 
 ## Still to build, in order
 
-1. **Clearing the site**, before anything is placed.
-2. **Drones as couriers.**
+1. **Drones as couriers.**
+2. **Bases with more than one floor,** once blocks can face a set way: a staircase needs that.
 3. **In a real world:** nothing above reaches 1.0.0 until a robot has built something in one.
 
 ## Open questions

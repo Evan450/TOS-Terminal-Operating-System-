@@ -112,6 +112,19 @@ function E.walk(bp, steps, opts)
     left[s[4]] = (left[s[4]] or 0) + 1
     carried[s[4]] = 0
   end
+  if opts.clear then
+    -- The same sweep as clearSite(): top down, back and forth, and the rows
+    -- run the other way each layer, so no layer starts with a walk.
+    local left = true
+    for layer = bp.sy, 1, -1 do
+      local down = (bp.sy - layer) % 2 == 1
+      for r = 1, bp.sz do
+        local tz = down and (bp.sz - r + 1) or r
+        for c = 1, bp.sx do travel(left and c or (bp.sx - c + 1), layer + 1, tz) end
+        left = not left
+      end
+    end
+  end
   for i, s in ipairs(steps) do
     n = i
     local k = s[4]
@@ -150,11 +163,12 @@ local STOP = {}                    -- thrown by stop()
 -- Where the robot is, in the blueprint's cells: it starts in the corner of
 -- the first layer. dir is 0 ahead, 1 right, 2 back, 3 left of how it stood.
 local x, y, z, dir, at, placed, there = 1, 1, 1, 0, 1, 0, 0
+local cleared = 0                  -- cells of the site dealt with so far
 
 local function save()
   local f = io.open(STATE, "w")
   if not f then return false end
-  f:write(NAME, "\n", x, " ", y, " ", z, " ", dir, " ", at, " ", placed, " ", there, "\n")
+  f:write(NAME, "\n", x, " ", y, " ", z, " ", dir, " ", at, " ", placed, " ", there, " ", cleared, "\n")
   f:close()
   return true
 end
@@ -166,10 +180,10 @@ local function load_state()
   local line = f:read("*l")
   f:close()
   if name ~= NAME or not line then return false end
-  local a, b, c, d, e, g, h = line:match("^(%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+)$")
+  local a, b, c, d, e, g, h, i = line:match("^(%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+) (%d+)$")
   if not a then return false end
-  x, y, z, dir, at, placed, there = tonumber(a), tonumber(b), tonumber(c), tonumber(d),
-    tonumber(e), tonumber(g), tonumber(h)
+  x, y, z, dir, at, placed, there, cleared = tonumber(a), tonumber(b), tonumber(c), tonumber(d),
+    tonumber(e), tonumber(g), tonumber(h), tonumber(i)
   return true
 end
 
@@ -180,7 +194,24 @@ local function stop(why)
   error(STOP, 0)
 end
 
---- Move one cell, waiting out a player, a mob, or a flat battery.
+--- Break what is on this side, if it is the kind of thing that has to go.
+--- A replaceable block (tall grass) and a liquid stay: a block can go
+--- straight in. Returns whether anything was broken.
+local function dig(side)
+  local _, what = robot.detect(side)
+  if what ~= "solid" and what ~= "passable" then return false end
+  for _ = 1, 5 do
+    robot.swing(side)
+    _, what = robot.detect(side)
+    if what ~= "solid" and what ~= "passable" then return true end
+    os.sleep(0.5)
+  end
+  stop("cannot break the block here: it may be unbreakable, or need a better tool")
+end
+
+--- Move one cell, waiting out a player, a mob, or a flat battery. With
+--- clearing on, what is in the way is dug: the route is outside the building
+--- or above it, so whatever is there is not the building.
 local function go(side)
   local waited = 0
   while true do
@@ -190,9 +221,11 @@ local function go(side)
       stop("too high to fly here: this robot needs a hover upgrade")
     end
     if why ~= "already moving" then
-      waited = waited + 1
-      if waited > PATIENCE then stop("cannot move: " .. tostring(why)) end
-      os.sleep(1)
+      if not (CLEAR and why ~= "entity" and dig(side)) then
+        waited = waited + 1
+        if waited > PATIENCE then stop("cannot move: " .. tostring(why)) end
+        os.sleep(1)
+      end
     end
   end
 end
@@ -226,6 +259,29 @@ local function holds(slot, b)
   return s ~= nil and s.name == b[1] and s.damage == b[2]
 end
 
+--- Empty into the chest under the robot. With `keep`, whatever a slot is
+--- meant to hold stays, and only debris goes.
+local function purge(keep)
+  local mine = {}
+  for key, list in pairs(SLOTS) do
+    for _, s in ipairs(list) do mine[s] = BLOCKS[key] end
+  end
+  local told = false
+  for s = 1, robot.inventorySize() do
+    while robot.count(s) > 0 and not (keep and mine[s] and holds(s, mine[s])) do
+      robot.select(s)
+      if not robot.drop(DOWN) then
+        if not told then
+          told = true
+          print("The chest is full: empty some of it.")
+          computer.beep(800, 0.3)
+        end
+        os.sleep(5)
+      end
+    end
+  end
+end
+
 --- Stand over the chest and take what the rest of the build still needs,
 --- by name and damage, leaving everything else in it alone. The chest sits
 --- behind where the robot started, outside the building, so the way there
@@ -234,6 +290,7 @@ local function restock()
   travel(0, 2, 1)
   local size = ic.getInventorySize(DOWN)
   if not size then stop("no chest under the robot: it goes right behind where the robot started") end
+  if CLEAR then purge(true) end
   local want = {}
   for i = at, TOTAL do
     local k = STEPS:sub(i * 4, i * 4)
@@ -278,7 +335,7 @@ local function take(key)
         wrong = true
       end
     end
-    if CHEST and not wrong and not stocked then
+    if CHEST and (CLEAR or not wrong) and not stocked then
       restock()
       stocked = true
     else
@@ -314,6 +371,68 @@ local function put(tx, ty, tz)
   end
 end
 
+--- A spare from the chest, for a robot with no tool: anything named a
+--- pickaxe. Waits there for one, because digging by hand can take minutes
+--- a block.
+local function fetchTool()
+  travel(0, 2, 1)
+  local told = false
+  while true do
+    purge(false)
+    local size = ic.getInventorySize(DOWN) or 0
+    for cs = 1, size do
+      local st = ic.getStackInSlot(DOWN, cs)
+      if st and tostring(st.name):find("pickaxe", 1, true) then
+        robot.select(1)
+        ic.suckFromSlot(DOWN, cs, 1)
+        ic.equip()
+        return
+      end
+    end
+    if not told then
+      told = true
+      print("Clearing needs a pickaxe: put one in the chest, or in the tool slot.")
+      computer.beep(800, 0.3)
+    end
+    os.sleep(5)
+  end
+end
+
+local function needsTool()
+  local left, why = robot.durability()
+  return left == nil and tostring(why):find("no tool", 1, true) ~= nil
+end
+
+--- Empty the building's space, top down, standing a block above each layer
+--- so the robot is always in cells it has already cleared. Rows run back and
+--- forth, and the other way each layer, so no layer starts with a walk.
+local function clearSite()
+  local n, left = 0, true
+  for layer = SY, 1, -1 do
+    local down = (SY - layer) % 2 == 1
+    for r = 1, SZ do
+      local tz = down and (SZ - r + 1) or r
+      for c = 1, SX do
+        n = n + 1
+        if n > cleared then
+          if needsTool() then fetchTool() end
+          -- The last slot in use means the next block may have nowhere to go.
+          if robot.count(robot.inventorySize()) > 0 then
+            travel(0, 2, 1)
+            purge(false)
+            robot.select(1)
+          end
+          travel(left and c or (SX - c + 1), layer + 1, tz)
+          dig(DOWN)
+          cleared = n
+        end
+      end
+      left = not left
+    end
+    print("Cleared layer " .. layer .. " of " .. SY)
+  end
+end
+
 local function main(...)
   if (...) == "fresh" then os.remove(STATE)
   elseif load_state() then print("Carrying on from step " .. at .. " of " .. TOTAL .. ".") end
@@ -321,6 +440,7 @@ local function main(...)
     stop("this needs " .. MAXSLOT .. " inventory slots and the robot has " .. robot.inventorySize())
   end
   if CHEST and not ic then stop("taking from a chest needs an inventory controller") end
+  if CLEAR then clearSite() end
   local layer = nil
   while at <= TOTAL do
     local i = (at - 1) * 4
@@ -353,12 +473,16 @@ if not ok and err ~= STOP then error(err, 0) end
 --- would end the comment and leave the rest of the line as code.
 local function plain(s) return (tostring(s):gsub("%c", " ")) end
 
---- The program for a blueprint. opts.slots is the robot's inventory, and
---- opts.chest has it fetch from a chest instead of being loaded by hand.
+--- The program for a blueprint. opts.slots is the robot's inventory,
+--- opts.chest has it fetch from a chest instead of being loaded by hand, and
+--- opts.clear has it empty the building's space first.
 --- Returns source and a table describing it, or nil and why.
 function E.program(bp, opts)
   opts = opts or {}
   local total = opts.slots or 16
+  -- Debris has to go somewhere, and a robot loaded by hand has no way to
+  -- tell what it dug from what it was given.
+  if opts.clear and not opts.chest then return nil, "clearing needs a chest for the debris: add --chest" end
   local steps, floating = P.order(bp)
   if #floating > 0 then
     local f = floating[1]
@@ -410,13 +534,16 @@ function E.program(bp, opts)
   head[#head + 1] = "}"
   head[#head + 1] = string.format("local TOTAL, LAYERS, MAXSLOT = %d, %d, %d", #steps, bp.sy, maxSlot)
   head[#head + 1] = "local CHEST = " .. tostring(opts.chest == true)
+  head[#head + 1] = "local CLEAR = " .. tostring(opts.clear == true)
+  head[#head + 1] = string.format("local SX, SY, SZ = %d, %d, %d", bp.sx, bp.sy, bp.sz)
   -- x, y, z and the key, a character each.
   head[#head + 1] = string.format("local STEPS = %q", table.concat(encoded))
 
-  local moves, turns, hover, trips = E.walk(bp, steps, { chest = opts.chest, map = map })
+  local moves, turns, hover, trips = E.walk(bp, steps, { chest = opts.chest, clear = opts.clear, map = map })
   return table.concat(head, "\n") .. "\n--[[DATA]]\n" .. BODY, {
     steps = #steps, moves = moves, turns = turns, hover = hover, loads = loads, sheet = sheet,
-    chest = opts.chest == true, trips = trips,
+    chest = opts.chest == true, trips = trips, clear = opts.clear == true,
+    site = opts.clear and (bp.sx * bp.sy * bp.sz) or 0,
     energy = moves * E.MOVE_ENERGY + turns * E.TURN_ENERGY,
     seconds = math.ceil((moves + turns + #steps) * E.DELAY),
   }

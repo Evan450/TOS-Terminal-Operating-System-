@@ -626,6 +626,10 @@ do
   test("--chest says what goes in the chest", has(chest, "Put a chest right behind the robot"), chest)
   test("...and what the robot needs", has(chest, "needs an inventory controller"), chest)
   test("...and writes a program that fetches", has(fx.files["/c.lua"], "local CHEST = true"))
+  local cleared = fx.run({ "export", "/hut.bp", "/k.lua", "--chest", "--clear" })
+  test("--clear says how much, and what it takes", has(cleared, "clears 30 cells first") and has(cleared, "pickaxe"), cleared)
+  test("...and where the debris goes", has(cleared, "double chest"), cleared)
+  test("--clear without --chest is refused", has(fx.run({ "export", "/hut.bp", "/k.lua", "--clear" }), "add --chest"))
   test("an unknown option is named", has(fx.run({ "export", "/hut.bp", "/x.lua", "--fast" }), "--fast"))
   test("it says what it needs", has(fx.run({ "export", "/hut.bp" }), "prefab export <file.bp>"))
   test("a missing blueprint says so", has(fx.run({ "export", "/no.bp", "/x.lua" }), "no such file"))
@@ -635,6 +639,90 @@ do
   test("a floating block refuses the export", has(fx2.run({ "export", "/t.bp", "/x.lua" }), "float"))
   local fx3 = machine({ files = { ["/hut.bp"] = HUT }, writeError = "disk full" })
   test("a failed write says so", has(fx3.run({ "export", "/hut.bp", "/x.lua" }), "Not saved: disk full"))
+end
+
+do
+  -- A base, the whole way through.
+  local BASE = "PREFABBASE1\nname Outpost\nsize 2 2\npart hall 1 1 0\npart room 1 2 0\n"
+  local fx = machine({ files = { ["/o.base"] = BASE } })
+  test("parts are listed", has(fx.run({ "parts" }), "hall") and has(fx.run({ "parts" }), "doors N E S W"), fx.run({ "parts" }))
+  local wrong = machine({ files = { ["/w.base"] = "PREFABBASE1\nsize 1 2\npart hall 1 1 0\npart room 1 2 2\n" } })
+  test("check says what is wrong", has(wrong.run({ "check", "/w.base" }), "has a door S into the wall of the room"), wrong.run({ "check", "/w.base" }))
+  local empty = machine({ files = { ["/e.base"] = "PREFABBASE1\nsize 2 2\n" } })
+  test("an empty base is not a good one", has(empty.run({ "check", "/e.base" }), "no parts yet"), empty.run({ "check", "/e.base" }))
+  local good = machine({ files = { ["/g.base"] = "PREFABBASE1\nname Good\nsize 1 2\npart hall 1 1 0\npart room 1 2 0\n" } })
+  test("a good layout is called good", has(good.run({ "check", "/g.base" }), "Good: Nothing wrong: 1 way in"), good.run({ "check", "/g.base" }))
+  test("compile writes a blueprint", has(good.run({ "compile", "/g.base", "/g.bp" }), "Wrote /g.bp: 7x5x14"), good.files["/g.bp"])
+  test("...that parses", B.parse(good.files["/g.bp"] or "") ~= nil)
+  test("a base works where a blueprint does: info", has(good.run({ "info", "/g.base" }), "Good: 7x5x14"), good.run({ "info", "/g.base" }))
+  test("...and export", has(good.run({ "export", "/g.base", "/b.lua", "--chest", "--clear" }), "Wrote /b.lua"), good.run({ "export", "/g.base", "/b.lua", "--chest", "--clear" }))
+  test("...and what it writes runs", load(good.files["/b.lua"] or "") ~= nil)
+  test("a bad size for a base says so", has(fx.run({ "base", "0", "1" }), "1 to 9 tiles"))
+  test("compile wants a target", has(good.run({ "compile", "/g.base" }), "prefab compile"))
+  test("check wants a file", has(good.run({ "check" }), "Which base?"))
+  test("a missing base says so", has(good.run({ "check", "/no.base" }), "no such file"))
+end
+
+do
+  -- The layout designer, driven by keys.
+  local keys = script(
+    { SPACE },                              -- hall at 1,1
+    { DOWN }, { TAB, TAB, TAB, TAB, TAB, TAB },  -- to room
+    { char("r"), char("r") },               -- turn what is in hand, on an empty tile
+    { SPACE },                              -- room at 1,2, turned 2: door S
+    { char("c") }, { SPACE },
+    { char("s") }, typed("/l.base"), { ENTER },
+    { QUIT })
+  local fx = machine({ keys = keys })
+  local ok, err = pcall(fx.run, { "base", "3", "3", "Camp" })
+  test("the layout designer runs", ok, err)
+  test("it says what it is", has(fx.screens[1], "PREFAB BASE  Camp") and has(fx.screens[1], "3 by 3 tiles"))
+  test("it lists the parts", has(fx.screens[1], "hall") and has(fx.screens[1], "cross"))
+  test("it shows a part's doors", has(fx.screens[1], "Doors: N S"), fx.screens[1])
+  test("a placed part shows on its tile, with door gaps", has(fx.screens[3], "┌─  ─┐"), fx.screens[3])
+  test("...and its name", has(fx.screens[3], "hall"))
+  local text = fx.files["/l.base"]
+  test("it saves a base", text ~= nil and has(text, "part hall 1 1 0") and has(text, "part room 1 2 2"), text)
+  test("the check is one key away", first(fx, "╡ Check ╞") ~= nil)
+  test("...and finds what is wrong", has(first(fx, "╡ Check ╞"), "door"), first(fx, "╡ Check ╞"))
+end
+
+do
+  -- A tile that is taken, removing, and the mouse.
+  local keys = {
+    SPACE, SPACE,                           -- the second is refused
+    DEL,                                    -- gone
+    { "touch", "scr", 8, 3, 0, "p" },       -- click tile 2,1: places
+    { "touch", "scr", 8, 3, 1, "p" },       -- right click: removes
+    { "touch", "scr", 1, 3, 0, "p" },       -- click tile 1,1: places
+    char("s") }
+  for _, k in ipairs(typed("/m.base")) do keys[#keys + 1] = k end
+  keys[#keys + 1] = ENTER
+  keys[#keys + 1] = QUIT
+  local fx = machine({ keys = keys })
+  local ok, err = pcall(fx.run, { "base", "2", "2" })
+  test("keys and the mouse both lay parts", ok, err)
+  test("a taken tile is refused, and says how to clear it", first(fx, "Del clears it") ~= nil)
+  local text = fx.files["/m.base"] or ""
+  test("the right button removes, and the left places", has(text, "part hall 1 1 0") and not has(text, "part hall 2 1"), text)
+end
+
+do
+  -- A part wider than what is left is refused, not half placed.
+  local keys = script({ RIGHT }, { char("a") }, typed("/nope.bp"), { ENTER }, { QUIT })
+  local fx = machine({ keys = keys })
+  pcall(fx.run, { "base", "2", "2" })
+  test("a part file that is not there says so", first(fx, "cannot read /nope.bp") ~= nil)
+  local tall = {}
+  for _ = 1, 10 do tall[#tall + 1] = TAB end
+  local big = script(tall, { SPACE }, { QUIT })
+  local fx2 = machine({ keys = big })
+  pcall(fx2.run, { "base", "1", "1" })
+  test("a part too big for the base is refused", first(fx2, "runs off the base") ~= nil, fx2.screens[#fx2.screens])
+  local mono = machine({ depth = 1, W = 50, H = 16, keys = { SPACE, QUIT, char("y") } })
+  local ok, err = pcall(mono.run, { "base", "4", "4" })
+  test("tier 1 at its smallest runs", ok, err)
+  test("...drawing plain characters", not has(mono.screens[#mono.screens - 1] or "", "┌"))
 end
 
 do

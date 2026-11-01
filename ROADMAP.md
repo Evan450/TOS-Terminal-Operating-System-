@@ -1045,4 +1045,8 @@ LINKS BUILT 2026-10-31 (test\_prefab\_links.lua, against the real stock, printer
 
 OTHER PAIRS WORTH LINKING, not done: web showing &lt;img&gt; through pic; stock's listing through printer, or to CSV for calc; warhead's reports through printer.
 
-NEXT, in order: clearing the site, drones, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc.
+CLEARING BUILT 2026-10-31 (test\_prefab\_export.lua 90 -&gt; 124): export --chest --clear empties the building's space top down, digs through its route, leaves replaceable blocks and liquids, empties itself at the chest, and takes spare pickaxes from it. SEEN under real OpenOS with --robot-rubbish: dug 4 blocks, dropped 4, took 40 and 2, 42 of 42 right. It does not fill gaps under the floor.
+
+PARTS BUILT 2026-10-31 (test\_prefab\_base.lua, 88; test\_prefab.lua, 188): 7x7x5 tiles, a door the middle 3 of an edge, 11 parts, turning, your own blueprint as a part with its doors found by looking, a .base layout that compiles to one blueprint, so every command takes it. `prefab base` opens a tile designer with keys and mouse. SEEN on a booted TOS: 5 parts placed and turned by keys, checked, saved, reopened, 21x5x21, 705 blocks, exported. SEEN under real OpenOS: a hall and a room compiled into one, built with the real export: 273 of 273 cells in the right place, no doubles, 482 moves.
+
+NEXT, in order: drones, floors over floors, then a real world. Blocks with a facing (stairs, doors) are an open question, in the doc, and multi-floor bases wait on it.

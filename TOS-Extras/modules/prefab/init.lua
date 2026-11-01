@@ -18,118 +18,20 @@ local P = require("prefab.plan")
 local G = require("prefab.survey")
 local E = require("prefab.export")
 local L = require("prefab.links")
+local Base = require("prefab.base")
+local Parts = require("prefab.parts")
 
 local V = {}   -- exported for test_prefab.lua
 
--- ── Keys ───────────────────────────────────────────────────────────────
-local KEYS do local okK, m = pcall(require, "shell.keys"); KEYS = okK and m or nil end
-local function isQuit(ch, code)
-  if KEYS and KEYS.is then return KEYS.is("quit", ch, code) end
-  return ch == 17 or code == 68 or code == 1
-end
-local function quitLabel()
-  if KEYS and KEYS.label then
-    local l = KEYS.label("quit")
-    if l ~= "" then return l end
-  end
-  return "^Q"
-end
-local K = { ENTER = 28, BACK = 14, DEL = 211, TAB = 15, UP = 200, DOWN = 208,
-            LEFT = 203, RIGHT = 205, PGUP = 201, PGDN = 209 }
-
--- ── Text that measures in screen columns ───────────────────────────────
-local function ulen(s)
-  local n = 0
-  for i = 1, #s do
-    local b = s:byte(i)
-    if b < 0x80 or b >= 0xC0 then n = n + 1 end
-  end
-  return n
-end
-local function usub(s, a, b)
-  local starts, n = {}, 0
-  for i = 1, #s do
-    local by = s:byte(i)
-    if by < 0x80 or by >= 0xC0 then n = n + 1; starts[n] = i end
-  end
-  starts[n + 1] = #s + 1
-  a, b = math.max(1, a), math.min(n, b)
-  if a > b then return "" end
-  return s:sub(starts[a], starts[b + 1] - 1)
-end
-local function pad(s, n)
-  s = tostring(s or "")
-  local w = ulen(s)
-  if w > n then return usub(s, 1, n) end
-  return s .. string.rep(" ", n - w)
-end
-
---- The key bar: hints that fit whole, and the way out always last.
-function V.fitKeys(hints, out, width)
-  local sep = " \194\183 "
-  local kept = {}
-  for _, h in ipairs(hints) do
-    kept[#kept + 1] = h
-    if ulen(table.concat(kept, sep) .. sep .. out) > width then kept[#kept] = nil; break end
-  end
-  if #kept == 0 then return out end
-  return table.concat(kept, sep) .. sep .. out
-end
-
---- Plain word wrap.
-function V.wrap(text, width)
-  local out, line = {}, ""
-  for word in tostring(text):gmatch("%S+") do
-    if line == "" then line = word
-    elseif ulen(line) + 1 + ulen(word) <= width then line = line .. " " .. word
-    else out[#out + 1] = line; line = word end
-  end
-  if line ~= "" then out[#out + 1] = line end
-  return out
-end
+local U = require("prefab.tui").new(component, computer, (function()
+  local okK, m = pcall(require, "shell.keys")
+  return okK and m or nil
+end)())
+local isQuit, quitLabel, K = U.isQuit, U.quitLabel, U.K
+local ulen, pad = U.ulen, U.pad
+V.fitKeys, V.wrap = U.fitKeys, U.wrap
 
 V.KEY_LINES = { "R Rect  C Copy", "V Paste U Undo", "A Add   M Report", "S Save  O Open" }
-
--- ── The screen ─────────────────────────────────────────────────────────
---- Eight colours a block can be told apart by. Tier 1 has none, so there
---- a block is its letter, reversed.
-local T3_BLOCKS = { 0xB0B0B0, 0xC08040, 0x60C0FF, 0x60C060, 0xE06060, 0xE0C040, 0xC060E0, 0x40C0B0 }
-local T2_BLOCKS = { 0xCCCCCC, 0xFFCC33, 0x6699FF, 0x33CC33, 0xFF3333, 0xFFFF33, 0xCC66CC, 0x336699 }
-
-local function screen()
-  local addr = component.list and component.list("gpu")()
-  if not addr then return nil, "no GPU" end
-  local okG, gpu = pcall(component.proxy, addr)
-  if not okG or not gpu then return nil, "cannot open the GPU" end
-  local Wd, Ht = gpu.getResolution()
-  if not Wd or Wd < 50 or Ht < 16 then
-    return nil, string.format("the designer needs 50x16 (this one is %sx%s)", tostring(Wd), tostring(Ht))
-  end
-  local okD, depth = pcall(gpu.getDepth)
-  local tier = (okD and type(depth) == "number") and (depth <= 1 and 1 or (depth <= 4 and 2 or 3)) or 1
-  local T = (tier == 1) and {
-    fg = 0xFFFFFF, dim = 0xFFFFFF, bg = 0x000000, border = 0xFFFFFF, title = 0xFFFFFF,
-    hi = 0xFFFFFF, warn = 0xFFFFFF, selfg = 0x000000, selbg = 0xFFFFFF,
-  } or {
-    fg = 0xFFFFFF, dim = tier == 2 and 0x333333 or 0x666666, bg = 0x000000,
-    border = tier == 2 and 0x6699FF or 0x00C0FF, title = tier == 2 and 0xFFFF33 or 0xFFFF00,
-    hi = tier == 2 and 0x33CC33 or 0x00FF00, warn = tier == 2 and 0xFF3333 or 0xFF4040,
-    selfg = 0x000000, selbg = 0xFFFFFF,
-  }
-  local S = { W = Wd, H = Ht, tier = tier, T = T, gpu = gpu, mono = tier == 1,
-              blocks = tier == 2 and T2_BLOCKS or T3_BLOCKS }
-  function S.set(x, y, s, fg, bg)
-    if fg then pcall(gpu.setForeground, fg) end
-    if bg then pcall(gpu.setBackground, bg) end
-    pcall(gpu.set, x, y, s)
-  end
-  function S.fill(x, y, w, h, ch, fg, bg)
-    if fg then pcall(gpu.setForeground, fg) end
-    if bg then pcall(gpu.setBackground, bg) end
-    pcall(gpu.fill, x, y, w, h, ch or " ")
-  end
-  return S
-end
 
 --! The sandbox's fs.writeFile refuses by returning false and a reason, not
 --! by throwing, so `pcall` alone calls a refused write a success, and its
@@ -144,10 +46,24 @@ end
 
 local function saveFile(path, bp) return writeFile(path, B.serialize(bp)) end
 
+--- A file's text, or nil: how a base reaches a part of your own.
+local function readText(path)
+  if not (fs and fs.exists and fs.exists(path)) then return nil end
+  local ok, data = pcall(fs.readFile, path)
+  if ok and type(data) == "string" then return data end
+end
+
+--! A base compiles here, so everything that loads a blueprint takes a base
+--! and none of it needs to know: survey, export, need, print, csv.
 local function loadFile(path)
   if not (fs and fs.exists and fs.exists(path)) then return nil, "no such file: " .. path end
-  local ok, data = pcall(fs.readFile, path)
-  if not ok or type(data) ~= "string" then return nil, "cannot read " .. path end
+  local data = readText(path)
+  if not data then return nil, "cannot read " .. path end
+  if Base.is(data) then
+    local base, err = Base.parse(data)
+    if not base then return nil, err end
+    return Base.compile(base, readText)
+  end
   return B.parse(data)
 end
 
@@ -180,16 +96,8 @@ function V.reportLines(bp, slots)
   return lines
 end
 
-local function pullEvent()
-  local e = { computer.pullSignal() }
-  if e[1] == "key_down" then return "key", e[3], e[4] end
-  if e[1] == "interrupted" then return "key", 17, nil end
-  if e[1] == "touch" or e[1] == "drag" then return "mouse", e[3], e[4], e[5], e[1] end
-  return e[1]
-end
-
 local function ui(o, bp, path)
-  local S, why = screen()
+  local S, why = U.screen()
   if not S then o("prefab: " .. why .. ". The commands still work: prefab help", 0xFF6600); return end
   local T, Wd, Ht = S.T, S.W, S.H
   local PANEL = math.min(24, math.floor(Wd * 0.34))
@@ -334,79 +242,8 @@ local function ui(o, bp, path)
     draw()
   end
 
-  -- ── Pop-ups, in the shell's dialog style ───────────────────────────
-  local function box(title, x, y, w, h)
-    local mono = S.mono
-    local hz, vt = mono and "=" or "═", mono and "|" or "║"
-    if not mono then
-      S.set(x + 1, y + h, string.rep(" ", w), T.bg, 0x1A1A1A)
-      S.fill(x + w, y + 1, 1, h, " ", T.bg, 0x1A1A1A)
-    end
-    local inner = string.rep(hz, w - 2)
-    S.set(x, y, (mono and "+" or "╔") .. inner .. (mono and "+" or "╗"), T.border, T.bg)
-    S.set(x, y + h - 1, (mono and "+" or "╚") .. inner .. (mono and "+" or "╝"), T.border, T.bg)
-    S.fill(x, y + 1, 1, h - 2, vt, T.border, T.bg)
-    S.fill(x + w - 1, y + 1, 1, h - 2, vt, T.border, T.bg)
-    S.fill(x + 1, y + 1, w - 2, h - 2, " ", T.fg, T.bg)
-    local label = pad(title, math.min(ulen(title), w - 6))
-    S.set(x + math.floor((w - ulen(label) - 4) / 2), y,
-      (mono and "[ " or "╡ ") .. label .. (mono and " ]" or " ╞"), T.title, T.bg)
-  end
-
-  local function popup(title, lines, hint, rows)
-    draw()
-    local w = math.min(Wd - 6, 64)
-    local n = math.min(#lines, Ht - 6 - rows)
-    local h = n + rows + 4
-    local x, y = math.floor((Wd - w) / 2) + 1, math.floor((Ht - h) / 2) + 1
-    box(title, x, y, w, h)
-    for i = 1, n do S.set(x + 2, y + i, pad(lines[i][1], w - 4), tone(lines[i][2]), T.bg) end
-    S.set(x + 2, y + h - 2, pad(hint, w - 4), T.dim, T.bg)
-    return x, y + n + 1, w
-  end
-
-  local function nextKey()
-    while true do
-      local kind, a, b = pullEvent()
-      if kind == "key" then return a, b end
-    end
-  end
-
-  local function prompt(title, label, initial)
-    local buf = tostring(initial or "")
-    local fresh = buf ~= ""              -- the first letter typed replaces it
-    local x, y, w = popup(title, { { label, "fg" } }, "Enter OK · " .. quitLabel() .. " cancel", 1)
-    while true do
-      local line = buf .. "_"
-      local over = ulen(line) - (w - 4)
-      if over > 0 then line = usub(line, over + 1, ulen(line)) end
-      S.set(x + 2, y, pad(line, w - 4), T.title, T.bg)
-      local ch, code = nextKey()
-      if code == K.ENTER then return buf end
-      if isQuit(ch, code) then return nil end
-      if code == K.BACK then buf = buf:sub(1, -2)
-      elseif ch and ch >= 32 and ch < 127 then
-        if fresh then buf = "" end
-        buf = buf .. string.char(ch)
-      end
-      fresh = false
-    end
-  end
-
-  local function yesNo(question)
-    local lines = {}
-    for _, l in ipairs(V.wrap(question, 56)) do lines[#lines + 1] = { l, "warn" } end
-    popup("Confirm", lines, "Y Yes · N No", 0)
-    while true do
-      local ch, code = nextKey()
-      if isQuit(ch, code) then return false end
-      if ch and ch > 0 then
-        local c = string.char(ch):lower()
-        if c == "y" then return true end
-        if c == "n" then return false end
-      end
-    end
-  end
+  local kit = U.kit(S, draw)
+  local popup, nextKey, prompt, yesNo = kit.popup, kit.nextKey, kit.prompt, kit.yesNo
 
   local function addBlock()
     local ch = B.freeKey(bp)
@@ -456,7 +293,7 @@ local function ui(o, bp, path)
 
   draw()
   while true do
-    local kind, ch, code, button, how = pullEvent()
+    local kind, ch, code, button, how = U.pullEvent()
     local redraw = true
     if kind == "tos_focus" then draw(); redraw = false
     elseif kind == "mouse" then
@@ -636,9 +473,10 @@ local function cliSurvey(args, o)
 end
 
 -- ── Export ─────────────────────────────────────────────────────────────
---- `prefab export`'s words. Returns in, out, slots and chest, or nil and why.
+--- `prefab export`'s words. Returns in, out, slots, chest and clear, or nil
+--- and why.
 function V.parseExport(args)
-  local pos, slots, chest = {}, 16, false
+  local pos, slots, chest, clear = {}, 16, false, false
   local i = 2
   while i <= #args do
     local a = args[i]
@@ -650,6 +488,9 @@ function V.parseExport(args)
     elseif a == "--chest" then
       chest = true
       i = i + 1
+    elseif a == "--clear" then
+      clear = true
+      i = i + 1
     elseif a:sub(1, 2) == "--" then
       return nil, "unknown option " .. a
     else
@@ -657,8 +498,8 @@ function V.parseExport(args)
       i = i + 1
     end
   end
-  if #pos ~= 2 then return nil, "prefab export <file.bp> <out.lua> [--slots N] [--chest]" end
-  return pos[1], pos[2], slots, chest
+  if #pos ~= 2 then return nil, "prefab export <file.bp> <out.lua> [--slots N] [--chest] [--clear]" end
+  return pos[1], pos[2], slots, chest, clear
 end
 
 --- What to tell whoever is about to carry the program to a robot.
@@ -671,6 +512,10 @@ function V.exportLines(path, info)
       lines[#lines + 1] = { string.format("  %5d  %s", l.count, l.label), "fg" }
     end
     lines[#lines + 1] = { string.format("It needs an inventory controller, and makes %d trip(s) to the chest.", info.trips), "dim" }
+    if info.clear then
+      lines[#lines + 1] = { string.format("It clears %d cells first, plus the time to dig them, so it needs a pickaxe.", info.site), "warn" }
+      lines[#lines + 1] = { "Debris goes in the chest: use a double chest, and put spare pickaxes in it.", "dim" }
+    end
   else
     lines[#lines + 1] = { "Load the robot:", "fg" }
     for _, l in ipairs(info.sheet) do
@@ -690,11 +535,11 @@ end
 
 local function cliExport(args, o)
   local colours = { hi = 0x55FF55, fg = 0xFFFFFF, dim = 0xAAAAAA, warn = 0xFF5555 }
-  local src, dest, slots, chest = V.parseExport(args)
+  local src, dest, slots, chest, clear = V.parseExport(args)
   if not src then o(dest, 0xFF5555); return end
   local bp, err = loadFile(src)
   if not bp then o(tostring(err), 0xFF5555); return end
-  local program, info = E.program(bp, { slots = slots, chest = chest })
+  local program, info = E.program(bp, { slots = slots, chest = chest, clear = clear })
   if not program then o("Cannot export: " .. tostring(info), 0xFF5555); return end
   local ok, wErr = writeFile(dest, program)
   if not ok then o("Not saved: " .. tostring(wErr), 0xFF5555); return end
@@ -813,12 +658,61 @@ local function help(o)
   o("  prefab info <file.bp> [slots]  what it takes to build", 0xFFFFFF)
   o("  prefab survey <file.bp>      read the site with a geolyzer", 0xFFFFFF)
   o("  prefab survey <w> <d> [--height N] [--at X Z] [--down N] [--up N]", 0xFFFFFF)
-  o("  prefab export <file.bp> <out.lua> [--slots N] [--chest]   a program for a robot", 0xFFFFFF)
+  o("  prefab export <file.bp> <out.lua> [--slots N] [--chest] [--clear]   a program for a robot", 0xFFFFFF)
+  o("  prefab parts                 the parts a base is built from", 0xFFFFFF)
+  o("  prefab base <w> <d> [name]   lay out a new base, in tiles", 0xFFFFFF)
+  o("  prefab check <file.base>     doors that lead nowhere, rooms cut off", 0xFFFFFF)
+  o("  prefab compile <file.base> <out.bp>   the base as one blueprint", 0xFFFFFF)
+  o("  A .base works anywhere a .bp does: survey, export, need, print, csv.", 0xAAAAAA)
   o("  prefab need <file.bp>        what you have against what it takes", 0xFFFFFF)
   o("  prefab watch <file.bp> [--off]   put its materials on stock's watch list", 0xFFFFFF)
   o("  prefab print <file.bp> [--dry]   print its plans", 0xFFFFFF)
   o("  prefab csv <file.bp> <out.csv>   its materials, for calc or anything else", 0xFFFFFF)
   o("  In the designer: Space paint, X Y Z change the view, PgUp/PgDn change the slice.", 0xAAAAAA)
+end
+
+local function layout(o, base, path)
+  require("prefab.layout").run(o, { U = U, read = readText, write = writeFile,
+    reportLines = function(bp) return V.reportLines(bp, 16) end }, base, path)
+end
+
+local function cliParts(o)
+  o(string.format("Each tile is %d by %d, %d high. A door is the middle of a tile's edge.", Parts.TILE, Parts.TILE, Parts.HEIGHT), 0xAAAAAA)
+  for _, p in ipairs(Parts.LIBRARY) do
+    o(string.format("  %-9s %-26s doors %s", p.name, p.label, Parts.doorText((Parts.doors(p.bp)))), 0xFFFFFF)
+  end
+  o("Your own blueprint is a part too, if whole tiles: prefab new 7 5 7", 0xAAAAAA)
+end
+
+local function baseArg(args, o)
+  if not args[2] then o("Which base?", 0xFF5555); return nil end
+  local text = readText(args[2])
+  if not text then o("no such file: " .. args[2], 0xFF5555); return nil end
+  local base, err = Base.parse(text)
+  if not base then o(tostring(err), 0xFF5555) end
+  return base
+end
+
+local function cliCheck(args, o)
+  local base = baseArg(args, o)
+  if not base then return end
+  local r, err = Base.check(base, readText)
+  if not r then o(tostring(err), 0xFF5555); return end
+  for _, p in ipairs(r.problems) do o(p, 0xFF5555) end
+  if #r.problems == 0 then
+    o(base.name .. ": " .. Base.summary(r), 0x55FF55)
+  end
+end
+
+local function cliCompile(args, o)
+  local base = baseArg(args, o)
+  if not base then return end
+  if not args[3] then o("prefab compile <file.base> <out.bp>", 0xFF5555); return end
+  local bp, err = Base.compile(base, readText)
+  if not bp then o(tostring(err), 0xFF5555); return end
+  local ok, wErr = writeFile(args[3], B.serialize(bp))
+  if not ok then o("Not saved: " .. tostring(wErr), 0xFF5555); return end
+  o(string.format("Wrote %s: %dx%dx%d.", args[3], bp.sx, bp.sy, bp.sz), 0x55FF55)
 end
 
 local function prefabCmd(args, o)
@@ -833,6 +727,19 @@ local function prefabCmd(args, o)
     local slots = math.max(1, math.min(64, tonumber(args[3]) or 16))
     local colours = { title = 0xFFFF55, fg = 0xFFFFFF, hi = 0x55FF55, warn = 0xFF5555 }
     for _, l in ipairs(V.reportLines(bp, slots)) do o(l[1], colours[l[2]]) end
+    return
+  end
+  if a == "parts" then cliParts(o); return end
+  if a == "check" then cliCheck(args, o); return end
+  if a == "compile" then cliCompile(args, o); return end
+  if a == "base" then
+    local w, d = tonumber(args[2]), tonumber(args[3])
+    if not (w and d and w >= 1 and d >= 1 and w <= Base.MAX_TILES and d <= Base.MAX_TILES and w == math.floor(w) and d == math.floor(d)) then
+      o("prefab base <w> <d> [name]: each side is 1 to " .. Base.MAX_TILES .. " tiles", 0xFF5555)
+      return
+    end
+    local name = B.cleanName(table.concat(args, " ", 4))
+    layout(o, Base.new(w, d, name ~= "" and name or nil))
     return
   end
   if a == "survey" then cliSurvey(args, o); return end
@@ -853,6 +760,13 @@ local function prefabCmd(args, o)
     return
   end
   if not a then ui(o, V.starter(16, 8, 16)); return end
+  -- Open a base as the base it is, not as what it compiles to.
+  if Base.is(readText(a)) then
+    local base, bErr = Base.parse(readText(a))
+    if not base then o(tostring(bErr), 0xFF5555); return end
+    layout(o, base, a)
+    return
+  end
   local bp, err = loadFile(a)
   if not bp then o(tostring(err), 0xFF5555); return end
   ui(o, bp, a)

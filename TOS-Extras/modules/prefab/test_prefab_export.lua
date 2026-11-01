@@ -61,6 +61,8 @@ local function world(opts)
   local function key(x, y, z) return x .. "," .. y .. "," .. z end
   function W.solid(x, y, z)
     if y < 1 then return not (opts.pit and opts.pit[x .. "," .. z]) end
+    local t = W.terrain and W.terrain[key(x, y, z)]
+    if t == "solid" or t == "bedrock" then return true end
     return W.cells[key(x, y, z)] ~= nil or W.blocked[key(x, y, z)] == true
   end
   --- Blueprint cell to world cell: ahead and to the right of how it stood.
@@ -141,14 +143,54 @@ local function world(opts)
     if side ~= 0 or not overChest() then return false end
     local it = slots[selected]
     if not it then return false end
+    if opts.chestFull then return false end
     W.chest[#W.chest + 1] = it
     slots[selected] = false
     return true
   end
+  local function cellOn(side)
+    if side == 0 then return rx, ry - 1, rz end
+    if side == 1 then return rx, ry + 1, rz end
+    if side == 3 then return rx + DX[facing], ry, rz + DZ[facing] end
+    error("no such side in this sim")
+  end
+  W.tool = opts.tool
+  W.terrain = opts.terrain or {}       -- key -> "solid", "passable", "replaceable", "liquid", "bedrock"
+  W.spilled, W.swings = 0, 0
   function robot.detect(side)
-    if side ~= 0 then error("only down in this sim") end
-    if W.solid(rx, ry - 1, rz) then return true, "solid" end
+    local x, y, z = cellOn(side)
+    local t = W.terrain[key(x, y, z)]
+    if t == "bedrock" then return true, "solid" end
+    if t then return t == "solid", t end
+    if W.solid(x, y, z) then return true, "solid" end
     return false, "air"
+  end
+  function robot.durability()
+    if not W.tool then return nil, "no tool equipped" end
+    return W.tool.uses / 100
+  end
+  function robot.swing(side)
+    local x, y, z = cellOn(side)
+    local k = key(x, y, z)
+    local t = W.terrain[k]
+    W.swings = W.swings + 1
+    if t == "bedrock" then return false, "block" end
+    if t ~= "solid" and t ~= "passable" then return false, "air" end
+    if W.cells[k] then error("the program dug something it had built, at " .. k) end
+    W.terrain[k] = nil
+    if W.tool then
+      W.tool.uses = W.tool.uses - 1
+      if W.tool.uses <= 0 then W.tool = nil end
+    end
+    -- What it dug lands in the selected slot, or the next with room.
+    for i = 0, #slots - 1 do
+      local s = (selected + i - 1) % #slots + 1
+      local it = slots[s]
+      if not it then slots[s] = { name = "minecraft:dirt", damage = 0, size = 1 }; return true, "block" end
+      if it.name == "minecraft:dirt" and it.size < 64 then it.size = it.size + 1; return true, "block" end
+    end
+    W.spilled = W.spilled + 1
+    return true, "block"
   end
   function robot.place(side)
     if side ~= 0 then error("only down in this sim") end
@@ -169,9 +211,15 @@ local function world(opts)
     local it = slots[s]
     return it and { name = it.name, damage = it.damage, size = it.size } or nil
   end }
+  function ic.equip()
+    local it = slots[selected]
+    slots[selected] = false
+    W.tool = it and { uses = 200 } or nil
+    return true
+  end
   function ic.getInventorySize(side)
     if side ~= 0 or not overChest() then return nil, "no inventory" end
-    return math.max(27, #W.chest)
+    return math.max(54, #W.chest)
   end
   function ic.getStackInSlot(side, s)
     if side ~= 0 or not overChest() then return nil end
@@ -413,12 +461,12 @@ end
 do
   local bp = B.parse(HUT)
   local src = E.program(bp)
-  local W = world({ files = { ["/home/.prefab-state"] = "Some other house\n3 3 3 0 9 5 0\n" } })
+  local W = world({ files = { ["/home/.prefab-state"] = "Some other house\n3 3 3 0 9 5 0 0\n" } })
   load_up(W, bp)
   W.run(src)
   test("a place saved by another blueprint is ignored", not has(W.text(), "Carrying on"), W.text())
   test("...and the build starts from the start", differs(W, bp) == nil, differs(W, bp))
-  local W2 = world({ files = { ["/home/.prefab-state"] = "Starter hut\n3 3 3 0 9 5 0\n" } })
+  local W2 = world({ files = { ["/home/.prefab-state"] = "Starter hut\n3 3 3 0 9 5 0 0\n" } })
   load_up(W2, bp)
   W2.run(src, "fresh")
   test("`fresh` throws a saved place away", not has(W2.text(), "Carrying on") and differs(W2, bp) == nil)
@@ -642,6 +690,154 @@ do
   local W = world({ size = 1, ic = true, chest = stacks })
   local ok, err = W.run((E.program(bp, { slots = 1, chest = true })))
   test("a 16-stack block just means more trips", ok and differs(W, bp) == nil, err or differs(W, bp))
+end
+
+print()
+print("=== clearing the site ===")
+print()
+
+--- Rubbish through a blueprint's box, in blueprint cells.
+local function rubbish(W, list)
+  for _, c in ipairs(list) do
+    local x, y, z = W.toWorld(c[1], c[2], c[3])
+    W.terrain[x .. "," .. y .. "," .. z] = c[4] or "solid"
+  end
+end
+
+do
+  local bp = B.parse(HUT)
+  local src, info = E.program(bp, { chest = true, clear = true })
+  test("clearing says how much", info.site == 45 and info.clear == true, info.site)
+  for facing = 0, 3 do
+    local W = world({ facing = facing, ic = true, chest = chestOf(bp), tool = { uses = 100 } })
+    rubbish(W, { { 1, 1, 1 }, { 2, 2, 2 }, { 5, 3, 3 }, { 3, 1, 2 }, { 4, 2, 1 } })
+    local ok, err = W.run(src)
+    test("facing " .. facing .. ": a littered site ends up as the blueprint", ok and differs(W, bp) == nil, err or differs(W, bp))
+    test("facing " .. facing .. ": nothing is left in the way", next(W.terrain) == nil)
+    test("facing " .. facing .. ": the route costs what the export said",
+      W.moves == info.moves and W.turns == info.turns, W.moves .. "/" .. info.moves .. ", " .. W.turns .. "/" .. info.turns)
+    test("facing " .. facing .. ": each block took one swing", W.swings == 5, W.swings)
+  end
+  local W = world({ ic = true, chest = chestOf(bp), tool = { uses = 100 } })
+  rubbish(W, { { 1, 1, 1 }, { 2, 2, 2 } })
+  W.run(src)
+  test("what it dug went in the chest", W.chestHolds("minecraft:dirt") == 2, W.chestHolds("minecraft:dirt"))
+  test("...and the robot ends empty", W.slots[1] == false and W.slots[2] == false)
+end
+
+do
+  -- Things a block can simply go into are left alone.
+  local bp = B.parse(HUT)
+  local W = world({ ic = true, chest = chestOf(bp), tool = { uses = 100 } })
+  rubbish(W, { { 2, 1, 1, "replaceable" }, { 3, 1, 1, "liquid" }, { 4, 1, 1, "passable" } })
+  W.run((E.program(bp, { chest = true, clear = true })))
+  test("a passable block is dug, tall grass and water are not", W.swings == 1, W.swings)
+end
+
+do
+  -- Something in the robot's way, above the building and beside it.
+  local bp = B.parse(HUT)
+  local W = world({ ic = true, chest = chestOf(bp), tool = { uses = 100 } })
+  local x, y, z = W.toWorld(1, 2, 1)
+  W.terrain[x .. "," .. y .. "," .. z] = "solid"      -- right above it at the start
+  local x2 = W.toWorld(3, 4, 1)
+  W.terrain[x2 .. ",4,20"] = "solid"                  -- at walking height over the top
+  local ok, err = W.run((E.program(bp, { chest = true, clear = true })))
+  test("what is in its way is dug through", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...including above the building's top layer", next(W.terrain) == nil)
+end
+
+do
+  local bp = B.parse(HUT)
+  local W = world({ ic = true, chest = chestOf(bp), tool = { uses = 100 } })
+  rubbish(W, { { 3, 2, 2, "bedrock" } })
+  W.run((E.program(bp, { chest = true, clear = true })))
+  test("something unbreakable stops it, and says so", has(W.text(), "cannot break the block"), W.text())
+  test("...with its place saved", W.files["/home/.prefab-state"] ~= nil)
+  W.terrain = {}
+  local ok, err = W.run((E.program(bp, { chest = true, clear = true })))
+  test("run again, it carries on clearing and builds", ok and differs(W, bp) == nil, err or differs(W, bp))
+end
+
+do
+  -- More debris than it can carry: it empties itself and comes back.
+  local bp = B.new(9, 1, 9, "Pad")
+  B.addBlock(bp, "a", "minecraft:stone", 0, "Stone")
+  B.set(bp, 1, 1, 1, "a")
+  local chest = chestOf(bp)
+  local W = world({ size = 2, ic = true, chest = chest, tool = { uses = 500 } })
+  local list = {}
+  for z = 1, 9 do for x = 1, 9 do list[#list + 1] = { x, 1, z } end end
+  rubbish(W, list)
+  local ok, err = W.run((E.program(bp, { slots = 2, chest = true, clear = true })))
+  test("a small robot clears a big site", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...spilling nothing", W.spilled == 0, W.spilled)
+  test("...and the debris is all in the chest", W.chestHolds("minecraft:dirt") == 81, W.chestHolds("minecraft:dirt"))
+end
+
+do
+  -- A pickaxe wears out half way: the chest has a spare.
+  local bp = B.parse(HUT)
+  local stacks = chestOf(bp, { { name = "minecraft:iron_pickaxe", damage = 0, size = 1, maxSize = 1 } })
+  local W = world({ ic = true, chest = stacks, tool = { uses = 2 } })
+  rubbish(W, { { 1, 3, 1 }, { 2, 3, 1 }, { 3, 2, 1 }, { 4, 1, 1 } })
+  local ok, err = W.run((E.program(bp, { chest = true, clear = true })))
+  test("a worn-out tool is replaced from the chest", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...and the spare was used", W.chestHolds("minecraft:iron_pickaxe") == 0 and W.tool ~= nil)
+  local none = world({ ic = true, chest = chestOf(bp) })
+  none.onSleep = function() none.chest[#none.chest + 1] = { name = "minecraft:diamond_pickaxe", damage = 0, size = 1, maxSize = 1 } end
+  local ok2, err2 = none.run((E.program(bp, { chest = true, clear = true })))
+  test("no tool at all: it asks at the chest, and goes on when there is one",
+    ok2 and has(none.text(), "needs a pickaxe") and differs(none, bp) == nil, err2 or none.text())
+end
+
+do
+  -- The chest fills with debris: it waits rather than dropping things.
+  local bp = B.parse(HUT)
+  local W = world({ size = 2, ic = true, chest = chestOf(bp), tool = { uses = 100 }, chestFull = true })
+  rubbish(W, { { 1, 2, 1 }, { 2, 2, 1 } })
+  local n = 0
+  W.onSleep = function() n = n + 1; if n > 3 then error("waited, as it should", 0) end end
+  W.run((E.program(bp, { slots = 2, chest = true, clear = true })))
+  test("a full chest stops it and says so", has(W.text(), "The chest is full"), W.text())
+end
+
+do
+  -- Debris picked up during the build is sorted out at the chest.
+  local bp = B.parse(HUT)
+  local src = E.program(bp, { chest = true, clear = true })
+  local W = world({ ic = true, chest = chestOf(bp), tool = { uses = 100 } })
+  -- Starts with rubbish in a slot meant for a block.
+  W.give(2, "minecraft:dirt", 0, 3)
+  local ok, err = W.run(src)
+  test("junk in a block's slot goes in the chest, not on the building", ok and differs(W, bp) == nil, err or differs(W, bp))
+end
+
+do
+  test("clearing without a chest is refused, and says why",
+    has(select(2, E.program(B.parse(HUT), { clear = true })), "add --chest"))
+end
+
+print()
+print("=== a base, built ===")
+print()
+
+do
+  -- A base from parts, through the same program as anything else, on a
+  -- littered site.
+  local Base = require("prefab.base")
+  local base = Base.parse("PREFABBASE1\nname Outpost\nsize 3 2\npart hall 2 1 0\npart cross 2 2 0\n"
+    .. "part room 1 2 1\npart room 3 2 3\n")
+  local bp = assert(Base.compile(base))
+  local src, info = E.program(bp, { chest = true, clear = true })
+  test("a compiled base exports", src ~= nil, info)
+  local W = world({ ic = true, chest = chestOf(bp), tool = { uses = 1000 } })
+  rubbish(W, { { 2, 2, 2 }, { 9, 3, 4 }, { 18, 2, 12 }, { 20, 4, 13 } })
+  local ok, err = W.run(src)
+  test("a robot builds a base from parts", ok and differs(W, bp) == nil, err or differs(W, bp))
+  test("...on the route the export counted", W.moves == info.moves and W.turns == info.turns,
+    W.moves .. "/" .. info.moves .. ", " .. W.turns .. "/" .. info.turns)
+  test("...and it is a real size", info.steps > 300, info.steps)
 end
 
 print()

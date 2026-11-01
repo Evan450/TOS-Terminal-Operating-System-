@@ -215,6 +215,7 @@ public class HeadlessTOS {
   static boolean withGeolyzer;  // --geolyzer
   static boolean withRobot;     // --robot
   static boolean withChest;     // --robot-chest
+  static boolean withRubbish;   // --robot-rubbish
   static boolean withTransposer; // --transposer
 
   /**
@@ -265,6 +266,8 @@ public class HeadlessTOS {
    *
    * With --robot-chest it starts empty, with StandInController fitted and a
    * chest right behind it holding 64 cobblestone, 64 dirt and 10 glass.
+   * With --robot-rubbish it has a pickaxe, and four blocks are in the way of
+   * the test hut, one of them above its first move.
    */
   public static class StandInRobot extends NoteBlock {
     private Node robotNode;
@@ -273,6 +276,9 @@ public class HeadlessTOS {
     final int[] items = new int[17];
     final String[] names = new String[17];
     private final Map<String, Integer> cells = new HashMap<>();
+    private final java.util.Set<String> rubbish = new java.util.HashSet<>(
+        withRubbish ? java.util.Arrays.asList("0,1,0", "2,0,1", "3,1,2", "4,2,0")
+                    : java.util.Collections.<String>emptyList());
     private static final int[] DX = { 1, 0, -1, 0 }, DZ = { 0, 1, 0, -1 };
     final String[] chestNames = { "minecraft:cobblestone", "minecraft:dirt", "minecraft:glass" };
     final int[] chestSizes = { 64, 64, 10 };
@@ -295,7 +301,37 @@ public class HeadlessTOS {
 
     private boolean solid(int cx, int cy, int cz) {
       if (withChest && cx == -1 && cy == 0 && cz == 0) return true;
+      if (rubbish.contains(cx + "," + cy + "," + cz)) return true;
       return cy < 0 || cells.containsKey(cx + "," + cy + "," + cz);
+    }
+
+    /** The cell on a side, as { x, y, z }. */
+    private int[] on(int side) {
+      if (side == 0) return new int[] { x, y - 1, z };
+      if (side == 1) return new int[] { x, y + 1, z };
+      if (side == 3) return new int[] { x + DX[facing], y, z + DZ[facing] };
+      throw new IllegalArgumentException("no such side here");
+    }
+
+    @Callback public Object[] durability(Context context, Arguments args) {
+      return withRubbish ? new Object[] { 0.9 } : new Object[] { null, "no tool equipped" };
+    }
+
+    @Callback public Object[] swing(Context context, Arguments args) {
+      int[] c = on(args.checkInteger(0));
+      String key = c[0] + "," + c[1] + "," + c[2];
+      if (cells.containsKey(key)) throw new IllegalStateException("it dug what it built: " + key);
+      if (!rubbish.remove(key)) return new Object[] { false, "air" };
+      for (int i = 0; i < 16; i++) {
+        int s = (selected - 1 + i) % 16 + 1;
+        if (items[s] == 0 || "minecraft:gravel".equals(names[s])) {
+          items[s]++;
+          names[s] = "minecraft:gravel";
+          break;
+        }
+      }
+      System.out.println("[headless] robot dug " + key);
+      return new Object[] { true, "block" };
     }
 
     @Callback public Object[] space(Context context, Arguments args) {
@@ -340,7 +376,8 @@ public class HeadlessTOS {
     }
 
     @Callback public Object[] detect(Context context, Arguments args) {
-      boolean there = solid(x, y - 1, z);
+      int[] c = on(args.checkInteger(0));
+      boolean there = solid(c[0], c[1], c[2]);
       return new Object[] { there, there ? "solid" : "air" };
     }
 
@@ -1131,6 +1168,7 @@ public class HeadlessTOS {
     withGeolyzer = flag(args, "--geolyzer");
     withRobot = flag(args, "--robot");
     withChest = flag(args, "--robot-chest");
+    withRubbish = flag(args, "--robot-rubbish");
     withTransposer = flag(args, "--transposer");
     if (opt(args, "--disk2", null) != null) {
       disk2Dir = Paths.get(opt(args, "--disk2", null)).toAbsolutePath();

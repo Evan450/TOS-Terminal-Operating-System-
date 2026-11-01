@@ -15,10 +15,10 @@
 -- A blueprint is data: it is parsed by hand and never executed.
 return {
   name        = "prefab",
-  version     = "0.5.0",
+  version     = "0.7.0",
   kind        = "command",
   category    = "control",
-  description = "Base designer: draw blueprints in slices along X, Y and Z, and count what a build takes.",
+  description = "Base designer: assemble bases from hallways and rooms, or draw blueprints in slices, and have a robot build them.",
   author      = "Strata Systems",
   files       = {
     "/usr/modules/prefab/init.lua",
@@ -27,13 +27,17 @@ return {
     "/usr/modules/prefab/survey.lua",
     "/usr/modules/prefab/export.lua",
     "/usr/modules/prefab/links.lua",
+    "/usr/modules/prefab/tui.lua",
+    "/usr/modules/prefab/parts.lua",
+    "/usr/modules/prefab/base.lua",
+    "/usr/modules/prefab/layout.lua",
   },
   fullscreen  = true,
   -- Nothing here changes while it is not looked at.
   background  = "freeze",
 
   commands     = { prefab = "/usr/modules/prefab/init.lua" },
-  handles      = { { ext = { "bp" }, as = "native" } },
+  handles      = { { ext = { "bp", "base" }, as = "native" } },
   capabilities = { "fs.read", "fs.write", "component", "peripheral.inventory", "peripheral.printer" },
   requires    = {},
   -- Soft: every action has a key, but painting is what a mouse is for, and

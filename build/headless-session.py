@@ -15,7 +15,7 @@ answers off the real screen.
         [--extra-disk DIR] [--extra-disk-tier N]
         [--floppy NAME=DIR]... [--floppy-in NAME]
         [--trace] [--keep] [--internet] [--geolyzer] [--transposer]
-        [--robot [--robot-chest]]
+        [--robot [--robot-chest [--robot-rubbish]]]
         [--ocelot DIR] [--java PATH] [--javac PATH] [--config FILE]
 
 A script is one step per line (HeadlessTOS.java's runScript lists them):
@@ -282,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="a stand-in transposer with a small chest to the north")
     ap.add_argument("--robot-chest", action="store_true",
                     help="with --robot: starts empty, with an inventory controller and a chest")
+    ap.add_argument("--robot-rubbish", action="store_true",
+                    help="with --robot-chest: a pickaxe, and four blocks in the way of the test hut")
     ap.add_argument("--machines", choices=["1", "2"], default="1",
                     help="2 adds a second computer with its own fresh TOS, joined by "
                          "network cards and a relay; `machine N` picks which one")
@@ -389,6 +391,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--robot")
     if args.robot_chest:
         cmd.append("--robot-chest")
+    if args.robot_rubbish:
+        cmd.append("--robot-rubbish")
     if args.transposer:
         cmd.append("--transposer")
     if args.seats != "1":
