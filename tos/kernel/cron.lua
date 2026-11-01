@@ -25,6 +25,9 @@ local timerID = nil
 local CRON_CAPS = {
   ["fs.read"]  = true,
   ["fs.write"] = true,
+  -- `io` over the same session-bound fs, so nothing new is granted. A script
+  -- that works under `run` died here on its first io.open.
+  ["compat.io"] = true,
   ["component"] = true,
 }
 

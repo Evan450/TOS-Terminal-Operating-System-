@@ -1319,7 +1319,9 @@ return function(C, S, deps)
       local info, err = bmod.inspect(args[2], { session = sess })
       if not info then o("Inspect failed: " .. tostring(err), T.error); return end
       o(string.format(" magic:    %s", info.magic), T.fg)
-      o(string.format(" created:  %d", info.created), T.fg)
+      -- An older snapshot holds game time, which is no date anyone can read.
+      o(string.format(" created:  %s", info.created > 978307200
+        and os.date("%Y-%m-%d %H:%M:%S UTC", info.created) or tostring(info.created)), T.fg)
       o(string.format(" entries:  %d", info.entries), T.fg)
       o(string.format(" root:     %s", info.root), T.fg)
       o(string.format(" metaHash: %s...", info.metaHash:sub(1, 24)), T.fg)
@@ -2043,6 +2045,7 @@ return function(C, S, deps)
   C.programs = function(args, o)
     local dirs = { "/bin", "/usr/bin", "/home/" .. S.who }
     o("Executables:", T.title)
+    local any = false
     for _, dir in ipairs(dirs) do
       if F.isDirectory(dir) then
         local ok2, list = pcall(F.list, dir)
@@ -2055,12 +2058,14 @@ return function(C, S, deps)
             if n:match("%.lua$") then found[#found+1] = n end
           end
           if #found > 0 then
+            any = true
             o(" " .. dir .. ":", T.dim)
             for _, n in ipairs(found) do o("   " .. n, T.file_lua or T.file_exec or T.highlight) end
           end
         end
       end
     end
+    if not any then o(" None yet. `help` lists the built-in commands.", T.dim) end
   end
   C.log = function(args, o)
     if not adminOnly(o) then return end
@@ -2341,6 +2346,12 @@ return function(C, S, deps)
       return type(err) == "string" and err:find("<eof>", 1, true) ~= nil
     end
     local chunkLines = {}
+    --! One env for the session. This built a new one per line, so `x = 5` was
+    --! gone by the next prompt, and a function could never be called once it
+    --! was defined. (test_lua_repl.lua)
+    local replEnv
+    local okQ, quitkey = pcall(require, "shell.quitkey")
+    local quitting = false
     while true do
       if row > H - 1 then
         D.getGpu().copy(1, 3, W, H-3, 0, -1)
@@ -2359,7 +2370,8 @@ return function(C, S, deps)
         D.set(px, row, buf .. "_", T.fg, T.bg)
         local sig, _, ch2, co2 = deps.pullSignal()
         if sig == "key_down" then
-          if co2 == 28 then break
+          if okQ and quitkey.is(ch2, co2, true) then quitting = true; break
+          elseif co2 == 28 then break
           elseif co2 == 14 then if #buf > 0 then buf = buf:sub(1,-2) end
           elseif co2 == 200 then if hidx2 > 1 then hidx2 = hidx2 - 1 buf = hist[hidx2] or "" end
           elseif co2 == 208 then
@@ -2379,8 +2391,9 @@ return function(C, S, deps)
       end
       row = row + 1
 
-      -- Exit only when not mid-block.
-      if (buf == "exit" or buf == "quit") and not cont then break end
+      -- Exit only when not mid-block, where the word could be code. The quit
+      -- key is not code, so it leaves from anywhere.
+      if quitting or ((buf == "exit" or buf == "quit") and not cont) then break end
 
       if buf == "" and not cont then
         -- blank line at top level: nothing to do
@@ -2410,7 +2423,7 @@ return function(C, S, deps)
               src:gsub("\n", " ; "):sub(1, 120))
           end
         end)
-        local replEnv = makeProgramEnv{
+        replEnv = replEnv or makeProgramEnv{
           name = "repl",
           caps = {
             ["fs.read"]=true, ["fs.write"]=true, ["compat.io"]=true,

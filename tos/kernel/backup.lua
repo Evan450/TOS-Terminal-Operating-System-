@@ -169,7 +169,7 @@ local function encodeSnapshot(srcRoot, entries, session)
   -- A whole second: OC's os.time() is game time, usually fractional, and
   -- packU32 is bitwise -- "number has no integer representation" killed
   -- every snapshot taken off a whole second. (test_backup_snapshot.lua)
-  local now = math.floor((os.time and os.time()) or 0)
+  local now = math.floor((fs.hostTime and fs.hostTime()) or (os.time and os.time()) or 0)
   emit(MAGIC)
   emit(packU32(now))
   emit(packU32(#entries))

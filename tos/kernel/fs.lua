@@ -316,6 +316,25 @@ function fs.lastModified(path)
   return ok and result or 0
 end
 
+--! The real time, in seconds since 1970, or nil. OpenComputers' os.time() is
+--! the in-game clock, 72 seconds to the real one, and nothing else in its
+--! sandbox tells the time. A file's modification stamp does: the host writes
+--! it in real milliseconds, which is why `ls -l` was right while `date` said
+--! 1970. So write nothing to the RAM disk and read when that happened. The
+--! tmpfs, so no drive pays for it. (test_host_time.lua)
+function fs.hostTime()
+  local path = "/tmp/.host-time"
+  if not fs.exists("/tmp") then return nil end
+  local okW = pcall(fs.writeFile, path, "")
+  if not okW then return nil end
+  local ms = fs.lastModified(path)
+  pcall(fs.remove, path)
+  -- Anything before 2001 is not a real stamp: a filesystem that has no clock
+  -- answers 0, and a game-time answer must not pass for the date.
+  if type(ms) == "number" and ms > 978307200000 then return math.floor(ms / 1000) end
+  return nil
+end
+
 -- Cooperative slice (#REV multi-seat freeze), resolved lazily — fs
 -- loads BEFORE kernel.process at boot. Called between whole-file
 -- operations only (never mid-file), so per-file atomicity within one

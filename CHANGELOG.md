@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 103 rounds of work:
+Everything since v1.5.0, in 104 rounds of work:
 
+- [the REPL remembers, and date tells the time](#the-repl-remembers-and-date-tells-the-time)
 - [the installer speaks your language](#the-installer-speaks-your-language)
 - [a minimal install, for a 1 MB drive](#a-minimal-install-for-a-1-mb-drive)
 - [a flag a command doesn't know is refused](#a-flag-a-command-doesnt-know-is-refused)
@@ -125,6 +126,10 @@ Everything since v1.5.0, in 103 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### the REPL remembers, and date tells the time
+
+The Lua prompt remembers what you define, and the quit key leaves it. `date` and `backup inspect` now show the real date, not the in-game clock. `set NAME value` works, a cron script can use `io` the way a `run` script can, and `env` lists in order.
 
 ### the installer speaks your language
 

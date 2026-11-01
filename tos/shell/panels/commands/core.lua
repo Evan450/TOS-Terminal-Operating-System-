@@ -2453,7 +2453,9 @@ return function(C, S, deps)
     end
     local fmt = args[1] or "%Y-%m-%d %H:%M:%S"
     local offset = (cfg and cfg.get and cfg.get("timezone")) or 0
-    local t = os.time() + (offset * 3600)
+    local kfs = _G._TOS and _G._TOS.fs
+    local real = kfs and kfs.hostTime and kfs.hostTime()
+    local t = (real or os.time()) + (offset * 3600)
     local ok, out = pcall(os.date, fmt, t)
     if ok and out then o(tostring(out), T.fg) else o(tostring(out or "date error"), T.error) end
   end
@@ -2956,6 +2958,11 @@ return function(C, S, deps)
     if args[1] then
       -- set: env KEY=VALUE
       local k, v = args[1]:match("^([%w_]+)=(.*)$")
+      -- `set NAME value`, the way DOS spells it. This read NAME and dropped
+      -- the value, so it looked like a set and left the variable empty.
+      if not k and args[2] and args[1]:match("^[%w_]+$") then
+        k, v = args[1], table.concat(args, " ", 2)
+      end
       if k then
         envMod.write(cur, k, v)
         o(k .. "=" .. v, T.highlight)
@@ -2965,8 +2972,10 @@ return function(C, S, deps)
         o(args[1] .. "=" .. tostring(val or ""), T.fg)
       end
     else
-      local all = envMod.list(cur)
-      for k, v in pairs(all) do o("  " .. k .. "=" .. tostring(v), T.fg) end
+      local all, names = envMod.list(cur), {}
+      for k in pairs(all) do names[#names + 1] = k end
+      table.sort(names)
+      for _, k in ipairs(names) do o("  " .. k .. "=" .. tostring(all[k]), T.fg) end
     end
   end
   C.export = C.env
