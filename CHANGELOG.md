@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 74 rounds of work:
+Everything since v1.5.0, in 76 rounds of work:
 
+- [`prefab` builds bases from hallways and rooms](#prefab-builds-bases-from-hallways-and-rooms)
+- [A `prefab` robot can clear its own site](#a-prefab-robot-can-clear-its-own-site)
 - [`prefab` works with `stock`, `printer` and `calc`](#prefab-works-with-stock-printer-and-calc)
 - [A refused save is not called saved](#a-refused-save-is-not-called-saved)
 - [`stock` keeps its thresholds](#stock-keeps-its-thresholds)
@@ -96,6 +98,14 @@ Everything since v1.5.0, in 74 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### `prefab` builds bases from hallways and rooms
+
+`prefab` 0.7.0. You no longer have to draw a base. `prefab base` opens a map of tiles and 11 ready-made parts (hallways, corners, junctions, rooms and a great hall) that fit because they share one grid: pick one, turn it, drop it, and each tile shows its doors. A check finds any door into a wall or room cut off from the rest. A blueprint of your own works as a part if it's whole tiles, and its doors are found by looking. A layout compiles to one ordinary blueprint, so `prefab export camp.base build.lua --chest --clear` and every other command just work. It's still held off the pack until a robot has built one in a real world.
+
+### A `prefab` robot can clear its own site
+
+`prefab` 0.6.0. `prefab export --chest --clear` has the robot empty the building's space before building, digging through anything on its way, and leaving tall grass and water, which a block can go straight into. Debris goes in the chest, and spare pickaxes come out of it. It doesn't fill gaps under the floor.
 
 ### `prefab` works with `stock`, `printer` and `calc`
 
