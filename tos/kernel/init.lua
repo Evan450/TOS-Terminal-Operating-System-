@@ -1,5 +1,5 @@
 
-local at,aF,aG,aH,aI,aJ,aK,ay,an,ap,az,aq,ak,aL,aA,_,aM,au,aN,aO,aB,av,aw,ar,aP,aj,aQ,aR,aC,ao,aD,al,ax,aS="  BAD "," (unreadable)","/var/crash","KB free)","Killed PID ","Result: %d OK, %s, %d damaged","^[^\n]*","_kernel_","collect","component","eeprom","filesystem","function","header","hotplug","kernel","kernel.cron","kernel.crypto","kernel.fs","kernel.log","kernel.monitor","kernel.rc","kernel.screen","kernel.serialize","kernel.srm","key_down","no EEPROM","not permitted","raised","repair","screen","string","tos_focus","tos_seat_changed"local ab=require("computer")local ah=require(ap)local ae={}local ai=false
+local at,aF,aG,aH,aI,aJ,aK,ay,an,ap,az,aq,al,aL,aA,_,aM,au,aN,aO,aB,av,aw,ar,aP,aj,aQ,aR,aC,ao,aD,ak,ax,aS="  BAD "," (unreadable)","/var/crash","KB free)","Killed PID ","Result: %d OK, %s, %d damaged","^[^\n]*","_kernel_","collect","component","eeprom","filesystem","function","header","hotplug","kernel","kernel.cron","kernel.crypto","kernel.fs","kernel.log","kernel.monitor","kernel.rc","kernel.screen","kernel.serialize","kernel.srm","key_down","no EEPROM","not permitted","raised","repair","screen","string","tos_focus","tos_seat_changed"local ab=require("computer")local ah=require(ap)local ae={}local ai=false
 local aT=false;local Z,ag,af,aa,ad,ac;local am;local as={}
 function ae.boot(a)a=a or{}
 local q=a.earlyPrint or function()end;local v=a.earlyMinLevel or 1
@@ -11,7 +11,7 @@ ag and ag.freeMemory and ag.freeMemory(m))or ab.freeMemory()local z=A>m;if g and
 return z end
 local j=(e and e.memprofile==true)and{}or nil
 local function c(z)if not j then return end
-if type(collectgarbage)==ak then
+if type(collectgarbage)==al then
 pcall(collectgarbage,an)else local A={}
 for B=1,10 do local C=table.pack(ab.pullSignal(0))if C.n>0 and
 C[1]~=nil then A[#A+1]=C end end;for C,B in ipairs(A)do
@@ -43,7 +43,7 @@ local x={"/tmp","/var","/var/log","/var/run","/var/pkg","/var/pkg/installed","/v
 if not ad.exists(z)then ad.makeDirectory(z)end end
 pcall(Z.attachFile,ad,"/var/log/kernel.log",{rotateBytes=16384})local o="/var/run/pwrstate"
 do
-local z=ad.exists(o)and ad.readFile(o)or nil;local A=0;if type(z)==al and#z>0 then
+local z=ad.exists(o)and ad.readFile(o)or nil;local A=0;if type(z)==ak and#z>0 then
 A=tonumber(z:match("\n(%d+)"))or 0;_G._TOS.unsafeShutdown=z:sub(1,1)~="C"else
 _G._TOS.unsafeShutdown=false end;_G._TOS.bootCount=
 A+1
@@ -55,7 +55,7 @@ tostring((os.time and os.time())or 0))
 if _G._TOS.unsafeShutdown then
 Z.warn(_,"PREVIOUS SHUTDOWN WAS UNSAFE (power loss / forced off) — state verified on boot")pcall(ab.beep,880,0.1)pcall(ab.beep,660,0.1)end end
 pcall(function()local C=ah.list(az)()if not C then return end;local A=ah.proxy(C)if not
-(A and A.getData)then return end;local D=A.getData()if type(D)~=al or not
+(A and A.getData)then return end;local D=A.getData()if type(D)~=ak or not
 D:find("SRM:",1,true)then return end
 local F,B=pcall(require,aP)if not(F and B)then
 Z.warn("srm","A POST fault is parked in the EEPROM but kernel.srm "..
@@ -121,7 +121,7 @@ if B and type(B.pools)=="table"then
 for D,C in ipairs(B.pools)do
 if
 type(C)=="table"and
-type(C.mount)==al and type(C.members)=="table"then local E={}for D,F in ipairs(C.members)do local H,G=pcall(ah.proxy,F)
+type(C.mount)==ak and type(C.members)=="table"then local E={}for D,F in ipairs(C.members)do local H,G=pcall(ah.proxy,F)
 if H and G then E[#E+1]=G end end
 if#E==0 then
 Z.warn(_,"JBOD pool "..C.mount..
@@ -198,7 +198,7 @@ Z.info(_,"Crypto: "..
 pcall(function()if
 not(z.addEntropy and z.exportEntropy and ad)then return end;local D="/etc/entropy"
 if ad.makeDirectory and not
-ad.exists("/etc")then ad.makeDirectory("/etc")end;if ad.exists(D)then local E=ad.readFile(D)if type(E)==al and#E>0 then
+ad.exists("/etc")then ad.makeDirectory("/etc")end;if ad.exists(D)then local E=ad.readFile(D)if type(E)==ak and#E>0 then
 z.addEntropy(E)end end
 z.addEntropy(
 tostring(ab.uptime()).."|"..
@@ -219,7 +219,7 @@ k("keychain","kernel.keychain",function()
 return{securefs=D,users=B,log=Z,serialize=require(ar)}end)if af then
 af.interval(300,function()B.sweepSessions()end,"kernel:session_sweep")end else
 Z.warn(_,"SecureFS not available: "..tostring(D))end else
-Z.warn(_,"User system not available: "..tostring(B))end else
+Z.warn(_,"User system not available: "..tostring(B))_G._TOS.usersFailure=tostring(B)end else
 Z.warn(_,"Crypto not available: "..tostring(z))end else
 Z.warn(_,"Skipping security (low memory: "..
 math.floor(ab.freeMemory()/1024)..aH)end end;c("9b theme manager")
@@ -269,9 +269,9 @@ local A,z=pcall(require,"kernel.audio")
 if A then z.init(b)_G._TOS.audio=z
 Z.info(_,"Audio feedback: ".. (z.isEnabled()and"enabled"or
 "disabled"))else Z.info(_,"Audio module not available")end end;function ae.gc()
-if type(collectgarbage)==ak then return pcall(collectgarbage,an)end;return false end
+if type(collectgarbage)==al then return pcall(collectgarbage,an)end;return false end
 _G._TOS.fs=ad;_G._TOS.kernel=ae;_G._TOS.proc=aa;_G._TOS.event=af
-c("13 boot complete")if type(collectgarbage)==ak then
+c("13 boot complete")if type(collectgarbage)==al then
 pcall(collectgarbage,"setpause",120)end
 local l=
 (ag and ag.freeMemory and ag.freeMemory())or ab.freeMemory()local u=ab.uptime()-_G._TOS.bootTime
@@ -317,12 +317,18 @@ if b then z=tonumber(b.get("bootPause"))or
 (b.get("verbose")and 1.5 or 0)end;if z>0 then ab.pullSignal(z)end end;Z.detachEarlyPrint()
 c("14 login -> shell / headless loop")ae.boot=nil
 if p then ae.headlessMain()else ae.loginAndStartShell()end end
-local function aU(a,c,b)local d=a.getTheme()a.clear(d.bg)
-a.set(2,2,"Not enough memory for TOS to start.",d.error,d.bg)
-a.set(2,4,"The user system did not fit, so nobody",d.fg,d.bg)
-a.set(2,5,"can log in. TOS needs at least 1 MB",d.fg,d.bg)a.set(2,6,"(one Tier 3.5 memory stick).",d.fg,d.bg)
-a.set(2,8,"Add memory, then power on again.",d.dim,d.bg)
-a.set(2,10,"Press any key to power off.",d.dim,d.bg)if b then pcall(b)end;repeat until c(math.huge)==aj end
+local function aU(a,d,b,c)local e=a.getTheme()a.clear(e.bg)
+if type(c)==ak and
+c:find("Module not found",1,true)then
+a.set(2,2,"TOS is damaged and cannot start.",e.error,e.bg)
+a.set(2,4,"The user system is missing from this",e.fg,e.bg)
+a.set(2,5,"disk, so nobody can log in. More",e.fg,e.bg)a.set(2,6,"memory will not help.",e.fg,e.bg)
+a.set(2,8,"Reinstall TOS from a disk or network.",e.dim,e.bg)else
+a.set(2,2,"Not enough memory for TOS to start.",e.error,e.bg)
+a.set(2,4,"The user system did not fit, so nobody",e.fg,e.bg)
+a.set(2,5,"can log in. TOS needs at least 1 MB",e.fg,e.bg)a.set(2,6,"(one Tier 3.5 memory stick).",e.fg,e.bg)
+a.set(2,8,"Add memory, then power on again.",e.dim,e.bg)end
+a.set(2,10,"Press any key to power off.",e.dim,e.bg)if b then pcall(b)end;repeat until d(math.huge)==aj end
 local function aV(b,c,d,e,a)local f=c.getUser and c.getUser("root")if not
 (f and f.firstBoot)then return nil end
 local function g(h,i)
@@ -345,13 +351,13 @@ b.set(2,8,"Password set. Starting TOS...",a.success,a.bg)d(1)return k end
 b.set(2,8,"Could not set it: "..tostring(l),a.error,a.bg)end;d(1.5)end end
 function ae.loginAndStartShell()ai=true;local a=_G._TOS.users;local n=_G._TOS.securefs
 local l=ab.freeMemory()local function h()
-if type(collectgarbage)==ak then pcall(collectgarbage,an)end end
+if type(collectgarbage)==al then pcall(collectgarbage,an)end end
 local function j()local p,x=ac.getSize()
 local o=ac.getTheme()ac.clear(o.bg)
 ac.set(2,2,"TOS - Authentication Required",o.title,o.bg)
 if not a then
 aU(ac,ab.pullSignal,function()if _G._TOS.audio then _G._TOS.audio.critical()else
-ab.beep(400,0.5)end end)ae.shutdown()return nil end;local u=aV(ac,a,ab.pullSignal,p,o)if u then return u end
+ab.beep(400,0.5)end end,_G._TOS.usersFailure)ae.shutdown()return nil end;local u=aV(ac,a,ab.pullSignal,p,o)if u then return u end
 ac.set(2,3,"Low memory mode. Enter root password.",o.dim,o.bg)ac.set(2,5,"Password: ",o.dim,o.bg)local s="/var/lockout.dat"
 local function w()
 local y,z=pcall(require,aN)local ad=(y and z)or nil;if not ad or not ad.exists or
@@ -519,7 +525,7 @@ function ae.crashWriteRaw(b,c,d,a)local f,h,i
 pcall(function()f=ab.getBootAddress()end)
 pcall(function()h=ab.tmpAddress()end)pcall(function()i=ab.address()end)
 local g,j={},{}local function k(m)
-if type(m)==al and m~=h and not j[m]then j[m]=true;g[#g+1]=m end end;k(f)pcall(function()
+if type(m)==ak and m~=h and not j[m]then j[m]=true;g[#g+1]=m end end;k(f)pcall(function()
 for m in ah.list(aq)do k(m)end end)local function e(n,o,...)return
 pcall(ah.invoke,n,o,...)end
 local function l(m,n,o)local r,p=e(m,"open",n,"w")if
@@ -563,13 +569,13 @@ if f and type(e)==
 "table"then
 for h,g in ipairs(e)do
 local i,j=pcall(ah.type,type(g)=="table"and g.address)if
-i and j==aq and type(g.mountPoint)==al and g.mountPoint~="/"then
+i and j==aq and type(g.mountPoint)==ak and g.mountPoint~="/"then
 a[#a+1]=(g.mountPoint:gsub("/+$",""))..aG end end end end;local c;pcall(function()c=ab.address()end)
 local d,b=pcall(require,aO)
 for e,f in ipairs(a)do local g=f.."/NEW"
 if ad.exists(g)then local h=""
 if ad.readFile then
-local k,j=pcall(ad.readFile,g)if k and type(j)==al then h=j end end;local i=h:match("\nmachine (%S+)")
+local k,j=pcall(ad.readFile,g)if k and type(j)==ak then h=j end end;local i=h:match("\nmachine (%S+)")
 if
 e==1 or(i~=nil and i==c)then
 local j=(h:match(aK)or""):gsub("%s+$","")if j==""then j="a previous run"end;if d and b and b.warn then
@@ -792,7 +798,7 @@ if w and type(u)=="table"and#u>0 then for y,x in ipairs(u)do
 b(string.format("[%7.1f][%s] %s",
 tonumber(x.time)or 0,tostring(x.source or"?"),tostring(x.msg or"")))end else
 local y,x=pcall(ad.readFile,"/var/log/kernel.log")
-if y and type(x)==al and x~=""then local z={}
+if y and type(x)==ak and x~=""then local z={}
 for A in x:gmatch("[^\n]+")do
 z[#z+1]=A;if#z>v then table.remove(z,1)end end;for B,A in ipairs(z)do b(A)end else
 b("No log available (the ring and /var/log/kernel.log are both unreadable).",a.error)end end elseif s=="srm"then local u=(r[2]or"status"):lower()
@@ -811,7 +817,7 @@ b("  "..tostring(z.text),
 z.sev=="ok"and a.success)or a.dim)end end end elseif s=="ls"then local v=r[2]or"/"local u;if d and d.list then u=d.list(v,n)else
 local w,x=pcall(ad.list,v)if w then u=x end end
 if u then if type(u)=="table"then for x,w in
-ipairs(u)do b("  "..w)end elseif type(u)==ak then
+ipairs(u)do b("  "..w)end elseif type(u)==al then
 for w in u do b("  "..w)end end else
 b("Cannot list: "..v,a.error)end elseif s=="cat"then
 if r[2]then local u;if d and d.readFile then u=d.readFile(r[2],n)else
@@ -841,18 +847,18 @@ for p,o in ipairs(l)do
 if ad.exists(o.path)then
 do
 if o.hash and i and i.hash then
-if type(o.hash)~=al or
+if type(o.hash)~=ak or
 #o.hash~=64 or o.hash:find("[^%x]")then
 a(at..
 o.path.." (malformed hash in manifest)",g)b=b+1
-if type(collectgarbage)==ak then pcall(collectgarbage,an)end;goto continue_verify end;local q=ad.readFile(o.path)if not q then a(at..o.path..aF,d)
+if type(collectgarbage)==al then pcall(collectgarbage,an)end;goto continue_verify end;local q=ad.readFile(o.path)if not q then a(at..o.path..aF,d)
 b=b+1
-if type(collectgarbage)==ak then pcall(collectgarbage,an)end;goto continue_verify end
+if type(collectgarbage)==al then pcall(collectgarbage,an)end;goto continue_verify end
 local r=i.hash(q)q=nil
 if not i.ctEquals(r,o.hash)then
 a("  HASH "..o.path..
 " (manifest="..o.hash:sub(1,12).." actual="..
-r:sub(1,12)..")",d)k=k+1;b=b+1;if type(collectgarbage)==ak then
+r:sub(1,12)..")",d)k=k+1;b=b+1;if type(collectgarbage)==al then
 pcall(collectgarbage,an)end;goto continue_verify end end
 if not o.path:match("%.lua$")then local r=false
 local q=ad.open(o.path,"r")if q then
@@ -865,7 +871,7 @@ t="OOM"else t="error"
 if q then if q:find("memory")then t="low RAM"else t="syntax"end end end;a(at..
 o.path.." ("..t..")",g)if r~=aC and q then
 a("      "..tostring(q),j)end;b=b+1 end end end
-if type(collectgarbage)==ak then pcall(collectgarbage,an)end else local q=o.critical and"MISS"or"GONE"
+if type(collectgarbage)==al then pcall(collectgarbage,an)end else local q=o.critical and"MISS"or"GONE"
 local r=o.critical and d or g
 a("  "..q..
 " "..o.path..

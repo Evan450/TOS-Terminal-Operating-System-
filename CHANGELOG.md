@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 90 rounds of work:
+Everything since v1.5.0, in 92 rounds of work:
 
+- [A refused package leaves a trail](#a-refused-package-leaves-a-trail)
+- [TOS knows what it can't live without](#tos-knows-what-it-cant-live-without)
 - [The shell reads its own variables](#the-shell-reads-its-own-variables)
 - [`find` works](#find-works)
 - [Network commands agree on what a peer is](#network-commands-agree-on-what-a-peer-is)
@@ -112,6 +114,16 @@ Everything since v1.5.0, in 90 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A refused package leaves a trail
+
+When a package reaches for something it wasn't granted, `log` now says so: `denied: <package> wanted capability <name>`. The sandbox used to refuse and leave no trail, so "installed and does nothing" had nothing to go on. Each refusal is recorded once per program, so a program stuck in a loop can't fill the log.
+
+### TOS knows what it can't live without
+
+The manifest now marks TOS's floor: the 33 of 167 files it needs to boot Safe Mode and reach a command line, 488 KB on disk, which fits a 1 MB drive. A test proves nothing in the floor depends on anything outside it, and `build/floorboot.py` deletes everything else and boots what's left. Nothing strips itself yet; this is the groundwork.
+
+Doing that showed a damaged install was misdiagnosed: with the user system's file missing, TOS said `Not enough memory` on a 2 MB machine, which would send you off to find RAM. It now says TOS is damaged and that memory won't help.
 
 ### The shell reads its own variables
 

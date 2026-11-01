@@ -1209,6 +1209,9 @@ A package that ships a service can give its own program a way to reach it:
 service holds the endpoint and decides what the caller's user may do, and only
 plain data crosses, copied both ways.
 
+When a running package reaches for something it was not granted, the sandbox
+refuses and `log` records it once: `denied: <package> wanted capability <name>`.
+
 A capability the allowlist does not know is **dropped**, and the reason is
 logged with the facet named — check `log` if a package installs cleanly and
 then behaves as though it has no hardware.
