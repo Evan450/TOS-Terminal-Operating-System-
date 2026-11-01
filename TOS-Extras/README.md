@@ -66,7 +66,7 @@ Grouped as the picker groups them. Each name links to that add-on's README: what
 |---|---|---|
 | [mail](modules/mail/README.md) | `mail` | Store-and-forward email between TOS machines, sealed end to end, with no server. Root. |
 | [intercom](modules/intercom/README.md) | `intercom` | Facility announcements: a recorded message plays from tape, and the same words go out over the network. Root. |
-| [cluster](cluster/README.md) | `cluster-setup` | Spreads jobs across machines: one Master, any number of Managers, and optional OpenOS workers. Root. Its `cluster` command does not start at present; see its README. |
+| [cluster](cluster/README.md) | `cluster-setup` | Spreads jobs across machines: one Master, any number of Managers, and optional OpenOS workers. Root. |
 | [cluster-storage](cluster/storage-skeleton/README.md) | service | A single Storage Node: the scratch tier the cluster Master spills oversized task lists into. Not the distributed pool its spec also describes. Root. |
 | [web](web/browser/README.md) | `web` | A text-mode browser: headings, paragraphs, lists, links and `<pre>`, read with this machine's own internet card. No fetch proxy yet — see its README. |
 

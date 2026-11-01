@@ -3,9 +3,40 @@
 -- ╚══════════════════════════════════════════════════════════════╝
 -- Thin wrapper over the daemon's API. Operators use this to inspect
 -- the local Manager and trigger drain/undrain without going through
--- the full Master CLI.
+-- the full Master CLI. A sandboxed program shares nothing with the daemon,
+-- so every call goes through its "cluster-manager" ipc endpoint, which also
+-- holds the tier checks.
 
-local mgr = require("cluster-manager")
+local function die(msg)
+  io.stderr:write("cluster-manager: " .. tostring(msg) .. "\n")
+  os.exit(1)
+end
+
+-- The endpoint answers true and the call's results, or false and why it was
+-- not made. Anything else means the library has not loaded on this boot.
+local function call(fn, ...)
+  -- A disabled package's program holds no capabilities, and an old TOS has
+  -- no ipc to give it, so the first is by far the likelier.
+  if type(ipc) ~= "table" then
+    die("not running. Start it with: service start cluster-manager"
+      .. " (if it is running, update TOS: this one is too old)")
+  end
+  local res = table.pack(ipc.call("cluster-manager", fn, ...))
+  if res[1] == nil then
+    if res[2] == "not running" then
+      die("not running. Start it with: service start cluster-manager")
+    end
+    die(res[2])
+  end
+  if res[1] == false then die(res[2]) end
+  return table.unpack(res, 2, res.n)
+end
+
+local mgr = setmetatable({}, { __index = function(t, fn)
+  local f = function(...) return call(fn, ...) end
+  t[fn] = f
+  return f
+end })
 
 local args = {...}
 local sub = args[1] or "status"
@@ -28,7 +59,7 @@ if sub == "status" then
 
 elseif sub == "workers" then
   -- CLUSTER v2 — registered OpenOS workers on the bridge.
-  local list = mgr.workers and mgr.workers() or {}
+  local list = mgr.workers() or {}
   if #list == 0 then
     print("No OpenOS workers registered (bridge off or none have joined).")
     print("Enable it in /etc/cluster-manager.cfg (worker_bridge_enabled +")

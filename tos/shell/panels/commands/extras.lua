@@ -177,6 +177,13 @@ return function(C, S, deps)
       local okS, err = rc.start(svcName)
       -- "Already running" is success from the operator's point of view.
       if not okS and tostring(err):find("Already running", 1, true) then return true end
+      -- As `service start` does: the package follows its service. A disabled
+      -- package's programs hold no capabilities, so the CLI could not reach
+      -- the daemon the wizard had just started.
+      local p = pkgMod()
+      if okS and p and p.noteServiceStarted then
+        p.noteServiceStarted(svcName, { session = helpers.sessionOf(S) })
+      end
       return okS, err
     end
 

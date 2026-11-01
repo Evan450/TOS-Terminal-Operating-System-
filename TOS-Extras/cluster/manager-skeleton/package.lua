@@ -15,7 +15,7 @@
 -- surface (printable terminals, easy file I/O).
 return {
   name        = "cluster-manager",
-  version     = "1.2.1",
+  version     = "1.3.0",
   kind        = "service",
   category    = "network",
   description = "Cluster Manager: registers with Master, accepts assignments, dispatches to workers.",
@@ -47,16 +47,10 @@ return {
   --! real fix is a small `cluster-protocol` package, recorded in TODO.txt.
   provides    = { "cluster-protocol" },
   -- No `commands` map: the operator CLI ships as /usr/bin/cluster-manager.lua
-  -- and is run from PATH at full shell privilege (the package sandbox would
-  -- withhold the live kernel net/component surface it needs). Omitted on
-  -- purpose, like /usr/bin/servers, ssh — not registered as a package command.
+  -- and runs from PATH. This is the CLI's capability and nothing else's: the
+  -- daemon runs through rc.d, with the caps its own rc.d script declares.
   capabilities = {
-    "fs.read", "fs.write",
-    "component",
-    "peripheral.modem",
-    "net",
-    "load",                     -- evaluating task code from the Master
-    "compat.io",                -- worker-bridge writes
+    "ipc:cluster-manager",      -- everything it does, through the daemon
   },
   service = { defaultState = "disabled" },
   requires = {},

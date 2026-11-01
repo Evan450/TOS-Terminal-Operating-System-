@@ -302,7 +302,9 @@ local function loadManifest(srcDisk)
   -- return type. We try serialize.decode first (the manifest's normal
   -- format is `return { ... }` table literal), and only if that fails
   -- do we fall back to the load() path with a warning. A defensive
-  -- size cap blocks pathological inputs.
+  -- size cap blocks pathological inputs. kernel.serialize exists only
+  -- once TOS is running, so from OpenOS -- the normal case -- it is the
+  -- empty-environment load() below that reads the manifest.
   if #source > 256 * 1024 then
     return nil, "manifest exceeds 256 KB sanity cap"
   end
@@ -875,6 +877,32 @@ end
 -- BIOS flash
 -- ============================================================
 
+-- This runs on OpenOS, where no kernel.* module exists: asking for
+-- kernel.crypto here answered "(unavailable)" on every install there has
+-- been. So the data card when there is one, else the disk's own pure-Lua
+-- hasher, which needs no TOS underneath it.
+local function biosDigest(code, srcDisk)
+  if component.isAvailable("data") then
+    local okD, raw = pcall(component.data.sha256, code)
+    if okD and type(raw) == "string" and #raw == 32 then
+      return (raw:gsub(".", function(c) return ("%02x"):format(c:byte()) end))
+    end
+  end
+  local h = io.open(srcDisk .. "/tos/kernel/sha256.lua", "r")
+  if not h then return nil end
+  local body = h:read("*a"); h:close()
+  local chunk = body and load(body, "=sha256", "t", {
+    string = string, table = table, math = math, tonumber = tonumber,
+    tostring = tostring, type = type, select = select, ipairs = ipairs,
+    pairs = pairs, error = error, assert = assert, setmetatable = setmetatable,
+  })
+  if not chunk then return nil end
+  local okS, mod = pcall(chunk)
+  if not (okS and type(mod) == "table" and mod.hex) then return nil end
+  local okH, digest = pcall(mod.hex, code)
+  return okH and digest or nil
+end
+
 local function offerBiosFlash(srcDisk)
   local biosPath = srcDisk .. "/bios.lua"
   if not fs.exists(biosPath) then return end
@@ -886,14 +914,8 @@ local function offerBiosFlash(srcDisk)
   local biosCode = h:read("*a"); h:close()
   if not biosCode or #biosCode == 0 then warn("Empty bios.lua"); print(); return end
 
-  local fingerprint = "(unavailable)"
-  do
-    local okC, cryptoMod = pcall(require, "kernel.crypto")
-    if okC and cryptoMod and cryptoMod.hash then
-      local digest = cryptoMod.hash(biosCode)
-      if digest then fingerprint = digest:sub(1, 16) .. "..." end
-    end
-  end
+  local digest = biosDigest(biosCode, srcDisk)
+  local fingerprint = digest and (digest:sub(1, 16) .. "...") or "(unavailable)"
 
   color(0xFFFF00)
   print("A TOS BIOS was found on the install disk.")

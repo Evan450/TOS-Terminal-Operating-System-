@@ -27,6 +27,7 @@ local sandbox = {}
 --                 data-in/data-out; no keychain or fs access)
 -- "crypto"      — hash/hmac/ctEquals/random primitives, plus a
 --                 per-PACKAGE machine secret (admin-gated; see below)
+-- "ipc:<name>"  — ipc.call to that one service endpoint (kernel/ipc.lua)
 -- "legacy"      — unlocks full os.* and io.* (opt-in compat for
 --                 ported OpenOS programs; default OFF)
 -- ============================================================
@@ -1627,6 +1628,28 @@ function sandbox.build(opts)
       -- rc.d services keep the whole module: they arm themselves
       -- (setServiceArm) and run the transfer/remote handlers.
       env.net = opts.allowUserLibs and isolatedModule(net) or netFacade(net)
+    end
+  end
+
+  -- ipc:<name> caps: call that one service's endpoint, as this program's
+  -- own session. Plain data only, copied both ways (kernel/ipc.lua).
+  do
+    local reach = nil
+    for k in pairs(caps) do
+      local name = type(k) == "string" and k:match("^ipc:(.+)$")
+      if name then reach = reach or {}; reach[name] = true end
+    end
+    local okI, kipc = false, nil
+    if reach then okI, kipc = pcall(require, "kernel.ipc") end
+    if okI and kipc then
+      env.ipc = {
+        call = function(name, ...)
+          if not reach[name] then
+            return nil, "this program may not reach '" .. tostring(name) .. "'"
+          end
+          return kipc.call(name, session, ...)
+        end,
+      }
     end
   end
 

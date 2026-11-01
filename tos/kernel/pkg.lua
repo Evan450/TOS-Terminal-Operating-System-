@@ -869,6 +869,8 @@ local PKG_RUN_CAPS = {
   crypto = true, -- hash/hmac/ctEquals/random + the per-package machine secret
   notify = true, -- raise a modal dialog box (post/result only; kernel.notify
                  -- rate-limits it and stamps the source from the pkg name)
+  ipc = true,    -- "ipc:<name>": call one service's endpoint (kernel/ipc.lua).
+                 -- The service still decides what the caller's user may do.
   ["peripheral.modem"] = true, ["peripheral.redstone"] = true,
   ["peripheral.robot"] = true, ["peripheral.inventory"] = true,
   ["peripheral.tape"] = true, ["peripheral.tractor"] = true,
@@ -1016,6 +1018,11 @@ local function grantedCaps(pkgName, m)
         local allowed, why = pkg.capAllowed(pkgName, parsed.facet)
         if allowed then
           caps[parsed.facet] = true
+          -- ipc is the one facet whose scope is what it grants: which
+          -- endpoint. Kept as its own key for the sandbox to read.
+          if parsed.facet == "ipc" and parsed.scope then
+            caps["ipc:" .. parsed.scope] = true
+          end
         elseif log then
           -- A dropped cap used to be silent, which is how "the package
           -- installed fine and then did nothing" became a debugging session.

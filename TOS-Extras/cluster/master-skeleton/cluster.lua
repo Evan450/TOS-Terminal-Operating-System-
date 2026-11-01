@@ -1,18 +1,15 @@
 -- ╔══════════════════════════════════════════════════════════════╗
 -- ║  cluster — Operator CLI                                      ║
--- ║  Invoked from the shell; dispatches subcommands via          ║
--- ║  cluster.api which talks to the running clusterd.            ║
+-- ║  Invoked from the shell; dispatches subcommands to the       ║
+-- ║  running clusterd through its "cluster" ipc endpoint.        ║
 -- ╚══════════════════════════════════════════════════════════════╝
--- Access tier enforcement (via TOS's users module):
+-- Access tiers, enforced by the daemon (cluster.api's ACCESS table):
 --   ADMIN: read-only commands (status, managers, jobs, storage, log)
 --   ROOT : mutating commands  (submit, cancel, retry, drain, undrain,
 --                                forget, config set)
 --
 -- Dispatch shim is intentionally small: print formatting lives here,
--- domain logic lives in cluster.api.
-
-local api   = require("cluster.api")
-local users = require("users")  -- TOS user/tier check
+-- domain logic lives in cluster.api, in the daemon.
 
 -- Optional modules: guard against running outside a full shell.
 local term, event
@@ -32,39 +29,44 @@ local function die(msg)
   os.exit(1)
 end
 
-local function _tierName(t)
-  local map = { [0]="GUEST", [1]="USER", [2]="ADMIN", [3]="ROOT" }
-  return map[t] or ("tier" .. tostring(t))
+-- ============================================================
+-- The daemon
+-- ============================================================
+
+local NOT_RUNNING = "clusterd is not running. Start it with: service start clusterd"
+-- A disabled package's program holds no capabilities, and an old TOS has no
+-- ipc to give it, so the first is by far the likelier.
+local NO_IPC = NOT_RUNNING .. " (if it is running, update TOS: this one is too old)"
+
+-- clusterd's endpoint answers true and the call's results, or false and why
+-- it was not made. Anything else means no daemon is there to ask.
+local function call(fn, ...)
+  if type(ipc) ~= "table" then die(NO_IPC) end
+  local res = table.pack(ipc.call("cluster", fn, ...))
+  if res[1] == nil then
+    local why = tostring(res[2])
+    if why == "not running" or why:find("not started", 1, true) then die(NOT_RUNNING) end
+    die(why)
+  end
+  if res[1] == false then die(res[2]) end
+  return table.unpack(res, 2, res.n)
 end
 
--- ============================================================
--- Tier guard
--- ============================================================
+local api = setmetatable({}, { __index = function(t, fn)
+  local f = function(...) return call(fn, ...) end
+  t[fn] = f
+  return f
+end })
 
-local function requireTier(minName)
-  if not users or not users.TIER or not users.currentSession then
-    -- Users module missing → fail closed rather than allow unchecked access.
-    die("users subsystem unavailable; refusing to run")
-  end
-  local need = users.TIER[minName]
-  if not need then die("internal: unknown tier " .. tostring(minName)) end
-
-  local sess = users.currentSession()
-  if not sess then
-    die("not logged in")
-  end
-  local have = sess.tier or 0
-  if have < need then
-    io.stderr:write(string.format(
-      "cluster: permission denied (need %s, have %s)\n",
-      minName, _tierName(have)))
-    os.exit(1)
-  end
+local _now
+local function nowCached()
+  _now = _now or api.now()
+  return _now
 end
 
 local function _fmtTime(t)
   if not t then return "-" end
-  local now = require("computer").uptime()
+  local now = nowCached()
   local d   = math.floor(now - t)
   if d < 0 then return "-" end
   if d < 60 then return d .. "s ago" end
@@ -158,7 +160,6 @@ end
 -- ============================================================
 
 function cli.status(_args)
-  requireTier("ADMIN")
   local s = api.status()
   if not s then die("daemon not responding") end
 
@@ -184,7 +185,6 @@ end
 -- ============================================================
 
 function cli.managers(args)
-  requireTier("ADMIN")
   if args[1] then
     local domain_id = tonumber(args[1]) or die("invalid domain_id: " .. args[1])
     local m = api.getManager(domain_id)
@@ -218,7 +218,6 @@ end
 -- ============================================================
 
 function cli.jobs(args)
-  requireTier("ADMIN")
   if args[1] then
     local job_id = tonumber(args[1]) or die("invalid job_id: " .. args[1])
     local j = api.getJob(job_id)
@@ -251,7 +250,6 @@ end
 -- ============================================================
 
 function cli.storage(_args)
-  requireTier("ADMIN")
   local s = api.storageStatus()
   if not s then
     print("Public storage: not configured")
@@ -265,10 +263,19 @@ end
 -- ============================================================
 
 function cli.submit(args)
-  requireTier("ROOT")
   local path = args[1] or die("usage: cluster submit <job-file>")
-  local chunk, err = loadfile(path, "t")
-  if not chunk then die("loadfile failed: " .. tostring(err)) end
+  -- Asked first: evaluating the file is code running, and the daemon's own
+  -- check on submit would come too late to stop that.
+  if type(ipc) ~= "table" then die(NO_IPC) end
+  local may, why = ipc.call("cluster", "may", "submit")
+  if may == nil then die(NOT_RUNNING) end
+  if not may then die(why) end
+  local h, oerr = io.open(path, "r")
+  if not h then die("cannot read " .. path .. ": " .. tostring(oerr)) end
+  local src = h:read("*a")
+  h:close()
+  local chunk, err = load(src, "=" .. path, "t")
+  if not chunk then die("job file failed to load: " .. tostring(err)) end
   local ok, spec = pcall(chunk)
   if not ok then die("job file threw: " .. tostring(spec)) end
   if type(spec) ~= "table" then die("job file must return a table") end
@@ -283,7 +290,6 @@ end
 -- ============================================================
 
 function cli.cancel(args)
-  requireTier("ROOT")
   local job_id = tonumber(args[1]) or die("usage: cluster cancel <job_id>")
   local ok, err = api.cancelJob(job_id)
   if not ok then die(tostring(err)) end
@@ -291,7 +297,6 @@ function cli.cancel(args)
 end
 
 function cli.retry(args)
-  requireTier("ROOT")
   local job_id = tonumber(args[1]) or die("usage: cluster retry <job_id>")
   local new_id, err = api.retryJob(job_id)
   if not new_id then die(tostring(err)) end
@@ -303,7 +308,6 @@ end
 -- ============================================================
 
 function cli.drain(args)
-  requireTier("ROOT")
   local domain_id = tonumber(args[1]) or die("usage: cluster drain <domain_id>")
   local ok, err = api.drainManager(domain_id)
   if not ok then die(tostring(err)) end
@@ -311,7 +315,6 @@ function cli.drain(args)
 end
 
 function cli.undrain(args)
-  requireTier("ROOT")
   local domain_id = tonumber(args[1]) or die("usage: cluster undrain <domain_id>")
   local ok, err = api.undrainManager(domain_id)
   if not ok then die(tostring(err)) end
@@ -319,7 +322,6 @@ function cli.undrain(args)
 end
 
 function cli.forget(args)
-  requireTier("ROOT")
   local domain_id = tonumber(args[1]) or die("usage: cluster forget <domain_id>")
   local ok, err = api.forgetManager(domain_id)
   if not ok then die(tostring(err)) end
@@ -335,7 +337,6 @@ end
 -- which trust.lua allows at UNKNOWN level (chicken-and-egg solved).
 
 function cli.pair(args)
-  requireTier("ROOT")
   local sub = args[1] or "start"
 
   if sub == "start" then
@@ -384,7 +385,6 @@ end
 -- ============================================================
 
 function cli.watch(args)
-  requireTier("ADMIN")
   if not term or not term.clear then
     die("watch requires a terminal")
   end
@@ -402,8 +402,6 @@ function cli.watch(args)
   if interval < 0.2 then interval = 0.2 end
   if interval > 60 then interval = 60 end
 
-  local computer = require("computer")
-
   -- CLUSTER-4 — render a compact dashboard frame. Sections are
   -- ASCII-rule-separated so it reads on T1 monochrome too.
   local function rule(label)
@@ -414,6 +412,7 @@ function cli.watch(args)
   print("Watching cluster. Refresh = " .. interval .. "s. Press 'q' to quit.")
   while true do
     term.clear()
+    _now = nil
 
     -- Header line: cluster summary as a one-liner.
     local s = api.status()
@@ -471,15 +470,8 @@ function cli.watch(args)
     -- Wait for either the refresh interval or a 'q' key.
     local quit = false
     if event and event.pull then
-      local t0 = computer.uptime()
-      while computer.uptime() - t0 < interval do
-        local remaining = interval - (computer.uptime() - t0)
-        if remaining <= 0 then break end
-        local name, _, ch = event.pull(math.min(0.25, remaining), "key_down")
-        if name == "key_down" then
-          if ch == 113 or ch == 81 then quit = true; break end -- q / Q
-        end
-      end
+      local name, _, ch = event.pull(interval, "key_down")
+      if name == "key_down" and (ch == 113 or ch == 81) then quit = true end -- q / Q
     end
     if quit then break end
   end
@@ -492,7 +484,6 @@ end
 
 function cli.config(args)
   if args[1] == "set" then
-    requireTier("ROOT")
     local k, v = args[2], args[3]
     if not k or v == nil then die("usage: cluster config set <key> <value>") end
     local ok, info = api.setConfig(k, v)
@@ -503,7 +494,6 @@ function cli.config(args)
       print("Set " .. k .. ".")
     end
   else
-    requireTier("ADMIN")
     local cfg = api.getConfig()
     printKV(cfg)
   end
@@ -514,7 +504,6 @@ end
 -- ============================================================
 
 function cli.log(args)
-  requireTier("ADMIN")
   local n = tonumber(args[1]) or 20
   local events = api.recentEvents(n)
   if not events or #events == 0 then
@@ -587,6 +576,8 @@ end
 
 local ok, err = pcall(fn, args)
 if not ok then
+  -- os.exit ends a program by raising, and die() has already spoken.
+  if type(err) == "table" then error(err, 0) end
   io.stderr:write("cluster: " .. tostring(err) .. "\n")
   os.exit(1)
 end

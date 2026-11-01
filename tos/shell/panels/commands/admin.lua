@@ -229,6 +229,14 @@ return function(C, S, deps)
       return set
     end
 
+    --! What `pkg search <term>` matches on. The term used to be dropped, so
+    --! searching for one package answered with every package there was.
+    local function searchHit(e, term)
+      local hay = ((e.name or "") .. " " .. (e.description or "") .. " "
+        .. (e.category or "")):lower()
+      return hay:find(term:lower(), 1, true) ~= nil
+    end
+
     --! A `--` word a verb does not know is refused, and nothing happens.
     --! They used to be dropped without a word, which is how
     --! --allow-unsigned -- named in the signature gate's own refusal --
@@ -288,6 +296,18 @@ return function(C, S, deps)
           o("unreachable. `pkg repo list` shows what is configured.", T.dim)
         end
         return
+      end
+      local term = args[2]
+      if term then
+        local hits = {}
+        for _, e in ipairs(list) do
+          if searchHit(e, term) then hits[#hits + 1] = e end
+        end
+        if #hits == 0 then
+          o("Nothing available matches '" .. term .. "'. `pkg search` lists everything.", T.dim)
+          return
+        end
+        list = hits
       end
       -- Group the listing by category so `pkg search` reads the same way
       -- the picker does. listAllAvailable comes name-sorted; bucket it.

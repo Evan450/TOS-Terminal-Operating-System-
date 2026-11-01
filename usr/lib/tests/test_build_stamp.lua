@@ -92,6 +92,39 @@ else
   test("without --stamp the build stamps the commit (" .. tostring(stamp) .. ")",
     okGit and stamp ~= nil and (stamp:match("^%x+$") or stamp:match("^%x+%-dirty$") or stamp == "unknown"))
 
+  -- "-dirty" is about the shipped bytes. A tree one folder down its repo,
+  -- like TOS-Dev, so the path prefix is exercised too.
+  local quiet = WINDOWS and " >nul 2>nul" or " >/dev/null 2>&1"
+  local repo, tree = base .. "/repo", base .. "/repo/tree"
+  lfs.mkdir(repo); lfs.mkdir(tree); lfs.mkdir(tree .. "/tests")
+  writeAll(tree .. "/init.lua", initSrc)
+  writeAll(tree .. "/tests/t.txt", "a")
+  local function git(args) return os.execute('git -C "' .. repo .. '" ' .. args .. quiet) end
+  local gitOk = git("init -q") and git("add .")
+    and git('-c user.email=t@t -c user.name=t commit -q -m one')
+  if gitOk then
+    local n = 3
+    local function stampNow()
+      n = n + 1
+      local out = base .. "/out" .. n
+      runStrip(tree, out, "--exclude /tests/")
+      return (readAll(out .. "/init.lua") or ""):match('build = "([^"]+)"') or "(none)"
+    end
+    local first = stampNow()
+    test("a clean tree has a plain stamp (" .. first .. ")", first:match("^%x+$") ~= nil)
+    writeAll(tree .. "/tests/t.txt", "b")
+    local s2 = stampNow()
+    test("an edit to an excluded file is not dirty (" .. s2 .. ")", s2:match("^%x+$") ~= nil)
+    writeAll(tree .. "/tests/new.txt", "c")
+    local s3 = stampNow()
+    test("nor is a new excluded file (" .. s3 .. ")", s3:match("^%x+$") ~= nil)
+    writeAll(tree .. "/init.lua", initSrc .. "\n-- changed\n")
+    local s4 = stampNow()
+    test("an edit to a shipped file is (" .. s4 .. ")", s4:match("^%x+%-dirty$") ~= nil)
+  else
+    test("git is here to build the throwaway repo", false)
+  end
+
   rmrf(base)
 end
 

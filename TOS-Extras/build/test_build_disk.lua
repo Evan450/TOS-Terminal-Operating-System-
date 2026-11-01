@@ -497,15 +497,11 @@ do
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
     local PENDING_RESIGN = {
-      -- The operator re-signed the pack on 2026-10-31 at 19:00, minified the
+      -- The operator re-signed the pack on 2026-10-31 at 22:36, minified the
       -- way the release is. Name a package here when a fix to it lands ahead
       -- of the next signing.
-      ["stock"] = "1.0.2: thresholds save at all, and a refusal is seen",
-      ["write"] = "1.1.1: a refused save is not called saved",
-      ["printer"] = "1.0.1: a refused scan file is not called written",
-      ["calc"] = "2.0.1: a refused save says why",
-      ["warhead"] = "1.0.2: a refused save says why",
-      ["pic"] = "1.0.1: a refused convert says why",
+      ["cluster-master"] = "1.1.0: the CLI runs, through clusterd's ipc endpoint",
+      ["cluster-manager"] = "1.3.0: the CLI runs, through the daemon's ipc endpoint",
     }
 
     if nShipped == 0 then

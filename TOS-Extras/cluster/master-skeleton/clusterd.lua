@@ -38,6 +38,14 @@ local event    = firstRequire("kernel.event", "event")
 local fs       = firstRequire("kernel.fs", "filesystem")
 local computer = require("computer")
 
+-- Registered as the library loads, not at start(): a stopped daemon should
+-- tell the CLI so, which it does through api's own "not started" error. A
+-- TOS older than kernel/ipc.lua just has no CLI.
+do
+  local okI, ipc = pcall(require, "kernel.ipc")
+  if okI and type(ipc) == "table" then ipc.register("cluster", api.endpoint, "clusterd") end
+end
+
 -- TOS rotating file logger (kernel.log on TOS). Fall back to
 -- stderr-prefixed stubs so unit/integration tests don't need a full
 -- kernel — io-guarded, since `io` doesn't exist at rc.d time either.

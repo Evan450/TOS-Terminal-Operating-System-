@@ -348,6 +348,18 @@ function M.run(ctx)
       if opts.title then o(tostring(opts.title), D.c("title")) end
       for _, line in ipairs(opts.lines or {}) do o(tostring(line)) end
       if opts.text then o(tostring(opts.text)) end
+      if opts.message then
+        for line in (tostring(opts.message) .. "\n"):gmatch("(.-)\n") do o(line) end
+      end
+      -- A choice stays a choice. A y/N here hid the buttons, so cluster-setup
+      -- asked "What is this machine?" and offered only OK. Anything but a
+      -- listed number takes the last button, as Esc does on the framed one.
+      local buttons = opts.buttons
+      if type(buttons) == "table" and #buttons > 0 then
+        for i, label in ipairs(buttons) do o("  " .. i .. ". " .. tostring(label)) end
+        local pick = tonumber(readLine("Choice: ", false, 4) or "")
+        return (pick and buttons[pick]) and pick or #buttons
+      end
       local a = readLine((opts.prompt or "OK?") .. " [y/N]: ", false, 4)
       return (a ~= nil and a:lower():sub(1, 1) == "y") and 1 or 2
     end,

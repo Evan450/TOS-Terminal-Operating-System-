@@ -80,6 +80,7 @@ return {
   { path = "/tos/kernel/srm.lua",             critical = false },
   { path = "/tos/kernel/errors.lua",          critical = false },
   { path = "/tos/kernel/notify.lua",          critical = false },
+  { path = "/tos/kernel/ipc.lua",             critical = false },
   { path = "/tos/kernel/sha256.lua",          critical = false },
   -- Package signing. All three are LAZILY loaded — nothing requires them
   -- until a signature is actually present to check — but they are listed

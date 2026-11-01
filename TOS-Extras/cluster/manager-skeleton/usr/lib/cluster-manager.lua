@@ -874,6 +874,35 @@ function mgr.status()
   }
 end
 
+-- Every call the CLI may make, and the tier it needs. The CLI is a sandboxed
+-- program any user can start, so this is the gate.
+local ADMIN, ROOT = 2, 3
+local TIER_NAME = { [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" }
+local ACCESS = { status = ADMIN, workers = ADMIN, drain = ROOT, undrain = ROOT, pair = ROOT }
+
+--- The "cluster-manager" ipc endpoint's handler. Answers true then what the
+--- call returned, or false and why it was not made.
+function mgr.endpoint(caller, fn, ...)
+  local need = ACCESS[fn]
+  if not need then return false, "unknown call: " .. tostring(fn) end
+  local have = caller.tier or 0
+  if have < need then
+    return false, string.format("permission denied (need %s, have %s)",
+      TIER_NAME[need], TIER_NAME[have] or tostring(have))
+  end
+  return true, mgr[fn](...)
+end
+
+-- Registered as the library loads, not at start(): `pair` works with the
+-- daemon stopped, and `status` says so. A TOS older than kernel/ipc.lua
+-- just has no CLI.
+do
+  local okI, ipc = pcall(require, "kernel.ipc")
+  if okI and type(ipc) == "table" then
+    ipc.register("cluster-manager", mgr.endpoint, "cluster-manager")
+  end
+end
+
 function mgr.drain()  _state.state = "draining"; return true end
 function mgr.undrain() _state.state = "active";   return true end
 

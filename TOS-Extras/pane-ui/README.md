@@ -30,7 +30,7 @@ The file browser:
 
 The command line under the browser is always live: type a command and press Enter, and its output opens in a viewer tab. Up and Down recall earlier commands once you have started typing. `cd`, `clear` and `exit` are handled by PaneUI itself, and `themes` and `theme <name>` choose a theme.
 
-The editor saves with Ctrl+S and undoes with Ctrl+Z; Ctrl+Q or F10 closes its tab, asking first if there are unsaved changes. The browser tab is always there. A tab with unsaved work or live output is shown in brackets, and tabs that do not fit collapse into a `«N` chip.
+The editor saves with Ctrl+S and undoes with Ctrl+Z; Ctrl+Q closes its tab, asking first if there are unsaved changes. At that question Ctrl+Q again backs out and keeps the tab. Quitting from anywhere asks about every tab with unsaved work. The browser tab is always there. A tab with unsaved work or live output is shown in brackets, and tabs that do not fit collapse into a `«N` chip.
 
 ## The same look as TOS
 
@@ -44,6 +44,7 @@ It runs on OpenOS, so it cannot load TOS's code; it keeps copies instead. The te
 
 From `TOS-Extras/`:
 
+- `lua pane-ui/test_paneui_session.lua`: the real program on a fake OpenOS, keys in and screen out: help closes on ^Q, a save prompt can be cancelled, no way out skips an unsaved tab, and a full disk is not called saved
 - `lua pane-ui/test_paneui_grammar.lua`: PaneUI's glyphs and visual grammar match TOS's own `tos/shell/panels/ui.lua`
 - `lua pane-ui/test_paneui_themes.lua`: its nine themes are TOS's nine themes
 - `lua pane-ui/test_paneui_syntax_utf8.lua`: the highlighter never splits a multi-byte character

@@ -4,7 +4,7 @@ One **Master** machine accepts jobs and schedules them. Any number of **Manager*
 
 **To set one up, read [installer/README.md](installer/README.md).** In short: on each machine, as root, run `cluster-setup`. It is part of the base TOS image, picks the right package for the machine's role, installs it from the Optional Utilities disk, writes the configuration and handles pairing.
 
-> **Known issue.** The operator commands `cluster` (on the Master) and `cluster-manager` (on a Manager) do not start at present. They were written to share the running service's state, and since the September sandbox hardening a program's libraries load privately inside its own sandbox. The services themselves run normally, and `cluster-setup` pairs machines without them. Restoring the commands is an open decision about what a trusted package's own program may reach.
+The operator commands are `cluster` on the Master and `cluster-manager` on a Manager. Each is a sandboxed program that talks to its running service through that service's ipc endpoint (`tos/kernel/ipc.lua`), which is also where the tier checks live: the program can be started by anyone, so the daemon decides what its user may do.
 
 ## What's here
 

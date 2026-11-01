@@ -469,8 +469,8 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
   --! eleven files behind" once reported a stale answer as a real one
   --! (it is why sync-emulator.py exists). The release's root init.lua
   --! gets _TOS.build = the commit it was built from (short hash, plus
-  --! "-dirty" if TOS-Dev had uncommitted changes) and _TOS.variant = the
-  --! strip mode. Done on the EMITTED bytes, before the digests below, so
+  --! "-dirty" if a file this build ships had uncommitted changes) and
+  --! _TOS.variant = the strip mode. Done on the EMITTED bytes, before the digests below, so
   --! the manifest covers the stamped file. A placeholder that is missing or
   --! doubled STOPS the build: a stamp that silently did not happen is the
   --! very failure this is for. (test_build_stamp.lua)
@@ -488,7 +488,20 @@ if arg and arg[0] and arg[0]:match("strip%.lua$") then
     local q = '"' .. src .. '"'
     local hash = run("git -C " .. q .. " rev-parse --short HEAD 2>" .. nul):match("^%s*(%x+)%s*$")
     if not hash then return "unknown" end
-    local dirty = run("git -C " .. q .. " status --porcelain -- . 2>" .. nul):match("%S")
+    --! Dirty means the SHIPPED bytes differ from the commit. An edit to a test
+    --! or a doc this build excludes cannot make the stamp lie, and counting
+    --! one stamped every build -dirty for a week, which also stopped
+    --! publish.ps1 tagging any of them. Porcelain paths are from the repo
+    --! root; TOS-Dev is a folder inside it.
+    local prefix = run("git -C " .. q .. " rev-parse --show-prefix 2>" .. nul):gsub("%s+$", "")
+    local dirty = false
+    for line in run("git -C " .. q .. " status --porcelain -- . 2>" .. nul):gmatch("[^\r\n]+") do
+      local path = line:sub(4)
+      path = path:match(" %-> (.+)$") or path        -- a rename's new name
+      path = path:gsub('^"', ""):gsub('"$', "")
+      if path:sub(1, #prefix) == prefix then path = path:sub(#prefix + 1) end
+      if not isExcluded(src .. "/" .. path) then dirty = true; break end
+    end
     return hash .. (dirty and "-dirty" or "")
   end
   local function stampInit(code)

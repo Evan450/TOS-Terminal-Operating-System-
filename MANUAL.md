@@ -974,7 +974,7 @@ from a disk or over the network.
 
 ### 7.1 Using pkg
 - `pkg list` — installed packages.
-- `pkg search` — what's installable in any repo or mounted disk.
+- `pkg search [term]` — what's installable in any repo or mounted disk; a term narrows it by name, description or category.
 - `pkg info <name>` — manifest details.
 - `pkg install [arg]` — one smart verb. A **name** resolves dependencies and
   installs from any known source (OPPM-style, native, or a mounted disk),
@@ -1203,6 +1203,11 @@ capabilities (the `legacy` cap — raw os/io — can never be requested by a
 manifest). Declare `hashes = { ["/usr/.../init.lua"] = "<64hex>" }` to get
 integrity verification at install and run.
 
+A package that ships a service can give its own program a way to reach it:
+`ipc:<name>` lets the program call that one service endpoint with `ipc.call`. The
+service holds the endpoint and decides what the caller's user may do, and only
+plain data crosses, copied both ways.
+
 A capability the allowlist does not know is **dropped**, and the reason is
 logged with the facet named — check `log` if a package installs cleanly and
 then behaves as though it has no hardware.
@@ -1381,10 +1386,12 @@ the old code until restarted: `service stop <svc>` then `service start <svc>`.
 ### 7.5 Finding packages
 
 `pkg search` lists everything installable: what is on a mounted disk, and
-what the repos you have configured advertise.
+what the repos you have configured advertise. Give it a word to narrow the list
+to packages with that word in their name, description or category.
 
 ```
 pkg search
+pkg search snake
 ```
 
 Remote entries show `repo:<name>` in the source column instead of a path,
@@ -3384,13 +3391,10 @@ characters, so pasting one back is the easy mistake, and a config built from
 one can never connect.) The window lasts five minutes; if it lapses, run
 `cluster-setup` on the Master again to open another.
 
-> **Known issue.** The `cluster` and `cluster-manager` commands do not start at
-> present, so `cluster status`, `cluster managers`, `cluster watch`, `cluster
-> pair status`, `cluster pair start` and `cluster-manager status` all fail, even
-> though `cluster-setup` still mentions some of them when it finishes. The
-> services run normally and `cluster-setup` pairs machines without them; `service
-> list` shows whether `clusterd` or `cluster-manager` is running. The cause is in
-> `TOS-Extras/cluster/README.md`.
+`cluster status`, `cluster managers` and `cluster pair status` on the Master, and
+`cluster-manager status` on a Manager, show how it stands. They talk to the
+running service, so start it first (`cluster-setup` does). Reading takes an admin,
+and anything that changes the cluster takes root.
 
 **OpenOS workers** are the one part that needs manual copying, because they
 run OpenOS and TOS's package manager has no reach into it — and they're

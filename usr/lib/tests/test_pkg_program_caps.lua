@@ -115,6 +115,17 @@ do
   }))
   fs.writeFile("/usr/repo/tool/usr/bin/tool.lua", tool)
 
+  -- A package whose CLI reaches its own daemon's endpoint.
+  local cli = "print('cli')"
+  fs.makeDirectory("/usr/repo/cli")
+  fs.writeFile("/usr/repo/cli/package.lua", serialize.encode({
+    name = "cli", version = "1.0.0", kind = "command",
+    files = { "/usr/bin/cli.lua" },
+    capabilities = { "ipc:daemon" },
+    hashes = { ["/usr/bin/cli.lua"] = sha256.hex(cli) },
+  }))
+  fs.writeFile("/usr/repo/cli/usr/bin/cli.lua", cli)
+
   local pkg = newPkg(fs)
   local ok, err = pkg.install("/mnt/repo/b64", { session = ADMIN, allowUnverified = true })
   test("the OPPM package installs (" .. tostring(err) .. ")", ok)
@@ -131,6 +142,12 @@ do
   local tcaps, towner = pkg.capsForFile("/usr/bin/tool.lua")
   test("tool.lua runs with exactly what tool declared",
     towner == "tool" and tcaps and tcaps["fs.read"] and tcaps.net and count(tcaps) == 2)
+
+  local okC, errC = pkg.install("/usr/repo/cli", { session = ADMIN })
+  test("a package declaring ipc:<name> installs (" .. tostring(errC) .. ")", okC)
+  local ccaps = pkg.capsForFile("/usr/bin/cli.lua")
+  test("...and its program holds that endpoint and no other",
+    ccaps and ccaps["ipc:daemon"] == true and not ccaps["ipc:other"])
 
   test("a path written //usr/bin/... is the same file",
     select(2, pkg.capsForFile("//usr/bin/base64.lua")) == "b64")

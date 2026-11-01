@@ -348,6 +348,8 @@ else
     local env = {}
     for n in pairs(SANDBOX_BASE) do env[n] = true end
     for _, c in ipairs(caps) do
+      -- Any ipc:<name> cap is the one global, ipc.
+      if c:match("^ipc:") then env.ipc = true end
       for _, n in ipairs(CAP_NAMES[c] or {}) do env[n] = true end
     end
     return env
@@ -441,7 +443,12 @@ else
                 -- kernel/selftest.lua load()s these into the kernel's _G.
                 classOf[src], whyOf[src] = STANDALONE, "self-test check (kernel _G)"
               elseif target:match("^/usr/bin/") then
-                classOf[src], whyOf[src] = envFor(PATH_CAPS), "PATH program " .. target
+                -- A program a package installed runs with progenv's set plus
+                -- what the package was granted (pkg.capsForFile).
+                local pathCaps = {}
+                for _, c in ipairs(PATH_CAPS) do pathCaps[#pathCaps + 1] = c end
+                for _, c in ipairs(caps) do pathCaps[#pathCaps + 1] = c end
+                classOf[src], whyOf[src] = envFor(pathCaps), "PATH program " .. target
               elseif target:match("^/etc/rc%.d/") then
                 classOf[src], whyOf[src] = envFor(rcCaps(readText(extras .. src) or "")),
                   "rc.d shim " .. target
@@ -477,11 +484,7 @@ else
   --! KNOWN GAPS -- recorded, not endorsed. Each is a real defect with its
   --! own TODO entry; it is pinned so that FIXING it fails this lint and the
   --! entry has to be removed, rather than passing silently.
-  local KNOWN_GAPS = {
-    ["cluster/master-skeleton/cluster.lua"] = {
-      loadfile = "THE CLUSTER CLIs CANNOT RUN IN THE SANDBOX THEY ARE GIVEN (TODO 2026-10-01)",
-    },
-  }
+  local KNOWN_GAPS = {}
   local extOffenders, gapSeen, xScanned = {}, {}, 0
   for _, rel in ipairs(all) do
     local names, err = envNamesAt(extras .. rel)

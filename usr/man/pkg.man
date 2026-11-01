@@ -2,7 +2,7 @@ NAME
     pkg - package manager (install, remove, update and trust TOS packages)
 
 SYNOPSIS
-    pkg list | search | info <name> | commands
+    pkg list | search [term] | info <name> | commands
     pkg install [<name>... | <dir>] [--dry-run] [--key <licenseKey>]
     pkg uninstall <name>
     pkg enable <name> | disable <name>

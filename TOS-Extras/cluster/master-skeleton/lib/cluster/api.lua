@@ -2,10 +2,11 @@
 -- ║  cluster.api — In-process API for the `cluster` CLI          ║
 -- ╚══════════════════════════════════════════════════════════════╝
 -- Bridge between the operator-facing CLI (`cluster`) and the daemon
--- (`clusterd`). The CLI requires this module and calls its functions
--- directly; because TOS is cooperative, they share address space within
--- the user's shell process for read operations. For write operations
--- the API acquires the state lock (state.withLock) before mutating.
+-- (`clusterd`). This copy runs in the daemon. The CLI is a sandboxed
+-- program with its own instance of anything it requires, so it reaches
+-- these functions through the "cluster" ipc endpoint (api.endpoint, below),
+-- which is also where the tier checks live. For write operations the API
+-- acquires the state lock (state.withLock) before mutating.
 --
 -- Design rule: this module is the ONLY entrypoint the CLI uses. It
 -- exists so that the CLI can't accidentally touch state directly —
@@ -81,6 +82,10 @@ end
 -- ============================================================
 -- Inspection (read-only; no lock needed for simple reads)
 -- ============================================================
+
+function api.now()
+  return computer.uptime()
+end
 
 function api.status()
   _requireBound()
@@ -372,6 +377,46 @@ function api.setConfig(key, value)
   local cfg = _clusterd and _clusterd.getConfig and _clusterd.getConfig()
   if cfg then cfg[key] = value end
   return true, { restart_required = spec.restart_required }
+end
+
+-- ============================================================
+-- The CLI's way in (the "cluster" ipc endpoint)
+-- ============================================================
+-- Every call the CLI may make, and the tier it needs. A name not listed
+-- here cannot be reached, so bind and endpoint itself stay out of reach.
+-- This is the gate: the `ipc:cluster` capability says which program may
+-- knock, and any user can run that program.
+local ADMIN, ROOT = 2, 3
+local TIER_NAME = { [0] = "GUEST", [1] = "USER", [2] = "ADMIN", [3] = "ROOT" }
+local ACCESS = {
+  now = ADMIN, status = ADMIN, listManagers = ADMIN, getManager = ADMIN,
+  listJobs = ADMIN, getJob = ADMIN, storageStatus = ADMIN, recentEvents = ADMIN,
+  getConfig = ADMIN,
+  submit = ROOT, cancelJob = ROOT, retryJob = ROOT, drainManager = ROOT,
+  undrainManager = ROOT, forgetManager = ROOT, startPairing = ROOT,
+  closePairing = ROOT, pairingInfo = ROOT, setConfig = ROOT,
+}
+
+local function allowed(caller, fn)
+  local need = ACCESS[fn]
+  if not need then return false, "unknown call: " .. tostring(fn) end
+  local have = caller.tier or 0
+  if have < need then
+    return false, string.format("permission denied (need %s, have %s)",
+      TIER_NAME[need], TIER_NAME[have] or tostring(have))
+  end
+  return true
+end
+
+--- The endpoint's handler. Answers true then what the call returned, or
+--- false and why it was not made, so a CLI can tell the two apart.
+--- may(fn) asks without calling: `cluster submit` runs the job file before
+--- it can submit it, and must not do that for someone who may not.
+function api.endpoint(caller, fn, ...)
+  if fn == "may" then return allowed(caller, (...)) end
+  local ok, why = allowed(caller, fn)
+  if not ok then return false, why end
+  return true, api[fn](...)
 end
 
 return api

@@ -447,9 +447,12 @@ end
 local function writeTextFile(path, content)
   local h = fs.open(path, "w")
   if not h then return false, "cannot open for write" end
-  local ok, err = pcall(function() h:write(content) end)
+  -- A full disk ANSWERS nil, "not enough space"; it does not raise, so a
+  -- bare pcall called that a save.
+  local ok, done, why = pcall(h.write, h, content)
   h:close()
-  if not ok then return false, err end
+  if not ok then return false, done end
+  if not done then return false, why or "write failed" end
   return true
 end
 
@@ -460,12 +463,18 @@ local function copyFile(src, dst)
   if not ih then return false, "cannot read source" end
   local oh = fs.open(dst, "wb") or fs.open(dst, "w")
   if not oh then ih:close(); return false, "cannot write dest" end
+  local failed
   while true do
     local chunk = ih:read(4096)
     if not chunk then break end
-    oh:write(chunk)
+    local done, why = oh:write(chunk)
+    if not done then failed = why or "write failed"; break end
   end
   ih:close(); oh:close()
+  if failed then
+    fs.remove(dst)
+    return false, failed
+  end
   return true
 end
 
@@ -1318,14 +1327,17 @@ local function confirmDialog(prompt)
   for i, ln in ipairs(lines) do
     setText(x + 3, y + 1 + i, fit(ln, textW), c("fg"), bg)
   end
-  setText(x + 3, y + #lines + 3, "[Y]es   [N]o", c("dim"), bg)
+  setText(x + 3, y + #lines + 3, "[Y]es   [N]o   ^Q Cancel", c("dim"), bg)
 
   while true do
     local _, _, ch = event.pull("key_down")
     if ch == 89 or ch == 121 then return true end
+    if ch == 78 or ch == 110 then return false end
     -- Esc is tolerated (harmless here) but ^Q is the documented, reliable
-    -- cancel (keymap.lua's convention for a prompt/dialog) -- see B5.
-    if ch == 78 or ch == 110 or ch == 27 or ch == 17 then return false end
+    -- cancel (keymap.lua's convention for a prompt/dialog) -- see B5. It
+    -- answers nil, not false: at a save prompt No throws the work away, and
+    -- backing out of the question must not.
+    if ch == 27 or ch == 17 then return nil end
   end
 end
 
@@ -1630,6 +1642,22 @@ end
 
 local CMD_OUT = "/tmp/paneui_cmdout.txt"
 
+-- Every way out comes through here, so a tab that is not in front cannot
+-- lose its work: the browser's F10 used to quit past an unsaved editor tab
+-- without a word. A Cancel, or a Save-As abandoned, stays in PaneUI.
+local function requestQuit()
+  for i, tab in ipairs(State.tabs) do
+    if tab.type == "edit" and tab.modified then
+      State.activeTab = i
+      repaint()
+      local save = confirmDialog("Save changes to '" .. (tab.label or "this file") .. "' before quitting?")
+      if save == nil then return end
+      if save and not saveEditTab(tab) then return end
+    end
+  end
+  State.quitting = true
+end
+
 local function runCommand(cmdLine)
   if cmdLine == "" then return end
 
@@ -1656,7 +1684,7 @@ local function runCommand(cmdLine)
     State.outCol = c("dim")
     return
   elseif builtin == "exit" or builtin == "quit" then
-    State.quitting = true
+    requestQuit()
     return
   elseif builtin == "themes" then
     State.out = "Themes: " .. table.concat(themeNames(), ", ") ..
@@ -1724,6 +1752,9 @@ local function runCommand(cmdLine)
     content = (content or "") .. "\n[PaneUI] command failed: " .. tostring(exErr or "(no error message)")
   end
 
+  -- A command can change what the browser is showing (mkdir, rm, cp).
+  refresh()
+
   if userRedirect then
     -- User did their own redirect, so we don't have captured output
     -- to show. Just acknowledge the run.
@@ -1771,7 +1802,7 @@ local function handleBrowserKey(ch, code)
 
   -- Always-available global keys
   if code == SCANCODE.f10 or (isCtrl(ch) and ch == 17) then
-    State.quitting = true; return
+    requestQuit(); return
   elseif code == SCANCODE.f1 then
     openHelp(); return
   -- Tab cycles tabs here, same as everywhere else in TOS now (keymap.lua:
@@ -1883,7 +1914,7 @@ local function handleViewerKey(ch, code, tab)
   local maxScroll = math.max(0, #(tab.lines or {}) - rows)
 
   if code == SCANCODE.f10 then
-    State.quitting = true
+    requestQuit()
   elseif isCtrl(ch) and ch == 17 then
     tabClose()
   elseif code == SCANCODE.f1 then
@@ -1912,25 +1943,13 @@ end
 -- Helper: prompt to save the buffer if modified, then run `after`.
 -- Used by both Ctrl+Q (close-tab) and F10 (quit-program) so neither
 -- one silently discards changes.
-local function maybeSaveAndContinue(tab, after)
-  if not tab.modified then after(); return end
-  if confirmDialog("Save changes to '" .. (tab.label or "this file") .. "' before continuing?") then
-    -- saveEditTab returns false if the user cancelled the Save-As prompt.
-    -- In that case we abort the F10 / Ctrl+Q rather than discarding the
-    -- buffer — consistent with "the user said save, then bailed".
-    if saveEditTab(tab) then after() end
-  else
-    after()
-  end
-end
-
 local function handleEditorKey(ch, code, tab)
   -- Global F-keys still work — but F10 now goes through the
   -- save-prompt path so a tap on F10 with unsaved work doesn't
   -- silently lose it (the previous F10 behaviour skipped the
   -- Ctrl+Q prompt).
   if code == SCANCODE.f10 then
-    maybeSaveAndContinue(tab, function() State.quitting = true end)
+    requestQuit()
     return
   end
   if code == SCANCODE.f1 then
@@ -2045,7 +2064,11 @@ local function handleEditorKey(ch, code, tab)
     end
   elseif isCtrl(ch) and ch == 17 then  -- Ctrl+Q
     if tab.modified then
-      if confirmDialog("Save changes to '" .. (tab.label or "this file") .. "' before closing?") then
+      local save = confirmDialog("Save changes to '" .. (tab.label or "this file") .. "' before closing?")
+      if save == nil then return end
+      if save then
+        -- saveEditTab returns false if the Save-As prompt was cancelled:
+        -- the tab stays, consistent with "said save, then bailed".
         if saveEditTab(tab) then tabClose() end
       else
         tabClose()
@@ -2061,9 +2084,17 @@ local function handleEditorKey(ch, code, tab)
   end
 end
 
+-- Ctrl, Shift and Alt raise a key_down of their own, with no character.
+local MODIFIER_CODE = {
+  [29] = true, [157] = true, [42] = true, [54] = true, [56] = true, [184] = true,
+}
+
 local function handleHelpKey(ch, code)
-  -- Any key dismisses help (but F10 still quits the program).
-  if code == SCANCODE.f10 then State.quitting = true; return end
+  -- Any key dismisses help (but F10 still quits the program). A modifier
+  -- alone is not a key: ^Q arrives as Ctrl then Q, so Ctrl closed the tab
+  -- and the Q reached the browser, which quit.
+  if ch == 0 and MODIFIER_CODE[code] then return end
+  if code == SCANCODE.f10 then requestQuit(); return end
   if code == SCANCODE.f2 or code == SCANCODE.tab then tabCycle(1); return end
   if code == SCANCODE.f1 then return end  -- F1 on help is a no-op (already open)
   tabClose()

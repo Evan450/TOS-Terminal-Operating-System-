@@ -13,7 +13,7 @@
 --     advertising itself.
 return {
   name        = "cluster-master",
-  version     = "1.0.2",
+  version     = "1.1.0",
   kind        = "service",
   category    = "network",
   description = "Cluster control-plane Master: registers Managers, schedules jobs, owns persistent state.",
@@ -35,16 +35,13 @@ return {
     "/etc/rc.d/clusterd.lua",
     "/etc/cluster-master.cfg",
   },
-  -- No `commands` map: the operator CLI ships as /usr/bin/cluster.lua and is
-  -- run from PATH at full shell privilege (it needs the live kernel net/
-  -- component surface, which the package sandbox would withhold). Declaring it
-  -- as a package command would either be malformed (array form) or sandbox the
-  -- CLI — so it is intentionally omitted, exactly like /usr/bin/servers, ssh.
+  -- No `commands` map: the operator CLI ships as /usr/bin/cluster.lua and runs
+  -- from PATH. These capabilities are the CLI's and nothing else's: the daemon
+  -- runs through rc.d, with the caps its own rc.d script declares. Any user can
+  -- start a PATH program, and `cluster submit` evaluates a file, so the CLI
+  -- holds no more than it needs.
   capabilities = {
-    "fs.read", "fs.write",      -- /etc/cluster-master.cfg + /var/cluster/state.dat
-    "component",                -- modem listing
-    "peripheral.modem",         -- C4 split: cluster needs raw modem access
-    "net",                      -- TOS net stack
+    "ipc:cluster",              -- everything it does, through clusterd
     "load",                     -- evaluating job specs at submit time
   },
   -- The rc.d hook starts the daemon. defaultState=disabled so a fresh
