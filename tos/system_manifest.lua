@@ -7,6 +7,10 @@
 -- Fields:
 --   path     = absolute path on the OC filesystem
 --   critical = true if the system cannot boot without this file
+--   floor    = true if TOS must keep this file when it strips itself: Safe
+--              Mode boots and the emergency terminal exists on these alone.
+--              test_manifest_floor.lua proves the set closed under require,
+--              and build/floorboot.py boots it.
 --
 -- Coverage rule: every runtime .lua file under /tos, /etc/rc.d,
 -- /usr/bin, /usr/modules and the bootstrap files at the root MUST
@@ -36,43 +40,43 @@
 
 return {
   -- ── Boot ─────────────────────────────────────────────────
-  { path = "/init.lua",                       critical = true  },
+  { path = "/init.lua",                       critical = true, floor = true  },
   { path = "/install.lua",                    critical = false },
 
   -- ── Kernel core ──────────────────────────────────────────
-  { path = "/tos/kernel/init.lua",            critical = true  },
-  { path = "/tos/kernel/log.lua",             critical = true  },
-  { path = "/tos/kernel/hal.lua",             critical = true  },
-  { path = "/tos/kernel/event.lua",           critical = true  },
-  { path = "/tos/kernel/process.lua",         critical = true  },
-  { path = "/tos/kernel/fs.lua",              critical = true  },
-  { path = "/tos/kernel/serialize.lua",       critical = true  },
-  { path = "/tos/kernel/display.lua",         critical = true  },
+  { path = "/tos/kernel/init.lua",            critical = true, floor = true  },
+  { path = "/tos/kernel/log.lua",             critical = true, floor = true  },
+  { path = "/tos/kernel/hal.lua",             critical = true, floor = true  },
+  { path = "/tos/kernel/event.lua",           critical = true, floor = true  },
+  { path = "/tos/kernel/process.lua",         critical = true, floor = true  },
+  { path = "/tos/kernel/fs.lua",              critical = true, floor = true  },
+  { path = "/tos/kernel/serialize.lua",       critical = true, floor = true  },
+  { path = "/tos/kernel/display.lua",         critical = true, floor = true  },
 
   -- ── Kernel optional ──────────────────────────────────────
-  { path = "/tos/kernel/screen.lua",          critical = false },
+  { path = "/tos/kernel/screen.lua",          critical = false, floor = true },
   { path = "/tos/kernel/clipboard.lua",       critical = false },
-  { path = "/tos/kernel/config.lua",          critical = false },
-  { path = "/tos/kernel/users.lua",           critical = false },
-  { path = "/tos/kernel/securefs.lua",        critical = false },
+  { path = "/tos/kernel/config.lua",          critical = false, floor = true },
+  { path = "/tos/kernel/users.lua",           critical = false, floor = true },
+  { path = "/tos/kernel/securefs.lua",        critical = false, floor = true },
   { path = "/tos/kernel/sandbox.lua",         critical = false },
   { path = "/tos/kernel/power.lua",           critical = false },
   { path = "/tos/kernel/rc.lua",              critical = false },
-  { path = "/tos/kernel/crypto.lua",          critical = false },
+  { path = "/tos/kernel/crypto.lua",          critical = false, floor = true },
   { path = "/tos/kernel/datacard.lua",        critical = false },
   { path = "/tos/kernel/logo.lua",            critical = false },
-  { path = "/tos/kernel/pipe.lua",            critical = false },
+  { path = "/tos/kernel/pipe.lua",            critical = false, floor = true },
   { path = "/tos/kernel/env.lua",             critical = false },
   { path = "/tos/kernel/cron.lua",            critical = false },
   { path = "/tos/kernel/audio.lua",           critical = false },
   { path = "/tos/kernel/theme.lua",           critical = false },
-  { path = "/tos/kernel/monitor.lua",         critical = false },
+  { path = "/tos/kernel/monitor.lua",         critical = false, floor = true },
   { path = "/tos/kernel/pkg.lua",             critical = false },
   { path = "/tos/kernel/pkgops.lua",          critical = false },
   { path = "/tos/kernel/swap.lua",            critical = false },
   { path = "/tos/kernel/compress.lua",        critical = false },
-  { path = "/tos/kernel/sysinfo.lua",         critical = false },
-  { path = "/tos/kernel/bootcfg.lua",         critical = false },
+  { path = "/tos/kernel/sysinfo.lua",         critical = false, floor = true },
+  { path = "/tos/kernel/bootcfg.lua",         critical = false, floor = true },
   { path = "/tos/kernel/bootsettings.lua",    critical = false },
   { path = "/tos/kernel/bootsteps.lua",       critical = false },
   { path = "/tos/kernel/repair.lua",          critical = false },
@@ -81,7 +85,7 @@ return {
   { path = "/tos/kernel/errors.lua",          critical = false },
   { path = "/tos/kernel/notify.lua",          critical = false },
   { path = "/tos/kernel/ipc.lua",             critical = false },
-  { path = "/tos/kernel/sha256.lua",          critical = false },
+  { path = "/tos/kernel/sha256.lua",          critical = false, floor = true },
   -- Package signing. All three are LAZILY loaded — nothing requires them
   -- until a signature is actually present to check — but they are listed
   -- here because the manifest is what `verify` walks. A file the image
@@ -94,13 +98,13 @@ return {
   { path = "/tos/kernel/x25519.lua",          critical = false },
   { path = "/tos/kernel/pkgsign.lua",         critical = false },
   { path = "/tos/kernel/backup.lua",          critical = false },
-  { path = "/tos/kernel/diag.lua",            critical = false },
+  { path = "/tos/kernel/diag.lua",            critical = false, floor = true },
   { path = "/tos/kernel/internet.lua",        critical = false },
   { path = "/tos/kernel/pkgremote.lua",       critical = false },
   { path = "/tos/kernel/jbod.lua",            critical = false },
   { path = "/tos/kernel/diskmount.lua",       critical = false },
   { path = "/tos/kernel/netfs.lua",           critical = false },
-  { path = "/tos/kernel/selftest.lua",        critical = false },
+  { path = "/tos/kernel/selftest.lua",        critical = false, floor = true },
   { path = "/tos/kernel/keychain.lua",        critical = false },
   { path = "/tos/kernel/profile.lua",         critical = false },
   { path = "/tos/kernel/i18n.lua",            critical = false },
@@ -120,25 +124,25 @@ return {
   { path = "/tos/kernel/net/meshctl.lua",     critical = false },
 
   -- ── Shell ────────────────────────────────────────────────
-  { path = "/tos/shell/init.lua",             critical = true  },
+  { path = "/tos/shell/init.lua",             critical = true, floor = true  },
   -- CRITICAL, like the launcher above it and unlike the panels tree: the
   -- CLI is the interface a seat falls back to when the TUI will not
   -- load, and `ui=cli` boots straight into it. A machine that has lost
   -- this has lost both of its shells and is down to the emergency
   -- terminal.
-  { path = "/tos/shell/cli.lua",              critical = true  },
-  { path = "/tos/shell/quitkey.lua",          critical = true  },
+  { path = "/tos/shell/cli.lua",              critical = true, floor = true  },
+  { path = "/tos/shell/quitkey.lua",          critical = true, floor = true  },
   -- The sandbox-environment builder both shells hand to every program
   -- they run. Not critical to REACH a prompt, but a shell that cannot
   -- build a program env cannot run anything from it.
-  { path = "/tos/shell/progenv.lua",          critical = false },
+  { path = "/tos/shell/progenv.lua",          critical = false, floor = true },
   -- The shared keybind table. Not critical to reach a prompt, but a
   -- machine that lost it falls back to the coded defaults rather than
   -- to no keys at all — see the module.
   { path = "/tos/shell/keys.lua",             critical = false },
-  { path = "/tos/shell/open.lua",             critical = false },
+  { path = "/tos/shell/open.lua",             critical = false, floor = true },
   { path = "/tos/shell/ext.lua",              critical = false },
-  { path = "/tos/shell/login.lua",            critical = false },
+  { path = "/tos/shell/login.lua",            critical = false, floor = true },
   { path = "/tos/shell/colophon.lua",         critical = false },
   { path = "/tos/shell/syntax.lua",           critical = false },
   { path = "/tos/shell/chat.lua",             critical = false },
@@ -151,7 +155,7 @@ return {
   -- ── Panels (Norton Commander UI) ─────────────────────────
   { path = "/tos/shell/panels.lua",           critical = false },
   { path = "/tos/shell/panels/init.lua",      critical = false },
-  { path = "/tos/shell/panels/commands.lua",  critical = false },
+  { path = "/tos/shell/panels/commands.lua",  critical = false, floor = true },
   { path = "/tos/shell/panels/context.lua",   critical = false },
   { path = "/tos/shell/panels/dialogs.lua",   critical = false },
   { path = "/tos/shell/panels/draw.lua",      critical = false },
@@ -159,10 +163,10 @@ return {
   { path = "/tos/shell/panels/takeover.lua",  critical = false },
   { path = "/tos/shell/panels/editor.lua",    critical = false },
   { path = "/tos/shell/panels/events.lua",    critical = false },
-  { path = "/tos/shell/panels/executor.lua",  critical = false },
+  { path = "/tos/shell/panels/executor.lua",  critical = false, floor = true },
   { path = "/tos/shell/panels/filebrowser.lua", critical = false },
-  { path = "/tos/shell/panels/helpers.lua",   critical = false },
-  { path = "/tos/shell/panels/keymap.lua",    critical = false },
+  { path = "/tos/shell/panels/helpers.lua",   critical = false, floor = true },
+  { path = "/tos/shell/panels/keymap.lua",    critical = false, floor = true },
   { path = "/tos/shell/panels/menus.lua",     critical = false },
   { path = "/tos/shell/panels/mouse.lua",     critical = false },
   { path = "/tos/shell/panels/state.lua",     critical = false },
@@ -181,8 +185,8 @@ return {
   -- pcall-requires "mailapp" from /usr/lib when the add-on is installed.)
 
   -- Command-table subfiles (v1.3 split — see panels/commands.lua header)
-  { path = "/tos/shell/panels/commands/core.lua",   critical = false },
-  { path = "/tos/shell/panels/commands/admin.lua",  critical = false },
+  { path = "/tos/shell/panels/commands/core.lua",   critical = false, floor = true },
+  { path = "/tos/shell/panels/commands/admin.lua",  critical = false, floor = true },
   { path = "/tos/shell/panels/commands/extras.lua", critical = false },
 
   -- ── Compat layer (OpenOS-compatible APIs) ────────────────

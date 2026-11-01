@@ -284,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="with --robot: starts empty, with an inventory controller and a chest")
     ap.add_argument("--robot-rubbish", action="store_true",
                     help="with --robot-chest: a pickaxe, and four blocks in the way of the test hut")
+    ap.add_argument("--release", metavar="DIR",
+                    help="boot a copy of DIR instead of TOS-Release (a stripped tree, say)")
     ap.add_argument("--machines", choices=["1", "2", "3"], default="1",
                     help="2 or 3: more computers, each with its own fresh TOS, joined by "
                          "network cards and one relay; `machine N` picks which one")
@@ -303,6 +305,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--javac", help="the javac to compile the runner with")
     ap.add_argument("--config", help="an OpenComputers.conf (default: the one beside the jar)")
     args = ap.parse_args(argv)
+    if args.release:
+        hs.RELEASE = Path(args.release).resolve()
 
     script = Path(args.script)
     if not script.is_file():

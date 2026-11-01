@@ -68,6 +68,26 @@ test("it no longer promises a reboot will fix it", not text:lower():find("reboot
 local widest = 0
 for _, l in ipairs(lines) do widest = math.max(widest, l.x + #l.text - 1) end
 test("every line fits a 50-column Tier 1 screen", widest <= W, widest)
+
+-- A file that is gone is a different problem from memory that ran out.
+lines = {}
+noUserSystem(d, function() return "key_down" end, nil, "Module not found: kernel.users")
+local damaged = {}
+widest = 0
+for _, l in ipairs(lines) do
+  damaged[#damaged + 1] = l.text
+  widest = math.max(widest, l.x + #l.text - 1)
+end
+local dt = table.concat(damaged, " ")
+test("a missing file is not called a memory problem", not dt:find("Not enough memory", 1, true), dt)
+test("...it says TOS is damaged", dt:find("damaged", 1, true) ~= nil, dt)
+test("...and that memory will not help", dt:find("will not help", 1, true) ~= nil, dt)
+test("...and that screen fits too", widest <= W, widest)
+lines = {}
+noUserSystem(d, function() return "key_down" end, nil, "not enough memory")
+local again = {}
+for _, l in ipairs(lines) do again[#again + 1] = l.text end
+test("real memory trouble still says so", table.concat(again, " "):find("Not enough memory", 1, true) ~= nil)
 test("it beeps once", beeps == 1, beeps)
 test("only a key press ends the wait", pulls == 4, pulls)
 test("...and the wait has no timeout", timeouts[1] == math.huge)

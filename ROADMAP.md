@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**78 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**79 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 54 | Planned or under investigation. Most contributions belong here. |
+| Planned | 55 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (13) · [Networking](#networking) (7) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (12)
+**By area:** [Testing in the game](#testing-in-the-game) (7) · [Add-ons](#add-ons) (5) · [Packages](#packages) (13) · [Networking](#networking) (7) · [Security and accounts](#security-and-accounts) (8) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (11) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (11) · [The project](#the-project) (13)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -805,11 +805,11 @@ THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS SINCE 2026-10-17, THE MIT CRE
 
 THE CREDIT IS FIXED, 2026-10-26; the rest is still the decision. minify\_vars.noticesOf puts back, at the top of the file, every `--!` paragraph whose first word is PROVENANCE., Copyright or SPDX-License-Identifier: (read from the unstripped file -- from the stripped one the credit ran on into the #SEC note after it). strip.lua's marker convention says so. internet.lua's 425 bytes are the only notice shipped today. test\_release\_credits.lua (14) checks the built TOS-Release; its built-tree checks fail on the old build. So the decision left is only whether #SEC notes and invariants ship (\~217 KB), no longer a licence question. Marked \[ \], not \[!\]: nothing is broken while it waits.
 
-### The tier 1 gap, re-measured
+### The tier 1 gap, re-measured (the floor below it is 488 KB, 2026-11-01
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
-THE TIER 1 GAP, RE-MEASURED. AUDIT 2 put a full install 773 KB over a 1,024 KB drive (1,797 KB on a managed disk). Dedenting and renaming have since happened: today it is 1,354 KB (1,292 KB of files plus 512 B of fileCost for each of 170 files and 15 dirs), so 330 KB over. What is left is profiles (Install profiles, below) and fileCost (the 21 man pages are 49 KB plus 10.5 KB of fileCost). The `--!` lever is spent, see above.
+THE TIER 1 GAP, RE-MEASURED (the floor below it is 488 KB, 2026-11-01: see BUILD THE SURVEY SUGGESTIONS). AUDIT 2 put a full install 773 KB over a 1,024 KB drive (1,797 KB on a managed disk). Dedenting and renaming have since happened: today it is 1,354 KB (1,292 KB of files plus 512 B of fileCost for each of 170 files and 15 dirs), so 330 KB over. What is left is profiles (Install profiles, below) and fileCost (the 21 man pages are 49 KB plus 10.5 KB of fileCost). The `--!` lever is spent, see above.
 
 ### The loot disk is whatever TOS-Release was when the mod last built
 
@@ -850,8 +850,8 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this list only once the open \[!\] entries and the bug entries in WHAT NOBODY WROTE DOWN are done or waiting on the operator. Each line points at the entry that holds the design; the design stays there, this is only the order and the reason. Ordered by what each unblocks, then by value to an operator against its cost.
 
 1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). DONE 2026-11-01 (kernel/ipc.lua); the cluster CLIs use it. rc-pilot hearing its robot still waits on its own decision.
-2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). The floor: system\_manifest `floor = true` and the test that the floor is closed under require. Buildable and safe on its own (it deletes nothing), and it is what the Tier 1 gap (330 KB over a 1 MB drive, re-measured above) needs before any stripping UI can be honest. The UI and the strip itself come later.
-3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). One piece of work: log what the sandbox refuses, then a mode that logs instead of refusing. How the audit mode is exposed is an operator decision already batched; the log half needs none.
+2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). DONE 2026-11-01: 33 of 167 files carry floor = true, test\_manifest\_floor.lua proves them closed under require, and build/floorboot.py deletes the other 134 and boots: password set, a file written and read, doctor run. 472 KB, 488 KB on a managed disk, so the floor fits the 1 MB drive a full install is 330 KB over. The UI and the strip itself come later.
+3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). THE LOG HALF DONE 2026-11-01: sandbox refusals reach `log` once per program and refusal, capped so a program cannot fill it. A mode that logs instead of refusing is the other half, and how that is exposed is the operator's.
 4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). The split (minimal EEPROM, recovery UI in stage 2) is the shape that fits the 4 KiB budget bios.lua already strains. Needs a real-Minecraft or runner boot round to land.
 5. A DRIVER REGISTRY WITH PER-DEVICE PROBING (survey 4).
 6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). component\_caps.cfg and pkg\_caps.cfg already exist; this is one place that says who may do what.
@@ -909,6 +909,12 @@ display goes, and the address has to come from the world
 keeps its address when moved from a computer into the
 
 Assembler, is an in-game check). Recommendation: (a). Then, as one pack change riding one signing: the chip answers an unauthenticated {op="who"} broadcast with {op="here", keyed=true|false, kind="robot"|"drone"}, presence only and never a secret; it beeps once at start when it has no secret; and `rc scan` lists what answers. Budget: the image is 3,683 of 4,096 bytes.
+
+### OpenOS's own bin/ does not run, and the compat number should say so
+
+*Planned* · from the round *Second pass: the compat number (2026-09-20)*
+
+OPENOS'S OWN bin/ DOES NOT RUN, AND THE COMPAT NUMBER SHOULD SAY SO. Found 2026-11-01, running Reference/OpenOS/openos/bin under `run`: cat and grep stop at require("tty") ("not on the allowed list"), ls and edit at a nil loadfile, and lua at /lib/core/lua\_shell.lua. Not a bug to chase, since TOS replaces those programs with its own commands, and the two corpora below are third-party code. But it bounds the claim: a program written against OpenOS's tty or loadfile will not load. If a real program ever needs it, the cheap half is a tty shim over compat.term and a sandbox loadfile behind the `load` cap.
 
 ### Put the compat number in the README, or decide not to
 

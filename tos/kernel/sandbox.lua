@@ -144,6 +144,31 @@ local BLOCKED_MODULE_NAMES = {
   ["system_manifest"]         = true,
 }
 
+--! What the sandbox refused, in the log. securefs has always said when it
+--! refused a path; a capability the sandbox withheld went out as an error the
+--! program could swallow, and left nothing behind, so "the package installed
+--! and does nothing" had no trail. Once per program and refusal: a program
+--! that hits the same wall every frame must not be able to fill the log, and
+--! the table is capped because a program chooses the names.
+local denialsSeen, denialCount = {}, 0
+local MAX_DENIALS = 128
+local function noteDenial(who, what)
+  local key = tostring(who) .. "|" .. tostring(what)
+  if denialsSeen[key] or denialCount >= MAX_DENIALS then return end
+  denialsSeen[key] = true
+  denialCount = denialCount + 1
+  local log = package.loaded["kernel.log"]
+  if log and log.warn then
+    pcall(log.warn, "sandbox", "denied: " .. tostring(who) .. " wanted " .. tostring(what))
+  end
+end
+
+local function currentProgram()
+  local P = package.loaded["kernel.process"]
+  local cur = P and P.current and P.current()
+  return cur and cur.name or "?"
+end
+
 local function isKernelModule(name)
   return type(name) == "string" and name:sub(1, #KERNEL_MODULE_PREFIX) == KERNEL_MODULE_PREFIX
 end
@@ -608,6 +633,7 @@ local function makeSafeComponent(caps)
   function safe.invoke(addr, method, ...)
     local ctype = comp.type(addr)
     if not isAllowedComponentType(ctype, caps) then
+      noteDenial(currentProgram(), "component " .. tostring(ctype))
       error("sandbox: access denied to " .. tostring(ctype))
     end
     if seatDenies(addr, ctype) then
@@ -997,6 +1023,7 @@ local function makeSafeRequire(opts, prebound, envRef)
     if cache[name] ~= nil then return cache[name] end
 
     if isKernelModule(name) then
+      noteDenial(opts.pkgName or opts.name, "module " .. name)
       error("sandbox: cannot require kernel module '" .. name .. "'", 2)
     end
 
@@ -1049,17 +1076,20 @@ local function makeSafeRequire(opts, prebound, envRef)
       -- componentFieldView), never one over the raw library.
       local view = prebound and prebound.component
       if not view then
+        noteDenial(opts.pkgName or opts.name, "capability component")
         error("sandbox: 'compat.component' needs the component capability", 2)
       end
       cache[name] = view
       return view
     end
     if name == "compat.internet" and not (opts.caps and opts.caps["internet"]) then
+      noteDenial(opts.pkgName or opts.name, "capability internet")
       error("sandbox: 'compat.internet' needs the internet capability", 2)
     end
     do
       local need = COMPAT_FILE_CAP[name]
       if need and not (opts.caps and (opts.caps[need] or opts.caps["legacy"])) then
+        noteDenial(opts.pkgName or opts.name, "capability " .. need)
         error("sandbox: '" .. name .. "' needs the " .. need .. " capability", 2)
       end
     end
@@ -1096,6 +1126,7 @@ local function makeSafeRequire(opts, prebound, envRef)
       -- `component`, `computer` and every `shell.*` internal stay blocked
       -- for services too (none of them live in /usr/lib or /usr/modules).
       if not (opts and opts.allowUserLibs and resolveUserLibPath(name)) then
+        noteDenial(opts and (opts.pkgName or opts.name), "module " .. name)
         error("sandbox: module '" .. name .. "' is not available to sandboxed code", 2)
       end
     end
