@@ -2710,9 +2710,10 @@ List a directory. Names starting with a dot are hidden, and the count says how
 many; `-a` includes them. `-l` adds when each entry last changed. Flags
 combine (`ls -la`). *Error:* `no such file`. *See also:* `cd`, `tree`.
 
-**lsdev** — `lsdev`
+**lsdev** — `lsdev [--full]`
 List every connected component with its type, short address and, where known, a
-detail such as a disk's label. *See also:* `component`.
+detail such as a disk's label. `--full` prints whole addresses, for the setups
+that need one typed into a config file. *See also:* `component`.
 
 **lua** — `lua <code>` **(root)**
 Evaluate a Lua snippet in the session sandbox ([§13.1](#131-one-liners-with-lua)). *Example:*

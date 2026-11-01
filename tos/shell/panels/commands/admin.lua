@@ -1231,29 +1231,29 @@ if g.setTier then aw,ax=g.setTier(aA,ay,1)else aw,ax=false,ao end
 if aw then
 a.lastOut={"'"..ay.."' set to user.",d.highlight}else a.lastOut={tostring(ax),d.error}end else E("Unknown action: "..az,d.error)
 E("Valid: lock, unlock, admin, user, root",d.dim)end end
-b.lsdev=function(av,E)
+b.lsdev=function(av,E)local ax=av[1]=="--full"
 E(string.format(" %-16s %-10s %s","Type","Address","Info"),d.title)E(string.rep("-",46),d.dim)local aw=0
-for ax,ay in K.list()do local az=""
-if ay==_ then
-local aB,aA=pcall(K.proxy,ax)
-if aB and aA then
-local aC=aA.getLabel and aA.getLabel()or""local aD=
-aA.spaceTotal and math.floor(aA.spaceTotal()/1024)or 0
-az=(aC~=""and
-'"'..aC..'" 'or"")..aD.."K"end elseif ay=="modem"then local aB,aA=pcall(K.proxy,ax)
-if aB and aA and aA.isWireless then az=
-aA.isWireless()and"wireless"or"wired"end elseif ay=="drive"then local aB,aA=pcall(K.proxy,ax)
-if aB and aA and aA.getCapacity then az="raw "..
+for ay,az in K.list()do local aA=""
+if az==_ then
+local aC,aB=pcall(K.proxy,ay)
+if aC and aB then
+local aD=aB.getLabel and aB.getLabel()or""local aE=
+aB.spaceTotal and math.floor(aB.spaceTotal()/1024)or 0
+aA=(aD~=""and
+'"'..aD..'" 'or"")..aE.."K"end elseif az=="modem"then local aC,aB=pcall(K.proxy,ay)
+if aC and aB and aB.isWireless then aA=
+aB.isWireless()and"wireless"or"wired"end elseif az=="drive"then local aC,aB=pcall(K.proxy,ay)
+if aC and aB and aB.getCapacity then aA="raw "..
 math.floor((
-aA.getCapacity()or 0)/1024).."K"end elseif ay=="openprinter"then local aB,aA=pcall(K.proxy,ax)
-if aB and aA then local function aC(aD)
-if aD==nil then return"?"end;local aF,aE=pcall(aD)
-return(aF and tonumber(aE))and
-tostring(math.floor(aE))or"?"end
-az="paper "..
-aC(aA.getPaperLevel).." ink "..
-aC(aA.getBlackInkLevel).."/"..aC(aA.getColorInkLevel)end end
-E(string.format(" %-16s %s  %s",ay,ax:sub(1,8).."...",az),d.fg)aw=aw+1 end
+aB.getCapacity()or 0)/1024).."K"end elseif az=="openprinter"then local aC,aB=pcall(K.proxy,ay)
+if aC and aB then local function aD(aE)
+if aE==nil then return"?"end;local aG,aF=pcall(aE)
+return(aG and tonumber(aF))and
+tostring(math.floor(aF))or"?"end
+aA="paper "..
+aD(aB.getPaperLevel).." ink "..
+aD(aB.getBlackInkLevel).."/"..aD(aB.getColorInkLevel)end end
+E(string.format(" %-16s %s  %s",az,ax and ay or(ay:sub(1,8).."..."),aA),d.fg)aw=aw+1 end
 if aw==0 then E("  (no peripherals detected)",d.dim)end end;b.devices=b.lsdev
 b.mount=function(av,E)
 if av[1]and av[2]then if not f(E)then return end
