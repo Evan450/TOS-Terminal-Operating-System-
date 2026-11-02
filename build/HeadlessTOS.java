@@ -534,6 +534,8 @@ public class HeadlessTOS {
   static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
   static boolean readOnlyBoot;
   static boolean rawDrive;
+  static String rawDriveAddress;
+  static EEPROM mainEeprom;
 
   /**
    * A floppy labelled `name` over host directory `dir`, at an address fixed
@@ -621,7 +623,8 @@ public class HeadlessTOS {
     if (rawDrive) {
       HDDUnmanaged raw = new HDDUnmanaged(Tier.Two());
       pc.inventory().apply(7).put(raw);
-      System.out.println("[headless] raw drive " + raw.node().address());
+      rawDriveAddress = raw.node().address();
+      System.out.println("[headless] raw drive " + rawDriveAddress);
     }
     if (t1) {
       pc.inventory().apply(1).put(new GraphicsCard(Tier.One()));
@@ -630,6 +633,7 @@ public class HeadlessTOS {
       pc.inventory().apply(8).put(new APU(Tier.Two()));
     }
     pc.inventory().apply(9).put(eeprom);
+    mainEeprom = eeprom;
 
     screen = ws.add(new Screen(t1 ? Tier.One() : Tier.Three()));
     Keyboard keyboard = ws.add(new Keyboard());
@@ -1035,6 +1039,11 @@ public class HeadlessTOS {
           done = true;
           break;
         }
+        // Point the EEPROM at the raw drive, as the BIOS's own "Save it? Y" does.
+        case "bootraw":
+          mainEeprom.volatileData_$eq(rawDriveAddress.getBytes(StandardCharsets.UTF_8));
+          done = true;
+          break;
         case "sleep":
           done = inStep >= secs;
           break;

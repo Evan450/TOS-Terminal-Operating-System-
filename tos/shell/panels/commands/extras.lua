@@ -855,8 +855,11 @@ return function(C, S, deps)
       --! the command that sees it. Say so, but only when there is
       --! actually one attached, so the hint never becomes noise.
       do
-        local raw = 0
-        for _ in component.list("drive", true) do raw = raw + 1 end
+        local inUse, raw = {}, 0
+        for _, m in ipairs(F.mounts and F.mounts() or {}) do inUse[m.address or ""] = true end
+        for addr in component.list("drive", true) do
+          if not inUse[addr] then raw = raw + 1 end
+        end
         if raw > 0 then
           o("", T.dim)
           o(raw .. " unmanaged (raw) drive(s) attached — not filesystems, so", T.warning)

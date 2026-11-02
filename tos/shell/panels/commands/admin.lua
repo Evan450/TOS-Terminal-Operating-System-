@@ -3215,8 +3215,11 @@ return function(C, S, deps)
       --! mounted. Someone with a raw drive attached sees a list without
       --! it and reasonably concludes it is not detected. Only shown when
       --! one is actually attached.
-      local raw = 0
-      for _ in component.list("drive", true) do raw = raw + 1 end
+      local inUse, raw = {}, 0
+      for _, m in ipairs(mnts) do inUse[m.address or ""] = true end
+      for addr in component.list("drive", true) do
+        if not inUse[addr] then raw = raw + 1 end
+      end
       if raw > 0 then
         o("", T.dim)
         o(raw .. " unmanaged (raw) drive(s) are attached and NOT listed above:", T.warning)
@@ -3302,7 +3305,7 @@ return function(C, S, deps)
       -- directory. Previously any string was accepted: a pool at "/mnt/pool"
       -- mounted even though neither /mnt nor pool existed, so the path was
       -- invisible in the browser and behaved confusingly.
-      if not (mount:sub(1, 6) == "/mnt/" and #mount > 6) then
+      if not (mount:sub(1, 5) == "/mnt/" and #mount > 5) then
         o("JBOD mount point must be under /mnt/  (e.g. jbod create /mnt/pool ...)", T.error)
         return
       end

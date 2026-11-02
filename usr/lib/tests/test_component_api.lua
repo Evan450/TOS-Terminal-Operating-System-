@@ -404,6 +404,28 @@ do
   for _, w in ipairs(wrong) do print("    " .. w) end
 end
 
+-- A slice compared with a string of another length can never match, and reads
+-- as correct. jbod's mount check was s:sub(1, 6) == "/mnt/", five characters, so
+-- every `jbod create` was refused with an example of what it had just refused.
+do
+  local wrong = {}
+  for _, path in ipairs(files) do
+    if not path:find("/tests/", 1, true) and not path:match("test_[%w_]*%.lua$") then
+      local h = io.open(path, "rb")
+      local src = h and h:read("a") or ""
+      if h then h:close() end
+      for line in src:gmatch("[^\n]+") do
+        local code = line:gsub("%-%-.*$", "")
+        for n, lit in code:gmatch(':sub%(%s*1%s*,%s*(%d+)%s*%)%s*[~=]=%s*"([^"\\]*)"') do
+          if lit ~= "" and tonumber(n) ~= #lit then wrong[#wrong + 1] = path .. ": " .. code:gsub("^%s+", "") end
+        end
+      end
+    end
+  end
+  test("no slice is compared with a string of another length", #wrong == 0)
+  for _, w in ipairs(wrong) do print("    " .. w) end
+end
+
 print("")
 print("Table: " .. apiPath .. "  (" ..
       (API.sources and API.sources.opencomputers or "?") .. ", generated " ..

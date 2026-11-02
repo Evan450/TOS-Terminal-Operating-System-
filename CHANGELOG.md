@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 112 rounds of work:
+Everything since v1.5.0, in 114 rounds of work:
 
+- [TOS boots from a raw drive](#tos-boots-from-a-raw-drive)
+- [jbod create works](#jbod-create-works)
 - [A broken kiosk config allows nothing](#a-broken-kiosk-config-allows-nothing)
 - [A tape restore that failed says so](#a-tape-restore-that-failed-says-so)
 - [A copy-on-write root](#a-copy-on-write-root)
@@ -134,6 +136,16 @@ Everything since v1.5.0, in 112 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### TOS boots from a raw drive
+
+`mount` and `disk` no longer say a raw drive "holds no filesystem yet" when it is mounted, or when the machine is running on it.
+
+`deploy drive` has now been seen working to the end: TOS installed onto a real unmanaged drive, the machine booted from it, First Boot ran, a file survived a reboot on a TBFS root, and `verify` found nothing wrong. Disk swap passed too: a view tab paged to disk came back with the same content.
+
+### jbod create works
+
+`jbod create` refused every pool, with an example of what it had just refused: its check compared six characters against the five in `/mnt/`, so it could never match. Pools work now, on real disks: writes spread across the members, a pool comes back after a reboot, and `jbod destroy` leaves each disk's data in place. A check now fails on any slice compared with a string of another length, and over every shipped file it found this one.
 
 ### A broken kiosk config allows nothing
 

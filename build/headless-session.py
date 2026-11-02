@@ -26,6 +26,7 @@ only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 `snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, `pullcard`
 (the internet card out of its slot), `resolution W H` (resize the screen
 from outside, which raises the same screen_resized a real resize does),
+`bootraw` (with --raw-drive: the next boot is from that drive),
 `seat N` (with --seats 2: type at and read screen N from then on),
 `machine N` (with --machines 2 or 3: the same, for that computer), and
 `hostmv FROM TO` (rename a file on the boot disk from outside the machine,
