@@ -217,6 +217,8 @@ UPDATES FROM REPOS, BUILT 2026-11-05, ahead of the rest because it was a hole, n
 
 Still not built: known repos (an upgrade has no floor, so it only reads configured ones), the winner order, private copies, mirror consensus.
 
+WINNER ORDER DRAFTED 2026-11-06, NOT MERGED (the draft is kept apart from the release until it is finished). pkg.plan ranks every root's copy (shared copy in passes, claimed-signer trust, newer, smaller; ties to opts.chooseCopy or the earliest root, recorded in plan.ties), with slice 1's own-disk rule above it; the decisions are in docs/FEDERATED-REPOS.md. The existing package tests pass on it. Before merging: its own test (test\_pkg\_winner\_order.lua, named in the code, not written), the full suite and selftest, ties shown by `pkg install --dry-run`, and the shell passing a chooseCopy that asks.
+
 FOUND ON THE WAY, the operator's call: a fresh machine does not trust the Optional Utilities key, so everything fetched from the official repo says "valid, but the key was not trusted at install time". Shipping it trusted would make that read "trusted", and would make the key the one that decides what installs without asking.
 
 ANSWERED 2026-11-05: the installer asks whether to trust the Optional Utilities key, showing its fingerprint, and the operator decides (8bda89c). Seen through real GitHub on 2026-11-06: a signed install answered yes lists discover at 335F F7B2 43C5 1D97.

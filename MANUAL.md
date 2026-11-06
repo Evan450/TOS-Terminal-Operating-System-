@@ -475,7 +475,12 @@ says which it is, and `users manage root` takes it back.
 TOS has **two interfaces and one command set**. The **panels** TUI is the
 default; the **CLI** is a plain scrolling prompt. They dispatch through the same
 command registry, so every command works in both — including pipes, redirects,
-quoting, `sudo`, and commands added by installed packages.
+quoting, `sudo`, and commands added by installed packages. The exceptions are
+the full-screen apps (`monitor`, `settings`, `desktop`, `chat`, `edit`): typed
+at the CLI they say so and how to get there (`tui`, then the command), and
+`monitor` prints the process list instead. A live view (`watch`, `--live`)
+runs once at the CLI. Output reaches the screen as a command produces it, so a
+slow one like `verify` shows its progress.
 
 Move between them whenever you like:
 
@@ -2481,7 +2486,7 @@ previous directory. *Error:* `not a directory`.
 
 **chat** — `chat` **(tier: modem)**
 Open the encrypted chat client to TRUSTED peers ([Chapter 8](#8-networking-zero-trust)) as a
-**persistent tab**: switch to other tabs and keep working — messages keep
+**persistent tab** (full interface only; the CLI says so): switch to other tabs and keep working — messages keep
 arriving in the background and the tab label shows an unread badge
 (`Chat(3)`). Type to talk — `peer:message` for one peer, `@group:message`
 for a named group (`/group` creates and edits them; see [§8.4](#84-chat-one-peer-one-group-or-everybody)), plain text to
@@ -2582,7 +2587,7 @@ pick-and-choose disk of your installed extras — use `pkg make-disk <mount>`.
 *See also:* `drive`, `verify`, `pkg`, `man packages`.
 
 **desktop** — `desktop`
-Open (or focus) the **Desktop** tab — the tile home screen of built-in apps and
+Open (or focus) the **Desktop** tab (full interface only; the CLI says so) — the tile home screen of built-in apps and
 installed package commands. Re-opening re-scans installed packages. Tiles honor
 command tiers and hardware gates. Your personal `~/.launcher.cfg` entries appear
 here as tiles too. *See also:* `settings`, `tape-menu`, [§4.4](#44-the-tiles-view--the-settings-app).
@@ -2742,7 +2747,10 @@ Show TOS's standard keyboard shortcuts, rebind one, or put one (or all) back to
 the default. *See also:* Appendix A.
 
 **kill** — `kill <job>` **(admin)**
-Terminate a job by id. *See also:* `ps`, `fg`, `bg`.
+Terminate a job by id. Killing the shell you are typing in ends your session:
+the screen goes back to the login within a second. A process that has already
+ended answers `No such process`, as `ps` would suggest. *See also:* `ps`, `fg`,
+`bg`.
 
 **kiosk** — `kiosk` **(admin)**
 Explain kiosk mode: the locked, guest-facing menu (an allow-list, read-only)
@@ -2771,7 +2779,9 @@ End the current session and return to the login screen. *See also:* `whoami`,
 **ls** — `ls [-l|-a] [dir]`
 List a directory. Names starting with a dot are hidden, and the count says how
 many; `-a` includes them. `-l` adds when each entry last changed. Flags
-combine (`ls -la`). *Error:* `no such file`. *See also:* `cd`, `tree`.
+combine (`ls -la`). Names are shown whole: the column widens to the longest,
+and only a name too long for the screen is cut, ending in `~`. *Error:* `no
+such file`. *See also:* `cd`, `tree`.
 
 **lsdev** — `lsdev [--full]`
 List every connected component with its type, short address and, where known, a
@@ -2780,7 +2790,8 @@ that need one typed into a config file. *See also:* `component`.
 
 **lua** — `lua <code>` **(root)**
 Evaluate a Lua snippet in the session sandbox ([§13.1](#131-one-liners-with-lua)). *Example:*
-`lua print(math.pi)`. *See also:* `run`.
+`lua print(math.pi)`. With no code it opens an interactive REPL; `exit`,
+`quit` or `os.exit()` leaves it. *See also:* `run`.
 
 ### M
 
@@ -2833,7 +2844,8 @@ can write.
 Create each directory (parents as needed). *Error:* `already exists`, which `-p` turns into a quiet success.
 
 **monitor** — `monitor` (alias `top`; also **Ctrl+T**)
-Opens the live System Monitor as a **full-screen app tab**: every process (kernel
+Opens the live System Monitor as a **full-screen app tab** (at the CLI, which has
+no tabs, it prints the process list and says to use `tui`): every process (kernel
 and user, each given a plain description), the rc.d services (admin+), and
 memory/uptime vitals, auto-refreshing in place. Because it's a tab it never
 truncates, scrolls like any view, is per-seat, and you can switch to/from it
@@ -3061,7 +3073,7 @@ report. Reads the display buffer when active, else the GPU directly. *See also:*
 Manage `/etc/rc.d/` services ([Chapter 12](#12-services--scheduling)). *See also:* `cron`.
 
 **settings** — `settings`
-Open (or focus) the **Settings app** tab: Appearance (theme, live preview),
+Open (or focus) the **Settings app** tab (full interface only; the CLI says so): Appearance (theme, live preview),
 Status Bar (widgets), Home (login landing), System (admin shortcuts).
 *See also:* `theme`, `profile`, `bootsettings`, [§4.4](#44-the-tiles-view--the-settings-app).
 
@@ -3201,8 +3213,11 @@ command history. *See also:* `man vault`, `keychain`.
 
 **verify** — `verify` **(admin)**
 The **file-integrity** check: every file in `/tos/system_manifest.lua` is checked
-for presence, Lua syntax, and (where declared) its SHA-256 hash. Only problems
-print; a clean system shows just the summary. (This checks files on disk, *not*
+for presence and, where declared, its SHA-256 hash; a Lua file with no declared
+hash is compiled to check its syntax (one whose hash matches is the shipped file,
+so it is not compiled again). Each file is listed as it is checked, `OK` or what
+is wrong, then a summary; on a Tier 3 machine 171 files take about a minute.
+(This checks files on disk, *not*
 runtime health — for that, run `doctor`.) *See also:* `doctor`, `deploy`,
 Chapters 16 & 17.
 
@@ -3213,7 +3228,8 @@ Open a **live tab** that re-runs a read-only command on a timer (default 1s) —
 self-updating counterpart to running it once. *Examples:* `watch ps`,
 `watch 2 df`, `watch net peers`. Press **r** to refresh now, **q**/F4 to close.
 Interactive/screen commands (`edit`, `lua`, `monitor`, …) can't be watched, and a
-watched command needs the same tier it needs at the prompt. The shorthand is
+watched command needs the same tier it needs at the prompt. At the CLI a live
+view runs once; run it again to refresh. The shorthand is
 `--live` on the command itself (`ps --live`, `net peers --live`); `-f` does the
 same for `ps`, `df`, `mem`, `uptime`, `log`, `net`, `battery` and `lsdev`, the
 status commands that use `-f` for nothing else. *See also:* `monitor`, `ps`.

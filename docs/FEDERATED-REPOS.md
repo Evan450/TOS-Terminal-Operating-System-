@@ -170,6 +170,13 @@ Local sources only (the built-in repo roots, mounted media, `extraRoots`). No ne
 
 Still to build: the four-step winner order; upgrading a shared dependency when that is the winning resolution; private copies; consensus and freshness checks across mirrors; update checks against a package's own `repos`.
 
+**Decided 2026-11-06, for the winner order** (drafted, not yet merged):
+
+- **Slice 1's rule stands above it.** The target, and any dependency shipped beside it on the source the operator pointed at, win outright, so a self-contained disk installs what it was built and tested with. Pure "newer wins" would replace a disk's bundled `lib` 1.0.0 with a 2.0.0 found elsewhere that the package never ran against. The four steps decide among the *other* sources.
+- **"One shared copy satisfies everyone"** needs every constraint before choosing, so the plan resolves in passes: the first learns the constraints, the next re-chooses with all of them known, and a third runs only if the re-chosen copies brought requirements of their own. When no copy satisfies everyone, the fallback prefers one that satisfies whoever asked, and the plan reports the rest as contradictions.
+- **Trust is read from the signer the `.sig` claims**, as pin selection already does: trusted key, then any key, then unsigned. `install` verifies it, so a false claim can lose an install but never win one.
+- **A tie** (equal on all four, different bytes) goes to the caller to ask; with nobody to ask, the earliest source keeps it and the plan records the tie. Identical copies are not a tie.
+
 ### Slice 4 — discovery and revocation
 
 The opt-in crawl over index `siblings`; revocation and rotation notices; in-world repos over the modem network; namespaced names.

@@ -13,9 +13,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 - **Networking:** two machines that trust each other agree a shared secret by themselves, and the mesh learns routes from its own traffic instead of always flooding. A reinstalled peer is flagged rather than silently failing.
 - **Packages:** a package is now its name and the key that signs it. Dependencies are found across disks and repositories, version constraints are enforced before anything is written, and `pkg fetch` brings what a package requires.
-- **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails.
+- **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails. It asks whether to trust the Optional Utilities key and who manages accounts, puts the old system in `/openos`, and cleans up its download.
 - **Add-ons:** a text-mode `web` browser, the `pic` picture viewer, the `warhead` nuke designer, a Lotus-style `calc` 2.0, `rbmk-control` bound to the real console, and a cluster `cluster-storage` node.
-- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says.
+- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says. Commands print as they work, killing your own shell brings the login back instead of freezing the screen, `find` takes wildcards, lists show names whole, and `&&`/`||` are refused rather than half-run.
 - **Size and speed:** the release and add-ons ship minified with local variables renamed, and the render path does less work per frame.
 
 The details follow, newest first.
