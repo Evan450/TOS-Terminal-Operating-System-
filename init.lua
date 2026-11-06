@@ -1,8 +1,8 @@
 
-local aI,aJ,aR,ar,aS,aK,aT,aA="/init.lua","/tos/kernel/init.lua","filesystem","key_down","reboot","screen","splash","string"local ae=...local ak=component;local af=computer
+local aI,aJ,aR,ar,aS,aK,aT,aA="/init.lua","/tos/kernel/init.lua","filesystem","key_down","reboot","screen","splash","string"local ae=...local ai=component;local af=computer
 if not load("return 1<<1")then local a
 for c in
-ak.list("gpu")do local e,d=pcall(ak.proxy,c)if e and d then a=d;break end end;local b;for c in ak.list(aK)do b=c;break end
+ai.list("gpu")do local e,d=pcall(ai.proxy,c)if e and d then a=d;break end end;local b;for c in ai.list(aK)do b=c;break end
 if a and b then pcall(a.bind,b)
 pcall(a.setBackground,0x000000)pcall(a.setForeground,0xFFFFFF)
 pcall(a.fill,1,1,80,25," ")
@@ -13,20 +13,20 @@ pcall(a.set,2,6,"computer-case slot to cycle architectures, then reboot.")pcall(
 while true do
 local c=af.pullSignal(math.huge)if c==ar then af.shutdown()end end end
 if not ae and _G._TOS_UNMANAGED_ROOT then ae=_G._TOS_UNMANAGED_ROOT end;if not ae then local a=af.getBootAddress
-if a then local b=a()if b and b~=""then local d,c=pcall(ak.proxy,b)if
+if a then local b=a()if b and b~=""then local d,c=pcall(ai.proxy,b)if
 d and c then ae=c end end end end;local function aU(a,b)
 local c,d=pcall(a.exists,b)return c and d end
-local function aB(a)
-if type(a)~="table"or
-type(a.isReadOnly)~="function"then return false end;local b,c=pcall(a.isReadOnly)return b and c==true end
+local function aB(a)if type(a)~="table"or
+not a.isReadOnly then return false end
+local b,c=pcall(a.isReadOnly)return b and c==true end
 local function aL(a)
-for c,b in ipairs({true,false})do for d in ak.list(aR)do local f,e=pcall(ak.proxy,d)
+for c,b in ipairs({true,false})do for d in ai.list(aR)do local f,e=pcall(ai.proxy,d)
 if
 f and e and e.exists and aU(e,a)then if not(b and aB(e))then return e end end end end end;if not ae then ae=aL(aJ)end;if not ae then ae=aL(aI)end;if not ae then
 error("FATAL: Cannot find boot filesystem!")end;_G._TOS_ROOT_READONLY=aB(ae)
 if _G._TOS_ROOT_READONLY then
-local a=ak.list("gpu")()local b=ak.list(aK)()
-if a and b then local d,c=pcall(ak.proxy,a)
+local a=ai.list("gpu")()local b=ai.list(aK)()
+if a and b then local d,c=pcall(ai.proxy,a)
 if d and c then
 pcall(c.bind,b)pcall(c.setBackground,0x000000)
 pcall(c.setForeground,0xFF5555)local e,f=pcall(c.getResolution)
@@ -40,78 +40,81 @@ pcall(c.set,2,5,"Install to a writable drive (run install.lua), or unprotect thi
 do local a=ae.spaceTotal()local c=524288;local b=_G._TOS_ROOT_READONLY;if _G._BIOS_ONETIME then
 a=nil end
 if a and(a<=c or b)then local d=nil;local e=0
-for f in ak.list(aR)do
+for f in ai.list(aR)do
 if f~=ae.address then
-local h,g=pcall(ak.proxy,f)if h and g and not aB(g)then local i=g.spaceTotal()
+local h,g=pcall(ai.proxy,f)if h and g and not aB(g)then local i=g.spaceTotal()
 if i and i>a and i>e then d=g;e=i end end end end
-if d then local f;for h in ak.list("gpu")do f=ak.proxy(h)break end;local g;for h in
-ak.list(aK)do g=h;break end
+if d then local f;for h in ai.list("gpu")do f=ai.proxy(h)break end;local g;for h in
+ai.list(aK)do g=h;break end
 if f and g then pcall(f.bind,g)
 f.setBackground(0x000000)f.setForeground(0xFFFFFF)local i,j=f.getResolution()
-f.fill(1,1,i,j," ")local function h(m,n,o)f.setForeground(o or 0xFFFFFF)
-f.set(2,m,tostring(n))end;local k=math.floor(a/1024)local l=math.floor(
+f.fill(1,1,i,j," ")local function h(n,o,p)f.setForeground(p or 0xFFFFFF)
+f.set(2,n,tostring(o))end;local l=math.floor(a/1024)local m=math.floor(
 e/1024)
 h(2,
 (b and"TOS is running from a read-only disk ("or
-"TOS is running from a floppy disk (")..k.."KB)",0xFFFF00)
-h(3,"A larger drive was detected ("..l.."KB)",0xFFFF00)
+"TOS is running from a floppy disk (")..l.."KB)",0xFFFF00)
+h(3,"A larger drive was detected ("..m.."KB)",0xFFFF00)
 h(4,"  source:  "..
 (ae.address or"?"):sub(1,12).."...",0xAAAAAA)
 h(5,"  target:  ".. (d.address or"?"):sub(1,12).."...",0xAAAAAA)
 h(7,"1. Install TOS to the hard drive (recommended)",0x00FF00)
-h(8,b and"2. Continue read-only (nothing is saved)"or"2. Continue booting from floppy (limited space)",0xAAAAAA)h(10,"Press 1 or 2:",0xFFFFFF)
-while true do
-local m,o,n=af.pullSignal(60)
-if m==ar then
+h(8,b and"2. Continue read-only (nothing is saved)"or"2. Continue booting from floppy (limited space)",0xAAAAAA)
+local k=b and ae.exists("/tos/kernel/cowfs.lua")if k then
+h(9,"3. Run from here, saving to the hard drive",0xAAAAAA)end
+h(10,k and"Press 1, 2 or 3:"or"Press 1 or 2:",0xFFFFFF)
+while true do local o,p,n=af.pullSignal(60)
+if o==ar then
 if n==49 then
-if ae.exists("/install.lua")then f.fill(1,1,i,j," ")
-h(2,"Starting installer...",0x00AAFF)f.fill(1,1,i,j," ")
-h(2,"Copying TOS to hard drive...",0x00AAFF)local p=4;local r=0;local q=nil
-local function s(D,E)local F=0;local G=D.list(E)if not G then return F end;for o,H in ipairs(G)do
-local I=E..H
-if D.isDirectory(I)then F=F+s(D,I)else F=F+ (D.size(I)or 0)end end;return F end
-local function t(D,E,F)if q then return end;local G=D.list(F)if not G then return end
-for o,H in ipairs(G)do if q then return end
-local I=F..H
-if D.isDirectory(I)then E.makeDirectory(I)t(D,E,I)else local J=D.open(I,"r")if
-not J then q="open-src "..I;return end;local K=E.open(I,"w")if not K then
-D.close(J)q="open-dst "..I;return end
+if ae.exists("/install.lua")then
+f.fill(1,1,i,j," ")h(2,"Starting installer...",0x00AAFF)
+f.fill(1,1,i,j," ")h(2,"Copying TOS to hard drive...",0x00AAFF)local q=4;local s=0
+local r=nil
+local function t(E,F)local G=0;local H=E.list(F)if not H then return G end;for p,I in ipairs(H)do local J=F..I
+if E.isDirectory(J)then G=
+G+t(E,J)else G=G+ (E.size(J)or 0)end end;return G end
+local function u(E,F,G)if r then return end;local H=E.list(G)if not H then return end
+for p,I in ipairs(H)do if r then return end
+local J=G..I
+if E.isDirectory(J)then F.makeDirectory(J)u(E,F,J)else local K=E.open(J,"r")if
+not K then r="open-src "..J;return end;local L=F.open(J,"w")if not L then
+E.close(K)r="open-dst "..J;return end
 while true do
-local L=D.read(J,4096)if not L then break end;local M,N=E.write(K,L)if not M then q="write "..
-I..": "..tostring(N)break end end;D.close(J)E.close(K)if q then return end;r=r+1 end end end;local u=s(ae,"/")+8192;local v=(d.spaceTotal()or 0)-
+local M=E.read(K,4096)if not M then break end;local N,O=F.write(L,M)if not N then r="write "..
+J..": "..tostring(O)break end end;E.close(K)F.close(L)if r then return end;s=s+1 end end end;local v=t(ae,"/")+8192;local w=(d.spaceTotal()or 0)-
 (d.spaceUsed()or 0)
-if v<u then
-h(p,"Target too full: need "..
+if w<v then
+h(q,"Target too full: need "..
 
-math.floor(u/1024).."KB, only "..math.floor(v/1024).."KB free",0xFF0000)p=p+1
-h(p,"Nothing was written. Free up the disk and retry.",0xFFAA00)while true do local D=af.pullSignal(1e9)
-if D==ar then af.shutdown(true)end end end
-local B={"/tos/","/tos/kernel/","/tos/kernel/net/","/tos/shell/","/tos/compat/","/tos/peripheral/","/etc/","/etc/rc.d/","/home/","/root/","/public/","/usr/","/usr/bin/","/usr/lib/","/usr/modules/","/var/","/var/log/","/var/run/","/tmp/"}for o,D in ipairs(B)do d.makeDirectory(D)end;t(ae,d,"/")
-if q then h(p,
-"Copy FAILED: "..q,0xFF0000)p=p+1
-h(p,"BIOS not updated. Remove disk to try again.",0xFFAA00)while true do local D=af.pullSignal(1e9)
-if D==ar then af.shutdown(true)end end end;h(p,"Copied "..r.." files",0x00FF00)p=p+1
-local w=d.exists(aI)local x=d.exists(aJ)local y=w and d.size(aI)or 0;local z=
-x and d.size(aJ)or 0
+math.floor(v/1024).."KB, only "..math.floor(w/1024).."KB free",0xFF0000)q=q+1
+h(q,"Nothing was written. Free up the disk and retry.",0xFFAA00)while true do local E=af.pullSignal(1e9)
+if E==ar then af.shutdown(true)end end end
+local C={"/tos/","/tos/kernel/","/tos/kernel/net/","/tos/shell/","/tos/compat/","/tos/peripheral/","/etc/","/etc/rc.d/","/home/","/root/","/public/","/usr/","/usr/bin/","/usr/lib/","/usr/modules/","/var/","/var/log/","/var/run/","/tmp/"}for p,E in ipairs(C)do d.makeDirectory(E)end;u(ae,d,"/")
+if r then h(q,
+"Copy FAILED: "..r,0xFF0000)q=q+1
+h(q,"BIOS not updated. Remove disk to try again.",0xFFAA00)while true do local E=af.pullSignal(1e9)
+if E==ar then af.shutdown(true)end end end;h(q,"Copied "..s.." files",0x00FF00)q=q+1
+local x=d.exists(aI)local y=d.exists(aJ)local z=x and d.size(aI)or 0;local A=
+y and d.size(aJ)or 0
 if
-not(w and x and y>0 and z>0)then
-h(p,"Verification FAILED — BIOS not updated",0xFF0000)p=p+1
-h(p,"  init.lua="..tostring(y).." kernel="..tostring(z),0xFF6600)while true do local D=af.pullSignal(1e9)
-if D==ar then af.shutdown(true)end end end
-h(p,"Files copied. Update EEPROM to boot from hard drive?",0xFFAA00)p=p+1
-h(p,"  [Y] update EEPROM   [N] leave EEPROM alone",0xAAAAAA)p=p+1
-h(p,"  Target: "..
-(d.address or"?"):sub(1,12).."...",0xAAAAAA)p=p+1;local A=false;local C=af.uptime()
-while af.uptime()-C<30 do
-local E,o,D=af.pullSignal(30)if E==ar then if D==121 or D==89 then A=true end;break end end
-if A then h(p,"Setting boot drive...",0x00AAFF)
-af.setBootAddress(d.address)p=p+1 else
-h(p,"EEPROM unchanged — remove floppy and reboot to use HD",0xFFAA00)p=p+1 end;h(p,"",0xFFFFFF)p=p+1
-h(p,"TOS installed to hard drive!",0x00FF00)p=p+1;h(p,"Rebooting in 3 seconds...",0xAAAAAA)
+not(x and y and z>0 and A>0)then
+h(q,"Verification FAILED — BIOS not updated",0xFF0000)q=q+1
+h(q,"  init.lua="..tostring(z).." kernel="..tostring(A),0xFF6600)while true do local E=af.pullSignal(1e9)
+if E==ar then af.shutdown(true)end end end
+h(q,"Files copied. Update EEPROM to boot from hard drive?",0xFFAA00)q=q+1
+h(q,"  [Y] update EEPROM   [N] leave EEPROM alone",0xAAAAAA)q=q+1
+h(q,"  Target: "..
+(d.address or"?"):sub(1,12).."...",0xAAAAAA)q=q+1;local B=false;local D=af.uptime()
+while af.uptime()-D<30 do
+local F,p,E=af.pullSignal(30)if F==ar then if E==121 or E==89 then B=true end;break end end
+if B then h(q,"Setting boot drive...",0x00AAFF)
+af.setBootAddress(d.address)q=q+1 else
+h(q,"EEPROM unchanged — remove floppy and reboot to use HD",0xFFAA00)q=q+1 end;h(q,"",0xFFFFFF)q=q+1
+h(q,"TOS installed to hard drive!",0x00FF00)q=q+1;h(q,"Rebooting in 3 seconds...",0xAAAAAA)
 af.pullSignal(3)af.shutdown(true)else
 h(10,"install.lua not found on floppy!",0xFF0000)h(11,"Booting from floppy instead...",0xAAAAAA)
-af.pullSignal(2)end;break elseif n==50 then break end elseif not m then break end end end end end end
-_G._TOS={version="1.5.0",codename="Aletheia",build="b2ac70b",variant="minified",bootFS=ae,bootAddr=ae and ae.address or nil,bootTime=af.uptime(),startMem=af.freeMemory(),totalMem=af.totalMemory()}local ap={}local aC={}local aM={}
+af.pullSignal(2)end;break elseif n==50 then break elseif n==51 and k then _G._TOS_OVERLAY_DISK=d.address;break end elseif not o then break end end end end end end
+_G._TOS={version="1.5.0",codename="Aletheia",build="0dbc1ee",variant="minified",bootFS=ae,bootAddr=ae and ae.address or nil,bootTime=af.uptime(),startMem=af.freeMemory(),totalMem=af.totalMemory()}local ap={}local aC={}local aM={}
 local aV={"/tos/?.lua","/tos/?/init.lua","/usr/lib/?.lua","/usr/modules/?.lua","/usr/modules/?/init.lua"}_G.package={loaded=nil}
 local function aN(a)if not ae.exists(a)then return nil end
 local b=ae.open(a,"r")if not b then return nil end;local c={}while true do local d=ae.read(b,4096)if not d then break end;c[#
@@ -146,55 +149,62 @@ error("Module not found: "..
 a.."\nSearched:\n  "..table.concat(b,"\n  "),2)end
 local function a_(a)if ap[a]then return ap[a]end;if aC[a]then
 error("Circular dependency: "..a,2)end;aC[a]=true;local c,b=pcall(aZ,a)aC[a]=nil;if not c then
-error(b,0)end;return b end;_G.require=a_;ap["component"]=ak;ap["computer"]=af;if unicode then
+error(b,0)end;return b end;_G.require=a_;ap["component"]=ai;ap["computer"]=af;if unicode then
 ap["unicode"]=unicode end;_G.package.loaded=ap
-_G.package.loadedFrom=aM;local au,an,aq
+_G.package.loadedFrom=aM
+if _G._TOS_OVERLAY_DISK or ae.exists("/etc/overlay.cfg")then
+local b,c=pcall(require,"kernel.cowfs")local d,a,e;if b then
+d,a,e=pcall(c.boot,ae,_G._TOS_OVERLAY_DISK,ai.proxy)end
+if d then _G._TOS.overlay=e;if a then
+ae,_G._TOS.bootFS=a,a;_G._TOS_ROOT_READONLY=false end else
+_G._TOS.overlay={missing=
+_G._TOS_OVERLAY_DISK or"?",why=tostring(b and a or c)}end end;local au,an,aq
 do local b,a=pcall(require,"kernel.bootcfg")
 if b and a then au=a
 local c,d=pcall(a.load,{exists=function(e)return
 ae.exists(e)end,readFile=function(e)return aN(e)end})an=c and d or nil end
 aq=(au and an)and au.verbosity(an)or"text"_G._TOS.bootcfg=an;_G._TOS.bootcfgMod=au end;local aD
 if au and au.echoMinLevel then aD=au.echoMinLevel(aq)else aD=
-({silent=4,splash=2,text=1,verbose=0})[aq]or 1 end;local aE;for a in ak.list("gpu")do aE=a;break end;local aF
-for a in ak.list(aK)do aF=a;break end;local ag;if aE and aF then ag=ak.proxy(aE)
-if not _G._BIOS_CY then ag.bind(aF)end;_G._TOS.gpu=ag end;local ai,al=50,16;if ag then
-ai,al=ag.getResolution()end;local ax=_G._BIOS_DEPTH or 1;if ag then
+({silent=4,splash=2,text=1,verbose=0})[aq]or 1 end;local aE;for a in ai.list("gpu")do aE=a;break end;local aF
+for a in ai.list(aK)do aF=a;break end;local ag;if aE and aF then ag=ai.proxy(aE)
+if not _G._BIOS_CY then ag.bind(aF)end;_G._TOS.gpu=ag end;local aj,al=50,16;if ag then
+aj,al=ag.getResolution()end;local ax=_G._BIOS_DEPTH or 1;if ag then
 local b,a=pcall(ag.getDepth)if b and a then ax=a end end;local ay=ax<=1;local function ah(a)if ay then
 return 0xFFFFFF end;return a end;local ao=1;local ba=
 (_G._TOS and _G._TOS.bootTime)or af.uptime()
-local function aj(a,b)
+local function ak(a,b)
 if not ag then return end;a=tostring(a)
 if aq=="verbose"then
 local c=math.floor((af.uptime()-ba)*1000)a=string.format("[%6dms] %s",c,a)end;if b then ag.setForeground(ah(b))end;if ao>al then
-ag.copy(1,2,ai,al-1,0,-1)ao=al end;ag.fill(1,ao,ai,1," ")
+ag.copy(1,2,aj,al-1,0,-1)ao=al end;ag.fill(1,ao,aj,1," ")
 ag.set(1,ao,a)ao=ao+1 end
 local function as()if not ag then return end;ag.setBackground(0x000000)
-ag.setForeground(ah(0x00FF00))ag.fill(1,1,ai,al," ")ao=1 end
+ag.setForeground(ah(0x00FF00))ag.fill(1,1,aj,al," ")ao=1 end
 local function at(a)if aq~=aT then return"  "..a end;return
-string.rep(" ",math.max(0,math.floor((ai-#a)/2)))..a end
+string.rep(" ",math.max(0,math.floor((aj-#a)/2)))..a end
 if _G._BIOS_CY then ao=_G._BIOS_CY;if ag then ag.setBackground(0x000000)
 ag.setForeground(ah(0x00FF00))end else as()end;local aG=math.floor(_G._TOS.totalMem/1024)local bb=math.floor(
 af.freeMemory()/1024)
 local function az()
 if aq~="silent"then
 local b,a=pcall(require,"kernel.logo")
-if b and a and a.banner then local c={ascii=ay,compact=ai<34}if aq==aT then c.width=ai else
+if b and a and a.banner then local c={ascii=ay,compact=aj<34}if aq==aT then c.width=aj else
 c.indent=2 end;for e,d in ipairs(a.banner(c))do
-aj(d[1],ah(
+ak(d[1],ah(
 (a.COLORS and a.COLORS[d[2]])or 0x00AAFF))end else
-local c=string.rep(ay and"="or"═",math.min(38,ai))aj(c,ah(0x00AAFF))aj("  TOS",ah(0x00AAFF))
-aj(c,ah(0x00AAFF))end
-aj(at("TOS v"..
+local c=string.rep(ay and"="or"═",math.min(38,aj))ak(c,ah(0x00AAFF))ak("  TOS",ah(0x00AAFF))
+ak(c,ah(0x00AAFF))end
+ak(at("TOS v"..
 _G._TOS.version.." [".._G._TOS.codename.."]"),ah(0x00AAFF))
-aj(at("Memory: "..bb.."K free / "..aG.."K total"),ah(0xAAAAAA))end;if _G._BIOS_ONETIME then
-aj(at("ONE-TIME BOOT: EEPROM unchanged, boot config preserved"),ah(0xFFAA00))end
+ak(at("Memory: "..bb.."K free / "..aG.."K total"),ah(0xAAAAAA))end;if _G._BIOS_ONETIME then
+ak(at("ONE-TIME BOOT: EEPROM unchanged, boot config preserved"),ah(0xFFAA00))end
 if
 an and an.profile=="safe"then
-aj(at("SAFE MODE: services, cron, packages, net, themes are OFF"),ah(0xFFAA00))
-aj(at("(Boot Settings -> Profile to leave Safe Mode)"),ah(0xAAAAAA))end
+ak(at("SAFE MODE: services, cron, packages, net, themes are OFF"),ah(0xFFAA00))
+ak(at("(Boot Settings -> Profile to leave Safe Mode)"),ah(0xAAAAAA))end
 if aG<128 then
-aj(at("WARNING: Low memory - features limited!"),ah(0xFF0000))elseif aG<256 then
-aj(at("NOTE: Limited memory - some features may be skipped"),ah(0xFFFF00))end end;az()
+ak(at("WARNING: Low memory - features limited!"),ah(0xFF0000))elseif aG<256 then
+ak(at("NOTE: Limited memory - some features may be skipped"),ah(0xFFFF00))end end;az()
 local function bc(b,c,a,e,d)local function g()
 while true do local i,k,j=e()if i==ar then return tonumber(j)or 0 end end end;if type(d)~="function"then
 a("Press any key to reboot...")g()return nil end
@@ -224,16 +234,16 @@ i[j].addr:sub(1,8)..". Rebooting.")return i[j].addr end end;return nil end
 local function aO()local a={}if ae.address then a[ae.address]=true end;if _G._TBFS_BOOT_DRIVE then
 a[_G._TBFS_BOOT_DRIVE]=true end
 pcall(function()a[af.tmpAddress()]=true end)
-pcall(bc,ak,a,function(b)aj(b,ah(0xAAAAAA))end,function()return
+pcall(bc,ai,a,function(b)ak(b,ah(0xAAAAAA))end,function()return
 af.pullSignal(math.huge)end,af.setBootAddress)af.shutdown(true)end
 local function aP(a,b)if not ag then return nil end
 local e,d=pcall(require,"kernel.recovery")if not e or type(d)~="table"then return nil end
 local f={title=0x00FFFF,value=0xFFFFFF,dim=0xAAAAAA,ok=0x00FF00,warn=0xFFAA00}
-local g,c=pcall(d.run,{W=ai,H=al,px=ae,component=ak,failed=a,why=b,otherDisk=aO,clear=as,color=function(h)return ah(f[h]or 0xFFFFFF)end,set=function(h,i,j,k)ag.setForeground(
+local g,c=pcall(d.run,{W=aj,H=al,px=ae,component=ai,failed=a,why=b,otherDisk=aO,clear=as,color=function(h)return ah(f[h]or 0xFFFFFF)end,set=function(h,i,j,k)ag.setForeground(
 k or 0xFFFFFF)ag.set(h,i,j)end,tick=function()
 af.pullSignal(0)end,readKey=function()while true do local h,k,i,j=af.pullSignal(math.huge)
 if h==ar then return h,i,j end end end})if not g then as()
-aj("Recovery stopped: "..tostring(c),ah(0xFF6600))return nil end;if c==aS then
+ak("Recovery stopped: "..tostring(c),ah(0xFF6600))return nil end;if c==aS then
 af.shutdown(true)end;if c=="off"then af.shutdown(false)end;return c end
 if
 ((an and an.showConfig)or aq=="verbose")and ag then
@@ -243,10 +253,10 @@ local l={bg=0x000000,border=ah(0x00AAFF),title=ah(0x00FFFF),dim=ah(0xAAAAAA),val
 ag.setForeground(o or 0xFFFFFF)ag.set(l,m,n)end
 local i=b.gather(
 nil,{cpuTier=an.cpuTier,dataTier=an.dataTier},function(k)
-aj("  Standby - "..k.."...",ah(0xAAAAAA))end)as()local f="TOS System Configuration"
-if ai>=60 then
+ak("  Standby - "..k.."...",ah(0xAAAAAA))end)as()local f="TOS System Configuration"
+if aj>=60 then
 local l,k=pcall(require,"kernel.logo")if l and k and k.VENDOR then
-f=k.VENDOR.."  -  System Configuration"end end;local j=b.render(i,{W=ai,H=al,color=e,set=a,title=f})
+f=k.VENDOR.."  -  System Configuration"end end;local j=b.render(i,{W=aj,H=al,color=e,set=a,title=f})
 a(2,math.min(al,(
 j or al)+1),"DEL Boot Settings, S Safe Mode (once), R Recovery...",ah(0xFFAA00))local c=false;local d=false;local g=false;local h=af.uptime()+3
 while af.uptime()<h do local l,n,k,m=af.pullSignal(
@@ -256,11 +266,11 @@ k==83 then d=true elseif k==114 or k==82 then g=true end;break end end;if g then
 if k=="safe"then d=true elseif k=="settings"then c=true end end;as()az()
 if d and an then
 an.profile="safe"
-aj("  SAFE MODE (one-time): services, cron, packages, net, themes OFF",ah(0xFFAA00))
-aj("  Boot config untouched - the next boot is normal.",ah(0xAAAAAA))end
+ak("  SAFE MODE (one-time): services, cron, packages, net, themes OFF",ah(0xFFAA00))
+ak("  Boot config untouched - the next boot is normal.",ah(0xAAAAAA))end
 if c then local l,k=pcall(require,"kernel.bootsettings")
 if l and k then
-local n={W=ai,H=al,color=e,set=a,sysinfo=b,clear=as,readKey=function()while true do
+local n={W=aj,H=al,color=e,set=a,sysinfo=b,clear=as,readKey=function()while true do
 local p,s,q,r=af.pullSignal()if p==ar then return p,q,r end end end}local m,o=k.run(an,n)
 if m=="save"or m==aS then
 local p={exists=function(q)return ae.exists(q)end,readFile=aN,writeFile=function(q,r)
@@ -295,26 +305,26 @@ if#am==0 then
 am={aJ,"/tos/kernel/log.lua","/tos/kernel/hal.lua","/tos/kernel/event.lua","/tos/kernel/process.lua","/tos/kernel/fs.lua","/tos/kernel/serialize.lua","/tos/kernel/display.lua","/tos/shell/init.lua"}aw="hardcoded fallback"end;local av={}
 for b,a in ipairs(am)do if not ae.exists(a)then av[#av+1]=a end end
 if#av>0 then
-aj("MISSING "..#av.." FILES:",ah(0xFF0000))
-for b,a in ipairs(av)do aj("  "..a,ah(0xFF6600))end;af.beep(400,0.5)
+ak("MISSING "..#av.." FILES:",ah(0xFF0000))
+for b,a in ipairs(av)do ak("  "..a,ah(0xFF6600))end;af.beep(400,0.5)
 aP(true,#av.." system file(s) are missing.")aO()end
 if aq~="silent"then
-aj(at("Verifying: ".. (#am-#av).."/"..
-#am.." system files OK ["..aw.."]"),ah(0x00FF00))aj(at("Loading kernel..."),ah(0x00FF00))end;local aQ=nil
+ak(at("Verifying: ".. (#am-#av).."/"..
+#am.." system files OK ["..aw.."]"),ah(0x00FF00))ak(at("Loading kernel..."),ah(0x00FF00))end;local aQ=nil
 if aq==aT and ag then local h,a=pcall(require,"kernel.bootsteps")
 local i=ao;local b,e,f,c,j;local l=3
 local function m()
 if h and a and a.splashGeometry then
-b,e,f,c=a.splashGeometry(ai,al,i)else e=math.max(10,math.min(40,ai-6))
-f=math.max(1,math.floor((ai-
-(e+2))/2)+1)b=math.max(1,math.min(al-1,i+1))end;c=c or math.max(0,math.min(l,al-b))j=ai-
+b,e,f,c=a.splashGeometry(aj,al,i)else e=math.max(10,math.min(40,aj-6))
+f=math.max(1,math.floor((aj-
+(e+2))/2)+1)b=math.max(1,math.min(al-1,i+1))end;c=c or math.max(0,math.min(l,al-b))j=aj-
 f+1;ag.setBackground(0x000000)
-pcall(ag.fill,1,b,ai,c+1," ")end;local g=0;local k=16;local q=ay and"#"or"█"local d={}local n=nil;if
+pcall(ag.fill,1,b,aj,c+1," ")end;local g=0;local k=16;local q=ay and"#"or"█"local d={}local n=nil;if
 h and a and a.STAGE_COUNT then k=a.STAGE_COUNT end;local function r(t)
 if h and a then return a.stageFor(t)end;return nil end
 local function s()
 local v,t,u=pcall(ag.getResolution)if not v or not t or not u then return false end;if
-t==ai and u==al then return false end;ai,al=t,u;as()ao=1;az()i=ao;m()
+t==aj and u==al then return false end;aj,al=t,u;as()ao=1;az()i=ao;m()
 ao=math.min(al,b+c+1)return true end
 local function o()s()ag.setBackground(0x000000)local t=math.floor(e*math.min(1,g/k)+
 0.5)
@@ -357,7 +367,7 @@ for j=1,math.min(
 #b,c)do
 pcall(a.setForeground,(b[j][2]=="dim")and h or f)pcall(a.set,1,j,b[j][1])end end
 local bg,bh=xpcall(function()local a=require("kernel")
-a.boot({gpu=ag,gpuDepth=ax,screenW=ai,screenH=al,earlyPrint=aj,bootFS=ae,bootcfg=an,bootcfgMod=au,earlyMinLevel=aD,bootProgress=aQ})end,function(a)
+a.boot({gpu=ag,gpuDepth=ax,screenW=aj,screenH=al,earlyPrint=ak,bootFS=ae,bootcfg=an,bootcfgMod=au,earlyMinLevel=aD,bootProgress=aQ})end,function(a)
 return
 tostring(a).."\n"..debug.traceback("",2)end)
 if not bg then local b=tostring(bh)or"Unknown error"
@@ -376,7 +386,7 @@ if n then
 ae.write(n,"=== TOS "..f.." ===\n"..
 b.."\nFree RAM: "..math.floor(af.freeMemory()/1024)..
 "KB\n")ae.close(n)g="/var/crash/crash-panic.txt"end;local o=ae.open("/var/crash/NEW","w")if o then ae.write(o,f)
-ae.close(o)end end end)local h,i=ai,al
+ae.close(o)end end end)local h,i=aj,al
 if ag then pcall(ag.setActiveBuffer,0)
 local o,m,n=pcall(ag.getResolution)if o and m and n then h,i=m,n end;local p=_G._TOS or{}
 bf(ag,be({code=d,sym=a,hex=k,detail=b,report=g,status=string.format("uptime %ds | %d KB free | TOS %s",math.floor(af.uptime()),math.floor(

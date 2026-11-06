@@ -1,0 +1,56 @@
+NAME
+    overlay - a copy-on-write root: keep writes on another disk
+
+SYNOPSIS
+    overlay
+    overlay on <disk> [--reset]
+    overlay off
+    overlay changes
+    overlay merge
+    overlay drop
+
+DESCRIPTION
+    With an overlay, `/` comes from two disks. Reads come from the second disk
+    if it has the file and from the real root if it does not. Every write lands
+    on the second disk, so the real root is not touched. Deleting a file records
+    that it is gone, on the second disk too. <disk> is an address prefix or a
+    label. Everything here is root's, and `on` and `off` take effect at the next
+    boot.
+
+    Three things come from this:
+
+      Run from a read-only disk. A loot disk cannot hold a password. Boot from
+      it with a hard drive in the machine and choose "Run from here, saving to
+      the hard drive". You are asked at each boot, because a read-only disk has
+      nowhere to remember the answer.
+
+      An appliance that resets. `overlay on <disk> --reset` forgets everything
+      at every boot: whatever a kiosk's visitors did is gone at the next one.
+
+      Try something, then keep it or don't. `overlay on <disk>`, reboot, install
+      or change what you like, and read `overlay changes`. Then `overlay merge`
+      writes it all to the real root, or `overlay drop` forgets it.
+
+SUBCOMMANDS
+    overlay        What is overlaid, and how much has changed.
+    on <disk>      From the next boot, writes land on <disk>. --reset forgets
+                   them at every boot. Nothing else on that disk is touched: the
+                   writes are in a directory of their own, /tos-overlay.
+    off            From the next boot this is the real root. What was written
+                   stays on the disk, and `overlay on` picks it up again.
+    changes        Every file the overlay holds (+) or hides (-).
+    merge          Write all of it to the real root. Reboot to finish. If it
+                   stops part way, nothing is lost: run it again.
+    drop           Forget all of it at the next boot.
+
+SAFETY
+    The second disk can replace any file on the system, the kernel included, so
+    whoever can write to it can do anything. That is why it is no longer mounted
+    once it holds the overlay, and why `mount` refuses it.
+
+    If that disk is missing at boot, the machine runs on the real root and every
+    write is permanent. `doctor` says so as an error. This is also the way back
+    from an overlay that broke something: take the disk out and boot.
+
+SEE ALSO
+    jbod, pkg, kiosk, srm

@@ -5,17 +5,18 @@ local am=8;local aa="/var/pkg/remote"local U=128*1024;local an=128*1024;local ae
 local af=64;local V=function()return false end
 function J.init(a)a=a or{}L=a.log;if
 type(a.validRepoHint)=="function"then V=a.validRepoHint end end
-local function T()local a,b=pcall(require,"kernel.internet")if a then return b end;return nil end;local function ag(a)return
+local function S()local a,b=pcall(require,"kernel.internet")if a then return b end;return nil end;local function ag(a)return
 type(a)==M and#a<=32 and a:match("^[%w_%-]+$")~=nil end
-local function S(a)if
+local function T(a)if
 type(a)~=M or a==""or#a>64 then return false end;if
 #a==1 then return a:match("^%w$")~=nil end;return
-a:match("^%w[%w%-]*%w$")~=nil end;J.validPkgName=S
-function J.repos()local a={}if not K.exists(P)then return a end
-local b=K.readFile(P)if not b then return a end
+a:match("^%w[%w%-]*%w$")~=nil end;J.validPkgName=T;function J.online()local a=S()
+return a~=nil and a.available()==true end
+function J.repos()local a={}
+if not K.exists(P)then return a end;local b=K.readFile(P)if not b then return a end
 local e,c=pcall(N.decode,b,{maxBytes=16384})
 if not e or type(c)~="table"then if L then
-L.warn(R,"Corrupt "..P.."; ignoring")end;return a end;local d=T()
+L.warn(R,"Corrupt "..P.."; ignoring")end;return a end;local d=S()
 for g,f in ipairs(c)do
 if type(f)=="table"and ag(f.name)and
 type(f.url)==M then
@@ -29,7 +30,7 @@ b[#b+1]={name=c.name,url=c.url,description=c.description}end;return
 K.writeFileAtomic and
 K.writeFileAtomic(P,N.encode(b))or K.writeFile(P,N.encode(b))end
 function J.addRepo(a,b,c)
-if not ag(a)then return false,"invalid repo name (letters, digits, _ and - only)"end;local e=T()if not e then return false,al end;local g,h=e.parseUrl(b)
+if not ag(a)then return false,"invalid repo name (letters, digits, _ and - only)"end;local e=S()if not e then return false,al end;local g,h=e.parseUrl(b)
 if not g then return false,h end;local d=J.repos()local f=false
 for k,j in ipairs(d)do if j.name==a then
 j.url,j.description,f=(b:gsub("/+$","")),c,true end end;if not f then
@@ -47,7 +48,7 @@ type(c)~="table"then if L then
 L.warn(R,"Corrupt "..O.."; ignoring")end;return a end
 for g,f in ipairs(c)do
 if type(f)=="table"and V(f.url)then local e={}for g,h in ipairs(
-type(f.from)=="table"and f.from or{})do if S(h)then
+type(f.from)=="table"and f.from or{})do if T(h)then
 e[#e+1]=h end end
 a[#a+1]={url=(f.url:gsub("/+$","")),from=e}end end;while#a>_ do table.remove(a,1)end;return a end
 local function ab(a)local b={}
@@ -60,7 +61,7 @@ ipairs(b)do
 if V(g)then local i=(g:gsub("/+$",""))
 if not e[i]then local j;for h,k in ipairs(c)do
 if k.url==i then j=k;break end end
-if not j then j={url=i,from={}}c[#c+1]=j;d=d+1 end;if S(a)then local k=false;for h,l in ipairs(j.from)do if l==a then k=true end end
+if not j then j={url=i,from={}}c[#c+1]=j;d=d+1 end;if T(a)then local k=false;for h,l in ipairs(j.from)do if l==a then k=true end end
 if
 not k and#j.from<8 then j.from[#j.from+1]=a end end end end end;while#c>_ do table.remove(c,1)end;local f=ab(c)
 if not f then return 0,Z..O end;if d>0 and L then
@@ -74,7 +75,7 @@ not c or not b[c]then return false,
 "no known repo "..tostring(a).." (see 'pkg repo list')"end;table.remove(b,c)if not ab(b)then return false,Z..O end
 return true,1 end
 local function ao(a)if not V(a)then return nil end;a=(a:gsub("/+$",""))
-local f,b=pcall(require,"kernel.crypto")local c=T()
+local f,b=pcall(require,"kernel.crypto")local c=S()
 if
 not f or type(b)~="table"or type(b.hash)~="function"or not c then return nil end;local e=c.hostOf and c.hostOf(a)
 local d=tostring(b.hash(a)or"")
@@ -92,7 +93,7 @@ if a:find("://",1,true)then return nil end
 if a:find("?",1,true)or a:find("#",1,true)then return nil end;if a:find("@",1,true)then return nil end;for b in a:gmatch("[^/]+")do if
 b=="."or b==".."then return nil end end;return
 (a:gsub("/+","/"))end;local X={}local Y={}local aj=64*1024
-function J.index(a,b)b=b or{}local d=T()if not d then return nil,al end
+function J.index(a,b)b=b or{}local d=S()if not d then return nil,al end
 if not
 b.refresh and X[a.name]then return X[a.name].index end;local e=a.url.."/programs.cfg"local f,g=d.get(e,{maxBytes=U})if
 not f then
@@ -117,7 +118,7 @@ local function ak(a)
 local b={}
 for d,c in ipairs(type(a)=="table"and a or{})do local e=
 type(c)=="table"and c.name or c;e=type(e)==M and
-e:match("^%S+")if e and S(e)then b[#b+1]=e end end;return b end
+e:match("^%S+")if e and T(e)then b[#b+1]=e end end;return b end
 function J.search(a)local b={}
 for d,c in ipairs(J.repos())do local e,f=J.index(c,a)
 if e then
@@ -126,12 +127,12 @@ if type(h)==M and
 type(g)=="table"and not g.hidden then
 local i=ak(g.requires)
 for j in
-pairs(type(g.dependencies)=="table"and g.dependencies or{})do if S(j)then i[#i+1]=j end end
+pairs(type(g.dependencies)=="table"and g.dependencies or{})do if T(j)then i[#i+1]=j end end
 b[#b+1]={name=h,repo=c.name,description=g.description or g.note,version=g.version,category=ad(g.category),kind=ad(g.kind),author=ad(g.author),requires=i,recommends=ak(g.recommends)}end end elseif L then L.warn(R,tostring(f))end end
 table.sort(b,function(c,d)return(c.name or"")< (d.name or"")end)return b end
-function J.fetch(a,b)b=b or{}if not S(a)then
+function J.fetch(a,b)b=b or{}if not T(a)then
 return nil,"not a package name: "..tostring(a):sub(1,64)..
-"  [E-602 ERR_PKG_BAD_NAME]"end;local g=T()
+"  [E-602 ERR_PKG_BAD_NAME]"end;local g=S()
 if not g then return nil,al end;if not g.available()then local r=g.status()return nil,
 r.reason or"internet is not available"end
 local l=J.repos()

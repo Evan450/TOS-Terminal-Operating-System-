@@ -65,7 +65,7 @@ b.o(string.format("%-10s %-8s %-6s %-5s %s",(h.hostname or"?"):sub(1,10),(
 h.device or"?"):sub(1,8),f[h.trust]or"?",u,(h.addr or"?"):sub(1,12)))end;b.o(#e.." peer(s) found.",0x888888)elseif d==t then
 local e=a.status()
 b.o("Host: ".. (e.hostname or"?"))
-b.o("Addr: ".. (e.address or"?"))
+b.o("Addr: ".. (e.fullAddress or e.address or"?"))
 local g=a.modemCount and a.modemCount()or(e.hasModem and 1 or 0)
 b.o("Modem: "..
 (e.hasModem and"Yes"or"No").. (g>1 and
@@ -191,13 +191,15 @@ b.o("net pair requires admin",0xFF0000)return end end
 if e=="start"then local g,h=f.startWindow()if not g then
 b.o("could not open pairing window: "..tostring(h),0xFF0000)return end
 local i=math.max(0,math.floor(h-o.uptime()))
-b.o("Pairing window open for "..i.."s.",0xFFFF55)b.o("Type this on the OTHER peer:",0xAAAAAA)b.o(
-"  net pair <our-addr-or-alias> "..g,0xFFFF00)
+b.o("Pairing window open for "..i.."s.",0xFFFF55)b.o("Type this on the OTHER peer:",0xAAAAAA)
+local j=a.status and
+a.status().fullAddress or"<our-addr-or-alias>"
+b.o("  net pair "..tostring(j).." "..g,0xFFFF00)
 b.o("Pre-condition: both peers must already be TRUSTED on both sides.",0x888888)elseif e==t then local g=f.windowInfo()
 if g then
 b.o(string.format("Window open: %ds left, %d peers paired",math.floor(g.expires_in),g.paired),0xFFFF55)else b.o("No pairing window open.",0xAAAAAA)end elseif e=="close"or e=="cancel"then f.closeWindow()
 b.o("Pairing window closed.",0x00FF00)elseif e and c[3]then local g=l(e)local h=c[3]
-b.o("Pairing with "..k(g).."...",0xFFFF55)local i,j=f.connect(g,h,10)if i then
+b.o("Pairing with "..k(g).."...",0xFFFF55)local i,j=f.connect(g,h)if i then
 b.o("Paired. Shared secret installed on both sides.",0x00FF00)else
 b.o("Pair failed: "..tostring(j),0xFF0000)end else
 b.o("Usage: net pair start | net pair <peer> <code> | net pair status",0xFFFF00)end else b.o("Unknown: net "..d,0xFF0000)end end

@@ -9,17 +9,19 @@ local c="/"..table.concat(b,"/")return c end
 function n.split(a)a=n.normalize(a)if not a then return nil,nil end
 local b,c=a:match("^(.-)([^/]+)$")if not b or b==""then b="/"end;return b,c or""end;function n.join(...)local a={...}
 return n.normalize(table.concat(a,"/"))end
-function n.mount(a,b)a=n.normalize(a)if not a then return false,
+function n.mount(a,c,b)a=n.normalize(a)if not a then return false,
 "invalid mount path"end;if p[a]then
 return false,"Already mounted at "..a end
-if a~="/"and n.exists(a)then
-if n.isDirectory(a)then
-local c=n.list(a)
-if type(c)=="table"and#c>0 then return false,
-"Refusing to mount over non-empty directory: "..a end else return false,"Mount path is a file, not a directory: "..a end end;p[a]=b;return true end
-function n.unmount(a)a=n.normalize(a)if not a then return false,q end;if a=="/"then
-return false,"Cannot unmount root"end;local b=p[a]
-if b==nil then return false,"Not mounted: "..a end;p[a]=nil;if
+if a~="/"and n.exists(a)and
+not(b and b.over)then
+if n.isDirectory(a)then local d=n.list(a)if
+type(d)=="table"and#d>0 then
+return false,"Refusing to mount over non-empty directory: "..a end else return false,
+"Mount path is a file, not a directory: "..a end end;p[a]=c;return true end;function n.rootProxy()return p["/"]end
+function n.unmount(a)a=n.normalize(a)if not a then
+return false,q end
+if a=="/"then return false,"Cannot unmount root"end;local b=p[a]if b==nil then return false,"Not mounted: "..a end;p[a]=
+nil;if
 type(b)=="table"and type(b.unmount)=="function"then pcall(b.unmount)end;return true end
 local function o(a)a=n.normalize(a)if not a then return nil end;local d="/"local c=1;for e in pairs(p)do
 if#e>c then if

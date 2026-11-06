@@ -1,111 +1,120 @@
-local I="string"local J=require("computer")local F={}local E=nil;local G=nil;local H=nil
-local K=nil;local B=nil;local D="chatpair"local O=300;local P="ABCDEFGHJKMNPQRSTUVWXYZ23456789"local Q=24
-local R="tos-chat-pair-v1"local C=nil;local S="root"local T=3
-function F.init(a)
-E=a and a.crypto or require("kernel.crypto")
-G=a and a.protocol or require("kernel.net.protocol")H=a and a.trust or nil;B=a and a.log or nil
-K=a and a.net or nil end;local function U()if K then return K end;local a,b=pcall(require,"kernel.net")if a then K=b end
-return K end
-local _="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-local function aa()local a,b={},#P
-while#a<Q do local c=E.salt(64)
-for d=1,#c do if#a>=Q then break end;local g=c:sub(d,d)
-local f=_:find(g,1,true)local e;if f then e=((f-1)%b)+1 else local h=c:byte(d)
+local K="string"local M=require("computer")local G={}local H=nil;local I=nil;local J=nil
+local N=nil;local O=nil;local L=nil;local D=nil;local F="chatpair"local S=300
+local T="ABCDEFGHJKMNPQRSTUVWXYZ23456789"local U=24;local V="tos-chat-pair-v1"local E=nil;local W="root"local X=3
+function G.init(a)H=a and a.crypto or
+require("kernel.crypto")I=a and a.protocol or
+require("kernel.net.protocol")
+J=a and a.trust or nil;D=a and a.log or nil;N=a and a.net or nil end;local function Y()if N then return N end;local a,b=pcall(require,"kernel.net")if a then N=b end
+return N end
+local ad="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+local function ae()local a,b={},#T
+while#a<U do local c=H.salt(64)
+for d=1,#c do if#a>=U then break end;local g=c:sub(d,d)
+local f=ad:find(g,1,true)local e;if f then e=((f-1)%b)+1 else local h=c:byte(d)
 if h<248 then e=(h%b)+1 end end
-if e then a[#a+1]=P:sub(e,e)end end end;return table.concat(a)end;local function V(a)return E.hashPassword(a,R)end
-local function L(a,b,c,d)local e,f=tostring(b or""),tostring(
+if e then a[#a+1]=T:sub(e,e)end end end;return table.concat(a)end;local function Z(a)return H.hashPassword(a,V)end
+local function P(a,b,c,d)local e,f=tostring(b or""),tostring(
 c or"")if e>f then e,f=f,e end;return
-E.hmac(a,e.."|"..f.."|"..
-tostring(d or 0))end;local M=2
-local function W()return
-(E.salt(16):gsub(".",function(a)
+H.hmac(a,e.."|"..f.."|"..
+tostring(d or 0))end;local Q=2
+local function _()return
+(H.salt(16):gsub(".",function(a)
 return string.format("%02x",a:byte())end))end
-local function N(a,b,c,d,e,f)local g,h=tostring(b or""),tostring(c or"")if g>h then g,h=h,g end;return
-E.hmac(a,table.concat({"v2",g,h,tostring(
+local function R(a,b,c,d,e,f)local g,h=tostring(b or""),tostring(c or"")if g>h then g,h=h,g end;return
+H.hmac(a,table.concat({"v2",g,h,tostring(
 d or 0),tostring(e or""),tostring(f or"")},"|"))end
-local function X(a,b,c,d,e)local f,g=tostring(b or""),tostring(c or"")if f>g then f,g=g,f end;return
-E.hmac(a,table.concat({R,"link",f,g,tostring(d),tostring(e)},"|"))end;local function Y(a)return
-type(a)==I and#a>=16 and#a<=64 and not a:find("[^%x]")end
-local function Z(a)if not H then return
-false,"trust manager unavailable"end
-local b=H.getLevel(a)if
-b< (H.LEVEL and H.LEVEL.TRUSTED or 2)then
+local function aa(a,b,c,d,e)local f,g=tostring(b or""),tostring(c or"")if f>g then f,g=g,f end;return
+H.hmac(a,table.concat({V,"link",f,g,tostring(d),tostring(e)},"|"))end;local function ab(a)return
+type(a)==K and#a>=16 and#a<=64 and not a:find("[^%x]")end
+local function ac(a)if
+not J then return false,"trust manager unavailable"end
+local b=J.getLevel(a)if
+b< (J.LEVEL and J.LEVEL.TRUSTED or 2)then
 return false,"peer must be TRUSTED before pairing (run 'net trust <addr> full' first)"end;return true end
-function F.startWindow()if not E then return nil,"chatpair not initialized"end
-local b=J.uptime()local a=aa()
-C={code=a,secret=V(a),opens_at=b,expires_at=b+O,paired_with={}}if B then
-B.info(D,"pairing window opened ("..O.."s)")end;return a,C.expires_at end;function F.closeWindow()C=nil
-if B then B.info(D,"pairing window closed")end end
-function F.windowOpen()if not C then return false end;if
-J.uptime()>C.expires_at then C=nil;return false end;return true end;function F.windowInfo()if not F.windowOpen()then return nil end
-return{expires_in=C.expires_at-J.uptime(),paired=
-#C.paired_with}end
-function F.onPairInit(b,a)
-if not
-F.windowOpen()then if B then
-B.warn(D,"pair_init from "..
-tostring(a):sub(1,8).." but no window open")end;return end;local c=b.payload or{}
+function G.startWindow()if not H then return nil,"chatpair not initialized"end
+local b=M.uptime()local a=ae()
+E={code=a,secret=Z(a),opens_at=b,expires_at=b+S,paired_with={}}if D then
+D.info(F,"pairing window opened ("..S.."s)")end;return a,E.expires_at end;function G.closeWindow()E=nil
+if D then D.info(F,"pairing window closed")end end
+function G.windowOpen()if not E then return false end;if
+M.uptime()>E.expires_at then E=nil;return false end;return true end;function G.windowInfo()if not G.windowOpen()then return nil end
+return{expires_in=E.expires_at-M.uptime(),paired=
+#E.paired_with}end;function G.setMeshSend(a)
+O=a end
+function G.onMeshPair(c,b,a)
+if type(b)~="table"or type(a)~=K then return end
+if c=="init"then
+G.onPairInit({payload=b},a,function(d)
+if O then pcall(O,a,"confirm",d.payload)end end)elseif c=="confirm"and L and L.peer==a then L.fn(b)end end
+function G.onPairInit(c,a,b)
+if not G.windowOpen()then if D then
+D.warn(F,"pair_init from "..tostring(a):sub(1,8)..
+" but no window open")end;return end;local d=c.payload or{}
 if
-type(c.mac)~=I or type(c.ts)~="number"then if B then
-B.warn(D,"malformed pair_init from "..tostring(a):sub(1,8))end;return end;for r,q in ipairs(C.paired_with)do
-if q==a then if B then
-B.warn(D,"duplicate pair_init from "..tostring(a):sub(1,8))end;return end end
-local j,k=Z(a)
-if not j then if B then
-B.warn(D,"pair_init from "..
-tostring(a):sub(1,8).." refused: "..k)end;return end;local d=U()
-local e=d and d.getAddress and d.getAddress()or nil
-if not e then if B then
-B.warn(D,"pair_init: no local address; dropping")end;return end;local l=L(C.secret,e,a,c.ts)
-if not E.ctEquals(l,c.mac)then if B then
-B.warn(D,
-"pair_init MAC mismatch from "..tostring(a):sub(1,8))end;return end;local f=(c.v==M)
+type(d.mac)~=K or type(d.ts)~="number"then if D then
+D.warn(F,"malformed pair_init from "..tostring(a):sub(1,8))end;return end;for s,r in ipairs(E.paired_with)do
+if r==a then if D then
+D.warn(F,"duplicate pair_init from "..tostring(a):sub(1,8))end;return end end
+local l,m=ac(a)
+if not l then if D then
+D.warn(F,"pair_init from "..
+tostring(a):sub(1,8).." refused: "..m)end;return end;local e=Y()
+local f=e and e.getAddress and e.getAddress()or nil
+if not f then if D then
+D.warn(F,"pair_init: no local address; dropping")end;return end;local n=P(E.secret,f,a,d.ts)
+if not H.ctEquals(n,d.mac)then if D then
+D.warn(F,
+"pair_init MAC mismatch from "..tostring(a):sub(1,8))end;return end;local g=(d.v==Q)
 if
-f and not
-(Y(c.nonce)and type(c.mac2)==I and E.ctEquals(N(C.secret,e,a,c.ts,c.nonce,
-nil),c.mac2))then if B then
-B.warn(D,"pair_init v2 MAC mismatch from "..tostring(a):sub(1,8))end;return end;local h=f and W()or nil
-local m=f and X(C.secret,e,a,c.nonce,h)or C.secret;local n,o=H.setSecret(S,a,m,T)
-if not n then if B then
-B.warn(D,"setSecret failed for "..
-tostring(a):sub(1,8)..": "..tostring(o))end;return end;C.paired_with[#C.paired_with+1]=a
-if B then
-B.info(D,"paired with "..
+g and not
+(ab(d.nonce)and type(d.mac2)==K and H.ctEquals(R(E.secret,f,a,d.ts,d.nonce,
+nil),d.mac2))then if D then
+D.warn(F,"pair_init v2 MAC mismatch from "..tostring(a):sub(1,8))end;return end;local i=g and _()or nil
+local o=g and aa(E.secret,f,a,d.nonce,i)or E.secret;local p,q=J.setSecret(W,a,o,X)
+if not p then if D then
+D.warn(F,"setSecret failed for "..
+tostring(a):sub(1,8)..": "..tostring(q))end;return end;E.paired_with[#E.paired_with+1]=a
+if D then
+D.info(F,"paired with "..
 tostring(a):sub(1,12).."...")
-if not f then
-B.warn(D,tostring(a):sub(1,8)..
+if not g then
+D.warn(F,tostring(a):sub(1,8)..
 " paired with the older (v1) handshake: "..
-"it shares this window's secret with any other v1 peer paired in it. ".."Update it and pair again.")end end;local i=J.uptime()local g={mac=L(C.secret,e,a,i),ts=i}
-if f then g.v=M
-g.nonce=h;g.mac2=N(C.secret,e,a,i,c.nonce,h)end
-local p=G.makePacket(G.TYPE.CHAT_PAIR_CONFIRM,g,{to=a})if d and d.send then pcall(d.send,a,p)end end
-function F.connect(a,b,c)
-if not E or not G or not H then return false,"chatpair not initialized"end
-if type(a)~=I or a==""then return false,"peer address required"end
-if type(b)~=I or#b<4 then return false,"pairing code required"end;local m,n=Z(a)if not m then return false,n end;local e=U()
-if
-not e or not e.send or not e.on or not e.off then return false,"net module unavailable"end;local o=b:upper():gsub("[^%w]","")local f=V(o)
-local i=J.uptime()
-local g=e.getAddress and e.getAddress()or nil;if not g then return false,"no local address"end;local j,d=false,nil
-local l=e.onceFrom(G.TYPE.CHAT_PAIR_CONFIRM,a,function(u)
-d=u.payload;j=true end)local h=W()
-local p=G.makePacket(G.TYPE.CHAT_PAIR_INIT,{mac=L(f,g,a,i),ts=i,v=M,nonce=h,mac2=N(f,g,a,i,h,nil)},{to=a})local q,r=e.send(a,p)
-if not q then
-e.off(G.TYPE.CHAT_PAIR_CONFIRM,l)return false,"send failed: "..tostring(r)end;e.waitFor(function()return j end,c or 10)
-e.off(G.TYPE.CHAT_PAIR_CONFIRM,l)
-if not j then return false,"no confirmation (wrong code, window expired, or peer offline)"end
-if type(d)~="table"or type(d.mac)~=I or
-type(d.ts)~="number"then return false,"malformed confirm"end;local k
-if d.v==M then
+"it shares this window's secret with any other v1 peer paired in it. ".."Update it and pair again.")end end;local j=M.uptime()local h={mac=P(E.secret,f,a,j),ts=j}
+if g then h.v=Q
+h.nonce=i;h.mac2=R(E.secret,f,a,j,d.nonce,i)end
+local k=I.makePacket(I.TYPE.CHAT_PAIR_CONFIRM,h,{to=a})
+if b then pcall(b,k)elseif e and e.send then pcall(e.send,a,k)end end
+function G.connect(a,b,c)
+if not H or not I or not J then return false,"chatpair not initialized"end
+if type(a)~=K or a==""then return false,"peer address required"end
+if type(b)~=K or#b<4 then return false,"pairing code required"end;local o,p=ac(a)if not o then return false,p end;local e=Y()if not e or not e.send or
+not e.on or not e.off then
+return false,"net module unavailable"end
+local q=b:upper():gsub("[^%w]","")local f=Z(q)local j=M.uptime()
+local g=e.getAddress and e.getAddress()or nil;if not g then return false,"no local address"end;local h,d=false,nil
+local m=e.onceFrom(I.TYPE.CHAT_PAIR_CONFIRM,a,function(v)if
+not h then d=v.payload;h=true end end)
+L={peer=a,fn=function(v)if not h then d=v;h=true end end}local i=_()
+local n=I.makePacket(I.TYPE.CHAT_PAIR_INIT,{mac=P(f,g,a,j),ts=j,v=Q,nonce=i,mac2=R(f,g,a,j,i,nil)},{to=a})local r,s=e.send(a,n)local k=false;if O then
+k=(pcall(O,a,"init",n.payload))end
+if not r and not k then
+e.off(I.TYPE.CHAT_PAIR_CONFIRM,m)L=nil;return false,"send failed: "..tostring(s)end
+e.waitFor(function()return h end,c or(k and 30 or 10))e.off(I.TYPE.CHAT_PAIR_CONFIRM,m)L=nil
+if not h then return false,
+"no confirmation (wrong code, window expired, or peer offline)"end
+if type(d)~="table"or type(d.mac)~=K or
+type(d.ts)~="number"then return false,"malformed confirm"end;local l
+if d.v==Q then
 if not
-(Y(d.nonce)and type(d.mac2)==I and
-E.ctEquals(N(f,g,a,d.ts,h,d.nonce),d.mac2))then
-return false,"confirm MAC mismatch (wrong code or attacker on wire)"end;k=X(f,g,a,h,d.nonce)else local u=L(f,g,a,d.ts)
+(ab(d.nonce)and type(d.mac2)==K and
+H.ctEquals(R(f,g,a,d.ts,i,d.nonce),d.mac2))then
+return false,"confirm MAC mismatch (wrong code or attacker on wire)"end;l=aa(f,g,a,i,d.nonce)else local v=P(f,g,a,d.ts)
 if
-not E.ctEquals(u,d.mac)then return false,"confirm MAC mismatch (wrong code or attacker on wire)"end;k=f
-if B then
-B.warn(D,a:sub(1,8).." answered with the older (v1) handshake; "..
-"the link uses the pairing window's shared secret. Update it and pair again.")end end;local s,t=H.setSecret(S,a,k,T)if not s then return false,
-"local setSecret failed: "..tostring(t)end
-if B then B.info(D,"paired with "..
-a:sub(1,12).."...")end;return true end;return F
+not H.ctEquals(v,d.mac)then return false,"confirm MAC mismatch (wrong code or attacker on wire)"end;l=f
+if D then
+D.warn(F,a:sub(1,8).." answered with the older (v1) handshake; "..
+"the link uses the pairing window's shared secret. Update it and pair again.")end end;local t,u=J.setSecret(W,a,l,X)if not t then return false,
+"local setSecret failed: "..tostring(u)end
+if D then D.info(F,"paired with "..
+a:sub(1,12).."...")end;return true end;return G

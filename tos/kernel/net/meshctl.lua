@@ -120,9 +120,10 @@ if b.lastSent and self.clock()-b.lastSent<
 l.RETRY_EVERY/2 then return end;self:_resend(b)end
 function k:send(a)a=a or{}if type(a.svc)~=n or a.svc==""then
 return nil,"mesh send needs a service kind (svc)"end
-local b=(a.to~=nil and a.to~=l.BROADCAST)local d=b and self.secretFor(a.to)or nil
-if
-not d and not a.allowPlaintext then
+local b=(a.to~=nil and a.to~=l.BROADCAST)
+local d=
+b and not(a.unsealed and a.allowPlaintext)and self.secretFor(a.to)or nil
+if not d and not a.allowPlaintext then
 if b then return nil,
 "no shared secret with "..
 tostring(a.to):sub(1,8).."... — pair first (net pair) or allow plaintext explicitly"end;return nil,"broadcasts can't be sealed — allow plaintext explicitly"end;if b then local f=self:pending()

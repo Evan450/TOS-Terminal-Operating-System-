@@ -71,6 +71,11 @@ if l and l~=ab then
 local m=P.sendToAddress(l,j)if m then return end;P._meshctl:invalidateRoute(i)end end;P.broadcast(j)end,secretFor=function(h)return
 
 Q._internalGetSecret and Q._internalGetSecret(h,P._trustToken)or nil end,log=R})
+if P._chatpair and P._chatpair.setMeshSend then
+P._chatpair.setMeshSend(function(h,i,j)
+local k,l=P._meshctl:send({svc="pair",to=h,allowPlaintext=true,unsealed=true,payload={kind=i,body=j}})if not k then error(l,0)end;return k end)
+P._meshctl:on("pair",function(h)local i=h and h.payload;if type(i)=="table"then
+pcall(P._chatpair.onMeshPair,i.kind,i.body,h.from)end;return true end)end
 local function g(h)if type(h.payload)=="table"then
 P._meshctl:onPacket(h.payload)end end;P.on(S.TYPE.MESH,g)P.on(S.TYPE.MESH_ACK,g)if R then
 R.info("net","Mesh transport controller registered")end elseif R then

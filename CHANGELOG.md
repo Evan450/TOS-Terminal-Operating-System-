@@ -20,8 +20,23 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 104 rounds of work:
+Everything since v1.5.0, in 119 rounds of work:
 
+- [pkg audit](#pkg-audit)
+- [A network install leaves only TOS](#a-network-install-leaves-only-tos)
+- [The operator decides who manages accounts, and whether to trust the pack](#the-operator-decides-who-manages-accounts-and-whether-to-trust-the-pack)
+- [A package from a repo is offered its updates](#a-package-from-a-repo-is-offered-its-updates)
+- [The mesh reaches a machine you have never heard](#the-mesh-reaches-a-machine-you-have-never-heard)
+- [TOS boots from a raw drive](#tos-boots-from-a-raw-drive)
+- [jbod create works](#jbod-create-works)
+- [A broken kiosk config allows nothing](#a-broken-kiosk-config-allows-nothing)
+- [A tape restore that failed says so](#a-tape-restore-that-failed-says-so)
+- [A copy-on-write root](#a-copy-on-write-root)
+- [Read-only disks are noticed](#read-only-disks-are-noticed)
+- [Packages as archives](#packages-as-archives)
+- [a network install is what the publisher signed](#a-network-install-is-what-the-publisher-signed)
+- [the licence is on every source file](#the-licence-is-on-every-source-file)
+- [a compatibility number you can check](#a-compatibility-number-you-can-check)
 - [the REPL remembers, and date tells the time](#the-repl-remembers-and-date-tells-the-time)
 - [the installer speaks your language](#the-installer-speaks-your-language)
 - [a minimal install, for a 1 MB drive](#a-minimal-install-for-a-1-mb-drive)
@@ -126,6 +141,88 @@ Everything since v1.5.0, in 104 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### pkg audit
+
+`pkg audit <name> on` (root) runs one package with every capability it could ask for, and records each use of one it never declared instead of refusing it. `pkg audit <name>` then lists what it used and the capabilities its manifest would need. It is logged, and it ends at reboot. The peripheral capabilities and `ipc` cannot be seen this way, and a service or a driver runs outside the sandbox, so neither can be audited.
+
+### A network install leaves only TOS
+
+A network install no longer leaves anything behind. The bootstrap meant to remove its download and itself after the installer finished, but the installer ends by rebooting, so neither happened: every network install left a second copy of TOS in `/home/tos-netinstall` and `/bootstrap.lua` at the root. The installer now removes the download once TOS is verified in place, and the bootstrap removes itself before handing over. Staging on the same drive is also moved rather than copied, so it no longer needs room for two copies; the unminified dev branch could not install on a 4 MB drive at all.
+
+When TOS goes onto a drive that held another system, the installer now asks what to do with that system's files, all of them rather than just `/bin`, `/boot` and `/lib`: leave them, move them into `/openos` (the default), or delete them. On a fresh OpenOS drive it moved 178 files, and `/etc` and `/usr` held only TOS's afterwards. Your `/home` is never counted.
+
+### The operator decides who manages accounts, and whether to trust the pack
+
+The installer asks two things it used to decide for you. **Who manages accounts:** root only, the default, or admins as well, for ordinary accounts only. Root can change it later with `users manage root|admins`. **Whether to trust the Optional Utilities publisher:** say yes and the official packages install as trusted, rather than "valid, but the key was not trusted"; `pkg trust` undoes it.
+
+### A package from a repo is offered its updates
+
+A package installed from a repo was never offered an update: `pkg outdated` only looked at mounted disks, and `pkg upgrade` could not fetch. With an internet card, both now look at the repos you added, and an upgrade from one runs every check an upgrade from a disk does: the signature first, the same publisher, and what depends on it. Repos you never added are not read.
+
+### The mesh reaches a machine you have never heard
+
+The mesh could not reach a machine you had never been next to. Sending to one needs a shared secret, and `net pair`, the way to make one, only worked between machines in range of each other. Pairing now crosses relays as well. No relay can forge it or learn the secret it makes, because both halves are keyed by the pairing code. `net status` shows your full address, and `net pair start` prints the exact line to type on the other machine. On three machines where the ends could not hear each other, the ends paired and mail went from one to the other, sealed.
+
+### TOS boots from a raw drive
+
+`mount` and `disk` no longer say a raw drive "holds no filesystem yet" when it is mounted, or when the machine is running on it.
+
+`deploy drive` has now been seen working to the end: TOS installed onto a real unmanaged drive, the machine booted from it, First Boot ran, a file survived a reboot on a TBFS root, and `verify` found nothing wrong. Disk swap passed too: a view tab paged to disk came back with the same content.
+
+### jbod create works
+
+`jbod create` refused every pool, with an example of what it had just refused: its check compared six characters against the five in `/mnt/`, so it could never match. Pools work now, on real disks: writes spread across the members, a pool comes back after a reboot, and `jbod destroy` leaves each disk's data in place. A check now fails on any slice compared with a string of another length, and over every shipped file it found this one.
+
+### A broken kiosk config allows nothing
+
+A `/etc/kiosk.cfg` that could not be parsed fell back to the defaults, and the defaults are wider than most configs: one missing brace in a file allowing only `date` gave a guest `cat`, `ls` and the rest, with nothing said anywhere. It now allows nothing, shows *This kiosk is out of order*, and logs the reason. Ctrl+D still gets out. A missing file still means the defaults, as documented.
+
+Everything else about the kiosk held up on a booted machine. `/etc/users.dat`, another user's home, a `../..` path, `pkg` and `lua` were all refused, `echo x > file` wrote nothing, a crash goes back to the login screen, and rsh authenticates machines, not accounts, so there is no way round the menu that way.
+
+### A tape restore that failed says so
+
+`tape restore` told an ordinary user it had restored their files when it had written nothing: it counted every file without looking at the result, and its default was `/home`, which only root can write. It now restores to your own home, counts only what landed, and reports anything else in red with the reason. A file that fails its checksum no longer replaces a good one: it lands as `<name>.damaged`.
+
+The runner gained `--raw-drive`, and TBFS passed a full round trip on a real sector device with nothing to fix: format, files, check, clean unmount, reboot, read back, defrag, remount.
+
+### A copy-on-write root
+
+`overlay on <disk>` makes `/` copy-on-write from the next boot: reads fall through to the real root, every write lands on the other disk, and the real root is not touched. That does three things TOS could not do. A loot disk now offers "Run from here, saving to the hard drive", and a root password set on a read-only disk was still there after a reboot. `overlay on <disk> --reset` forgets everything at every boot, which is the half kiosk mode was missing: `kiosk.cfg` gated commands while the filesystem stayed permanently mutable. And you can try something, read `overlay changes`, then `overlay merge` it to the real root or `overlay drop` it.
+
+A file named like a whiteout could hide another, so the name is refused on every path that creates anything. The second disk can replace the kernel, so it stops being mounted once it holds the overlay and `mount` refuses it: a disk at `/mnt` is one a user can write to. A disk that has gone missing boots the real root and `doctor` reports it as an error, which is also the way back from an overlay that broke something.
+
+### Read-only disks are noticed
+
+No real read-only disk was ever noticed. A loot disk has been meant to get a warning at boot and the offer to install to a hard drive since August, but the check asked whether `isReadOnly` was a function, and a component proxy's methods are callable tables. It was true of every test's fake and of nothing real. Booted from a read-only disk, TOS went straight to First Boot Setup and threw the password away. It now warns and offers, and the install runs: 175 of 175 files copied, the EEPROM updated, and the machine boots from the hard drive with `verify` at 170 OK and 0 damaged.
+
+`drive list` had the same check, so every raw drive read as "nothing TOS can read". It now says what the drive holds.
+
+The test fakes are callable tables now, and a check fails if the question is ever asked of a proxy again. The headless runner gained `--readonly-boot`, a locked disk that OC treats as it treats a loot disk, which is what found this.
+
+### Packages as archives
+
+`pkg compact` turns a package's files under `/usr` into one mtar archive, compressed if there is a data card, and serves them back from it. OC charges 512 bytes per file on top of the content, so one file is cheaper than seventy before anything is compressed. On the booted machine `pkg compact --all` took calc, printer, tape and write from 147 KB to 59 KB, which `df` showed as 38% going to 36% of a 4 MB disk. calc still opened afterwards, from the archive, and after a reboot. `pkg expand` undoes it.
+
+The package changes nothing: its paths read, it lists and sizes as before, and its signed manifest still describes it. The archive sits under `/usr` as the lower half of a copy-on-write overlay, with the disk's real `/usr` as the upper half, so everything else there still takes writes. A machine that never ran `pkg compact` does one `exists()` at boot and loads none of this.
+
+Nothing loose goes until every entry has read back byte for byte. A compact that fails, for a full disk or a data card that cannot give back what it took, leaves the package where it was with no archive behind it. A damaged archive at boot costs that package and no other, and is logged. An archive path that climbs out with `..` is refused.
+
+`pkg expand` keeps what happened since: an edit stays and a removal stays removed. Everything goes to a temp name first and moves together, because a failed write to the real name would leave an empty file that hides the good copy.
+
+`pkg uninstall` now takes the directories it emptied with it. It used to leave `/usr/modules/<name>` behind on every removal, at 512 bytes each.
+
+### a network install is what the publisher signed
+
+A network install is now what the publisher signed. `bootstrap.lua` carries the publisher's key and checks a signature on the release, so a compromised repository can't ship code to a machine installing from `main`. A release that isn't signed is refused before anything downloads. Forks and other branches aren't signed by this key, and bootstrap says so and carries on.
+
+### the licence is on every source file
+
+TOS's licence is now stated in full: GPL-3.0-or-later, in a header on every source file. The headers are source-only comments, so the release and the signed pack are unchanged.
+
+### a compatibility number you can check
+
+The README now gives a number for OpenOS compatibility that anyone can reproduce: 30 of the 31 Lua files on OpenComputers' loot disks find every library they ask for. `build/compat_scan.py` counts them. It also says plainly that OpenOS's own `bin/` doesn't run here. On GitHub, `main` and `dev` now refuse force-pushes and deletion.
 
 ### the REPL remembers, and date tells the time
 

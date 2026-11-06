@@ -1,15 +1,15 @@
 
-local v,u,A,w,B,x,C,y,D,E,z,s="/bios.lua","/install.lua","Cancel","Drive ","No network available","No removable disks mounted","Status","^(.*)/[^/]+$","danger","kernel.pkg","status","string"local F=require("computer")local q=require("component")
-local r=require("shell.panels.helpers")local t=function()end
+local w,v,B,x,C,y,D,z,E,F,t,s="/bios.lua","/install.lua","Cancel","Drive ","No network available","No removable disks mounted","Status","^(.*)/[^/]+$","danger","kernel.pkg","status","string"local A=require("computer")local q=require("component")
+local r=require("shell.panels.helpers")local u=function()end
 do local b,a=pcall(require,"kernel.process")if b and a and
-a.yieldCooperative then t=a.yieldCooperative end end
+a.yieldCooperative then u=a.yieldCooperative end end
 return
-function(a,b,c)local h,G,o,e,m,M=b.K,b.E,b.P,b.F,b.D,b.U;local P,k,f=b.SC,b.NM,b.st;local d=b.T;local Q=b.tier
-local I,R=b.W,b.H;local N=c.rp;local S=c.openViewTab;local T=c.openEditTab;local n=c.refreshBrowser
-local U=c.canRead;local V=c.canWrite;local W=c.canAccess;local J=c.rootOnly;local K=c.dialog;local i=c.adminOnly
+function(a,b,c)local h,I,o,e,m,M=b.K,b.E,b.P,b.F,b.D,b.U;local P,k,f=b.SC,b.NM,b.st;local d=b.T;local Q=b.tier
+local J,R=b.W,b.H;local N=c.rp;local S=c.openViewTab;local T=c.openEditTab;local n=c.refreshBrowser
+local U=c.canRead;local V=c.canWrite;local W=c.canAccess;local p=c.rootOnly;local K=c.dialog;local i=c.adminOnly
 local X=c.makeProgramEnv;local g=r.fmtSz
 local Y=function(H)return r.expandBuf(b,H)end;local j=c.promptInput;local l=c.confirm
-local function p(Z,H)
+local function G(Z,H)
 local ab,aa=pcall(require,"shell.panels.diskprobe")if not ab or type(aa)~="table"then return nil end
 local ac,_=pcall(aa.probe,Z)if not ac or type(_)~="table"then return nil end
 if
@@ -31,11 +31,11 @@ Z(ab and"Set "..H[2].." = "..H[3]or tostring(ac),
 ab and d.highlight or d.error)elseif H[1]=="pulse"and H[2]then
 _.pulse(H[2],tonumber(H[3])or 0.5)Z("Pulsed "..H[2],d.highlight)else
 Z("Usage: redstone [set <side> <0-15>|pulse <side> [duration]]",d.dim)end end;a.rs=a.redstone
-a["cluster-setup"]=function(Z,H)if not J(H)then return end
+a["cluster-setup"]=function(Z,H)if not p(H)then return end
 local ad,ab=pcall(require,"shell.clustersetup")if not ad or not ab then
 H("cluster setup module unavailable",d.error)return end
 local aa=_G._TOS and _G._TOS.fs
-local function ac()local ah,ai=pcall(require,E)return ah and ai or nil end
+local function ac()local ah,ai=pcall(require,F)return ah and ai or nil end
 local ae={ok=d.highlight,warn=d.warning,err=d.error,title=d.title}local _={}
 _.say=function(ah,ai)H(ah or"",ae[ai or""]or d.fg)end
 _.choose=function(aj,ah,ai)
@@ -109,8 +109,8 @@ H(string.format("Playing on the tape (%.1fs).",ah.seconds or 0),d.highlight)end
 if ah.sent then
 H("Broadcast to the network.",d.highlight)elseif not ah.localOnly then H("Nothing was broadcast.",d.warning)end end
 if aa==""then local ai,ah=pcall(require,"intercomapp")if ai and ah and ah.open then
-ah.open(b)return end;aa=z end
-if aa==z then H("=== Intercom ===",d.title)local ah,aj=_.findDrive()
+ah.open(b)return end;aa=t end
+if aa==t then H("=== Intercom ===",d.title)local ah,aj=_.findDrive()
 if ah then
 local am=(
 ah.getSize and ah.getSize())or 0;local al=(ah.isReady and ah.isReady())and"tape loaded"or
@@ -212,14 +212,14 @@ ae and d.highlight or d.warning)else
 H("Send failed: "..tostring(ae),d.error)end elseif aa=="read"then local ae=tonumber(Z[2])local af=_.inboxBox(ab)local ad=af and ae and
 af:get(ae)if not ad then
 H("No message #"..tostring(Z[2]),d.error)return end;af:markRead(ae)
-H(string.rep("-",math.min(I,50)),d.dim)
+H(string.rep("-",math.min(J,50)),d.dim)
 H("From:    "..
 
 (ad.fromUser and(ad.fromUser.." @ ")or"")..tostring(ad.from):sub(1,12),d.fg)
 H("Subject: "..
 (ad.subject~=""and ad.subject or"(no subject)"),d.title)if not ad.readable then
 H("[sealed - no shared secret to open this]",d.warning)end
-H(string.rep("-",math.min(I,50)),d.dim)for ag in
+H(string.rep("-",math.min(J,50)),d.dim)for ag in
 (tostring(ad.body).."\n"):gmatch("(.-)\n")do H(ag,d.fg)end elseif
 aa=="delete"or aa=="rm"then local ad=tonumber(Z[2])local ae=_.inboxBox(ab)if
 ae and ad and ae:delete(ad)then H("Deleted #"..ad,d.highlight)else
@@ -228,7 +228,7 @@ local ad,af=_.inbox(ab)if not ad then H(tostring(af),d.error)return end
 if
 #ad==0 then H("(inbox empty)",d.dim)else
 H("Inbox for "..ab..":",d.title)for ah,ag in ipairs(ad)do
-H(_.inboxRow(ag,ah,I-1),ag.read and d.dim or d.fg)end end;local ae=_.pending()if ae and ae>0 then
+H(_.inboxRow(ag,ah,J-1),ag.read and d.dim or d.fg)end end;local ae=_.pending()if ae and ae>0 then
 H(ae.." outbound awaiting delivery",d.dim)end
 H("Commands: mail send <peer> [subj] [body] | read <n> | delete <n>",d.dim)end end
 a.rbmk=function(Z,H)local aa,_=pcall(require,"rbmk-cmd")
@@ -237,7 +237,7 @@ not aa or type(_)~="table"or not _.run then
 H("The RBMK controller add-on isn't installed on this machine.",d.error)
 H("Install it from the Optional Utilities disk:  pkg install rbmk-control",d.dim)
 H("Then:  rbmk survey   (identifies the console's real API)",d.dim)return end;local ab,ac=pcall(require,"kernel.screen")
-_.run(Z,H,{display=m,event=G,screen=ab and ac or nil})end
+_.run(Z,H,{display=m,event=I,screen=ab and ac or nil})end
 a.robot=function(Z,H)local ab,_=pcall(require,"peripheral.robot")if not ab then
 H("No robot module",d.error)return end;if not _.available()then
 H("Not a robot",d.error)return end;local aa=Z[1]
@@ -282,7 +282,7 @@ ae.reloadComponentConfig then
 H("Sandbox doesn't support reload-caps",d.error)return end
 local ag,ah=ae.reloadComponentConfig()local ab,ac=0,0;for aj in pairs(ag or{})do ab=ab+1 end
 for aj in pairs(ah or{})do ac=ac+1 end
-H(string.format("Reloaded: %d extra base, %d extra gated types",ab,ac),d.highlight)local ai,ad=pcall(require,E)
+H(string.format("Reloaded: %d extra base, %d extra gated types",ab,ac),d.highlight)local ai,ad=pcall(require,F)
 if ai and ad and ad.reloadCapConfig then
 local al,am=ad.reloadCapConfig()local aj,ak=0,0;for an in pairs(al or{})do aj=aj+1 end;for an,ao in pairs(am or{})do for aq in pairs(ao)do ak=
 ak+1 end;local ap=an end
@@ -290,7 +290,7 @@ H(string.format("Reloaded: %d extra package caps, %d denials",aj,ak),d.highlight
 H("Packages already loaded this boot keep their old caps.",d.dim)end end;return end
 if Z[1]=="list"then local ab={}for ad,ac in q.list()do if not ab[ac]then ab[ac]=0 end
 ab[ac]=ab[ac]+1 end;for ac,ad in pairs(ab)do
-H(string.format("  %-20s x%d",ac,ad),d.fg)end;return end;if not J(H)then return end;local _=Z[1]
+H(string.format("  %-20s x%d",ac,ad),d.fg)end;return end;if not p(H)then return end;local _=Z[1]
 local aa=q.proxy(q.list(_)()or"")
 if not aa then H("No component: ".._,d.error)return end
 if not Z[2]then local ab={}
@@ -312,8 +312,8 @@ if ac[1]then
 for ae=2,ac.n do H("  "..tostring(ac[ae]),d.fg)end else H("Error: "..tostring(ac[2]),d.error)end end end
 a.internet=function(Z,H)local ab,aa=pcall(require,"kernel.internet")if not ab or not aa then
 H("internet module unavailable",d.error)return end
-local _=(Z[1]or z):lower()
-if _==z then local f=aa.status()
+local _=(Z[1]or t):lower()
+if _==t then local f=aa.status()
 if not f.present then
 H("No internet card installed.",d.warning)
 H("An Internet Card goes in a card slot; the machine needs no",d.dim)
@@ -345,7 +345,7 @@ H("Usage: internet [status|get <url>|on|off]",d.dim)end end
 a.compat=function(Z,H)local _,aa=pcall(require,"compat")if not _ then
 H("Compat layer not loaded",d.error)return end;local ab=aa.list()
 H(" OpenOS Compatibility Layer",d.title)
-H(string.format(" %-16s %s","Module",C),d.dim)for ad,ac in ipairs(ab)do
+H(string.format(" %-16s %s","Module",D),d.dim)for ad,ac in ipairs(ab)do
 H(string.format(" %-16s %s",ac.name,ac.loaded and"loaded"or"not loaded"),
 ac.loaded and d.highlight or d.dim)end end
 a.disk=function(Z,H)local _=Z[1]
@@ -354,23 +354,25 @@ local aa=e.mounts and e.mounts()or nil
 if aa and type(aa)=="table"and#aa>0 then local ab={}
 for ad,ac in ipairs(aa)do if
 ac.mountPoint~="/"then ab[#ab+1]=ac end end
-if#ab==0 then H(x,d.dim)else
-H(string.format(" %-16s %-10s %s","Mount","Label",C),d.title)H(string.rep("-",42),d.dim)
+if#ab==0 then H(y,d.dim)else
+H(string.format(" %-16s %-10s %s","Mount","Label",D),d.title)H(string.rep("-",42),d.dim)
 for ad,ac in ipairs(ab)do
 local ae=ac.mountPoint;local af=r.classifyDisk(e,ae)
 local ag=(ac.label or""):sub(1,10)
 H(string.format(" %-16s %-10s %s",ae:sub(1,16),ag,af.desc),
 af.kind~="data"and d.highlight or d.fg)end end elseif e.exists("/mnt")then local ab=e.list("/mnt")
-if ab and#ab==0 then H(x,d.dim)elseif ab then
-H(string.format(" %-16s %-8s %s","Mount","Type",C),d.title)H(string.rep("-",42),d.dim)
+if ab and#ab==0 then H(y,d.dim)elseif ab then
+H(string.format(" %-16s %-8s %s","Mount","Type",D),d.title)H(string.rep("-",42),d.dim)
 for ad,ac in ipairs(ab)do local ae="/mnt/"..
 ac:gsub("/$","")local af=r.classifyDisk(e,ae)
 H(string.format(" %-16s %-8s %s",ae:sub(1,16),"disk",af.desc),
-af.kind~="data"and d.highlight or d.fg)end else H(x,d.dim)end else H(x,d.dim)end
-do local ab=0;for ac in q.list("drive",true)do ab=ab+1 end
-if ab>0 then H("",d.dim)
-H(ab..
-" unmanaged (raw) drive(s) attached — not filesystems, so",d.warning)
+af.kind~="data"and d.highlight or d.fg)end else H(y,d.dim)end else H(y,d.dim)end
+do local ac,ab={},0;for ae,ad in ipairs(e.mounts and e.mounts()or{})do ac[
+ad.address or""]=true end;for ad in
+q.list("drive",true)do if not ac[ad]then ab=ab+1 end end
+if ab>0 then
+H("",d.dim)
+H(ab.." unmanaged (raw) drive(s) attached — not filesystems, so",d.warning)
 H("they cannot appear above until formatted and mounted.",d.dim)
 H("  drive list          see them, with address and capacity",d.dim)
 H("  drive format <addr> make one a TBFS filesystem",d.dim)end end
@@ -425,7 +427,7 @@ H("  Managed disks appear under 'disk' / 'df'; this is for raw drives.",d.dim)el
 H("  Install 'blockfs' to format/mount them:  pkg install blockfs",d.dim)else
 H("  format | mount | check [--repair] | defrag [--if-over N] | read | write",d.dim)end;return end
 if _=="info"then local ag,ah=ab(Z[2])
-if not ag then H(tostring(ah),d.error)return end;H(w..ah:sub(1,8).."...",d.title)
+if not ag then H(tostring(ah),d.error)return end;H(x..ah:sub(1,8).."...",d.title)
 H(string.format("  capacity   %s",g((
 ag.getCapacity and ag.getCapacity())or 0)),d.fg)
 H(string.format("  sector     %d bytes",
@@ -440,8 +442,8 @@ aj.dataBlocks*aj.sectorSize),aj.files,aj.dirs),d.fg)
 H(string.format("    fragmentation %d%%   %s",math.floor(aj.fragmentation*100+0.5),
 aj.clean and"clean"or"DIRTY (mounted or unclean)"),d.fg)else
 H("  Not a TBFS volume. It holds "..
-(p(ag)or"something unreadable")..".",d.dim)end else
-H("  It holds ".. (p(ag)or"something unreadable")..".",d.dim)
+(G(ag)or"something unreadable")..".",d.dim)end else
+H("  It holds ".. (G(ag)or"something unreadable")..".",d.dim)
 H("  (install 'blockfs' to format or mount it)",d.dim)end;return end;local aa=ad()if not aa then
 H("The 'blockfs' package is required:  pkg install blockfs",d.error)return end
 local function ac(ag)for ai,ah in ipairs(
@@ -468,7 +470,7 @@ local aw=string.format("'%s' has to take %s out of the mount table while it work
 "Something is using it right now:%s\n\n"..
 "Continuing will pull the volume out from under it. It is\n".."remounted at %s afterwards.",ah,ak,ax,ak)local av
 if l then
-av=l(aw,{title="Unmount "..ak.."?",severity=D,yes="Unmount and continue",no=A})else H(aw,d.warning)
+av=l(aw,{title="Unmount "..ak.."?",severity=E,yes="Unmount and continue",no=B})else H(aw,d.warning)
 local ay=j and
 j("Unmount "..ak.." and continue? [y/N]: ",4)or"n"av=(ay or""):lower()=="y"end;if not av then
 H("Cancelled; the drive is still mounted.",d.dim)return false end else
@@ -488,13 +490,13 @@ H("  Mount it by hand:  drive mount "..ag:sub(1,8).." "..ak,d.dim)end;if not as 
 if _=="unmount"or _=="umount"then if not i(H)then return end;local ai,ag=ab(Z[2])if not
 ai then H(tostring(ag),d.error)return end
 local ah=ac(ag)if not ah then
-H(w..ag:sub(1,8).."... is not mounted.",d.dim)return end;local aj=r.sessionOf(b)
+H(x..ag:sub(1,8).."... is not mounted.",d.dim)return end;local aj=r.sessionOf(b)
 local ak,al=e.unmount(ah,aj)if ak==false then
 H(tostring(al or"unmount failed"),d.error)return end
 H("Unmounted "..ah.." (volume marked clean).",d.highlight)pcall(n)return end
 if _=="format"then if not i(H)then return end;local ah,ag=ab(Z[2])if not ah then
 H(tostring(ag),d.error)return end
-local ak=Z[3]or("disk"..ag:sub(1,4))local ai=p(ah,aa)local aj
+local ak=Z[3]or("disk"..ag:sub(1,4))local ai=G(ah,aa)local aj
 if l then
 aj=l("Format drive "..
 ag:sub(1,8)..
@@ -502,8 +504,8 @@ ag:sub(1,8)..
 "\n\n".. (ai and
 ("It holds "..ai..".\n")or"")..
 
-"Every file on it is destroyed. There is no undo and no\n".."recovery tool in TOS that can bring it back.",{title="Format drive",severity=D,yes="Format",no=A})else if ai then
-H(w..ag:sub(1,8).."... holds "..ai..".",d.warning)end
+"Every file on it is destroyed. There is no undo and no\n".."recovery tool in TOS that can bring it back.",{title="Format drive",severity=E,yes="Format",no=B})else if ai then
+H(x..ag:sub(1,8).."... holds "..ai..".",d.warning)end
 local al=
 j and j("FORMAT "..
 ag:sub(1,8).."... as TBFS? destroys all data [y/N]: ",4)or"n"aj=(al or""):lower()=="y"end;if not aj then H("Cancelled.",d.dim)return end
@@ -533,8 +535,8 @@ if _=="check"or _=="fsck"then if not i(H)then return end;local ah,ai=ab(Z[2])if 
 H(tostring(ai),d.error)return end
 local aj=Z[3]=="--repair"or Z[3]=="-r"local ag
 if aj then
-local al=ae(ai,ah,"check --repair",function()ag=aa.check(ah,{repair=true,yield=t})end)if al==false then return end else
-ag=aa.check(ah,{repair=false,yield=t})end
+local al=ae(ai,ah,"check --repair",function()ag=aa.check(ah,{repair=true,yield=u})end)if al==false then return end else
+ag=aa.check(ah,{repair=false,yield=u})end
 if not ag then H("Not a TBFS volume.",d.error)return end;local ak=ac(ai)
 if ak and not aj then local al={}
 for an,am in ipairs(ag.problems)do if
@@ -577,7 +579,7 @@ H("for deliberate raw writes. Format/mount/defrag cover normal use.",d.dim)retur
 H("Usage: drive [list | info <addr> | format <addr> [label] | mount <addr> [path]",d.dim)
 H("             | unmount <addr> | check <addr> [--repair] | defrag <addr> [--if-over N]",d.dim)
 H("             | read <addr> <sec>]   (format/repair/defrag need the drive unmounted)",d.dim)end
-a.tape=function(Z,H)local aa,_=pcall(require,E)
+a.tape=function(Z,H)local aa,_=pcall(require,F)
 if aa and _ and _.getCommand then
 local ab=_.getCommand("tape")if ab then ab(Z,H)return end
 if _.info and _.info("tape")then
@@ -590,7 +592,7 @@ H("    pkg install tape",d.dim)H("",d.fg)
 H(" Build your own: a /usr/modules/<name>/init.lua returning",d.dim)
 H("   { commands = { tape = function(args, o) ... end } }",d.dim)
 H(" plus a package.lua manifest (kind=\"command\"). See the TOS Manual.",d.dim)end
-a.deploy=function(Z,H)if not J(H)then return end
+a.deploy=function(Z,H)if not p(H)then return end
 if Z[1]=="drive"then
 local aC,al=pcall(require,"blockfs")
 if not aC or not al then
@@ -619,7 +621,7 @@ local aJ,aN=al.plan(ao,{bootBytes=av})if not aJ then
 H("This drive cannot hold TOS: "..tostring(aN)..". Nothing was erased.",d.error)return end
 local function aO(aP)local aQ,aR=0,1
 local aT,aU={["/"]=0},{}
-local function aV(aW,aX)aT[aW]=(aT[aW]or 0)+5+#aX end;local function aS(aW)local aX=aW:match(y)return
+local function aV(aW,aX)aT[aW]=(aT[aW]or 0)+5+#aX end;local function aS(aW)local aX=aW:match(z)return
 (aX==nil or aX=="")and"/"or aX end
 for aX,aW in ipairs(aq)do
 local aZ,a_=pcall(e.size,aW)aQ=aQ+
@@ -642,15 +644,15 @@ H("Nothing was erased. Use a larger drive, or a managed disk: deploy <mount-poin
 H(string.format("Fits: %s of %s, leaving %s spare; %d of %d inodes.",g(
 aL*aJ.ss),g(aJ.dataBlocks*aJ.ss),g(aM),aK,aJ.inodeCount),d.dim)if aM<64*1024 then
 H("Under 64 KB will be free after the install — logs, trash and swap fill that fast.",d.warning)end else
-H("(This blockfs cannot check capacity before erasing — 'pkg upgrade blockfs' adds it.)",d.warning)end;local ax;local ar=p(ao,al)
+H("(This blockfs cannot check capacity before erasing — 'pkg upgrade blockfs' adds it.)",d.warning)end;local ax;local ar=G(ao,al)
 if l then
 ax=l("Install TOS onto raw drive "..
 an:sub(1,8)..
 "...?".."\n\n"..
 (ar and
 ("It holds "..ar..".\n")or"")..
-"The drive is erased and reformatted as bootable TBFS.\n".."Anything on it now is gone.",{title="Erase and install",severity=D,yes="Erase",no=A})else if ar then
-H(w..an:sub(1,8).."... holds "..ar..".",d.warning)end
+"The drive is erased and reformatted as bootable TBFS.\n".."Anything on it now is gone.",{title="Erase and install",severity=E,yes="Erase",no=B})else if ar then
+H(x..an:sub(1,8).."... holds "..ar..".",d.warning)end
 local aJ=
 j and j("Install TOS onto raw drive "..
 an:sub(1,8).."...? ERASES it [y/N]: ",4)or"n"ax=(aJ or""):lower()=="y"end;if not ax then H("Cancelled.",d.dim)return end;local aA=function()
@@ -662,9 +664,9 @@ local aF,aG=al.format(ao,{label="tos",bootBytes=av,now=aA,inodeRatio=aw})if not 
 H("Format failed: "..tostring(aG).." (drive too small?)",d.error)return end
 local ap,aH=al.mount(ao,{now=aA})if not ap then
 H("Mount failed: "..tostring(aH),d.error)return end;local as,at=0,0
-for aK,aJ in ipairs(aq)do t()
+for aK,aJ in ipairs(aq)do u()
 local aL=e.open(aJ,"r")
-if aL then local aN=aJ:match(y)
+if aL then local aN=aJ:match(z)
 if aN and aN~=""then local aP=""for aQ in aN:gmatch("[^/]+")do
 aP=aP.."/"..aQ
 if not ap.exists(aP)then ap.makeDirectory(aP)end end end;local aM=ap.open(aJ,"w")local aO=aM~=nil
@@ -701,15 +703,15 @@ type(an)=="table"and type(an.path)==s then ae[#ae+1]=an.path end end end
 if#ae==0 then
 H("  WARN: system_manifest not loadable, using minimal file list",d.warning)
 ae={"/init.lua","/tos/kernel/init.lua","/tos/kernel/hal.lua","/tos/kernel/event.lua","/tos/kernel/process.lua","/tos/kernel/fs.lua","/tos/kernel/display.lua","/tos/kernel/log.lua","/tos/kernel/serialize.lua","/tos/shell/init.lua"}end end;local ag=512;local aa,ah=0,{}local ad={}for am,al in ipairs(ae)do ad[#ad+1]=al end;ad[#ad+
-1]=v;ad[#ad+1]=u
+1]=w;ad[#ad+1]=v
 for am,al in ipairs(ad)do
 if e.exists(al)then
 local ap,aq=pcall(e.size,al)
 aa=aa+ ((ap and tonumber(aq))or 0)local ao=_..al
 if e.exists(ao)then local ar,as=pcall(e.size,ao)aa=aa- (
-(ar and tonumber(as))or 0)else aa=aa+ag end;local an=al:match(y)
+(ar and tonumber(as))or 0)else aa=aa+ag end;local an=al:match(z)
 while an and an~=""and not ah[an]do ah[an]=true;if not e.exists(_..
-an)then aa=aa+ag end;an=an:match(y)end end end;local af=e.spaceFree and e.spaceFree(_)
+an)then aa=aa+ag end;an=an:match(z)end end end;local af=e.spaceFree and e.spaceFree(_)
 if af then
 if aa>af then
 H(string.format(
@@ -722,9 +724,9 @@ for am,al in ipairs(ae)do
 if e.exists(al)then local an,ao=e.copy(al,_..al)if an then ab=ab+1 else
 H("  FAIL "..al..": "..
 tostring(ao),d.error)ac=ac+1 end else ai=ai+1 end end
-if e.exists(v)then if e.copy(v,_..v)then ab=ab+1 else ac=ac+1 end end
-if e.exists(u)then
-do local al,am=e.copy(u,_..u)
+if e.exists(w)then if e.copy(w,_..w)then ab=ab+1 else ac=ac+1 end end
+if e.exists(v)then
+do local al,am=e.copy(v,_..v)
 if al then ab=ab+1
 H("  Copied install.lua (automated installer)",d.highlight)else
 H("  FAIL writing install.lua: "..tostring(am),d.error)ac=ac+1 end end else
@@ -732,10 +734,10 @@ H("  WARNING: /install.lua not found on boot drive",d.error)
 H("  The install disk will not have an automated installer.",d.dim)end;H("",d.fg)
 if ac==0 then
 H("Install disk created: "..ab.." files",d.highlight)H("",d.fg)
-H("On the target machine (OpenOS), run:",d.dim)H("  # ".._..u,d.fg)
+H("On the target machine (OpenOS), run:",d.dim)H("  # ".._..v,d.fg)
 H("Or insert the disk and run: /mnt/<disk>/install.lua",d.dim)else
 H(ab.." files copied, "..ac.." failed",d.error)end end
-a.chat=function(Z,H)if not k then H(B,d.error)return end
+a.chat=function(Z,H)if not k then H(C,d.error)return end
 local aa,_=pcall(require,"shell.panels.chatapp")if not aa then
 H("Chat unavailable: "..tostring(_),d.error)return end;_.open(b)end
 local function L(H)local aa,Z=pcall(require,"shell.ext")
@@ -745,7 +747,7 @@ local _=_G._TOS and _G._TOS.net and _G._TOS.net.aliases;if type(H)==s and _ and 
 if ab then return ab end end;return H end
 a.rsh=function(Z,H)if not i(H)then return end;if not Z[1]or not Z[2]then
 H("Usage: rsh <peer> <lua>   e.g. rsh two print(1+2)",d.dim)return end
-if not k then H(B,d.error)return end;local ab,ac=pcall(require,"kernel.net.remote")if not ab then
+if not k then H(C,d.error)return end;local ab,ac=pcall(require,"kernel.net.remote")if not ab then
 H("Remote module unavailable",d.error)return end;local _=L(Z[1])
 local ad=table.concat(Z," ",2)
 H("Executing on ".._:sub(1,8).."...",d.dim)local aa,ae=ac.execute(_,ad)if aa then H(aa,d.fg)else
@@ -753,7 +755,7 @@ H("Error: "..tostring(ae),d.error)end end;a.ssh=a.rsh
 a.scp=function(Z,H)if not i(H)then return end
 if not Z[1]or not Z[2]then
 H("Usage: scp <peer>:<remote_path> <local_path>",d.dim)
-H("  Copies a file from a TRUSTED peer's /public.",d.dim)return end;if not k then H(B,d.error)return end
+H("  Copies a file from a TRUSTED peer's /public.",d.dim)return end;if not k then H(C,d.error)return end
 local ab,ac=pcall(require,"kernel.net.transfer")
 if not ab then H("Transfer module unavailable",d.error)return end;local _,aa=Z[1]:match("^([^:]+):(.+)$")
 if _ then local ad=L(_)local ae=N(Z[2])
@@ -764,6 +766,57 @@ H(
 H("Downloaded: "..aa.." -> "..ae,d.highlight)else
 H("Transfer failed: "..tostring(ag),d.error)end else
 H("Usage: scp <peer>:<remote_path> <local_path>",d.dim)end end;a.share=a.scp
+a.overlay=function(Z,H)if not p(H)then return end
+local ae,aa=pcall(require,"kernel.cowfs")
+if not ae then H("Overlays are not on this install.",d.error)return end;local ab=(Z[1]or t):lower()local _=_G._TOS.overlay
+local ad=_ and _.root
+local ac=ad and _.lower or require("kernel.fs").rootProxy()
+if ab==t then
+if ad then local af=_.root.changes()
+H(string.format("Root overlay: writes land on %s%s",_.disk:sub(1,8),
+_.reset and", forgotten at every boot"or""),d.highlight)
+H(#af.." change(s) so far. 'overlay changes' lists them.",d.dim)elseif _ and _.missing then
+H("The overlay's disk "..tostring(_.missing):sub(1,8)..
+" is not here.",d.error)
+H("This is the real root, and every write is permanent.",d.warning)else
+H("No overlay: writes land on the real root.",d.fg)
+H("Usage: overlay on <disk> [--reset] | off | changes | merge | drop",d.dim)end elseif ab=="on"then local ag,ah
+for aj=2,#Z do
+if Z[aj]=="--reset"then ah=true elseif Z[aj]:sub(1,1)=="-"then
+H("Unknown option '"..
+Z[aj].."'. Nothing was done.",d.error)return else ag=Z[aj]end end
+if not ag then H("Usage: overlay on <disk> [--reset]",d.dim)return end;local af={}
+for aj in q.list("filesystem")do local al,ak=pcall(q.proxy,aj)
+if al and ak and
+(
+aj:sub(1,#ag)==ag or(ak.getLabel and ak.getLabel()==ag))then af[#af+1]=aj end end;if#af~=1 then
+H(#af==0 and("No disk matches: "..ag)or(
+"Several disks match: "..ag),d.error)return end
+local ai=q.proxy(af[1])
+if af[1]==ac.address or af[1]==A.tmpAddress()then
+H("That disk cannot hold the writes: it is what they would change, or it is tmpfs.",d.error)elseif ai.isReadOnly()then H("That disk is read-only.",d.error)elseif
+ac.isReadOnly and ac.isReadOnly()then
+H("The real root is read-only, so this is chosen at each boot instead.",d.warning)else local aj,ak=aa.saveConfig(ac,af[1],ah)if not aj then
+H(tostring(ak),d.error)return end
+H("From the next boot, writes land on "..
+af[1]:sub(1,8).. (ah and
+" and are forgotten at every boot."or"."),d.highlight)
+H("It is no longer mounted from then on: whoever can write it can change the kernel.",d.dim)end elseif ab=="off"then if not ac.exists(aa.CONFIG)then
+H("No overlay is set.",d.dim)return end;ac.remove(aa.CONFIG)
+H("From the next boot this is the real root. What is in the layer stays there.",d.highlight)elseif not ad then H("There is no overlay running.",d.dim)elseif ab=="changes"then
+local af=_.root.changes()for ah,ag in ipairs(af)do
+H((ag.removed and"- "or"+ ")..ag.path,d.fg)end
+H(#af.." change(s).",d.dim)elseif ab=="merge"then
+if _.lower.isReadOnly and _.lower.isReadOnly()then
+H("The real root is read-only, so there is nothing to merge into.",d.error)
+H("Install to a writable disk from the boot offer instead.",d.dim)return end;local af,ag=aa.merge(_)if not af then
+H("Stopped: "..
+tostring(ag)..". Nothing was lost, and this can be run again.",d.error)return end;aa.drop(_)
+H(
+af.." change(s) written to the real root. Reboot to finish.",d.highlight)elseif ab=="drop"then local af,ag=aa.drop(_)if not af then H(tostring(ag),d.error)
+return end
+H("Everything in the layer goes at the next boot.",d.highlight)else
+H("Usage: overlay on <disk> [--reset] | off | changes | merge | drop",d.dim)end end
 a.screen=function(Z,H)local aa,_=pcall(require,"kernel.screen")if not aa then
 H("Screen module unavailable",d.error)return end
 if Z[1]=="res"then
@@ -804,6 +857,6 @@ local function O(H)
 return
 function(_,Z)local ab,aa=pcall(require,"shell.ext")
 if ab and aa[H]then
-aa[H](_,{K=h,E=G,P=o,F=e,D=m,U=M,o=Z,st=f,computer=F,cwd=b.cwd})else if H=="logout"then G.push("tos_logout",b.displayIdx)else
+aa[H](_,{K=h,E=I,P=o,F=e,D=m,U=M,o=Z,st=f,computer=A,cwd=b.cwd})else if H=="logout"then I.push("tos_logout",b.displayIdx)else
 Z("Extension unavailable (low RAM?)",d.error)end end end end;for Z,H in
 ipairs({"net","ping","hostname","config","battery","audio"})do a[H]=O(H)end end

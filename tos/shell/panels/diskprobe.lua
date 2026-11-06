@@ -11,10 +11,9 @@ local function j(b,a)if#a==0 then return b..", with no partitions"end;local c={}
 return("%s: %d partition%s (%s%s)"):format(b,
 #a,#a==1 and""or"s",table.concat(c,", "),
 #a>3 and(", +".. (#a-3))or"")end
-function h.probe(a)if
-type(a)~="table"or type(a.readSector)~="function"then
-return{kind="unreadable",text="nothing TOS can read as a raw drive"}end
-local b=g(a,1)if not b then
+function h.probe(a)
+if type(a)~="table"or not a.readSector then return
+{kind="unreadable",text="nothing TOS can read as a raw drive"}end;local b=g(a,1)if not b then
 return{kind="unreadable",text="a first sector that cannot be read"}end
 if b:sub(1,4)=="TBFS"then return
 {kind="tbfs",text="a TBFS volume (TOS's own filesystem)"}end

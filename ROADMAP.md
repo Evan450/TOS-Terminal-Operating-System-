@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**61 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**50 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 37 | Planned or under investigation. Most contributions belong here. |
+| Planned | 26 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (10) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (4) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (10)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (6)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -171,6 +171,8 @@ Run a verification round in REAL Minecraft OpenComputers: the Ocelot emulator ha
 
 THE DISTRIBUTED STORAGE POOL WAITS ON FIVE OPERATOR DECISIONS. cluster-storage shipped 1.0.0 on 2026-10-23 as ONE node; the pool, inputs\_ref and result\_sink = "public" are not built. TOS-Extras/cluster/storage-spec-draft.md section 10 holds the questions: a coordinator or none; shared/ replication to all members or a quorum; capacity in a contributing Manager's heartbeat; what happens to a lease when its member leaves; and whether netfs read-only exports may go to PAIRED-but-untrusted peers.
 
+DRAFT ANSWERS 2026-11-05, as asked: section 10 of the spec now holds a recommendation for each, with its cost. Nothing is built until they are approved or changed.
+
 ### Optional Utilities candidates from the pack's own components
 
 *Idea / far future* · from the round *What nobody wrote down (2026-10-26)*
@@ -205,73 +207,23 @@ ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MIN
 
 THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major number is 0 (preRelease), suffix or not, beside the SKIP list; the picker drops the "v" when a version would not fit its 8 cells, so 1.10.0-b shows whole; blockfs's \_VERSION matches (blockfs 1.2.2, pending re-sign), and so do mail's and intercom's, which today's quit-key bumps had made drift too. No package is 0.x today, so the pack's contents do not change. build/ test\_addon\_versions.lua (22; 6 fail on the old files) checks all three and every modules/&lt;pkg&gt;/usr/lib/&lt;pkg&gt;.lua \_VERSION against its manifest. STILL OPEN: the notes rule -- there is no per-package release notes file yet for a `tos.py check` step to look in, so where the notes live comes first; and whether a SUFFIXED pre-1.0 package may ship labelled (operator; held back for now, as every 0.x is).
 
-### The keychain is not within a package's reach — operator decision
-
-*Planned* · from the round *The command fuzz and workflow pass (2026-10-31)*
-
-THE KEYCHAIN IS NOT WITHIN A PACKAGE'S REACH -- OPERATOR DECISION. rc-pilot is the only package that wants a stored secret. It cannot have one: `_G._TOS` is nil in a package's sandbox (seen on a real machine), and the keychain's name rule refuses the `:` in its `rc:<addr>` slot. Its code still looks, so a decision only has to open the door. Options:
-
-(a) a `keychain` capability scoped to slots named after the
-
-package, so it reads its own and nothing else. The name rule
-
-takes `:` or the slot becomes rc-pilot.&lt;addr&gt;. Narrow, but a
-
-package's capability then reaches a user's unlocked secrets,
-
-which the sandbox has never allowed;
-
-(b) leave it closed: `rc` asks every time, or takes --secret.
-
-Honest and working, and what 1.2.1 documents. Do not fix the name rule alone: the secret would then save happily and never be read.
-
 ### Slice 3: resolution
 
 *Planned* · from the round *Federated package repos (2026-09-27)*
 
 SLICE 3: RESOLUTION. Winner order: one shared copy satisfies everyone &gt; higher trust &gt; newer &gt; less disk; a tie asks. Private copies when no shared copy works; consensus and freshness across mirrors (a signature cannot stop a mirror serving an OLD signed version; agreement between repos can).
 
-### Mount packages as read-only archives instead of extracting them
+UPDATES FROM REPOS, BUILT 2026-11-05, ahead of the rest because it was a hole, not a refinement: a package installed with `pkg fetch` was never offered an update, since `pkg outdated` read mounted disks only and `pkg upgrade` could not fetch. Both read configured repos now, and the upgrade runs on the staged copy with every gate it has. SEEN against the real optional-utilities branch: snake 1.0.0 from a disk was listed, then upgraded to the signed 1.0.1.
 
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
+Still not built: known repos (an upgrade has no floor, so it only reads configured ones), the winner order, private copies, mirror consensus.
 
-MOUNT PACKAGES AS READ-ONLY ARCHIVES INSTEAD OF EXTRACTING THEM. PsychOS' pkgfs (lib/pkgfs.lua) installs a package by REGISTERING its archive: a filesystem-component-shaped table over an mtar file, optionally lz16-compressed, with a path index, where write/rename/makeDirectory/seek return false. activatePackage is one line. Fuchas does the same at boot with nitrofs; Zorya reads arcfs/romfs/cpio from the BOOTLOADER.
-
-WHY IT IS WORTH MORE TO US THAN TO THEM: OC charges fileCost (512 B) per file on top of content, and a full install leaves \~260 KB free on an empty T2. Measured on TOS-Extras/dist/optional-utilities as shipped:
-
-```text
-  all 16 packages   76 files   745,015 B   38,912 B fileCost
-  cluster-master    13 files   140,631 B    6,656 B
-  blockfs            3 files    55,343 B    1,536 B
-```
-
-Archive-mounting all 16 recovers \~23 KB of pure fileCost before compression, and data-card deflate on Lua source usually halves the content. Call it 350-400 KB back on a disk with 260 KB to give: four installed packages becomes a dozen.
-
-WE ALREADY OWN THE THREE HARD PARTS:
-
-- fs.mount(path, proxy) takes anything filesystem-component- shaped, and netfs.lua and jbod.lua are existing producers of exactly that shape.
-- compress.lua already frames deflate as INDEPENDENTLY inflatable chunks (nChunks(u16), then cLen/cData pairs). That is random access at chunk granularity, which is what an archive mount needs. Written for swap and backups; the property generalises for free.
-- OC filesystem handles support seek (OpenOS 1.8.9: lib/devfs.lua:329, lib/core/full\_buffer.lua:12), so a mount seeks to a chunk instead of reading a 140 KB package whole on a 192 KB box.
-
-SIGNING GETS SIMPLER, NOT HARDER: pkgsign signs a manifest of per-file hashes today; one archive is one hash and one signature, the archive is immutable after install, and srm scan stops walking a package's files. Uninstall becomes one remove.
-
-COST, and compress.lua's own header already says it: a data- card call draws a per-tick budget and can sleep the machine a tick, so this is for COLD data. Package code is read once per require, which fits; a package whose data files are read in a hot loop does not. Per-package flag, not a global mode.
-
-No data card -&gt; compress.lua falls back to a stored blob, so the fileCost win survives without compression.
-
-securefs must still mediate the mount point, exactly as the jbod header says ("a TRANSPORT, not an access layer").
+FOUND ON THE WAY, the operator's call: a fresh machine does not trust the Optional Utilities key, so everything fetched from the official repo says "valid, but the key was not trusted at install time". Shipping it trusted would make that read "trusted", and would make the key the one that decides what installs without asking.
 
 ### Get listed in `oppm list`
 
 *Planned* · from the round *Planned (near future)*
 
 Get listed in `oppm list`: a PR adding this repo to OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS show up for people who never heard of it.
-
-### Anchor the network install to a key, not the transport
-
-*Planned* · from the round *Planned (near future)*
-
-Anchor the network install to a KEY, not the transport. bootstrap.lua verifies every download against the manifest, but the manifest comes from the same host, so it proves "these are the bytes that repository is serving" -- not "these are the bytes the publisher released". Its own comment block says exactly that. Pin an Ed25519 public key in bootstrap.lua and sign the release manifest with the machinery `pkg` already has: the root of trust moves from the transport to the one file an operator can read before running it. Every part is in the tree already (2026-09-10 review, §2).
 
 ### Slice 4: discovery and revocation
 
@@ -305,6 +257,8 @@ Later: teach `pkg install` to refresh the baseline for files it replaces, so an 
 
 THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
 
+DRAFT ANSWERS 2026-11-05, as asked: section 10 of the spec now holds a recommendation for each, with its cost. Nothing is built until they are approved or changed.
+
 ### The canonical number format is still architecture-dependent
 
 *Planned* · from the round *Extras sweep 2: the packaging seam (2026-09-06)*
@@ -333,15 +287,7 @@ WHO MAY MANAGE ACCOUNTS, READ THE LOG, USE SCP. Found 2026-10-03 walking the REA
 
 DECISION NEEDED, if any should be LOOSER: kernel users.create already accepts an ADMIN creator (effective tier &gt;= ADMIN), so admin account management is a one-word change in admin.lua -- but usermod's admin/root promotions and userdel need checking against users.setTier/delete's own guards first. `log` "filtered by tier" implies a user-visible log that the body has never allowed.
 
-### Dry-run capability enforcement
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-DRY-RUN CAPABILITY ENFORCEMENT. Upgrades AUDIT LOG FOR CAPABILITY DENIALS (OCOS survey, \[\*\]) from an idea to a shape. Their cap.check has an `enforce` flag: when false it ALWAYS RETURNS TRUE but writes a denial record to the audit log; when true it denies and the caller raises EPERM (src/sys/k/cap.lua).
-
-That is the safe way to tighten a sandbox on a live base: turn enforcement off, run the workload, read what WOULD have broken, then turn it on. It is also an excellent test fixture -- run the OpenOS compat corpus above in audit mode and the log says exactly which capabilities real programs need, which is the empirical version of guessing.
-
-SECOND, SMALLER IDEA from the same file: their caps are namespaced and GLOB-MATCHED -- syscall:write:/var/log/\*, component:&lt;type&gt;:&lt;addr&gt; -- so a service is granted write access to a PATH PREFIX rather than to the filesystem. Ours are flat booleans and write scoping is securefs per USER, which is the better answer for humans. For a sandboxed DAEMON with no human behind it, a path-scoped write cap is strictly tighter than "can write as this user". First use is rc.d services, whose caps are already declared and already gated (ALLOWED\_SERVICE\_CAPS).
+ACCOUNTS DECIDED 2026-11-05, the operator's answer: "up to the Operator with Root being the default". The installer asks, root changes it with `users manage root|admins`, and with admins allowed an admin manages ordinary accounts only and never makes an admin (test\_accounts\_policy). SEEN on the runner both ways. `log` and `scp` are still as found.
 
 ### Run-this-once confinement
 
@@ -488,30 +434,6 @@ NOT a gap, recorded so it isn't re-investigated: their "fastest VT100 in OC" is 
 
 ## Files and storage
 
-### If we build the archive mount, use mtar — do not invent a format
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-IF WE BUILD THE ARCHIVE MOUNT, USE mtar -- DO NOT INVENT A FORMAT. Refines MOUNT PACKAGES AS READ-ONLY ARCHIVES above. mtar is \~100 lines and the header is trivial:
-
-\\255\\255 &lt;version:u8&gt; &lt;nameLen&gt; &lt;name&gt; &lt;fileLen&gt; version 0 uses &gt;I2 for the length, version 1 &gt;I8. Entries stream, so an iterator walks the archive without loading it, and cleanPath strips . and .. segments AT PARSE TIME -- a traversal guard we would otherwise have to write.
-
-The reason beyond saving work: four implementations already read it (PsychOS' libmtar, ULOS 2's mtarldr boots FROM one, Zorya's reader, plus the writers), so a TOS package archive would be readable by other systems and we could read theirs. This is the one place we lose nothing by being compatible: a package archive has no trust properties of its own -- the Ed25519 signature over it is where the security lives, and that stays ours.
-
-### Copy-on-write overlay mounts
-
-*Planned* · from the round *What the rest of the field does better (2026-09-20)*
-
-COPY-ON-WRITE OVERLAY MOUNTS. Plan9k's pipes/06\_cowfs.lua is \~120 lines: cowfs.new(readfs, writefs) returns one proxy, reads fall through to the read-only side unless the write side has the file, writes always land on the write side, and deletes are recorded as &lt;dir&gt;/.cfsdel.&lt;name&gt; whiteouts so a delete can shadow a file that exists only on the read-only side.
-
-Three things we cannot do today and would get:
-
-- RUN from read-only media. HEAD already offers to install from a read-only boot disk; an overlay is the other answer -- run NOW, writes on any writable disk, install later or never.
-- A kiosk or LOG WALL appliance that RESETS on reboot. Point the write side at a scratch volume and wipe it at boot. kiosk.cfg gates commands; the filesystem is still permanently mutable. This is the missing half.
-- TRY-BEFORE-COMMIT: pkg install or an srm experiment on an overlay, inspect, then merge or drop the write layer. A weaker form of `srm baseline --full`, reached without media.
-
-WHITEOUTS ARE A NAMESPACE HAZARD and Plan9k does not guard it: a real file named .cfsdel.x must not be able to hide x. fs.lua already refuses to mount over a non-empty directory (#SEC H27) and refuses to remove mount points, so naming and blocking this class is house style. Needs its own test.
-
 ### Still \~8 sector writes per tiny file
 
 *Planned* · from the round *TBFS: the cost was writes, and a second handle (2026-09-06)*
@@ -525,16 +447,6 @@ STILL \~8 SECTOR WRITES PER TINY FILE (inode alloc, directory append + its inode
 A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME another OS's disk, the next step would be listing and copying files off it (OSDI/MTPT partitions, SimpleFS), which is a real base-admin task. A line, not a round.
 
 ## Shell and interface
-
-### Six surfaces still ignore the key table
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-SIX SURFACES STILL IGNORE THE KEY TABLE. AUDIT 2. shell.keys is read by the panels core, calc, write, warhead, web, stock, rc-pilot and the games. It is not read by the package picker (its legend says "Q Quit", pkgpicker.lua:743; it takes a typed "q", :1024), panels/dialogs.lua, either mail UI (mailapp.lua tests for 17, ^Q), intercomapp.lua or the rbmk SKALA panel. After `keys set quit F4` those six still answer ^Q, which is what the REAL MINECRAFT round's F4 check exists to catch. Severity LOW-MEDIUM. Pin: usr/lib/tests/test\_keys\_readers.lua (audit branch).
-
-BASE HALF FIXED 2026-10-26: the picker and panels/dialogs.lua ask shell.keys for quit (a text field never takes a printable binding as quit). Found on the way, both in the picker: its filter prompt's undo was Esc ALONE, which real Minecraft never delivers, so in-game it had none; and at 80 columns its key bar (86 wide) was cut at "Enter In…", so the way out was never on screen -- it is ordered most-needed first now and packs to 70 when it must. A new test\_keys\_readers.lua on master DRIVES the dialogs on a fake keys.cfg (quit = F4; 8 fail on the old files) and lifts the picker's helpers. SEEN on the runner: `keys set quit F4`, `pkg install` -&gt; bar "Space·Enter Install·F4 Quit·/ Filter·G Group·A All·N None·R +Suggested"; in the filter ^Q did nothing and F4 undid; in the list ^Q did nothing and F4 left. THE PANELS, SAME DAY: the audit's six were not all. 22 hand-written ^Q tests were left in tos/shell: the menus, the power prompt, the cmdline, the viewer, the editor, and the chat, monitor, settings and desktop tabs all ignored the table. They ask keys.isQuit now (new, with keys.quitHint for one-line hints; the power prompt says "\[F4\]Cancel"). One more found on the runner: F4 is the panels' close-tab key and it was swallowed on the SHELL tab too, where it closes nothing, so the manual's own `keys set quit F4` could never clear the command line; it falls through there now. SEEN on the runner with quit = F4: ^Q left "abcdef" on the line and F4 cleared it; F10's prompt read "\[F4\]Cancel", ignored ^Q, closed on F4. test\_keys\_readers.lua (37) lists every ^Q test left in the shell with its reason, so a new one fails. STILL OPEN: (1) the CLI path -- cli.lua's prompt, CLI chat, login's two prompts, the tutorial, and kernel/init.lua's notice viewer. CLI mode never loads shell.keys and requiring it there costs heap on the 1 MB floor, so these wait for a `tos.py floorcheck` run; pinned as exceptions in the test. (2) the add-on half (both mail UIs, intercomapp, rbmk SKALA), which needs the pack re-signed.
-
-ADD-ON HALF BUILT 2026-10-26, AWAITING THE RE-SIGN: mail 1.0.1, intercom 1.0.2 and rbmk-control 1.0.1 ask shell.keys (a local isQuit over keys.is, so they still run on an older base) and their hints name the key. SKALA was worse than listed: it quit on a bare Q or Esc only (^Q is char 17, not "Q"; F10 was never read), so in-game the letter was the only way out. All three are in PENDING\_RESIGN. test\_keys\_readers.lua (57) lifts and runs each one's helper. SEEN on the runner from an unsigned scratch pack (--machines 2, for the network card): the mail tab's bar read "F4 Close", ^Q did nothing, F4 closed it. THE HINTS, SAME DAY: the viewer's and editor's footers, the chat, monitor and settings key bars and the help text still printed ^Q whatever the binding; they call keys.quitHint now. SEEN: after `keys set quit F4`, `help`'s viewer footer read "\[F4\]Close", ^Q did nothing and F4 closed it. Left as is: the desktop's key bar, an i18n string (desktop.keys) whose catalogs would all need the change -- the desktop does close on the quit key.
 
 ### Smaller, noted in passing
 
@@ -625,14 +537,6 @@ Translate TOS to other languages by the following priority table:
 
 ## The project
 
-### The release has shipped without its `--!` comments since 2026-10-17, the MIT credit…
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-THE RELEASE HAS SHIPPED WITHOUT ITS `--!` COMMENTS SINCE 2026-10-17, THE MIT CREDIT INCLUDED. Found by this sweep. build/strip.lua's contract is "--! Preserve this comment in dist", for #SEC notes, cross-file invariants and licence / attribution headers. --minify-vars (bb6b2e4, the release default) re-emits each file through LuaMinify's formatter, which writes no comments at all, and that commit does not mention it. The shipped sources hold 3,560 `--!` lines (\~217 KB); today's TOS-Release holds 7, all in the rc.d scripts that get the whitespace pass only. So tos/compat/internet.lua's PROVENANCE note -- parts follow OpenOS's lib/internet.lua (MIT licence) line for line, credited for that reason -- is gone from the release and from the published main. test\_provenance.py cannot see it: it checks that the SOURCE carries a `--!` credit, which was enough while `--!` survived. The add-on pack (092df1e) goes through the same pass. This also settles, silently, the operator decision the RAM and storage entries below still list as open ("dropping the --! comments from the release (219 KB)"). OPERATOR DECISION, in effect made by accident: either keep `--!` through the renamer (the release is 1,292 KB raw, so \~217 KB more still fits the 1,920 KB budget), or accept that the release carries no comments, and then move the MIT credit somewhere that ships (a NOTICE file beside LICENSE.txt, or a string) and say so in strip.lua. Either way, a test on the BUILT tree that the credit is there.
-
-THE CREDIT IS FIXED, 2026-10-26; the rest is still the decision. minify\_vars.noticesOf puts back, at the top of the file, every `--!` paragraph whose first word is PROVENANCE., Copyright or SPDX-License-Identifier: (read from the unstripped file -- from the stripped one the credit ran on into the #SEC note after it). strip.lua's marker convention says so. internet.lua's 425 bytes are the only notice shipped today. test\_release\_credits.lua (14) checks the built TOS-Release; its built-tree checks fail on the old build. So the decision left is only whether #SEC notes and invariants ship (\~217 KB), no longer a licence question. Marked \[ \], not \[!\]: nothing is broken while it waits.
-
 ### The loot disk is whatever TOS-Release was when the mod last built
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
@@ -641,27 +545,13 @@ THE LOOT DISK IS WHATEVER TOS-Release WAS WHEN THE MOD LAST BUILT. AUDIT 1 found
 
 THE CHECK IS BUILT, 2026-10-26: build/check\_lootdisk.py, a step of `tos.py check`. It finds the newest radbridge-X.Y.Z.jar (or --jar / $TOS\_LOOTDISK\_JAR), compares assets/radbridge/loot/tos/ with TOS-Release file by file, and names what differs. Advisory (exit 0; --strict fails): the mod is its own repo, and a stale disk is no reason to hold a TOS publish. build/test\_check\_lootdisk.py (6). Today it says radbridge-0.5.0.jar's disk is build 1448305: 143 files differ and 6 are missing (x25519, curve25519field, pkgops, diskmount, open + its man page). STILL OPEN, in the mod's repo and so not done here: rebuild radbridge against this release and bump its version.
 
-### See the 2026-10-17..24 work run
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-SEE THE 2026-10-17..24 WORK RUN. Built and tested off-box only, and each can be checked on the headless runner:
-
-- Diffie-Hellman (e2f2445): SEEN 2026-10-26, once something sent a HELLO (AUTOMATIC DIFFIE-HELLMAN NEVER RAN, above). On the runner's T2 APU both sides had derived, and the sealed send was accepted, within 5 s of the second `net trust`: two X25519s and the HELLO round trip. One X25519 alone is untimed.
-- the mesh route cache (279ec4b): learning needs a relay in the middle, three nodes in a LINE. The runner does three now, but one relay joins all of them, so each hears the others directly. That needs two networks and two cards in the middle machine; test\_meshctl's three-node simulation stands until then.
-- cluster-storage (d6963fb): SEEN 2026-11-01 on three machines, see FOUND RUNNING THE 2026-10 WORK.
-- chat's wrapped lines and mail's Sent: line (49dec7a): both SEEN, see FOUND RUNNING THE 2026-10 WORK.
-- the browser (web 1.0.0): SEEN 2026-10-26, and it had never worked. Its first fetch died: "pkg:web:36: attempt to call a nil value (field 'get')". web took require("internet"), which in the sandbox is OpenOS's library (request/socket/open); the kernel wrapper with get() is the `internet` GLOBAL. Its tests stubbed require("internet") with a get. Fixed in web 1.0.1 (pending re-sign); test\_web\_ui.lua's fake sandbox now has the real shape and fails 10 of 14 on 1.0.0. Then, from an unsigned scratch pack with --internet: http://info.cern.ch/ rendered with its heading, four numbered links and the references list; 1 + Enter opened TheProject.html, b came back, ^Q left. A LOCAL http server is not reachable: the card's filteringRules deny private addresses, and adding "allow 127.0.0.1" to a copy of the config disabled HTTP altogether in this Ocelot build -- so the run used a public page.
-- PaneUI (c8a76b9) on OpenOS 1.8.9: SEEN 2026-10-31, see FOUND RUNNING THE 2026-10 WORK.
-- bootstrap.lua end to end (e33d25c): SEEN 2026-10-31 from the real GitHub, not a local server, see the same entry.
-
 ### GitHub, now that CI has run
 
 *Planned* · from the round *What nobody wrote down (2026-10-26)*
 
 GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green on dev (Actions API, 2026-10-26).
 
-- OPERATOR DECISION: no branch is protected (dev, main, master, optional-utilities all "protected": false, 2026-10-26). The triage round left that for after CI had proved green on GitHub, and it has.
+- DONE 2026-11-01, the operator's call: main and dev refuse force pushes and deletion. No pull requests or status checks are required, because publish.ps1 pushes directly and that must keep working. master and optional-utilities are unprotected, as asked.
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
 
@@ -679,37 +569,19 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). DONE 2026-11-01: kernel/policy.lua, failing closed.
 7. SHARED getopt (OCOS \[\*\]). DONE 2026-11-01: helpers.getopt, on the commands where a flag could become a file name.
 8. LOCALISE THE INSTALLER (survey 10). DONE 2026-11-01.
-9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). Disk, not RAM; large; wants the floor (2) first.
-10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). Builds on 9.
+9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). DONE 2026-11-01: `pkg compact` / `pkg expand`, kernel/pkgfs.lua.
+10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). DONE 2026-11-01: the `overlay` command, on the root, and the read-only boot offer.
 11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]).
 12. /proc-STYLE READ-ONLY INTROSPECTION (Cynosure \[\*\]).
 13. FAR: RUN-THIS-ONCE CONFINEMENT (survey 11), "ASK" AS A THIRD STATE (KittenOS), LINE DISCIPLINES (survey 19), the LOG WALL appliance (settle its local-or-feed question first).
 
 NOT ON THIS LIST, because they are the operator's to decide, not to build: the boot battery in CI (it runs on the headless runner today; the CI host is the open question), and PUT THE COMPAT NUMBER IN THE README (an editorial call).
 
-### Licence headers — operator decision
-
-*Planned* · from the round *The open queue, worked through (2026-10-01)*
-
-LICENCE HEADERS -- OPERATOR DECISION. The provenance lint's other half (A PROVENANCE LINT, below) wanted every shipped .lua to carry a licence header. Today 0 of the 197 shipped files do; LICENSE.txt at the root is the whole statement. Two calls are the licence holder's, not a session's: (1) GPL-3.0-only or GPL-3.0-or-later; (2) whether the RELEASE carries it. strip.lua keeps `--!` lines (licence headers are one of the three things it keeps), so a one-line `--! SPDX-License-Identifier: GPL-3.0-or-later` costs 46 bytes in each of the 138 release files: about 6.2 KB on a Tier 2 disk the 2026-09 audit already found tight. A plain `--` header would cost nothing in the release and carry the notice in source only. Once decided, the header goes in mechanically and test\_provenance.py grows the check.
-
 ### OpenOS's own bin/ does not run, and the compat number should say so
 
 *Planned* · from the round *Second pass: the compat number (2026-09-20)*
 
 OPENOS'S OWN bin/ DOES NOT RUN, AND THE COMPAT NUMBER SHOULD SAY SO. Found 2026-11-01, running Reference/OpenOS/openos/bin under `run`: cat and grep stop at require("tty") ("not on the allowed list"), ls and edit at a nil loadfile, and lua at /lib/core/lua\_shell.lua. Not a bug to chase, since TOS replaces those programs with its own commands, and the two corpora below are third-party code. But it bounds the claim: a program written against OpenOS's tty or loadfile will not load. If a real program ever needs it, the cheap half is a tty shim over compat.term and a sandbox loadfile behind the `load` cap.
-
-### Put the compat number in the README, or decide not to
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-PUT THE COMPAT NUMBER IN THE README, or decide not to. The shims above make the measured failure rate zero on both corpora, so "OpenOS compatibility, so much of what already exists still runs" can become a number. It is an EDITORIAL call, deliberately left to the operator, because the number needs its caveats alongside it or it overstates:
-
-- a require() that resolves is not a program that works — caps, paths and terminal behaviour still differ;
-- the corpora are the nine loot disks (80 programs) and three OpenPrograms repos (60 files), which is what exists and is still not everything;
-- some community code targets PLAN9K, not OpenOS (magik6k's process.rt / process.globalSignals calls are Plan9k's API). Those files were never going to run here and are not counted as compat gaps.
-
-Honest phrasing is something like "every program on the nine OpenComputers loot disks loads; the OpenOS names we do not provide were required by none of them". Then re-run the scan when the claim is made, so the number in the README is one somebody can reproduce.
 
 ### Error registry: the rest of the migration
 

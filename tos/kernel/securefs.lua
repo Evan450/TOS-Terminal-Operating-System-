@@ -131,14 +131,16 @@ return F.mounts()end
 local function Z(a)
 if not G or not G.TIER then return nil,"users module unavailable"end;local b=I(a)if not b then return nil,"no session"end;if b.tier<G.TIER.ADMIN then return nil,
 "mount requires admin"end;return b end
-function E.mount(a,b,c)if not F then return false,S end;local e,g=Z(c)
+function E.mount(b,a,c)if not F then return false,S end;local e,g=Z(c)
 if not e then if H then
-H.warn(M,"MOUNT denied: "..tostring(a).." ("..
-g..")")end;return false,V..g..U end;local d=F.normalize(a)if not d then return false,N end;local f=O(d,e)if f then if H then
+H.warn(M,"MOUNT denied: "..tostring(b).." ("..
+g..")")end;return false,V..g..U end;local d=F.normalize(b)if not d then return false,N end
+local h=_G._TOS and _G._TOS.overlay;if h and a and a.address==h.disk then
+return false,"That disk holds the overlay's writes, and is not mounted."end;local f=O(d,e)if f then if H then
 H.warn(M,
 "MOUNT denied (protected system path "..f.."): "..d)end
 return false,L("mounting over",f,e)end
-return F.mount(d,b)end
+return F.mount(d,a)end
 function E.unmount(a,b)if not F then return false,S end;local d,c=Z(b)
 if not d then if H then
 H.warn(M,"UNMOUNT denied: "..tostring(a).." ("..

@@ -59,17 +59,20 @@ if b>0 then e="err"elseif c>0 then e="warn"end
 a(string.format("log: %d errors, %d warnings in last 50 entries",b,c),e)end
 local function D(a)if _G._TOS_POLICY_FAILURE then
 a("security: ".._G._TOS_POLICY_FAILURE,"err")end
-local d=_G._TOS and _G._TOS.users
-if not d then a("security: users unavailable","warn")return end;local b=_G._TOS and _G._TOS.kernel
-if b and b.verifyManifestHash then
-local f,e=b.verifyManifestHash()
-if f then
-a("security: manifest hash matches EEPROM anchor","ok")elseif e and e:find("no anchored hash")then
+local b=_G._TOS and _G._TOS.overlay;if b and b.missing then
+a("overlay: disk "..tostring(b.missing):sub(1,8)..
+" is missing, so writes are landing on the real root","err")end;local e=_G._TOS and
+_G._TOS.users;if not e then
+a("security: users unavailable","warn")return end
+local c=_G._TOS and _G._TOS.kernel
+if c and c.verifyManifestHash then local g,f=c.verifyManifestHash()
+if g then
+a("security: manifest hash matches EEPROM anchor","ok")elseif f and f:find("no anchored hash")then
 a("security: manifest hash not anchored in EEPROM "..
 "(optional hardening — run 'verify anchor' as admin)","warn")else
-a("security: manifest hash MISMATCH — "..tostring(e),"err")end end
-local c=_G._TOS and _G._TOS.net and _G._TOS.net.trust;if c and c.list then local e=c.list()local f=#e
-a(string.format("security: %d trust-DB peers",f),"info")end end
+a("security: manifest hash MISMATCH — "..tostring(f),"err")end end
+local d=_G._TOS and _G._TOS.net and _G._TOS.net.trust;if d and d.list then local f=d.list()local g=#f
+a(string.format("security: %d trust-DB peers",g),"info")end end
 local function E(a)local d,b=pcall(require,"kernel.notify")if
 not d or not b or not b.depth then return end;local c=b.depth()if c==0 then return end
 a(string.format("notices: %d dialog(s) waiting to be shown",c),

@@ -8,6 +8,8 @@ SYNOPSIS
     pkg enable <name> | disable <name>
     pkg outdated
     pkg upgrade <name>... | --all [--yes] [--dry-run]
+    pkg compact <name> | --all
+    pkg expand <name>
     pkg make-disk <mount> [name ...]
     pkg repo list | add <name> <url> | remove <name> | forget <n|url|all>
     pkg remote
@@ -17,6 +19,7 @@ SYNOPSIS
     pkg verify-sig <dir>
     pkg sign <dir> --as <publisher>
     pkg license-hash <name> <licenseKey>
+    pkg audit [<name> [on|off]]
 
     install <name>          shortcut for 'pkg install <name>'
     uninstall <name>        shortcut for 'pkg uninstall <name>'
@@ -57,6 +60,18 @@ SUBCOMMANDS
                    plan and changes nothing. (The old 'install-dir' and
                    'from-floppy' still work as hidden aliases.)
     uninstall <name>   Remove an installed package.
+    compact <name> One archive instead of a file each, for what the package
+                   keeps under /usr; --all does every package. OC charges
+                   512 bytes per file, and with a data card the content
+                   shrinks too: calc went from 89 KB to 35. The package runs
+                   as before and its paths still read. Bare `pkg compact`
+                   lists what is compact. Nothing goes until the archive has
+                   read back byte for byte. A compressed archive needs a data
+                   card to read, so keep one in the machine, and leave a
+                   package loose if it reads its own files in a hot loop.
+    expand <name>  Back to loose files. An edit made since is kept, and a file
+                   removed since stays removed. An upgrade or an uninstall
+                   needs neither: they deal with the archive themselves.
     enable <name>  Switch an installed package back on.
     disable <name> Switch it off without removing it (its commands and its
                    service stop; its files stay).
@@ -98,6 +113,15 @@ SUBCOMMANDS
                    are final; the signature covers the manifest, which covers
                    the hashes, which cover the files).
     license-hash <name> <key>   The hash a licensed package's manifest holds.
+    audit <name> on|off   (root) Run one package with every capability it
+                   could ask for, and record each use of one it did not
+                   declare instead of refusing it: the way to learn what a
+                   package really needs before granting it. Logged, and it
+                   ends at reboot. `pkg audit <name>` reads what it used and
+                   names the capabilities the manifest would have to declare;
+                   bare `pkg audit` lists what is under audit. Not seen this
+                   way: the peripheral capabilities and ipc. A service or a
+                   driver runs outside the sandbox and cannot be audited.
 
 EXAMPLES
     pkg search

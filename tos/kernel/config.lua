@@ -1,6 +1,6 @@
 local l,m="computer","tablet"local p=require(l)
 local n=require("kernel.serialize")local j={}local o="/etc/tos.cfg"
-local k={device=l,hostname="tos",compactUI=false,screenRes="auto",screenColsPerBlock=10,screenRowsPerBlock=4,powerProfile="balanced",lowBatWarn=15,critBatWarn=5,showBattery=false,autoLockout=true,maxAttempts=5,sessionTimeout=0,guestAccess=false,encryptComms=true,listenPort=42,internet=true,internetMaxKB=64,internetTimeout=15,headless=false,rackSlot=0,autoServices=true,verbose=false,timezone=0}local i={}
+local k={device=l,hostname="tos",compactUI=false,screenRes="auto",screenColsPerBlock=10,screenRowsPerBlock=4,powerProfile="balanced",lowBatWarn=15,critBatWarn=5,showBattery=false,autoLockout=true,maxAttempts=5,sessionTimeout=0,guestAccess=false,accountAdmins=false,encryptComms=true,listenPort=42,internet=true,internetMaxKB=64,internetTimeout=15,headless=false,rackSlot=0,autoServices=true,verbose=false,timezone=0}local i={}
 function j.init(a)j._fs=a;for f,g in pairs(k)do i[f]=g end;local b=n.loadFile(a,o)if b then for f,g in
 pairs(b)do i[f]=g end end
 local c=require("component")

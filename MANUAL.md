@@ -89,6 +89,7 @@ same place.
   - [5.2 Trash, vault & keychain](#52-trash-vault--keychain)
   - [5.3 Disk pooling (JBOD, opt-in)](#53-disk-pooling-jbod-opt-in)
   - [5.4 Unmanaged (raw) drives — TBFS](#54-unmanaged-raw-drives--tbfs)
+  - [5.5 A copy-on-write root](#55-a-copy-on-write-root)
 - [6. Commands at a Glance](#6-commands-at-a-glance)
   - [6.1 Files & navigation](#61-files--navigation)
   - [6.2 Saying things](#62-saying-things)
@@ -458,6 +459,12 @@ generic error.
 
 Commands: `passwd` (change your own); (admin) `users`; and (root) `useradd`,
 `userdel`, `usermod <user> lock|unlock|admin|user|root`.
+
+**Who manages accounts is the operator's choice.** It is root only unless the
+installer was told otherwise, or root runs `users manage admins`. Then an admin
+may add, remove, lock and unlock ordinary accounts too, but never touches
+another admin or root, and never makes one: that stays root's. `users manage`
+says which it is, and `users manage root` takes it back.
 
 ---
 
@@ -916,6 +923,30 @@ still runs an older EEPROM, reflash with `flash /bios.lua` first. A `deploy
 drive` volume is also a complete, mountable TOS disk you can reach with
 `drive mount` at any time.
 
+### 5.5 A copy-on-write root
+
+With an overlay, `/` comes from two disks. Reads come from the second disk if it
+has the file and from the real root if it does not, and every write lands on the
+second disk, so the real root is not touched. `overlay on <disk>` sets it up and
+takes effect at the next boot. It is root's, and it gives you three things:
+
+- **Run from a read-only disk.** A loot disk cannot hold a password. Boot from it
+  with a hard drive in the machine and choose *Run from here, saving to the hard
+  drive*. You are asked at each boot, because a read-only disk has nowhere to
+  remember the answer.
+- **An appliance that resets.** `overlay on <disk> --reset` forgets everything at
+  every boot. `kiosk.cfg` decides which commands a visitor may run, and this is
+  the other half: whatever they did is gone at the next boot.
+- **Try something, then keep it or don't.** Install what you like, read `overlay
+  changes`, then `overlay merge` to write it all to the real root or `overlay
+  drop` to forget it.
+
+The second disk can replace any file on the system, the kernel included, so once
+it holds the overlay it is no longer mounted, and `mount` refuses it. If it is
+missing at boot the machine runs on the real root, every write is permanent, and
+`doctor` reports that as an error. That is also the way back from an overlay that
+broke something: take the disk out and boot. See `man overlay`.
+
 ## 6. Commands at a Glance
 
 `help` shows the lean, install-aware list; this chapter is a quick **catalog by
@@ -941,8 +972,8 @@ operator's face, every seat — see [§4.1.4](#414-two-ways-to-say-something))
 reports a POST fault the BIOS caught — see [§9.3](#93-srm--system-repair--maintenance).)
 
 ### 6.4 Administration
-`users` `useradd` `userdel` `usermod` `mount` `umount` `jbod` `flash` `lua` `run`
-`edit` `bootsettings` `service` `cron` `deploy` `backup` `kiosk`
+`users` `useradd` `userdel` `usermod` `mount` `umount` `jbod` `overlay` `flash`
+`lua` `run` `edit` `bootsettings` `service` `cron` `deploy` `backup` `kiosk`
 
 (`jbod` — disk pooling — appears only after you enable it with `bootsettings
 jbod on`; see Chapter 5 and `man jbod`.)
@@ -1356,10 +1387,14 @@ both fields, and `--force` goes past them.
 ### 7.4 Updating packages
 
 ```
-pkg outdated                  what has a newer version on the inserted disks
+pkg outdated                  what has a newer version on a disk or a repo you added
 pkg upgrade <name> [<name>…]  replace those
 pkg upgrade --all --yes       replace everything with a newer version
 pkg upgrade <name> --dry-run  print the plan, change nothing
+pkg audit <name> on           (root) find out what a package really needs
+pkg compact <name>            one archive instead of a file each
+pkg compact --all             the same for every package
+pkg expand <name>             back to loose files
 ```
 
 An upgrade is not "install over the top". TOS verifies the candidate first
@@ -1765,6 +1800,13 @@ each other to TRUSTED (`net trust <peer> full`, on both): they then agree one by
 themselves, with nothing to type. `net pair` is the out-of-band way to do it
 with a code. Broadcasts (`*`) cannot be sealed by definition, so they must be
 opted into explicitly and are labelled PLAINTEXT wherever they appear.
+
+**A peer you have never heard** is reached the same way, with its full address,
+which `net status` shows. On each machine, `net trust <the other's address>
+full`; then `net pair start` on one and the `net pair` line it prints on the
+other. The pairing crosses the relays between you, and none of them can forge
+it or learn the secret it makes, because both halves are keyed by the code.
+After that, mail and anything else sealed reaches it through the mesh.
 
 **A reinstalled peer has a new key.** Two TRUSTED peers derive their shared secret from each other's identity keys. Reinstalling a machine keeps its address (the network card) but makes a new key, so it derives a new secret while you still hold the old one, and nothing sealed gets through. TOS does not accept the new key by itself, because anything that can speak as that address could offer a key of its own. Instead the log records the change and `net peers` marks the peer. Once you know why the key changed, `net trust rekey <peer>` (admin) derives a new secret from the new key.
 
@@ -2702,7 +2744,9 @@ Terminate a job by id. *See also:* `ps`, `fg`, `bg`.
 Explain kiosk mode: the locked, guest-facing menu (an allow-list, read-only)
 that runs when someone logs in as an account named `kiosk`. No such account
 ships, so make it first with `useradd kiosk`, then log out and log in as it.
-Its allow-list and menu live in `/etc/kiosk.cfg`.
+Its allow-list and menu live in `/etc/kiosk.cfg`. A file that cannot be understood
+allows nothing and shows *This kiosk is out of order*, with the reason in the
+log. To reset it at every boot as well, see [§5.5](#55-a-copy-on-write-root).
 
 ### L
 
@@ -2890,6 +2934,12 @@ cost to about nothing (and is why the "screensaver" draws nothing — anything
 prettier would cost more than what it replaced), and the display buffer removes
 GPU writes outright. The one optimization that *costs* energy is swap: paging a
 cold tab out is a disk write. *See also:* `swap`, `battery`, `doctor`, `mem`.
+
+**overlay** — `overlay [on <disk> [--reset] | off | changes | merge | drop]` **(root)**
+A copy-on-write root: from the next boot, every write lands on `<disk>` and the
+real root is not touched. `--reset` forgets them at every boot, `changes` lists
+them, `merge` writes them to the real root and `drop` forgets them.
+*See also:* [§5.5](#55-a-copy-on-write-root), `man overlay`.
 
 ### P
 
@@ -3119,20 +3169,23 @@ Remove one of your aliases. *See also:* `alias`.
 **uptime** — `uptime`
 Show how long the machine has been running.
 
-**useradd** — `useradd <name>` **(root)**
+**useradd** — `useradd <name>` **(root; admins if `users manage admins`)**
 Create a user account at the USER tier. It asks for the password twice; raise
 the tier afterwards with `usermod <name> admin`. *See also:* `users`,
 `userdel`, `usermod`.
 
-**userdel** — `userdel <name>` **(root)**
-Delete a user account. *See also:* `users`, `useradd`.
+**userdel** — `userdel <name>` **(root; admins if `users manage admins`)**
+Delete a user account. An admin may delete ordinary accounts only. *See also:*
+`users`, `useradd`.
 
-**usermod** — `usermod <name> lock | unlock | user | admin | root` **(root)**
-Modify a user (tier, lock state). *See also:* `users`, `passwd`.
+**usermod** — `usermod <name> lock | unlock | user | admin | root` **(root; admins if `users manage admins`)**
+Modify a user (tier, lock state). An admin may lock and unlock ordinary
+accounts, and never promotes anyone. *See also:* `users`, `passwd`.
 
-**users** — `users` **(admin)**
-List user accounts and their tiers ([Chapter 3](#3-logging-in-users--tiers)). *See also:* `useradd`,
-`userdel`, `usermod`, `passwd`.
+**users** — `users [manage [root | admins]]` **(admin; changing it: root)**
+List user accounts and their tiers ([Chapter 3](#3-logging-in-users--tiers)). `users manage` says who
+manages accounts; root changes it with `users manage root` or `admins`.
+*See also:* `useradd`, `userdel`, `usermod`, `passwd`.
 
 ### V
 
@@ -3268,14 +3321,13 @@ Explain the last refusal or error, in plain English, with the fix.
   manifest too, so run `verify anchor` again after one. A machine running
   straight from the source tree has no digests to check: the source manifest
   stays digest-free, so that editing a file does not dirty it.
-- **`bootstrap.lua` trusts the repository, not the publisher.** It checks every
-  download against the release manifest's digests before writing it, and
-  refuses the whole install on any mismatch. But the manifest and the files come
-  from the same host over the same connection, so this proves "these are the
-  bytes that repository serves", not "these are the bytes Strata published".
-  A signature checked against a key pinned in `bootstrap.lua` would close the
-  gap; it is not done. Installing from a disk you made yourself avoids the
-  dependency.
+- **A network install is what the publisher signed.** `bootstrap.lua` carries the
+  publisher's public key, so a compromised repository cannot ship code to a
+  machine installing from `main`: it refuses, before anything is downloaded. A
+  fork or another branch has no such signature, and it says so and goes on. It
+  then checks every download against the signed manifest's digests before
+  writing it, and refuses the whole install on any mismatch. A hostile server can
+  stop an install, but it cannot change one.
 
 - **No preemption.** OpenComputers keeps `debug.sethook` for its own "too long
   without yielding" watchdog and does not give it to the OS, so TOS cannot
