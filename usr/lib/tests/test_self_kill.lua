@@ -80,6 +80,20 @@ local idle = proc.spawn("idle", function() while true do coroutine.yield() end e
 proc.tick(); clock = clock + 1; proc.tick()
 test("one that only yields stays alive", not gone(idle), proc.get(idle) and proc.get(idle).state)
 
+print("=== killing one that already ended ===")
+-- On a two-seat machine `kill 2` said "Killed PID 2": a login that had
+-- finished, kept in the table until the sweep reaps it, which `ps` does
+-- not list.
+local ended = proc.spawn("login@2", function() end, { principal = ROOT, display = 2, inherit = false })
+proc.tick(); clock = clock + 1
+if proc.get(ended) then
+  local okE, errE = proc.kill(ended, { kernel = true })
+  test("kill does not claim to have killed it", okE == false, tostring(okE))
+  test("...it says there is no such process", tostring(errE):find("No such process", 1, true) ~= nil, errE)
+else
+  test("(the ended process was reaped at once, nothing to kill)", true)
+end
+
 print(string.format("\nResults: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end
 print("All tests passed.")

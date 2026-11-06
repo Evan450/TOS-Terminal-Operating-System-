@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**50 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**51 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 26 | Planned or under investigation. Most contributions belong here. |
+| Planned | 27 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (6)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (6)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -459,6 +459,20 @@ SMALLER, NOTED IN PASSING.
 - DONE 2026-11-01: the CLI path follows the key table. shell/quitkey.lua answers ^Q until a keys file exists, and only then loads shell.keys, so a machine that never bound quit pays almost nothing. Floorcheck: every README claim holds, 67K free at 1024K against \~65K. SEEN in CLI mode: after `keys set quit F4` ^Q left "abcdef" on the line and F4 cleared it; after `keys reset` ^Q did. kernel/init.lua's notice viewer stays as it is: `q` closes it whatever quit is bound to.
 - DONE 2026-11-01: the 297 test files that reported failure by marker alone exit non-zero now. test\_install\_preinit.lua is the one left: it carries the operator's uncommitted edit, so it was not touched.
 - check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
+
+### Noted in that pass, not fixed
+
+*Planned* · from the round *The local worker's command pass (2026-11-06)*
+
+NOTED IN THAT PASS, NOT FIXED. None loses data.
+
+- TOS has no `&&` (the survey's SHELL LEXER + PARSER), and a command handed one ignores it with the rest of the line: `whoami && echo X` prints root and nothing else, without a word. A line containing &amp;&amp; or || could say the shell runs one command at a time.
+- Long lines at the command line wrap at about 72 columns on an 80-column screen (sudo's 78-character usage wraps; `screen` says 80x25), probably the auto resolution. Wrapping at words is right at any width; the gap itself is unexplained.
+- `verify` takes 60-180 s for 171 files on the runner's T3 machine. It is live now; whether it can be faster was not looked at.
+- `inventory` cuts item names at 24 characters, the last of the cut-name lists. Shown only, never typed back.
+- `tape`'s not-installed text indents one line by one space and the rest by two or more.
+
+566 cases on a booted machine (every command bare, with a bad argument and a bad flag, and every `cmd sub` the MANUAL names) gave no Lua error. Fixed that day: see the CHANGELOG round "Every command, run on a real machine". The scripts were throwaway, and the idea is worth keeping: `build/headless-session.py` with `--machines 2` gets a modem, and a scan for "attempt to", ".lua:" and ERR\_ is one regex. What was left, by choice:
 
 ### The shadow buffer is tuned for TUI redraw
 

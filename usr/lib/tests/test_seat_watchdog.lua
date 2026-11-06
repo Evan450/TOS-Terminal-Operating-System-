@@ -70,6 +70,9 @@ local spawn = src:match("local function spawnLoginProcess(.-)\n  end\n") or ""
 test("every login is recorded for its seat", spawn:find("loginPIDs[dIdx] = loginPid", 1, true) ~= nil)
 test("the respawn logs the killed seat's session out first",
   loop:find("usersmod.logout(sessionTokens[dIdx])", watch or 1, true) ~= nil)
+local unplug = loop:match("for _, dIdx in ipairs%(removed%) do(.-)\n        end\n") or ""
+test("an unplugged seat's login is killed with it, not left waiting",
+  unplug:find("proc.kill(loginPIDs[dIdx]", 1, true) ~= nil, #unplug)
 
 print(string.format("\nResults: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end

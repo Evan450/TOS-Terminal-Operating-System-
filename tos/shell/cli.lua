@@ -128,6 +128,17 @@ function M.run(ctx)
     cy = 3
   end
 
+  -- What the running command has printed live, for drawAll to put back
+  -- after a mid-command repaint. A screenful at most: the rest has
+  -- scrolled away anyway. nil between commands.
+  local cmdLines = nil
+  local function keepForReplay(text, color)
+    if not cmdLines then return end
+    cmdLines[#cmdLines + 1] = { text, color }
+    if #cmdLines > H then table.remove(cmdLines, 1) end
+  end
+  local replayCommand
+
   local function o(text, color)
     -- Wrap rather than truncate. The old CLI cut at the screen edge with
     -- `:sub(1, W)`, which silently ate the end of any long line — and
@@ -140,6 +151,11 @@ function M.run(ctx)
       if line ~= "" then D.set(1, cy, line, color or D.c("fg"), D.c("bg")) end
       cy = cy + 1
     end
+  end
+
+  replayCommand = function()
+    if not cmdLines then return end
+    for _, l in ipairs(cmdLines) do o(l[1], l[2]) end
   end
 
   local function chrome()
@@ -374,10 +390,11 @@ function M.run(ctx)
     -- and the prompt on row 3. This was a no-op, and on the headless
     -- machine quitting the picker left a blank screen and a bare prompt,
     -- with no header or key bar for the rest of the session. What a
-    -- built-in prints is buffered by the executor and shown after it
-    -- returns, so a command that repaints and then reports (`theme set`)
-    -- still keeps its message. (test_cli_takeover.lua)
-    drawAll        = function() redraw() end,
+    -- built-in prints reaches the screen as it happens now (the executor's
+    -- live route), so a command that prints and then repaints (`theme
+    -- set`) would wipe its own message: the lines this command printed are
+    -- put back after the repaint. (test_cli_takeover.lua)
+    drawAll        = function() redraw(); replayCommand() end,
     drawOutRow     = function(text, color) if text then o(text, color) end end,
   }
 
@@ -394,7 +411,7 @@ function M.run(ctx)
     showOutput     = function(wrapped, _label) viewBuffer(wrapped, nil) end,
     -- A running program's lines go straight to the teletype, and its typing
     -- gets the next row.
-    liveLine       = function(text, color) o(text, color) end,
+    liveLine       = function(text, color) o(text, color); keepForReplay(text, color) end,
     repaint        = function() redraw() end,
     inputRow       = function()
       scroll()
@@ -485,7 +502,9 @@ function M.run(ctx)
       if localVerb then
         localVerb()
       else
+        cmdLines = {}
         local okE, err = pcall(exec, line)
+        cmdLines = nil
         if not okE then
           o("Error: " .. tostring(err), D.c("error"))
         else

@@ -2058,6 +2058,14 @@ function kernel.loginAndStartShell()
             monitorPIDs[dIdx] = nil
           end
           if monitorHosts[dIdx] then monitorHosts[dIdx] = nil end
+          -- And its login, if it was sitting at one: that process waited
+          -- for keys from a seat that no longer exists, and every replug
+          -- started another beside it. (test_seat_watchdog.lua)
+          if loginPIDs[dIdx] then
+            proc.kill(loginPIDs[dIdx], { kernel = true })
+            loginPIDs[dIdx] = nil
+          end
+          seatTries[dIdx] = nil
           if sessionTokens[dIdx] then
             if usersmod then usersmod.logout(sessionTokens[dIdx]) end
             sessionTokens[dIdx] = nil

@@ -488,13 +488,21 @@ function M.build(S, deps)
       --! legend or a single pong until the pilot quit. Its env is built once
       --! and shared, so the read hook goes on this shell's process for the
       --! length of the call rather than in the env.
+      --! And so does a built-in, on the plain path. `verify` at the command
+      --! line showed nothing at all for over a minute on the headless
+      --! machine, then 171 lines at once: a slow built-in looked hung, and
+      --! one that explains itself before a prompt explained afterwards. The
+      --! read hook stays a package's: a built-in reads through promptInput.
+      --! (test_builtin_output_live.lua)
       local out, me = o, nil
-      if foreignDraw and S._plainPath and S.programIO then
+      if S._plainPath and S.programIO then
         local stdout, beforeRead = S.programIO(o)
         out = stdout
-        local okP, procMod = pcall(require, "kernel.process")
-        me = okP and type(procMod) == "table" and procMod.current and procMod.current() or nil
-        if me then me.beforeRead = beforeRead end
+        if foreignDraw then
+          local okP, procMod = pcall(require, "kernel.process")
+          me = okP and type(procMod) == "table" and procMod.current and procMod.current() or nil
+          if me then me.beforeRead = beforeRead end
+        end
       end
       local ok2, err2 = pcall(fn, args, out)
       if me then me.beforeRead = nil end
@@ -644,19 +652,31 @@ function M.build(S, deps)
     local plain = S._plainPath
     local live = plain and deps.liveLine or nil
     local echo = plain and deps.echoLine or nil
-    local function stdout(line, color)
+    -- The full interface echoes to its one output row as well as keeping
+    -- the line; four times a second is enough to show it is working, and
+    -- a 300-line `tree` must not pay a row redraw for every line. The
+    -- whole buffer is drawn when the command ends.
+    local okC, comp = pcall(require, "computer")
+    local clock = okC and type(comp) == "table" and comp.uptime or os.clock
+    local lastEcho = -1
+    -- `always`: a question about to wait for its answer is echoed even
+    -- inside the quarter second, or it would sit unseen while the read waits.
+    local function stdout(line, color, always)
       if live then
         live(line, color)
         coopYield()
       else
         o(line, color or S.T.fg)
-        if echo then echo(line) end
+        if echo then
+          local now = clock()
+          if always or now - lastEcho >= 0.25 then lastEcho = now; echo(line) end
+        end
       end
     end
     local beforeRead = nil
     if plain and deps.inputRow then
       beforeRead = function(partial)
-        if partial ~= "" then stdout(partial) end
+        if partial ~= "" then stdout(partial, nil, true) end
         local okT, term = pcall(require, "compat.term")
         if okT and type(term) == "table" then term.setCursor(1, deps.inputRow()) end
       end

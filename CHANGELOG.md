@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 129 rounds of work:
+Everything since v1.5.0, in 131 rounds of work:
 
+- [kill tells the truth about an ended process](#kill-tells-the-truth-about-an-ended-process)
+- [Built-in commands print as they go](#built-in-commands-print-as-they-go)
 - [os.exit() leaves the Lua REPL](#osexit-leaves-the-lua-repl)
 - [A screen whose shell is gone gets its login back](#a-screen-whose-shell-is-gone-gets-its-login-back)
 - [Killing your own shell no longer freezes the screen](#killing-your-own-shell-no-longer-freezes-the-screen)
@@ -151,6 +153,14 @@ Everything since v1.5.0, in 129 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### kill tells the truth about an ended process
+
+`kill` on a process that has already ended says there is no such process, as `ps` would suggest. It said "Killed PID 2" for a login that had finished, which looked like it had killed something.
+
+### Built-in commands print as they go
+
+Built-in commands are heard while they run. `verify` at the command line showed nothing for over a minute and then 171 lines at once; it now lists each file as it checks it. In the full interface the output row shows the latest line as a command works, and the whole output still opens when it ends.
 
 ### os.exit() leaves the Lua REPL
 

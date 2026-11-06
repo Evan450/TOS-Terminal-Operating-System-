@@ -534,6 +534,13 @@ function proc.kill(pid, opts)
     end
   end
 
+  --! A process that has already ended still sits in the table until the
+  --! sweep reaps it (the last three are kept), and `kill` on one said
+  --! "Killed PID 2": on a two-seat machine that was a finished login, which
+  --! `ps` does not list. The cleanup below still runs (it is harmless, and
+  --! kernel callers may count on it), but the answer is the truth.
+  --! (test_self_kill.lua)
+  local alreadyDead = p.state == STATE.DEAD
   p.state = STATE.DEAD
   invalidateRunnable()
   -- If killed process was global foreground, switch to parent or first live
@@ -562,6 +569,7 @@ function proc.kill(pid, opts)
   -- event.purgeOwner); flagged so the scheduler's sweep does not repeat it.
   if event.purgeOwner then event.purgeOwner(pid) end
   p._purged = true
+  if alreadyDead then return false, "No such process (it had already ended)" end
   return true
 end
 
