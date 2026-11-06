@@ -63,6 +63,8 @@ local LIST = {
   { 404, "ERR_SAFE_MODE", "Safe Mode, or another boot profile, has that turned off" },
 
   { 501, "ERR_NET_NO_ANSWER",   "a remote host did not answer (timed out, refused, or broke off)" },
+  { 502, "ERR_NET_NO_SECRET",   "there is no shared secret with that machine, so nothing was sent" },
+  { 503, "ERR_NET_PAIR_FAILED", "pairing got no confirmation, so no secret was installed" },
 
   { 601, "ERR_PKG_NOT_FOUND",   "no configured repo has a package by that name" },
   { 602, "ERR_PKG_BAD_NAME",    "that is not a valid package name" },

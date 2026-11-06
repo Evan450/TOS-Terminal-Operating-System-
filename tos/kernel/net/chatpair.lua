@@ -468,6 +468,7 @@ function chatpair.connect(peer, code, timeout)
   _waiting = nil
   if not got then
     return false, "no confirmation (wrong code, window expired, or peer offline)"
+      .. "  [E-503 ERR_NET_PAIR_FAILED]"
   end
 
   -- Verify the confirm MAC. The receiver bound it to (us, their_ts)

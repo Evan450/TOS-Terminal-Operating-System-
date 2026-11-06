@@ -20,8 +20,11 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 119 rounds of work:
+Everything since v1.5.0, in 122 rounds of work:
 
+- [ls shows long names whole](#ls-shows-long-names-whole)
+- [Two network refusals carry codes](#two-network-refusals-carry-codes)
+- [A BIOS too big for the EEPROM no longer ends the install](#a-bios-too-big-for-the-eeprom-no-longer-ends-the-install)
 - [pkg audit](#pkg-audit)
 - [A network install leaves only TOS](#a-network-install-leaves-only-tos)
 - [The operator decides who manages accounts, and whether to trust the pack](#the-operator-decides-who-manages-accounts-and-whether-to-trust-the-pack)
@@ -141,6 +144,18 @@ Everything since v1.5.0, in 119 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### ls shows long names whole
+
+`ls` no longer cuts file names at 24 characters. The Name column widens to the longest name in the directory, as far as the screen allows, so `/etc` lists `component_caps.cfg.example` whole instead of `component_caps.cfg.examp`, a name nobody could type back. A name too long for the screen ends in `~` to say it was cut. A directory with one entry says `1 item`, as do the file browser's summary line and `trash empty`.
+
+### Two network refusals carry codes
+
+Two network refusals now carry codes `why` can explain: E-502, when a machine has no shared secret with the one it is sending to, and E-503, when pairing gets no confirmation. `why E-502` says how to make a secret, including through the mesh for a machine you cannot hear.
+
+### A BIOS too big for the EEPROM no longer ends the install
+
+Installing from the dev branch no longer fails at the very end: its BIOS is the unminified source, too big for an EEPROM, and flashing it used to stop the installer with "not enough space" after TOS was already in place. The installer now checks the size first and skips the flash with the reason; the BIOS the machine has boots TOS too.
 
 ### pkg audit
 

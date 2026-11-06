@@ -27,7 +27,11 @@ package.path = "tos/?.lua;tos/?/init.lua;" .. package.path
 package.loaded["computer"] = { uptime = function() return 0 end, freeMemory = function() return 1e6 end }
 package.loaded["component"] = { list = function() return function() end end, proxy = function() end }
 
-local dirs = { ["/"] = { "etc/", "init.lua", ".profile.cfg", "notes.txt" } }
+local HUGE = string.rep("n", 90) .. ".txt"
+local dirs = { ["/"] = { "etc/", "init.lua", ".profile.cfg", "notes.txt" },
+               ["/etc"] = { "component_caps.cfg.example", "entropy" },
+               ["/one"] = { "only.txt" },
+               ["/huge"] = { HUGE } }
 local F = {
   exists = function(p) return dirs[p] ~= nil or p == "/init.lua" or p == "/notes.txt" or p == "/.profile.cfg" end,
   list = function(p) return dirs[p] or {} end,
@@ -61,6 +65,35 @@ test("ls -la / does both", la:find(".profile.cfg", 1, true) and la:find("Modifie
 local missing = ls({ "/nope" })
 test("a directory that is not there says so", missing:find("no such file", 1, true) ~= nil, missing)
 test("an unknown flag is refused with the usage", ls({ "-x" }):find("Usage: ls", 1, true) ~= nil)
+
+print("=== a name is never cut where it fits on the screen ===")
+-- The Name column was a fixed 24: /etc on the headless machine listed
+-- "component_caps.cfg.examp", a name nobody could type back.
+local etc = ls({ "/etc" })
+test("a 26-character name is listed whole", etc:find("component_caps.cfg.example", 1, true) ~= nil, etc)
+-- The short form ends at the right edge of Size, so the heading and both
+-- rows are one length exactly when that column lines up.
+local ends = {}
+for line in etc:gmatch("[^\n]+") do
+  if line:find("Size", 1, true) or line:find("2K", 1, true) then ends[#ends + 1] = #line end
+end
+test("...and the Size column still lines up", #ends == 3
+  and ends[1] == ends[2] and ends[2] == ends[3], table.concat(ends, ","))
+local etcLong = ls({ "-l", "/etc" })
+test("the long form too", etcLong:find("component_caps.cfg.example", 1, true) ~= nil, etcLong)
+local huge = ls({ "/huge" })
+test("a name wider than the screen is cut...", huge:find(HUGE, 1, true) == nil, huge)
+test("...and ends in ~ to say so", huge:find("n~", 1, true) ~= nil, huge)
+local widest = 0
+for line in huge:gmatch("[^\n]+") do widest = math.max(widest, #line) end
+test("...so no line is wider than the screen", widest <= S.W, widest)
+test("the short names a directory has keep the 24 column",
+  ls({ "/" }):find(" Name                         Size", 1, true) ~= nil)
+
+print("=== one entry is one item ===")
+local one = ls({ "/one" })
+test("1 item, not 1 items", one:find("1 item", 1, true) ~= nil and one:find("1 items", 1, true) == nil, one)
+test("two are items", etc:find("2 items", 1, true) ~= nil, etc)
 
 print(string.format("\nResults: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end

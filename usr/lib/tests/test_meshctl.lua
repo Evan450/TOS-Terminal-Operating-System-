@@ -118,6 +118,8 @@ do
   test("unicast with no shared secret is REFUSED", id == nil)
   test("refusal explains how to fix it",
     type(err) == "string" and err:find("pair") ~= nil)
+  test("and carries its code, for `why`",
+    tostring(err):find("[E-502 ERR_NET_NO_SECRET]", 1, true) ~= nil, err)
   eq("refused send put nothing on the wire", 0, #sent)
 
   local id2 = ctl:send({ svc = "mail", to = "UNPAIRED", payload = { body = "hi" },

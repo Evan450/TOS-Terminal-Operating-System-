@@ -3537,6 +3537,8 @@ hit — and the E-number's last digit is that same beep count.
 | E-403 | `ERR_TIER_REQUIRED` | that needs a higher account tier | |
 | E-404 | `ERR_SAFE_MODE` | Safe Mode, or another boot profile, has that turned off | |
 | E-501 | `ERR_NET_NO_ANSWER` | a remote host did not answer (timed out, refused, or broke off) | |
+| E-502 | `ERR_NET_NO_SECRET` | there is no shared secret with that machine, so nothing was sent | |
+| E-503 | `ERR_NET_PAIR_FAILED` | pairing got no confirmation, so no secret was installed | |
 | E-601 | `ERR_PKG_NOT_FOUND` | no configured repo has a package by that name | |
 | E-602 | `ERR_PKG_BAD_NAME` | that is not a valid package name | |
 | E-603 | `ERR_PKG_DEPENDENCY` | something the package requires could not be satisfied | |

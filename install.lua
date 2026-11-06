@@ -1085,6 +1085,20 @@ local function biosDigest(code, srcDisk)
   return okH and digest or nil
 end
 
+--! Why a BIOS will not go on this EEPROM, or nil when it will. The dev
+--! branch's bios.lua is the unminified source, 13,608 bytes against a 4,096
+--! byte EEPROM; set() refused it with "not enough space", and that error ended
+--! an install whose files were already copied and verified. A release build
+--! minifies it to under 4 KB.
+local function biosRefusal(codeLen, eepromSize)   --[[TEST-EXTRACT]]
+  if type(eepromSize) ~= "number" or eepromSize <= 0 then return nil end
+  if codeLen > eepromSize then
+    return string.format("This BIOS is %d bytes and the EEPROM holds %d: it is the "
+      .. "unminified source, not a release build.", codeLen, eepromSize)
+  end
+  return nil
+end                                                --[[/TEST-EXTRACT]]
+
 local function offerBiosFlash(srcDisk)
   local biosPath = srcDisk .. "/bios.lua"
   if not fs.exists(biosPath) then return end
@@ -1095,6 +1109,18 @@ local function offerBiosFlash(srcDisk)
   if not h then warn("Could not read bios.lua"); print(); return end
   local biosCode = h:read("*a"); h:close()
   if not biosCode or #biosCode == 0 then warn("Empty bios.lua"); print(); return end
+
+  local eepromAddr = component.list("eeprom")()
+  local okS, size = false, nil
+  if eepromAddr then okS, size = pcall(component.invoke, eepromAddr, "getSize") end
+  local refusal = biosRefusal(#biosCode, okS and size or nil)
+  if refusal then
+    warn(refusal)
+    warn("Skipping the BIOS flash. The BIOS this machine has boots TOS too; flash")
+    warn("a release's bios.lua later if you want TOS's own (flash /bios.lua).")
+    print()
+    return
+  end
 
   local digest = biosDigest(biosCode, srcDisk)
   local fingerprint = digest and (digest:sub(1, 16) .. "...") or "(unavailable)"
@@ -1109,12 +1135,17 @@ local function offerBiosFlash(srcDisk)
   local typed = io.read() or ""
   if typed ~= "flash" then ok("Skipped BIOS flash"); print(); return end
 
-  local eeprom = component.list("eeprom")()
-  if eeprom then
-    local ep = component.proxy(eeprom)
-    ep.set(biosCode)
-    ep.setLabel("TOS BIOS")
-    ok("BIOS flashed! Label set to 'TOS BIOS'")
+  if eepromAddr then
+    local ep = component.proxy(eepromAddr)
+    -- The last step of an install that has already worked: a refusal here is
+    -- a warning, never the end of the installer.
+    local okSet, setErr = pcall(ep.set, biosCode)
+    if okSet then
+      pcall(ep.setLabel, "TOS BIOS")
+      ok("BIOS flashed! Label set to 'TOS BIOS'")
+    else
+      warn("The EEPROM refused the BIOS (" .. tostring(setErr) .. "); it was left as it was.")
+    end
   else warn("No EEPROM found") end
   print()
 end

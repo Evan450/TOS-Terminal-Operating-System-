@@ -478,6 +478,7 @@ function meshctl:send(opts)
     if unicast then
       return nil, "no shared secret with " .. tostring(opts.to):sub(1, 8)
         .. "... — pair first (net pair) or allow plaintext explicitly"
+        .. "  [E-502 ERR_NET_NO_SECRET]"
     end
     return nil, "broadcasts can't be sealed — allow plaintext explicitly"
   end

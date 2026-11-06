@@ -468,7 +468,7 @@ function M.sumRail(S, text)
     local files = S.browser.files or {}
     local n = #files
     if files[1] and files[1].name == ".." then n = n - 1 end
-    txt = n .. " items"
+    txt = n .. (n == 1 and " item" or " items")
     if S.browser.freeStr then txt = txt .. " · " .. S.browser.freeStr .. " free" end
   end
   ui.drawRail(S.D, S.T, S.SUM_ROW, S.W, { { label = txt } })

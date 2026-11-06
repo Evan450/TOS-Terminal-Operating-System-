@@ -847,6 +847,22 @@ local FAILURES = {
       { "Fix: `internet` shows whether the card can reach the network;", "fix" },
       { "then try again.", "fix" },
     } },
+  { sym = "ERR_NET_NO_SECRET", lines = {
+      { "Nothing goes to a trusted machine unsealed, and this one has no", "err" },
+      { "shared secret with it yet, so nothing was sent.", "err" },
+      { "Fix: `net trust <address> full` on BOTH machines agrees one by", "fix" },
+      { "itself when they can hear each other. For one you reach only", "fix" },
+      { "through others, `net pair start` there and the `net pair` line", "fix" },
+      { "it prints, here: pairing crosses the mesh.", "fix" },
+    } },
+  { sym = "ERR_NET_PAIR_FAILED", lines = {
+      { "Pairing sent its request and no confirmation came back, so no", "err" },
+      { "secret was installed on either side.", "err" },
+      { "It is one of: a mistyped code, a window that closed (it lasts", "dim" },
+      { "five minutes), or a machine that cannot be reached.", "dim" },
+      { "Fix: `net pair start` on the other machine again, then type the", "fix" },
+      { "line it prints here. Both must already trust each other.", "fix" },
+    } },
   { sym = "ERR_PKG_NOT_FOUND", lines = {
       { "No configured repo lists a package by that name.", "err" },
       { "Fix: `pkg search <word>` lists what the repos offer, and", "fix" },

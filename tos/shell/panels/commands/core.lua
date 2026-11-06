@@ -703,17 +703,40 @@ return function(C, S, deps)
       local okD, txt = pcall(os.date, "%Y-%m-%d %H:%M", math.floor(ms / 1000))
       return okD and txt or "-"
     end
+    --! The Name column is as wide as the longest name, from 24 up to what
+    --! the screen holds. It was a fixed 24 that cut every longer file name
+    --! there, silently: /etc listed "component_caps.cfg.examp", a name
+    --! nobody could type back. Only a name too long for the screen is cut
+    --! now, and it ends in "~" to say so. (test_ls_flags.lua)
+    local function shown(n)
+      if n:sub(-1) == "/" then return "[" .. n:sub(1, -2) .. "]" end
+      return n
+    end
+    local widest = 24
+    for _, n in ipairs(e) do widest = math.max(widest, #shown(n)) end
+    local room = (tonumber(S.W) or 80) - 11 - (long and 18 or 0)
+    local nameW = math.max(24, math.min(widest, room))
+    local function fit(s)
+      if #s <= nameW then return s end
+      local cut = nameW - 1
+      -- never split a UTF-8 character
+      while cut > 0 and (s:byte(cut + 1) or 0) >= 0x80 and (s:byte(cut + 1) or 0) < 0xC0 do
+        cut = cut - 1
+      end
+      return s:sub(1, cut) .. "~"
+    end
+    local row = " %-" .. nameW .. "s %8s"
     if long then
-      o(string.format(" %-24s %8s  %s", "Name", "Size", "Modified"), T.title)
-      o(string.rep("-", 52), T.border)
+      o(string.format(row .. "  %s", "Name", "Size", "Modified"), T.title)
+      o(string.rep("-", nameW + 28), T.border)
     else
-      o(string.format(" %-24s %8s", "Name", "Size"), T.title)
-      o(string.rep("-", 34), T.border)
+      o(string.format(row, "Name", "Size"), T.title)
+      o(string.rep("-", nameW + 10), T.border)
     end
     for _, n in ipairs(e) do
       local line, col
       if n:sub(-1) == "/" then
-        line = string.format(" %-24s %8s", "["..n:sub(1,-2).."]", "<DIR>")
+        line = string.format(row, fit(shown(n)), "<DIR>")
         col = T.dir or T.highlight
       else
         local sz = F.size(F.join(p, n))
@@ -721,15 +744,16 @@ return function(C, S, deps)
         if n:match("%.lua$") then col = T.file_lua or T.file_exec or T.highlight
         elseif n:match("%.cfg$") or n:match("%.conf$") then col = T.file_cfg or T.warning
         elseif n:match("%.log$") then col = T.file_log or T.dim end
-        line = string.format(" %-24s %8s", n:sub(1,24), fmtSz(sz))
+        line = string.format(row, fit(n), fmtSz(sz))
       end
       if long then line = line .. "  " .. modified(n) end
       o(line, col)
     end
+    local count = #e .. (#e == 1 and " item" or " items")
     if hidden > 0 then
-      o(#e .. " items (" .. hidden .. " hidden: ls -a shows them)", T.dim)
+      o(count .. " (" .. hidden .. " hidden: ls -a shows them)", T.dim)
     else
-      o(#e .. " items", T.dim)
+      o(count, T.dim)
     end
   end
   C.dir = C.ls
@@ -1050,7 +1074,7 @@ return function(C, S, deps)
       end
     elseif sub == "empty" then
       local ok2, n = trashMod.empty(sess)
-      if ok2 then o("Emptied " .. tostring(n) .. " items.", T.highlight)
+      if ok2 then o("Emptied " .. tostring(n) .. (n == 1 and " item." or " items."), T.highlight)
       else o(tostring(n or "empty failed"), T.error) end
     elseif sub == "restore" then
       -- (v1.4.0 consolidation: was the standalone `restore` command —

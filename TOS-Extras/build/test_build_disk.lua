@@ -497,18 +497,11 @@ do
     --! files no longer differ fails too, so the signing that empties the
     --! reason also empties the list.
     local PENDING_RESIGN = {
-      -- The operator re-signed the pack on 2026-10-31 at 22:36, minified the
-      -- way the release is. Name a package here when a fix to it lands ahead
-      -- of the next signing.
-      ["cluster-master"] = "1.1.0: the CLI runs, through clusterd's ipc endpoint",
-      ["cluster-manager"] = "1.3.0: the CLI runs, through the daemon's ipc endpoint",
-      ["cluster-storage"] = "1.0.1: it installs on a fresh machine",
-      ["rc-pilot"] = "1.3.0: rc hears its robot, and `rc scan` finds one",
-      ["stock"] = "1.0.3: typing a threshold replaces the one shown",
-      ["calc"] = "2.0.2: typing at a prompt replaces its default",
-      ["warhead"] = "1.0.3: typing at a prompt replaces its default",
-      ["write"] = "1.1.2: typing at a prompt replaces its default",
-      ["tape"] = "2.3.2: a restore that failed says so, and goes to your own home",
+      -- The operator re-signed the pack on 2026-11-06 and published it at
+      -- 03:44 UTC: calc 2.0.2, cluster-manager 1.3.0, cluster-master 1.1.0,
+      -- cluster-storage 1.0.1, rc-pilot 1.3.0, stock 1.0.3, tape 2.3.2,
+      -- warhead 1.0.3 and write 1.1.2 are what programs.cfg serves. Name a
+      -- package here when a fix to it lands ahead of the next signing.
     }
 
     if nShipped == 0 then

@@ -156,6 +156,7 @@ current = "A"
 local ok2, err2 = CA.connect(ADDR.B, "WRONGCODEWRONGCODEWRONGX", 1)
 test("wrong code -> no pair", ok2 == false)
 test("wrong code -> explains", type(err2) == "string" and err2:find("confirmation") ~= nil, err2)
+test("...and carries its code, for `why`", tostring(err2):find("[E-503 ERR_NET_PAIR_FAILED]", 1, true) ~= nil, err2)
 
 -- ── 3. No window open: init dropped, sender times out ──────────────
 current = "B"

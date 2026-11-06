@@ -597,6 +597,8 @@ Same day, vault and deploy (both touched that day): E-305 ERR\_VAULT\_UNLOCK, ta
 
 2026-10-16, federated slice 2's floor: E-606 ERR\_PKG\_UNTRUSTED\_SOURCE. Same day, the rest of pkg's install and upgrade gates: E-607 unverified (no hashes), E-608 hash mismatch, E-609 a signature that does not verify, E-610 `pkg trust require on`, E-611 the wrong publisher (a pin, or an upgrade's key change), E-612 a protected target, E-613 a conflict (test\_pkg\_refusal\_codes.lua drives each through the real pkg.install). Still untagged: the network layer proper, drive format/mount failures, hardware.
 
+2026-11-06, the network layer's two refusals that this week's mesh work touched: E-502 ERR\_NET\_NO\_SECRET (net.send and the mesh, with nothing sent) and E-503 ERR\_NET\_PAIR\_FAILED (no confirmation). `why` explains both and says pairing crosses the mesh. Still untagged: drive format/mount failures, whose text is blockfs's and would cost a re-sign, and hardware.
+
 ### A prefab base designer
 
 *Idea / far future* · from the round *Operator notes from testing the published build (2026-10-30)*

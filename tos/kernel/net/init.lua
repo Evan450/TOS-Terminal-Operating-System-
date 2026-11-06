@@ -1368,7 +1368,7 @@ function net.verifyPeer(addr, timeout, force)
   local secret = trustMgr._internalGetSecret and
                  trustMgr._internalGetSecret(addr, net._trustToken) or nil
   if not secret or secret == "" then
-    return false, "no shared secret with peer"
+    return false, "no shared secret with peer  [E-502 ERR_NET_NO_SECRET]"
   end
 
   -- Fresh nonce per challenge — replay protection. salt() pulls
