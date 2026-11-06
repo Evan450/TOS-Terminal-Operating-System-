@@ -326,8 +326,11 @@ function M.run(ctx)
     openLiveTab    = function(label, fn, _interval)
       local okL, buf = pcall(fn)
       if okL and type(buf) == "table" then viewBuffer(buf, label) end
-      o("(one-shot: live views need the TUI — 'watch " .. tostring(label)
-        .. "' repeats it here)", D.c("dim"))
+      -- It said "'watch " .. label .. "' repeats it here", and watch's label
+      -- is "watch: ps": `watch ps` ended "'watch watch: ps' repeats it
+      -- here", a command that is not one. (test_cli_live_once.lua)
+      o("(Once: a live view needs the full interface, 'tui'. Run it again to"
+        .. " refresh.)", D.c("dim"))
     end,
 
     -- The editor is genuinely a full-screen, tab-hosted program. Rather

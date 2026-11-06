@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**51 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**49 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 27 | Planned or under investigation. Most contributions belong here. |
+| Planned | 25 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (9) · [The project](#the-project) (6)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -218,6 +218,8 @@ UPDATES FROM REPOS, BUILT 2026-11-05, ahead of the rest because it was a hole, n
 Still not built: known repos (an upgrade has no floor, so it only reads configured ones), the winner order, private copies, mirror consensus.
 
 FOUND ON THE WAY, the operator's call: a fresh machine does not trust the Optional Utilities key, so everything fetched from the official repo says "valid, but the key was not trusted at install time". Shipping it trusted would make that read "trusted", and would make the key the one that decides what installs without asking.
+
+ANSWERED 2026-11-05: the installer asks whether to trust the Optional Utilities key, showing its fingerprint, and the operator decides (8bda89c). Seen through real GitHub on 2026-11-06: a signed install answered yes lists discover at 335F F7B2 43C5 1D97.
 
 ### Get listed in `oppm list`
 
@@ -460,20 +462,6 @@ SMALLER, NOTED IN PASSING.
 - DONE 2026-11-01: the 297 test files that reported failure by marker alone exit non-zero now. test\_install\_preinit.lua is the one left: it carries the operator's uncommitted edit, so it was not touched.
 - check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
 
-### Noted in that pass, not fixed
-
-*Planned* · from the round *The local worker's command pass (2026-11-06)*
-
-NOTED IN THAT PASS, NOT FIXED. None loses data.
-
-- TOS has no `&&` (the survey's SHELL LEXER + PARSER), and a command handed one ignores it with the rest of the line: `whoami && echo X` prints root and nothing else, without a word. A line containing &amp;&amp; or || could say the shell runs one command at a time.
-- Long lines at the command line wrap at about 72 columns on an 80-column screen (sudo's 78-character usage wraps; `screen` says 80x25), probably the auto resolution. Wrapping at words is right at any width; the gap itself is unexplained.
-- `verify` takes 60-180 s for 171 files on the runner's T3 machine. It is live now; whether it can be faster was not looked at.
-- `inventory` cuts item names at 24 characters, the last of the cut-name lists. Shown only, never typed back.
-- `tape`'s not-installed text indents one line by one space and the rest by two or more.
-
-566 cases on a booted machine (every command bare, with a bad argument and a bad flag, and every `cmd sub` the MANUAL names) gave no Lua error. Fixed that day: see the CHANGELOG round "Every command, run on a real machine". The scripts were throwaway, and the idea is worth keeping: `build/headless-session.py` with `--machines 2` gets a modem, and a scan for "attempt to", ".lua:" and ERR\_ is one regex. What was left, by choice:
-
 ### The shadow buffer is tuned for TUI redraw
 
 *Planned* · from the round *Log wall / streaming-console appliance (2026-08-10)*
@@ -577,7 +565,7 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 
 1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). DONE 2026-11-01 (kernel/ipc.lua); the cluster CLIs use it. rc-pilot hearing its robot still waits on its own decision.
 2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). DONE 2026-11-01: 33 of 167 files carry floor = true, test\_manifest\_floor.lua proves them closed under require, and build/floorboot.py deletes the other 134 and boots: password set, a file written and read, doctor run. 472 KB, 488 KB on a managed disk, so the floor fits the 1 MB drive a full install is 330 KB over. The UI and the strip itself come later.
-3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). THE LOG HALF DONE 2026-11-01: sandbox refusals reach `log` once per program and refusal, capped so a program cannot fill it. A mode that logs instead of refusing is the other half, and how that is exposed is the operator's.
+3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). THE LOG HALF DONE 2026-11-01: sandbox refusals reach `log` once per program and refusal, capped so a program cannot fill it. A mode that logs instead of refusing is the other half, and how that is exposed is the operator's. DONE 2026-11-05, the operator's answer "build it, root-only, per package": `pkg audit <pkg>` runs a package under a sandbox that records what it reaches for instead of refusing (0dbc1ee).
 4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). DONE 2026-11-01 in stage 2 (kernel/recovery.lua), seen restoring a machine that could not boot.
 5. A DRIVER REGISTRY WITH PER-DEVICE PROBING (survey 4). PARKED 2026-11-01 until a second driver exists: see its entry.
 6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). DONE 2026-11-01: kernel/policy.lua, failing closed.
@@ -590,12 +578,6 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 13. FAR: RUN-THIS-ONCE CONFINEMENT (survey 11), "ASK" AS A THIRD STATE (KittenOS), LINE DISCIPLINES (survey 19), the LOG WALL appliance (settle its local-or-feed question first).
 
 NOT ON THIS LIST, because they are the operator's to decide, not to build: the boot battery in CI (it runs on the headless runner today; the CI host is the open question), and PUT THE COMPAT NUMBER IN THE README (an editorial call).
-
-### OpenOS's own bin/ does not run, and the compat number should say so
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-OPENOS'S OWN bin/ DOES NOT RUN, AND THE COMPAT NUMBER SHOULD SAY SO. Found 2026-11-01, running Reference/OpenOS/openos/bin under `run`: cat and grep stop at require("tty") ("not on the allowed list"), ls and edit at a nil loadfile, and lua at /lib/core/lua\_shell.lua. Not a bug to chase, since TOS replaces those programs with its own commands, and the two corpora below are third-party code. But it bounds the claim: a program written against OpenOS's tty or loadfile will not load. If a real program ever needs it, the cheap half is a tty shim over compat.term and a sandbox loadfile behind the `load` cap.
 
 ### Error registry: the rest of the migration
 

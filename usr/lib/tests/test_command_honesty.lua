@@ -147,6 +147,24 @@ do
   test("one word that is not is the pattern", said:find("Searching / ", 1, true) ~= nil, said)
   test("and finds it from the top", said:find("/tmp/sub/deep/notes.md", 1, true) ~= nil, said)
   test("a directory shows as one", run("find", "/tmp", "deep"):find("/tmp/sub/deep/", 1, true) ~= nil)
+
+  -- A wildcard was read as a Lua pattern, where a leading * is a literal
+  -- star: `find /etc -name *.example` found nothing beside two .example
+  -- files on the headless machine.
+  files["/tmp/sub/kiosk.cfg.example"] = "z"
+  said = run("find", "/tmp", "-name", "*.example")
+  test("-name *.example finds the .example file", said:find("/tmp/sub/kiosk.cfg.example", 1, true) ~= nil, said)
+  test("...and nothing that only contains the letters", not said:find("other.txt", 1, true), said)
+  said = run("find", "/tmp", "*.md")
+  test("a bare wildcard works the same", said:find("notes.md", 1, true) ~= nil and not said:find("example", 1, true), said)
+  said = run("find", "/tmp", "-name", "note?.md")
+  test("? is one character", said:find("notes.md", 1, true) ~= nil, said)
+  said = run("find", "/tmp", "-name", "*.ex")
+  test("a wildcard covers the whole name, not part of it", said:find("No matches", 1, true) ~= nil, said)
+  said = run("find", "/tmp", "-name", "d*")
+  test("a directory's name matches without its slash", said:find("/tmp/sub/deep/", 1, true) ~= nil, said)
+  said = run("find", "/tmp", "%.example$")
+  test("a Lua pattern written on purpose still works", said:find("kiosk.cfg.example", 1, true) ~= nil, said)
 end
 
 print("=== nothing else hands join a gsub count ===")

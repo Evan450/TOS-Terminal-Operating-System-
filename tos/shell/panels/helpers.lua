@@ -466,7 +466,11 @@ function M.expandBuf(S, rawBuf)
   -- time — the "'or' becomes 'o', 'r' off-screen" bug. Reserve a fixed 6
   -- columns on T2+ (enough for the gutter of any output up to 99,999
   -- lines) so a wrapped line always fits inside viewW without re-clipping.
-  local reserve = (S.tier and S.tier >= 2) and 6 or 0
+  --! Not at the command line, which draws no gutter: there the reserve
+  --! wrapped everything piped or reported 6 columns short, so sudo's
+  --! 78-character usage broke at 74 on an 80-column screen.
+  --! (test_expandbuf_cli.lua)
+  local reserve = (S.tier and S.tier >= 2 and not S.isCLI) and 6 or 0
   local wrapW = math.max(8, S.W - reserve)
   --! #MEM (pentest, Sep 2026) — a line that already fits is passed through
   --! as the SAME entry, not copied into a fresh { text, colour } table (nor

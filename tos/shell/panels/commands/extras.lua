@@ -603,10 +603,23 @@ return function(C, S, deps)
     local side = args[1] and (tonumber(args[1]) or args[1]) or nil
     local items = inv.list(side)
     if items then
-      o(string.format(" %-4s %-24s %s", "Slot", "Item", "Count"), T.title)
+      --! Item names whole where the screen allows, as ls and disk list do:
+      --! a fixed 24 cut "minecraft:diamond_pickaxe" to "minecraft:diamond_pickax"
+      --! without a mark. Too long for the screen ends in "~".
+      --! (test_inventory_names.lua)
+      local iw = 24
+      for _, item in ipairs(items) do
+        if item.count > 0 then iw = math.max(iw, #(item.name or "?")) end
+      end
+      iw = math.min(iw, math.max(24, (tonumber(W) or 80) - 14))
+      local function fit(s)
+        if #s <= iw then return s end
+        return s:sub(1, iw - 1) .. "~"
+      end
+      o(string.format(" %-4s %-" .. iw .. "s %s", "Slot", "Item", "Count"), T.title)
       for _, item in ipairs(items) do
         if item.count > 0 then
-          o(string.format(" %-4d %-24s %d", item.slot, (item.name or "?"):sub(1,24), item.count), T.fg)
+          o(string.format(" %-4d %-" .. iw .. "s %d", item.slot, fit(item.name or "?"), item.count), T.fg)
         end
       end
     else

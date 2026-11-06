@@ -470,6 +470,7 @@ return function(C, S, deps)
       o("  cmd1 | cmd2        Pipe output of cmd1 into cmd2", T.fg)
       o("  cmd > file         Redirect output to file", T.fg)
       o("  cmd >> file        Append output to file", T.fg)
+      o("  One command per line: there is no && or ||.", T.dim)
       o("", T.fg)
       o("Showing only what's installed here. 'man <topic>' for detail; MANUAL.md for the book.", T.dim)
     end
@@ -1494,6 +1495,18 @@ return function(C, S, deps)
       if pattern or F.isDirectory(rp(bare[1])) then root = rp(bare[1])
       else pattern = bare[1] end
     end
+    --! A pattern with * or ? is a wildcard over the whole name, as `find
+    --! -name` takes one everywhere else. It was read as a Lua pattern, where
+    --! a leading * is a literal star: `find /etc -name *.example` answered
+    --! "No matches found" beside two .example files on the headless machine.
+    --! A % still means a Lua pattern, so one written on purpose keeps
+    --! working; a plain word still finds every name containing it.
+    --! (test_command_honesty.lua)
+    local glob = pattern and pattern:find("[%*%?]") and not pattern:find("%", 1, true)
+    if glob then
+      local lua = pattern:gsub("[%^%$%(%)%.%[%]%+%-]", "%%%0")
+      pattern = "^" .. (lua:gsub("%*", ".*"):gsub("%?", ".")) .. "$"
+    end
     -- Validate the user-supplied pattern up front. Lua's string.match
     -- errors on malformed patterns like "%" or "[" — without this pcall
     -- a user typing `find -name "["` would propagate an error out of
@@ -1543,7 +1556,9 @@ return function(C, S, deps)
         local full = F.join(dir, (n:gsub("/$", "")))
         local isDir = n:sub(-1) == "/"
         local matched = false
-        if pattern then
+        if glob then
+          matched = (n:gsub("/$", "")):match(pattern) ~= nil
+        elseif pattern then
           local okA, ra = pcall(string.match, full, pattern)
           local okB, rb = pcall(string.match, n, pattern)
           matched = (okA and ra) or (okB and rb)
@@ -2528,8 +2543,12 @@ return function(C, S, deps)
 
     if sub == "list" or sub == "ls" then
       o("TOS standard shortcuts:", T.title)
-      for _, row in ipairs(K2.actions(S.who)) do
-        o(string.format("  %-9s %-14s %s", row.action, row.keys, row.help),
+      -- The keys column fits the longest binding: at 14 "Shift+Delete ^X"
+      -- ran into its own description. (test_keys_list.lua)
+      local rows, kw = K2.actions(S.who), 14
+      for _, row in ipairs(rows) do kw = math.max(kw, #row.keys) end
+      for _, row in ipairs(rows) do
+        o(string.format("  %-9s %-" .. kw .. "s  %s", row.action, row.keys, row.help),
           row.isDefault and T.fg or T.highlight)
       end
       o("", T.dim)

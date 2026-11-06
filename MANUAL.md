@@ -754,6 +754,8 @@ than two names.
 Supports pipes (`cmd1 | cmd2`), redirect (`> file`), append (`>> file`), input
 (`cat < file`, `grep word < file`), command
 history (up/down), and per-process environment variables (`env`, `export KEY=VAL`).
+It runs one command per line: there is no `&&`, `||` or `;`, and a line with
+`&&` or `||` outside quotes is refused rather than half-run.
 Unqualified program names resolve only against system bin dirs (`/bin`,
 `/usr/bin`, `/tos/shell`) and *safe* `PATH` entries — a disk under `/mnt` can't
 shadow a system binary.
@@ -2644,7 +2646,9 @@ stays as typed. A variable you want at every login belongs in your profile:
 Bring a background/stopped job to the foreground. *See also:* `bg`, `ps`.
 
 **find** — `find [path] <name-pattern>`
-Search for files by name under a path. *See also:* `grep`, `tree`.
+Search for files by name under a path. A pattern with `*` or `?` is a
+wildcard over the whole name (`find /etc *.cfg`, or `-name` as elsewhere); a
+plain word finds every name containing it. *See also:* `grep`, `tree`.
 
 **flash** — `flash <file> [--data]` **(root)**
 Write a new EEPROM (BIOS) image. *Danger:* a bad image can stop the machine

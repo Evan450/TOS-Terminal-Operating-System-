@@ -20,8 +20,14 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 131 rounds of work:
+Everything since v1.5.0, in 137 rounds of work:
 
+- [verify is quicker](#verify-is-quicker)
+- [&& and || are refused, not half-run](#and--are-refused-not-half-run)
+- [inventory shows item names whole](#inventory-shows-item-names-whole)
+- [The command line wraps at its full width](#the-command-line-wraps-at-its-full-width)
+- [keys and watch read right at the command line](#keys-and-watch-read-right-at-the-command-line)
+- [find takes wildcards](#find-takes-wildcards)
 - [kill tells the truth about an ended process](#kill-tells-the-truth-about-an-ended-process)
 - [Built-in commands print as they go](#built-in-commands-print-as-they-go)
 - [os.exit() leaves the Lua REPL](#osexit-leaves-the-lua-repl)
@@ -153,6 +159,30 @@ Everything since v1.5.0, in 131 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### verify is quicker
+
+`verify` no longer compiles a file whose hash already matched the release: that file is byte for byte what shipped. 171 files took 69 seconds instead of 81 on the test machine; a changed file is still caught.
+
+### && and || are refused, not half-run
+
+A line with `&&` or `||` outside quotes is refused with a reason instead of half-run. TOS has neither: `whoami && echo X` ran `whoami` alone without a word, and `a || b` ran as a pipe, so `b` ran when it should not have. `help` and the manual say so.
+
+### inventory shows item names whole
+
+`inventory` shows item names whole where the screen allows. It cut every name at 24 characters without a mark, so `minecraft:diamond_pickaxe` lost its last letter.
+
+### The command line wraps at its full width
+
+The command line wraps piped and reported output at its own width. It kept six columns back for a line-number gutter it never draws, so a 78-character line broke in two on an 80-column screen.
+
+### keys and watch read right at the command line
+
+`keys` lines its bindings up: "Shift+Delete ^X" ran into its own description. At the command line `watch` and the other live views end with a hint that is a real instruction ("Run it again to refresh"), not "watch watch: ps", which was not a command.
+
+### find takes wildcards
+
+`find` takes wildcards: `find /etc -name *.example` finds the `.example` files. A pattern with `*` or `?` was read as a Lua pattern, where a leading `*` is a literal star, so it found nothing. A plain word still finds every name containing it.
 
 ### kill tells the truth about an ended process
 

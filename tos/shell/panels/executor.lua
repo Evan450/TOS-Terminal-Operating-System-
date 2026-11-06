@@ -684,8 +684,35 @@ function M.build(S, deps)
     return stdout, beforeRead
   end
 
+  --! Whether a line chains commands with && or || outside quotes. TOS's
+  --! shell has neither (the survey's SHELL LEXER + PARSER), and both went
+  --! wrong without a word: `whoami && echo X` ran whoami, which ignored the
+  --! rest, and `a || b` split at its bars into a pipe, so b ran whatever a
+  --! did, the opposite of ||. (test_no_andor.lua)
+  local function chains(input)
+    local q = nil
+    for i = 1, #input - 1 do
+      local ch = input:sub(i, i)
+      if q then
+        if ch == q then q = nil end
+      elseif ch == '"' or ch == "'" then
+        q = ch
+      else
+        local two = input:sub(i, i + 1)
+        if two == "&&" or two == "||" then return two end
+      end
+    end
+    return nil
+  end
+
   local function exec(input)
     S.lastOut = nil
+    local chain = chains(input)
+    if chain then
+      S.lastOut = { "TOS runs one command per line, and has no " .. chain
+        .. ". Type the commands one at a time.", T.error }
+      return
+    end
     local hasPipe = input:find("|", 1, true)
     local hasRedirect = input:find("[>]") or input:find("<")
 

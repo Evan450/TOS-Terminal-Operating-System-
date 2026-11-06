@@ -3215,6 +3215,15 @@ function kernel.verifySystem(printFn)
             if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
             goto continue_verify
           end
+          --! The hash matched, so this is byte for byte the file the release
+          --! shipped, and that compiled when it was built: the syntax check
+          --! below would only compile it again. On the headless machine that
+          --! took `verify` from 81 s to 69 s for 171 files; reading and
+          --! hashing each one is the rest. (test_verify_fast.lua)
+          printFn("  OK  " .. file.path, cOK)
+          ok = ok + 1
+          if type(collectgarbage) == "function" then pcall(collectgarbage, "collect") end
+          goto continue_verify
         end
         -- #REV — only Lua files get a SYNTAX check. The manifest also lists
         -- data files (man pages /usr/man/*.man, configs, etc.); running
