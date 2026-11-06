@@ -162,11 +162,13 @@ Local sources only (the built-in repo roots, mounted media, `extraRoots`). No ne
 - An OPPM `programs.cfg` entry has no `repos` field: only native manifests carry hints.
 - `recommends` in table form is not accepted yet.
 - A package's own `repos` are learned but not yet used to check it for updates (slice 3).
-- `pkg upgrade` and `pkg outdated` do not look at known repos.
+- `pkg upgrade` and `pkg outdated` do not look at known repos. (Configured repos since 2026-11-05: slice 3.)
 
 ### Slice 3 — resolution
 
-The four-step winner order; upgrading a shared dependency when that is the winning resolution; private copies; consensus and freshness checks across mirrors; update checks against a package's own `repos`.
+**Built 2026-11-05:** update checks against configured repos. `pkg outdated` lists a newer version a configured repo serves, and `pkg upgrade` fetches it to staging and runs the ordinary upgrade on exactly that copy, so the signature, publisher and contradiction gates all apply. Known repos are not read: an upgrade has no floor. Test: `test_pkg_upgrade_remote`.
+
+Still to build: the four-step winner order; upgrading a shared dependency when that is the winning resolution; private copies; consensus and freshness checks across mirrors; update checks against a package's own `repos`.
 
 ### Slice 4 — discovery and revocation
 

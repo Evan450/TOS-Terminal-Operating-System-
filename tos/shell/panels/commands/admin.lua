@@ -698,7 +698,7 @@ return function(C, S, deps)
     elseif sub == "outdated" or sub == "updates" then
       local list = pkgMod.outdated()
       if #list == 0 then
-        o("Everything is up to date (against what's mounted right now).", T.highlight)
+        o("Everything is up to date, against what's mounted and the repos you added.", T.highlight)
         o("Insert another disk and re-run to check against it too.", T.dim)
         return
       end
@@ -706,7 +706,7 @@ return function(C, S, deps)
       for _, u in ipairs(list) do
         o(string.format(" %-20s %-10s %-10s %s", u.name:sub(1, 20),
           tostring(u.from):sub(1, 10), tostring(u.to):sub(1, 10),
-          tostring(u.root or "?")), T.fg)
+          u.remote and ("repo " .. tostring(u.repo)) or tostring(u.root or "?")), T.fg)
       end
       o("", T.dim)
       o("pkg upgrade <name>   or   pkg upgrade --all --yes", T.dim)
@@ -776,7 +776,8 @@ return function(C, S, deps)
 
       local okN, failN = 0, 0
       for _, u in ipairs(todo) do
-        local ok2, res = pkgMod.upgrade(u.name,
+        local how = u.remote and pkgMod.upgradeRemote or pkgMod.upgrade
+        local ok2, res = how(u.name,
           { session = helpers.sessionOf(S), force = force,
             allowUnverified = allowUnverified, allowUnsigned = allowUnsigned })
         if ok2 then

@@ -120,6 +120,13 @@ local function validPkgName(n)
 end
 pkgremote.validPkgName = validPkgName
 
+--- Is there a card that can reach a repo right now? Asked first by what
+--- looks at repos in passing, so a machine with none says nothing.
+function pkgremote.online()
+  local im = inet()
+  return im ~= nil and im.available() == true
+end
+
 --- Load configured repos. Returns an array of { name, url, host }.
 --- A malformed entry is dropped rather than failing the whole file: one
 --- bad line should not make every other repo unreachable.

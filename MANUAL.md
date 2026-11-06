@@ -1381,7 +1381,7 @@ both fields, and `--force` goes past them.
 ### 7.4 Updating packages
 
 ```
-pkg outdated                  what has a newer version on the inserted disks
+pkg outdated                  what has a newer version on a disk or a repo you added
 pkg upgrade <name> [<name>…]  replace those
 pkg upgrade --all --yes       replace everything with a newer version
 pkg upgrade <name> --dry-run  print the plan, change nothing

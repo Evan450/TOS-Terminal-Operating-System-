@@ -663,22 +663,60 @@ end
 --! Step 3 is why this cannot be a flag on install: the set of files to
 --! delete is the difference between two manifests.
 
---- Packages with a newer version available. Pure w.r.t. side effects.
---- @return { { name=, from=, to=, dir=, root= }, ... }, sorted by name
+--- Packages with a newer version available: on a mounted disk, or, with an
+--- internet card, in a configured repo (`opts.remote = false` skips repos).
+--- A repo's copy carries remote = true and its repo's name. Pure w.r.t. side
+--- effects, the repo indexes aside.
+--- @return { { name=, from=, to=, dir=, root= | repo=, remote= }, ... }, by name
 function pkg.outdated(opts)
   opts = opts or {}
-  local out = {}
-  for _, e in ipairs(pkg.listAllAvailable() or {}) do
+  local out, at = {}, {}
+  local function offer(e, entry)
     local cur = installed[e.name]
-    if cur and e.version and cur.version then
-      if pkg.compareVersion(e.version, cur.version) > 0 then
-        out[#out + 1] = { name = e.name, from = cur.version, to = e.version,
-                          dir = e.dir, root = e.root }
-      end
+    if not (cur and e.version and cur.version) then return end
+    if pkg.compareVersion(e.version, cur.version) <= 0 then return end
+    local i = at[e.name]
+    if i and pkg.compareVersion(e.version, out[i].to) <= 0 then return end
+    entry.name, entry.from, entry.to = e.name, cur.version, e.version
+    if i then out[i] = entry else out[#out + 1] = entry; at[e.name] = #out end
+  end
+  for _, e in ipairs(pkg.listAllAvailable() or {}) do
+    offer(e, { dir = e.dir, root = e.root })
+  end
+  --! A package fetched from a repo was never offered an update: this looked
+  --! at mounted disks only, and `pkg upgrade` could not fetch. Configured
+  --! repos only, the same ones `pkg remote` lists.
+  local rm = opts.remote ~= false and remoteMod() or nil
+  if rm and rm.online and rm.online() then
+    for _, e in ipairs(pkg.listRemoteAvailable() or {}) do
+      offer(e, { repo = e.repo, remote = true })
     end
   end
   table.sort(out, function(a, b) return a.name < b.name end)
   return out
+end
+
+--- Upgrade from a configured repo: fetch to staging, then the ordinary upgrade
+--- on exactly that copy, with every gate it runs (signature first, the same
+--- publisher, contradictions), and the staging gone afterwards. Configured
+--- repos only: one nobody configured is held to the floor in installRemote,
+--- which an upgrade does not have, so fetch is not given discoveredPolicy.
+--- @tier admin
+function pkg.upgradeRemote(name, opts)
+  opts = opts or {}
+  local g, gErr = adminGate(opts)
+  if not g then return false, gErr end
+  if not installed[name] then return false, "not installed: " .. tostring(name) end
+  local rm, rmErr = remoteMod()
+  if not rm then return false, rmErr end
+  local dir, err = rm.fetch(name, {})
+  if not dir then return false, "could not fetch " .. tostring(name) .. ": " .. tostring(err) end
+  local o = {}
+  for k, v in pairs(opts) do o[k] = v end
+  o._candidate = { dir = dir, root = dir:match("^(.*)/[^/]+$") }
+  local ok, res = pkg.upgrade(name, o)
+  rm.cleanup(dir)
+  return ok, res
 end
 
 --- Turn a package's files under /usr into one archive (kernel/pkgfs.lua).
@@ -723,7 +761,14 @@ function pkg.upgrade(name, opts)
   local cur = installed[name]
   if not cur then return false, "not installed: " .. tostring(name) end
 
-  local pkgDir, root = pkg.findInRepos(name, opts.extraRoots)
+  -- upgradeRemote hands over the copy it staged. findInRepos would search the
+  -- built-in roots first, where an older copy on a disk would win.
+  local pkgDir, root
+  if type(opts._candidate) == "table" then
+    pkgDir, root = opts._candidate.dir, opts._candidate.root
+  else
+    pkgDir, root = pkg.findInRepos(name, opts.extraRoots)
+  end
   if not pkgDir then
     return false, "no source for " .. name .. " on any repo or inserted disk"
   end

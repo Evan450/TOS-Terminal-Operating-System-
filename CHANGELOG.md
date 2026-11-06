@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 115 rounds of work:
+Everything since v1.5.0, in 116 rounds of work:
 
+- [A package from a repo is offered its updates](#a-package-from-a-repo-is-offered-its-updates)
 - [The mesh reaches a machine you have never heard](#the-mesh-reaches-a-machine-you-have-never-heard)
 - [TOS boots from a raw drive](#tos-boots-from-a-raw-drive)
 - [jbod create works](#jbod-create-works)
@@ -137,6 +138,10 @@ Everything since v1.5.0, in 115 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A package from a repo is offered its updates
+
+A package installed from a repo was never offered an update: `pkg outdated` only looked at mounted disks, and `pkg upgrade` could not fetch. With an internet card, both now look at the repos you added, and an upgrade from one runs every check an upgrade from a disk does: the signature first, the same publisher, and what depends on it. Repos you never added are not read.
 
 ### The mesh reaches a machine you have never heard
 

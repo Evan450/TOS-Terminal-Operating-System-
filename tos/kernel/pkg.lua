@@ -1627,7 +1627,7 @@ install installByName installFromFloppy installRemote installWithDeps
 knownRepos listAllAvailable listRemoteAvailable listRepo outdated plan
 planByName removeRepo repoRoots repos runInstaller runtimeRefusal
 searchRemote signPackage signingKey trustAdd trustDiscovered trustList
-trustRemove trustRequire trustRequired uninstall upgrade
+trustRemove trustRequire trustRequired uninstall upgrade upgradeRemote
 verifyLicenseKey
 ]]):gmatch("%S+") do OPS_NAMES[n] = true end
 pkg._OPS_NAMES = OPS_NAMES
