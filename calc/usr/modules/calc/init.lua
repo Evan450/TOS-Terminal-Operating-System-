@@ -182,21 +182,22 @@ if O=="key_down"then return"key",P,bp end;if O=="interrupted"then return"key",17
 if O=="tos_focus"then ab()elseif
 O=="clipboard"and type(P)==z then return"paste",P elseif O=="touch"or O=="drag"then
 return"touch",P,bp,bq elseif O==M then return M,P,bp,bq end end end
-local function t(P,bp,O)local bq=tostring(bp or"")local br=0;local bs=k;k="EDIT"
-while true do
-l=P.." "..bq.."_"if O and#O>0 then q=table.concat(O,"  ")X=nil end
-ab()local bv,bt,bu=ac()
-if bv=="paste"then bq=bq..bt:gsub(I," ")elseif bv=="key"then if bu==28 then k=bs
-l=nil;q=nil;return bq end
-if y(bt,bu)then k=bs;l=nil;q=nil;return nil end
-if bu==14 then bq=bq:sub(1,-2)elseif
-(bu==200 or bu==208)and O and#O>0 then
-br=(bu==208)and(br%#O+1)or((br-2)%#O+1)bq=O[br]elseif bt and bt>=32 and bt<127 then
-bq=bq..string.char(bt)end end end end
-local function ak(bp,bq,O,P)
-while true do local bs=t(bp,tostring(bq))if bs==nil then return nil end
-local br=tonumber(bs)if
-br and(not O or br>=O)and(not P or br<=P)then return br end;ae()
+local function t(P,bp,O,bq)local br=tostring(bp or"")local bs=br~=""and not bq;local bt=0;local bu=k
+k="EDIT"
+while true do l=P.." "..br.."_"if O and#O>0 then q=table.concat(O,"  ")
+X=nil end;ab()local bx,bv,bw=ac()
+if bx=="paste"then br=(bs and""or br)..
+bv:gsub(I," ")bs=false elseif bx=="key"then
+if bw==28 then k=bu;l=nil;q=nil;return br end;if y(bv,bw)then k=bu;l=nil;q=nil;return nil end
+if bw==14 then br=br:sub(1,-2)elseif(
+bw==200 or bw==208)and O and#O>0 then
+bt=
+(bw==208)and(bt%#O+1)or((bt-2)%#O+1)br=O[bt]elseif bv and bv>=32 and bv<127 then br=(bs and""or br)..
+string.char(bv)end;bs=false end end end
+local function ak(bp,bq,O,P,br)
+while true do local bt=t(bp,tostring(bq),nil,br)if bt==nil then return nil end
+local bs=tonumber(bt)if
+bs and(not O or bs>=O)and(not P or bs<=P)then return bs end;ae()
 f("Enter a number".. (O and
 (" from "..O.." to "..P)or"")..".","err")end end
 local function al(O,P,bp)
@@ -432,7 +433,7 @@ if br=="key"then if bq==28 then break end;if y(bp,bq)then c.colw[e.c]=nil;k=P;l,
 nil;return end
 if bq==203 then O=math.max(1,O-1)elseif
 bq==205 then O=math.min(60,O+1)elseif bp and bp>=48 and bp<=57 then
-local bs=ak("Enter column width (1..60):",string.char(bp),1,60)if bs then O=math.floor(bs)end;break end end end;k=P;l,q=nil,nil
+local bs=ak("Enter column width (1..60):",string.char(bp),1,60,true)if bs then O=math.floor(bs)end;break end end end;k=P;l,q=nil,nil
 if O==c.gwidth then c.colw[e.c]=nil else c.colw[e.c]=O end;h()end
 g["col.reset"]=function()c.colw[e.c]=nil;h()end
 g["ws.erase"]=function()c=u.new()W=u.evaluator(c)i=nil;af=false;an=false

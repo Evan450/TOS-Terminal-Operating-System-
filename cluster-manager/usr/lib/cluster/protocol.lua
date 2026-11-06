@@ -26,7 +26,7 @@ a.workers_busy or 0,queue_depth=a.queue_depth or 0,assignments_running=a.assignm
 a.compute_capable and true or false,storage_used=a.storage_used or 0,errors_last_min=a.errors_last_min or 0,uptime=a.uptime or 0}end
 function l.payload.assign(a)a=a or{}
 return
-{assignment_id=a.assignment_id,job_id=a.job_id,priority=a.priority or 5,deadline=a.deadline or 0,retry_policy=a.retry_policy or"safe",tasks_inline=a.tasks_inline,tasks_ref=a.tasks_ref,inputs_inline=a.inputs_inline,inputs_ref=a.inputs_ref,result_sink=
+{assignment_id=a.assignment_id,job_id=a.job_id,priority=a.priority or 5,deadline=a.deadline or 0,retry_policy=a.retry_policy or"safe",tasks_inline=a.tasks_inline,tasks_ref=a.tasks_ref,store_addr=a.store_addr,inputs_inline=a.inputs_inline,inputs_ref=a.inputs_ref,result_sink=
 a.result_sink or"inline",result_prefix=a.result_prefix}end
 function l.payload.result(a)a=a or{}
 return

@@ -92,12 +92,13 @@ local an=t and
 an="F1 help · F2 save · F3 print · F5 pages · "..F().." quit"end
 h.fill(1,n,i,1," ",e.bg,e.border)h.set(2,n,z(an,i-2),e.bg,e.border)end
 local function W()S()h.clear()ad()if t then af()else ae()end;ag()end
-local function ah(an,ao)local ap=tostring(ao or"")
+local function ah(an,ao)local ap=tostring(ao or"")local aq=ap~=""
 while true do
 h.fill(1,n-1,i,1," ",e.fg,e.bg)
-h.set(1,n-1,z(an.." "..ap.."_",i),e.title,e.bg)local aq,ar=B()if ar==w.ENTER then return ap end;if E(aq,ar)then return nil end;if
-ar==w.BACK then ap=ap:sub(1,-2)elseif aq and aq>=32 and aq<127 then
-ap=ap..string.char(aq)end end end
+h.set(1,n-1,z(an.." "..ap.."_",i),e.title,e.bg)local ar,as=B()if as==w.ENTER then return ap end;if E(ar,as)then return nil end
+if
+as==w.BACK then ap=ap:sub(1,-2)elseif ar and ar>=32 and ar<127 then if aq then ap=""end;ap=ap..
+string.char(ar)end;aq=false end end
 local function aa(an)h.fill(1,n-1,i,1," ",e.fg,e.bg)
 h.set(1,n-1,z(an.."  (Y/N)",i),e.warn,e.bg)
 while true do local ao,ap=B()if E(ao,ap)then return false end
@@ -163,6 +164,6 @@ a("uses dot commands (.title .center .color .page), so the",0xAAAAAA)a("file sta
 x and not x.available()then a("",0xFFFFFF)
 a("No printer attached: composing and pagination still work.",0xAAAAAA)end;return end;if c:sub(1,1)~="/"then
 a("Give a full path (e.g. /home/report.txt).",0xFF5555)return end;J(c,a)end
-local R={VERSION="1.1.0",open=function(b,c,a)a=a or print;if type(b)~="string"or b:sub(1,1)~="/"then
+local R={VERSION="1.1.2",open=function(b,c,a)a=a or print;if type(b)~="string"or b:sub(1,1)~="/"then
 a("write: a document needs a full path to be saved at.",0xFF5555)return false end
 J(b,a,c or"")return true end}return{commands={write=Q},api=R}

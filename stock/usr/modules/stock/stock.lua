@@ -44,6 +44,9 @@ function b.totals(a)local c,d,e=0,0,0;for g,f in ipairs(a or{})do
 if not f.absent then
 c=c+ (f.total or 0)e=e+ (f.stacks or 0)d=d+1 end end
 return{items=c,distinct=d,slots=e}end
+function b.numberKey(c,d,a)if a=="back"then return c:sub(1,-2),false end
+if a and
+a:match("^%d$")then return(d and""or c)..a,false end;return c,d end
 function b.encodeWatches(a,c)local d={}for f in pairs(a or{})do d[#d+1]=f end
 table.sort(d)local e={}
 for g,f in ipairs(d)do local h=tonumber(a[f])if h and not

@@ -1,14 +1,14 @@
 return {
 hashes = {
 ["/usr/modules/calc/graph.lua"] = "5f322c162cc1e35e96f078a5e3c73c58918cfba8d2ebd55dae245c4573652e72",
-["/usr/modules/calc/init.lua"] = "77f35fce87538bedf1c0240085e7629fac4bf297c8f1f3c236957e00cc7f59be",
+["/usr/modules/calc/init.lua"] = "ab2231c8bf9981bfe7d415736b44473d36bfebffc48e219052fbc7a3b2867285",
 ["/usr/modules/calc/menu.lua"] = "1ef569d126779574512bfc48ecb7105179949395b1edcd3a5a6ecf4ec6b17154",
 ["/usr/modules/calc/ops.lua"] = "fc24b85a521effdd7ae67a057919959063e885d3d54a7e5a281972936141a103",
 ["/usr/modules/calc/print.lua"] = "01f981b6947654a1436c919f11209f1973c72437184201b083472fa0f669fc12",
 ["/usr/modules/calc/sheet.lua"] = "5dbb4515072c6a02a0d4b6542861573fb112c82f242842099626cdbb14e0258a",
 },
 name = "calc",
-version = "2.0.1",
+version = "2.0.2",
 kind = "command",
 category = "productivity",
 description = "Spreadsheet, the Lotus 1-2-3 way: / menus, pointing, @functions, formats, copy/move, sort, graphs, print.",

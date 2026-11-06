@@ -1,9 +1,9 @@
 return {
 hashes = {
-["/usr/modules/tape/init.lua"] = "51dd71d212bab2b1ec10b027d2964ec3a69aca92520813bc5308b3be79fcc103",
+["/usr/modules/tape/init.lua"] = "7d8ad39405405f62b7560575073204ca4d15f108217ad490a0cd5079c7ae1b9b",
 },
 name = "tape",
-version = "2.3.1",
+version = "2.3.2",
 kind = "command",
 category = "storage",
 description = "General Computronics tape control: data archive/restore + audio playback + raw I/O + device state.",

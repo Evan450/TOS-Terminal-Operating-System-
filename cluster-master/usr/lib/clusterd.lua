@@ -1,17 +1,19 @@
-local ag,ah,ai,ab="active","degraded","draining","offline"
-local G=require("cluster.state")local ac=require("cluster.scheduler")
-local M=require("cluster.jobs")local N=require("cluster.net")local ad=require("cluster.api")
+local ag,ah,ai,ac="active","degraded","draining","offline"
+local G=require("cluster.state")local ad=require("cluster.scheduler")
+local M=require("cluster.jobs")local N=require("cluster.net")local Z=require("cluster.api")
 local O=require("cluster.pair")local R=require("cluster.store_client")
-local function Z(...)for a=1,select("#",...)do
-local c,b=pcall(require,(select(a,...)))if c and b then return b end end end;local P=Z("kernel.event","event")
-local L=Z("kernel.fs","filesystem")local _=require("computer")local J
-do local a=Z("kernel.log","log")
-if
-a and a.info then J=a else local function b(c,d,e)
-if io and io.stderr then io.stderr:write("["..
-c.."]["..d.."] "..e.."\n")end end
-J={info=function(c,d)b("I",c,d)end,warn=function(c,d)
-b("W",c,d)end,error=function(c,d)b("E",c,d)end}end end;local K="clusterd"local H={}local Q=false;local S;local T;local U;local aa={}local V="/etc/cluster-master.cfg"
+local function _(...)for a=1,select("#",...)do
+local c,b=pcall(require,(select(a,...)))if c and b then return b end end end;local P=_("kernel.event","event")
+local L=_("kernel.fs","filesystem")local aa=require("computer")
+do
+local b,a=pcall(require,"kernel.ipc")if b and type(a)=="table"then
+a.register("cluster",Z.endpoint,"clusterd")end end;local J
+do local a=_("kernel.log","log")
+if a and a.info then J=a else
+local function b(c,d,e)if io and io.stderr then
+io.stderr:write(
+"["..c.."]["..d.."] "..e.."\n")end end
+J={info=function(c,d)b("I",c,d)end,warn=function(c,d)b("W",c,d)end,error=function(c,d)b("E",c,d)end}end end;local K="clusterd"local H={}local Q=false;local S;local T;local U;local ab={}local V="/etc/cluster-master.cfg"
 local W="/var/cluster/state.dat"local X="/var/cluster/status.dat"
 local ae={host_thread_budget=4,heartbeat_interval=5,heartbeat_degraded_after=15,heartbeat_offline_after=30,scheduler_tick_interval=1,status_snapshot_interval=2,heartbeat_sweep_interval=5,encryption={plaintext_types={}},storage_node_address=nil,cluster_protocol="1.0",min_supported_protocol="1.0"}local I;H._cfg=nil
 local function Y(a)local b={}for c,d in pairs(ae)do b[c]=d end;if type(a)=="table"then for c,d in pairs(a)do
@@ -48,40 +50,40 @@ J.info(K,"public storage: "..
 tostring(R.address()):sub(1,8))else
 J.info(K,"public storage: none configured (assignments stay inline)")end end;do local c,d=pcall(require,"kernel.net.trust")if c then
 O.init({trust=d})end end
-aa=N.register({onRegister=function(c,d)
+ab=N.register({onRegister=function(c,d)
 H._onRegister(c,d)end,onHeartbeat=function(c,d)H._onHeartbeat(c,d)end,onResult=function(c,d)
 H._onResult(c,d)end,onResultChunk=function(c,d)H._onResultChunk(c,d)end,onAssignAck=function(c,d)
 H._onAssignAck(c,d)end,onStatusRes=function(c,d)H._onStatusRes(c,d)end,onRelayFail=function(c,d)
 H._onRelayFail(c,d)end,onPairInit=function(c,d)O.onPairInit(c,d)end})
 S=P.interval(I.heartbeat_sweep_interval,function()H._onHeartbeatSweep()end,"clusterd.hbsweep")
 U=P.interval(I.scheduler_tick_interval,function()H._onSchedulerTick()end,"clusterd.sched")
-T=P.interval(I.status_snapshot_interval,function()H._onStatusSnapshot()end,"clusterd.status")ad.bind(G,ac,M,H)Q=true;J.info(K,"started")return true end
+T=P.interval(I.status_snapshot_interval,function()H._onStatusSnapshot()end,"clusterd.status")Z.bind(G,ad,M,H)Q=true;J.info(K,"started")return true end
 function H.stop()if not Q then return true end;J.info(K,"stopping")if S then
 P.cancelTimer(S)S=nil end;if U then P.cancelTimer(U)U=nil end;if T then
-P.cancelTimer(T)T=nil end;N.unregister(aa)aa={}
+P.cancelTimer(T)T=nil end;N.unregister(ab)ab={}
 local a,b=pcall(G.save,W)if not a then
-J.error(K,"final save failed: "..tostring(b))end;ad.unbind()H._cfg=nil;Q=false
+J.error(K,"final save failed: "..tostring(b))end;Z.unbind()H._cfg=nil;Q=false
 J.info(K,"stopped")return true end;function H.isRunning()return Q end;function H.getConfig()return I end;function H.startPairing()return
 O.startWindow()end
 function H.closePairing()return O.closeWindow()end;function H.pairingInfo()return O.windowInfo()end;function H.pairingOpen()return
 O.windowOpen()end
 function H._onHeartbeatSweep()if not I then return end
-local a=_.uptime()
+local a=aa.uptime()
 for b,c in pairs(G._data.managers)do
 local e=a- (c.last_heartbeat or a)local d=c.state
-if e>I.heartbeat_offline_after and d~=ab then
-G.setManagerState(b,ab)pcall(M.onManagerOffline,c.domain_id,G)elseif
+if e>I.heartbeat_offline_after and d~=ac then
+G.setManagerState(b,ac)pcall(M.onManagerOffline,c.domain_id,G)elseif
 e>I.heartbeat_degraded_after and d==ag then G.setManagerState(b,ah)elseif
 e<=I.heartbeat_degraded_after and d==ah then G.setManagerState(b,ag)end
 if d==ai then local f=false
 for h,g in pairs(G._data.jobs)do
 for h,i in pairs(g.assignments)do if i.state=="running"and
-i.assigned_to==b then f=true;break end end;if f then break end end;if not f then G.setManagerState(b,ab)end end end end
-function H._onSchedulerTick()if not I then return end;local a=_.uptime()
+i.assigned_to==b then f=true;break end end;if f then break end end;if not f then G.setManagerState(b,ac)end end end end
+function H._onSchedulerTick()G.flush()if not I then return end;local a=aa.uptime()
 local c=M.pendingAssignments(G)
 local b={compute_bound_in_flight=G.computeBoundInFlight(),host_thread_budget=I.host_thread_budget,uptime=a}
 for e,d in ipairs(c)do b.compute_bound_in_flight=G.computeBoundInFlight()
-local f,g=ac.pickDomain(d,G._data.managers,b)
+local f,g=ad.pickDomain(d,G._data.managers,b)
 if f then local h,i=M.dispatch(d,f,G,N)if not h then
 J.warn(K,string.format("dispatch %d failed: %s",d.assignment_id or-1,tostring(i)))end elseif g and
 g~="thread_budget_saturated"then end end
@@ -91,9 +93,9 @@ if
 f.state=="running"and f.deadline and f.deadline>0 then if a>f.deadline then
 pcall(M.onAssignmentTimeout,g,G,N)end end end end end
 function H._onStatusSnapshot()
-local a={time=_.uptime(),managers={active=0,degraded=0,draining=0,offline=0},jobs={pending=0,running=0,done=0,failed=0,cancelled=0},storage=nil,host_thread_budget=I and
+local a={time=aa.uptime(),managers={active=0,degraded=0,draining=0,offline=0},jobs={pending=0,running=0,done=0,failed=0,cancelled=0},storage=nil,host_thread_budget=I and
 I.host_thread_budget or nil,compute_bound_in_flight=G.computeBoundInFlight(),recent_events=G.recentEvents(10)}
-for h,g in pairs(G._data.managers)do local i=g.state or ab;a.managers[i]=
+for h,g in pairs(G._data.managers)do local i=g.state or ac;a.managers[i]=
 (a.managers[i]or 0)+1 end;for h,g in pairs(G._data.jobs)do local i=g.state or"pending"a.jobs[i]=
 (a.jobs[i]or 0)+1 end
 if

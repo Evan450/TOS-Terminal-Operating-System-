@@ -6,7 +6,7 @@ hashes = {
 ["/usr/lib/cluster/store.lua"] = "a270076d58d8afa120fd8c85e36828f96e8b12d8ce356207e9365f05d266ae9f",
 },
 name = "cluster-storage",
-version = "1.0.0",
+version = "1.0.1",
 kind = "service",
 category = "network",
 description = "Cluster Storage Node: scratch store for oversized task lists, writes on 2101, reads on 2100.",
@@ -17,7 +17,7 @@ files = {
 "/etc/cluster-storage.cfg",
 "/etc/rc.d/cluster-storaged.lua",
 },
-requires = { "cluster-protocol" },
+requires = { "cluster-manager" },
 capabilities = {
 "fs.read", "fs.write",
 "net",

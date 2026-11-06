@@ -17,7 +17,7 @@ return false,"empty_reverse_path"end;local h=w.encode(e)
 local i=s.makePacket(n.RELAY_FORWARD,{dest=a,path=f,ttl=math.max(3,#f+1),inner=h,inner_type=b},{to=g})return u.send(g,i)end;return u.send(a,e)end
 function r.sendAssignment(b,a)
 local c={assignment_id=a.assignment_id,job_id=a.job_id,priority=a.priority or 5,deadline=a.deadline or 0,retry_policy=a.retry_policy or"safe",compute_profile=
-a.compute_profile or"mixed",tasks_inline=a.tasks_inline,tasks_ref=a.tasks_ref,inputs_inline=a.inputs_inline,inputs_ref=a.inputs_ref,result_sink=a.result_sink or"inline",result_prefix=a.result_prefix}return t(b,n.CLUSTER_ASSIGN,c)end
+a.compute_profile or"mixed",tasks_inline=a.tasks_inline,tasks_ref=a.tasks_ref,store_addr=a.store_addr,inputs_inline=a.inputs_inline,inputs_ref=a.inputs_ref,result_sink=a.result_sink or"inline",result_prefix=a.result_prefix}return t(b,n.CLUSTER_ASSIGN,c)end
 function r.sendCancel(a,b)return t(a,n.CLUSTER_CANCEL,{assignment_id=b})end;function r.sendDrain(a)return t(a,n.CLUSTER_DRAIN,{})end
 function r.sendRegisterAck(d,c,b,e,a)a=
 a or{}

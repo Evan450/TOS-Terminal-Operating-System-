@@ -120,40 +120,49 @@ if#x>0 then aC(d,x)end;i=i+A;if j%5 ==0 then aw.pullSignal(0)end end;aC(d,az)i=i
 a(string.format("Done: %d files, %s written",j,ap(i)),0x00FF00)
 a(string.format("Tape: %s free (%.1f%% used)",ap(t),s*100/h),t<h*0.1 and
 0xFF6600 or 0x00FF00)end
-local function bl(b,a)local d=b[2]or"/home"d=ar.normalize(d)local c,h=at(nil)if not c then
-a(h,0xFF0000)return end
-if not c.isReady()then a(av,0xFF6600)return end;c.stop()aq(c)
-a("Restoring from tape to "..d.." ...",0x00AAFF)local f=0;local g=0;local e=0
-while true do local m=as(c,4)if not m or#m<4 then
-a("Unexpected end of tape",0xFF6600)break end;if m==az then break end;if m~=ay then
+local function bl(b,a)
+local e=b[2]or(ar.home and ar.home())or"/home"e=ar.normalize(e)local c,k=at(nil)
+if not c then a(k,0xFF0000)return end;if not c.isReady()then a(av,0xFF6600)return end
+c.stop()aq(c)
+a("Restoring from tape to "..e.." ...",0x00AAFF)local h=0;local i=0;local f=0;local d,g,j=0,nil,0
+while true do local p=as(c,4)if not p or#p<4 then
+a("Unexpected end of tape",0xFF6600)break end;if p==az then break end;if p~=ay then
 a(
-"Not a TOS archive (bad magic at byte "..e..")",0xFF0000)aq(c)return end;local n=as(c,2)if not n then
-a(aP,0xFF0000)break end;local p=n:byte(1)local v=n:byte(2)if p>aJ then
-a("Archive version "..p..
-" not supported (max "..aJ..")",0xFF0000)aq(c)return end;local q=as(c,2)if not q then
-a(aP,0xFF0000)break end;local r=aL(q)local j=as(c,r)if not j then
-a("Truncated path",0xFF0000)break end;local s=as(c,4)
-if not s then a(aP,0xFF0000)break end;local o=aH(s)local t=as(c,4)if not t then a(aP,0xFF0000)break end
-local u=aH(t)e=e+4+2+2+r+4+4;local w=(v%2)==1;if type(j)~="string"or
-j==""then
-a("Skipping entry with empty path",0xFF6600)break end;if j:find("\0",1,true)then a(
-"REFUSING tainted path from tape: "..j,0xFF0000)
-aq(c)return end;j=j:gsub("^/+","")if j==
-""then j="."end
-do local x=false;for y in j:gmatch("[^/\\]+")do
-if y==".."then x=true;break end end;if x then
-a("REFUSING traversal path from tape: "..j,0xFF0000)aq(c)return end end;local k=ar.join(d,j)local l=d;if l:sub(-1)~="/"then l=l.."/"end;if k~=d and k:sub(1,
-#l)~=l then
-a("REFUSING path that escapes destBase: "..k,0xFF0000)aq(c)return end
-if w then if
-not ar.exists(k)then ar.makeDirectory(k)end;g=g+1 else local x=""if o>0 then
-x=as(c,o)
-if not x then a("Truncated data for: "..j,0xFF0000)break end end;e=e+o;local z=aW(x)if z~=u then
-a("CHECKSUM MISMATCH: "..j,0xFF6600)
-a("  Expected: "..u.." Got: "..z,0xFF6600)end;local y=ar.split(k)
-if
-y and y~="/"and not ar.exists(y)then ar.makeDirectory(y)end;ar.writeFile(k,x)f=f+1 end;if(f+g)%5 ==0 then aw.pullSignal(0)end end;aq(c)local i=c.getSize()
-a(string.format("Restored: %d files, %d dirs (%s read from %s tape)",f,g,ap(e),aE(i)),0x00FF00)end
+"Not a TOS archive (bad magic at byte "..f..")",0xFF0000)aq(c)return end;local q=as(c,2)if not q then
+a(aP,0xFF0000)break end;local s=q:byte(1)local y=q:byte(2)if s>aJ then
+a("Archive version "..s..
+" not supported (max "..aJ..")",0xFF0000)aq(c)return end;local t=as(c,2)if not t then
+a(aP,0xFF0000)break end;local u=aL(t)local m=as(c,u)if not m then
+a("Truncated path",0xFF0000)break end;local v=as(c,4)
+if not v then a(aP,0xFF0000)break end;local r=aH(v)local w=as(c,4)if not w then a(aP,0xFF0000)break end
+local x=aH(w)f=f+4+2+2+u+4+4;local z=(y%2)==1;if type(m)~="string"or
+m==""then
+a("Skipping entry with empty path",0xFF6600)break end;if m:find("\0",1,true)then a(
+"REFUSING tainted path from tape: "..m,0xFF0000)
+aq(c)return end;m=m:gsub("^/+","")if m==
+""then m="."end
+do local A=false;for B in m:gmatch("[^/\\]+")do
+if B==".."then A=true;break end end;if A then
+a("REFUSING traversal path from tape: "..m,0xFF0000)aq(c)return end end;local n=ar.join(e,m)local o=e;if o:sub(-1)~="/"then o=o.."/"end;if n~=e and n:sub(1,
+#o)~=o then
+a("REFUSING path that escapes destBase: "..n,0xFF0000)aq(c)return end
+if z then if ar.exists(n)or
+ar.makeDirectory(n)then i=i+1 else d=d+1
+g=g or("cannot make "..n)end else local A=""if r>0 then A=as(c,r)
+if not A then a(
+"Truncated data for: "..m,0xFF0000)break end end;f=f+r;local C=aW(A)local D=n;if C~=x then a(
+"CHECKSUM MISMATCH: "..m,0xFF6600)a("  Expected: "..
+x.." Got: "..C,0xFF6600)
+D=n..".damaged"j=j+1 end
+local B=ar.split(n)if B and B~="/"and not ar.exists(B)then
+ar.makeDirectory(B)end;local E,F=ar.writeFile(D,A)if E then h=h+1 else d=d+1
+g=g or F end end;if(h+i)%5 ==0 then aw.pullSignal(0)end end;aq(c)local l=c.getSize()
+a(string.format("Restored: %d files, %d dirs (%s read from %s tape)",h,i,ap(f),aE(l)),
+d>0 and 0xFF6600 or 0x00FF00)if d>0 then
+a(string.format("%d NOT restored: %s",d,tostring(g)),0xFF0000)
+a("Name a folder you can write to: tape restore <path>",0xAAAAAA)end;if j>0 then
+a(j..
+" damaged on the tape, kept as <name>.damaged. Nothing was replaced by them.",0xFF6600)end end
 local function bm(b,a)local c,k=at(nil)if not c then a(k,0xFF0000)return end;if not c.isReady()then
 a(av,0xFF6600)return end;local e=c.getSize()c.stop()aq(c)
 local i=as(c,4)

@@ -1,10 +1,10 @@
 return {
 hashes = {
-["/usr/modules/rc-pilot/init.lua"] = "27cc948e628ba555576f616722d0f02fb8bf7f645a876551db17495198340cbc",
-["/usr/share/rc-pilot/eeprom-rc-pilot.lua"] = "0b1493e28c589a15af822e15eedc5f347a81ae7574e0775df10af6a12a94ef4c",
+["/usr/modules/rc-pilot/init.lua"] = "545480e6f4f8ade4b1274afe8087a9dd47ac7662cf9ed7618741001684978495",
+["/usr/share/rc-pilot/eeprom-rc-pilot.lua"] = "6086026ad0122c88d0b223f2644f32e3e661b38d50ef78c70066834073f4a7eb",
 },
 name = "rc-pilot",
-version = "1.2.1",
+version = "1.3.0",
 kind = "command",
 category = "control",
 description = "WASD remote-control host for OC robots/drones running the rc-pilot EEPROM.",

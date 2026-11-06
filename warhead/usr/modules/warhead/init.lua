@@ -279,13 +279,14 @@ local be,bf=
 math.floor((d-bd)/2)+1,math.floor((o-bh)/2)+1;L(a_,be,bf,bd,bh)for bj=1,bg do
 c.set(be+2,bf+bj,Z(bi[bj],bd-4),G(bb),b.bg)end
 c.set(be+2,bf+bh-2,Z(bc,bd-4),b.dim,b.bg)return be,bf+bg+1,bd end
-local function E(aZ,a_,ba)local bb=tostring(ba or"")
-local bd,be,bc=J(aZ,a_,"fg","Enter OK · "..ao().." cancel",1)
-while true do local bf=bb.."_"local bi=aa(bf)- (bc-4)if bi>0 then
-bf=ap(bf,bi+1,aa(bf))end
-c.set(bd+2,be,Z(bf,bc-4),b.title,b.bg)local bg,bh=ah()if bh==Y.ENTER then return bb end;if aj(bg,bh)then return nil end;if bh==
-Y.BACK then bb=bb:sub(1,-2)elseif bg and bg>=32 and bg<127 then
-bb=bb..string.char(bg)end end end
+local function E(aZ,a_,ba)local bb=tostring(ba or"")local bc=bb~=""
+local be,bf,bd=J(aZ,a_,"fg","Enter OK · "..ao().." cancel",1)
+while true do local bg=bb.."_"local bj=aa(bg)- (bd-4)if bj>0 then
+bg=ap(bg,bj+1,aa(bg))end
+c.set(be+2,bf,Z(bg,bd-4),b.title,b.bg)local bh,bi=ah()if bi==Y.ENTER then return bb end;if aj(bh,bi)then return nil end
+if bi==
+Y.BACK then bb=bb:sub(1,-2)elseif bh and bh>=32 and bh<127 then if bc then bb=""end;bb=bb..
+string.char(bh)end;bc=false end end
 local function M(aZ)J("Confirm",aZ,"warn","Y Yes · N No",0)
 while true do local a_,ba=ah()if
 aj(a_,ba)then return false end

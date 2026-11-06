@@ -1,10 +1,10 @@
 return {
 hashes = {
-["/usr/modules/stock/init.lua"] = "1dc52d0bf9573b292a68b692dc24fe4c55f36381820f4212644473e3431061a3",
-["/usr/modules/stock/stock.lua"] = "9d8897dfe31326f9ea4ab841cd1f2e35899cc3126d86c4b0655b6c24600b3165",
+["/usr/modules/stock/init.lua"] = "6fb1d32f9a87f3869314f106738194a2e6a3775b52fe6a29956d14cd0d461c82",
+["/usr/modules/stock/stock.lua"] = "68ecb67b7aed21d1e338fef92127dddf82a015616847b5c1198da25a858658ad",
 },
 name = "stock",
-version = "1.0.2",
+version = "1.0.3",
 kind = "command",
 category = "automation",
 description = "Inventory monitor: totals every adjacent chest, warns on low stock.",

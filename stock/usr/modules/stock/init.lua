@@ -45,30 +45,30 @@ if a==200 then return"up"elseif
 a==208 then return"down"elseif a==201 then return"pgup"elseif a==209 then return"pgdn"elseif a==199 then return"home"elseif a==207 then return"end"elseif a==28 then
 return"enter"elseif D(b,a)then return"esc"elseif a==14 then return"back"elseif b and b>0 then
 return string.char(b):lower()end;return nil end
-local function E(a)local c=B(a,50,16)if not c then return end;local b,e,i=c.T,c.W,c.H;local j,p=x()local k,I,K={},nil,{}
-local d,g=1,1;local f,h="",false;local G=false;local L=0;local l=nil;local m,M=5,i-2;local n=M-m+1
-local function H()local P,Q,R=w()if not P then k,I={},Q
+local function E(a)local c=B(a,50,16)if not c then return end;local b,e,k=c.T,c.W,c.H;local f,h=x()local l,I,K={},nil,{}
+local d,i=1,1;local g,j="",false;local G=false;local L=0;local m=nil;local n,M=5,k-2;local o=M-n+1
+local function H()local P,Q,R=w()if not P then l,I={},Q
 return end;I,K=nil,R or{}
-k=q.applyWatches(q.aggregate(P),j,p)L=u.uptime()if d>#k then d=math.max(1,#k)end end
-local function o()local P=q.filter(k,f)if G then P=q.lowStock(P)end;return P end
-local function J()local Q=o()c.clear()c.fill(1,1,e,1," ",b.bg,b.border)
-c.set(2,1,"STOCK",b.bg,b.border)local R=q.totals(k)
+l=q.applyWatches(q.aggregate(P),f,h)L=u.uptime()if d>#l then d=math.max(1,#l)end end
+local function p()local P=q.filter(l,g)if G then P=q.lowStock(P)end;return P end
+local function J()local Q=p()c.clear()c.fill(1,1,e,1," ",b.bg,b.border)
+c.set(2,1,"STOCK",b.bg,b.border)local R=q.totals(l)
 local V=string.format("%d kinds  %s items  %d slots",R.distinct,q.fmtCount(R.items),R.slots)
 c.set(math.max(8,e-#V-1),1,V,b.bg,b.border)
 local Y=
-(#K>0)and("sides: "..table.concat(K,", "))or"no inventories detected"c.set(2,2,s(Y,e-2),b.dim,b.bg)local P={}if f~=""then
-P[#P+1]="filter '"..f.."'"end;if G then P[#P+1]="LOW ONLY"end;local W=(#P>0)and
-table.concat(P,"  ·  ")or""if h then
-W="/"..f.."_"end
-c.set(2,3,s(W,e-2),h and b.title or b.hi,b.bg)local S,T,U=9,8,7;local X=e-2-S-T-U-12
+(#K>0)and("sides: "..table.concat(K,", "))or"no inventories detected"c.set(2,2,s(Y,e-2),b.dim,b.bg)local P={}if g~=""then
+P[#P+1]="filter '"..g.."'"end;if G then P[#P+1]="LOW ONLY"end;local W=(#P>0)and
+table.concat(P,"  ·  ")or""if j then
+W="/"..g.."_"end
+c.set(2,3,s(W,e-2),j and b.title or b.hi,b.bg)local S,T,U=9,8,7;local X=e-2-S-T-U-12
 c.set(2,4,s("ITEM",X)..t("COUNT",S)..
 t("STACKS",T)..t("MIN",U).."  WHERE",b.title,b.bg)
-if I then c.set(2,m+1,I,b.warn,b.bg)
-c.set(2,m+3,"Attach a transposer or inventory controller",b.dim,b.bg)
-c.set(2,m+4,"with a chest next to it, then press R.",b.dim,b.bg)elseif#Q==0 then
-c.set(2,m+1,(f~=""or G)and"Nothing matches."or"No items found.",b.dim,b.bg)else if d<g then g=d end;if d>g+n-1 then g=d-n+1 end
-for _=0,n-1 do local ac=g+_;local aa=Q[ac]if not aa then
-break end;local ad=m+_;local ae=(ac==d)
+if I then c.set(2,n+1,I,b.warn,b.bg)
+c.set(2,n+3,"Attach a transposer or inventory controller",b.dim,b.bg)
+c.set(2,n+4,"with a chest next to it, then press R.",b.dim,b.bg)elseif#Q==0 then
+c.set(2,n+1,(g~=""or G)and"Nothing matches."or"No items found.",b.dim,b.bg)else if d<i then i=d end;if d>i+o-1 then i=d-o+1 end
+for _=0,o-1 do local ac=i+_;local aa=Q[ac]if not aa then
+break end;local ad=n+_;local ae=(ac==d)
 local ab=aa.low and b.warn or b.fg;if aa.absent then ab=b.warn end;local af=ae and b.sel or b.bg;if ae then
 c.fill(1,ad,e,1," ",ab,af)end;local ag=
 (#aa.sides>0)and table.concat(aa.sides,",")or"-"
@@ -76,39 +76,40 @@ if aa.absent then ag="(none)"end
 c.set(2,ad,s(aa.label,X)..
 t(q.fmtCount(aa.total),S)..
 t(q.fmtStacks(aa.total,64),T)..t(aa.min and tostring(aa.min)or"-",U)..
-"  "..ag,ab,af)end;if#Q>n then
-c.set(e-10,4,string.format("%d/%d",d,#Q),b.dim,b.bg)end end;c.fill(1,i,e,1," ",b.bg,b.border)
-local Z=h and"Enter=apply  Esc=cancel"or
+"  "..ag,ab,af)end;if#Q>o then
+c.set(e-10,4,string.format("%d/%d",d,#Q),b.dim,b.bg)end end;c.fill(1,k,e,1," ",b.bg,b.border)
+local Z=j and"Enter=apply  Esc=cancel"or
 (
-"R refresh · / filter · L low-only · W watch · U unwatch · ^B bg · "..z().." quit")c.set(2,i,s(Z,e-2),b.bg,b.border)if l then
-c.set(2,i-1,s(l,e-2),b.hi,b.bg)end end
-local function N(P,Q)local R=tostring(Q or"")
+"R refresh · / filter · L low-only · W watch · U unwatch · ^B bg · "..z().." quit")c.set(2,k,s(Z,e-2),b.bg,b.border)if m then
+c.set(2,k-1,s(m,e-2),b.hi,b.bg)end end
+local function N(P,Q)local R,S=tostring(Q or""),true
 while true do
-c.fill(1,i-1,e,1," ",b.fg,b.bg)c.set(2,i-1,P.." "..R.."_",b.title,b.bg)
-local S={u.pullSignal()}
-if S[1]=="key_down"then local T=A(S[3],S[4])
-if T=="enter"then return tonumber(R)end;if T=="esc"then return nil end;if T=="back"then R=R:sub(1,-2)elseif
-T and T:match("^%d$")then R=R..T end elseif S[1]=="interrupted"then return nil end end end;H()J()local O=10
+c.fill(1,k-1,e,1," ",b.fg,b.bg)c.set(2,k-1,P.." "..R.."_",b.title,b.bg)
+local T={u.pullSignal()}
+if T[1]=="key_down"then local U=A(T[3],T[4])
+if U=="enter"then return tonumber(R)end;if U=="esc"then return nil end;R,S=q.numberKey(R,S,U)elseif
+T[1]=="interrupted"then return nil end end end;H()J()local O=10
 while true do local Q={u.pullSignal(1)}local P=Q[1]
 if P=="key_down"then
-local R=A(Q[3],Q[4])l=nil
-if h then if R=="enter"then h=false elseif R=="esc"then h=false;f=""elseif R=="back"then f=f:sub(1,-2)elseif R and#R==1 then
-f=f..R end;d,g=1,1 elseif R=="q"or R==
-"esc"then break elseif R=="r"then H()l="Rescanned."elseif R=="/"then h=true elseif R=="l"then G=not G;d,g=1,1 elseif R=="up"then d=math.max(1,
+local R=A(Q[3],Q[4])m=nil
+if j then if R=="enter"then j=false elseif R=="esc"then j=false;g=""elseif R=="back"then g=g:sub(1,-2)elseif R and#R==1 then
+g=g..R end;d,i=1,1 elseif R=="q"or R==
+"esc"then break elseif R=="r"then H()m="Rescanned."elseif R=="/"then j=true elseif R=="l"then G=not G;d,i=1,1 elseif R=="up"then d=math.max(1,
 d-1)elseif R=="down"then
-d=math.min(math.max(1,#o()),d+1)elseif R=="pgup"then d=math.max(1,d-n)elseif R=="pgdn"then
-d=math.min(math.max(1,#o()),d+n)elseif R=="home"then d=1 elseif R=="end"then d=math.max(1,#o())elseif R=="w"then local S=o()[d]
+d=math.min(math.max(1,#p()),d+1)elseif R=="pgup"then d=math.max(1,d-o)elseif R=="pgdn"then
+d=math.min(math.max(1,#p()),d+o)elseif R=="home"then d=1 elseif R=="end"then d=math.max(1,#p())elseif R=="w"then local S=p()[d]
 if S then
 local T=N("Warn when '"..S.label..
 "' drops below:",S.min or 64)
-if T then j[S.key]=T;p[S.key]=S.label;local U,V=y(j,p)
-l=U and("Watching "..
-S.label.." (min "..T..").")or(
-"Not saved (needs admin): "..tostring(V))H()end end elseif R=="u"then local S=o()[d]
-if S and j[S.key]then j[S.key]=nil;p[S.key]=nil;local T,U=y(j,p)
-l=
-
-T and("Stopped watching "..S.label..".")or("Could not save: "..tostring(U))H()end end;J()elseif P=="interrupted"then break elseif P=="tos_focus"then J()elseif P==nil or P=="timer"then if
+if T then local V,W=f[S.key],h[S.key]f[S.key]=T;h[S.key]=S.label;local U,X=y(f,h)
+m=U and
+(
+"Watching "..S.label.." (min "..T..").")or
+("Not saved (needs admin): "..tostring(X))if not U then f[S.key],h[S.key]=V,W end;H()end end elseif R=="u"then local S=p()[d]
+if S and f[S.key]then local U,V=f[S.key],h[S.key]
+f[S.key]=nil;h[S.key]=nil;local T,W=y(f,h)
+m=T and
+("Stopped watching "..S.label..".")or("Could not save: "..tostring(W))if not T then f[S.key],h[S.key]=U,V end;H()end end;J()elseif P=="interrupted"then break elseif P=="tos_focus"then J()elseif P==nil or P=="timer"then if
 u.uptime()-L>=O then H()J()end end end;c.clear()pcall(c.gpu.setForeground,0xFFFFFF)
 pcall(c.gpu.setBackground,0x000000)end
 local function F(b,a)
