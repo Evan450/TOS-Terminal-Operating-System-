@@ -353,9 +353,15 @@ return function(C, S, deps)
           o("unknown-key, and your admin privilege is the only gate.", T.dim)
           o("Add one:  pkg trust add <name> <64-hex-key>", T.dim)
         else
-          o(string.format(" %-16s %s", "name", "fingerprint"), T.title)
+          --! The name column fits the longest label (pkgsign allows 48),
+          --! because `pkg trust remove` needs it whole: it was cut at 16, so
+          --! a longer label listed as a name the remove refused.
+          local w = 16
+          for _, k in ipairs(keys) do w = math.max(w, #k.label) end
+          local row = " %-" .. w .. "s %s"
+          o(string.format(row, "name", "fingerprint"), T.title)
           for _, k in ipairs(keys) do
-            o(string.format(" %-16s %s", k.label:sub(1, 16), k.fingerprint), T.fg)
+            o(string.format(row, k.label, k.fingerprint), T.fg)
           end
           o("", T.dim)
           o("Compare a fingerprint with the publisher over a channel that is", T.dim)
@@ -549,10 +555,15 @@ return function(C, S, deps)
           o("Add one:  pkg repo add <name> <https://host/path>", T.dim)
           o("The URL is the directory holding the repo's programs.cfg.", T.dim)
         else
-          o(string.format(" %-14s %s", "name", "url"), T.title)
+          -- Whole names (a repo name may be 32), as in `pkg trust list`:
+          -- `pkg repo remove` takes the name it lists.
+          local w = 14
+          for _, r in ipairs(list) do w = math.max(w, #r.name) end
+          local row = " %-" .. w .. "s %s"
+          o(string.format(row, "name", "url"), T.title)
           for _, r in ipairs(list) do
-            o(string.format(" %-14s %s", r.name:sub(1, 14), r.url), T.fg)
-            if r.description then o("                " .. r.description, T.dim) end
+            o(string.format(row, r.name, r.url), T.fg)
+            if r.description then o(string.rep(" ", w + 2) .. r.description, T.dim) end
           end
           o("", T.dim)
           o("This list is the allowlist: what these serve installs like a disk.", T.dim)
@@ -2523,6 +2534,13 @@ return function(C, S, deps)
         if not fn3 then fn3, err3 = load(src, "=repl", "t", replEnv) end
         if fn3 then
           local ok3, res = pcall(fn3)
+          --! os.exit() ends the REPL, as it ends a program. It raises the
+          --! sandbox's exit sentinel, which this pcall caught and printed:
+          --! "exit nil", and the REPL carried on. (test_repl_os_exit.lua)
+          local okSb, sbMod = pcall(require, "kernel.sandbox")
+          local exited = not ok3 and okSb and type(sbMod) == "table"
+            and sbMod.exitStatus and sbMod.exitStatus(res) ~= nil
+          if exited then break end
           if ok3 then
             if res ~= nil then reout(tostring(res), T.highlight) end
           else reout(tostring(res), T.error) end

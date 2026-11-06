@@ -1299,6 +1299,27 @@ local function minimalFirstBoot(d, usersmod, pull, W, T)   --[[TEST-EXTRACT-FB]]
   end
 end                                                         --[[/TEST-EXTRACT-FB]]
 
+--! The seats that need their login back: neither the shell nor the login
+--! recorded for them is alive. A login only came back after a clean exit,
+--! a logout, or when EVERY process was gone, and the rc.d services keep
+--! that last one from happening; so a shell that was killed (`kill <its
+--! pid>` said "Killed PID 2" on the headless machine) left its seat
+--! frozen on its last screen, taking no input, until a reboot. `tries`
+--! counts the respawns this watchdog has made per seat since a shell last
+--! ran there; past `maxTries` a seat is left alone, so a login that dies
+--! as it starts cannot spin. (test_seat_watchdog.lua)
+local function seatsWithoutLogin(indices, shellPIDs, loginPIDs, alive, tries, maxTries)   --[[TEST-EXTRACT-SEATS]]
+  local out = {}
+  for _, dIdx in ipairs(indices) do
+    if alive(shellPIDs[dIdx]) then
+      tries[dIdx] = nil
+    elseif not alive(loginPIDs[dIdx]) and (tries[dIdx] or 0) < maxTries then
+      out[#out + 1] = dIdx
+    end
+  end
+  return out
+end                                                         --[[/TEST-EXTRACT-SEATS]]
+
 function kernel.loginAndStartShell()
   running = true
 
@@ -1512,6 +1533,7 @@ function kernel.loginAndStartShell()
   -- Per-seat state: session tokens and shell PIDs indexed by display
   local sessionTokens = {}
   local shellPIDs = {}
+  local loginPIDs = {}      -- each seat's latest login, for the seat watchdog
 
   -- Forward-declare spawnShellForSeat so spawnLoginProcess (below) can
   -- close over it. Without the `local` the assignment at definition
@@ -1586,6 +1608,7 @@ function kernel.loginAndStartShell()
     -- a 2nd seat's login then captured the 1st seat's input and froze it. The
     -- later login→shell handoff (spawnShellForSeat) re-claims the same seat.
     if loginPid then pcall(proc.setForeground, loginPid, dIdx) end
+    loginPIDs[dIdx] = loginPid
     return loginPid
   end
 
@@ -1773,6 +1796,13 @@ function kernel.loginAndStartShell()
     -- real crashes (typically OOM at login on a tight box). Bounded so an
     -- OOM-crash-loop drops to the emergency shell instead of spinning.
     local crashRespawns = 0
+    -- The seat watchdog's state (seatsWithoutLogin).
+    local lastSeatCheck, seatTries = 0, {}
+    local DEAD = proc.STATE and proc.STATE.DEAD or "dead"
+    local function seatAlive(pid)
+      local p = pid and proc.get(pid)
+      return p ~= nil and p.state ~= DEAD
+    end
     while running do
       -- 0.1s idle tick (was 0.05). pull() returns IMMEDIATELY on any
       -- real signal, so input latency is untouched — the timeout only
@@ -2039,6 +2069,28 @@ function kernel.loginAndStartShell()
           log.info("hotplug", "Display " .. dIdx .. " added, spawning login")
         end
         signal = table.pack(nil)
+      end
+
+      -- A seat with no live shell and no live login gets its login back,
+      -- checked once a second (seatsWithoutLogin says why). BEFORE the
+      -- tick: a shell that ends on its own pushes tos_shell_exited as it
+      -- goes, and event.pull hands that to the handler above first, so
+      -- only a shell that ended without it (killed) is ever seen here.
+      local nowSeat = computer.uptime()
+      if nowSeat - lastSeatCheck >= 1 and proc.count() > 0 then
+        lastSeatCheck = nowSeat
+        for _, dIdx in ipairs(seatsWithoutLogin(screenMod.indices(), shellPIDs, loginPIDs,
+            seatAlive, seatTries, 5)) do
+          if sessionTokens[dIdx] then
+            if usersmod then usersmod.logout(sessionTokens[dIdx]) end
+            sessionTokens[dIdx] = nil
+          end
+          shellPIDs[dIdx] = nil
+          seatTries[dIdx] = (seatTries[dIdx] or 0) + 1
+          log.warn("kernel", "Seat " .. dIdx .. ": its shell is gone without exiting"
+            .. " (killed?), starting its login again [" .. seatTries[dIdx] .. "/5]")
+          spawnLoginProcess(dIdx)
+        end
       end
 
       proc.tick(signal.n > 0 and signal or nil)

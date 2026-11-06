@@ -1178,6 +1178,15 @@ function proc.tick(signal)
         elseif coroutine.status(co) == "dead" then
           p.state = STATE.DEAD
           invalidateRunnable()
+        elseif p.state == STATE.DEAD then
+          --! Killed while it was the one running: a self-kill (`kill 2` from
+          --! the shell that is PID 2). proc.kill marked it DEAD and dropped
+          --! its seat's foreground, then the coroutine ran on to its next
+          --! yield and this line made it READY again: alive to every check,
+          --! taking no input, its seat frozen on the last screen for good.
+          --! It stays dead now, and is reaped below like any other.
+          --! (test_self_kill.lua)
+          invalidateRunnable()
         else
           p.state = p.tsr and STATE.TSR or STATE.READY
         end

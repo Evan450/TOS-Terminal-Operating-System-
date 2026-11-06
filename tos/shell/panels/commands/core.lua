@@ -2149,6 +2149,12 @@ return function(C, S, deps)
   -- / service start-stop). A full-screen APP TAB — roomy + scrollable (the old
   -- centred modal truncated), per-seat, driven by the panels event loop.
   C.monitor = function(args, o)
+    if helpers.needsTabs(S, o, "monitor") then
+      -- Not live, but not nothing: what the monitor's list would show.
+      o("The processes now:", T.dim)
+      C.ps({}, o)
+      return
+    end
     local okM, monMod = pcall(require, "shell.panels.monitorapp")
     if not okM then o("Monitor unavailable: " .. tostring(monMod), T.error); return end
     monMod.open(S)
@@ -3145,12 +3151,14 @@ return function(C, S, deps)
   -- ── Desktop + Settings (tab-based apps) ──────────────────
   -- Both open (or focus) their tab; the panels event loop drives them.
   C.desktop = function(args, o)
+    if helpers.needsTabs(S, o, "desktop") then return end
     local okD, desktopMod = pcall(require, "shell.panels.desktop")
     if not okD then o("Desktop unavailable: " .. tostring(desktopMod), T.error); return end
     desktopMod.open(S)
   end
 
   C.settings = function(args, o)
+    if helpers.needsTabs(S, o, "settings") then return end
     local okS2, settingsMod = pcall(require, "shell.panels.settingsapp")
     if not okS2 then o("Settings unavailable: " .. tostring(settingsMod), T.error); return end
     settingsMod.open(S)

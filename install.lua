@@ -1089,12 +1089,14 @@ end
 --! branch's bios.lua is the unminified source, 13,608 bytes against a 4,096
 --! byte EEPROM; set() refused it with "not enough space", and that error ended
 --! an install whose files were already copied and verified. A release build
---! minifies it to under 4 KB.
+--! minifies it to under 4 KB. Each line of the reason fits an 80-column
+--! screen after warn()'s "  ! ": one line used to run to 103 and wrap
+--! mid-word ("unminified sou" / "rce").
 local function biosRefusal(codeLen, eepromSize)   --[[TEST-EXTRACT]]
   if type(eepromSize) ~= "number" or eepromSize <= 0 then return nil end
   if codeLen > eepromSize then
-    return string.format("This BIOS is %d bytes and the EEPROM holds %d: it is the "
-      .. "unminified source, not a release build.", codeLen, eepromSize)
+    return string.format("This BIOS is %d bytes and the EEPROM holds %d:\n"
+      .. "it is the unminified source, not a release build.", codeLen, eepromSize)
   end
   return nil
 end                                                --[[/TEST-EXTRACT]]
@@ -1115,7 +1117,7 @@ local function offerBiosFlash(srcDisk)
   if eepromAddr then okS, size = pcall(component.invoke, eepromAddr, "getSize") end
   local refusal = biosRefusal(#biosCode, okS and size or nil)
   if refusal then
-    warn(refusal)
+    for line in refusal:gmatch("[^\n]+") do warn(line) end
     warn("Skipping the BIOS flash. The BIOS this machine has boots TOS too; flash")
     warn("a release's bios.lua later if you want TOS's own (flash /bios.lua).")
     print()

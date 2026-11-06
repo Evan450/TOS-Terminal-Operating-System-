@@ -31,11 +31,18 @@ if refusal then
   test("exactly full fits", refusal(4096, 4096) == nil)
   test("one byte over does not", refusal(4097, 4096) ~= nil)
   test("an EEPROM that will not say its size is not refused here", refusal(13608, nil) == nil)
+  -- On the headless machine the one-line reason ran to 103 columns and
+  -- wrapped mid-word. warn() adds "  ! ", so each line gets 76.
+  local widest = 0
+  for line in (refusal(13608, 4096) or ""):gmatch("[^\n]+") do widest = math.max(widest, #line) end
+  test("each line of the reason fits 80 columns after warn's prefix", widest > 0 and widest + 4 <= 80, widest)
 end
 
 local flash = src:match("local function offerBiosFlash.-\nend\n") or ""
 test("the size is checked before the operator is asked to type flash",
   (flash:find("biosRefusal(", 1, true) or 1e9) < (flash:find('Type "flash"', 1, true) or 0))
+test("the caller warns the reason a line at a time",
+  flash:find('refusal:gmatch("[^\\n]+")', 1, true) ~= nil)
 test("and a refused write is a warning, not the end of the installer",
   flash:find("pcall(ep.set, biosCode)", 1, true) ~= nil)
 

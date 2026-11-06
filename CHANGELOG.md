@@ -20,8 +20,15 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 122 rounds of work:
+Everything since v1.5.0, in 129 rounds of work:
 
+- [os.exit() leaves the Lua REPL](#osexit-leaves-the-lua-repl)
+- [A screen whose shell is gone gets its login back](#a-screen-whose-shell-is-gone-gets-its-login-back)
+- [Killing your own shell no longer freezes the screen](#killing-your-own-shell-no-longer-freezes-the-screen)
+- [Full-screen apps explain themselves at the command line](#full-screen-apps-explain-themselves-at-the-command-line)
+- [disk list shows mount points whole](#disk-list-shows-mount-points-whole)
+- [pkg's lists show names whole](#pkgs-lists-show-names-whole)
+- [The BIOS-skip reason fits the screen](#the-bios-skip-reason-fits-the-screen)
 - [ls shows long names whole](#ls-shows-long-names-whole)
 - [Two network refusals carry codes](#two-network-refusals-carry-codes)
 - [A BIOS too big for the EEPROM no longer ends the install](#a-bios-too-big-for-the-eeprom-no-longer-ends-the-install)
@@ -144,6 +151,34 @@ Everything since v1.5.0, in 122 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### os.exit() leaves the Lua REPL
+
+`os.exit()` in the Lua REPL leaves it, as it ends a program. It printed "exit nil" and the REPL carried on; `exit` always worked.
+
+### A screen whose shell is gone gets its login back
+
+A screen whose shell is gone without exiting gets its login back within a second, even while services or background programs keep running. The kernel only brought a login back after a clean exit, a logout, or when every process had stopped.
+
+### Killing your own shell no longer freezes the screen
+
+A process that kills itself stays dead. `kill` on the shell you are typing in said "Killed PID 2" and froze the screen for good: the shell ran on to its next pause, the scheduler marked it ready again, and with its input gone nothing could reach it. The login screen now comes back within a second, and logging in works as before.
+
+### Full-screen apps explain themselves at the command line
+
+`monitor`, `settings`, `desktop` and `chat` typed at the command line say they are full-screen apps and how to reach them (`tui`, then the command). Each used to print nothing and give the prompt back, having opened a tab the command line never shows. `monitor` also lists the processes, as `ps` does.
+
+### disk list shows mount points whole
+
+`disk list` shows mount points and labels whole. A floppy mounts at `/mnt/` plus its label, which may be 32 characters, and the list cut the mount point at 16: a disk labelled "Optional Utilities" listed as `/mnt/Optional Ut`, not a directory anyone could `cd` into.
+
+### pkg's lists show names whole
+
+`pkg trust list` and `pkg repo list` show names whole. They cut a publisher label at 16 characters and a repo name at 14, though a label may be 48 and a repo name 32, and `pkg trust remove` and `pkg repo remove` refused the cut name the list had shown.
+
+### The BIOS-skip reason fits the screen
+
+The installer's reason for skipping a BIOS too big for the EEPROM is two lines that fit an 80-column screen. As one line it ran to 103 characters and wrapped mid-word.
 
 ### ls shows long names whole
 

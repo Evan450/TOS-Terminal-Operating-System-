@@ -611,6 +611,21 @@ function M.tierRefusal(S, name)
     .. "  [E-403 ERR_TIER_REQUIRED]", need, have
 end
 
+--! A command whose whole interface is a full-screen tab, typed at the
+--! command line, which has one pseudo-tab and draws none: it made a tab
+--! nobody would ever see, printed nothing and gave the prompt back, so it
+--! looked broken. Found by the local worker with `monitor` on the headless
+--! machine; settings, desktop and chat did the same. `edit` and `watch`
+--! already said so. True when it has explained, and the caller stops.
+--! (test_cli_tab_apps.lua)
+function M.needsTabs(S, o, name)
+  if not (S and S.isCLI) then return false end
+  local T = S.T or {}
+  o("'" .. name .. "' is a full-screen app, and the command line has no", T.warning)
+  o("screen to give it. Type 'tui' for the full interface, then '" .. name .. "'.", T.dim)
+  return true
+end
+
 function M.rootOnly(S, o)
   if M.liveTier(S) < 3 then
     -- Record the denial so `why` (no args) can explain it after the fact.

@@ -816,13 +816,22 @@ return function(C, S, deps)
         if #removable == 0 then
           o("No removable disks mounted", T.dim)
         else
-          o(string.format(" %-16s %-10s %s", "Mount", "Label", "Status"), T.title)
-          o(string.rep("-", 42), T.dim)
+          --! Mount points whole, as ls now shows names: one is "/mnt/" and
+          --! a label of up to 32 (diskmount.sanitizeLabel), and it is what
+          --! you `cd` into. It was cut at 16, so a floppy labelled
+          --! "Optional Utilities" listed as "/mnt/Optional Ut".
+          local mw, lw = 16, 10
+          for _, m in ipairs(removable) do
+            mw = math.max(mw, #m.mountPoint)
+            lw = math.max(lw, #(m.label or ""))
+          end
+          local row = " %-" .. mw .. "s %-" .. lw .. "s %s"
+          o(string.format(row, "Mount", "Label", "Status"), T.title)
+          o(string.rep("-", mw + lw + 16), T.dim)
           for _, m in ipairs(removable) do
             local mnt = m.mountPoint
             local info = helpers.classifyDisk(F, mnt)
-            local label = (m.label or ""):sub(1, 10)
-            o(string.format(" %-16s %-10s %s", mnt:sub(1,16), label, info.desc),
+            o(string.format(row, mnt, m.label or "", info.desc),
               info.kind ~= "data" and T.highlight or T.fg)
           end
         end
@@ -832,12 +841,15 @@ return function(C, S, deps)
         if entries and #entries == 0 then
           o("No removable disks mounted", T.dim)
         elseif entries then
-          o(string.format(" %-16s %-8s %s", "Mount", "Type", "Status"), T.title)
-          o(string.rep("-", 42), T.dim)
+          local mw = 16
+          for _, name in ipairs(entries) do mw = math.max(mw, #("/mnt/" .. name:gsub("/$", ""))) end
+          local row = " %-" .. mw .. "s %-8s %s"
+          o(string.format(row, "Mount", "Type", "Status"), T.title)
+          o(string.rep("-", mw + 26), T.dim)
           for _, name in ipairs(entries) do
             local mnt = "/mnt/" .. name:gsub("/$", "")
             local info = helpers.classifyDisk(F, mnt)
-            o(string.format(" %-16s %-8s %s", mnt:sub(1,16), "disk", info.desc),
+            o(string.format(row, mnt, "disk", info.desc),
               info.kind ~= "data" and T.highlight or T.fg)
           end
         else
@@ -1693,6 +1705,7 @@ return function(C, S, deps)
     end
   end
   C.chat = function(args, o)
+    if helpers.needsTabs(S, o, "chat") then return end
     if not NM then o("No network available", T.error); return end
     -- Chat is an app TAB now (stage 4): it stays open, and messages
     -- keep arriving (unread badge) while you work in other tabs.
