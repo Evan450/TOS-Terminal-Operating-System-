@@ -1,10 +1,10 @@
 
 local aq,ar,as,al,am,at="Permission denied","kernel.event","key_down","number","string","suspended"local V=require("computer")local R={}
 local T={RUNNING="running",READY="ready",SLEEPING="sleeping",TSR="tsr",DEAD="dead"}local S={}local aa=0;local af=0;local U=nil;local W=nil;local X={}
-local au={key_down=true,key_up=true,clipboard=true,touch=true,drag=true,drop=true,scroll=true}local ag=15;local av=16;local Y={}local ab=0
-local function aw(d,a,b,c)if type(a)~=am then return end;local e=Y[a]
+local au={key_down=true,key_up=true,clipboard=true,touch=true,drag=true,drop=true,scroll=true}local ag=15;local av=16;local Z={}local ab=0
+local function aw(d,a,b,c)if type(a)~=am then return end;local e=Z[a]
 if not e then if ab>=av then
-Y,ab={},0 end;e={codes={},chars={},at=0}Y[a]=e;ab=ab+1 end;local f=V.uptime()
+Z,ab={},0 end;e={codes={},chars={},at=0}Z[a]=e;ab=ab+1 end;local f=V.uptime()
 if e.at>0 and f-e.at>ag then e.codes,e.chars={},{}end;e.at=f;local g=(d==as)or nil
 if type(c)==al then e.codes[c]=g end;if type(b)==al and b>0 then e.chars[b]=g end end
 function R.keyDown(a,b)local c,d
@@ -13,11 +13,11 @@ local g,h=pcall(utf8.codepoint,a,1)if not g then return false end;c,d=h,true els
 local function e(g)if not g or(g.at>0 and f-g.at>ag)then return
 false end;return
 (d and g.chars or g.codes)[c]==true end;if type(b)=="table"then
-for h,g in ipairs(b)do if e(Y[g])then return true end end;return false end;for h,g in pairs(Y)do
+for h,g in ipairs(b)do if e(Z[g])then return true end end;return false end;for h,g in pairs(Z)do
 if e(g)then return true end end;return false end;R.KEY_STALE=ag;local ah=nil;local function ax()if ah==nil then
 local a,b=pcall(require,"kernel.screen")ah=a and b or false end
 return ah or nil end;local an=nil
-local ai=true;local function Z()ai=true end;local _=nil
+local ai=true;local function Y()ai=true end;local _=nil
 function R.withListener(a,b,...)local f=_;_=a;local g,e,h,i,j=pcall(b,...)_=f;if not g then
 error(e,0)end;return e,h,i,j end;function R.genOf(a)local b=S[a]return b and b.gen or nil end
 local function aj()if
@@ -41,7 +41,7 @@ pairs(d.caps)do e[q]=r end end;if g and d then local q=d.caps or{}
 for r in pairs(e)do if not q[r]then e[r]=nil end end end
 S[f]={pid=f,gen=o,name=b or("proc_"..f),coroutine=p,state=T.READY,tsr=
 a.tsr or false,priority=a.priority or 5,source=a.source or"user",created=V.uptime(),lastRun=0,cpuTime=0,cpuBudget=a.cpuBudget,signalInterest=ao(a.signalInterest),background=a.background,bgSince=
-nil,bgTicks=0,signals={},sigHead=1,sigTail=0,env={},parent=U,principal=h,token=i,caps=e,cwd=j or"/",stdin=k,stdout=l,stderr=m,display=n}Z()return f end;local az=0.05
+nil,bgTicks=0,signals={},sigHead=1,sigTail=0,env={},parent=U,principal=h,token=i,caps=e,cwd=j or"/",stdin=k,stdout=l,stderr=m,display=n}Y()return f end;local az=0.05
 local function ac()
 if coroutine.isyieldable then return coroutine.isyieldable()end;local a,b=coroutine.running()if b==true then return false end
 return a~=nil end
@@ -78,14 +78,16 @@ function R.kill(a,b)local c=S[a]if not c then return false,"No such process"end;
 if
 not e then if not(type(b)=="table"and b.kernel)then return false,
 "Permission denied (no caller)"end else
-local f=S[e]if f and not ad(f,c)then return false,aq end end;c.state=T.DEAD;Z()if a==W then
-if c.parent and S[c.parent]and
-S[c.parent].state~=T.DEAD then W=c.parent else R.cycleForeground()end end
-for f,g in pairs(X)do if g==a then
-if c.parent and
-S[c.parent]and S[c.parent].state~=T.DEAD and
-S[c.parent].display==f then X[f]=c.parent else X[f]=nil end end end;local d=require(ar)d.removeSource("proc:"..a)if d.purgeOwner then
-d.purgeOwner(a)end;c._purged=true;return true end
+local g=S[e]if g and not ad(g,c)then return false,aq end end;local f=c.state==T.DEAD;c.state=T.DEAD;Y()
+if a==W then if c.parent and S[c.parent]and
+S[c.parent].state~=T.DEAD then W=c.parent else
+R.cycleForeground()end end
+for g,h in pairs(X)do
+if h==a then if
+c.parent and S[c.parent]and S[c.parent].state~=T.DEAD and S[c.parent].display==g then
+X[g]=c.parent else X[g]=nil end end end;local d=require(ar)d.removeSource("proc:"..a)if d.purgeOwner then
+d.purgeOwner(a)end;c._purged=true;if f then
+return false,"No such process (it had already ended)"end;return true end
 function R.goTSR(a)local d=a or U;local b=S[d]if not b then return false end;local c=aj()
 if a and c and a~=c then
 local e=S[c]if e and not ad(e,b)then return false,aq end end;b.tsr=true;b.state=T.TSR;return true end;local aA=256
@@ -173,7 +175,7 @@ i=="touch"or i=="drag"or i=="drop"or i=="scroll"then j=h.displayForScreen(a[2])e
 for i,h in ipairs(g)do local j=S[h]
 if j and j.state~=T.DEAD then local k=j.coroutine
 local l=coroutine.status(k)
-if l=="dead"then j.state=T.DEAD;Z()elseif l==at and aG(j,a,b)then elseif l==at and aF(j,h,d)then elseif l==at then U=h
+if l=="dead"then j.state=T.DEAD;Y()elseif l==at and aG(j,a,b)then elseif l==at and aF(j,h,d)then elseif l==at then U=h
 j.state=T.RUNNING;local n=V.uptime()j._resumeStart=n;local m=nil;if j.sigHead==nil then
 j.sigHead,j.sigTail=1,#j.signals end
 if j._coopYield then j._coopYield=false
@@ -198,8 +200,9 @@ if m then
 q,r=coroutine.resume(k,table.unpack(m,1,m.n or#m))else q,r=coroutine.resume(k)end;if s then pcall(debug.sethook,k)end;if p then aD()end;j.cpuTime=
 j.cpuTime+ (V.uptime()-n)
 j.lastRun=V.uptime()
-if not q then j.state=T.DEAD;j.error=tostring(r)Z()elseif
-coroutine.status(k)=="dead"then j.state=T.DEAD;Z()else j.state=j.tsr and T.TSR or T.READY end;U=nil end end end;local f,e=nil,nil
+if not q then j.state=T.DEAD;j.error=tostring(r)Y()elseif
+coroutine.status(k)=="dead"then j.state=T.DEAD;Y()elseif j.state==T.DEAD then Y()else
+j.state=j.tsr and T.TSR or T.READY end;U=nil end end end;local f,e=nil,nil
 for i,h in pairs(S)do
 if h.state==T.DEAD then if h.coroutine then h.coroutine=nil end
 if not

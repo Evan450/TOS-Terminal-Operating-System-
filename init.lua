@@ -114,7 +114,7 @@ h(q,"TOS installed to hard drive!",0x00FF00)q=q+1;h(q,"Rebooting in 3 seconds...
 af.pullSignal(3)af.shutdown(true)else
 h(10,"install.lua not found on floppy!",0xFF0000)h(11,"Booting from floppy instead...",0xAAAAAA)
 af.pullSignal(2)end;break elseif n==50 then break elseif n==51 and k then _G._TOS_OVERLAY_DISK=d.address;break end elseif not o then break end end end end end end
-_G._TOS={version="1.5.0",codename="Aletheia",build="0dbc1ee",variant="minified",bootFS=ae,bootAddr=ae and ae.address or nil,bootTime=af.uptime(),startMem=af.freeMemory(),totalMem=af.totalMemory()}local ap={}local aC={}local aM={}
+_G._TOS={version="1.5.0",codename="Aletheia",build="07bf795",variant="minified",bootFS=ae,bootAddr=ae and ae.address or nil,bootTime=af.uptime(),startMem=af.freeMemory(),totalMem=af.totalMemory()}local ap={}local aC={}local aM={}
 local aV={"/tos/?.lua","/tos/?/init.lua","/usr/lib/?.lua","/usr/modules/?.lua","/usr/modules/?/init.lua"}_G.package={loaded=nil}
 local function aN(a)if not ae.exists(a)then return nil end
 local b=ae.open(a,"r")if not b then return nil end;local c={}while true do local d=ae.read(b,4096)if not d then break end;c[#

@@ -2,6 +2,6 @@ return {
   ["key"] = "dcdafa5342333048be0ad519911a6bd1ecffefcffde73879a4e246fc20d7fd8b",
   ["covers"] = "tos/system_manifest.lua",
   ["signer"] = "discover",
-  ["sig"] = "7ed844587d67b993e4386903af0f877a7631c1ecd1be5a26a620d1e66e6a3486c9a2c0d52a6448a82953171740693bd98b8527694f5e4624c1b0000752ea630d",
+  ["sig"] = "5ae774f21e0b5e392b233bd0ab22e4f015e5212b8f2e3856fe80146fe282b88c06a0a803e2e778cc023c8237733d749d3a21e252119a7a76edf4b67c97c25906",
   ["v"] = 1,
 }

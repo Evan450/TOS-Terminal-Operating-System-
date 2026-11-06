@@ -124,9 +124,11 @@ local b=(a.to~=nil and a.to~=l.BROADCAST)
 local d=
 b and not(a.unsealed and a.allowPlaintext)and self.secretFor(a.to)or nil
 if not d and not a.allowPlaintext then
-if b then return nil,
+if b then
+return nil,
 "no shared secret with "..
-tostring(a.to):sub(1,8).."... — pair first (net pair) or allow plaintext explicitly"end;return nil,"broadcasts can't be sealed — allow plaintext explicitly"end;if b then local f=self:pending()
+tostring(a.to):sub(1,8)..
+"... — pair first (net pair) or allow plaintext explicitly".."  [E-502 ERR_NET_NO_SECRET]"end;return nil,"broadcasts can't be sealed — allow plaintext explicitly"end;if b then local f=self:pending()
 if f>=k.ORIGIN_MAX then return nil,"mesh outbox full: "..
 f.." messages are still awaiting delivery"end end
 local c=self:_nextId(a.svc:sub(1,1))

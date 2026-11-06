@@ -100,11 +100,12 @@ local n=I.makePacket(I.TYPE.CHAT_PAIR_INIT,{mac=P(f,g,a,j),ts=j,v=Q,nonce=i,mac2
 k=(pcall(O,a,"init",n.payload))end
 if not r and not k then
 e.off(I.TYPE.CHAT_PAIR_CONFIRM,m)L=nil;return false,"send failed: "..tostring(s)end
-e.waitFor(function()return h end,c or(k and 30 or 10))e.off(I.TYPE.CHAT_PAIR_CONFIRM,m)L=nil
-if not h then return false,
-"no confirmation (wrong code, window expired, or peer offline)"end
-if type(d)~="table"or type(d.mac)~=K or
-type(d.ts)~="number"then return false,"malformed confirm"end;local l
+e.waitFor(function()return h end,c or(k and 30 or 10))e.off(I.TYPE.CHAT_PAIR_CONFIRM,m)L=nil;if not h then
+return false,
+"no confirmation (wrong code, window expired, or peer offline)".."  [E-503 ERR_NET_PAIR_FAILED]"end
+if
+
+type(d)~="table"or type(d.mac)~=K or type(d.ts)~="number"then return false,"malformed confirm"end;local l
 if d.v==Q then
 if not
 (ab(d.nonce)and type(d.mac2)==K and

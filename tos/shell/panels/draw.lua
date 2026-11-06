@@ -92,8 +92,9 @@ f.title or f.fg})if c then c.markToggle(a,a.RAIL_ROW,nil,nil)
 for m,n in ipairs(b)do if n==h and i[m]then
 c.markToggle(a,a.RAIL_ROW,i[m].s,i[m].e)end end end end
 function z.sumRail(a,b)local c=b
-if not c then local d=a.browser.files or{}local e=#d;if d[1]and
-d[1].name==".."then e=e-1 end;c=e.." items"
+if not c then local e=a.browser.files or{}local d=#e;if e[1]and
+e[1].name==".."then d=d-1 end;c=d..
+(d==1 and" item"or" items")
 if a.browser.freeStr then c=c.." · "..
 a.browser.freeStr.." free"end end;C.drawRail(a.D,a.T,a.SUM_ROW,a.W,{{label=c}})end
 local function U(a)local b=a.W;local c=7;local d=a.tier>=3 and b>=80;local e=d and 6 or 0;local f=d and(b-c-e-

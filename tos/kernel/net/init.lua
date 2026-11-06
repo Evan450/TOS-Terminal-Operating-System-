@@ -266,10 +266,11 @@ return false,"trust manager unavailable"end;if not c then local m=al[a]
 if m and W.uptime()<m then return true end end;if
 Q.getLevel(a)<Q.LEVEL.TRUSTED then return false,"peer not trusted"end
 local f=Q._internalGetSecret and
-Q._internalGetSecret(a,P._trustToken)or nil
-if not f or f==""then return false,"no shared secret with peer"end;local d
-if T.salt then d=T.salt(16)else local m={}for n=1,16 do
-m[n]=string.char(math.random(0,255))end;d=table.concat(m)end;local g,h,e=false,nil,nil
+Q._internalGetSecret(a,P._trustToken)or nil;if not f or f==""then
+return false,"no shared secret with peer  [E-502 ERR_NET_NO_SECRET]"end;local d
+if T.salt then d=T.salt(16)else
+local m={}
+for n=1,16 do m[n]=string.char(math.random(0,255))end;d=table.concat(m)end;local g,h,e=false,nil,nil
 local i=P.onceFrom(S.TYPE.CHALLENGE_RES,a,function(m)
 if
 m.payload and m.payload.nonce==d then h=m.payload.proof;e=m.payload.serverNonce;g=true end end)local k,l=P.send(a,S.challenge(d))

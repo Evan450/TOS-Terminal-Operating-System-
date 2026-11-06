@@ -13,15 +13,33 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 - **Networking:** two machines that trust each other agree a shared secret by themselves, and the mesh learns routes from its own traffic instead of always flooding. A reinstalled peer is flagged rather than silently failing.
 - **Packages:** a package is now its name and the key that signs it. Dependencies are found across disks and repositories, version constraints are enforced before anything is written, and `pkg fetch` brings what a package requires.
-- **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails.
+- **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails. It asks whether to trust the Optional Utilities key and who manages accounts, puts the old system in `/openos`, and cleans up its download.
 - **Add-ons:** a text-mode `web` browser, the `pic` picture viewer, the `warhead` nuke designer, a Lotus-style `calc` 2.0, `rbmk-control` bound to the real console, and a cluster `cluster-storage` node.
-- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says.
+- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says. Commands print as they work, killing your own shell brings the login back instead of freezing the screen, `find` takes wildcards, lists show names whole, and `&&`/`||` are refused rather than half-run.
 - **Size and speed:** the release and add-ons ship minified with local variables renamed, and the render path does less work per frame.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 119 rounds of work:
+Everything since v1.5.0, in 137 rounds of work:
 
+- [verify is quicker](#verify-is-quicker)
+- [&& and || are refused, not half-run](#and--are-refused-not-half-run)
+- [inventory shows item names whole](#inventory-shows-item-names-whole)
+- [The command line wraps at its full width](#the-command-line-wraps-at-its-full-width)
+- [keys and watch read right at the command line](#keys-and-watch-read-right-at-the-command-line)
+- [find takes wildcards](#find-takes-wildcards)
+- [kill tells the truth about an ended process](#kill-tells-the-truth-about-an-ended-process)
+- [Built-in commands print as they go](#built-in-commands-print-as-they-go)
+- [os.exit() leaves the Lua REPL](#osexit-leaves-the-lua-repl)
+- [A screen whose shell is gone gets its login back](#a-screen-whose-shell-is-gone-gets-its-login-back)
+- [Killing your own shell no longer freezes the screen](#killing-your-own-shell-no-longer-freezes-the-screen)
+- [Full-screen apps explain themselves at the command line](#full-screen-apps-explain-themselves-at-the-command-line)
+- [disk list shows mount points whole](#disk-list-shows-mount-points-whole)
+- [pkg's lists show names whole](#pkgs-lists-show-names-whole)
+- [The BIOS-skip reason fits the screen](#the-bios-skip-reason-fits-the-screen)
+- [ls shows long names whole](#ls-shows-long-names-whole)
+- [Two network refusals carry codes](#two-network-refusals-carry-codes)
+- [A BIOS too big for the EEPROM no longer ends the install](#a-bios-too-big-for-the-eeprom-no-longer-ends-the-install)
 - [pkg audit](#pkg-audit)
 - [A network install leaves only TOS](#a-network-install-leaves-only-tos)
 - [The operator decides who manages accounts, and whether to trust the pack](#the-operator-decides-who-manages-accounts-and-whether-to-trust-the-pack)
@@ -141,6 +159,78 @@ Everything since v1.5.0, in 119 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### verify is quicker
+
+`verify` no longer compiles a file whose hash already matched the release: that file is byte for byte what shipped. 171 files took 69 seconds instead of 81 on the test machine; a changed file is still caught.
+
+### && and || are refused, not half-run
+
+A line with `&&` or `||` outside quotes is refused with a reason instead of half-run. TOS has neither: `whoami && echo X` ran `whoami` alone without a word, and `a || b` ran as a pipe, so `b` ran when it should not have. `help` and the manual say so.
+
+### inventory shows item names whole
+
+`inventory` shows item names whole where the screen allows. It cut every name at 24 characters without a mark, so `minecraft:diamond_pickaxe` lost its last letter.
+
+### The command line wraps at its full width
+
+The command line wraps piped and reported output at its own width. It kept six columns back for a line-number gutter it never draws, so a 78-character line broke in two on an 80-column screen.
+
+### keys and watch read right at the command line
+
+`keys` lines its bindings up: "Shift+Delete ^X" ran into its own description. At the command line `watch` and the other live views end with a hint that is a real instruction ("Run it again to refresh"), not "watch watch: ps", which was not a command.
+
+### find takes wildcards
+
+`find` takes wildcards: `find /etc -name *.example` finds the `.example` files. A pattern with `*` or `?` was read as a Lua pattern, where a leading `*` is a literal star, so it found nothing. A plain word still finds every name containing it.
+
+### kill tells the truth about an ended process
+
+`kill` on a process that has already ended says there is no such process, as `ps` would suggest. It said "Killed PID 2" for a login that had finished, which looked like it had killed something.
+
+### Built-in commands print as they go
+
+Built-in commands are heard while they run. `verify` at the command line showed nothing for over a minute and then 171 lines at once; it now lists each file as it checks it. In the full interface the output row shows the latest line as a command works, and the whole output still opens when it ends.
+
+### os.exit() leaves the Lua REPL
+
+`os.exit()` in the Lua REPL leaves it, as it ends a program. It printed "exit nil" and the REPL carried on; `exit` always worked.
+
+### A screen whose shell is gone gets its login back
+
+A screen whose shell is gone without exiting gets its login back within a second, even while services or background programs keep running. The kernel only brought a login back after a clean exit, a logout, or when every process had stopped.
+
+### Killing your own shell no longer freezes the screen
+
+A process that kills itself stays dead. `kill` on the shell you are typing in said "Killed PID 2" and froze the screen for good: the shell ran on to its next pause, the scheduler marked it ready again, and with its input gone nothing could reach it. The login screen now comes back within a second, and logging in works as before.
+
+### Full-screen apps explain themselves at the command line
+
+`monitor`, `settings`, `desktop` and `chat` typed at the command line say they are full-screen apps and how to reach them (`tui`, then the command). Each used to print nothing and give the prompt back, having opened a tab the command line never shows. `monitor` also lists the processes, as `ps` does.
+
+### disk list shows mount points whole
+
+`disk list` shows mount points and labels whole. A floppy mounts at `/mnt/` plus its label, which may be 32 characters, and the list cut the mount point at 16: a disk labelled "Optional Utilities" listed as `/mnt/Optional Ut`, not a directory anyone could `cd` into.
+
+### pkg's lists show names whole
+
+`pkg trust list` and `pkg repo list` show names whole. They cut a publisher label at 16 characters and a repo name at 14, though a label may be 48 and a repo name 32, and `pkg trust remove` and `pkg repo remove` refused the cut name the list had shown.
+
+### The BIOS-skip reason fits the screen
+
+The installer's reason for skipping a BIOS too big for the EEPROM is two lines that fit an 80-column screen. As one line it ran to 103 characters and wrapped mid-word.
+
+### ls shows long names whole
+
+`ls` no longer cuts file names at 24 characters. The Name column widens to the longest name in the directory, as far as the screen allows, so `/etc` lists `component_caps.cfg.example` whole instead of `component_caps.cfg.examp`, a name nobody could type back. A name too long for the screen ends in `~` to say it was cut. A directory with one entry says `1 item`, as do the file browser's summary line and `trash empty`.
+
+### Two network refusals carry codes
+
+Two network refusals now carry codes `why` can explain: E-502, when a machine has no shared secret with the one it is sending to, and E-503, when pairing gets no confirmation. `why E-502` says how to make a secret, including through the mesh for a machine you cannot hear.
+
+### A BIOS too big for the EEPROM no longer ends the install
+
+Installing from the dev branch no longer fails at the very end: its BIOS is the unminified source, too big for an EEPROM, and flashing it used to stop the installer with "not enough space" after TOS was already in place. The installer now checks the size first and skips the flash with the reason; the BIOS the machine has boots TOS too.
 
 ### pkg audit
 

@@ -26,162 +26,172 @@ b=b+1
 while b<=d do local j=a:sub(b,b)if
 j==" "or j=="\t"or j=="'"or j=='"'or j=="\\"then break end;b=b+1 end;e(i,b-1)end end;g()return f end;o._tokenize=t
 function o.build(a,b)local d=a.F;local c=a.T;local f=b.rp;local i=b.makeProgramEnv;local j=b.C
-local function k(B,C,D,A,E)
-local O,F=pcall(require,r)
-if not O or type(F)~="table"or not F.spawn then return false end;local H=a.displayIdx;if not H then return false end
-local M=F.current and F.current()local K=M and M.pid;if not K then return false end;local P,G=pcall(require,w)G=
-P and G or nil;local L=false
-if A and G and G.fitDisplay then
-local S=A.mode=="min"and(a.W or 0)>=
-A.width and(a.H or 0)>=A.height;if not S then
-local T=G.fitDisplay(H,{mode="size",w=A.width,h=A.height})L=T~=nil end end;local J={}
-local function Q(S,T)J[#J+1]={tostring(S),T or c.fg}end;local I
-I=F.spawn("prog:"..B.."@"..H,function()local U,V=pcall(C,D,Q)if not U then
-J[#J+1]={u..tostring(V),c.error}end
-if L and G and G.restore then pcall(G.restore,H)end
-if a._program and a._program.pid==I then a._program=nil end;local W,S=pcall(require,"shell.panels.tabs")if W and S then
-for Y,X in
-ipairs(a.tabs or{})do if X.type=="program"and X.pid==I then X.pid=nil;pcall(S.close,a,Y)
+local function k(C,D,E,B,F)
+local P,G=pcall(require,r)
+if not P or type(G)~="table"or not G.spawn then return false end;local I=a.displayIdx;if not I then return false end
+local N=G.current and G.current()local L=N and N.pid;if not L then return false end;local Q,H=pcall(require,w)H=
+Q and H or nil;local M=false
+if B and H and H.fitDisplay then
+local T=B.mode=="min"and(a.W or 0)>=
+B.width and(a.H or 0)>=B.height;if not T then
+local U=H.fitDisplay(I,{mode="size",w=B.width,h=B.height})M=U~=nil end end;local K={}
+local function R(T,U)K[#K+1]={tostring(T),U or c.fg}end;local J
+J=G.spawn("prog:"..C.."@"..I,function()local V,W=pcall(D,E,R)if not V then
+K[#K+1]={u..tostring(W),c.error}end
+if M and H and H.restore then pcall(H.restore,I)end
+if a._program and a._program.pid==J then a._program=nil end;local X,T=pcall(require,"shell.panels.tabs")if X and T then
+for Z,Y in
+ipairs(a.tabs or{})do if Y.type=="program"and Y.pid==J then Y.pid=nil;pcall(T.close,a,Z)
 break end end end;if a.D and
-a.D.invalidate then pcall(a.D.invalidate)end;if#J>0 then
-a.outLines=n.expandBuf(a,J)end;local T=F.get and F.get(K)if T and
-T.state~=F.STATE.DEAD then
-F.setForeground(K,H,{kernel=true});(F.signalKernel or
-F.signal)(K,"tos_focus")end end,{priority=3,source="user",principal=
-n.sessionOf and n.sessionOf(a)or nil,token=a.st,display=H,background=E})if not I then if L and G and G.restore then pcall(G.restore,H)end;return
+a.D.invalidate then pcall(a.D.invalidate)end;if#K>0 then
+a.outLines=n.expandBuf(a,K)end;local U=G.get and G.get(L)if U and
+U.state~=G.STATE.DEAD then
+G.setForeground(L,I,{kernel=true});(G.signalKernel or
+G.signal)(L,"tos_focus")end end,{priority=3,source="user",principal=
+n.sessionOf and n.sessionOf(a)or nil,token=a.st,display=I,background=F})if not J then if M and H and H.restore then pcall(H.restore,I)end;return
 false end
-a._program={pid=I,name=B,seat=H}local R,N=pcall(require,"shell.panels.tabs")if R and N then
-pcall(N.create,a,"program",B,{pid=I,seat=H,prog=B,live=true})end;a.suspendIdleDraw=true;if
+a._program={pid=J,name=C,seat=I}local S,O=pcall(require,"shell.panels.tabs")if S and O then
+pcall(O.create,a,"program",C,{pid=J,seat=I,prog=C,live=true})end;a.suspendIdleDraw=true;if
 a.D and a.D.invalidate then pcall(a.D.invalidate)end
-F.setForeground(I,H,{kernel=true})return true end
-local function e(B,A,C)
-do local R,O=pcall(require,"kernel.env")local S,Q=pcall(require,r)
-if R and
-type(O)=="table"and O.read then
-local P=S and type(Q)=="table"and
-Q.current and Q.current()or nil;B=z(B,function(T)return O.read(P,T)end)end end;local G=t(B)if#G==0 then return""end;G=n.expandAlias(a,G)
-if#G==0 then return""end;local D=G[1]:lower()
-if C and D~="watch"then
-for O=2,#G do if G[O]=="--live"or
-(G[O]=="-f"and s[D])then table.remove(G,O)
-table.insert(G,1,"watch")D="watch"break end end end;a.curCmd=D;if D~="why"then n.clearFailure(a)end;local F={}for O=2,#G do
-F[#F+1]=G[O]end;a._plainPath=C;local I={}local function E(O,P)
-I[#I+1]={tostring(O),P or c.fg}
-if P==c.error and D~="why"then n.noteFailure(a,D,O)end;q()end
-if A and#A>0 then
+G.setForeground(J,I,{kernel=true})return true end
+local function e(C,B,D)
+do local S,Q=pcall(require,"kernel.env")local T,R=pcall(require,r)
+if S and
+type(Q)=="table"and Q.read then
+local P=T and type(R)=="table"and
+R.current and R.current()or nil;C=z(C,function(U)return Q.read(P,U)end)end end;local H=t(C)if#H==0 then return""end;H=n.expandAlias(a,H)
+if#H==0 then return""end;local E=H[1]:lower()
+if D and E~="watch"then
+for P=2,#H do if H[P]=="--live"or
+(H[P]=="-f"and s[E])then table.remove(H,P)
+table.insert(H,1,"watch")E="watch"break end end end;a.curCmd=E;if E~="why"then n.clearFailure(a)end;local G={}for P=2,#H do
+G[#G+1]=H[P]end;a._plainPath=D;local J={}local function F(P,Q)
+J[#J+1]={tostring(P),Q or c.fg}
+if Q==c.error and E~="why"then n.noteFailure(a,E,P)end;q()end
+if B and#B>0 then
 if
-D=="cat"and#F==0 then
-for O in(A.."\n"):gmatch("(.-)\n")do E(O,c.fg)end;return I elseif D=="grep"and#F>=1 and
-(not F[2]or(F[1]=="-i"and not F[3]))then local O=F[1]=="-i"
-local P=O and F[2]:lower()or F[1]
-for Q in A:gmatch("([^\n]*)\n?")do if
-(O and Q:lower()or Q):find(P,1,true)then E(Q,c.fg)end end;return I elseif D=="wc"and#F==0 then local O,P,Q=0,0,#A;for R in A:gmatch("\n")do O=O+1 end;if
-A:sub(-1)~="\n"then O=O+1 end;for R in A:gmatch("%S+")do P=P+1 end
-E(string.format(" %d lines  %d words  %d bytes",O,P,Q),c.fg)return I elseif D=="head"or D=="tail"then local O,P=10,false;for R,Q in ipairs(F)do
-if Q=="-n"then O=
-tonumber(F[R+1])or O elseif Q:match("^%-%d+$")then O=tonumber(Q:sub(2))elseif
-F[R-1]~="-n"then P=true end end
+E=="cat"and#G==0 then
+for P in(B.."\n"):gmatch("(.-)\n")do F(P,c.fg)end;return J elseif E=="grep"and#G>=1 and
+(not G[2]or(G[1]=="-i"and not G[3]))then local P=G[1]=="-i"
+local Q=P and G[2]:lower()or G[1]
+for R in B:gmatch("([^\n]*)\n?")do if
+(P and R:lower()or R):find(Q,1,true)then F(R,c.fg)end end;return J elseif E=="wc"and#G==0 then local P,Q,R=0,0,#B;for S in B:gmatch("\n")do P=P+1 end;if
+B:sub(-1)~="\n"then P=P+1 end;for S in B:gmatch("%S+")do Q=Q+1 end
+F(string.format(" %d lines  %d words  %d bytes",P,Q,R),c.fg)return J elseif E=="head"or E=="tail"then local P,Q=10,false;for S,R in ipairs(G)do
+if R=="-n"then P=
+tonumber(G[S+1])or P elseif R:match("^%-%d+$")then P=tonumber(R:sub(2))elseif
+G[S-1]~="-n"then Q=true end end
 if not
-P then local Q={}
-for S in(A.."\n"):gmatch("(.-)\n")do Q[#Q+1]=S end
-local R=D=="head"and 1 or math.max(1,#Q-O+1)for S=R,math.min(#Q,R+O-1)do E(Q[S],c.fg)end;return I end end end;local H=j[D]
-if H then local R,P=pcall(require,"shell.panels.commands")local Q=
-R and
-type(P)=="table"and P.entry and P.entry(D)or nil;local O=Q and
-tonumber(Q.tier)or 0
-if O>0 then local S=
+Q then local R={}
+for T in(B.."\n"):gmatch("(.-)\n")do R[#R+1]=T end
+local S=E=="head"and 1 or math.max(1,#R-P+1)for T=S,math.min(#R,S+P-1)do F(R[T],c.fg)end;return J end end end;local I=j[E]
+if I then local S,Q=pcall(require,"shell.panels.commands")local R=
+S and
+type(Q)=="table"and Q.entry and Q.entry(E)or nil;local P=R and
+tonumber(R.tier)or 0
+if P>0 then local T=
 n.liveTier and n.liveTier(a)or 0
-if S<O then
-local T="Permission denied: '"..
-D.."' needs "..
+if T<P then
+local U="Permission denied: '"..
+E.."' needs "..
 (
-n.tierName and n.tierName(O)or("tier "..O)).."  [E-403 ERR_TIER_REQUIRED]"if n.fail then n.fail(a,T,E)else E(T,c.error)end
-a.lastDenial={cmd=D,need=O,have=S}return I end end end;local J=nil;local K=false;local L,M=false,"drowsy"
-if not H then local P,O=false,nil;if n.mayHavePackages()then
-P,O=pcall(require,v)end
-if P and O and O.getCommand then H=O.getCommand(D)
-K=H~=nil
-if H and O.getCommandScreen then J=O.getCommandScreen(D)end
-if H and O.getCommandFullscreen then L=O.getCommandFullscreen(D)if
-O.getCommandBackground then M=O.getCommandBackground(D)end end end end;if H and L and C then if k(D,H,F,J,M)then return{}end end
-local function N()if a.D and
+n.tierName and n.tierName(P)or("tier "..P)).."  [E-403 ERR_TIER_REQUIRED]"if n.fail then n.fail(a,U,F)else F(U,c.error)end
+a.lastDenial={cmd=E,need=P,have=T}return J end end end;local K=nil;local L=false;local M,N=false,"drowsy"
+if not I then local Q,P=false,nil;if n.mayHavePackages()then
+Q,P=pcall(require,v)end
+if Q and P and P.getCommand then I=P.getCommand(E)
+L=I~=nil
+if I and P.getCommandScreen then K=P.getCommandScreen(E)end
+if I and P.getCommandFullscreen then M=P.getCommandFullscreen(E)if
+P.getCommandBackground then N=P.getCommandBackground(E)end end end end;if I and M and D then if k(E,I,G,K,N)then return{}end end
+local function O()if a.D and
 a.D.invalidate then pcall(a.D.invalidate)end end
-if H then local P=false
-if J then
-local T=J.mode=="min"and(a.W or 0)>=J.width and
-(a.H or 0)>=J.height
-if not T then local V,U=pcall(require,w)
-if V and U and U.fitDisplay then
-local X,Y,W=U.fitDisplay(a.displayIdx,{mode="size",w=J.width,h=J.height})if X then P=true end;if W then E(W,c.warning)end end end end;local Q,O=E,nil
-if K and a._plainPath and a.programIO then local U,V=a.programIO(E)
-Q=U;local W,T=pcall(require,r)
-O=
-W and type(T)=="table"and T.current and T.current()or nil;if O then O.beforeRead=V end end;local R,S=pcall(H,F,Q)if O then O.beforeRead=nil end;if not R then
-E(u..tostring(S),c.error)end;if K then N()end
-if P then local V,T=pcall(require,w)if
-V and T and T.restore then pcall(T.restore,a.displayIdx)end
-local W,U=pcall(require,"shell.panels.state")
-if W and U and U.recomputeLayout then pcall(U.recomputeLayout,a)end end else local O=n.resolveProgram(d,D)
-if O then
-local P=n.safeModeRefusal and n.safeModeRefusal(O)
-if P then if n.fail then n.fail(a,P,E)else E(P,c.error)end;return I end;local Q=d.readFile(O)
-if Q then local S,T=nil,nil;local U,R=false,nil;if n.mayHavePackages()then
-U,R=pcall(require,v)end;if
-U and type(R)=="table"and R.capsForFile then S,T=R.capsForFile(O)end
-local X,Y=a.programIO(E)
-local V=i{name=O,pkgName=T,caps=S,stdout=X,beforeRead=Y}local W,Z=load(Q,"="..O,"t",V)if W then
-local _,aa=pcall(W,table.unpack(F))n.reportProgramEnd(a,E,_,aa,u,V)N()else
-E("Compile error: "..tostring(Z),c.error)end end else local S,Q=pcall(require,"shell.panels.commands")local R=S and Q.entry and
-Q.entry(D)or nil;local P=nil;if not R and
-n.mayHavePackages()then local U,T=pcall(require,v)
-if U and type(T)=="table"and
-T.commandFailure then P=T.commandFailure(D)end end
+if I then local Q=false
+if K then
+local U=K.mode=="min"and(a.W or 0)>=K.width and
+(a.H or 0)>=K.height
+if not U then local W,V=pcall(require,w)
+if W and V and V.fitDisplay then
+local Y,Z,X=V.fitDisplay(a.displayIdx,{mode="size",w=K.width,h=K.height})if Y then Q=true end;if X then F(X,c.warning)end end end end;local R,P=F,nil
+if a._plainPath and a.programIO then local U,V=a.programIO(F)R=U;if L then
+local X,W=pcall(require,r)P=
+X and type(W)=="table"and W.current and W.current()or nil
+if P then P.beforeRead=V end end end;local S,T=pcall(I,G,R)if P then P.beforeRead=nil end;if not S then
+F(u..tostring(T),c.error)end;if L then O()end
+if Q then local W,U=pcall(require,w)if
+W and U and U.restore then pcall(U.restore,a.displayIdx)end
+local X,V=pcall(require,"shell.panels.state")
+if X and V and V.recomputeLayout then pcall(V.recomputeLayout,a)end end else local P=n.resolveProgram(d,E)
 if P then
-E("'"..D..
-"' is installed but could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]",c.error)E(tostring(P),c.error)
-E("Free some memory (close tabs, or reboot) and try again.",c.dim)elseif R then
-E("'"..D.."' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]",c.error)
-if a.lastOut and a.lastOut[1]then E(a.lastOut[1],c.error)
+local Q=n.safeModeRefusal and n.safeModeRefusal(P)
+if Q then if n.fail then n.fail(a,Q,F)else F(Q,c.error)end;return J end;local R=d.readFile(P)
+if R then local T,U=nil,nil;local V,S=false,nil;if n.mayHavePackages()then
+V,S=pcall(require,v)end;if
+V and type(S)=="table"and S.capsForFile then T,U=S.capsForFile(P)end
+local Y,Z=a.programIO(F)
+local W=i{name=P,pkgName=U,caps=T,stdout=Y,beforeRead=Z}local X,_=load(R,"="..P,"t",W)if X then
+local aa,ab=pcall(X,table.unpack(G))n.reportProgramEnd(a,F,aa,ab,u,W)O()else
+F("Compile error: "..tostring(_),c.error)end end else local T,R=pcall(require,"shell.panels.commands")local S=T and R.entry and
+R.entry(E)or nil;local Q=nil;if not S and
+n.mayHavePackages()then local V,U=pcall(require,v)
+if V and type(U)=="table"and
+U.commandFailure then Q=U.commandFailure(E)end end
+if Q then
+F("'"..E..
+"' is installed but could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]",c.error)F(tostring(Q),c.error)
+F("Free some memory (close tabs, or reboot) and try again.",c.dim)elseif S then
+F("'"..E.."' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]",c.error)
+if a.lastOut and a.lastOut[1]then F(a.lastOut[1],c.error)
 a.lastOut=nil else
-E("Its command group failed to load — check `log` for the reason.",c.dim)end
-E("Free some memory (close tabs, or reboot) and try again.",c.dim)else
-E("Unknown command: "..D.."  [E-801 ERR_UNKNOWN_CMD]",c.error)E("Type 'help' for available commands.",c.dim)end
-if _G._TOS.audio then _G._TOS.audio.warning()end end end;return I end;local l=8
+F("Its command group failed to load — check `log` for the reason.",c.dim)end
+F("Free some memory (close tabs, or reboot) and try again.",c.dim)else
+F("Unknown command: "..E.."  [E-801 ERR_UNKNOWN_CMD]",c.error)F("Type 'help' for available commands.",c.dim)end
+if _G._TOS.audio then _G._TOS.audio.warning()end end end;return J end;local l=8
 local g=b.showOutput or
-function(A,B)a.lastOut=nil;a.outLines=nil;local C=n.routeOutput(#A,l)
+function(B,C)a.lastOut=nil;a.outLines=nil;local D=n.routeOutput(#B,l)
 if
-C=="status"then a.lastOut=A[1]elseif C=="inline"then a.outLines=A elseif C=="tab"then local D=y()if D then
-D.openViewTab(a,A,B or x,true)else a.outLines=A end end end;local function h(A)local B=a.lastOut
-if type(B)=="table"and B[1]then A[#A+1]=B;a.lastOut=nil end;return A end
-function a.programIO(A)
-local B=a._plainPath;local C=B and b.liveLine or nil
-local D=B and b.echoLine or nil;local function E(G,H)
-if C then C(G,H)q()else A(G,H or a.T.fg)if D then D(G)end end end;local F=nil
-if B and b.inputRow then
-F=function(G)
-if G~=""then E(G)end;local I,H=pcall(require,"compat.term")if I and type(H)=="table"then
-H.setCursor(1,b.inputRow())end end end;return E,F end
-local function m(A)a.lastOut=nil;local C=A:find("|",1,true)
-local D=A:find("[>]")or A:find("<")
-if C or D then local G,H=pcall(require,"kernel.pipe")
-if G then local J=H.parse(A)
-local I=nil;local K={}
-for M,L in ipairs(J)do
-if L.stdin and L.stdin.type=="file"then
-local P=f(L.stdin.path)if not n.canRead(a,P)then
-a.lastOut={"Cannot read: "..L.stdin.path,c.error}return end;I=
-d.exists(P)and d.readFile(P)or nil;if not I then
-a.lastOut={"No such file: "..L.stdin.path,c.error}return end;I=I:gsub("\n$","")end;local O=e(L.cmd,I)local N={}
-for Q,P in ipairs(O)do N[#N+1]=type(P)=="table"and P[1]or
-tostring(P)end;I=table.concat(N,"\n")
+D=="status"then a.lastOut=B[1]elseif D=="inline"then a.outLines=B elseif D=="tab"then local E=y()if E then
+E.openViewTab(a,B,C or x,true)else a.outLines=B end end end;local function h(B)local C=a.lastOut
+if type(C)=="table"and C[1]then B[#B+1]=C;a.lastOut=nil end;return B end
+function a.programIO(B)
+local C=a._plainPath;local D=C and b.liveLine or nil
+local E=C and b.echoLine or nil;local J,F=pcall(require,"computer")local K=
+J and type(F)=="table"and F.uptime or os.clock;local G=-1;local function H(L,M,N)
+if D then D(L,M)q()else B(L,
+M or a.T.fg)if E then local O=K()
+if N or O-G>=0.25 then G=O;E(L)end end end end;local I=nil
+if C and
+b.inputRow then
+I=function(L)if L~=""then H(L,nil,true)end
+local N,M=pcall(require,"compat.term")
+if N and type(M)=="table"then M.setCursor(1,b.inputRow())end end end;return H,I end
+local function m(B)local C=nil
+for D=1,#B-1 do local E=B:sub(D,D)
+if C then if E==C then C=nil end elseif E=='"'or E=="'"then C=E else
+local F=B:sub(D,D+1)if F=="&&"or F=="||"then return F end end end;return nil end
+local function A(B)a.lastOut=nil;local D=m(B)if D then
+a.lastOut={"TOS runs one command per line, and has no "..
+D..". Type the commands one at a time.",c.error}return end
+local E=B:find("|",1,true)local F=B:find("[>]")or B:find("<")
+if E or F then
+local I,J=pcall(require,"kernel.pipe")
+if I then local L=J.parse(B)local K=nil;local M={}
+for O,N in ipairs(L)do
 if
-L.stdout and L.stdout.type=="file"then local P=f(L.stdout.path)
-if n.canWrite(a,P)then local Q,R
-if L.stdout.append then
-Q,R=d.appendFile(P,I.."\n")else Q,R=d.writeFile(P,I.."\n")end;n.refreshBrowser(a)if Q then
-a.lastOut={"Output written to "..L.stdout.path,c.highlight}else
-a.lastOut={"Not written: "..tostring(R or L.stdout.path),c.error}end end;return end;if M==#J then K=O end end;g(n.expandBuf(a,h(K)),x)return end end;local E=a._program;local F=e(A,nil,true)
-if a._program and a._program~=E then return end;local B=package.loaded["compat.term"]
+N.stdin and N.stdin.type=="file"then local R=f(N.stdin.path)if not n.canRead(a,R)then
+a.lastOut={"Cannot read: "..N.stdin.path,c.error}return end;K=
+d.exists(R)and d.readFile(R)or nil;if not K then
+a.lastOut={"No such file: "..N.stdin.path,c.error}return end;K=K:gsub("\n$","")end;local Q=e(N.cmd,K)local P={}
+for S,R in ipairs(Q)do P[#P+1]=type(R)=="table"and R[1]or
+tostring(R)end;K=table.concat(P,"\n")
 if
-b.repaint and B and B._screenTaken and B._screenTaken()then b.repaint()end
-g(n.expandBuf(a,h(F)),A:match("^(%S+)")or x)end;a.execOne=e;return m end;return o
+N.stdout and N.stdout.type=="file"then local R=f(N.stdout.path)
+if n.canWrite(a,R)then local S,T
+if N.stdout.append then
+S,T=d.appendFile(R,K.."\n")else S,T=d.writeFile(R,K.."\n")end;n.refreshBrowser(a)if S then
+a.lastOut={"Output written to "..N.stdout.path,c.highlight}else
+a.lastOut={"Not written: "..tostring(T or N.stdout.path),c.error}end end;return end;if O==#L then M=Q end end;g(n.expandBuf(a,h(M)),x)return end end;local G=a._program;local H=e(B,nil,true)
+if a._program and a._program~=G then return end;local C=package.loaded["compat.term"]
+if
+b.repaint and C and C._screenTaken and C._screenTaken()then b.repaint()end
+g(n.expandBuf(a,h(H)),B:match("^(%S+)")or x)end;a.execOne=e;return A end;return o
