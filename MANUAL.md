@@ -1794,6 +1794,13 @@ themselves, with nothing to type. `net pair` is the out-of-band way to do it
 with a code. Broadcasts (`*`) cannot be sealed by definition, so they must be
 opted into explicitly and are labelled PLAINTEXT wherever they appear.
 
+**A peer you have never heard** is reached the same way, with its full address,
+which `net status` shows. On each machine, `net trust <the other's address>
+full`; then `net pair start` on one and the `net pair` line it prints on the
+other. The pairing crosses the relays between you, and none of them can forge
+it or learn the secret it makes, because both halves are keyed by the code.
+After that, mail and anything else sealed reaches it through the mesh.
+
 **A reinstalled peer has a new key.** Two TRUSTED peers derive their shared secret from each other's identity keys. Reinstalling a machine keeps its address (the network card) but makes a new key, so it derives a new secret while you still hold the old one, and nothing sealed gets through. TOS does not accept the new key by itself, because anything that can speak as that address could offer a key of its own. Instead the log records the change and `net peers` marks the peer. Once you know why the key changed, `net trust rekey <peer>` (admin) derives a new secret from the new key.
 
 ### 8.4 Chat: one peer, one group, or everybody

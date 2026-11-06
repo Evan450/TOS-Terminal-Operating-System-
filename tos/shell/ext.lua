@@ -150,7 +150,9 @@ function X.net(a,ctx)
   elseif s=="status" then
     local i=NM.status()
     ctx.o("Host: "..(i.hostname or "?"))
-    ctx.o("Addr: "..(i.address or "?"))
+    -- In full: a peer you cannot hear is named by it, in `net trust` and
+    -- `net pair`, since there is no scan line to pick it from.
+    ctx.o("Addr: "..(i.fullAddress or i.address or "?"))
     local modemCount = NM.modemCount and NM.modemCount() or (i.hasModem and 1 or 0)
     ctx.o("Modem: "..(i.hasModem and "Yes" or "No")..
       (modemCount > 1 and (" (x"..modemCount..")") or "")..
@@ -430,7 +432,8 @@ function X.net(a,ctx)
       local secs = math.max(0, math.floor(expiresAt - computer.uptime()))
       ctx.o("Pairing window open for " .. secs .. "s.", 0xFFFF55)
       ctx.o("Type this on the OTHER peer:", 0xAAAAAA)
-      ctx.o("  net pair <our-addr-or-alias> " .. code, 0xFFFF00)
+      local me = NM.status and NM.status().fullAddress or "<our-addr-or-alias>"
+      ctx.o("  net pair " .. tostring(me) .. " " .. code, 0xFFFF00)
       ctx.o("Pre-condition: both peers must already be TRUSTED on both sides.",0x888888)
     elseif sub2 == "status" then
       local info = CP.windowInfo()
@@ -447,7 +450,9 @@ function X.net(a,ctx)
       local addr = resolvePeer(sub2)
       local code = a[3]
       ctx.o("Pairing with " .. fmtAddr(addr) .. "...", 0xFFFF55)
-      local ok2, err2 = CP.connect(addr, code, 10)
+      -- No timeout of ours: chatpair waits longer when the init went over the
+      -- mesh, where relays have to pass the confirm back.
+      local ok2, err2 = CP.connect(addr, code)
       if ok2 then
         ctx.o("Paired. Shared secret installed on both sides.", 0x00FF00)
       else

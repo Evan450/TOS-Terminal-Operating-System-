@@ -286,6 +286,77 @@ test("a confirm whose nonce was altered is refused", ok9 == false
 test("...and nothing was installed", trustA.secrets[ADDR.B] == nil)
 deliver = prevDeliver
 
+-- ── 10. Over the mesh, to a peer that cannot be heard ──────────────
+-- The direct send goes nowhere; only the mesh carries anything. Seen on
+-- three machines in a line: mail between the ends was refused for want of
+-- a secret, and pairing could not make one. Section 8 left CB on trustBmany.
+print()
+print("-- over the mesh --")
+local function meshPair(direct, tamper, fromOverride)
+  trustA.secrets, trustBmany.secrets = {}, {}
+  current = "B"; CB.closeWindow()
+  local c = CB.startWindow()
+  deliver = function(to, pkt, from)
+    if direct then return prevDeliver(to, pkt, from) end
+    return true          -- sent, and nobody heard it
+  end
+  local sentMesh = 0
+  CA.setMeshSend(function(to, kind, body)
+    sentMesh = sentMesh + 1
+    if tamper then body = tamper(body) end
+    local prev = current; current = "B"
+    CB.onMeshPair(kind, body, fromOverride or ADDR.A)
+    current = prev
+    return true
+  end)
+  CB.setMeshSend(function(to, kind, body)
+    local prev = current; current = "A"
+    CA.onMeshPair(kind, body, ADDR.B)
+    current = prev
+    return true
+  end)
+  current = "A"
+  local okM, errM = CA.connect(ADDR.B, c, 1)
+  CA.setMeshSend(nil); CB.setMeshSend(nil)
+  deliver = prevDeliver
+  return okM, errM, sentMesh
+end
+do
+  local okM, errM, n = meshPair(false)
+  test("a peer heard only over the mesh pairs", okM == true, errM)
+  test("the init went over the mesh", n == 1)
+  test("both sides derived the same secret",
+    trustA.secrets[ADDR.B] ~= nil and trustA.secrets[ADDR.B] == trustBmany.secrets[ADDR.A])
+
+  okM, errM = meshPair(true)
+  test("with both routes open it still pairs", okM == true, errM)
+  test("and both sides agree, though the init arrived twice",
+    trustA.secrets[ADDR.B] ~= nil and trustA.secrets[ADDR.B] == trustBmany.secrets[ADDR.A])
+
+  okM = meshPair(false, function(b)
+    local c = {}
+    for k, v in pairs(b) do c[k] = v end
+    c.nonce = string.rep("0", 32)
+    return c
+  end)
+  test("a relay that alters the init gets nothing paired", okM == false
+    and trustBmany.secrets[ADDR.A] == nil and trustA.secrets[ADDR.B] == nil)
+
+  okM = meshPair(false, nil, "cccc-3333-cccc-3333")
+  test("an init claiming another sender is refused", okM == false
+    and trustBmany.secrets["cccc-3333-cccc-3333"] == nil)
+
+  CA.onMeshPair("confirm", { mac = "x", ts = 1 }, ADDR.B)
+  test("a confirm nobody is waiting for does nothing", trustA.secrets[ADDR.B] == nil)
+
+  -- The wiring, read from source: the fake above cannot seal, and a real mesh
+  -- sealed the confirm with the secret pairing had just installed.
+  local h = io.open("tos/kernel/net/init.lua", "rb")
+  local src = h and h:read("a") or ""
+  if h then h:close() end
+  test("kernel.net sends pairing unsealed", src:find('svc = "pair", to = to, allowPlaintext = true,%s+unsealed = true') ~= nil)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)

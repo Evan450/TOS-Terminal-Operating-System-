@@ -51,6 +51,8 @@ local crypto    = nil
 local protocol  = nil
 local trustMod  = nil
 local netMod    = nil  -- set lazily because we live INSIDE kernel.net
+local meshSend  = nil  -- function(to, kind, body), once the mesh is up
+local _waiting  = nil  -- { peer =, fn = } while connect() waits for a confirm
 local log       = nil
 local LOG_TAG   = "chatpair"
 
@@ -269,11 +271,44 @@ end
 -- Packet handlers (registered by net.init)
 -- ============================================================
 
+-- ============================================================
+-- Over the mesh
+-- ============================================================
+--! The mesh reaches a machine you cannot hear, but only with a shared
+--! secret, and pairing was point to point: two machines that had never been
+--! in range of each other could not be keyed at all, so mail between them
+--! was refused. Seen on three machines in a line, 2026-11-05.
+--!
+--! Pairing can cross relays because nothing in it trusts who handed a packet
+--! over. Both MACs are keyed by the code, bound to both addresses and both
+--! nonces, so a relay can neither forge an init or a confirm nor learn the
+--! link secret, which never travels. The init goes out on both routes with
+--! the same nonce; the receiver takes one per address per window, so if both
+--! arrive the second is dropped and both sides still derive the same secret.
+--! A confirm answers by the route its init came.
+
+--- How to reach a peer over the mesh. kernel.net sets it once the mesh is up.
+function chatpair.setMeshSend(fn) meshSend = fn end
+
+--- An init or a confirm that came over the mesh, from the address the
+--- envelope names. The MAC decides whether that address is true.
+function chatpair.onMeshPair(kind, body, from)
+  if type(body) ~= "table" or type(from) ~= "string" then return end
+  if kind == "init" then
+    chatpair.onPairInit({ payload = body }, from, function(confirm)
+      if meshSend then pcall(meshSend, from, "confirm", confirm.payload) end
+    end)
+  elseif kind == "confirm" and _waiting and _waiting.peer == from then
+    _waiting.fn(body)
+  end
+end
+
 --- Receiver-side handler: inbound CHAT_PAIR_INIT.
 --- Verifies the MAC against our window secret, installs the secret
 --- locally, and sends CHAT_PAIR_CONFIRM back so the sender can do the
---- same on its side.
-function chatpair.onPairInit(packet, from)
+--- same on its side. `reply`, when given, is how to answer: the mesh, for
+--- an init that came over it.
+function chatpair.onPairInit(packet, from, reply)
   if not chatpair.windowOpen() then
     if log then log.warn(LOG_TAG, "pair_init from "..tostring(from):sub(1,8).." but no window open") end
     return
@@ -361,7 +396,8 @@ function chatpair.onPairInit(packet, from)
     payload.mac2  = mac2(_window.secret, ourAddr, from, ts, p.nonce, confNonce)
   end
   local confirm = protocol.makePacket(protocol.TYPE.CHAT_PAIR_CONFIRM, payload, { to = from })
-  if net and net.send then pcall(net.send, from, confirm) end
+  if reply then pcall(reply, confirm)
+  elseif net and net.send then pcall(net.send, from, confirm) end
 end
 
 -- ============================================================
@@ -401,9 +437,11 @@ function chatpair.connect(peer, code, timeout)
 
   local got, confirmPayload = false, nil
   local lid = net.onceFrom(protocol.TYPE.CHAT_PAIR_CONFIRM, peer, function(pkt)
-    confirmPayload = pkt.payload
-    got = true
+    if not got then confirmPayload = pkt.payload; got = true end
   end)
+  _waiting = { peer = peer, fn = function(body)
+    if not got then confirmPayload = body; got = true end
+  end }
 
   -- v1 MAC unchanged (an older receiver checks only that); v2 fields ride
   -- beside it. See "Per-link secret" above.
@@ -416,13 +454,18 @@ function chatpair.connect(peer, code, timeout)
     mac2  = mac2(secret, ourAddr, peer, ts, initNonce, nil),
   }, { to = peer })
   local sent, sErr = net.send(peer, pkt)
-  if not sent then
+  local viaMesh = false
+  if meshSend then viaMesh = (pcall(meshSend, peer, "init", pkt.payload)) end
+  if not sent and not viaMesh then
     net.off(protocol.TYPE.CHAT_PAIR_CONFIRM, lid)
+    _waiting = nil
     return false, "send failed: "..tostring(sErr)
   end
 
-  net.waitFor(function() return got end, timeout or 10)
+  -- A mesh confirm has relays to cross, and each hop waits its turn.
+  net.waitFor(function() return got end, timeout or (viaMesh and 30 or 10))
   net.off(protocol.TYPE.CHAT_PAIR_CONFIRM, lid)
+  _waiting = nil
   if not got then
     return false, "no confirmation (wrong code, window expired, or peer offline)"
   end

@@ -460,6 +460,11 @@ end
 ---   payload              plain table of service content
 ---   ttl                  hop-budget override
 ---   allowPlaintext       REQUIRED to send unsealed (#SEC — see header)
+---   unsealed             send in the clear even with a secret; needs
+---                        allowPlaintext. Only for what MAKES the secret:
+---                        pairing installs it on one side before its
+---                        confirm leaves, and a confirm sealed with it is
+---                        one the other side cannot open.
 --- Returns (id, sealed) or (nil, reason).
 function meshctl:send(opts)
   opts = opts or {}
@@ -467,7 +472,8 @@ function meshctl:send(opts)
     return nil, "mesh send needs a service kind (svc)"
   end
   local unicast = (opts.to ~= nil and opts.to ~= mesh.BROADCAST)
-  local secret = unicast and self.secretFor(opts.to) or nil
+  local secret = unicast and not (opts.unsealed and opts.allowPlaintext)
+    and self.secretFor(opts.to) or nil
   if not secret and not opts.allowPlaintext then
     if unicast then
       return nil, "no shared secret with " .. tostring(opts.to):sub(1, 8)

@@ -343,6 +343,24 @@ function net.init(modules)
       log = log,
     })
 
+    -- Pairing rides the mesh as well, so two machines that cannot hear each
+    -- other can still be keyed. It is unsealed because it is what makes the
+    -- secret, and authenticated by the code: kernel/net/chatpair.lua says why
+    -- a relay can neither forge it nor learn the result.
+    if net._chatpair and net._chatpair.setMeshSend then
+      net._chatpair.setMeshSend(function(to, kind, body)
+        local id, why = net._meshctl:send({ svc = "pair", to = to, allowPlaintext = true,
+          unsealed = true, payload = { kind = kind, body = body } })
+        if not id then error(why, 0) end
+        return id
+      end)
+      net._meshctl:on("pair", function(msg)
+        local p = msg and msg.payload
+        if type(p) == "table" then pcall(net._chatpair.onMeshPair, p.kind, p.body, msg.from) end
+        return true
+      end)
+    end
+
     local function onMeshPkt(pkt)
       if type(pkt.payload) == "table" then net._meshctl:onPacket(pkt.payload) end
     end

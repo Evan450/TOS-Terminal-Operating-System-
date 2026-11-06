@@ -27,6 +27,7 @@ only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 (the internet card out of its slot), `resolution W H` (resize the screen
 from outside, which raises the same screen_resized a real resize does),
 `bootraw` (with --raw-drive: the next boot is from that drive),
+`bootaddr ADDRESS` (the next boot is from that disk),
 `seat N` (with --seats 2: type at and read screen N from then on),
 `machine N` (with --machines 2 or 3: the same, for that computer), and
 `hostmv FROM TO` (rename a file on the boot disk from outside the machine,
@@ -274,6 +275,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--trace", action="store_true", help="keep every distinct screen in frames.txt")
     ap.add_argument("--keep", action="store_true", help="keep the run directory even on success")
     ap.add_argument("--internet", action="store_true", help="give the machine an internet card")
+    ap.add_argument("--line", action="store_true",
+                    help="with --machines 3: 1 is wired, 3 has only a radio, 2 has both, "
+                         "so 1 and 3 cannot hear each other")
     ap.add_argument("--raw-drive", action="store_true",
                     help="an unmanaged drive in the third disk's slot, sectors and no filesystem")
     ap.add_argument("--readonly-boot", action="store_true",
@@ -401,6 +405,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--readonly-boot")
     if args.raw_drive:
         cmd.append("--raw-drive")
+    if args.line:
+        cmd.append("--line")
     if args.tape:
         cmd.append("--tape")
     if args.geolyzer:

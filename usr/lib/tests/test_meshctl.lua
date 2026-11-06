@@ -138,6 +138,17 @@ do
 
   eq("a sealed send to a PAIRED peer reports sealed=true", true,
     select(2, ctl:send({ svc = "mail", to = "PAIRED", payload = { body = "hi" } })))
+
+  -- Pairing's confirm leaves after its sender has installed the secret, and
+  -- sealed with it, the peer it is for cannot open it. Seen on three machines.
+  local n = #sent
+  eq("unsealed sends in the clear to a paired peer", false,
+    select(2, ctl:send({ svc = "pair", to = "PAIRED", payload = { k = 1 },
+      allowPlaintext = true, unsealed = true })))
+  test("and nothing about it is sealed", sent[n + 1] and sent[n + 1].sealed == nil
+    and sent[n + 1].payload and sent[n + 1].payload.k == 1)
+  eq("without allowPlaintext, unsealed is not enough", true,
+    select(2, ctl:send({ svc = "pair", to = "PAIRED", payload = {}, unsealed = true })))
 end
 
 -- ── service multiplexing: handlers only see their own kind ─────────

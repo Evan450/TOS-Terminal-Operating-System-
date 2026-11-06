@@ -534,6 +534,7 @@ public class HeadlessTOS {
   static final Map<String, FloppyManaged> floppies = new java.util.LinkedHashMap<>();
   static boolean readOnlyBoot;
   static boolean rawDrive;
+  static boolean line;
   static String rawDriveAddress;
   static EEPROM mainEeprom;
 
@@ -733,7 +734,11 @@ public class HeadlessTOS {
         eeprom2.label_$eq("Lua BIOS");
         eeprom2.volatileData_$eq(addr2.getBytes(StandardCharsets.UTF_8));
         pc2.inventory().apply(0).put(new DataCard.Tier3());
-        pc2.inventory().apply(1).put(new NetworkCard());
+        // --line: machine 1 is wired only, 3 has only a radio, and 2 has a
+        // tier 2 wireless card, which speaks both. Two cards in one case could
+        // not do this: a case is one network, so the relays would bridge
+        // through it. Here 1 and 3 cannot hear each other at all.
+        pc2.inventory().apply(1).put(line ? new WirelessNetworkCard.Tier2() : new NetworkCard());
         pc2.inventory().apply(3).put(new Memory(stick("1024")));
         pc2.inventory().apply(4).put(new Memory(stick("1024")));
         pc2.inventory().apply(5).put(hdd2);
@@ -749,7 +754,7 @@ public class HeadlessTOS {
         Keyboard keyboard3 = ws.add(new Keyboard());
         pc2.connect(peerScreen);
         peerScreen.connect(keyboard3);
-        relay.connect(i == 0 ? Direction$.MODULE$.South() : Direction$.MODULE$.East(), pc2);
+        if (!(line && i == 1)) relay.connect(i == 0 ? Direction$.MODULE$.South() : Direction$.MODULE$.East(), pc2);
         peers.add(pc2.machine());
         peerScreens.add(peerScreen);
         System.out.println("[headless] peer: T3 case, 1024+1024K, boot disk " + addr2 + ", via a relay");
@@ -1039,9 +1044,14 @@ public class HeadlessTOS {
           done = true;
           break;
         }
-        // Point the EEPROM at the raw drive, as the BIOS's own "Save it? Y" does.
+        // Point the EEPROM at the raw drive, or at a disk by address, as the
+        // BIOS's own "Save it? Y" does.
         case "bootraw":
           mainEeprom.volatileData_$eq(rawDriveAddress.getBytes(StandardCharsets.UTF_8));
+          done = true;
+          break;
+        case "bootaddr":
+          mainEeprom.volatileData_$eq(line.split("\\s+")[1].getBytes(StandardCharsets.UTF_8));
           done = true;
           break;
         case "sleep":
@@ -1222,6 +1232,7 @@ public class HeadlessTOS {
     withTape = flag(args, "--tape");
     readOnlyBoot = flag(args, "--readonly-boot");
     rawDrive = flag(args, "--raw-drive");
+    line = flag(args, "--line");
     withGeolyzer = flag(args, "--geolyzer");
     withRobot = flag(args, "--robot");
     withChest = flag(args, "--robot-chest");

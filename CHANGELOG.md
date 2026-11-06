@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 114 rounds of work:
+Everything since v1.5.0, in 115 rounds of work:
 
+- [The mesh reaches a machine you have never heard](#the-mesh-reaches-a-machine-you-have-never-heard)
 - [TOS boots from a raw drive](#tos-boots-from-a-raw-drive)
 - [jbod create works](#jbod-create-works)
 - [A broken kiosk config allows nothing](#a-broken-kiosk-config-allows-nothing)
@@ -136,6 +137,10 @@ Everything since v1.5.0, in 114 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The mesh reaches a machine you have never heard
+
+The mesh could not reach a machine you had never been next to. Sending to one needs a shared secret, and `net pair`, the way to make one, only worked between machines in range of each other. Pairing now crosses relays as well. No relay can forge it or learn the secret it makes, because both halves are keyed by the pairing code. `net status` shows your full address, and `net pair start` prints the exact line to type on the other machine. On three machines where the ends could not hear each other, the ends paired and mail went from one to the other, sealed.
 
 ### TOS boots from a raw drive
 
