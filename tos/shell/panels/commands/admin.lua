@@ -802,6 +802,48 @@ return function(C, S, deps)
         o("new code ('service stop <svc>' then 'service start <svc>').", T.dim)
       end
 
+    elseif sub == "audit" then
+      --! Root runs one package with every auditable capability and reads
+      --! what it used that it never declared (kernel/sandbox.lua, buildAudit).
+      --! It ends at reboot. Reading the report is an admin's, like the rest.
+      local name, onoff = args[2], args[3]
+      if not name then
+        local list = pkgMod.audited and pkgMod.audited() or {}
+        if #list == 0 then o("No package is under audit.", T.fg)
+        else o("Under audit until reboot: " .. table.concat(list, ", "), T.warning) end
+        o("Usage: pkg audit <name> on|off   (root)   pkg audit <name>   (the report)", T.dim)
+        return
+      end
+      if onoff == "on" or onoff == "off" then
+        local ok2, err2 = pkgMod.audit(name, onoff == "on", { session = helpers.sessionOf(S) })
+        if not ok2 then o(tostring(err2), T.error); return end
+        if onoff == "on" then
+          o(name .. " runs with every auditable capability until reboot.", T.warning)
+          o("Use it, then read what it needed: pkg audit " .. name, T.dim)
+          o("Not seen this way: the peripheral capabilities and ipc.", T.dim)
+        else
+          o(name .. " runs with what it declared again.", T.highlight)
+        end
+        return
+      end
+      if onoff then o("Usage: pkg audit <name> on|off", T.dim); return end
+      local rep = pkgMod.auditReport and pkgMod.auditReport(name)
+      if not rep then o(name .. " is not under audit. Root: pkg audit " .. name .. " on", T.dim); return end
+      if #rep == 0 then
+        o(name .. " has used nothing it did not declare, so far.", T.highlight)
+        return
+      end
+      o(string.format(" %-12s %-34s %s", "needs", "used", "times"), T.title)
+      local caps = {}
+      for _, r in ipairs(rep) do
+        o(string.format(" %-12s %-34s %d", r.cap, r.name:sub(1, 34), r.count), T.fg)
+        caps[r.cap] = true
+      end
+      local names = {}
+      for c in pairs(caps) do names[#names + 1] = c end
+      table.sort(names)
+      o("To grant them, the manifest would declare: " .. table.concat(names, ", "), T.dim)
+
     elseif sub == "info" then
       if not args[2] then o("Usage: pkg info <name>", T.dim); return end
       local m = pkgMod.info(args[2])
@@ -2949,9 +2991,61 @@ return function(C, S, deps)
       o("Aborted.", T.dim)
     end
   end
+  --! Who manages accounts is the operator's choice: root only, the default,
+  --! or admins as well, for ordinary accounts and never to make another admin.
+  --! The three commands are registered at admin tier so an admin reaches this.
+  --! Returns ok, and whether the caller is held to ordinary accounts.
+  local function accountAdminsAllowed()
+    local SCm = S.SC or (_G._TOS and _G._TOS.config)
+    return SCm and SCm.get and SCm.get("accountAdmins") == true or false
+  end
+  local function accountsGate(o)
+    if helpers.liveTier(S) >= 3 then return true, false end
+    if not accountAdminsAllowed() then
+      o("Only root manages accounts on this machine. Root can let admins manage", T.error)
+      o("ordinary accounts with: users manage admins", T.dim)
+      return false
+    end
+    if not adminOnly(o) then return false end
+    return true, true
+  end
+  local function tierOf(name)
+    for _, u in ipairs(U and (U.list and U.list() or U.listUsers and U.listUsers()) or {}) do
+      if (u.username or u.user) == name then return tonumber(u.tier or u.accessLevel) end
+    end
+  end
+  local function ordinaryOnly(o, name)
+    local t = tierOf(name)
+    if t and t >= 2 then
+      o("An admin manages ordinary accounts only, and '" .. name .. "' is not one.", T.error)
+      return false
+    end
+    return true
+  end
+
   C.users = function(args, o)
     if not adminOnly(o) then return end
     if not U then o("No user system", T.error); return end
+    if args[1] == "manage" then
+      local SCm = S.SC or (_G._TOS and _G._TOS.config)
+      if not args[2] then
+        o("Accounts are managed by: " .. (accountAdminsAllowed()
+          and "root, and admins for ordinary accounts" or "root only"), T.fg)
+        o("Usage: users manage root|admins   (root only)", T.dim)
+        return
+      end
+      if not rootOnly(o) then return end
+      if args[2] ~= "root" and args[2] ~= "admins" then
+        o("Usage: users manage root|admins", T.dim); return
+      end
+      if not (SCm and SCm.set and SCm.save) then o("No config to change.", T.error); return end
+      SCm.set("accountAdmins", args[2] == "admins")
+      SCm.save()
+      o(args[2] == "admins"
+        and "Admins may now add, remove and change ordinary accounts. Root still does the rest."
+        or "Only root manages accounts now.", T.highlight)
+      return
+    end
     o(string.format(" %-12s %-8s %s", "User", "Tier", "Status"), T.title)
     o(string.rep("-", 34), T.border)
     local list = U.list and U.list() or U.listUsers and U.listUsers() or {}
@@ -2979,7 +3073,7 @@ return function(C, S, deps)
   end
 
   C.useradd = function(args, o)
-    if not rootOnly(o) then return end
+    if not accountsGate(o) then return end
     if not U then o("No user system", T.error); return end
     local name = args[1]
     if not name then o("Usage: useradd <username>", T.dim); return end
@@ -2993,10 +3087,12 @@ return function(C, S, deps)
   end
 
   C.userdel = function(args, o)
-    if not rootOnly(o) then return end
+    local okG, limited = accountsGate(o)
+    if not okG then return end
     if not U then o("No user system", T.error); return end
     local name = args[1]
     if not name then o("Usage: userdel <username>", T.dim); return end
+    if limited and not ordinaryOnly(o, name) then return end
     --! A framed box rather than a one-character prompt: deleting an
     --! account is not recoverable from the shell, and "[y/N]" typed into
     --! the same line as everything else is easy to answer on reflex.
@@ -3019,11 +3115,18 @@ return function(C, S, deps)
   end
 
   C.usermod = function(args, o)
-    if not rootOnly(o) then return end
+    local okG, limited = accountsGate(o)
+    if not okG then return end
     if not U then o("No user system", T.error); return end
     local name, action = args[1], args[2]
     if not name or not action then
       o("Usage: usermod <username> lock|unlock|admin|user|root", T.dim); return
+    end
+    if limited then
+      if action == "admin" or action == "root" then
+        o("Only root makes an admin or a root account.", T.error); return
+      end
+      if not ordinaryOnly(o, name) then return end
     end
     local actor = currentActor()
     local ok2, err2

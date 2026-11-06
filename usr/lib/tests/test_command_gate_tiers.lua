@@ -48,6 +48,7 @@ for _, file in ipairs({ "core", "admin", "extras" }) do
     -- per-subcommand check (`pkg trust add`), not the command's tier.
     local head = body:match("^([^\n]*\n?[^\n]*\n?[^\n]*)") or ""
     local which = head:match("if not (rootOnly)%(o%)") or head:match("if not (adminOnly)%(o%)")
+      or (head:find("accountsGate(o)", 1, true) and "adminOnly")
     if which then
       gated[#gated + 1] = { name = name, gate = GATE[which], file = file }
     end
@@ -68,7 +69,9 @@ for _, g in ipairs(gated) do
 end
 
 -- The five that disagreed, named, so the fix cannot quietly regress.
-for name, want in pairs({ useradd = 3, userdel = 3, usermod = 3, log = 2, scp = 2 }) do
+-- The account commands are admin since 2026-11-05: their gate is accountsGate,
+-- which is the operator's setting, root only by default (test_accounts_policy).
+for name, want in pairs({ useradd = 2, userdel = 2, usermod = 2, log = 2, scp = 2 }) do
   test(name .. " is registered at tier " .. want, registry[name] == want, registry[name])
 end
 

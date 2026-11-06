@@ -198,9 +198,12 @@ local REGISTRY = {
   -- Root, not admin: each body calls rootOnly, and always has. The registry
   -- said 2, so `help` showed an admin a command that then refused them.
   -- (test_command_gate_tiers.lua; TODO: WHO MAY MANAGE ACCOUNTS)
-  useradd  = { category = "admin", tier = 3, help = "Create a new user (root only)" },
-  userdel  = { category = "admin", tier = 3, help = "Delete a user (root only)" },
-  usermod  = { category = "admin", tier = 3, help = "Modify a user (root only)" },
+  -- Admin here so the executor lets an admin reach the body, whose gate is
+  -- the operator's setting: root only unless `users manage admins`, and then
+  -- an admin touches ordinary accounts only. (admin.lua, accountsGate)
+  useradd  = { category = "admin", tier = 2, help = "Create a new user (root; admins if allowed)" },
+  userdel  = { category = "admin", tier = 2, help = "Delete a user (root; admins if allowed)" },
+  usermod  = { category = "admin", tier = 2, help = "Modify a user (root; admins if allowed)" },
   lsdev    = { category = "admin", tier = 1, help = "List connected components (devices)" },
   devices  = { category = "admin", tier = 1, help = "List connected components", alias = "lsdev" },
   mount    = { category = "admin", tier = 2, help = "Mount a disk" },

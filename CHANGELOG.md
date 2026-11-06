@@ -20,8 +20,11 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 116 rounds of work:
+Everything since v1.5.0, in 119 rounds of work:
 
+- [pkg audit](#pkg-audit)
+- [A network install leaves only TOS](#a-network-install-leaves-only-tos)
+- [The operator decides who manages accounts, and whether to trust the pack](#the-operator-decides-who-manages-accounts-and-whether-to-trust-the-pack)
 - [A package from a repo is offered its updates](#a-package-from-a-repo-is-offered-its-updates)
 - [The mesh reaches a machine you have never heard](#the-mesh-reaches-a-machine-you-have-never-heard)
 - [TOS boots from a raw drive](#tos-boots-from-a-raw-drive)
@@ -138,6 +141,20 @@ Everything since v1.5.0, in 116 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### pkg audit
+
+`pkg audit <name> on` (root) runs one package with every capability it could ask for, and records each use of one it never declared instead of refusing it. `pkg audit <name>` then lists what it used and the capabilities its manifest would need. It is logged, and it ends at reboot. The peripheral capabilities and `ipc` cannot be seen this way, and a service or a driver runs outside the sandbox, so neither can be audited.
+
+### A network install leaves only TOS
+
+A network install no longer leaves anything behind. The bootstrap meant to remove its download and itself after the installer finished, but the installer ends by rebooting, so neither happened: every network install left a second copy of TOS in `/home/tos-netinstall` and `/bootstrap.lua` at the root. The installer now removes the download once TOS is verified in place, and the bootstrap removes itself before handing over. Staging on the same drive is also moved rather than copied, so it no longer needs room for two copies; the unminified dev branch could not install on a 4 MB drive at all.
+
+When TOS goes onto a drive that held another system, the installer now asks what to do with that system's files, all of them rather than just `/bin`, `/boot` and `/lib`: leave them, move them into `/openos` (the default), or delete them. On a fresh OpenOS drive it moved 178 files, and `/etc` and `/usr` held only TOS's afterwards. Your `/home` is never counted.
+
+### The operator decides who manages accounts, and whether to trust the pack
+
+The installer asks two things it used to decide for you. **Who manages accounts:** root only, the default, or admins as well, for ordinary accounts only. Root can change it later with `users manage root|admins`. **Whether to trust the Optional Utilities publisher:** say yes and the official packages install as trusted, rather than "valid, but the key was not trusted"; `pkg trust` undoes it.
 
 ### A package from a repo is offered its updates
 

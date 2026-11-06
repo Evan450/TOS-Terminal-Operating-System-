@@ -100,7 +100,12 @@ if bootstrap then
   test("does not overstate what verification proves",
     bootstrap:find("A hostile server can stop an install", 1, true) ~= nil)
   test("passes the staging directory as install.lua's override arg",
-    bootstrap:find("pcall(chunk, stagingDir)", 1, true) ~= nil)
+    bootstrap:find('pcall(chunk, stagingDir, "--temporary")', 1, true) ~= nil)
+  -- The installer reboots, so nothing after the call runs on success: the
+  -- tree is the installer's to remove, and this script removes itself first.
+  local handoff = bootstrap:find('pcall(chunk, stagingDir, "--temporary")', 1, true) or 0
+  local selfGone = bootstrap:find("local self = selfPathToReclaim", 1, true) or math.huge
+  test("removes itself before the hand-off, by the tested rule", selfGone < handoff)
 end
 
 -- ── safeToken: the actual behavior, not just its presence ──────────

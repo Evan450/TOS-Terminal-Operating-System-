@@ -963,7 +963,55 @@ if not chunk then
   return
 end
 
-local hok, herr = pcall(chunk, stagingDir)
+--! ...AND THE SCRIPT ITSELF, which is the other half of "it doesn't clean
+--! up after itself". This is downloaded to the filesystem ROOT (the
+--! documented one-liner saves it to /bootstrap.lua, and it has to be an
+--! absolute path because the root is not on OpenOS's PATH). It is dead
+--! weight the moment the install succeeds: the machine reboots into TOS,
+--! and a second install would re-download it in one line anyway.
+--!
+--! Only on SUCCESS, only the file we were actually run from, and only
+--! when that is a plain file at the root -- never a guess. Removing the
+--! running script is safe: it was read into memory before it ran.
+--! ...and "at the root" now MEANS at the root. The comment above has said
+--! so since this was written; the code only prepended a slash to a relative
+--! name and then removed whatever `arg[0]` pointed at, anywhere on the disk.
+--! Nothing hit it while the documented install was `wget -f … /bootstrap.lua`,
+--! because that always is at the root -- but the OPPM package installs this
+--! file to /usr/bin, where `oppm` keeps an ownership record. Deleting a file
+--! out from under a package manager leaves it certain it installed something
+--! that is no longer there, and `oppm uninstall` then fails on a machine
+--! whose install actually succeeded. A managed copy is not ours to remove.
+-- Pure, and named, so the decision can be tested without running an
+-- installer: test_install_bootstrap.lua lifts THIS function out of this
+-- file and calls it, rather than grepping for the guard and hoping.
+local function selfPathToReclaim(a0)   --[[TEST-EXTRACT]]
+  if type(a0) ~= "string" or a0 == "" then return nil end
+  local p = a0
+  if p:sub(1, 1) ~= "/" then p = "/" .. p end
+  if p:find("/", 2, true) then return nil end   -- not at the root: someone else's
+  return p
+end                                    --[[/TEST-EXTRACT]]
+
+--! THE INSTALLER ENDS BY REBOOTING, so nothing after the call below runs on a
+--! successful install. This script used to remove itself and the staging tree
+--! down there, and on a successful install never did: every network install
+--! left /bootstrap.lua and a second copy of TOS behind. So it goes now, before
+--! the hand-off (it is in memory; a retry runs the staged install.lua, as the
+--! failure message says), and --temporary makes the tree the installer's to
+--! move from and to remove.
+do
+  local self = selfPathToReclaim((arg and arg[0]) or nil)
+  if self and fs.exists(self) and not fs.isDirectory(self) then
+    if pcall(fs.remove, self) and not fs.exists(self) then
+      ok("Removed " .. self .. " (re-download it with the same one-liner)")
+    else
+      warn("Could not remove " .. self .. "; delete it when convenient.")
+    end
+  end
+end
+
+local hok, herr = pcall(chunk, stagingDir, "--temporary")
 if not hok then
   fail("install.lua exited with an error: " .. tostring(herr))
   warn("You can retry it directly:")
@@ -996,43 +1044,3 @@ do
   end
 end
 
---! ...AND THE SCRIPT ITSELF, which is the other half of "it doesn't clean
---! up after itself". This is downloaded to the filesystem ROOT (the
---! documented one-liner saves it to /bootstrap.lua, and it has to be an
---! absolute path because the root is not on OpenOS's PATH). It is dead
---! weight the moment the install succeeds: the machine reboots into TOS,
---! and a second install would re-download it in one line anyway.
---!
---! Only on SUCCESS, only the file we were actually run from, and only
---! when that is a plain file at the root -- never a guess. Removing the
---! running script is safe: it was read into memory before it ran.
---! ...and "at the root" now MEANS at the root. The comment above has said
---! so since this was written; the code only prepended a slash to a relative
---! name and then removed whatever `arg[0]` pointed at, anywhere on the disk.
---! Nothing hit it while the documented install was `wget -f … /bootstrap.lua`,
---! because that always is at the root -- but the OPPM package installs this
---! file to /usr/bin, where `oppm` keeps an ownership record. Deleting a file
---! out from under a package manager leaves it certain it installed something
---! that is no longer there, and `oppm uninstall` then fails on a machine
---! whose install actually succeeded. A managed copy is not ours to remove.
--- Pure, and named, so the decision can be tested without running an
--- installer: test_install_bootstrap.lua lifts THIS function out of this
--- file and calls it, rather than grepping for the guard and hoping.
-local function selfPathToReclaim(a0)   --[[TEST-EXTRACT]]
-  if type(a0) ~= "string" or a0 == "" then return nil end
-  local p = a0
-  if p:sub(1, 1) ~= "/" then p = "/" .. p end
-  if p:find("/", 2, true) then return nil end   -- not at the root: someone else's
-  return p
-end                                    --[[/TEST-EXTRACT]]
-
-do
-  local self = selfPathToReclaim((arg and arg[0]) or nil)
-  if self and fs.exists(self) and not fs.isDirectory(self) then
-    if pcall(fs.remove, self) and not fs.exists(self) then
-      ok("Removed " .. self .. " (re-download it with the same one-liner)")
-    else
-      warn("Could not remove " .. self .. "; delete it when convenient.")
-    end
-  end
-end

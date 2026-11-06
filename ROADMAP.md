@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**51 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**50 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 27 | Planned or under investigation. Most contributions belong here. |
+| Planned | 26 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (5) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (6)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (6)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -171,6 +171,8 @@ Run a verification round in REAL Minecraft OpenComputers: the Ocelot emulator ha
 
 THE DISTRIBUTED STORAGE POOL WAITS ON FIVE OPERATOR DECISIONS. cluster-storage shipped 1.0.0 on 2026-10-23 as ONE node; the pool, inputs\_ref and result\_sink = "public" are not built. TOS-Extras/cluster/storage-spec-draft.md section 10 holds the questions: a coordinator or none; shared/ replication to all members or a quorum; capacity in a contributing Manager's heartbeat; what happens to a lease when its member leaves; and whether netfs read-only exports may go to PAIRED-but-untrusted peers.
 
+DRAFT ANSWERS 2026-11-05, as asked: section 10 of the spec now holds a recommendation for each, with its cost. Nothing is built until they are approved or changed.
+
 ### Optional Utilities candidates from the pack's own components
 
 *Idea / far future* · from the round *What nobody wrote down (2026-10-26)*
@@ -255,6 +257,8 @@ Later: teach `pkg install` to refresh the baseline for files it replaces, so an 
 
 THE BROWSER'S LATER STEPS WAIT ON FIVE OPERATOR DECISIONS. web 1.0.0 (e62839d) is browser-spec-draft.md's first two steps: the renderer and a browser on this machine's own card, no proxy. webproxyd, the shared cache and its cluster back end wait on that spec's section 10: auto-discover a proxy or configure one; whether cache\_read\_trust = "unknown" needs a second confirmation; whether per-call cap raising is enough for kernel.internet; the canonical URL key; and whether the proxy strips anything from a response.
 
+DRAFT ANSWERS 2026-11-05, as asked: section 10 of the spec now holds a recommendation for each, with its cost. Nothing is built until they are approved or changed.
+
 ### The canonical number format is still architecture-dependent
 
 *Planned* · from the round *Extras sweep 2: the packaging seam (2026-09-06)*
@@ -283,15 +287,7 @@ WHO MAY MANAGE ACCOUNTS, READ THE LOG, USE SCP. Found 2026-10-03 walking the REA
 
 DECISION NEEDED, if any should be LOOSER: kernel users.create already accepts an ADMIN creator (effective tier &gt;= ADMIN), so admin account management is a one-word change in admin.lua -- but usermod's admin/root promotions and userdel need checking against users.setTier/delete's own guards first. `log` "filtered by tier" implies a user-visible log that the body has never allowed.
 
-### Dry-run capability enforcement
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-DRY-RUN CAPABILITY ENFORCEMENT. Upgrades AUDIT LOG FOR CAPABILITY DENIALS (OCOS survey, \[\*\]) from an idea to a shape. Their cap.check has an `enforce` flag: when false it ALWAYS RETURNS TRUE but writes a denial record to the audit log; when true it denies and the caller raises EPERM (src/sys/k/cap.lua).
-
-That is the safe way to tighten a sandbox on a live base: turn enforcement off, run the workload, read what WOULD have broken, then turn it on. It is also an excellent test fixture -- run the OpenOS compat corpus above in audit mode and the log says exactly which capabilities real programs need, which is the empirical version of guessing.
-
-SECOND, SMALLER IDEA from the same file: their caps are namespaced and GLOB-MATCHED -- syscall:write:/var/log/\*, component:&lt;type&gt;:&lt;addr&gt; -- so a service is granted write access to a PATH PREFIX rather than to the filesystem. Ours are flat booleans and write scoping is securefs per USER, which is the better answer for humans. For a sandboxed DAEMON with no human behind it, a path-scoped write cap is strictly tighter than "can write as this user". First use is rc.d services, whose caps are already declared and already gated (ALLOWED\_SERVICE\_CAPS).
+ACCOUNTS DECIDED 2026-11-05, the operator's answer: "up to the Operator with Root being the default". The installer asks, root changes it with `users manage root|admins`, and with admins allowed an admin manages ordinary accounts only and never makes an admin (test\_accounts\_policy). SEEN on the runner both ways. `log` and `scp` are still as found.
 
 ### Run-this-once confinement
 

@@ -460,6 +460,12 @@ generic error.
 Commands: `passwd` (change your own); (admin) `users`; and (root) `useradd`,
 `userdel`, `usermod <user> lock|unlock|admin|user|root`.
 
+**Who manages accounts is the operator's choice.** It is root only unless the
+installer was told otherwise, or root runs `users manage admins`. Then an admin
+may add, remove, lock and unlock ordinary accounts too, but never touches
+another admin or root, and never makes one: that stays root's. `users manage`
+says which it is, and `users manage root` takes it back.
+
 ---
 
 # Part II — Using TOS
@@ -1385,6 +1391,7 @@ pkg outdated                  what has a newer version on a disk or a repo you a
 pkg upgrade <name> [<name>…]  replace those
 pkg upgrade --all --yes       replace everything with a newer version
 pkg upgrade <name> --dry-run  print the plan, change nothing
+pkg audit <name> on           (root) find out what a package really needs
 pkg compact <name>            one archive instead of a file each
 pkg compact --all             the same for every package
 pkg expand <name>             back to loose files
@@ -3162,20 +3169,23 @@ Remove one of your aliases. *See also:* `alias`.
 **uptime** — `uptime`
 Show how long the machine has been running.
 
-**useradd** — `useradd <name>` **(root)**
+**useradd** — `useradd <name>` **(root; admins if `users manage admins`)**
 Create a user account at the USER tier. It asks for the password twice; raise
 the tier afterwards with `usermod <name> admin`. *See also:* `users`,
 `userdel`, `usermod`.
 
-**userdel** — `userdel <name>` **(root)**
-Delete a user account. *See also:* `users`, `useradd`.
+**userdel** — `userdel <name>` **(root; admins if `users manage admins`)**
+Delete a user account. An admin may delete ordinary accounts only. *See also:*
+`users`, `useradd`.
 
-**usermod** — `usermod <name> lock | unlock | user | admin | root` **(root)**
-Modify a user (tier, lock state). *See also:* `users`, `passwd`.
+**usermod** — `usermod <name> lock | unlock | user | admin | root` **(root; admins if `users manage admins`)**
+Modify a user (tier, lock state). An admin may lock and unlock ordinary
+accounts, and never promotes anyone. *See also:* `users`, `passwd`.
 
-**users** — `users` **(admin)**
-List user accounts and their tiers ([Chapter 3](#3-logging-in-users--tiers)). *See also:* `useradd`,
-`userdel`, `usermod`, `passwd`.
+**users** — `users [manage [root | admins]]` **(admin; changing it: root)**
+List user accounts and their tiers ([Chapter 3](#3-logging-in-users--tiers)). `users manage` says who
+manages accounts; root changes it with `users manage root` or `admins`.
+*See also:* `useradd`, `userdel`, `usermod`, `passwd`.
 
 ### V
 

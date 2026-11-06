@@ -50,6 +50,9 @@ local defaults = {
   maxAttempts  = 5,            -- Failed attempts before lockout
   sessionTimeout = 0,          -- Auto-logout after N seconds idle (0=never)
   guestAccess  = false,        -- Allow guest login without password
+  -- Who manages accounts: root only, or admins too, for ordinary accounts.
+  -- The operator's choice, at install or with `users manage`.
+  accountAdmins = false,
 
   -- Network
   encryptComms = true,         -- Encrypt network messages when possible

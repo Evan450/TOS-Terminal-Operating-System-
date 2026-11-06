@@ -19,6 +19,7 @@ SYNOPSIS
     pkg verify-sig <dir>
     pkg sign <dir> --as <publisher>
     pkg license-hash <name> <licenseKey>
+    pkg audit [<name> [on|off]]
 
     install <name>          shortcut for 'pkg install <name>'
     uninstall <name>        shortcut for 'pkg uninstall <name>'
@@ -112,6 +113,15 @@ SUBCOMMANDS
                    are final; the signature covers the manifest, which covers
                    the hashes, which cover the files).
     license-hash <name> <key>   The hash a licensed package's manifest holds.
+    audit <name> on|off   (root) Run one package with every capability it
+                   could ask for, and record each use of one it did not
+                   declare instead of refusing it: the way to learn what a
+                   package really needs before granting it. Logged, and it
+                   ends at reboot. `pkg audit <name>` reads what it used and
+                   names the capabilities the manifest would have to declare;
+                   bare `pkg audit` lists what is under audit. Not seen this
+                   way: the peripheral capabilities and ipc. A service or a
+                   driver runs outside the sandbox and cannot be audited.
 
 EXAMPLES
     pkg search

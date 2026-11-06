@@ -62,6 +62,17 @@ local function adminGate(opts)
   return false, "Insufficient privileges: admin required"
 end
 
+--- Root, or the kernel itself. For what loosens the machine rather than
+--- managing it: pkg.audit runs a package with capabilities it never asked for.
+local function rootGate(opts)
+  local session = (type(opts) == "table" and opts.session) or nil
+  if not session and users and users.currentSession then session = users.currentSession() end
+  if type(session) == "table" and (session.isKernel or (tonumber(session.tier) or 0) >= 3) then
+    return true
+  end
+  return false, "Insufficient privileges: root required"
+end
+
 --! #SEC (pentest, Sep 2026) — a service package is trusted with the whole
 --! machine, and installing one is a ROOT act, not merely ADMIN. rc.d runs a
 --! service as the principal it declares and as ROOT when it declares none,
@@ -842,6 +853,9 @@ local pkgActive = {}  -- pkgName -> loaded module table (cache)
 local PKG_CACHE_MAX = 2
 local PKG_LOW_MEM   = 48 * 1024
 local pkgUse, pkgUseTick = {}, 0
+-- Packages under audit this boot: name -> { uses = { ["cap name"] = count } }.
+-- Root's, in memory, so a reboot ends it: sandbox.buildAudit says what it is.
+local auditing = {}
 local function lowMemory()
   local okC, comp = pcall(require, "computer")
   return okC and type(comp) == "table" and type(comp.freeMemory) == "function"
@@ -1072,6 +1086,55 @@ end
 --! machine at 1 MB, kernel.sandbox would not fit in memory.
 --! (test_pkg_unloadable.lua)
 local entryError = {}
+--- Put a package under audit, or take it out of it. Root only, this boot
+--- only: it runs with capabilities it never asked for, and that is not a
+--- state to wake up in. Returns true, or false and why.
+--- @tier root
+function pkg.audit(name, on, opts)
+  local g, gErr = rootGate(opts)
+  if not g then return false, gErr end
+  local m = installed[name]
+  if not m then return false, "not installed: " .. tostring(name) end
+  if m.kind == "service" or m.kind == "driver" then
+    return false, "a " .. m.kind .. " runs outside the sandbox, so there is nothing to audit"
+  end
+  if on then auditing[name] = auditing[name] or { uses = {} }
+  else auditing[name] = nil end
+  -- The loaded copy was built the other way; the next use builds it again.
+  pkgActive[name] = nil
+  pkgUse[name] = nil
+  if log then
+    pcall(log.warn, "pkg", (on and "AUDIT on for " or "AUDIT off for ") .. name
+      .. (on and ": it runs with every auditable capability until reboot" or ""))
+  end
+  return true
+end
+
+--- What a package under audit has used that it did not declare, sorted by
+--- capability, or nil when it is not under audit.
+function pkg.auditReport(name)
+  local a = auditing[name]
+  if not a then return nil end
+  local out = {}
+  for key, n in pairs(a.uses) do
+    local cap, what = key:match("^(%S+) (.+)$")
+    out[#out + 1] = { cap = cap, name = what, count = n }
+  end
+  table.sort(out, function(x, y)
+    if x.cap ~= y.cap then return x.cap < y.cap end
+    return x.name < y.name
+  end)
+  return out
+end
+
+--- The packages under audit now.
+function pkg.audited()
+  local out = {}
+  for n in pairs(auditing) do out[#out + 1] = n end
+  table.sort(out)
+  return out
+end
+
 local function entryFailed(pkgName, why)
   entryError[pkgName] = why
   if log then log.warn("pkg", "cannot load " .. pkgName .. ": " .. why) end
@@ -1113,7 +1176,21 @@ local function loadPkgEntry(pkgName, m, entryPath)
   end
   -- pkgName scopes the crypto cap's per-package machine secret. It comes
   -- from the validated manifest (validName), never from the entry code.
-  local env = sandbox.build({ caps = caps, pkgName = pkgName })
+  local env
+  local audit = auditing[pkgName]
+  if audit and sandbox.buildAudit then
+    env = sandbox.buildAudit({ caps = caps, pkgName = pkgName }, function(cap, name)
+      local key = cap .. " " .. name
+      local first = audit.uses[key] == nil
+      audit.uses[key] = (audit.uses[key] or 0) + 1
+      if first and log then
+        pcall(log.warn, "pkg", "AUDIT " .. pkgName .. " used " .. name
+          .. ", which needs '" .. cap .. "' and is not declared")
+      end
+    end)
+  else
+    env = sandbox.build({ caps = caps, pkgName = pkgName })
+  end
   local fn, lerr = load(source, "=pkg:" .. pkgName, "t", env)
   if not fn then return entryFailed(pkgName, tostring(lerr)) end
   local ok, result = pcall(fn)

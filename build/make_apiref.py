@@ -41,6 +41,7 @@ GATES = {
     "adminGate": "admin",          # pkg.lua
     "requireAdmin": "admin",       # securefs.lua, net/aliases.lua
     "requireAdminActor": "admin",  # net/trust.lua
+    "rootGate": "root",            # pkg.lua
 }
 GATE_CALL = re.compile(r"\b(" + "|".join(GATES) + r")\(")
 

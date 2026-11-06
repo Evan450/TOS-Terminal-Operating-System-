@@ -117,6 +117,16 @@ local function confirm(question)
   return answer and (answer:lower() == "y" or answer:lower() == "yes")
 end
 
+--! The key the Optional Utilities are signed with, and the one bootstrap.lua
+--! pins for a release (RELEASE_KEY). The operator is asked whether to trust it;
+--! a fresh machine otherwise installs the official packages as "valid, but the
+--! key was not trusted". test_install_trust.lua keeps it equal to both.
+local OFFICIAL_KEY_LABEL = "discover"
+--! Set when bootstrap.lua hands over a staging tree (--temporary): what is
+--! in it may be moved rather than copied, and it goes once TOS is in place.
+local MOVE_STAGED = false
+local OFFICIAL_KEY = "dcdafa5342333048be0ad519911a6bd1ecffefcffde73879a4e246fc20d7fd8b"
+
 -- Single source of truth for the version string. Update only the
 -- INSTALLER_VERSION constant; the banner reads it. Previously the
 -- header comment said v1.2.6 while the banner displayed v0.3.0 —
@@ -435,7 +445,7 @@ end
 -- write (out-of-space, partial buffer) makes the file present but
 -- short; without this check, the BIOS flash would proceed onto a
 -- silently broken install and brick the box on next boot.
-local function verifyCopy(srcDisk, manifest, root)
+local function verifyCopy(srcDisk, manifest, root, sizes)
   root = root or ""
   local missing, sized = {}, {}
   for _, entry in ipairs(manifest) do
@@ -443,7 +453,8 @@ local function verifyCopy(srcDisk, manifest, root)
     if not fs.exists(target) then
       missing[#missing + 1] = target
     else
-      local srcSize = fs.size(srcDisk .. entry.path) or 0
+      -- A moved file's source is gone, so its size was taken before the move.
+      local srcSize = (sizes and sizes[entry.path]) or fs.size(srcDisk .. entry.path) or 0
       local dstSize = fs.size(target) or 0
       if srcSize ~= dstSize then
         sized[#sized + 1] = string.format("%s (src=%d dst=%d)", target, srcSize, dstSize)
@@ -486,6 +497,14 @@ local function spaceNeeded(srcDisk, manifest, size, exists, root)   --[[TEST-EXT
   end
   return need
 end                                                           --[[/TEST-EXTRACT]]
+
+--- Are these two paths on one drive? A staged copy on the drive TOS goes to
+--- is moved, not copied, so it costs no second copy's worth of space.
+local function sameDrive(a, b)
+  local okA, pa = pcall(fs.get, (a == nil or a == "") and "/" or a)
+  local okB, pb = pcall(fs.get, (b == nil or b == "") and "/" or b)
+  return okA and okB and pa and pb and pa.address == pb.address or false
+end
 
 local function freeOnTarget(root)
   local okG, proxy = pcall(fs.get, (root == nil or root == "") and "/" or root)
@@ -539,6 +558,8 @@ local function classifyArgs(args)   --[[TEST-EXTRACT]]
       out.help = true
     elseif a == "--configure" then
       out.configure = true
+    elseif a == "--temporary" then
+      out.temporary = true
     elseif a == "--profile" then
       i = i + 1
       if args[i] == "minimal" or args[i] == "full" then out.profile = args[i]
@@ -652,6 +673,7 @@ local function listTargets(srcDisk, manifest)
         c.hasInit = okI and hasInit or false
         c.hasTos = okK and hasTos or false
         c.need = manifest and spaceNeeded(srcDisk, manifest, fs.size, fs.exists, prefix) or 0
+        if MOVE_STAGED and sameDrive(srcDisk, prefix) then c.need = 0 end
         cands[#cands + 1] = c
       end
     end
@@ -767,6 +789,11 @@ local function copyFromDisk(srcDisk, root, preloaded)
   ok("Manifest loaded: " .. #manifest .. " files declared")
 
   local need = spaceNeeded(srcDisk, manifest, fs.size, fs.exists, root)
+  --! A staging tree on the drive TOS goes to is MOVED. Copying it there
+  --! needed room for a second copy: on a 4 MB drive with OpenOS the source
+  --! tree left 182 KB, and the installer offered the minimal system.
+  local moving = MOVE_STAGED and sameDrive(srcDisk, root)
+  if moving then need = 0 end
   local free = freeOnTarget(root)
   if free and need > free then
     print()
@@ -810,6 +837,7 @@ local function copyFromDisk(srcDisk, root, preloaded)
   color(0x00AAFF); print(t("install.copying", "--- Copying system files ---")); color(0xFFFFFF)
   local copied, failed = 0, 0
   local errs = {}
+  local sizes = moving and {} or nil
   for _, entry in ipairs(manifest) do
     local src = srcDisk .. entry.path
     local dst = root .. entry.path
@@ -817,7 +845,14 @@ local function copyFromDisk(srcDisk, root, preloaded)
       failed = failed + 1
       errs[#errs + 1] = "missing on disk: " .. entry.path
     else
-      local cok, cerr = copyFileChunked(src, dst)
+      local cok, cerr
+      if moving then
+        sizes[entry.path] = fs.size(src)
+        if fs.exists(dst) then fs.remove(dst) end
+        cok = fs.rename(src, dst) and fs.exists(dst)
+      end
+      -- A file that would not move is copied, as it always was.
+      if not cok then cok, cerr = copyFileChunked(src, dst) end
       if cok then copied = copied + 1
       else failed = failed + 1; errs[#errs + 1] = entry.path .. ": " .. tostring(cerr) end
     end
@@ -837,7 +872,7 @@ local function copyFromDisk(srcDisk, root, preloaded)
   -- copyFileChunked thought succeeded.
   if failed == 0 then
     color(0x00AAFF); print(t("install.verifying", "--- Verifying copy ---")); color(0xFFFFFF)
-    local missing, sized = verifyCopy(srcDisk, manifest, root)
+    local missing, sized = verifyCopy(srcDisk, manifest, root, sizes)
     if #missing == 0 and #sized == 0 then
       ok("All " .. #manifest .. " files verified")
     else
@@ -912,6 +947,84 @@ local function preserveForeignInit(root)
   if not w then return false end
   w:write(body); w:close()
   return fs.exists(root .. PRE_TOS)
+end
+
+--! THE OLD SYSTEM, WHOLE. Removing /bin, /boot and /lib left OpenOS's other
+--! files among TOS's: /etc/motd, /etc/profile.lua, /etc/rc.cfg, /usr/man,
+--! /usr/misc, and whatever someone had put in /usr/bin. Which file is whose
+--! cannot be told after the copy, when the two share /etc and /usr, so it is
+--! told BEFORE: what is on the drive then, outside the user's own places, is
+--! the old system's. Only for a drive with no TOS on it yet, because on one
+--! that has, the list would hold TOS's own users.dat and tos.cfg.
+--! Moved into /openos by default, which loses nothing: the operator chooses.
+local OLD_SYSTEM_HOME = "/openos"
+local function isOldSystemPath(path)   --[[TEST-EXTRACT]]
+  for _, keep in ipairs({ "/home", "/mnt", "/tmp", "/dev", "/openos", "/init.lua" }) do
+    if path == keep or path:sub(1, #keep + 1) == keep .. "/" then return false end
+  end
+  if path:find("tos%-netinstall") or path == "/bootstrap.lua" then return false end
+  return true
+end                                     --[[/TEST-EXTRACT]]
+
+local function snapshotOld(root)
+  root = root or ""
+  local out = {}
+  local function walk(rel)
+    local okL, it = pcall(fs.list, (root .. rel) == "" and "/" or (root .. rel))
+    if not okL or not it then return end
+    for name in it do
+      local child = (rel == "/" and "" or rel) .. "/" .. tostring(name):gsub("/$", "")
+      if isOldSystemPath(child) and sameDrive(root .. child, root) then
+        if fs.isDirectory(root .. child) then walk(child)
+        else out[#out + 1] = child end
+      end
+    end
+  end
+  walk("/")
+  return out
+end
+
+--- What the snapshot holds that TOS did not take over: still there, and not a
+--- path the manifest wrote.
+local function oldLeft(root, before, manifest)
+  local mine = {}
+  for _, entry in ipairs(manifest or {}) do mine[entry.path] = true end
+  local left = {}
+  for _, p in ipairs(before or {}) do
+    if not mine[p] and fs.exists(root .. p) and not fs.isDirectory(root .. p) then
+      left[#left + 1] = p
+    end
+  end
+  return left
+end
+
+--- Move the old system's files into /openos, or delete them. Then the
+--- directories that held only them, deepest first.
+local function putAwayOld(root, files, how)
+  local done, dirs = 0, {}
+  for _, p in ipairs(files) do
+    local ok2
+    if how == "move" then
+      local dest = root .. OLD_SYSTEM_HOME .. p
+      local dir = dest:match("^(.*)/[^/]+$")
+      if dir and not fs.exists(dir) then fs.makeDirectory(dir) end
+      ok2 = fs.rename(root .. p, dest)
+    else
+      ok2 = fs.remove(root .. p)
+    end
+    if ok2 then done = done + 1 end
+    local d = p:match("^(.*)/[^/]+$")
+    while d and d ~= "" do dirs[d] = true; d = d:match("^(.*)/[^/]+$") end
+  end
+  local list = {}
+  for d in pairs(dirs) do list[#list + 1] = d end
+  table.sort(list, function(a, b) return #a > #b end)
+  for _, d in ipairs(list) do
+    local okL, it = pcall(fs.list, root .. d)
+    local empty = okL and it and it() == nil
+    if empty then fs.remove(root .. d) end
+  end
+  return done
 end
 
 local function hasOpenOsLeftovers(root)
@@ -1089,6 +1202,26 @@ local function runQuestionnaire(hw)
   end
   print()
 
+  -- Who manages accounts. Root only unless the operator says otherwise; root
+  -- can change it later with `users manage`.
+  print(t("install.accounts_q", "Who may add, remove and change user accounts?"))
+  color(0xAAAAAA)
+  print(t("install.accounts_1", "  1. Root only"))
+  print(t("install.accounts_2", "  2. Root, and admins for ordinary accounts"))
+  color(0xFFFFFF)
+  cfg.accountAdmins = ask(t("install.choice", "Choice"), {"1", "2"}, "1") == "2"
+  ok(cfg.accountAdmins and "Accounts: root, and admins for ordinary accounts"
+    or "Accounts: root only")
+  print()
+
+  -- The official add-ons' key. Asked, not assumed: it decides what installs
+  -- as trusted, and what a repo nobody configured may offer without asking.
+  print(t("install.trust_1", "The Optional Utilities are signed by their publisher. Trusting"))
+  print(t("install.trust_2", "the key makes them install as trusted; `pkg trust` undoes it."))
+  cfg.trustOfficial = confirm(t("install.trust_q", "Trust the Optional Utilities publisher?"))
+  ok(cfg.trustOfficial and "Optional Utilities key: trusted" or "Optional Utilities key: not trusted")
+  print()
+
   -- Network
   if hw.hasModem or hw.hasTunnel then
     color(0x00AAFF)
@@ -1158,6 +1291,10 @@ end
 -- option, not a directory: --help explains, anything else is refused rather
 -- than being treated as a path that does not exist.
 local parsed = classifyArgs({...})
+MOVE_STAGED = parsed.temporary == true
+-- The old system: what was on the drive before TOS, what is left of it, and
+-- what the operator wants done with it (nil: leave it).
+local oldBefore, oldFiles, oldHow
 
 term.clear()
 header()
@@ -1300,6 +1437,9 @@ if diskMode then
   if not preInstallSafetyCheck(_G._FORCE_WIPE or false, TARGET) then return end
 
   if preserveForeignInit(TARGET) then ok("Kept the previous /init.lua as " .. TARGET .. PRE_TOS) end
+  -- What the drive holds before TOS does: the old system, for the question
+  -- below. Not on a drive that already has TOS (see snapshotOld).
+  if fs and not fs.exists(TARGET .. "/tos/kernel/init.lua") then oldBefore = snapshotOld(TARGET) end
 
   -- Copy system files from install disk. On failure we still allow
   -- the user to proceed to the questionnaire (so config can be saved
@@ -1333,9 +1473,25 @@ if diskMode then
     print()
   end
 
-  -- Clean install: offer to shed OpenOS leftovers, but only when TOS is
-  -- safely in place (copyOk) and there's actually something to remove.
-  if copyOk and hasOpenOsLeftovers(TARGET) then
+  -- The old system, whole: when the drive had no TOS before, everything that
+  -- was on it outside the user's own places, and TOS did not take over.
+  oldFiles = copyOk and oldBefore and oldLeft(TARGET, oldBefore, preloadedManifest) or nil
+  if oldFiles and #oldFiles > 0 then
+    color(0x00AAFF); print(t("install.old", "--- The old system ---")); color(0xFFFFFF)
+    color(0xAAAAAA)
+    print(#oldFiles .. t("install.old_n", " of the previous system's files are still on this drive,"))
+    print(t("install.old_why", "among TOS's own (/etc, /usr, /bin, /lib). Your /home is not counted."))
+    print(t("install.old_1", "  1. Leave them where they are"))
+    print(t("install.old_2", "  2. Move them into /openos, out of TOS's way"))
+    print(t("install.old_3", "  3. Delete them"))
+    color(0xFFFFFF)
+    local pick = ask(t("install.choice", "Choice"), {"1", "2", "3"}, "2")
+    oldHow = (pick == "2" and "move") or (pick == "3" and "delete") or nil
+    ok(oldHow == "move" and "The old system goes into /openos before reboot"
+      or oldHow == "delete" and "The old system is deleted before reboot"
+      or "Leaving the old system's files where they are")
+    print()
+  elseif copyOk and hasOpenOsLeftovers(TARGET) then
     color(0x00AAFF); print("--- Clean install ---"); color(0xFFFFFF)
     color(0xAAAAAA)
     print("OpenOS's own files (/bin, /boot, /lib) are still on this drive.")
@@ -1387,7 +1543,10 @@ elseif cfg.device == "server" then
   print("  Services:   " .. (cfg.autoServices and "Auto-start" or "Manual"))
 end
 print("  Verbose:    " .. (cfg.verbose and "Yes" or "No"))
-if diskMode and copyOk then
+if diskMode and copyOk and oldFiles and #oldFiles > 0 then
+  print("  Old system: " .. (oldHow == "move" and "move into /openos"
+    or oldHow == "delete" and "delete" or "leave in place"))
+elseif diskMode and copyOk then
   print("  Clean inst: " .. (cleanInstall and "Yes (remove /bin, /boot, /lib)" or "No"))
 end
 color(0xFFFFFF)
@@ -1405,10 +1564,32 @@ if fs then
   end
 end
 
+-- Not a tos.cfg setting: it goes in the trust store, as `pkg trust add` would.
+local trustOfficial = cfg.trustOfficial
+cfg.trustOfficial = nil
 if writeConfig(cfg, TARGET) then
   ok("Configuration saved to " .. TARGET .. "/etc/tos.cfg")
 else
   warn("Could not save config (defaults will be used)")
+end
+if trustOfficial then
+  local path = TARGET .. "/etc/pkg_trust.cfg"
+  --! Only into a store that is not there yet: this runs on OpenOS, with no
+  --! decoder of TOS's to merge with, and a bad merge would lose keys.
+  if fs and fs.exists(path) then
+    warn("A trust store is already there; to add the key, once TOS is up:")
+    warn("  pkg trust add " .. OFFICIAL_KEY_LABEL .. " " .. OFFICIAL_KEY)
+  else
+    local f = io.open(path, "w")
+    if f then
+      f:write("return {\n  keys = {\n    [\"" .. OFFICIAL_KEY_LABEL .. "\"] = \""
+        .. OFFICIAL_KEY .. "\",\n  },\n}\n")
+      f:close()
+      ok("Trusted the Optional Utilities key as '" .. OFFICIAL_KEY_LABEL .. "'")
+    else
+      warn("Could not write " .. path .. "; trust it later with pkg trust add")
+    end
+  end
 end
 ok("Device profile: " .. cfg.device)
 print()
@@ -1466,6 +1647,40 @@ if diskMode and copyOk and cleanInstall then
   else
     warn("Nothing to remove (already clean).")
   end
+  print()
+end
+
+if diskMode and copyOk and oldHow and oldFiles and #oldFiles > 0 then
+  color(0x00AAFF); print(t("install.old", "--- The old system ---")); color(0xFFFFFF)
+  local n = putAwayOld(TARGET, oldFiles, oldHow)
+  if TARGET ~= nil and fs.exists(TARGET .. PRE_TOS) then
+    if oldHow == "move" then fs.rename(TARGET .. PRE_TOS, TARGET .. OLD_SYSTEM_HOME .. "/init.lua")
+    else fs.remove(TARGET .. PRE_TOS) end
+  end
+  ok(string.format(oldHow == "move" and "Moved %d file(s) into /openos" or "Deleted %d file(s)", n))
+  if n < #oldFiles then warn((#oldFiles - n) .. " could not be " .. (oldHow == "move" and "moved" or "deleted")) end
+  print()
+end
+
+--! THE STAGING TREE. bootstrap.lua meant to remove it, after this returned,
+--! but this ends by rebooting, so it never returned: every network install
+--! left a second copy of TOS in /home/tos-netinstall. Removed here, once TOS
+--! is verified in place, and only a tree named as bootstrap names its own.
+if MOVE_STAGED and diskMode and copyOk and srcDisk and srcDisk:find("tos%-netinstall") then
+  local function rmTree(path)
+    if fs.isDirectory(path) then
+      local okL, it = pcall(fs.list, path)
+      if okL and it then
+        local names = {}
+        for name in it do names[#names + 1] = name end
+        for _, name in ipairs(names) do rmTree(path .. "/" .. tostring(name):gsub("/$", "")) end
+      end
+    end
+    pcall(fs.remove, path)
+  end
+  rmTree(srcDisk)
+  if fs.exists(srcDisk) then warn("Could not remove the download at " .. srcDisk .. "; delete it to reclaim the space.")
+  else ok("Removed the download at " .. srcDisk) end
   print()
 end
 

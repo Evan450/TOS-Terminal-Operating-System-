@@ -1923,4 +1923,95 @@ function sandbox.describeEnd(ok, result)
   return "exited with status " .. tostring(code), false
 end
 
+-- ============================================================
+-- Audit mode (pkg audit)
+-- ============================================================
+--! A package root has put under audit runs with what it declared, and with
+--! every other auditable capability as well. Each use of something only an
+--! undeclared one supplies is recorded instead of refused: the way to learn
+--! what a package really needs before granting it. It is root's, for one
+--! package, and ends at reboot (kernel/pkg.lua).
+--!
+--! What an undeclared capability supplies is found by building once more with
+--! it and keeping only what that build adds to the declared one, so a record
+--! names the capability that would be needed. A capability that changes how
+--! something already there behaves, rather than adding to it, cannot be seen
+--! this way: the peripheral ones gate on the process, and ipc is scoped, so
+--! neither is here. legacy never is.
+--!
+--! Additions go into a copy of a table, never the table: env.string and its
+--! kind are the real shared libraries, and writing into them would change
+--! them for everything on the machine.
+sandbox.AUDITABLE = { "fs.read", "fs.write", "component", "compat.io", "load",
+  "net", "swap", "internet", "vault", "crypto", "notify" }
+
+local function watched(v, cap, name, record, seen)
+  if type(v) == "function" then
+    return function(...) record(cap, name); return v(...) end
+  end
+  if type(v) ~= "table" then return v end
+  seen = seen or {}
+  if seen[v] then return seen[v] end
+  if getmetatable(v) == nil then
+    local t = {}
+    seen[v] = t
+    for k, x in pairs(v) do t[k] = watched(x, cap, name .. "." .. tostring(k), record, seen) end
+    return t
+  end
+  --! A table with a metatable is answered through it, as `component` is, so
+  --! it is watched on the way out rather than copied: a copy would lose what
+  --! its metatable does, and a use would go unrecorded.
+  local proxy = setmetatable({}, {
+    __index = function(_, k)
+      local x = v[k]
+      if type(x) == "function" then
+        return function(...) record(cap, name .. "." .. tostring(k)); return x(...) end
+      end
+      return x
+    end,
+    __newindex = function(_, k, x) v[k] = x end,
+    __pairs = function() return pairs(v) end,
+    __len = function() return #v end,
+  })
+  seen[v] = proxy
+  return proxy
+end
+sandbox._watched = watched
+
+--- The environment for a package under audit. record(cap, name) is called on
+--- every use of something the declared capabilities do not supply.
+function sandbox.buildAudit(opts, record)
+  local declared = opts.caps or {}
+  local env = sandbox.build(opts)
+  for _, cap in ipairs(sandbox.AUDITABLE) do
+    if not declared[cap] then
+      local caps, o = {}, {}
+      for k, v in pairs(declared) do caps[k] = v end
+      caps[cap] = true
+      for k, v in pairs(opts) do o[k] = v end
+      o.caps = caps
+      local wide = sandbox.build(o)
+      for k, v in pairs(wide) do
+        local mine = rawget(env, k)
+        if mine == nil then
+          rawset(env, k, watched(v, cap, tostring(k), record))
+        elseif type(mine) == "table" and type(v) == "table" and getmetatable(mine) == nil then
+          local copy
+          for sk, sv in pairs(v) do
+            if rawget(mine, sk) == nil then
+              if not copy then
+                copy = {}
+                for ck, cv in pairs(mine) do copy[ck] = cv end
+              end
+              copy[sk] = watched(sv, cap, tostring(k) .. "." .. tostring(sk), record)
+            end
+          end
+          if copy then rawset(env, k, copy) end
+        end
+      end
+    end
+  end
+  return env
+end
+
 return sandbox
