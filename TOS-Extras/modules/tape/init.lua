@@ -511,44 +511,55 @@ local function cmdStore(args, o)
   seekTo(drive, appendPos)
   local totalBytes = 0
   local fileCount = 0
+  --! A FILE THAT CANNOT BE READ IS LEFT OFF THE TAPE AND NAMED. It was
+  --! stored as an empty file (`readFile(...) or ""`) under "Done", and a
+  --! restore then wrote that zero-byte stand-in over the real one. The
+  --! filesystem answers "" for an empty file, so nil is only ever a failed
+  --! read. kernel.backup had the same line. (test_tape_archive.lua)
+  local unread = {}
 
   for _, entry in ipairs(entries) do
     -- Make path relative to the base
     local relPath = relativeTo(basePath, entry.path)
 
     local flags = entry.isDir and FLAG_DIR or 0
-    local data = ""
+    local data, why = "", nil
     if not entry.isDir then
-      data = fs.readFile(entry.path) or ""
-      fileCount = fileCount + 1
+      data, why = fs.readFile(entry.path)
     end
 
-    -- Build header
-    local pathBytes = relPath
-    local header = MAGIC
-      .. string.char(VERSION)
-      .. string.char(flags)
-      .. enc16(#pathBytes)
-      .. pathBytes
-      .. enc32(#data)
-      .. enc32(checksum(data))
+    if data == nil then
+      unread[#unread + 1] = relPath .. "  (" .. tostring(why or "cannot be read") .. ")"
+    else
+      -- Build header
+      local pathBytes = relPath
+      local header = MAGIC
+        .. string.char(VERSION)
+        .. string.char(flags)
+        .. enc16(#pathBytes)
+        .. pathBytes
+        .. enc32(#data)
+        .. enc32(checksum(data))
 
-    -- Check space (account for existing data + what we've written so far)
-    local needed = #header + #data
-    if existingUsed + totalBytes + needed + EOA_SIZE > tapeSize then
-      o("WARNING: Tape full after " .. fileCount .. " files.", 0xFF6600)
-      break
-    end
+      -- Check space (account for existing data + what we've written so far)
+      local needed = #header + #data
+      if existingUsed + totalBytes + needed + EOA_SIZE > tapeSize then
+        o("WARNING: Tape full after " .. fileCount .. " files.", 0xFF6600)
+        break
+      end
 
-    tapeWrite(drive, header)
-    if #data > 0 then
-      tapeWrite(drive, data)
-    end
-    totalBytes = totalBytes + needed
+      tapeWrite(drive, header)
+      if #data > 0 then
+        tapeWrite(drive, data)
+      end
+      totalBytes = totalBytes + needed
+      -- Counted once it is on the tape, so "full after N" is what fitted.
+      if not entry.isDir then fileCount = fileCount + 1 end
 
-    -- Yield periodically to avoid "too long without yielding"
-    if fileCount % 5 == 0 then
-      computer.pullSignal(0)
+      -- Yield periodically to avoid "too long without yielding"
+      if fileCount % 5 == 0 then
+        computer.pullSignal(0)
+      end
     end
   end
 
@@ -559,7 +570,13 @@ local function cmdStore(args, o)
   rewind(drive)
   local totalOnTape = existingUsed + totalBytes
   local freeAfter = tapeSize - totalOnTape
-  o(string.format("Done: %d files, %s written", fileCount, fmtSize(totalBytes)), 0x00FF00)
+  o(string.format("Done: %d files, %s written", fileCount, fmtSize(totalBytes)),
+    #unread > 0 and 0xFF6600 or 0x00FF00)
+  if #unread > 0 then
+    o(string.format("%d file(s) NOT on the tape, because they could not be read:", #unread), 0xFF0000)
+    for i = 1, math.min(#unread, 10) do o("  " .. unread[i], 0xFF6600) end
+    if #unread > 10 then o(string.format("  ... and %d more", #unread - 10), 0xFF6600) end
+  end
   o(string.format("Tape: %s free (%.1f%% used)",
     fmtSize(freeAfter), totalOnTape * 100 / tapeSize),
     freeAfter < tapeSize * 0.1 and 0xFF6600 or 0x00FF00)

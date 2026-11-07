@@ -1,5 +1,11 @@
 -- FEAT-7 native package manifest for tape.
 return {
+  -- 2.3.3 — `tape store` no longer puts a file it cannot read on the tape as
+  -- an empty file. It did, under "Done", and `tape restore` then wrote the
+  -- zero-byte stand-in over the real one. Such a file is left off and named
+  -- now, and "Tape full after N files" counts only what fitted.
+  -- (test_tape_archive.lua; kernel.backup had the same flaw)
+  --
   -- 2.3.2 — `tape restore` says when it failed. It counted every file whatever
   -- the write returned, so a user with no write access was told "Restored: 1
   -- files" and got nothing. Its default was /home, which only root can write,
@@ -28,7 +34,7 @@ return {
   -- in-place reinstalls, and the old build's files live at the old
   -- install path.)
   name        = "tape",
-  version     = "2.3.2",
+  version     = "2.3.3",
   kind        = "command",
   category    = "storage",
   description = "General Computronics tape control: data archive/restore + audio playback + raw I/O + device state.",

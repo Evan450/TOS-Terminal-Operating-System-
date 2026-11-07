@@ -502,6 +502,7 @@ do
       -- cluster-storage 1.0.1, rc-pilot 1.3.0, stock 1.0.3, tape 2.3.2,
       -- warhead 1.0.3 and write 1.1.2 are what programs.cfg serves. Name a
       -- package here when a fix to it lands ahead of the next signing.
+      ["tape"] = "2.3.3: a file `tape store` cannot read is named, not stored empty",
     }
 
     if nShipped == 0 then

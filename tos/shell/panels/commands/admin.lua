@@ -1436,6 +1436,20 @@ return function(C, S, deps)
     if not bmod then o("backup module unavailable", T.error); return end
     local sub = args[1]
     local sess = helpers.sessionOf(S)  -- #SEC CR-9 — seat-bound principal
+    --! What was left out, by name. A backup or a restore that is missing a
+    --! file must not read as a whole one. (test_backup_roundtrip.lua)
+    local function leftOut(list, what)
+      if type(list) ~= "table" or #list == 0 then return end
+      o(string.format("%d file(s) %s:", #list, what), T.warning)
+      for i = 1, math.min(#list, 10) do
+        o("  " .. tostring(list[i].rel) .. "  (" .. tostring(list[i].why) .. ")", T.warning)
+      end
+      if #list > 10 then o(string.format("  ... and %d more (see 'log')", #list - 10), T.warning) end
+    end
+    local function counts(s)
+      return string.format("%d file(s), %d director%s", s.files or 0, s.dirs or 0,
+        (s.dirs == 1) and "y" or "ies")
+    end
 
     if sub == "snapshot" or sub == "create" then
       if not args[2] or not args[3] then
@@ -1443,8 +1457,10 @@ return function(C, S, deps)
       end
       local ok2, summary = bmod.snapshot(args[2], args[3], { session = sess })
       if ok2 then
-        o(string.format("Snapshot OK: %d entries, %d bytes -> %s",
-          summary.entries, summary.bytes, args[3]), T.highlight)
+        local partial = type(summary.skipped) == "table" and #summary.skipped > 0
+        o(string.format("Snapshot %s: %s, %d bytes -> %s", partial and "INCOMPLETE" or "OK",
+          counts(summary), summary.bytes, args[3]), partial and T.warning or T.highlight)
+        leftOut(summary.skipped, "NOT in the backup")
         o("  metaHash: " .. summary.hash:sub(1, 16) .. "...", T.dim)
       else
         o("Snapshot failed: " .. tostring(summary), T.error)
@@ -1475,8 +1491,11 @@ return function(C, S, deps)
       local ok2, summary = bmod.restore(args[2],
         { session = sess, destRoot = destRoot, force = force })
       if ok2 then
-        o(string.format("Restore OK: %d/%d files -> %s",
-          summary.restored, summary.entries, summary.destRoot), T.highlight)
+        local partial = (summary.restored or 0) < (summary.files or 0)
+        o(string.format("Restore %s: %d of %s -> %s", partial and "INCOMPLETE" or "OK",
+          summary.restored or 0, counts(summary), summary.destRoot),
+          partial and T.warning or T.highlight)
+        leftOut(summary.skipped, "NOT restored")
         refreshBrowser()
       else
         o("Restore failed: " .. tostring(summary), T.error)

@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 139 rounds of work:
+Everything since v1.5.0, in 140 rounds of work:
 
+- [backup restores every file, or says which it did not](#backup-restores-every-file-or-says-which-it-did-not)
 - [A question of several lines shows whole at the command line](#a-question-of-several-lines-shows-whole-at-the-command-line)
 - [The best copy of a dependency wins, not the first one found](#the-best-copy-of-a-dependency-wins-not-the-first-one-found)
 - [verify is quicker](#verify-is-quicker)
@@ -161,6 +162,10 @@ Everything since v1.5.0, in 139 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### backup restores every file, or says which it did not
+
+`backup restore` puts empty files back. It skipped every one, said "Restore OK", and counted directories as files, so five files restored as "4/7". A file the snapshot cannot read is now left out and named instead of being stored as an empty file that a restore would write over the real one, and a restore names each file it could not write or whose contents fail their hash. Either way the command says INCOMPLETE. A file as the destination is refused, and the refusal of a non-empty destination names `--force`.
 
 ### A question of several lines shows whole at the command line
 

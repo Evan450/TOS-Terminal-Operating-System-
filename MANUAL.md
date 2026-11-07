@@ -2463,7 +2463,10 @@ argument, shows the current on/off state and volume. Setting persists to
 Snapshot a directory tree into a self-contained backup file, inspect one without
 restoring, or restore it (optionally to a different destination; `--force`
 overwrites). Companion to `trash` (single-file undelete) — `backup` is for
-whole-tree snapshots. *See also:* `trash`, `deploy`.
+whole-tree snapshots. Empty files are kept like any other. A file the snapshot
+cannot read is left out rather than stored empty, and a file the restore cannot
+write or whose contents fail their hash is not restored; either way the command
+says **INCOMPLETE** and names each file and why. *See also:* `trash`, `deploy`.
 
 **battery** — `battery`
 Show stored/maximum energy and the current charge level. Used by the power

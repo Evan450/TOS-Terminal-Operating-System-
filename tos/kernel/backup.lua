@@ -94,7 +94,7 @@ end
 -- ============================================================
 
 --- Walk `srcRoot` and produce a flat array of entries.
-local function walkTree(srcRoot, session, excludes)
+local function walkTree(srcRoot, session, excludes, skipped)
   local entries = {}
   excludes = excludes or DEFAULT_EXCLUDES
   local count = 0
@@ -127,6 +127,9 @@ local function walkTree(srcRoot, session, excludes)
           log.warn("backup", "Skipping oversized file: " .. full ..
             " (" .. sz .. " > " .. MAX_ENTRY_BYTES .. ")")
         end
+        if skipped then
+          skipped[#skipped + 1] = { rel = rel, why = "larger than " .. MAX_ENTRY_BYTES .. " bytes" }
+        end
         count = count - 1
         return
       end
@@ -140,7 +143,7 @@ end
 
 --- Encode the snapshot binary, returning the byte string plus a
 --- summary table.
-local function encodeSnapshot(srcRoot, entries, session)
+local function encodeSnapshot(srcRoot, entries, session, skipped)
   local parts = {}
   local function emit(s) parts[#parts + 1] = s end
 
@@ -148,19 +151,35 @@ local function encodeSnapshot(srcRoot, entries, session)
   local bodyParts = {}
   local function emitBody(s) bodyParts[#bodyParts + 1] = s end
 
+  --! A FILE THAT CANNOT BE READ IS LEFT OUT AND NAMED, never stored as
+  --! empty. `readFile(...) or ""` did the second: the backup said OK and
+  --! held a zero-byte stand-in, and a restore then wrote that over the
+  --! real file. fs.readFile answers "" for an empty file, so nil is only
+  --! ever a failed read. (test_backup_roundtrip.lua)
+  local emitted, files, dirs = 0, 0, 0
   for _, e in ipairs(entries) do
-    local flags = e.isDir and 1 or 0
-    emitBody(packU8(flags))
-    emitBody(packU16(#e.rel))
-    emitBody(e.rel)
-    if e.isDir then
-      emitBody(packU32(0))
-      emitBody(string.rep("0", 64))  -- placeholder hash for dirs
-    else
-      local data = securefs.readFile(srcRoot .. e.rel, session) or ""
-      emitBody(packU32(#data))
-      emitBody(data)
-      emitBody(crypto and crypto.hash(data) or string.rep("0", 64))
+    local data, why
+    if not e.isDir then
+      data, why = securefs.readFile(srcRoot .. e.rel, session)
+      if data == nil then
+        skipped[#skipped + 1] = { rel = e.rel, why = tostring(why or "cannot be read") }
+      end
+    end
+    if e.isDir or data ~= nil then
+      emitted = emitted + 1
+      emitBody(packU8(e.isDir and 1 or 0))
+      emitBody(packU16(#e.rel))
+      emitBody(e.rel)
+      if e.isDir then
+        dirs = dirs + 1
+        emitBody(packU32(0))
+        emitBody(string.rep("0", 64))  -- placeholder hash for dirs
+      else
+        files = files + 1
+        emitBody(packU32(#data))
+        emitBody(data)
+        emitBody(crypto and crypto.hash(data) or string.rep("0", 64))
+      end
     end
   end
 
@@ -174,7 +193,7 @@ local function encodeSnapshot(srcRoot, entries, session)
   local now = math.floor((fs.hostTime and fs.hostTime()) or (os.time and os.time()) or 0)
   emit(MAGIC)
   emit(packU32(now))
-  emit(packU32(#entries))
+  emit(packU32(emitted))
   emit(packU16(#rootBytes))
   emit(rootBytes)
   -- metaHash is over the body (covers every entry's contents).
@@ -183,7 +202,10 @@ local function encodeSnapshot(srcRoot, entries, session)
   emit(body)
 
   return table.concat(parts), {
-    entries = #entries,
+    entries = emitted,
+    files   = files,
+    dirs    = dirs,
+    skipped = skipped,   -- { { rel =, why = }, ... }: NOT in the backup
     bytes   = 0,  -- filled below
     root    = srcRoot,
     created = now,
@@ -225,7 +247,8 @@ function backup.snapshot(srcRoot, destPath, opts)
     return false, "destination must be outside source"
   end
 
-  local entries = walkTree(srcRoot, session, opts.exclude)
+  local skipped = {}
+  local entries = walkTree(srcRoot, session, opts.exclude, skipped)
   if #entries == 0 then
     return false, "no files to back up under " .. srcRoot
   end
@@ -233,7 +256,10 @@ function backup.snapshot(srcRoot, destPath, opts)
     return false, "tree exceeds " .. MAX_TOTAL_ENTRIES .. " entries"
   end
 
-  local blob, summary = encodeSnapshot(srcRoot, entries, session)
+  local blob, summary = encodeSnapshot(srcRoot, entries, session, skipped)
+  if summary.entries == 0 then
+    return false, "nothing under " .. srcRoot .. " could be read"
+  end
   summary.bytes = #blob
 
   local ok, err = securefs.writeFile(destPath, blob, session)
@@ -300,12 +326,17 @@ function backup.restore(srcPath, opts)
   if destRoot == "/" then return false, "refusing to restore to /" end
 
   -- Refuse to overwrite an existing populated tree unless caller forces.
+  -- The refusal is read by an operator at the shell, so it names the
+  -- shell's flag, not the API's opts.force.
+  if securefs.exists(destRoot, session) and not securefs.isDirectory(destRoot, session) then
+    -- Every file would land beneath a file: each write fails, and the old
+    -- loop reported that as "Restore OK: 0/N".
+    return false, "the destination is a file, not a directory: " .. destRoot
+  end
   if securefs.exists(destRoot, session) and not opts.force then
-    if securefs.isDirectory(destRoot, session) then
-      local list = securefs.list(destRoot, session)
-      if type(list) == "table" and #list > 0 then
-        return false, "destRoot non-empty; pass force=true to overwrite: " .. destRoot
-      end
+    local list = securefs.list(destRoot, session)
+    if type(list) == "table" and #list > 0 then
+      return false, "the destination is not empty: " .. destRoot .. " (--force writes over it)"
     end
   end
 
@@ -325,8 +356,14 @@ function backup.restore(srcPath, opts)
     end
   end
 
+  --! EVERY FILE IS WRITTEN, AND EVERY ONE THAT IS NOT IS NAMED. The write
+  --! used to sit inside `if crypto and #data > 0`, so an empty file was
+  --! never restored, a machine without kernel.crypto restored nothing at
+  --! all, and a bad hash or a failed write went to the log while the
+  --! operator read "Restore OK". Seen on the headless runner: 5 files in,
+  --! 4 out, the empty one gone. (test_backup_roundtrip.lua)
   local off = 1
-  local restored = 0
+  local restored, files, dirs, skipped = 0, 0, 0, {}
   for i = 1, info.entries do
     if off > #body then return false, "truncated body at entry " .. i end
     local flags;     flags,   off = unpackU8(body, off)
@@ -355,33 +392,40 @@ function backup.restore(srcPath, opts)
     end
     local isDir = (flags & 1) == 1
     if isDir then
+      dirs = dirs + 1
       if not securefs.exists(fullDest, session) then
         securefs.makeDirectory(fullDest, session)
       end
     else
-      -- Per-entry hash verify.
-      if crypto and #data > 0 then
-        local liveHash = crypto.hash(data)
-        if not crypto.ctEquals(liveHash, hash) then
-          if log then
-            log.warn("backup", "Skipping entry with bad hash: " .. relPath)
-          end
-        else
-          -- Create parent dirs as needed.
-          local parent = fullDest:match("^(.+)/[^/]+$")
-          if parent and parent ~= "" and not securefs.exists(parent, session) then
-            -- Walk up creating missing parents in order.
-            local accum = ""
-            for seg in parent:gmatch("[^/]+") do
-              accum = accum .. "/" .. seg
-              if not securefs.exists(accum, session) then
-                securefs.makeDirectory(accum, session)
-              end
+      files = files + 1
+      -- Per-entry hash verify, whenever there is a hasher: an empty file
+      -- has a hash like any other.
+      local hashOk = true
+      if crypto then hashOk = crypto.ctEquals(crypto.hash(data), hash) end
+      if not hashOk then
+        skipped[#skipped + 1] = { rel = relPath, why = "its contents do not match their hash" }
+        if log then
+          log.warn("backup", "Skipping entry with bad hash: " .. relPath)
+        end
+      else
+        -- Create parent dirs as needed.
+        local parent = fullDest:match("^(.+)/[^/]+$")
+        if parent and parent ~= "" and not securefs.exists(parent, session) then
+          -- Walk up creating missing parents in order.
+          local accum = ""
+          for seg in parent:gmatch("[^/]+") do
+            accum = accum .. "/" .. seg
+            if not securefs.exists(accum, session) then
+              securefs.makeDirectory(accum, session)
             end
           end
-          local wOk, wErr = securefs.writeFile(fullDest, data, session)
-          if wOk then restored = restored + 1
-          elseif log then
+        end
+        local wOk, wErr = securefs.writeFile(fullDest, data, session)
+        if wOk then
+          restored = restored + 1
+        else
+          skipped[#skipped + 1] = { rel = relPath, why = "could not be written: " .. tostring(wErr) }
+          if log then
             log.warn("backup", "Restore write failed: " .. fullDest .. ": " ..
               tostring(wErr))
           end
@@ -391,10 +435,11 @@ function backup.restore(srcPath, opts)
   end
 
   if log then
-    log.info("backup", string.format("Restored %d files from %s -> %s",
-      restored, srcPath, destRoot))
+    log.info("backup", string.format("Restored %d of %d files from %s -> %s",
+      restored, files, srcPath, destRoot))
   end
-  return true, { entries = info.entries, restored = restored, destRoot = destRoot }
+  return true, { entries = info.entries, files = files, dirs = dirs, restored = restored,
+                 skipped = skipped, destRoot = destRoot }
 end
 
 return backup

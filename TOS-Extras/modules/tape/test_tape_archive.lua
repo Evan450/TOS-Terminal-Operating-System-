@@ -308,6 +308,37 @@ reset(); tape({ "restore" }, o)
 test("with no path it restores to your own home", "hello", FS.readFile("/home/alice/a.txt"))
 FS.home = realHome
 
+-- ── A file the store cannot read ────────────────────
+--! It went onto the tape as an EMPTY file under "Done", and a restore wrote
+--! that over the real one. kernel.backup had the same `or ""`.
+print()
+print("-- a file that cannot be read is named, not stored empty --")
+FS.makeDirectory("/home/locked")
+FS.writeFile("/home/locked/open.txt", "open")
+FS.writeFile("/home/locked/secret.txt", "the real secret")
+local realRead = FS.readFile
+FS.readFile = function(p)
+  if FS.normalize(p) == "/home/locked/secret.txt" then return nil, "permission denied" end
+  return realRead(p)
+end
+reset(); tape({ "store", "/home/locked", "--overwrite" }, o)
+FS.readFile = realRead
+test("store names the file it could not read", true, said("secret.txt  (permission denied)"))
+test("and says it is NOT on the tape", true, said("NOT on the tape"))
+test("counting the one file it wrote", true, said("Done: 1 files"))
+reset(); tape({ "list" }, o)
+test("list does not show it", false, said("secret.txt"))
+test("but does show the readable one", true, said("open.txt"))
+FS.makeDirectory("/r2")
+FS.writeFile("/r2/secret.txt", "keep me")
+reset(); tape({ "restore", "/r2" }, o)
+test("a restore leaves the real file alone", "keep me", FS.readFile("/r2/secret.txt"))
+test("and restores the readable one", "open", FS.readFile("/r2/open.txt"))
+
+reset(); tape({ "store", "/home/locked", "--overwrite" }, o)
+test("a store that read everything warns of nothing", false, said("NOT on the tape"))
+test("and counts both files", true, said("Done: 2 files"))
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)
