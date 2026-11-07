@@ -512,9 +512,16 @@ function M.build(S, deps)
         if okC and computer and computer.freeMemory then
           kb = string.format(" (%dKB free)", math.floor(computer.freeMemory() / 1024))
         end
+        -- Below TOS's floor no amount of closing tabs frees enough: say what
+        -- will help. (bootcfg.FLOOR_KB, test_below_floor.lua)
+        local bcfg = package.loaded["kernel.bootcfg"]
+        local have = type(bcfg) == "table" and bcfg.belowFloor and bcfg.belowFloor()
+        local advice = have
+          and string.format(" — this machine has %d KB and TOS needs %d KB: add memory.",
+            have, bcfg.FLOOR_KB)
+          or " — free RAM (close tabs / reboot) and they'll load on next use."
         S.lastOut = { "'" .. cat .. "' commands need more memory than is free" .. kb
-          .. " — free RAM (close tabs / reboot) and they'll load on next use.",
-          (S.T and S.T.error) or nil }
+          .. advice, (S.T and S.T.error) or nil }
       else
         loaded[cat] = true
       end

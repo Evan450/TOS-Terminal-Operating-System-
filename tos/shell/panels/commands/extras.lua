@@ -88,7 +88,11 @@ return function(C, S, deps)
     if not args[1] then
       local st2, why = rs.status()
       if not st2 then
-        o((tostring(why or "no redstone component"):gsub("^%l", string.upper)), T.error)
+        if why == nil or why == "no redstone component" then
+          o("No redstone card is attached.  [E-701 ERR_NO_DEVICE]", T.error)
+        else
+          o((tostring(why):gsub("^%l", string.upper)), T.error)
+        end
         return
       end
       o(" Side      In  Out", T.title)
@@ -596,7 +600,7 @@ return function(C, S, deps)
   C.robot = function(args, o)
     local ok2, rob = pcall(require, "peripheral.robot")
     if not ok2 then o("No robot module", T.error); return end
-    if not rob.available() then o("Not a robot", T.error); return end
+    if not rob.available() then o("Not a robot.  [E-701 ERR_NO_DEVICE]", T.error); return end
     local cmd = args[1]
     if cmd == "forward" or cmd == "fwd" then local ok3, r = rob.forward(); o(ok3 and "Moved forward" or tostring(r), ok3 and T.highlight or T.error)
     elseif cmd == "back" then local ok3, r = rob.back(); o(ok3 and "Moved back" or tostring(r), ok3 and T.highlight or T.error)
@@ -624,7 +628,10 @@ return function(C, S, deps)
   C.inventory = function(args, o)
     local ok2, inv = pcall(require, "peripheral.inventory")
     if not ok2 then o("No inventory module", T.error); return end
-    if not inv.available() then o("No inventory controller/transposer", T.error); return end
+    if not inv.available() then
+      o("No inventory controller or transposer is attached.  [E-701 ERR_NO_DEVICE]", T.error)
+      return
+    end
     --! WITH NO SIDE, EVERY SIDE THAT HAS AN INVENTORY. It passed nil to
     --! inv.list, which has no default side, so plain `inventory` -- the form
     --! the manual documents -- said "Cannot read inventory" on every machine

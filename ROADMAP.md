@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**45 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**44 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 25 | Planned or under investigation. Most contributions belong here. |
+| Planned | 24 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 18 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (7) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (7) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (6) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (7) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -216,6 +216,8 @@ ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MIN
 
 THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major number is 0 (preRelease), suffix or not, beside the SKIP list; the picker drops the "v" when a version would not fit its 8 cells, so 1.10.0-b shows whole; blockfs's \_VERSION matches (blockfs 1.2.2, pending re-sign), and so do mail's and intercom's, which today's quit-key bumps had made drift too. No package is 0.x today, so the pack's contents do not change. build/ test\_addon\_versions.lua (22; 6 fail on the old files) checks all three and every modules/&lt;pkg&gt;/usr/lib/&lt;pkg&gt;.lua \_VERSION against its manifest. STILL OPEN: the notes rule -- there is no per-package release notes file yet for a `tos.py check` step to look in, so where the notes live comes first; and whether a SUFFIXED pre-1.0 package may ship labelled (operator; held back for now, as every 0.x is).
 
+NOTES RULE BUILT 2026-11-07: notes live in the package's manifest, a comment line starting with the version ("-- 2.3.3 — ..."), as the newest bumps already do. test\_addon\_versions.lua, now a `tos.py check` step, fails when a package's version differs from the SIGNED pack's and has no such line. It applies from each package's next bump: 12 of 18 manifests carry no note for their current version, and adding them now would cost 12 re-signs for comments. Removing tape 2.3.3's note fails it ("tape 2.3.2 -&gt; 2.3.3"). LEFT, the operator's: may a SUFFIXED pre-1.0 package ship labelled? Every 0.x is held back until then.
+
 ### Slice 3: resolution
 
 *Planned* · from the round *Federated package repos (2026-09-27)*
@@ -369,12 +371,6 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 
 NEXT if still tight: i18n catalogs, and the display-layer work already queued in the OC optimization playbook.
 
-### Support-ceiling policy (design decision, operator-approved direction)
-
-*Planned* · from the round *Polish - operator feedback (round 4)*
-
-Support-ceiling policy (design decision, operator-approved direction): instead of degrading everything for T1 GPUs / tiny RAM, set a floor - refuse to boot (clean message) or fall back to the CLI shell on hardware below it. Sweep the T1/low-RAM special cases once decided.
-
 ### Line disciplines — direction, not a task, and expensive
 
 *Idea / far future* · from the round *Second pass: the compat number (2026-09-20)*
@@ -447,7 +443,7 @@ A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME 
 
 SMALLER, NOTED IN PASSING.
 
-- The chat tab repaints in full on every keystroke (handleKey returns 3): about 16 keys a second on the runner's T2 APU. Past human speed, so not a bug, but a pasted line lags.
+- The chat tab repaints in full on every keystroke (handleKey returns 3): about 16 keys a second on the runner's T2 APU. Past human speed, so not a bug, but a pasted line lags. DONE 2026-11-07: a key that only edits the input repaints the input row and asks for nothing more (chatapp.drawInput, test\_chat\_keystroke.lua). SEEN on the runner: "hello world" and two Backspaces showed "&gt; hello wor\_", the messages untouched.
 - DONE 2026-11-01: desktop.keys says the bound key, swapped in where it is drawn, so no catalog changed.
 - DONE 2026-11-01: the CLI path follows the key table. shell/quitkey.lua answers ^Q until a keys file exists, and only then loads shell.keys, so a machine that never bound quit pays almost nothing. Floorcheck: every README claim holds, 67K free at 1024K against \~65K. SEEN in CLI mode: after `keys set quit F4` ^Q left "abcdef" on the line and F4 cleared it; after `keys reset` ^Q did. kernel/init.lua's notice viewer stays as it is: `q` closes it whatever quit is bound to.
 - DONE 2026-11-01: the 297 test files that reported failure by marker alone exit non-zero now. test\_install\_preinit.lua is the one left: it carries the operator's uncommitted edit, so it was not touched.
@@ -579,6 +575,8 @@ Same day, vault and deploy (both touched that day): E-305 ERR\_VAULT\_UNLOCK, ta
 2026-10-16, federated slice 2's floor: E-606 ERR\_PKG\_UNTRUSTED\_SOURCE. Same day, the rest of pkg's install and upgrade gates: E-607 unverified (no hashes), E-608 hash mismatch, E-609 a signature that does not verify, E-610 `pkg trust require on`, E-611 the wrong publisher (a pin, or an upgrade's key change), E-612 a protected target, E-613 a conflict (test\_pkg\_refusal\_codes.lua drives each through the real pkg.install). Still untagged: the network layer proper, drive format/mount failures, hardware.
 
 2026-11-06, the network layer's two refusals that this week's mesh work touched: E-502 ERR\_NET\_NO\_SECRET (net.send and the mesh, with nothing sent) and E-503 ERR\_NET\_PAIR\_FAILED (no confirmation). `why` explains both and says pairing crosses the mesh. Still untagged: drive format/mount failures, whose text is blockfs's and would cost a re-sign, and hardware.
+
+2026-11-07, the hardware range's first code, for the device commands touched that day: E-701 ERR\_NO\_DEVICE on `redstone`, `inventory` and `robot` when the device is not attached; `why` explains it, Appendix C lists it. Tagged at the command, not in peripheral/\*.lua, whose strings OpenOS programs see through compat. Still untagged: drive format/mount failures (blockfs's text, a re-sign). This entry is a standing rule -- tag as touched -- so it stays open by design.
 
 ### A prefab base designer
 

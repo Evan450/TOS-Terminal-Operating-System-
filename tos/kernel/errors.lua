@@ -80,6 +80,10 @@ local LIST = {
   { 612, "ERR_PKG_PROTECTED_TARGET", "the package would write a path no package may own" },
   { 613, "ERR_PKG_CONFLICT", "the package conflicts with something already installed" },
 
+  -- 7xx: hardware. The first, 2026-11-07, for the device commands touched
+  -- that day (redstone, inventory, robot).
+  { 701, "ERR_NO_DEVICE",       "the device that needs is not attached to this machine" },
+
   { 801, "ERR_UNKNOWN_CMD",     "no command by that name" },
   { 802, "ERR_CMD_UNLOADABLE",  "the command exists but would not fit in memory" },
 }

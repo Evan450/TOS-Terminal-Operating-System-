@@ -72,6 +72,50 @@ p:close()
 test("found the libraries that carry a _VERSION (blockfs, mail, ...)", checked >= 5, checked)
 
 print()
+print("=== a version bump carries its release notes ===")
+print()
+--! WHERE NOTES LIVE: in the package's own manifest, as a comment line that
+--! starts with the version ("-- 2.3.3 — what changed"), the practice the
+--! newest bumps already follow (tape, ttt, snake, ...). The rule applies to a
+--! version that differs from the SIGNED pack's, i.e. to a bump not yet
+--! signed: asking every manifest for a note now would change 12 signed
+--! manifests, and so 12 re-signs, for comments alone. Each picks it up at its
+--! next bump. (TODO: ADD-ON VERSIONING, the notes rule)
+local function shippedVersion(name)
+  for d = 1, 4 do
+    local m = readAll("dist/optional-utilities/disk" .. d .. "/" .. name .. "/package.lua")
+    if m then return m:match('version%s*=%s*"([^"]+)"') end
+  end
+  return nil
+end
+local function hasNote(man, v)
+  local esc = v:gsub("%p", "%%%0")
+  for line in (man .. "\n"):gmatch("([^\n]*)\n") do
+    if line:match("^%s*%-%-%s*" .. esc .. "%f[^%w%.%-]") then return true end
+  end
+  return false
+end
+test("a note line is recognised", hasNote("  -- 2.3.3 — x\n", "2.3.3"))
+test("a different version's note is not", not hasNote("  -- 2.3.31 — x\n", "2.3.3"))
+test("a version mentioned mid-line is not a note", not hasNote("  -- since 2.3.3 it\n", "2.3.3"))
+local p2 = io.popen(package.config:sub(1, 1) == "\\" and "dir /b /ad modules 2>nul" or "ls modules")
+local bumped, unnoted = 0, {}
+for name in p2:lines() do
+  name = name:gsub("%s+$", "")
+  local man = readAll("modules/" .. name .. "/package.lua")
+  local mv = man and man:match('version%s*=%s*"([^"]+)"')
+  local sv = mv and shippedVersion(name)
+  if sv and mv ~= sv then
+    bumped = bumped + 1
+    if not hasNote(man, mv) then unnoted[#unnoted + 1] = name .. " " .. sv .. " -> " .. mv end
+  end
+end
+p2:close()
+if bumped == 0 then print("  note: no package is bumped past the signed pack today") end
+test("every package bumped past the signed pack has a note for its new version",
+  #unnoted == 0, table.concat(unnoted, ", "))
+
+print()
 print("=== the picker shows a suffixed version whole ===")
 print()
 local picker

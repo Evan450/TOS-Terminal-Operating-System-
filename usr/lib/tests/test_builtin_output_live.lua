@@ -35,7 +35,7 @@ package.loaded["shell.panels.helpers"] = {
   expandAlias = function(_, parts) return parts end,
   resolveProgram = function() return nil end,
   clearFailure = function() end,
-  noteFailure = function() end,
+  noteFailure = function(S, cmd, text) if not S.lastFailure then S.lastFailure = { cmd = cmd, text = text } end end,
   liveTier = function() return 3 end,
   tierName = function() return "ROOT" end,
   fail = function(_, msg, o) o(msg, "ERR"); return false end,
@@ -65,6 +65,7 @@ package.loaded["kernel.pkg"] = {
 
 -- A slow built-in: three lines, the clock moving a little between them.
 local C = {}
+C.broke = function(_, o) o("it broke", 3) end
 C.slow = function(_, o)
   o("checking 1", 5)
   during.liveAfterFirst = #during.live
@@ -90,6 +91,7 @@ local function shell(shape)
     deps.echoLine = function(text) during.echo[#during.echo + 1] = text end
     deps.inputRow = function() return 20 end
   end
+  LAST_S = S
   return require("shell.panels.executor").build(S, deps)
 end
 
@@ -121,6 +123,17 @@ me.beforeRead = nil
 during = { live = {}, echo = {} }
 cli("slow")
 test("a built-in gets no read hook (it reads through promptInput)", me.beforeRead == nil)
+
+print("=== a refusal at the command line is what `why` sees ===")
+do
+  -- shell() leaves the S it built in LAST_S, where `why` would read it.
+  local cli2 = shell("cli")
+  during = { live = {}, echo = {} }
+  cli2("broke")
+  test("the error line went out live", during.live[1] and during.live[1][1] == "it broke")
+  test("and was noted for why", LAST_S and LAST_S.lastFailure and LAST_S.lastFailure.text == "it broke",
+    LAST_S and LAST_S.lastFailure and LAST_S.lastFailure.text)
+end
 
 print("=== in the full interface ===")
 local tui = shell("tui")

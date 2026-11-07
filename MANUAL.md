@@ -3591,6 +3591,7 @@ hit — and the E-number's last digit is that same beep count.
 | E-611 | `ERR_PKG_WRONG_PUBLISHER` | the package is not signed by the publisher it has to be | |
 | E-612 | `ERR_PKG_PROTECTED_TARGET` | the package would write a path no package may own | |
 | E-613 | `ERR_PKG_CONFLICT` | the package conflicts with something already installed | |
+| E-701 | `ERR_NO_DEVICE` | the device that needs is not attached to this machine | |
 | E-801 | `ERR_UNKNOWN_CMD` | no command by that name | |
 | E-802 | `ERR_CMD_UNLOADABLE` | the command exists but would not fit in memory | |
 

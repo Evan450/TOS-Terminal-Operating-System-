@@ -866,6 +866,14 @@ local FAILURES = {
       { "Fix: `internet` shows whether the card can reach the network;", "fix" },
       { "then try again.", "fix" },
     } },
+  { sym = "ERR_NO_DEVICE", lines = {
+      { "That command drives a device, and this machine has none of that", "err" },
+      { "kind attached: a redstone card, an inventory controller or a", "err" },
+      { "transposer beside an inventory, or a robot's own body.", "err" },
+      { "Fix: fit the card, or place the block touching the case, then", "fix" },
+      { "`lsdev` to see it. A device added while the machine runs is", "fix" },
+      { "picked up without a reboot.", "fix" },
+    } },
   { sym = "ERR_NET_NO_SECRET", lines = {
       { "Nothing goes to a trusted machine unsealed, and this one has no", "err" },
       { "shared secret with it yet, so nothing was sent.", "err" },

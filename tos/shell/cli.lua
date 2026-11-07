@@ -475,6 +475,17 @@ function M.run(ctx)
       .. "and the full interface needs %d KB.", auto.haveKB, auto.needKB), D.c("warning"))
     o("'tui' opens it anyway · 'bootsettings ui panels' makes it the default", D.c("dim"))
   end
+  -- Below TOS's own floor the commands will not load either: say so first,
+  -- rather than let each one fail with advice that cannot help.
+  do
+    local okB, bcfg = pcall(require, "kernel.bootcfg")
+    local have = okB and type(bcfg) == "table" and bcfg.belowFloor and bcfg.belowFloor()
+    if have then
+      o(string.format("This machine has %d KB of memory and TOS needs at least %d KB "
+        .. "(one Tier 3.5 stick), so most commands will not load. Add memory.",
+        have, bcfg.FLOOR_KB), D.c("error"))
+    end
+  end
   -- The full interface was asked for and would not load. Its own
   -- warning is gone in two seconds; this one stays in the scrollback.
   if ctx.tuiFailed then

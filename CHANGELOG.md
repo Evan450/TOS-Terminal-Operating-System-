@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 150 rounds of work:
+Everything since v1.5.0, in 151 rounds of work:
 
+- [Below 1 MB, TOS says to add memory](#below-1-mb-tos-says-to-add-memory)
 - [log denied lists every refusal](#log-denied-lists-every-refusal)
 - [inventory with no side lists every inventory beside it](#inventory-with-no-side-lists-every-inventory-beside-it)
 - [redstone says what it did](#redstone-says-what-it-did)
@@ -172,6 +173,10 @@ Everything since v1.5.0, in 150 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Below 1 MB, TOS says to add memory
+
+On a machine with less than 1 MB of memory the command line now says at once that TOS needs at least 1 MB and that most commands will not load, and a command that cannot load for memory says to add memory. Each command used to advise closing tabs or rebooting, which on such a machine can never free enough.
 
 ### log denied lists every refusal
 

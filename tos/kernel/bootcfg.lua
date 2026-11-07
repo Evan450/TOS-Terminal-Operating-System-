@@ -281,6 +281,22 @@ end
 --- same 1024 KB machine left 48 KB. (build/headless-session.py --ram)
 bootcfg.PANELS_MIN_KB = 1536
 
+--- TOS's floor: below it the command line starts but its commands do not
+--- load (768 KB on the headless machine, 2026-11-07: 17 KB free after the
+--- shell). The README's Requirements say 1 MB. Below it TOS says so and
+--- says to add memory, instead of advising "close tabs / reboot", which on
+--- such a machine can never help. (test_below_floor.lua)
+bootcfg.FLOOR_KB = 1024
+
+--- The installed memory in KB when it is below FLOOR_KB, else nil.
+function bootcfg.belowFloor()
+  local okC, computer = pcall(require, "computer")
+  local total = okC and computer and computer.totalMemory and computer.totalMemory() or 0
+  local kb = math.floor(total / 1024)
+  if kb > 0 and kb < bootcfg.FLOOR_KB then return kb end
+  return nil
+end
+
 --- Effective startup interface: "home", "split" or "cli" -- and, as a
 --- second value, "auto" when it was chosen FOR the operator rather than
 --- set by them.

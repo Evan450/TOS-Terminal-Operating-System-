@@ -168,6 +168,22 @@ end
 -- Row 1 top bar (shell) · row 2 rail · rows 3..H-2 messages ·
 -- row H-1 input · row H hints.
 
+--! THE INPUT ROW ALONE, which is all a keystroke changes. Typing returned
+--! draw level 3, and an app tab has one way to draw, so every key cleared
+--! the screen and re-wrapped every message: about 16 keys a second on the
+--! runner's T2 APU, and a pasted line lagged (TODO, SMALLER, NOTED IN
+--! PASSING). The row is cleared first, so Backspace leaves nothing behind.
+--! (test_chat_keystroke.lua)
+function M.drawInput(S, tab)
+  local D, T, W, H = S.D, S.T, S.W, S.H
+  D.fill(1, H - 1, W, 1, " ", T.fg, T.bg)
+  D.set(1, H - 1, "> ", T.highlight, T.bg)
+  local maxW = W - 3
+  local shown = tab.input or ""
+  if #shown > maxW then shown = shown:sub(#shown - maxW + 1) end
+  D.set(3, H - 1, shown .. "_", T.fg, T.bg)
+end
+
 function M.draw(S, tab)
   local D, T, W, H = S.D, S.T, S.W, S.H
   D.fill(1, 2, W, H - 1, " ", T.fg, T.bg)
@@ -213,12 +229,7 @@ function M.draw(S, tab)
     end
   end
 
-  -- Input line.
-  D.set(1, H - 1, "> ", T.highlight, T.bg)
-  local maxW = W - 3
-  local shown = tab.input or ""
-  if #shown > maxW then shown = shown:sub(#shown - maxW + 1) end
-  D.set(3, H - 1, shown .. "_", T.fg, T.bg)
+  M.drawInput(S, tab)
 
   ui.drawRampBar(D, T, H, W,
     "Enter Send · peer:msg Direct · /help · PgUp/Dn Scroll · " .. require("shell.keys").quitHint(S.who) .. " Close",
@@ -485,7 +496,8 @@ function M.handleKey(S, tab, ch, co, deps)
     return 3
   elseif co == 14 then                                -- Backspace
     if #(tab.input or "") > 0 then tab.input = tab.input:sub(1, -2) end
-    return 3
+    M.drawInput(S, tab)
+    return 0
   elseif co == 201 then                               -- PgUp: scrollback
     tab.scroll = (tab.scroll or 0) + math.max(1, S.H - 5)
     return 3
@@ -496,7 +508,8 @@ function M.handleKey(S, tab, ch, co, deps)
     if #(tab.input or "") < 200 then
       tab.input = (tab.input or "") .. string.char(ch)
     end
-    return 3
+    M.drawInput(S, tab)
+    return 0
   end
   return 0
 end

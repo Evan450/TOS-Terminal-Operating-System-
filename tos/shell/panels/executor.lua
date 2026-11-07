@@ -280,6 +280,19 @@ function M.build(S, deps)
     return true
   end
 
+  --! What to do about a command that would not load for memory. Below TOS's
+  --! floor, closing tabs or rebooting can never free enough, so the advice
+  --! is to add memory. (bootcfg.FLOOR_KB, test_below_floor.lua)
+  local function memoryAdvice()
+    local bcfg = package.loaded["kernel.bootcfg"]
+    local have = type(bcfg) == "table" and bcfg.belowFloor and bcfg.belowFloor()
+    if have then
+      return string.format("This machine has %d KB and TOS needs %d KB: add memory.",
+        have, bcfg.FLOOR_KB)
+    end
+    return "Free some memory (close tabs, or reboot) and try again."
+  end
+
   local function execSingle(cmdStr, inputData, allowHandOff)
     do
       local okE, envMod = pcall(require, "kernel.env")
@@ -581,7 +594,7 @@ function M.build(S, deps)
         if why then
           o("'" .. name .. "' is installed but could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
           o(tostring(why), T.error)
-          o("Free some memory (close tabs, or reboot) and try again.", T.dim)
+          o(memoryAdvice(), T.dim)
         elseif known then
           o("'" .. name .. "' could not be loaded.  [E-802 ERR_CMD_UNLOADABLE]", T.error)
           if S.lastOut and S.lastOut[1] then
@@ -590,7 +603,7 @@ function M.build(S, deps)
           else
             o("Its command group failed to load — check `log` for the reason.", T.dim)
           end
-          o("Free some memory (close tabs, or reboot) and try again.", T.dim)
+          o(memoryAdvice(), T.dim)
         else
           o("Unknown command: " .. name .. "  [E-801 ERR_UNKNOWN_CMD]", T.error)
           o("Type 'help' for available commands.", T.dim)
@@ -663,6 +676,15 @@ function M.build(S, deps)
     -- inside the quarter second, or it would sit unseen while the read waits.
     local function stdout(line, color, always)
       if live then
+        --! The live path does not go through execSingle's `o`, which is where a
+        --! failure is noted for `why`. So at the command line, since built-ins
+        --! print live, `why` after any refusal said "Nothing has failed since
+        --! the last command ran" (headless runner, 2026-11-07: `redstone`
+        --! with no card, then `why`); the panels echo through `o` and were
+        --! fine. Noted here as well. (test_builtin_output_live.lua)
+        if color == S.T.error and S.curCmd ~= "why" then
+          helpers.noteFailure(S, S.curCmd, line)
+        end
         live(line, color)
         coopYield()
       else

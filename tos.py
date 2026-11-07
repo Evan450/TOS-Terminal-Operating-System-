@@ -268,6 +268,11 @@ def cmd_check(args) -> int:
     ]
     if (EXTRAS / "build" / "test_repo_index.lua").is_file():
         checks.append(("add-on repo index", ["lua", "build/test_repo_index.lua"], EXTRAS))
+    # Versions agree with their libraries, 0.x stays off the pack, and a
+    # version bumped past the signed pack carries its release note.
+    if (EXTRAS / "build" / "test_addon_versions.lua").is_file():
+        checks.append(("add-on versions + release notes",
+                       ["lua", "build/test_addon_versions.lua"], EXTRAS))
     if (DEV / "todo_index.py").is_file():
         checks.append(("open queue freshness", [sys.executable, "todo_index.py", "--check"], DEV))
     if (DEV / "build" / "make_roadmap.py").is_file():

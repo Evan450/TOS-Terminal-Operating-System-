@@ -110,6 +110,16 @@ print("=== status says why it cannot read ===")
 statusErr = "peripheral.redstone cap required"
 said, err = run()
 test("the real reason, not 'No redstone component'", err and said == "Peripheral.redstone cap required", said)
+statusErr = "no redstone component"
+said, err = run()
+test("no card at all is E-701, the hardware range's first code",
+  err and said:find("[E-701 ERR_NO_DEVICE]", 1, true) ~= nil, said)
+local helpers = require("shell.panels.helpers")
+local lines = helpers.explainFailure(said)
+test("which `why` explains", type(lines) == "table" and #lines > 0)
+test("...with a fix", lines and table.concat((function()
+  local t = {}; for _, l in ipairs(lines) do t[#t + 1] = type(l) == "table" and (l.text or l[1]) or tostring(l) end; return t
+end)(), " "):find("lsdev", 1, true) ~= nil)
 statusErr = nil
 said, err = run()
 test("and a working card lists its sides", not err and said:find("front", 1, true) ~= nil, said)
