@@ -94,27 +94,46 @@ local FALLBACK_CAPS = {
   ["peripheral.robot"]=true, ["peripheral.inventory"]=true,
   ["peripheral.tape"]=true, ["peripheral.tractor"]=true,
   ["peripheral.piston"]=true, ["peripheral.hologram"]=true,
-  ["peripheral.printer"]=true,
+  ["peripheral.printer"]=true, ipc=true,
 }
 
+--! On the published dev branch TOS-Extras sits INSIDE the source tree, so the
+--! kernel is ../tos/, not ../TOS-Dev/tos/. package.path named only the
+--! monorepo's layout, so pkg.lua's require("kernel.policy") failed there,
+--! pcall swallowed it, and the lint fell back to the list above -- which
+--! had no `ipc`, added on 2026-11-01 for the cluster CLIs. CI on dev was red
+--! from then on (manager- and master-skeleton "not sandbox-grantable") for
+--! five days. Both layouts are on the path now, and a kernel that is THERE
+--! but will not load is a failure, not a quiet fallback.
+package.path = package.path .. ";../tos/?.lua"
 local KNOWN_CAPS, capSource = FALLBACK_CAPS, "the fallback list in this file"
+local kernelLoadError = nil
 do
   for _, p in ipairs({ "../TOS-Dev/tos/kernel/pkg.lua", "../tos/kernel/pkg.lua",
                        "TOS-Dev/tos/kernel/pkg.lua" }) do
-    local chunk = loadfile(p)
+    local chunk, loadErr = loadfile(p)
     if chunk then
       local okLoad, pkgMod = pcall(chunk)
       if okLoad and type(pkgMod) == "table" and type(pkgMod.runCaps) == "function" then
         local okCaps, caps = pcall(pkgMod.runCaps)
         if okCaps and type(caps) == "table" and next(caps) then
           KNOWN_CAPS, capSource = caps, "kernel/pkg.lua's own PKG_RUN_CAPS"
+          kernelLoadError = nil
           break
         end
+        kernelLoadError = p .. ": runCaps() gave nothing usable"
+      else
+        kernelLoadError = p .. ": " .. tostring(pkgMod)
       end
+    elseif loadErr and not tostring(loadErr):find("No such file", 1, true)
+        and not tostring(loadErr):find("cannot open", 1, true) then
+      kernelLoadError = p .. ": " .. tostring(loadErr)
     end
   end
 end
 print("  (capability list from: " .. capSource .. ")")
+test("the kernel's capability list loads when the kernel is here"
+  .. (kernelLoadError and ("  (" .. kernelLoadError .. ")") or ""), kernelLoadError == nil)
 
 --! pkg does not run a manifest, it DECODES one, with kernel/serialize's
 --! data-only decoder -- and dofile() is happy with expressions that decoder
