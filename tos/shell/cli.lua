@@ -144,7 +144,16 @@ function M.run(ctx)
     -- `:sub(1, W)`, which silently ate the end of any long line — and
     -- the registry's commands were written for a shell that wraps.
     local s = (text == nil) and "" or tostring(text)
-    local lines = helpers.wrapLine(s, W)
+    --! A newline is a line break. wrapLine knows only widths, so a message of
+    --! several lines -- every `alert` and `confirmTyped` at the CLI -- was
+    --! wrapped as one string and painted with its newlines inside a row:
+    --! "...machine.\n\nThis is destructive. It..." came out cut in the wrong
+    --! places, a full stop gone (headless runner, `strip`, 2026-11-07).
+    --! Each line is wrapped on its own now. (test_cli_prompt_lines.lua)
+    local lines = {}
+    for part in (s:gsub("\r\n", "\n") .. "\n"):gmatch("([^\n]*)\n") do
+      for _, l in ipairs(helpers.wrapLine(part, W)) do lines[#lines + 1] = l end
+    end
     for _, line in ipairs(lines) do
       scroll()
       D.fill(1, cy, W, 1, " ", D.c("fg"), D.c("bg"))

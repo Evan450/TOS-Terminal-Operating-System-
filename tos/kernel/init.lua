@@ -905,6 +905,13 @@ function kernel.boot(opts)
       else
         log.warn("kernel", "Network init failed")
       end
+    elseif fs.exists("/etc/stripped.cfg") and (function()
+        local okS, stripMod = pcall(require, "kernel.strip")
+        return okS and type(stripMod) == "table" and stripMod.isStripped("/tos/kernel/net/init.lua")
+      end)() then
+      -- Stripped on purpose (`strip network`): one clear line, not a module
+      -- search dump, and not a warning -- the operator chose it.
+      log.info("kernel", "Network: stripped from this machine ('strip restore network' brings it back)")
     else
       log.warn("kernel", "Network module not available: " .. tostring(netMod))
     end
@@ -3198,6 +3205,18 @@ function kernel.verifySystem(printFn)
     return fn, lerr, nil
   end
 
+  --! A file stripped on purpose (kernel/strip.lua) is reported as such,
+  --! never as missing. The module loads only on a machine that has
+  --! stripped something, so a verify elsewhere pays nothing for it.
+  local strippedN = 0
+  local isStripped = function() return false end
+  if fs.exists("/etc/stripped.cfg") then
+    local okS, stripMod = pcall(require, "kernel.strip")
+    if okS and type(stripMod) == "table" and stripMod.isStripped then
+      isStripped = function(p) return (stripMod.isStripped(p)) end
+    end
+  end
+
   for _, file in ipairs(allFiles) do
     if fs.exists(file.path) then
       do
@@ -3304,12 +3323,17 @@ function kernel.verifySystem(printFn)
       -- missing file. It is not damaged either: there is nothing to be
       -- broken. The count was always right (missing, never damaged);
       -- only the word was wrong.
+      if isStripped(file.path) then
+        printFn("  STRIPPED " .. file.path .. " (removed on purpose: `strip list`)", cDim)
+        strippedN = strippedN + 1
+      else
       local tag   = file.critical and "MISS" or "GONE"
       local color = file.critical and cErr or cWrn
       printFn("  " .. tag .. " " .. file.path ..
         (file.critical and " (critical, not installed)" or " (not installed)"), color)
       missing = missing + 1
       if file.critical then missingCritical = missingCritical + 1 end
+      end
     end
     ::continue_verify::
 
@@ -3332,6 +3356,7 @@ function kernel.verifySystem(printFn)
   else
     missText = string.format("%d missing", missing)
   end
+  if strippedN > 0 then missText = missText .. string.format(", %d stripped", strippedN) end
   if hashMismatch > 0 then
     printFn(string.format("Result: %d OK, %s, %d damaged (incl. %d HASH MISMATCH)",
       ok, missText, damaged, hashMismatch), cErr)

@@ -87,7 +87,9 @@ return {
   { path = "/tos/kernel/policy.lua",          critical = false, floor = true },
   { path = "/tos/kernel/policyload.lua",      critical = false, floor = true },
   { path = "/tos/kernel/repair.lua",          critical = false },
-  { path = "/tos/kernel/netrepair.lua",       critical = false },
+  { path = "/tos/kernel/netrepair.lua",       critical = false, group = "internet" },
+  -- `strip`: feature groups off the base image, and back (in no group).
+  { path = "/tos/kernel/strip.lua",           critical = false },
   { path = "/tos/kernel/srm.lua",             critical = false },
   { path = "/tos/kernel/errors.lua",          critical = false },
   { path = "/tos/kernel/notify.lua",          critical = false },
@@ -102,33 +104,33 @@ return {
   { path = "/tos/kernel/sha512.lua",          critical = false },
   { path = "/tos/kernel/curve25519field.lua", critical = false },
   { path = "/tos/kernel/ed25519.lua",         critical = false },
-  { path = "/tos/kernel/x25519.lua",          critical = false },
+  { path = "/tos/kernel/x25519.lua",          critical = false, group = "network" },
   { path = "/tos/kernel/pkgsign.lua",         critical = false },
   { path = "/tos/kernel/backup.lua",          critical = false },
   { path = "/tos/kernel/diag.lua",            critical = false, floor = true },
-  { path = "/tos/kernel/internet.lua",        critical = false },
-  { path = "/tos/kernel/pkgremote.lua",       critical = false },
-  { path = "/tos/kernel/jbod.lua",            critical = false },
+  { path = "/tos/kernel/internet.lua",        critical = false, group = "internet" },
+  { path = "/tos/kernel/pkgremote.lua",       critical = false, group = "internet" },
+  { path = "/tos/kernel/jbod.lua",            critical = false, group = "jbod" },
   { path = "/tos/kernel/diskmount.lua",       critical = false },
-  { path = "/tos/kernel/netfs.lua",           critical = false },
+  { path = "/tos/kernel/netfs.lua",           critical = false, group = "network" },
   { path = "/tos/kernel/selftest.lua",        critical = false, floor = true },
   { path = "/tos/kernel/keychain.lua",        critical = false },
   { path = "/tos/kernel/profile.lua",         critical = false },
-  { path = "/tos/kernel/i18n.lua",            critical = false },
+  { path = "/tos/kernel/i18n.lua",            critical = false, group = "i18n" },
   { path = "/tos/kernel/ustr.lua",            critical = false },
   { path = "/tos/kernel/trash.lua",           critical = false },
   { path = "/tos/kernel/vault.lua",           critical = false },
 
   -- ── Networking ───────────────────────────────────────────
-  { path = "/tos/kernel/net/init.lua",        critical = false },
-  { path = "/tos/kernel/net/protocol.lua",    critical = false },
-  { path = "/tos/kernel/net/trust.lua",       critical = false },
-  { path = "/tos/kernel/net/transfer.lua",    critical = false },
-  { path = "/tos/kernel/net/remote.lua",      critical = false },
-  { path = "/tos/kernel/net/aliases.lua",     critical = false },
-  { path = "/tos/kernel/net/chatpair.lua",    critical = false },
-  { path = "/tos/kernel/net/mesh.lua",        critical = false },
-  { path = "/tos/kernel/net/meshctl.lua",     critical = false },
+  { path = "/tos/kernel/net/init.lua",        critical = false, group = "network" },
+  { path = "/tos/kernel/net/protocol.lua",    critical = false, group = "network" },
+  { path = "/tos/kernel/net/trust.lua",       critical = false, group = "network" },
+  { path = "/tos/kernel/net/transfer.lua",    critical = false, group = "network" },
+  { path = "/tos/kernel/net/remote.lua",      critical = false, group = "network" },
+  { path = "/tos/kernel/net/aliases.lua",     critical = false, group = "network" },
+  { path = "/tos/kernel/net/chatpair.lua",    critical = false, group = "network" },
+  { path = "/tos/kernel/net/mesh.lua",        critical = false, group = "network" },
+  { path = "/tos/kernel/net/meshctl.lua",     critical = false, group = "network" },
 
   -- ── Shell ────────────────────────────────────────────────
   { path = "/tos/shell/init.lua",             critical = true, floor = true  },
@@ -152,8 +154,8 @@ return {
   { path = "/tos/shell/login.lua",            critical = false, floor = true },
   { path = "/tos/shell/colophon.lua",         critical = false },
   { path = "/tos/shell/syntax.lua",           critical = false },
-  { path = "/tos/shell/chat.lua",             critical = false },
-  { path = "/tos/shell/clustersetup.lua",     critical = false },
+  { path = "/tos/shell/chat.lua",             critical = false, group = "network" },
+  { path = "/tos/shell/clustersetup.lua",     critical = false, group = "cluster" },
   { path = "/tos/shell/pkgpicker.lua",        critical = false },
   { path = "/tos/shell/tutorial.lua",         critical = false },
   { path = "/tos/shell/kiosk.lua",            critical = false },
@@ -187,7 +189,7 @@ return {
   { path = "/tos/shell/panels/diskprobe.lua", critical = false },
   { path = "/tos/shell/panels/settingsapp.lua", critical = false },
   { path = "/tos/shell/panels/monitorapp.lua", critical = false },
-  { path = "/tos/shell/panels/chatapp.lua",   critical = false },
+  { path = "/tos/shell/panels/chatapp.lua",   critical = false, group = "network" },
   -- (mailapp.lua left with the mail package — stage 5. The app registry
   -- pcall-requires "mailapp" from /usr/lib when the add-on is installed.)
 
@@ -202,7 +204,7 @@ return {
   { path = "/tos/compat/colors.lua",          critical = false },
   { path = "/tos/compat/event.lua",           critical = false },
   { path = "/tos/compat/filesystem.lua",      critical = false },
-  { path = "/tos/compat/internet.lua",        critical = false },
+  { path = "/tos/compat/internet.lua",        critical = false, group = "internet" },
   { path = "/tos/compat/io.lua",              critical = false },
   { path = "/tos/compat/keyboard.lua",        critical = false },
   { path = "/tos/compat/note.lua",            critical = false },
@@ -220,15 +222,15 @@ return {
   { path = "/tos/peripheral/robot.lua",       critical = false },
 
   -- ── Boot services (rc.d) ─────────────────────────────────
-  { path = "/etc/rc.d/10-discoveryd.lua",     critical = false },
-  { path = "/etc/rc.d/20-chatrelay.lua",      critical = false },
-  { path = "/etc/rc.d/20-fileshare.lua",      critical = false },
-  { path = "/etc/rc.d/20-netfsd.lua",         critical = false },
-  { path = "/etc/rc.d/20-rshd.lua",           critical = false },
+  { path = "/etc/rc.d/10-discoveryd.lua",     critical = false, group = "network" },
+  { path = "/etc/rc.d/20-chatrelay.lua",      critical = false, group = "network" },
+  { path = "/etc/rc.d/20-fileshare.lua",      critical = false, group = "network" },
+  { path = "/etc/rc.d/20-netfsd.lua",         critical = false, group = "network" },
+  { path = "/etc/rc.d/20-rshd.lua",           critical = false, group = "network" },
   -- Ships DISABLED by default (security): rshd registers but doesn't
   -- auto-start unless an admin runs `service start 20-rshd`. This marker
   -- must ship so fresh installs stay opt-in.
-  { path = "/etc/rc.d/20-rshd.disabled",      critical = false },
+  { path = "/etc/rc.d/20-rshd.disabled",      critical = false, group = "network" },
 
   -- ── /usr/bin tools ───────────────────────────────────────
 
@@ -245,25 +247,26 @@ return {
   { path = "/usr/man/open.man",               critical = false },
   { path = "/usr/man/filesystem.man",         critical = false },
   { path = "/usr/man/intercom.man",           critical = false },
-  { path = "/usr/man/jbod.man",               critical = false },
+  { path = "/usr/man/jbod.man",               critical = false, group = "jbod" },
   { path = "/usr/man/overlay.man",            critical = false },
-  { path = "/usr/man/netfs.man",              critical = false },
+  { path = "/usr/man/netfs.man",              critical = false, group = "network" },
   { path = "/usr/man/man.man",                critical = false },
   { path = "/usr/man/memory.man",             critical = false },
-  { path = "/usr/man/net.man",                critical = false },
-  { path = "/usr/man/networking.man",         critical = false },
+  { path = "/usr/man/net.man",                critical = false, group = "network" },
+  { path = "/usr/man/networking.man",         critical = false, group = "network" },
   { path = "/usr/man/notify.man",             critical = false },
   { path = "/usr/man/packages.man",           critical = false },
   { path = "/usr/man/pkg.man",                critical = false },
   { path = "/usr/man/screen.man",             critical = false },
   { path = "/usr/man/srm.man",                critical = false },
+  { path = "/usr/man/strip.man",              critical = false },
   { path = "/usr/man/swap.man",               critical = false },
   { path = "/usr/man/vault.man",              critical = false },
 
   -- ── Language catalogs (kernel.i18n DATA files) ───────────
   -- Common languages ship in the base image; rarer ones install as
   -- ordinary packages that drop a file here.
-  { path = "/usr/lang/ru.lang",               critical = false },
+  { path = "/usr/lang/ru.lang",               critical = false, group = "i18n" },
 
   -- ── Self-reference ───────────────────────────────────────
   { path = "/tos/system_manifest.lua",        critical = false, floor = true },

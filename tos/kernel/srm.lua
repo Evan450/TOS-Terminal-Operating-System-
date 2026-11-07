@@ -506,6 +506,15 @@ end
 ---   warn  a stored copy has itself rotted (the repair source is bad)
 ---   warn  a critical file has no baseline entry (added since capture)
 --- @return report  (plus report.drift / report.missing arrays for repair)
+--! Whether `strip` removed this path on purpose (kernel/strip.lua). The
+--! module loads only on a machine that has stripped something.
+local function strippedOnPurpose(fs, path)
+  if not (fs and fs.exists and fs.exists("/etc/stripped.cfg")) then return false end
+  local okS, stripMod = pcall(require, "kernel.strip")
+  return okS and type(stripMod) == "table" and stripMod.isStripped
+    and (stripMod.isStripped(path)) or false
+end
+
 function srm.scan(deps, opts)
   deps = srm.deps(deps)
   opts = opts or {}
@@ -535,7 +544,10 @@ function srm.scan(deps, opts)
   for _, path in ipairs(paths) do
     coopYield()
     local rec = idx.files[path]
-    if not (fs.exists and fs.exists(path)) then
+    if not (fs.exists and fs.exists(path)) and strippedOnPurpose(fs, path) then
+      --! Removed by `strip`, on purpose: neither missing nor a repair target.
+      add(rep, "STRIPPED " .. path, "info")
+    elseif not (fs.exists and fs.exists(path)) then
       rep.missing[#rep.missing + 1] = path
       add(rep, "MISSING  " .. path, "err")
     else

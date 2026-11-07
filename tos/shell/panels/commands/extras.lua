@@ -52,6 +52,9 @@ return function(C, S, deps)
   --! Both default to no. See dialogs.M.confirm -- the SAFE
   --! choice is the first button, so a click-through cancels.
   local confirmBox        = deps.confirm
+  --! The same box, where yes means typing the word: for `strip`, which
+  --! deletes part of the base image.
+  local confirmTyped      = deps.confirmTyped
 
   --! What a raw drive holds, said BEFORE it is erased: an OSDI table and a
   --! blank drive are different decisions, and "not a TBFS volume" was all
@@ -1643,12 +1646,27 @@ return function(C, S, deps)
     local files = {}
     do
       local ok1, manifest = pcall(require, "system_manifest")
+      -- What `strip` removed on purpose is not copied, and not an error: the
+      -- new disk carries what this machine carries. (kernel/strip.lua)
+      local isStripped = function() return false end
+      if F.exists("/etc/stripped.cfg") then
+        local okS, stripMod = pcall(require, "kernel.strip")
+        if okS and type(stripMod) == "table" then isStripped = stripMod.isStripped end
+      end
+      local strippedN = 0
       if ok1 and type(manifest) == "table" then
         for _, entry in ipairs(manifest) do
           if type(entry) == "table" and type(entry.path) == "string" then
-            files[#files + 1] = entry.path
+            if isStripped(entry.path) and not F.exists(entry.path) then
+              strippedN = strippedN + 1
+            else
+              files[#files + 1] = entry.path
+            end
           end
         end
+      end
+      if strippedN > 0 then
+        o(string.format("  %d stripped file(s) are not copied (`strip list`).", strippedN), T.dim)
       end
       if #files == 0 then
         o("  WARN: system_manifest not loadable, using minimal file list", T.warning)
@@ -1942,6 +1960,95 @@ return function(C, S, deps)
 
     else
       o("Usage: overlay on <disk> [--reset] | off | changes | merge | drop", T.dim)
+    end
+  end
+
+  -- strip — feature groups off the base image, and back (kernel/strip.lua).
+  -- The operator's 2026-08-11 decision: what a machine carries is chosen in
+  -- game, once it has done its job a while, and TOS strips itself.
+  C.strip = function(args, o)
+    if not rootOnly(o) then return end
+    local okS, stripMod = pcall(require, "kernel.strip")
+    if not okS then o("Stripping is not on this install.", T.error); return end
+    local sub = (args[1] or "list"):lower()
+    local flags, rest = {}, {}
+    local i = 2
+    while i <= #args do
+      local a = tostring(args[i])
+      if a == "--from" then flags.from = args[i + 1]; i = i + 1   -- takes the mount
+      elseif a:sub(1, 2) == "--" then flags[a:sub(3)] = true
+      else rest[#rest + 1] = a end
+      i = i + 1
+    end
+
+    if sub == "list" then
+      local rows = stripMod.list()
+      if #rows == 0 then o("This install defines no feature groups.", T.dim); return end
+      o(string.format(" %-10s %5s %9s  %s", "Group", "Files", "On disk", "State"), T.title)
+      for _, r in ipairs(rows) do
+        local state = r.stripped and "stripped" or (r.present == r.files and "here"
+          or string.format("%d of %d here", r.present, r.files))
+        o(string.format(" %-10s %5d %8dK  %s", r.name, r.files, math.ceil(r.bytes / 1024), state),
+          r.stripped and T.dim or T.fg)
+      end
+      o("'strip <group>' takes one off; 'strip restore <group>' puts it back.", T.dim)
+
+    elseif sub == "restore" then
+      local name = rest[1]
+      if not name then
+        o("Usage: strip restore <group> [--from <mount>] [--online [--unanchored]]", T.dim)
+        return
+      end
+      if flags.from == true or flags.from == "" then
+        o("--from needs the mount of a TOS disk, e.g. --from /mnt/disk_5e55", T.error); return
+      end
+      local okR, rep = stripMod.restore(nil, name, { online = flags.online,
+        unanchored = flags.unanchored, from = flags.from and rp(flags.from) or nil,
+        unverified = flags.unverified })
+      if okR == false and type(rep) == "string" then o(rep, T.error); return end
+      for _, l in ipairs(rep.lines or {}) do o(tostring(l.text), T.dim) end
+      if okR then
+        o(string.format("'%s' is back: %d file(s).", name, rep.restored), T.highlight)
+      else
+        o(string.format("%d file(s) of '%s' are still not here:", #rep.missing, name), T.warning)
+        for i = 1, math.min(#rep.missing, 8) do o("  " .. rep.missing[i], T.warning) end
+        o("Bring them from a TOS disk with 'strip restore " .. name .. " --from <mount>',", T.dim)
+        o("or from the published release with '--online' (an internet card).", T.dim)
+      end
+
+    else
+      local name = sub
+      local groups = stripMod.groups()
+      if not groups[name] then
+        o("No feature group called '" .. name .. "'. 'strip list' shows them.", T.error)
+        return
+      end
+      local nFiles = #groups[name]
+      -- Refuse what cannot go ahead BEFORE asking anyone to confirm it.
+      local can, cannot = stripMod.check(nil, name, { noCopy = flags["no-copy"] })
+      if not can then o(tostring(cannot), T.error); return end
+      --! DESTRUCTIVE, AND IT SAYS SO IN THOSE WORDS (the design's rule), and
+      --! the word must be typed: a stripped group comes back only from
+      --! SRM's copies, the network or an install disk.
+      local msg = string.format("Strip '%s': delete its %d file(s) from this machine.\n\n"
+        .. "This is destructive. It comes back only from a TOS disk ('strip restore %s "
+        .. "--from <mount>') or the network ('--online').", name, nFiles, name)
+      local yes
+      if confirmTyped then
+        yes = confirmTyped(msg, "strip", { title = "Strip a feature group", style = "warning",
+          yes = "Strip", no = "Keep" })
+      elseif confirmBox then
+        yes = confirmBox(msg, { title = "Strip a feature group", yes = "Strip", no = "Keep" })
+      end
+      if not yes then o("Nothing was stripped.", T.dim); return end
+      local okX, rep = stripMod.strip(nil, name, { noCopy = flags["no-copy"] })
+      if not okX then o(tostring(rep), T.error); return end
+      o(string.format("Stripped '%s': %d file(s), about %dK freed.", name, rep.removed,
+        math.ceil(rep.freed / 1024)), T.highlight)
+      if #rep.failed > 0 then
+        o(#rep.failed .. " file(s) could not be removed: " .. table.concat(rep.failed, ", "), T.warning)
+      end
+      o("Reboot to run without it. 'strip restore " .. name .. "' puts it back.", T.dim)
     end
   end
 

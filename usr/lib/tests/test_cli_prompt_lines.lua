@@ -71,6 +71,17 @@ do
   test("splitPrompt is defined above readLine (a local must be)", from < (rl or 0))
 end
 
+print("=== o() breaks a message at its newlines ===")
+do
+  local at = src:find("local function o(text, color)", 1, true)
+  local body = at and src:sub(at, (src:find("\n  end\n", at, true) or at)) or ""
+  local split = body:find('gmatch("([^\\n]*)\\n")', 1, true)
+  local wrap = body:find("helpers.wrapLine(part, W)", 1, true)
+  test("found the CLI's o()", at ~= nil)
+  test("it splits on newlines", split ~= nil)
+  test("and wraps each line on its own", wrap ~= nil and split ~= nil and split < wrap)
+end
+
 print()
 print(string.format("Results: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1)

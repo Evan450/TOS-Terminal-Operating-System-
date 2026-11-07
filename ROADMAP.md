@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**40 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**39 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
-| In progress | 2 | Started, unfinished. Ask before duplicating the work. |
+| In progress | 1 | Started, unfinished. Ask before duplicating the work. |
 | Planned | 20 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 18 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (5) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (5) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (4) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (5) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -318,59 +318,6 @@ NOT GAPS from this pair, recorded so they are not re- investigated: Plan9k's MOD
 - If we do it: "ask" is legal ONLY in an interactive session and resolves to DENY everywhere else. Decide that first, in writing, before any code.
 
 ## Boot, memory and the kernel
-
-### Self-stripping, not build-time config — operator decision, 2026-08-11
-
-*In progress* · from the round *From the Cynosure 2 survey (2026-08-10)*
-
-SELF-STRIPPING, NOT BUILD-TIME CONFIG — OPERATOR DECISION, 2026-08-11. Supersedes the build-time item below; keep that text for the Cynosure argument it came from, but the shape has changed and this is the one to build.
-
-THE DECISION: the choice belongs to the OPERATOR, IN GAME,
-
-whenever they want it — TOS strips ITSELF. Not a .config
-
-chosen by whoever built the image, months before the
-
-machine had a job.
-
-WHY IT IS BETTER, and this is the operator's argument
-
-rather than a rationalisation of it: a build-time config
-
-forces the decision at the moment you know LEAST about the
-
-machine. Deciding in-game means deciding after the box has
-
-been doing its actual work, with its real RAM, its real
-
-peripherals and its real disk pressure in front of you.
-
-It also means the decision is REVISITABLE while the
-
-machine is alive.
-
-THE TWO FLOORS, non-negotiable, both operator-set:
-
-- SAFE MODE always boots. It is what you fall back TO, so it cannot be a thing you can strip. Anything Safe Mode needs is in the floor by definition.
-- The EMERGENCY TERMINAL always exists. Same reason: it is the diagnostic of last resort and a diagnostic you can delete is not one.
-
-Everything else is on the table.
-
-DESIGN NOTES, so whoever builds it does not re-derive them:
-
-- The floor must be COMPUTED AND TESTED, never a hand-kept list — a hand-kept floor drifts and you find out on the boot where you needed it. Shape: system\_manifest.lua grows `floor = true`, and a test asserts the floor is CLOSED UNDER REQUIRE (nothing in the floor requires anything outside it). That test is the feature.
-- FEATURE GROUPS, not files. The operator picks cluster / internet / tape / blockfs / mesh / i18n / rbmk — the axes the build-time note already identified. Nobody should be ticking individual .lua files.
-- STRIPPING IS DESTRUCTIVE AND NEEDS MEDIA TO REVERSE, and the UI has to say so in those words. `srm baseline --full` first is the honest prerequisite: the SRM store is what makes an un-strip possible at all, and it already exists. Refuse to strip with no baseline unless the operator overrides, exactly as `srm repair --restore` refuses without one.
-- THE MANIFEST MUST BE UPDATED BY THE SAME OPERATION, or `verify` and `srm scan` cry deletion about every removed file forever and the operator learns to ignore them — which costs more than the disk saved. Stripped entries get marked, not deleted, so the difference between "removed on purpose" and "missing" survives.
-- BOOT PROFILES AND STRIPPING ARE DIFFERENT LAYERS and now interact: a profile gates what LOADS, stripping removes what EXISTS. A profile that would load a stripped feature must degrade with a clear line in the boot log, never panic. Today the load paths pcall-and-warn, which is most of the way there — but it has never been tested against a file that is genuinely absent rather than merely skipped.
-- NOT a package. `pkg uninstall` already covers add-ons; this is about the BASE IMAGE, which pkg does not own.
-
-SIZED 2026-11-07 for the next pass (not started; the floor half is done):
-
-- Groups found in the manifest's 135 non-floor entries: NETWORK (kernel/net/\*, netfs, netrepair, x25519, curve25519field, the four 20-\* rc.d services, shell/chat, chatapp, net/netfs/networking man pages), INTERNET (kernel/internet, pkgremote, compat/internet), JBOD (kernel/jbod + man page), I18N (kernel/i18n, usr/lang/\*), CLUSTER (shell/clustersetup). Tag them `group = "..."` in the manifest.
-- The closure test, beside test\_manifest\_floor: a file outside a group reaches the group's modules only through pcall(require, ...). A bare require across the line is the boot that panics after a strip.
-- The EEPROM anchor is not a blocker: it warns, never refuses, and stripping rewrites the manifest, so `strip` re-anchors when the machine was anchored. The signed release is unaffected (it pins what was published, not what is on this disk).
-- Seen-on-the-runner bar: strip NETWORK, reboot clean, `net` says it was stripped (not a Lua error), `verify` and `srm scan` quiet, then `srm repair --restore` puts it back and the manifest marks clear.
 
 ### Line disciplines — direction, not a task, and expensive
 

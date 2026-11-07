@@ -1,0 +1,48 @@
+NAME
+    strip - take a feature group off this machine, or put it back
+
+SYNOPSIS
+    strip
+    strip list
+    strip <group> [--no-copy]
+    strip restore <group> [--from <mount>] [--online [--unanchored]]
+
+DESCRIPTION
+    TOS strips itself: once a machine has done its job for a while, you know
+    what it uses, and what it does not use is disk it could have. A feature
+    group is a set of base-image files the manifest tags together:
+
+      network   the network stack, its four services, chat, their man pages
+      internet  the internet card, remote packages, the online repair
+      jbod      disk pooling
+      i18n      the language catalogs
+      cluster   the cluster setup wizard
+
+    The floor -- what Safe Mode and the emergency terminal need -- is in no
+    group and can never be stripped. Everything here is root's.
+
+SUBCOMMANDS
+    list             Every group, its size on disk, and whether it is here.
+    <group>          Delete the group's files. You are asked to type the
+                     word `strip`. Unless SRM holds a copy of every file (a
+                     baseline stores only the critical ones), --no-copy must
+                     say you know the group comes back only from a TOS disk
+                     or the network. Reboot to run without it.
+    restore <group>  Put the group back. --from <mount> copies each file from
+                     a TOS disk (the install disk, a `deploy`ed drive);
+                     --online fetches it from the published release with an
+                     internet card. Every file is checked against this
+                     machine's manifest digest before it is written, so a
+                     disk of another build cannot put back the wrong bytes.
+                     --unanchored allows --online on a machine whose manifest
+                     is not anchored in its EEPROM; --unverified copies a file
+                     the manifest has no digest for.
+
+REMOVED ON PURPOSE IS NOT MISSING
+    What was stripped is recorded in /etc/stripped.cfg. `verify` lists those
+    files as STRIPPED, not missing; `srm scan` does not call them deleted;
+    the online repair does not put them back; `deploy` does not copy them.
+    The manifest itself is not changed, so its EEPROM anchor still holds.
+
+SEE ALSO
+    srm, verify, deploy

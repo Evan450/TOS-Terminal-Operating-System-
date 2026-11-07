@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 151 rounds of work:
+Everything since v1.5.0, in 152 rounds of work:
 
+- [TOS can strip itself](#tos-can-strip-itself)
 - [Below 1 MB, TOS says to add memory](#below-1-mb-tos-says-to-add-memory)
 - [log denied lists every refusal](#log-denied-lists-every-refusal)
 - [inventory with no side lists every inventory beside it](#inventory-with-no-side-lists-every-inventory-beside-it)
@@ -173,6 +174,10 @@ Everything since v1.5.0, in 151 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### TOS can strip itself
+
+`strip` takes a feature group off a machine that does not use it, and puts it back: `network` (115 KB: the network stack, its services, chat), `internet`, `jbod`, `i18n` and `cluster`. `strip list` shows them with their size. Stripping asks you to type `strip`, and unless SRM holds a copy of every file, `--no-copy` must say you know it comes back only from a TOS disk or the network. `strip restore <group> --from <mount>` copies it back from the install disk, and `--online` from the published release, each file checked against the manifest first. The floor that Safe Mode and the emergency terminal need is in no group. `verify` counts stripped files apart from missing ones, and `srm scan`, the online repair and `deploy` leave them alone. A machine with a modem whose network was stripped boots with one line saying so.
 
 ### Below 1 MB, TOS says to add memory
 

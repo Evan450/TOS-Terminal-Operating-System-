@@ -3114,6 +3114,21 @@ including a fault the BIOS parked in the EEPROM. *See also:* `man srm`,
 Another name for `rsh`: it runs Lua on the peer, not a shell line, and there is
 no interactive remote shell. *See also:* `rsh`, `scp`.
 
+**strip** — `strip [list | <group> [--no-copy] | restore <group> [--from <mount>] [--online [--unanchored]]]` **(root)**
+Take a feature group off this machine's base image, or put it back. The groups
+are `network` (the network stack, its services, chat and their man pages),
+`internet` (the internet card, remote packages and the online repair), `jbod`,
+`i18n` (the language catalogs) and `cluster` (the setup wizard). The floor that
+Safe Mode and the emergency terminal need is never in a group. Stripping is
+destructive: it asks you to type `strip`, and unless SRM holds a copy of every
+file (a baseline stores only the critical ones) you must say with `--no-copy`
+that you know it comes back only from a TOS disk or the network. `verify`, `srm
+scan`, the online repair and `deploy` treat a stripped file as removed on
+purpose, not missing. `strip restore` puts a group back: `--from <mount>` from
+a TOS disk (the install disk, a `deploy`ed drive), `--online` from the
+published release, every file checked against the manifest's digest first.
+*See also:* `srm`, `verify`, `man strip`.
+
 **sudo** — `sudo <command>` | `sudo -s` | `sudo -k` | `sudo setup [admin|root]` |
 `sudo off` **(USER+; guests cannot elevate)**
 Run a command with elevated privileges using a **separate elevation password**

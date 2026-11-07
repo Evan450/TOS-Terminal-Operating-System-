@@ -73,7 +73,12 @@ function netrepair.deps(d)
     end
   end
   if d.build == nil then d.build = T.build end
-  d.log = d.log or T.log or package.loaded["kernel.log"]
+  --! THE LOG MODULE, NOT _TOS.log. On a booted machine _TOS.log is a function
+  --! (src, msg) -- kernel/init.lua's wrapper -- so `deps.log.warn` indexed a
+  --! function and an applied repair raised right after writing its first file.
+  --! Found when kernel/strip.lua copied this line and crashed on the headless
+  --! runner the same way. (test_netrepair_log.lua)
+  d.log = d.log or (type(T.log) == "table" and T.log) or package.loaded["kernel.log"]
   return d
 end
 
@@ -111,7 +116,13 @@ function netrepair.damaged(deps)
     if type(p) == "string" then
       local want = type(e.hash) == "string" and e.hash:lower() or nil
       local reason
-      if not fs.exists(p) then
+      --! Stripped on purpose (kernel/strip.lua) is not damage: an online
+      --! repair putting it back would undo the operator's strip. `strip
+      --! restore --online` passes stripAware = false to fetch exactly those.
+      if not fs.exists(p) and deps.stripAware ~= false and fs.exists("/etc/stripped.cfg")
+          and select(2, pcall(function() return require("kernel.strip").isStripped(p) end)) == true then
+        skipped[#skipped + 1] = { path = p, why = "stripped on purpose (`strip restore` brings it back)" }
+      elseif not fs.exists(p) then
         reason = "missing"
       elseif want then
         local okR, data = pcall(fs.readFile, p)
