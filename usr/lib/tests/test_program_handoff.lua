@@ -99,9 +99,15 @@ do
 
     -- Pipelines must NOT hand off: a program in a pipeline has no
     -- stdout to give anyone, and a redirect wants a buffer.
+    -- exec runs a line through runOne; only a line that is ONE command (no
+    -- && or ||) takes the plain path, and runOne passes that on.
     local exec = ex:match("local function exec%(input%).-\n  end")
+    local runOne = ex:match("local function runOne%(input, plain%).-\n  end")
     test("the single-command path opts in",
-      exec ~= nil and exec:find("execSingle(input, nil, true)", 1, true) ~= nil)
+      exec ~= nil and exec:find("runOne(input, true)", 1, true) ~= nil
+      and runOne ~= nil and runOne:find("execSingle(input, nil, plain)", 1, true) ~= nil)
+    test("a part of an && / || chain does not (it must run to its end)",
+      exec ~= nil and exec:find("runOne(p.cmd, false)", 1, true) ~= nil)
     local pipeCall = ex:match("local buf = execSingle%(seg%.cmd, prevOutput%)")
     test("the PIPELINE path does not (no third argument)", pipeCall ~= nil)
 

@@ -220,7 +220,12 @@ do
             line = line:gsub("%s+$", "")
             local h = io.open(line, "rb")
             if h then
-              local n = h:seek("end"); h:close()
+              --! The bytes a download fetches: GitHub serves LF, so a CRLF
+              --! checkout (core.autocrlf on Windows) is not what is measured.
+              --! Counting the working copy put admin.lua at 75.4% of the cap
+              --! on a fresh clone and 73.9% as served, and failed the check.
+              local data = h:read("a") or ""; h:close()
+              local n = #(data:gsub("\r\n", "\n"))
               scanned = scanned + 1
               if n > biggest then biggest, biggestPath = n, line end
             end

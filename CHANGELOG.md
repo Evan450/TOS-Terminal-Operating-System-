@@ -15,13 +15,18 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 - **Packages:** a package is now its name and the key that signs it. Dependencies are found across disks and repositories, version constraints are enforced before anything is written, and `pkg fetch` brings what a package requires.
 - **Installing:** the installer asks which drive TOS goes on, checks that it fits first, can reconfigure a TOS on any drive, and stops at the first write that fails. It asks whether to trust the Optional Utilities key and who manages accounts, puts the old system in `/openos`, and cleans up its download.
 - **Add-ons:** a text-mode `web` browser, the `pic` picture viewer, the `warhead` nuke designer, a Lotus-style `calc` 2.0, `rbmk-control` bound to the real console, and a cluster `cluster-storage` node.
-- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says. Commands print as they work, killing your own shell brings the login back instead of freezing the screen, `find` takes wildcards, lists show names whole, and `&&`/`||` are refused rather than half-run.
+- **Everyday use:** `open` picks the right program for a file, `keys set quit` is honoured everywhere, and `cron`, `trash restore`, pipes and the kiosk all do what the manual says. Commands print as they work, killing your own shell brings the login back instead of freezing the screen, `find` takes wildcards, lists show names whole, and `&&` and `||` chain commands as in other shells.
 - **Size and speed:** the release and add-ons ship minified with local variables renamed, and the render path does less work per frame.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 145 rounds of work:
+Everything since v1.5.0, in 150 rounds of work:
 
+- [log denied lists every refusal](#log-denied-lists-every-refusal)
+- [inventory with no side lists every inventory beside it](#inventory-with-no-side-lists-every-inventory-beside-it)
+- [redstone says what it did](#redstone-says-what-it-did)
+- [redstone, robot and inventory work at the shell](#redstone-robot-and-inventory-work-at-the-shell)
+- [&& and || chain commands](#and--chain-commands)
 - [Saving in the editor keeps the file's last lines](#saving-in-the-editor-keeps-the-files-last-lines)
 - [The editor's "Save?" on the way out can be answered](#the-editors-save-on-the-way-out-can-be-answered)
 - [A failed save in the editor keeps the file and the text](#a-failed-save-in-the-editor-keeps-the-file-and-the-text)
@@ -167,6 +172,26 @@ Everything since v1.5.0, in 145 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### log denied lists every refusal
+
+`log denied` shows only the refusals in the log, with their times: a program the sandbox refused a module, a capability or a component, and a path the file-access checks refused. They were there before, among everything else.
+
+### inventory with no side lists every inventory beside it
+
+`inventory` with no side lists each side that has an inventory, with its size, then what is in it. With no side it said "Cannot read inventory" on every machine, because the module it asks has no default side. A side that cannot be read now says why.
+
+### redstone says what it did
+
+`redstone set` takes a level from 0 to 15 and refuses anything else with nothing changed. `redstone set north abc` set the side to 15 and said "= abc", and `set west 99` set 15 and said "= 99". `redstone pulse` takes 0 to 30 seconds, says how long it pulsed, and no longer says "Pulsed" when the pulse was refused. A status that cannot be read gives the real reason instead of "No redstone component".
+
+### redstone, robot and inventory work at the shell
+
+`redstone`, `robot` and `inventory` typed at a shell reach their hardware. They never had: the shell is started from the login, which holds no capabilities, and a process can never hold more than the one that started it, so the shell held none of the ones it is meant to have. With a real redstone card in the machine, `redstone` said "No redstone component" and `redstone set` "peripheral.redstone cap required", as root. Packages were never affected: each package command runs with what its own manifest declares.
+
+### && and || chain commands
+
+`a && b` runs `b` only if `a` succeeded and `a || b` only if it failed, left to right as in other shells, at the command line and in the full interface: `mkdir /tmp/x && cd /tmp/x || echo no`. A command failed if it printed an error or was refused, which is what `why` explains. A full-screen program in a chain runs to its end before the next command, and the output of the whole chain is shown when it ends. Quoted, `&&` and `||` are text; a line with nothing on one side of one is refused. Since the day before, a line with either had been refused rather than half-run.
 
 ### Saving in the editor keeps the file's last lines
 

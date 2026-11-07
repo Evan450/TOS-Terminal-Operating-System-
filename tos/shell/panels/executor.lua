@@ -684,35 +684,48 @@ function M.build(S, deps)
     return stdout, beforeRead
   end
 
-  --! Whether a line chains commands with && or || outside quotes. TOS's
-  --! shell has neither (the survey's SHELL LEXER + PARSER), and both went
-  --! wrong without a word: `whoami && echo X` ran whoami, which ignored the
-  --! rest, and `a || b` split at its bars into a pipe, so b ran whatever a
-  --! did, the opposite of ||. (test_no_andor.lua)
-  local function chains(input)
-    local q = nil
-    for i = 1, #input - 1 do
+  --! A line split at && and || outside quotes: { { cmd = "a" },
+  --! { op = "&&", cmd = "b" }, ... }, or nil and why when one side of an
+  --! operator is empty. Before 2026-11-07 both were refused, because the
+  --! shell had neither and both went wrong without a word: `whoami && echo
+  --! X` ran whoami, which ignored the rest, and `a || b` split at its bars
+  --! into a pipe. The survey's order (TODO, SHELL LEXER + PARSER, item 11)
+  --! put them next. A single | is still a pipe inside a part.
+  --! (test_no_andor.lua)
+  local function splitChain(input)
+    local parts, start, q, i, op = {}, 1, nil, 1, nil
+    while i <= #input do
       local ch = input:sub(i, i)
       if q then
         if ch == q then q = nil end
+        i = i + 1
       elseif ch == '"' or ch == "'" then
         q = ch
+        i = i + 1
       else
         local two = input:sub(i, i + 1)
-        if two == "&&" or two == "||" then return two end
+        if two == "&&" or two == "||" then
+          local cmd = input:sub(start, i - 1):match("^%s*(.-)%s*$")
+          if cmd == "" then return nil, "nothing before " .. two end
+          parts[#parts + 1] = { op = op, cmd = cmd }
+          op, start, i = two, i + 2, i + 2
+        else
+          i = i + 1
+        end
       end
     end
-    return nil
+    local cmd = input:sub(start):match("^%s*(.-)%s*$")
+    if op and cmd == "" then return nil, "nothing after " .. op end
+    parts[#parts + 1] = { op = op, cmd = cmd }
+    return parts
   end
 
-  local function exec(input)
-    S.lastOut = nil
-    local chain = chains(input)
-    if chain then
-      S.lastOut = { "TOS runs one command per line, and has no " .. chain
-        .. ". Type the commands one at a time.", T.error }
-      return
-    end
+  --! One command line with no && or || in it: pipes, redirects, or a
+  --! single command. Returns its output buffer and a label, or nil when a
+  --! program took the seat (its output is its own). `plain` is the typed-
+  --! at-the-prompt path: live output, and a full-screen program may take
+  --! the seat. A refusal or a redirect's report is left in S.lastOut.
+  local function runOne(input, plain)
     local hasPipe = input:find("|", 1, true)
     local hasRedirect = input:find("[>]") or input:find("<")
 
@@ -729,12 +742,12 @@ function M.build(S, deps)
             local inPath = rp(seg.stdin.path)
             if not helpers.canRead(S, inPath) then
               S.lastOut = { "Cannot read: " .. seg.stdin.path, T.error }
-              return
+              return {}, "output"
             end
             prevOutput = F.exists(inPath) and F.readFile(inPath) or nil
             if not prevOutput then
               S.lastOut = { "No such file: " .. seg.stdin.path, T.error }
-              return
+              return {}, "output"
             end
             prevOutput = prevOutput:gsub("\n$", "")
           end
@@ -765,13 +778,12 @@ function M.build(S, deps)
                 S.lastOut = { "Not written: " .. tostring(werr or seg.stdout.path), T.error }
               end
             end
-            return
+            return {}, "output"
           end
 
           if i == #segments then finalBuf = buf end
         end
-        showOutput(helpers.expandBuf(S, withReport(finalBuf)), "output")
-        return
+        return finalBuf, "output"
       end
     end
 
@@ -786,11 +798,56 @@ function M.build(S, deps)
     --! 2026-10-10; `mkdir` there proved the commands were running).
     --! (test_bg_program_output.lua)
     local before = S._program
-    local buf = execSingle(input, nil, true)
-    if S._program and S._program ~= before then return end   -- it owns the seat now
+    local buf = execSingle(input, nil, plain)
+    if S._program and S._program ~= before then return nil end   -- it owns the seat now
+    return buf, input:match("^(%S+)") or "output"
+  end
+
+  local function exec(input)
+    S.lastOut = nil
+    local parts, why = splitChain(input)
+    if not parts then
+      S.lastOut = { "Cannot run that line: " .. why .. ".", T.error }
+      return
+    end
+
+    if #parts == 1 then
+      local buf, label = runOne(input, true)
+      if not buf then return end
+      local term = package.loaded["compat.term"]
+      if deps.repaint and term and term._screenTaken and term._screenTaken() then deps.repaint() end
+      showOutput(helpers.expandBuf(S, withReport(buf)), label)
+      return
+    end
+
+    --! A CHAIN, left to right, as a POSIX shell runs one: `a && b` runs b
+    --! only if a succeeded, `a || b` only if it failed, and a part that is
+    --! skipped leaves the last status as it was, so `a && b || c` runs c
+    --! when either a or b failed. A command FAILED when it printed in the
+    --! error colour or refused (S.lastFailure, the record `why` reads; a
+    --! redirect that could not write counts too). That is the shell's one
+    --! notion of failure, so no command had to learn a new one.
+    --! Every part runs off the plain path: a full-screen program runs to its
+    --! end before the next part, rather than taking the seat and leaving the
+    --! chain with nothing to wait on. All the output is shown at the end,
+    --! in order, under the first command's name.
+    local all, ok, label = {}, true, nil
+    for i, p in ipairs(parts) do
+      if i == 1 or (p.op == "&&" and ok) or (p.op == "||" and not ok) then
+        S.lastOut = nil
+        local buf, l = runOne(p.cmd, false)
+        buf = buf or {}
+        label = label or l
+        local said = S.lastOut
+        ok = S.lastFailure == nil
+          and not (type(said) == "table" and said[2] == T.error)
+        withReport(buf)
+        for _, e in ipairs(buf) do all[#all + 1] = e end
+      end
+    end
     local term = package.loaded["compat.term"]
     if deps.repaint and term and term._screenTaken and term._screenTaken() then deps.repaint() end
-    showOutput(helpers.expandBuf(S, withReport(buf)), input:match("^(%S+)") or "output")
+    showOutput(helpers.expandBuf(S, all), label or "output")
   end
 
   -- Expose the single-command runner so `sudo <cmd>` can run one command

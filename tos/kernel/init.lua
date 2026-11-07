@@ -1731,6 +1731,18 @@ function kernel.loginAndStartShell()
       cwd       = shellSession and shellSession.home or "/",
       caps      = shellCaps,
       display   = dIdx,
+      --! THE KERNEL GRANTS THESE, NOT THE LOGIN. This runs inside the login
+      --! process, which holds no caps, and spawn intersects a child's caps
+      --! with its parent's -- so every cap above was stripped and the shell
+      --! held none. The 2026-08-11 fix that added the peripheral caps could
+      --! never take effect: on the headless runner with a real redstone
+      --! card, `redstone` said "No redstone component" and `redstone set`
+      --! "peripheral.redstone cap required", as root. Everything else the
+      --! shell's identity needs is given explicitly above, and the parent
+      --! link (setForeground's own-child rule) is recorded either way.
+      --! Package code is unaffected: its commands run under their
+      --! manifest's cap scope. (test_shell_caps.lua)
+      inherit   = false,
     })
     -- #REV-3 — surface a failed handoff instead of ignoring the return:
     -- if the seat's input isn't routed to this shell, the seat is dead

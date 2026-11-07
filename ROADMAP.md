@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**49 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**45 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
 | Planned | 25 | Planned or under investigation. Most contributions belong here. |
-| Idea / far future | 22 | Idea, no commitment. Discuss before building. |
+| Idea / far future | 18 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (8) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (7) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (7) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (7) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -119,6 +119,8 @@ HEADLESS 2026-10-09 -- everything here a machine with no mods can show, run on t
 - the two-floppy flow: see MULTI-DISK. The 192K `reboot` line is moot: TOS needs 1 MB (THE RAM FLOOR IS 1 MB below).
 
 STILL FOR A REAL WORLD: printer/write, stock on a transposer, redstone/robot/inventory from a shell, a read-only boot disk (a managed hard drive cannot be made read-only here, and TOS does not fit a floppy), Esc closing the Minecraft screen.
+
+SINCE, ON THE RUNNER (2026-11-01..07): a read-only boot disk (--readonly-boot, 802e916: noticed, and the copy-to-hard-drive offer run end to end); stock on a stand-in transposer (stock 1.0.3); and `redstone` and `inventory` from a shell, which had NEVER worked: the shell held no caps at all (f647ab8), `redstone set` lied about bad levels (c3e5c03), plain `inventory` could not read (c1f5944). The runner gained --redstone for it. LEFT FOR A REAL WORLD, each needing what Ocelot does not have: printer/write (OpenPrinter), `robot` from a shell (TOS running inside a robot body), stock against a real chest with many slots, Esc closing the Minecraft screen.
 
 ### Emulator checklist - the RBMK SKALA panel (Extras, v0.2.0)
 
@@ -252,12 +254,6 @@ SLICE 4: DISCOVERY AND REVOCATION. Opt-in bounded crawl over index `siblings`; s
 
 NOT DONE, deliberate: OPPM's MASTER LIST (the index-of- indexes at openprograms.github.io that lets `oppm` search every registered repo). TOS works one repo at a time by URL. Adding it means trusting a list of hosts you did not write down, which is exactly what the allowlist exists to prevent — it needs an operator-facing "add all of these?" step, not a silent federation.
 
-### Later, and the reason the OPPM work stops here: OPPM proper downloads from GitHub
-
-*Idea / far future* · from the round *Shell gaps + real OPPM round (2026-08-04)*
-
-Later, and the reason the OPPM work stops here: OPPM proper downloads from GitHub. TOS has NO internet-card support anywhere (zero occurrences of "internet" in the tree), so a repo still has to arrive as a directory. Doing it properly is a chain — compat/internet.lua, an `internet` entry in the sandbox's gated component types, sysinfo/lsdev detection, then remote pkg repos with host allowlisting and hash pinning. That is the first time TOS would fetch executable code from outside the world and wants its own round. Same bucket: the compat layer shims 11 OpenOS libs; `thread` (widely used, maps onto kernel.process) and `uuid` (trivial) are the two most-missed. `thread` needs a decision about what a sandboxed program spawning a process may inherit — it must be exactly the caller's caps, never more.
-
 ### Later: teach `pkg install` to refresh the baseline for files it replaces, so an upgrade…
 
 *Idea / far future* · from the round *SRM round (2026-07-28)*
@@ -279,12 +275,6 @@ DRAFT ANSWERS 2026-11-05, as asked: section 10 of the spec now holds a recommend
 *Planned* · from the round *Extras sweep 2: the packaging seam (2026-09-06)*
 
 THE CANONICAL NUMBER FORMAT IS STILL ARCHITECTURE-DEPENDENT. The fix above removes the only float that crosses the wire; it does not make the FORMAT safe for the next one. A field carrying an integral float still canonicalizes differently on 5.2 and 5.3. The fix is one line in each half -- render numbers with a subtype-independent rule ("%d" when the value is integral, else "%.14g") -- but it changes the MAC for every frame, so both sides must be upgraded together AND the OpenOS worker is hand-copied to each worker box. Worth doing at the next protocol version bump, not on its own.
-
-### Operator idea (raised 2026-08-04, deferred)
-
-*Idea / far future* · from the round *Internet card + remote pkg round (2026-08-04)*
-
-OPERATOR IDEA (raised 2026-08-04, deferred): a text-mode WEB BROWSER package over the internet card. Notes on shape before anyone starts — see the discussion, but the short version: the fetch is the easy 10%; HTML -&gt; text layout is the work, and the 80x25 T2 screen is the real constraint. Build it as a PACKAGE declaring `internet` + `fullscreen`, never in the base image. It is also the first thing that would want kernel.internet's caps RAISED (a page is bigger than 64K), which is a good reason to keep that per-call rather than global.
 
 ### Later: per-group mesh sealing
 
@@ -324,12 +314,6 @@ NOT GAPS from this pair, recorded so they are not re- investigated: Plan9k's MOD
 
 - BLOCKED ON A DESIGN ANSWER, which is why it's \[\*\]: KittenOS is single-user, single-seat, GUI. We are multi-seat with rc.d services and sandboxed daemons that have NO operator attached — that is why notify.lua exists at all. A naive port hangs a service forever waiting for an answer nobody is there to give.
 - If we do it: "ask" is legal ONLY in an interactive session and resolves to DENY everywhere else. Decide that first, in writing, before any code.
-
-### Audit log for capability denials
-
-*Idea / far future* · from the round *From the OCOS survey (2026-08-10)*
-
-AUDIT LOG FOR CAPABILITY DENIALS. When the sandbox refuses a program a cap we log it, but there's no single place an operator can read "what got refused, to whom, when". Worth a dedicated append-only log rather than digging through the general log. (OCOS's permissive-mode flag that logs instead of denying is NOT for us — we're fail-closed by design and that stays. It's the record that's worth having, not the escape hatch.)
 
 ## Boot, memory and the kernel
 
@@ -503,12 +487,6 @@ Open question worth settling first: is the feed LOCAL (this machine's own events
 
 `service`/`cron` are read-only in the Monitor tab; consider a dedicated services pane if it earns its keep.
 
-### Shell lexer + parser
-
-*Idea / far future* · from the round *From the OCOS survey (2026-08-10)*
-
-SHELL LEXER + PARSER. Only if we ever want `&&`, `||` or `$?`. Today the executor string-parses through kernel.pipe.parse, which is fine for `|` and redirects and will not stretch to conjunction or exit-status expansion. A real lexer/parser is the honest way to get there. Filed as far-future because nothing is currently ASKING for it — don't build it on spec.
-
 ### Split tabs — two or more tabs sharing one screen
 
 *Idea / far future* · from the round *Deferred by operator: split tabs (design captured)*
@@ -580,7 +558,7 @@ BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this 
 8. LOCALISE THE INSTALLER (survey 10). DONE 2026-11-01.
 9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). DONE 2026-11-01: `pkg compact` / `pkg expand`, kernel/pkgfs.lua.
 10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). DONE 2026-11-01: the `overlay` command, on the root, and the read-only boot offer.
-11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]).
+11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]). DONE 2026-11-07: both chain as in other shells, in both shells (see its entry).
 12. /proc-STYLE READ-ONLY INTROSPECTION (Cynosure \[\*\]).
 13. FAR: RUN-THIS-ONCE CONFINEMENT (survey 11), "ASK" AS A THIRD STATE (KittenOS), LINE DISCIPLINES (survey 19), the LOG WALL appliance (settle its local-or-feed question first).
 

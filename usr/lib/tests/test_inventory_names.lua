@@ -22,9 +22,17 @@ package.path = "tos/?.lua;tos/?/init.lua;" .. package.path
 package.loaded["computer"] = { uptime = function() return 0 end, freeMemory = function() return 1e6 end }
 package.loaded["component"] = { list = function() return function() end end, proxy = function() end }
 local HUGE = "mod:" .. string.rep("x", 90)
+-- Shaped like the real module: list() has no default side, and refuses nil
+-- the way resolveSide does; sides() names the sides that hold an inventory.
+local SIDES = { { side = 2, name = "north", size = 4 } }
+local listFails = nil
 package.loaded["peripheral.inventory"] = {
   available = function() return true end,
-  list = function()
+  getMode = function() return "transposer" end,
+  sides = function() return SIDES end,
+  list = function(side)
+    if side == nil then return nil, "invalid side" end
+    if listFails then return nil, listFails end
     return { { slot = 1, name = "minecraft:diamond_pickaxe", count = 1 },
              { slot = 2, name = "minecraft:stone", count = 64 },
              { slot = 3, name = HUGE, count = 2 },
@@ -58,6 +66,24 @@ test("no line is wider than the screen", widest <= 80, widest)
 test("the counts line up", #countAt == 3 and countAt[1] == countAt[2] and countAt[2] == countAt[3],
   table.concat(countAt, ","))
 test("an empty slot is still left out", not text:find("minecraft:air", 1, true))
+
+print("=== plain `inventory` lists every side that has one ===")
+test("the side is named, with its size", text:find("north (4 slots):", 1, true) ~= nil, text)
+SIDES = { { side = 2, name = "north", size = 4 }, { side = 3, name = "south", size = 27 } }
+out = {}
+C.inventory({}, function(line) out[#out + 1] = tostring(line) end)
+local two = table.concat(out, "\n")
+test("two sides, two listings", two:find("north (4 slots):", 1, true) ~= nil
+  and two:find("south (27 slots):", 1, true) ~= nil, two)
+SIDES = {}
+out = {}
+C.inventory({}, function(line) out[#out + 1] = tostring(line) end)
+test("none beside it says so", table.concat(out):find("has an inventory", 1, true) ~= nil, table.concat(out))
+listFails = "no inventory on that side"
+out = {}
+C.inventory({ "west" }, function(line) out[#out + 1] = tostring(line) end)
+test("a failed read gives the module's reason",
+  table.concat(out):find("no inventory on that side", 1, true) ~= nil, table.concat(out))
 
 print(string.format("\nResults: %d passed, %d failed", passed, failed))
 if failed > 0 then print("*** TESTS FAILED ***"); os.exit(1) end

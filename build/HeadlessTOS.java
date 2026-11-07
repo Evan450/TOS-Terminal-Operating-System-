@@ -34,6 +34,7 @@ import totoro.ocelot.brain.entity.machine.Arguments;
 import totoro.ocelot.brain.entity.machine.Callback;
 import totoro.ocelot.brain.entity.machine.Context;
 import totoro.ocelot.brain.entity.NetworkCard;
+import totoro.ocelot.brain.entity.Redstone;
 import totoro.ocelot.brain.entity.Relay;
 import totoro.ocelot.brain.entity.Screen;
 import totoro.ocelot.brain.entity.TapeDrive;
@@ -222,6 +223,13 @@ public class HeadlessTOS {
   static boolean withChest;     // --robot-chest
   static boolean withRubbish;   // --robot-rubbish
   static boolean withTransposer; // --transposer
+  // --redstone: a Tier 1 redstone card in the first free card slot. Steps
+  // `redin SIDE LEVEL` set what the card hears on a side, `redout` prints
+  // what it is emitting, so a script can check `redstone` against the card
+  // rather than against what the command says it did.
+  static boolean withRedstone;
+  static Redstone.Tier1 redstoneCard;
+  static final String[] SIDE_NAMES = { "down", "up", "north", "south", "west", "east" };
 
   /**
    * A transposer with one chest, to the north, holding 20 cobblestone and a
@@ -788,6 +796,16 @@ public class HeadlessTOS {
           + chipRobot.node().address() + ", wireless on both ends");
     }
 
+    // Last of the cards, so it takes whichever card slot the others left.
+    if (withRedstone) {
+      int free = -1;
+      for (int s = 0; s <= 2 && free < 0; s++) if (pc.inventory().apply(s).isEmpty()) free = s;
+      if (free < 0) throw new IllegalArgumentException("--redstone: no free card slot");
+      redstoneCard = new Redstone.Tier1();
+      pc.inventory().apply(free).put(redstoneCard);
+      System.out.println("[headless] redstone card in slot " + free);
+    }
+
     machine = pc.machine();
     System.out.println("[headless] profile " + profile + ", RAM " + String.join("+", sticks)
         + "K, boot disk " + bootAddr);
@@ -1087,6 +1105,26 @@ public class HeadlessTOS {
           done = true;
           break;
         }
+        case "redin": {
+          String[] a = line.split("\\s+");
+          if (redstoneCard == null) { failure = "redin: no redstone card (run with --redstone)"; break; }
+          if (a.length != 3) { failure = "redin takes SIDE LEVEL"; break; }
+          int side = java.util.Arrays.asList(SIDE_NAMES).indexOf(a[1].toLowerCase());
+          if (side < 0) { failure = "redin: SIDE is one of " + String.join("|", SIDE_NAMES); break; }
+          redstoneCard.setRedstoneInput(Direction$.MODULE$.apply(side), Integer.parseInt(a[2]));
+          done = true;
+          break;
+        }
+        case "redout": {
+          if (redstoneCard == null) { failure = "redout: no redstone card (run with --redstone)"; break; }
+          StringBuilder sb = new StringBuilder("[redstone] out");
+          scala.collection.Iterator<Object> it = redstoneCard.redstoneOutput().iterator();
+          for (int s = 0; it.hasNext() && s < SIDE_NAMES.length; s++)
+            sb.append(' ').append(SIDE_NAMES[s]).append('=').append(it.next());
+          System.out.println(sb);
+          done = true;
+          break;
+        }
         case "pullcard":
           if (pcCase == null || pcCase.inventory().apply(2).isEmpty()) {
             failure = "pullcard: no internet card (run with --internet)"; break;
@@ -1238,6 +1276,7 @@ public class HeadlessTOS {
     withChest = flag(args, "--robot-chest");
     withRubbish = flag(args, "--robot-rubbish");
     withTransposer = flag(args, "--transposer");
+    withRedstone = flag(args, "--redstone");
     chipFile = opt(args, "--chip", null);
     chipData = opt(args, "--chip-data", null);
     if (opt(args, "--disk2", null) != null) {

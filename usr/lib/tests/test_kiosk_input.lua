@@ -31,7 +31,9 @@ local base = here:gsub("[^/\\]*$", "")
 local function readSource(rel)
   for _, p in ipairs({ base .. "../../../" .. rel, rel, "TOS-Dev/" .. rel }) do
     local f = io.open(p, "rb")
-    if f then local d = f:read("a"); f:close(); return d, p end
+    -- CRLF folded to LF: a Windows checkout (core.autocrlf) has CRLF, and the
+    -- patterns below are written with \n.
+    if f then local d = f:read("a"):gsub("\r\n", "\n"); f:close(); return d, p end
   end
 end
 

@@ -78,19 +78,44 @@ return function(C, S, deps)
   C.redstone = function(args, o)
     local ok2, rs = pcall(require, "peripheral.redstone")
     if not ok2 then o("No redstone module", T.error); return end
+    --! WHAT IS SAID IS WHAT WAS DONE (headless runner, a real redstone card,
+    --! 2026-11-07). `set north abc` set 15 and said "= abc"; `set west 99`
+    --! set 15 and said "= 99"; `pulse` said "Pulsed" whatever happened,
+    --! refusals included; and every refusal of the status read "No redstone
+    --! component". A level is a whole number 0-15 and a duration 0-30 s, or
+    --! nothing is touched; the module's own reason is shown.
+    --! (test_redstone_command.lua)
     if not args[1] then
-      local st2 = rs.status()
-      if not st2 then o("No redstone component", T.error); return end
+      local st2, why = rs.status()
+      if not st2 then
+        o((tostring(why or "no redstone component"):gsub("^%l", string.upper)), T.error)
+        return
+      end
       o(" Side      In  Out", T.title)
       for _, s in ipairs(st2) do
         o(string.format(" %-9s %2d  %2d", s.name, s.input, s.output), T.fg)
       end
     elseif args[1] == "set" and args[2] and args[3] then
-      local ok3, err = rs.setOutput(args[2], tonumber(args[3]) or 15)
-      o(ok3 and "Set " .. args[2] .. " = " .. args[3] or tostring(err), ok3 and T.highlight or T.error)
+      local level = tonumber(args[3])
+      if not level or level ~= math.floor(level) or level < 0 or level > 15 then
+        o("A level is a whole number from 0 to 15, not '" .. tostring(args[3])
+          .. "'. Nothing was set.", T.error)
+        return
+      end
+      local ok3, err = rs.setOutput(args[2], level)
+      o(ok3 and ("Set " .. args[2] .. " = " .. level) or tostring(err), ok3 and T.highlight or T.error)
     elseif args[1] == "pulse" and args[2] then
-      rs.pulse(args[2], tonumber(args[3]) or 0.5)
-      o("Pulsed " .. args[2], T.highlight)
+      local secs = 0.5
+      if args[3] then
+        secs = tonumber(args[3])
+        if not secs or secs ~= secs or secs < 0 or secs > 30 then
+          o("A pulse lasts 0 to 30 seconds, not '" .. tostring(args[3]) .. "'. Nothing was sent.", T.error)
+          return
+        end
+      end
+      local okP, err = rs.pulse(args[2], secs)
+      o(okP and ("Pulsed " .. args[2] .. " for " .. secs .. " s") or tostring(err),
+        okP and T.highlight or T.error)
     else
       o("Usage: redstone [set <side> <0-15>|pulse <side> [duration]]", T.dim)
     end
@@ -600,8 +625,27 @@ return function(C, S, deps)
     local ok2, inv = pcall(require, "peripheral.inventory")
     if not ok2 then o("No inventory module", T.error); return end
     if not inv.available() then o("No inventory controller/transposer", T.error); return end
-    local side = args[1] and (tonumber(args[1]) or args[1]) or nil
-    local items = inv.list(side)
+    --! WITH NO SIDE, EVERY SIDE THAT HAS AN INVENTORY. It passed nil to
+    --! inv.list, which has no default side, so plain `inventory` -- the form
+    --! the manual documents -- said "Cannot read inventory" on every machine
+    --! (headless runner, a transposer beside a chest, 2026-11-07). The reason
+    --! from the module is shown now too. (test_inventory_names.lua)
+    if not args[1] then
+      local found = inv.sides()
+      if #found == 0 then
+        o("Nothing beside the " .. tostring(inv.getMode and inv.getMode() or "controller")
+          .. " has an inventory.", T.warning)
+        return
+      end
+      for i, sd in ipairs(found) do
+        if i > 1 then o("", T.fg) end
+        o(string.format("%s (%d slots):", sd.name, sd.size), T.dim)
+        C.inventory({ tostring(sd.side) }, o)
+      end
+      return
+    end
+    local side = tonumber(args[1]) or args[1]
+    local items, why = inv.list(side)
     if items then
       --! Item names whole where the screen allows, as ls and disk list do:
       --! a fixed 24 cut "minecraft:diamond_pickaxe" to "minecraft:diamond_pickax"
@@ -623,7 +667,7 @@ return function(C, S, deps)
         end
       end
     else
-      o("Cannot read inventory", T.error)
+      o("Cannot read inventory: " .. tostring(why or "unknown reason"), T.error)
     end
   end
   C.inv = C.inventory

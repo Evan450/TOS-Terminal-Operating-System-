@@ -22,7 +22,9 @@ local function test(name, cond, detail)
 end
 
 local f = assert(io.open("tos/kernel/init.lua", "rb"))
-local src = f:read("a"); f:close()
+-- CRLF folded to LF: a Windows checkout (core.autocrlf) has CRLF, and the
+-- patterns below are written with \n.
+local src = f:read("a"):gsub("\r\n", "\n"); f:close()
 local body = src:match("function kernel%.verifySystem(.-)\nend\n") or ""
 test("found verifySystem", body ~= "")
 

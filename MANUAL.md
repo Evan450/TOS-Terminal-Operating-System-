@@ -759,8 +759,12 @@ than two names.
 Supports pipes (`cmd1 | cmd2`), redirect (`> file`), append (`>> file`), input
 (`cat < file`, `grep word < file`), command
 history (up/down), and per-process environment variables (`env`, `export KEY=VAL`).
-It runs one command per line: there is no `&&`, `||` or `;`, and a line with
-`&&` or `||` outside quotes is refused rather than half-run.
+`a && b` runs `b` only if `a` succeeded, and `a || b` only if it failed,
+left to right as in other shells: `mkdir /tmp/x && cd /tmp/x || echo no`. A
+command *failed* if it printed an error or was refused (what `why` explains).
+In a chain, a full-screen program runs to its end before the next command, and
+all the output is shown when the chain ends. There is no `;` and no `$?`;
+quoted, `&&` and `||` are just text.
 Unqualified program names resolve only against system bin dirs (`/bin`,
 `/usr/bin`, `/tos/shell`) and *safe* `PATH` entries — a disk under `/mnt` can't
 shadow a system binary.
@@ -2781,8 +2785,10 @@ Show or set the UI language. Catalogs are data files in `/usr/lang`;
 machine default via `lang system` (admin). *See also:* [§10.2](#102-language-packs-i18n),
 `profile`.
 
-**log** — `log [N | clear]` **(admin)**
-Show the last N log lines (kernel + services), or clear the log. *See also:*
+**log** — `log [N | denied [N] | clear]` **(admin)**
+Show the last N log lines (kernel + services), or clear the log. `log denied`
+shows only the refusals: a program the sandbox refused a module, a capability
+or a component, and a path securefs refused, each with its time. *See also:*
 `doctor`.
 
 **logout** — `logout`

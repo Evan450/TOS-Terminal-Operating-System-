@@ -2299,6 +2299,33 @@ return function(C, S, deps)
       return
     end
 
+    --! `log denied`: every refusal in one place -- what was refused, to
+    --! whom, when. The sandbox writes "denied: <program> wanted <thing>"
+    --! (462cfcf) and securefs "READ/WRITE denied: <path>"; they sat among
+    --! everything else in the log, which is what the TODO's AUDIT LOG FOR
+    --! CAPABILITY DENIALS asked to stop. A filter on the one log, not a
+    --! second log to keep. (test_log_denied.lua)
+    if args[1] == "denied" then
+      pcall(logMod.flush)
+      local content = F.readFile("/var/log/kernel.log")
+      if not content then o("No log on disk yet.", T.dim); return end
+      local rows = {}
+      for line in content:gmatch("([^\n]*)\n?") do
+        line = line:gsub("\r$", "")
+        if line:find("%[sandbox%]") and line:find("denied: ", 1, true)
+          or line:find("%[securefs%]") and line:find(" denied: ", 1, true) then
+          rows[#rows + 1] = { line, T.warning }
+        end
+      end
+      if #rows == 0 then o("Nothing has been refused since the log began.", T.dim); return end
+      local n = tonumber(args[2])
+      local first = (n and n > 0) and math.max(1, #rows - n + 1) or 1
+      local buf = { { string.format(" refusals in /var/log/kernel.log  (%d)", #rows), T.title } }
+      for i = first, #rows do buf[#buf + 1] = rows[i] end
+      openViewTab(buf, "log denied")
+      return
+    end
+
     if args[1] == "filter" then
       -- Admin is already enforced at command entry; setSourceLevel
       -- re-checks the live session as belt-and-braces.
@@ -2354,7 +2381,7 @@ return function(C, S, deps)
       return
     end
 
-    o("Usage: log [N] | log ring [N] | log clear | log filter ...", T.dim)
+    o("Usage: log [N] | log denied [N] | log ring [N] | log clear | log filter ...", T.dim)
     o("  log        Open the full on-disk log (last N lines if given)", T.dim)
     o("  log ring   Quick peek at the in-memory ring", T.dim)
   end

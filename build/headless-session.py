@@ -26,6 +26,8 @@ only if the text appears), `type TEXT` (\\n is Enter), `key NAME [N]`
 `snap NAME`, `off SECS`, `powercycle`, `eject`, `insert NAME`, `pullcard`
 (the internet card out of its slot), `resolution W H` (resize the screen
 from outside, which raises the same screen_resized a real resize does),
+`redin SIDE LEVEL` / `redout` (with --redstone: set what the card hears on
+a side; print what it is emitting on each),
 `bootraw` (with --raw-drive: the next boot is from that drive),
 `bootaddr ADDRESS` (the next boot is from that disk),
 `seat N` (with --seats 2: type at and read screen N from then on),
@@ -295,6 +297,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="with --chip: the EEPROM's data field, as `flash --data` leaves it")
     ap.add_argument("--transposer", action="store_true",
                     help="a stand-in transposer with a small chest to the north")
+    ap.add_argument("--redstone", action="store_true",
+                    help="a Tier 1 redstone card; steps `redin SIDE LEVEL` and `redout`")
     ap.add_argument("--robot-chest", action="store_true",
                     help="with --robot: starts empty, with an inventory controller and a chest")
     ap.add_argument("--robot-rubbish", action="store_true",
@@ -419,6 +423,8 @@ def main(argv: list[str] | None = None) -> int:
         cmd.append("--robot-rubbish")
     if args.transposer:
         cmd.append("--transposer")
+    if args.redstone:
+        cmd.append("--redstone")
     if args.chip:
         cmd += ["--chip", str(Path(args.chip).resolve())]
         if args.chip_data:
@@ -442,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
     except subprocess.TimeoutExpired as e:
         code, out = 2, str(e.stdout or "") + "\n(the JVM itself had to be killed)"
     for line in out.splitlines():
-        if line.startswith(("[step]", "[headless]", "[beep]")):
+        if line.startswith(("[step]", "[headless]", "[beep]", "[redstone]")):
             print(line)
 
     for snap in sorted(work.glob("snap-*.txt"), key=lambda p: p.stat().st_mtime):
@@ -454,7 +460,7 @@ def main(argv: list[str] | None = None) -> int:
                       else work / "screen.txt", 60).rstrip())
         print("--- kernel.log (last 30 lines)")
         print(hs.tail(boot / "var" / "log" / "kernel.log", 30))
-        other = [l for l in out.splitlines() if not l.startswith(("[step]", "[headless]", "[beep]"))]
+        other = [l for l in out.splitlines() if not l.startswith(("[step]", "[headless]", "[beep]", "[redstone]"))]
         if other:
             print("--- runner output (last 20 lines)")
             print("\n".join(other[-20:]))
