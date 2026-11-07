@@ -1,8 +1,25 @@
 # Screenshots: what to capture, and where they go
 
-The repository has no images. That is the single largest thing standing between TOS and anyone finding it: on the OpenComputers forum, on Discord, on Reddit, **the screenshot is the post**. A wall of text about an OS gets scrolled past.
+The repository had no images. That is the single largest thing standing between TOS and anyone finding it: on the OpenComputers forum, on Discord, on Reddit, **the screenshot is the post**. A wall of text about an OS gets scrolled past.
 
 This file is the shot list so the capture session is mechanical.
+
+## Captured 2026-11-06
+
+Taken from Ocelot Desktop 1.14.2, running build `07bf795` (the signed release) freshly copied onto the boot disk of a scratch copy of the workspace. The screen is a Tier 2 GPU at 80×25, captured losslessly at its native 640×400: exactly the screen's content, with no window frame. The stills are logged in as an ordinary user, `steve`, in the default theme, except where a shot needs otherwise.
+
+| File | What it shows |
+|---|---|
+| `desktop.png` | `steve`'s tile Desktop, just after `theme set default` |
+| `files.png` | `steve`'s home in the file browser, with F8's delete dialog open on `notes.txt` (then cancelled) |
+| `themes.png` | the Desktop in `default`, `amber` and `nord`: three captures of the same screen, placed side by side |
+| `login.png` | the login screen |
+| `monitor.png` | the System Monitor as **root**, which lists the services too; as `steve` it shows only steve's own shell |
+| `boot.gif` | power on → boot → login as `steve` → Desktop → `theme set amber` |
+
+`boot.gif` is real frames, 4.8 per second, in recorded order and unaltered. What was taken out: `steve`'s first-login tutorial (a one-time screen), the ten seconds the Desktop sat still before the theme switch (its first frame is held instead), and frames that differed from the last only by the in-game clock or the cursor blinking (under 300 changed pixels). Long waits are cut to half a second. 60 s were recorded and 16.9 s loop. The login screen in it says the last shutdown was unsafe: the machine was switched off at the case button before recording, and that is TOS's real power-loss check.
+
+**Still to capture: `rbmk.png`.** The RBMK supervisor needs HBM's reactor console, which only exists in a Minecraft world with HBM's Nuclear Tech Mod; Ocelot has no such component. Take it in-world. Until then the README shows `files.png` in its place.
 
 ## Where the files go
 

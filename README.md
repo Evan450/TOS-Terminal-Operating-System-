@@ -13,18 +13,17 @@ The details are under [Requirements](#requirements).
 
 Current release: **v1.5.0 "Aletheia"** — see [`CHANGELOG.md`](CHANGELOG.md) for what changed.
 
-<!-- SCREENSHOTS -- see docs/screenshots/SHOTS.md for the shot list and how to
-     capture them. Delete this comment wrapper once the files exist on `dev`;
-     the URLs are absolute so the same README renders on every branch.
-
+<!-- Screenshots: real captures from Ocelot Desktop. docs/screenshots/SHOTS.md
+     has the shot list, how they were taken, and the one still missing (rbmk.png,
+     which needs an HBM reactor). The URLs are absolute so the same README
+     renders on every branch. -->
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/desktop.png"  alt="The Desktop: a tile home screen" width="49%">
-  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/rbmk.png"     alt="The RBMK reactor supervisor" width="49%">
+  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/desktop.png" alt="The Desktop: a tile home screen" width="49%">
+  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/files.png"   alt="The file browser with a delete dialog open" width="49%">
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/boot.gif"     alt="Boot to login to Desktop to a theme switch" width="80%">
+  <img src="https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/dev/docs/screenshots/boot.gif"    alt="Boot to login to Desktop to a theme switch" width="80%">
 </p>
--->
 
 **Contents:** [Install it](#install-it) · [Your first ten minutes](#your-first-ten-minutes) · [What's in it](#whats-in-it) · [Why not just use OpenOS?](#why-not-just-use-openos) · [Requirements](#requirements) · [Add-ons](#add-ons) · [Known limitations](#known-limitations) · [Where to go next](#where-to-go-next) · [License](#license)
 
