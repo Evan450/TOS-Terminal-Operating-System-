@@ -46,7 +46,8 @@ local function promptYN(S, message)
   D.set(1, S.OUT_ROW, (message .. " (y/n)"):sub(1, W), T.warning, T.bg)
   while true do
     local sig, _, ch = pullSignal()
-    if sig == "key_down" then
+    -- Shift alone (char 0) is not an answer: Shift+Y used to mean no.
+    if sig == "key_down" and ch ~= 0 then
       if ch == 121 or ch == 89 then return true end
       return false
     end

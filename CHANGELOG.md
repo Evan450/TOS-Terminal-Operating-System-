@@ -20,8 +20,9 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 144 rounds of work:
+Everything since v1.5.0, in 145 rounds of work:
 
+- [Saving in the editor keeps the file's last lines](#saving-in-the-editor-keeps-the-files-last-lines)
 - [The editor's "Save?" on the way out can be answered](#the-editors-save-on-the-way-out-can-be-answered)
 - [A failed save in the editor keeps the file and the text](#a-failed-save-in-the-editor-keeps-the-file-and-the-text)
 - [vault in place never destroys the file on a full disk](#vault-in-place-never-destroys-the-file-on-a-full-disk)
@@ -166,6 +167,10 @@ Everything since v1.5.0, in 144 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### Saving in the editor keeps the file's last lines
+
+Opening a file in the editor and saving it without a change writes back the same bytes. Every save dropped the final newline, and a blank line at the end went with it: a 19-byte file saved unchanged came back as 17.
 
 ### The editor's "Save?" on the way out can be answered
 

@@ -77,6 +77,27 @@ function M.openLiveTab(S, label, refreshFn, interval)
   return tab
 end
 
+--! OPEN AND SAVE ARE EXACT INVERSES. The old split dropped the file's
+--! final newline and the join never gave it back, so every save changed
+--! the file's last byte, "a\n\n" came back as "a", and a file that was
+--! one newline saved as an empty one. The final newline is remembered
+--! now, and the split does not rely on gmatch's empty-match quirk.
+--! (test_editor_save.lua)
+function M.splitLines(content)
+  content = tostring(content or "")
+  local finalNewline = content:sub(-1) == "\n"
+  local body = finalNewline and content:sub(1, -2) or content
+  local lines = {}
+  for l in (body .. "\n"):gmatch("([^\n]*)\n") do lines[#lines + 1] = l end
+  if #lines == 0 then lines[1] = "" end
+  return lines, finalNewline
+end
+
+--- The text a save writes: the lines, and the final newline if the file had one.
+function M.textOf(tab)
+  return table.concat(tab.lines, "\n") .. (tab.finalNewline and "\n" or "")
+end
+
 --! SAVING NEVER COSTS THE FILE. writeFile opens with truncation, so a
 --! save that ran out of room (a full disk, a file that grew) left a cut-off
 --! file, and the quit prompt's "[y]es" ignored the answer and closed the
@@ -108,7 +129,7 @@ function M.openEditTab(S, path)
     return
   end
   if path and S.F.exists(path) and not helpers.canRead(S, path) then return end
-  local lines = { "" }
+  local lines, finalNewline = { "" }, false
   if path and S.F.exists(path) then
     --! A FILE THAT CANNOT BE READ IS NOT OPENED AS AN EMPTY ONE. This was
     --! `readFile(path) or ""`, and readFile answers nil on a failed read --
@@ -125,10 +146,7 @@ function M.openEditTab(S, path)
       return helpers.fail(S, "Cannot open " .. tostring(path) .. ": " .. why
         .. " (not opened, so nothing can be saved over it)" .. tag)
     end
-    lines = {}
-    for l in content:gmatch("([^\n]*)\n?") do lines[#lines + 1] = l end
-    if #lines == 0 then lines[1] = "" end
-    if lines[#lines] == "" and #lines > 1 then lines[#lines] = nil end
+    lines, finalNewline = M.splitLines(content)
   end
   local fname = (path and path:match("[^/]+$")) or "new file"
   local tab = tabs.create(S, "edit", fname, {
@@ -142,6 +160,7 @@ function M.openEditTab(S, path)
     --! it too, so a tab from an older session cannot render blank.
     viewLeft   = 1,
     modified   = false,
+    finalNewline = finalNewline,   -- given back on save (M.textOf)
     searchTerm = nil,
     undoStack  = {},
     undoMax    = 32,

@@ -95,6 +95,17 @@ disk(100000)
 ok = editor.save(F, "/d/new.txt", "hello")
 test("saved", ok == true and files["/d/new.txt"] == "hello")
 
+print("=== opening then saving gives back the same bytes ===")
+for _, c in ipairs({ "a\nb\n", "a\nb", "a\n\n", "\n", "", "one line", "x\r\ny\r\n", "\n\nz" }) do
+  local lines, nl = editor.splitLines(c)
+  local back = editor.textOf({ lines = lines, finalNewline = nl })
+  test(string.format("%q round-trips", c), back == c, string.format("%q", back))
+end
+do
+  local lines = editor.splitLines("a\nb\n")
+  test("a file's lines do not include a phantom empty last line", #lines == 2, #lines)
+end
+
 print("=== the quit prompt closes only on a save that landed ===")
 do
   local h = assert(io.open("tos/shell/panels/events.lua", "rb"))
@@ -134,6 +145,19 @@ do
     test("releases, a timeout and Shift are not an answer", i == 5, i)
     test("Y is", s2 == "key_down" and c2 == 89, tostring(c2))
   end
+end
+
+print("=== the other y/n prompts let Shift through too ===")
+do
+  local function src(p) local h = assert(io.open(p, "rb")); local t = h:read("a"); h:close(); return t end
+  local ev = src("tos/shell/panels/events.lua")
+  local at = ev:find("Unsaved! [y]Close [n]Cancel", 1, true)
+  test("F4's Unsaved prompt skips a bare modifier",
+    at and ev:sub(at, at + 400):find('s3 == "key_down" and c3 ~= 0', 1, true) ~= nil)
+  local fb = src("tos/shell/panels/filebrowser.lua")
+  local at2 = fb:find("local function promptYN", 1, true)
+  test("the file browser's y/n skips a bare modifier",
+    at2 and fb:sub(at2, at2 + 600):find('sig == "key_down" and ch ~= 0', 1, true) ~= nil)
 end
 
 print()

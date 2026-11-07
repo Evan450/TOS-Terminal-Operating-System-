@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**48 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**49 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 24 | Planned or under investigation. Most contributions belong here. |
+| Planned | 25 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (7) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (8) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (7) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -199,6 +199,12 @@ Specialized per-machine launcher profiles (doors, reactors).
 Tape "personal menu" ecosystem polish.
 
 ## Packages
+
+### Sign a release (operator)
+
+*Planned* · from the round *Found by round trips on the runner (2026-11-06)*
+
+SIGN A RELEASE (operator). main is the signed build 07bf795; every fix above reaches a bootstrap install only after `tos.py sign-release` and a main publish. Five of them lose data silently.
 
 ### Add-on versioning: decided 2026-09-12, not built
 

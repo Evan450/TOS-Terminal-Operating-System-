@@ -499,7 +499,8 @@ function M.run(S, deps)
               D.set(1, H, " Unsaved! [y]Close [n]Cancel", T.warning, T.bg)
               while true do
                 local s3, _, c3 = pullSignal()
-                if s3 == "key_down" then
+                -- Shift alone (char 0) is not an answer, so Y works.
+                if s3 == "key_down" and c3 ~= 0 then
                   if c3 == 121 or c3 == 89 then closeTab(); break else break end
                 end
               end
@@ -1049,7 +1050,7 @@ function M.run(S, deps)
                     if tab.path then
                       local normPath = (F.normalize and F.normalize(tab.path)) or tab.path
                       if canWrite(normPath) then
-                        local okS, why = editorMod.save(F, normPath, table.concat(lines, "\n"))
+                        local okS, why = editorMod.save(F, normPath, editorMod.textOf(tab))
                         if okS then
                           saved = true
                           refreshBrowser()
@@ -1090,7 +1091,7 @@ function M.run(S, deps)
               if tab.path then
                 local normPath = (F.normalize and F.normalize(tab.path)) or tab.path
                 if canWrite(normPath) then
-                  local okS, why = editorMod.save(F, normPath, table.concat(lines, "\n"))
+                  local okS, why = editorMod.save(F, normPath, editorMod.textOf(tab))
                   if okS then
                     tab.path = normPath
                     tab.modified = false
