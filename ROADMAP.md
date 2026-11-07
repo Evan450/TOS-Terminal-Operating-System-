@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**44 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**40 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 24 | Planned or under investigation. Most contributions belong here. |
+| Planned | 20 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 18 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (6) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (7) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (5) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (5) · [The project](#the-project) (4)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -365,11 +365,12 @@ DESIGN NOTES, so whoever builds it does not re-derive them:
 - BOOT PROFILES AND STRIPPING ARE DIFFERENT LAYERS and now interact: a profile gates what LOADS, stripping removes what EXISTS. A profile that would load a stripped feature must degrade with a clear line in the boot log, never panic. Today the load paths pcall-and-warn, which is most of the way there — but it has never been tested against a file that is genuinely absent rather than merely skipped.
 - NOT a package. `pkg uninstall` already covers add-ons; this is about the BASE IMAGE, which pkg does not own.
 
-### Next if still tight: i18n catalogs, and the display-layer work already queued in the OC…
+SIZED 2026-11-07 for the next pass (not started; the floor half is done):
 
-*Planned* · from the round *Memory round (2026-07-24)*
-
-NEXT if still tight: i18n catalogs, and the display-layer work already queued in the OC optimization playbook.
+- Groups found in the manifest's 135 non-floor entries: NETWORK (kernel/net/\*, netfs, netrepair, x25519, curve25519field, the four 20-\* rc.d services, shell/chat, chatapp, net/netfs/networking man pages), INTERNET (kernel/internet, pkgremote, compat/internet), JBOD (kernel/jbod + man page), I18N (kernel/i18n, usr/lang/\*), CLUSTER (shell/clustersetup). Tag them `group = "..."` in the manifest.
+- The closure test, beside test\_manifest\_floor: a file outside a group reaches the group's modules only through pcall(require, ...). A bare require across the line is the boot that panics after a strip.
+- The EEPROM anchor is not a blocker: it warns, never refuses, and stripping rewrites the manifest, so `strip` re-anchors when the machine was anchored. The signed release is unaffected (it pins what was published, not what is on this disk).
+- Seen-on-the-runner bar: strip NETWORK, reboot clean, `net` says it was stripped (not a Lua error), `verify` and `srm scan` quiet, then `srm repair --restore` puts it back and the manifest marks clear.
 
 ### Line disciplines — direction, not a task, and expensive
 
@@ -437,18 +438,6 @@ A READ-ONLY FOREIGN-VOLUME READER. Split from the entry above: now TOS can NAME 
 
 ## Shell and interface
 
-### Smaller, noted in passing
-
-*Planned* · from the round *Found running the 2026-10 work on the runner (2026-10-30)*
-
-SMALLER, NOTED IN PASSING.
-
-- The chat tab repaints in full on every keystroke (handleKey returns 3): about 16 keys a second on the runner's T2 APU. Past human speed, so not a bug, but a pasted line lags. DONE 2026-11-07: a key that only edits the input repaints the input row and asks for nothing more (chatapp.drawInput, test\_chat\_keystroke.lua). SEEN on the runner: "hello world" and two Backspaces showed "&gt; hello wor\_", the messages untouched.
-- DONE 2026-11-01: desktop.keys says the bound key, swapped in where it is drawn, so no catalog changed.
-- DONE 2026-11-01: the CLI path follows the key table. shell/quitkey.lua answers ^Q until a keys file exists, and only then loads shell.keys, so a machine that never bound quit pays almost nothing. Floorcheck: every README claim holds, 67K free at 1024K against \~65K. SEEN in CLI mode: after `keys set quit F4` ^Q left "abcdef" on the line and F4 cleared it; after `keys reset` ^Q did. kernel/init.lua's notice viewer stays as it is: `q` closes it whatever quit is bound to.
-- DONE 2026-11-01: the 297 test files that reported failure by marker alone exit non-zero now. test\_install\_preinit.lua is the one left: it carries the operator's uncommitted edit, so it was not touched.
-- check\_lootdisk.py reports radbridge 0.5.0 stale: rebuild the mod against this release and bump its version.
-
 ### The shadow buffer is tuned for TUI redraw
 
 *Planned* · from the round *Log wall / streaming-console appliance (2026-08-10)*
@@ -476,12 +465,6 @@ Deliberately NOT the kernel log ring: it is 64 entries (16/32 on low RAM) and it
 *Planned* · from the round *Log wall / streaming-console appliance (2026-08-10)*
 
 Open question worth settling first: is the feed LOCAL (this machine's own events) or REMOTE (mesh packets from the whole base)? Remote is the interesting one and the one that justifies a dedicated machine — but it means the log wall is a network endpoint, so it inherits the whole trust-tier question. A display that renders whatever any peer sends it is an injection surface, not a feature.
-
-### `Service`/`cron` are read-only in the Monitor tab
-
-*Planned* · from the round *Planned (near future)*
-
-`service`/`cron` are read-only in the Monitor tab; consider a dedicated services pane if it earns its keep.
 
 ### Split tabs — two or more tabs sharing one screen
 
@@ -537,28 +520,6 @@ GITHUB, NOW THAT CI HAS RUN. CI, Issue triage and Push on dev have all run green
 - DONE 2026-11-01, the operator's call: main and dev refuse force pushes and deletion. No pull requests or status checks are required, because publish.ps1 pushes directly and that must keep working. master and optional-utilities are unprotected, as asked.
 - triage's match thresholds (list 0.35, label 0.60) were tuned on CHANGELOG and ROADMAP text. Re-check them on the first real reports; there are none yet.
 - Dependabot opens its PRs against dev, which publish.ps1 replaces whole, so a bump is taken in the workflow source and the PR closed by hand, as PR #1 was. Nothing automates that, by the never-decline rule.
-
-### Build the survey suggestions in this order, after the bugs
-
-*Planned* · from the round *The os-survey suggestions, scheduled (2026-10-26)*
-
-BUILD THE SURVEY SUGGESTIONS IN THIS ORDER, AFTER THE BUGS. Work starts on this list only once the open \[!\] entries and the bug entries in WHAT NOBODY WROTE DOWN are done or waiting on the operator. Each line points at the entry that holds the design; the design stays there, this is only the order and the reason. Ordered by what each unblocks, then by value to an operator against its cost.
-
-1. ADDRESSABLE LOCAL IPC (survey 5; WHAT THE REST OF THE FIELD). DONE 2026-11-01 (kernel/ipc.lua); the cluster CLIs use it. rc-pilot hearing its robot still waits on its own decision.
-2. SELF-STRIPPING, FIRST STEP ONLY (Cynosure, \[\~\]). DONE 2026-11-01: 33 of 167 files carry floor = true, test\_manifest\_floor.lua proves them closed under require, and build/floorboot.py deletes the other 134 and boots: password set, a file written and read, doctor run. 472 KB, 488 KB on a managed disk, so the floor fits the 1 MB drive a full install is 330 KB over. The UI and the strip itself come later.
-3. DRY-RUN CAPABILITY ENFORCEMENT + AN AUDIT LOG OF DENIALS (survey 16; OCOS \[\*\]). THE LOG HALF DONE 2026-11-01: sandbox refusals reach `log` once per program and refusal, capped so a program cannot fill it. A mode that logs instead of refusing is the other half, and how that is exposed is the operator's. DONE 2026-11-05, the operator's answer "build it, root-only, per package": `pkg audit <pkg>` runs a package under a sandbox that records what it reaches for instead of refusing (0dbc1ee).
-4. A RECOVERY MENU IN THE BIOS, VIA THE SPLIT (survey 1 + 17). DONE 2026-11-01 in stage 2 (kernel/recovery.lua), seen restoring a machine that could not boot.
-5. A DRIVER REGISTRY WITH PER-DEVICE PROBING (survey 4). PARKED 2026-11-01 until a second driver exists: see its entry.
-6. CONSOLIDATE THE SECURITY POLICY INTO ONE FILE (KittenOS). DONE 2026-11-01: kernel/policy.lua, failing closed.
-7. SHARED getopt (OCOS \[\*\]). DONE 2026-11-01: helpers.getopt, on the commands where a flag could become a file name.
-8. LOCALISE THE INSTALLER (survey 10). DONE 2026-11-01.
-9. MOUNT PACKAGES AS READ-ONLY ARCHIVES, IN mtar (survey 2 + 18). DONE 2026-11-01: `pkg compact` / `pkg expand`, kernel/pkgfs.lua.
-10. COPY-ON-WRITE OVERLAY MOUNTS (survey 3). DONE 2026-11-01: the `overlay` command, on the root, and the read-only boot offer.
-11. A SHELL LEXER + PARSER for &amp;&amp; and || (OCOS \[\*\]). DONE 2026-11-07: both chain as in other shells, in both shells (see its entry).
-12. /proc-STYLE READ-ONLY INTROSPECTION (Cynosure \[\*\]).
-13. FAR: RUN-THIS-ONCE CONFINEMENT (survey 11), "ASK" AS A THIRD STATE (KittenOS), LINE DISCIPLINES (survey 19), the LOG WALL appliance (settle its local-or-feed question first).
-
-NOT ON THIS LIST, because they are the operator's to decide, not to build: the boot battery in CI (it runs on the headless runner today; the CI host is the open question), and PUT THE COMPAT NUMBER IN THE README (an editorial call).
 
 ### Error registry: the rest of the migration
 
