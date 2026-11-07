@@ -1212,8 +1212,31 @@ return function(C, S, deps)
         out, info = vmod.decrypt(data, passphrase)
       end
       if not out then o("Failed: " .. tostring(info), T.error); return end
-      local wOk, wErr = writeBytes(path, out)
-      if not wOk then o("Write failed: " .. tostring(wErr), T.error); return end
+      --! IN PLACE WITHOUT A WINDOW TO LOSE THE FILE. writeFile opens with
+      --! truncation, so a write that ran out of room left neither the old
+      --! file nor a whole new one, and the plaintext lived only in this
+      --! command's memory. Encrypting grows a file by ~130 bytes: on a disk
+      --! with less free than that, the file was destroyed. Now, with room
+      --! for a whole second copy, the write is atomic (temp, then rename);
+      --! with room only once the old file is gone, it is in place as before
+      --! (truncation frees the old bytes first, so that cannot run short);
+      --! with neither, nothing is touched. (test_vault_in_place.lua)
+      local free = secfs and secfs.spaceFree and tonumber((secfs.spaceFree(path)))
+      local wOk, wErr
+      if free and free >= #out + 1024 and secfs.writeFileAtomic then
+        wOk, wErr = secfs.writeFileAtomic(path, out, sess)
+      elseif free and free + #data < #out then
+        o(string.format("Not enough room to write it back: %d bytes short. Nothing was changed.",
+          #out - free - #data), T.error)
+        return
+      else
+        wOk, wErr = writeBytes(path, out)
+      end
+      -- fs.writeFile's reason already starts "Write failed: ".
+      if not wOk then
+        o("Write failed: " .. tostring(wErr):gsub("^Write failed: ", ""), T.error)
+        return
+      end
       o(string.format("%s in place: %d -> %d bytes",
         sub:sub(1, 7) == "encrypt" and "Encrypted" or "Decrypted",
         #data, #out), T.highlight)

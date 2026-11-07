@@ -379,8 +379,19 @@ function log.flush()
   elseif _logFs.writeFile then
     -- Last-resort: read+concat+write. Slowest; only if neither appendFile
     -- nor open is available on the proxy in question.
-    local existing = _logFs.readFile and _logFs.readFile(_logPath) or ""
-    local ok, err = _logFs.writeFile(_logPath, (existing or "") .. payload)
+    --! A failed read is not an empty log: rewriting with `or ""` kept only
+    --! the new entries. An absent log starts empty; one that exists and
+    --! cannot be read is left alone. (test_log_fallback_append.lua)
+    local existing = ""
+    if _logFs.exists == nil or _logFs.exists(_logPath) then
+      local data, rerr = nil, nil
+      if _logFs.readFile then data, rerr = _logFs.readFile(_logPath) end
+      if data == nil and _logFs.exists then
+        return false, "cannot read the log to append to it: " .. tostring(rerr)
+      end
+      existing = data or ""
+    end
+    local ok, err = _logFs.writeFile(_logPath, existing .. payload)
     if not ok then return false, err end
   else
     return false, "fs supports neither appendFile, open, nor writeFile"

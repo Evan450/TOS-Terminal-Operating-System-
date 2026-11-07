@@ -20,8 +20,12 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 140 rounds of work:
+Everything since v1.5.0, in 144 rounds of work:
 
+- [The editor's "Save?" on the way out can be answered](#the-editors-save-on-the-way-out-can-be-answered)
+- [A failed save in the editor keeps the file and the text](#a-failed-save-in-the-editor-keeps-the-file-and-the-text)
+- [vault in place never destroys the file on a full disk](#vault-in-place-never-destroys-the-file-on-a-full-disk)
+- [The editor never opens a file it could not read as an empty one](#the-editor-never-opens-a-file-it-could-not-read-as-an-empty-one)
 - [backup restores every file, or says which it did not](#backup-restores-every-file-or-says-which-it-did-not)
 - [A question of several lines shows whole at the command line](#a-question-of-several-lines-shows-whole-at-the-command-line)
 - [The best copy of a dependency wins, not the first one found](#the-best-copy-of-a-dependency-wins-not-the-first-one-found)
@@ -162,6 +166,22 @@ Everything since v1.5.0, in 140 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### The editor's "Save?" on the way out can be answered
+
+Leaving the editor with unsaved changes asks "Save? [y]es [n]o [c]ancel" and waits for the answer. It read the next signal of any kind, which is the release of the quit key, so the question vanished before it could be answered and the y went into the text. A failed save now says so on the editor's own status line ("NOT SAVED: not enough room: 13 bytes short"), where it can be seen; the message went to a line the editor covers.
+
+### A failed save in the editor keeps the file and the text
+
+Saving in the editor never leaves a cut-off file. A save that ran out of room truncated the file first; now it is atomic when there is room for a second copy, in place when the old file's own space is enough, and otherwise refused with how many bytes short it is, leaving the file alone. Answering yes to "Save?" on the way out closes the editor only once the save has landed; it closed whatever happened, so a failed save lost the text as well. A refusal says why instead of "Save failed!".
+
+### vault in place never destroys the file on a full disk
+
+`vault encrypt-in-place` on a full disk refuses and changes nothing. It truncated the file, ran out of room writing the slightly larger encrypted copy, and left a 0-byte file, with the plaintext gone: seen on a full floppy. With room for a second copy the write is now atomic, with room only once the old file is gone it is in place as before, and otherwise it says "Not enough room to write it back: N bytes short. Nothing was changed."
+
+### The editor never opens a file it could not read as an empty one
+
+The editor refuses to open a file it cannot read, and says why. It opened it as an empty buffer instead, and saving wrote that over the real file. On a machine with 1.5 MB, `edit` on a 400 KB file ran out of memory reading it, showed an empty buffer with no warning, and one Ctrl+S left the file at 0 bytes. It now says "Cannot open ...: not enough memory ... (not opened, so nothing can be saved over it)", tagged E-202 so `why` explains it, and the file is untouched.
 
 ### backup restores every file, or says which it did not
 

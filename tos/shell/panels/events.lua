@@ -1027,18 +1027,42 @@ function M.run(S, deps)
             elseif isQuit(ch, co, true) then
               if tab.modified then
                 D.fill(1, H, W, 1, " ", T.fg, T.bg); D.set(1, H, " Save? [y]es [n]o [c]ancel", T.warning, T.bg)
-                local s2, _, c2 = pullSignal()
+                --! THE ANSWER IS A KEY PRESS WITH A CHARACTER. This read ONE
+                --! signal and acted only if it was a key_down, so releasing
+                --! the quit key (key_up), a timer, or pullSignal's own 0.1 s
+                --! timeout dismissed the prompt unanswered, and the y went
+                --! into the text. Seen on the headless runner: ^Q, y, and the
+                --! cursor moved one column. Shift alone (char 0) is not an
+                --! answer either, so Y works. (test_editor_save.lua)
+                local s2, c2 = nil, nil
+                repeat
+                  local sig, _, ch = pullSignal()
+                  if sig == "key_down" and ch and ch ~= 0 then s2, c2 = sig, ch end
+                until s2
                 if s2 == "key_down" then
                   if c2 == 121 or c2 == 89 then
                     -- #SEC H8 — re-check at save (see ch==19 branch).
+                    --! The tab closes only once the save has landed. It
+                    --! closed whatever writeFile answered, so a save that
+                    --! failed threw the text away with no word said.
+                    local saved = not tab.path
                     if tab.path then
                       local normPath = (F.normalize and F.normalize(tab.path)) or tab.path
                       if canWrite(normPath) then
-                        F.writeFile(normPath, table.concat(lines, "\n"))
-                        refreshBrowser()
+                        local okS, why = editorMod.save(F, normPath, table.concat(lines, "\n"))
+                        if okS then
+                          saved = true
+                          refreshBrowser()
+                        else
+                          S.lastOut = { "Save failed: " .. tostring(why)
+                            .. " -- not closed, your text is still here", T.error }
+                          -- lastOut is not drawn while the editor is up; the
+                          -- status line is, until the next key.
+                          tab.flash = "NOT SAVED, not closed: " .. tostring(why)
+                        end
                       end
                     end
-                    closeTab(); draw = 3
+                    if saved then closeTab(); draw = 3 else draw = 1 end
                   elseif c2 == 110 or c2 == 78 then closeTab(); draw = 3
                   else draw = 1 end
                 end
@@ -1066,12 +1090,16 @@ function M.run(S, deps)
               if tab.path then
                 local normPath = (F.normalize and F.normalize(tab.path)) or tab.path
                 if canWrite(normPath) then
-                  if F.writeFile(normPath, table.concat(lines, "\n")) then
+                  local okS, why = editorMod.save(F, normPath, table.concat(lines, "\n"))
+                  if okS then
                     tab.path = normPath
                     tab.modified = false
                     S.lastOut = { "Saved: " .. tab.label, T.highlight }
                     refreshBrowser()
-                  else S.lastOut = { "Save failed!", T.error } end
+                  else
+                    S.lastOut = { "Save failed: " .. tostring(why), T.error }
+                    tab.flash = "NOT SAVED: " .. tostring(why)   -- the status line, seen
+                  end
                 end
               elseif not tab.path then S.lastOut = { "No path set", T.error } end; draw = 1
             elseif ch == 6 then

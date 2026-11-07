@@ -77,6 +77,30 @@ function M.openLiveTab(S, label, refreshFn, interval)
   return tab
 end
 
+--! SAVING NEVER COSTS THE FILE. writeFile opens with truncation, so a
+--! save that ran out of room (a full disk, a file that grew) left a cut-off
+--! file, and the quit prompt's "[y]es" ignored the answer and closed the
+--! tab, so the text went too. With room for a whole second copy the save
+--! is atomic (temp, then rename); with room only once the old bytes are
+--! freed it is in place, which cannot run short; with neither nothing is
+--! touched. Returns true, or false and why. (test_editor_open_unreadable.lua)
+function M.save(F, path, text)
+  local free = F.spaceFree and tonumber((F.spaceFree(path))) or nil
+  local ok, why
+  if F.writeFileAtomic and (free == nil or free >= #text + 1024) then
+    ok, why = F.writeFileAtomic(path, text)
+  else
+    local old = 0
+    if F.exists and F.exists(path) and F.size then old = tonumber((F.size(path))) or 0 end
+    if free and free + old < #text then
+      return false, string.format("not enough room: %d bytes short", #text - free - old)
+    end
+    ok, why = F.writeFile(path, text)
+  end
+  if ok then return true end
+  return false, (tostring(why or "the write was refused"):gsub("^Write failed: ", ""))
+end
+
 function M.openEditTab(S, path)
   local existing = tabs.find(S, "edit", path)
   if existing then
@@ -86,7 +110,21 @@ function M.openEditTab(S, path)
   if path and S.F.exists(path) and not helpers.canRead(S, path) then return end
   local lines = { "" }
   if path and S.F.exists(path) then
-    local content = S.F.readFile(path) or ""
+    --! A FILE THAT CANNOT BE READ IS NOT OPENED AS AN EMPTY ONE. This was
+    --! `readFile(path) or ""`, and readFile answers nil on a failed read --
+    --! including "not enough memory", which a large file on a small machine
+    --! hits. The editor then showed a blank buffer for a file that has
+    --! contents, and saving it wrote the blank (or whatever was typed) over
+    --! the real file. An empty file reads as "", so it still opens.
+    --! (test_editor_open_unreadable.lua)
+    local content, why = S.F.readFile(path)
+    if content == nil then
+      -- The reason without Lua's "file.lua:80: " in front of it.
+      why = tostring(why or "it could not be read"):gsub("^[^:]*%.lua:%d+: ", "")
+      local tag = why:find("not enough memory", 1, true) and "  [E-202 ERR_OUT_OF_MEMORY]" or ""
+      return helpers.fail(S, "Cannot open " .. tostring(path) .. ": " .. why
+        .. " (not opened, so nothing can be saved over it)" .. tag)
+    end
     lines = {}
     for l in content:gmatch("([^\n]*)\n?") do lines[#lines + 1] = l end
     if #lines == 0 then lines[1] = "" end
