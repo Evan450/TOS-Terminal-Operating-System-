@@ -185,10 +185,32 @@ function M.run(ctx)
     return computer.pullSignal(0.25)
   end
 
+  --- A prompt's lines: every line but the last, and the last one.
+  -- "a\nb\nAsk? " -> { "a", "b" }, "Ask? ". No newline: {}, prompt.
+  local function splitPrompt(prompt)
+    prompt = tostring(prompt or "")
+    local lead = {}
+    local last = prompt:match("\n([^\n]*)$")
+    if not last then return lead, prompt end
+    for l in prompt:sub(1, #prompt - #last):gmatch("([^\n]*)\n") do lead[#lead + 1] = l end
+    return lead, last
+  end
+
   --- Read one line, with history, cursor movement and tab completion.
   -- @param prompt  string
   -- @param mask    true to echo asterisks (passwords)
   local function readLine(prompt, mask, maxLen)
+    --! ONE ROW IS ALL A PROMPT GETS, so a prompt with newlines in it is
+    --! printed above the input line and only its last line is kept as the
+    --! prompt. `confirm` and `promptInput` hand their whole message here,
+    --! and a message of several lines (pkg's "Which copy?", the media
+    --! scan's "Install X?\n\nFrom: ...") was painted as one row: sliced to
+    --! its last 80 characters, newlines and all, so the question was cut at
+    --! "[y/" on the headless runner and the operator could not see what was
+    --! being asked. (test_cli_prompt_lines.lua)
+    local lead
+    lead, prompt = splitPrompt(prompt)
+    for _, l in ipairs(lead) do o(l) end
     maxLen = maxLen or 256
     local buf, cur = "", 1
     local histIdx = #S.cmdHistory + 1

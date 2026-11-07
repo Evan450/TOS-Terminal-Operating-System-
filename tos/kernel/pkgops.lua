@@ -1523,6 +1523,131 @@ function pkg.plan(repoDir, targetName, opts)
   -- times without re-reading the same package.lua. chosenDir remembers
   -- WHICH root answered, so the install reads the same copy.
   local manifestCache, chosenDir, chosenPath, pinMiss = {}, {}, {}, {}
+
+  --! THE WINNER ORDER (federated repos slice 3). With several acceptable
+  --! copies of a dependency the first root to have one used to win, so
+  --! which disk was mounted first decided what installed. Now every root is
+  --! read and the copies are ranked as docs/FEDERATED-REPOS.md decided:
+  --!   1. one copy that satisfies EVERY requirer (the passes below re-choose
+  --!      once all the constraints are known);
+  --!   2. higher trust: signed by a trusted key, then by any key, then not;
+  --!   3. newer version;
+  --!   4. less disk.
+  --! Still equal is a tie: opts.chooseCopy(name, copies) answers it, and
+  --! without one the earliest root keeps it and the plan says so. The
+  --! signer read here is the one the .sig CLAIMS; install verifies it, so a
+  --! false claim can lose an install but never win one. The target itself
+  --! comes from repoDir, the copy the operator pointed at, and so does a
+  --! dependency shipped beside it there.
+  --! (test_pkg_winner_order.lua)
+  local wantedBy = {}         -- dependency -> { constraint = true, ... }
+  local ties = {}             -- dependency -> { chosen = dir, over = { dirs } }
+  --! The passes below re-run lookup, so without this the operator would be
+  --! asked the same question once per pass. Kept across passes on purpose:
+  --! the same name between the same copies is the same question.
+  local answered = {}         -- name \0 dir \0 dir ... -> the dir chosen, or false
+  local okSign, signMod = pcall(require, "kernel.pkgsign")
+  local function trustOf(c)
+    if c.trust == nil then
+      c.key = claimedKey(c.path)
+      local trusted = c.key and okSign and type(signMod) == "table" and signMod.labelForKey
+        and signMod.labelForKey(c.key) ~= nil
+      c.trust = trusted and 2 or (c.key and 1 or 0)
+    end
+    return c.trust
+  end
+  -- Every file under a package directory, as (path below dir, full path).
+  local function eachFile(dir, fn)
+    local function walk(d, rel, depth)
+      if depth > 6 then return end
+      local okL, list = pcall(fs.list, d)
+      if not okL or type(list) ~= "table" then return end
+      for _, n in ipairs(list) do
+        local bare = n:gsub("/$", "")
+        local p = fs.join(d, bare)
+        if n:sub(-1) == "/" then walk(p, rel .. bare .. "/", depth + 1)
+        else fn(rel .. bare, p) end
+      end
+    end
+    walk(dir, "", 0)
+  end
+  local function sizeOf(c)
+    if c.size == nil then
+      local total = 0
+      eachFile(c.dir, function(_, p) total = total + (tonumber(fs.size(p)) or 0) end)
+      c.size = total
+    end
+    return c.size
+  end
+  --! Identical copies are not a tie. Different manifest bytes settle it at
+  --! once. The same manifest settles it only when the manifest carries
+  --! hashes, because install checks every file against them; without, two
+  --! hand-made copies with one package.lua and different files were found
+  --! "identical" on the headless runner, and the operator was never asked.
+  --! So those are compared file by file -- only ever between two copies
+  --! already equal on trust, version and size, which is rare and small.
+  local function sameCopy(a, b)
+    if a.bytes ~= b.bytes then return false end
+    if type(a.m.hashes) == "table" and next(a.m.hashes) ~= nil then return true end
+    local fa, nA = {}, 0
+    eachFile(a.dir, function(rel, p) fa[rel] = fs.readFile(p) or false; nA = nA + 1 end)
+    local same, nB = true, 0
+    eachFile(b.dir, function(rel, p)
+      nB = nB + 1
+      if same and fa[rel] ~= (fs.readFile(p) or false) then same = false end
+    end)
+    return same and nA == nB
+  end
+  -- >0 when a is the better copy, <0 when b is, 0 for a tie.
+  local function better(a, b)
+    local ta, tb = trustOf(a), trustOf(b)
+    if ta ~= tb then return ta - tb end
+    local v = pkg.compareVersion(a.m.version or "0.0.0", b.m.version or "0.0.0")
+    if v ~= 0 then return v end
+    local sa, sb = sizeOf(a), sizeOf(b)
+    if sa ~= sb then return sb - sa end
+    return 0
+  end
+  local function pick(name, cands)
+    local best, tied = cands[1], {}
+    for i = 2, #cands do
+      local d = better(cands[i], best)
+      if d > 0 then best, tied = cands[i], {}
+      elseif d == 0 and not sameCopy(cands[i], best) then tied[#tied + 1] = cands[i] end
+    end
+    if #tied > 0 then
+      local all = { best }
+      for _, c in ipairs(tied) do all[#all + 1] = c end
+      local chosen = nil
+      if type(opts.chooseCopy) == "function" then
+        local dirs = {}
+        for _, c in ipairs(all) do dirs[#dirs + 1] = c.dir end
+        local key = name .. "\0" .. table.concat(dirs, "\0")
+        local answer = answered[key]
+        if answer == nil then
+          local okC, a = pcall(opts.chooseCopy, name, dirs)
+          answer = (okC and type(a) == "string") and a or false
+          answered[key] = answer
+        end
+        -- Only one of the offered copies counts as an answer; anything
+        -- else keeps the earliest, as if nobody had been asked.
+        for _, c in ipairs(all) do if c.dir == answer then chosen = c end end
+      end
+      best = chosen or best
+      local over = {}
+      for _, c in ipairs(all) do if c ~= best then over[#over + 1] = c.dir end end
+      ties[name] = { chosen = best.dir, over = over, asked = chosen ~= nil }
+    end
+    return best
+  end
+  local function satisfiesAll(name, version, constraint)
+    if constraint and not pkg.satisfiesConstraint(version, constraint) then return false end
+    for c in pairs(wantedBy[name] or {}) do
+      if not pkg.satisfiesConstraint(version, c) then return false end
+    end
+    return true
+  end
+
   local function lookup(name, req, requirer)
     if installed[name] then return installed[name] end
     if manifestCache[name] then return manifestCache[name] end
@@ -1531,10 +1656,11 @@ function pkg.plan(repoDir, targetName, opts)
     -- fallback: if nothing better turns up it is chosen, and the plan
     -- reports the version contradiction rather than "unknown package".
     local fallback
+    local cands = {}
     for _, root in ipairs(roots) do
       local pkgSrc = fs.join(root, name)
       if fs.exists(pkgSrc) then
-        local m, _, mPath = loadAnyManifest(pkgSrc)
+        local m, _, mPath, mBytes = loadAnyManifest(pkgSrc)
         -- #SEC H-20 — the directory name is the identity that was asked
         -- for; the manifest's `name` is whatever the disk says. With more
         -- than one root in play, a disk could otherwise answer for any
@@ -1551,17 +1677,33 @@ function pkg.plan(repoDir, targetName, opts)
               log.warn("pkg", "Passing over '" .. name .. "' in " .. root .. ": "
                 .. tostring(requirer) .. " requires it signed by another key")
             end
-          elseif constraint and not pkg.satisfiesConstraint(m.version or "0.0.0", constraint) then
-            fallback = fallback or { m = m, dir = pkgSrc, path = mPath }
-          else
+          elseif not satisfiesAll(name, m.version or "0.0.0", constraint) then
+            -- Satisfying whoever asked now beats satisfying nobody, when no
+            -- copy satisfies everyone; the plan names the rest.
+            local meetsThis = not constraint or pkg.satisfiesConstraint(m.version or "0.0.0", constraint)
+            if not fallback or (meetsThis and not fallback.meetsThis) then
+              fallback = { m = m, dir = pkgSrc, path = mPath, meetsThis = meetsThis }
+            end
+          elseif name == targetName or root == roots[1] then
+            -- The target is the copy the operator pointed at, and so is a
+            -- dependency shipped beside it on that disk: a self-contained
+            -- disk installs what it was built and tested with, as slice 1
+            -- promised. The ranking decides among the OTHER disks.
             manifestCache[name], chosenDir[name], chosenPath[name] = m, pkgSrc, mPath
             return m
+          else
+            cands[#cands + 1] = { m = m, dir = pkgSrc, path = mPath, bytes = mBytes }
           end
         elseif m and log then
           log.warn("pkg", "Ignoring '" .. tostring(name) .. "' in " .. root ..
             ": manifest name '" .. tostring(m.name) .. "' does not match directory")
         end
       end
+    end
+    if #cands > 0 then
+      local best = pick(name, cands)
+      manifestCache[name], chosenDir[name], chosenPath[name] = best.m, best.dir, best.path
+      return best.m
     end
     if fallback then
       manifestCache[name], chosenDir[name], chosenPath[name] = fallback.m, fallback.dir, fallback.path
@@ -1570,7 +1712,33 @@ function pkg.plan(repoDir, targetName, opts)
     return nil
   end
 
-  local order, resolveErr = pkg.resolveInstallOrder(targetName, lookup)
+  -- The first pass learns every constraint on every dependency; the next
+  -- re-chooses with all of them known, so one copy that satisfies everyone
+  -- beats the first that satisfied whoever asked first. A third pass only if
+  -- the re-chosen copies brought requirements of their own.
+  local order, resolveErr
+  for _ = 1, 3 do
+    order, resolveErr = pkg.resolveInstallOrder(targetName, lookup)
+    if not order then break end
+    local changed = false
+    for _, pname in ipairs(order) do
+      local pm = manifestCache[pname] or installed[pname]
+      if type(pm) == "table" and type(pm.requires) == "table" then
+        for _, req in ipairs(pm.requires) do
+          local dep, c = parseRequire(req)
+          if dep and type(c) == "string" and c ~= "" then
+            wantedBy[dep] = wantedBy[dep] or {}
+            if not wantedBy[dep][c] then wantedBy[dep][c] = true; changed = true end
+          end
+        end
+      end
+    end
+    if not changed then break end
+    for k in pairs(manifestCache) do manifestCache[k] = nil end
+    for k in pairs(chosenDir) do chosenDir[k] = nil end
+    for k in pairs(chosenPath) do chosenPath[k] = nil end
+    for k in pairs(ties) do ties[k] = nil end
+  end
   if not order then
     local missing = tostring(resolveErr):match("^unknown package: (.+)$")
     local miss = missing and pinMiss[missing]
@@ -1593,7 +1761,8 @@ function pkg.plan(repoDir, targetName, opts)
     end
   end
 
-  local plan = { order = order, dirs = chosenDir, expectKey = {}, contradictions = {} }
+  local plan = { order = order, dirs = chosenDir, expectKey = {}, contradictions = {},
+                 ties = ties }
   local function contradiction(kind, name, text)
     plan.contradictions[#plan.contradictions + 1] =
       { kind = kind, name = name, text = text, id = kind .. "|" .. tostring(name) }
@@ -1718,7 +1887,9 @@ function pkg.installWithDeps(repoDir, targetName, opts)
     end
   end
 
-  return true, { installed = installedList, skipped = skippedList }
+  -- ties: a dependency more than one copy could have answered, equal on
+  -- every rule, and which one went in (pkg.plan's plan.ties).
+  return true, { installed = installedList, skipped = skippedList, ties = plan.ties or {} }
 end
 
 --- Uninstall a package by name.
@@ -2051,6 +2222,7 @@ function pkg.installByName(targetName, opts)
     allowUnsigned   = opts.allowUnsigned,    -- `pkg trust require on`'s, for one install
     extraRoots      = opts.extraRoots,  -- deps are searched for here too
     force           = opts.force,       -- past the plan's contradictions and file conflicts
+    chooseCopy      = opts.chooseCopy,  -- asks which copy wins a tie (pkg.plan)
   })
 end
 

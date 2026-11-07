@@ -998,6 +998,50 @@ return function(C, S, deps)
       elseif #names > 1 then mode = "many"
       else mode = "name" end
 
+      --! A TIE between copies of a dependency (federated slice 3: equal
+      --! trust, version and size, different contents) is the operator's
+      --! to answer, so pkg.plan asks this. One box per other copy, each
+      --! naming both whole paths in the box itself, since the panels shell
+      --! draws o() lines only when the command ends; the first yes wins.
+      --! No, Esc, --yes and a seat with no way to ask all keep the
+      --! earliest copy, and the install says which copy went in either
+      --! way. (test_pkg_winner_order.lua, test_pkg_tie_shell.lua)
+      local function chooseCopy(name, dirs)
+        if assumeYes or not (confirmBox or promptInput) then return nil end
+        for i = 2, #dirs do
+          local yes
+          if confirmBox then
+            yes = confirmBox("Two copies of '" .. tostring(name) .. "' tie: the same "
+              .. "trust, version and size, but different contents.\n\nKept:\n  "
+              .. tostring(dirs[1]) .. "\nOther:\n  " .. tostring(dirs[i])
+              .. "\n\nInstall the other copy instead?",
+              { title = "Which copy?", severity = "install", yes = "Use other", no = "Keep" })
+          else
+            local typed = promptInput("Use " .. tostring(dirs[i]) .. " for " .. tostring(name)
+              .. " instead of " .. tostring(dirs[1]) .. "? [y/N]: ", 4) or ""
+            yes = typed:lower() == "y" or typed:lower() == "yes"
+          end
+          if yes then return dirs[i] end
+        end
+        return dirs[1]
+      end
+      local function tieLines(ties, indent, planned)
+        local tn = {}
+        for n in pairs(ties or {}) do tn[#tn + 1] = n end
+        table.sort(tn)
+        -- One path per line: two /mnt paths and the words between them
+        -- overrun 80 columns, and a wrapped path is hard to read back.
+        for _, n in ipairs(tn) do
+          local t = ties[n]
+          o(indent .. "tie: " .. n .. " from " .. tostring(t.chosen)
+            .. (t.asked and " (your choice)" or " (the earliest)"), T.dim)
+          for _, d in ipairs(t.over or {}) do o(indent .. "     over " .. tostring(d), T.dim) end
+        end
+        if planned and #tn > 0 then
+          o(indent .. "(a real install asks which copy to use; --yes keeps the earliest)", T.dim)
+        end
+      end
+
       -- Shared driver for the non-interactive modes.
       local function installList(list)
         if #list == 0 then o("Nothing to install.", T.dim); return end
@@ -1025,6 +1069,7 @@ return function(C, S, deps)
                   and (pn .. " (installed)") or pn
               end
               if #steps > 1 then o("    order: " .. table.concat(steps, ", "), T.dim) end
+              tieLines(plan.ties, "    ", true)
               for _, c in ipairs(plan.contradictions or {}) do
                 o("    ! " .. tostring(c.text), T.warning)
               end
@@ -1050,13 +1095,14 @@ return function(C, S, deps)
         for _, n in ipairs(list) do
           local ok2, summary = pkgMod.installByName(n,
             { session = helpers.sessionOf(S), allowUnverified = allowUnverified,
-              allowUnsigned = allowUnsigned, force = force })
+              allowUnsigned = allowUnsigned, force = force, chooseCopy = chooseCopy })
           if ok2 then
             okN = okN + 1
             o(string.format("  %-20s installed%s", n,
               (#summary.skipped > 0)
                 and (" (deps present: " .. table.concat(summary.skipped, ", ") .. ")")
                 or ""), T.highlight)
+            tieLines(summary.ties, "    ")
           else
             failN = failN + 1
             o(string.format("  %-20s FAILED: %s", n, tostring(summary)), T.error)
@@ -1119,9 +1165,10 @@ return function(C, S, deps)
           { licenseKey = licenseKey, session = helpers.sessionOf(S),
             allowUnverified = allowUnverified,    -- #SEC CR-5 + hash gate
             allowUnsigned = allowUnsigned,        -- + signature gate
-            force = force })
+            force = force, chooseCopy = chooseCopy })
         if ok2 then
           o(string.format("Installed: %s", table.concat(summary.installed, ", ")), T.highlight)
+          tieLines(summary.ties, "  ")
           serviceHint(summary.installed)
           if #summary.skipped > 0 then
             o(string.format("Skipped (already present): %s",

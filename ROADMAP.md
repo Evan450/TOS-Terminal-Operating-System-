@@ -2,16 +2,16 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**49 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**48 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 2 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 25 | Planned or under investigation. Most contributions belong here. |
+| Planned | 24 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 22 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (8) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (5)
+**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (4) · [Security and accounts](#security-and-accounts) (4) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (7) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (8) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
@@ -86,6 +86,7 @@ IN-WORLD CHECKS THE HEADLESS RUNNER CANNOT DO. Belongs with NEXT REAL-MINECRAFT 
 - `stock` on a transposer, then a slot number from `inventory` against the same stack through inv.stacks().
 - `components` with OpenSecurity's readers and door controller, an adapter on an ME controller and on an NTM battery, and the OpenGlasses terminal, recording the exact names the candidates below need.
 - after the key-table fix: `keys set quit F4`, then the picker, a delete confirm, both mail UIs, intercom and `rbmk skala`.
+- docs/screenshots/rbmk.png: the supervisor's core map on a linked console, 640x400 at 80x25 (SHOTS.md has the method). The README shows files.png in its place until it exists.
 
 ### Next real-minecraft round
 
@@ -218,6 +219,10 @@ UPDATES FROM REPOS, BUILT 2026-11-05, ahead of the rest because it was a hole, n
 Still not built: known repos (an upgrade has no floor, so it only reads configured ones), the winner order, private copies, mirror consensus.
 
 WINNER ORDER DRAFTED 2026-11-06, NOT MERGED (the draft is kept apart from the release until it is finished). pkg.plan ranks every root's copy (shared copy in passes, claimed-signer trust, newer, smaller; ties to opts.chooseCopy or the earliest root, recorded in plan.ties), with slice 1's own-disk rule above it; the decisions are in docs/FEDERATED-REPOS.md. The existing package tests pass on it. Before merging: its own test (test\_pkg\_winner\_order.lua, named in the code, not written), the full suite and selftest, ties shown by `pkg install --dry-run`, and the shell passing a chooseCopy that asks.
+
+WINNER ORDER MERGED 2026-11-06 with all four: test\_pkg\_winner\_order.lua (47; 22 of its first 42 fail on the old first-found code), the shell's chooseCopy (a box per other copy, --yes and seats that cannot ask keep the earliest; test\_pkg\_tie\_shell.lua, 26), ties in --dry-run and in every install's output, suite and selftest green. Two things the draft had wrong, both found by running it: the passes asked the operator the same question once per pass (answers are remembered now), and two unhashed copies with one package.lua and different files counted as identical, so a real tie was never asked (the files are compared when the manifest has no hashes). SEEN on the headless runner: --dry-run showed the tie, the box named both paths, "Use other" installed the other disk's file.
+
+Still not built: known repos for upgrades, private copies, mirror consensus, upgrading a shared dependency.
 
 FOUND ON THE WAY, the operator's call: a fresh machine does not trust the Optional Utilities key, so everything fetched from the official repo says "valid, but the key was not trusted at install time". Shipping it trusted would make that read "trusted", and would make the key the one that decides what installs without asking.
 
@@ -379,12 +384,6 @@ NEXT if still tight: i18n catalogs, and the display-layer work already queued in
 *Planned* · from the round *Polish - operator feedback (round 4)*
 
 Support-ceiling policy (design decision, operator-approved direction): instead of degrading everything for T1 GPUs / tiny RAM, set a floor - refuse to boot (clean message) or fall back to the CLI shell on hardware below it. Sweep the T1/low-RAM special cases once decided.
-
-### Screenshots
-
-*Planned* · from the round *Planned (near future)*
-
-Screenshots. There is not one image in the repository, and every venue worth posting in is one where the screenshot IS the post. Six stills plus a boot GIF; the shot list, the capture method and the publish prerequisite are in docs/screenshots/SHOTS.md. The README already has the markup, commented out, waiting for the files.
 
 ### Line disciplines — direction, not a task, and expensive
 

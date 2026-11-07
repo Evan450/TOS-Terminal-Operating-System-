@@ -1150,6 +1150,16 @@ in, dependencies first, and every contradiction the install would be refused
 for — a dependency at the wrong version, or one pinned to a different
 publisher. With `--force` as well, it says the install would go past them.
 
+When a dependency is on more than one disk or repository, the install takes
+one copy that every package needing it can use, then the copy signed by a
+trusted key, then the newer, then the smaller. A dependency on the same disk
+as the package you asked for always wins, so a self-contained disk installs
+what it was built with. Two copies equal on all of that but with different
+contents are a *tie*: `pkg install` asks which one to use, showing both
+paths, and keeps the earliest if you say no. `--yes` keeps the earliest
+without asking, `--dry-run` shows the tie without asking, and the install
+prints which copy went in (`tie: lib from /mnt/a/lib (your choice)`).
+
 An option `pkg install`, `pkg upgrade` or `pkg fetch` does not know is refused
 and nothing is done, with the list of options it does know. A misspelt
 `--dry-run` must not install anything.

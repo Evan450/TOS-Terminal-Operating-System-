@@ -168,14 +168,17 @@ Local sources only (the built-in repo roots, mounted media, `extraRoots`). No ne
 
 **Built 2026-11-05:** update checks against configured repos. `pkg outdated` lists a newer version a configured repo serves, and `pkg upgrade` fetches it to staging and runs the ordinary upgrade on exactly that copy, so the signature, publisher and contradiction gates all apply. Known repos are not read: an upgrade has no floor. Test: `test_pkg_upgrade_remote`.
 
-Still to build: the four-step winner order; upgrading a shared dependency when that is the winning resolution; private copies; consensus and freshness checks across mirrors; update checks against a package's own `repos`.
+**Built 2026-11-06:** the four-step winner order, below, in `pkg.plan`. Tests: `test_pkg_winner_order` (the ranking, ties, the passes), `test_pkg_tie_shell` (`pkg install` asks, `--yes` and `--dry-run` do not, the install says which copy went in). Seen on the headless runner with two tied copies on two disks: `--dry-run` showed the tie, the install asked in a box naming both paths, and "Use other" installed the other disk's file.
 
-**Decided 2026-11-06, for the winner order** (drafted, not yet merged):
+Still to build: upgrading a shared dependency when that is the winning resolution; private copies; consensus and freshness checks across mirrors; update checks against a package's own `repos`.
+
+**Decided 2026-11-06, for the winner order** (built 2026-11-06, the same day):
 
 - **Slice 1's rule stands above it.** The target, and any dependency shipped beside it on the source the operator pointed at, win outright, so a self-contained disk installs what it was built and tested with. Pure "newer wins" would replace a disk's bundled `lib` 1.0.0 with a 2.0.0 found elsewhere that the package never ran against. The four steps decide among the *other* sources.
 - **"One shared copy satisfies everyone"** needs every constraint before choosing, so the plan resolves in passes: the first learns the constraints, the next re-chooses with all of them known, and a third runs only if the re-chosen copies brought requirements of their own. When no copy satisfies everyone, the fallback prefers one that satisfies whoever asked, and the plan reports the rest as contradictions.
 - **Trust is read from the signer the `.sig` claims**, as pin selection already does: trusted key, then any key, then unsigned. `install` verifies it, so a false claim can lose an install but never win one.
-- **A tie** (equal on all four, different bytes) goes to the caller to ask; with nobody to ask, the earliest source keeps it and the plan records the tie. Identical copies are not a tie.
+- **A tie** (equal on all four, different bytes) goes to the caller to ask; with nobody to ask, the earliest source keeps it and the plan records the tie. Identical copies are not a tie. "Identical" is the same manifest bytes when the manifest carries hashes (install checks every file against them), and the same files otherwise: two hand-made copies with one `package.lua` and different files were taken for identical on the runner until the files were compared.
+- **The shell asks once per question.** The passes re-run the lookup, so an answer is remembered for the same name between the same copies. `pkg install` asks in a box per other copy (the first yes wins); No, Esc, `--yes` and a seat that cannot ask keep the earliest. Ties come back in the plan (`plan.ties`) and the install summary (`summary.ties`).
 
 ### Slice 4 — discovery and revocation
 

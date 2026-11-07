@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 137 rounds of work:
+Everything since v1.5.0, in 139 rounds of work:
 
+- [A question of several lines shows whole at the command line](#a-question-of-several-lines-shows-whole-at-the-command-line)
+- [The best copy of a dependency wins, not the first one found](#the-best-copy-of-a-dependency-wins-not-the-first-one-found)
 - [verify is quicker](#verify-is-quicker)
 - [&& and || are refused, not half-run](#and--are-refused-not-half-run)
 - [inventory shows item names whole](#inventory-shows-item-names-whole)
@@ -159,6 +161,16 @@ Everything since v1.5.0, in 137 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A question of several lines shows whole at the command line
+
+At the command line, a yes/no question whose text runs to several lines is printed above the prompt, with only its last line left as the prompt. The prompt is one row, and the whole message used to be painted into it, cut to its last 80 characters: `pkg install`'s "which copy?" and the media scan's "Install X? From: ..." ended at `[y/`, so what was being asked could not be read.
+
+### The best copy of a dependency wins, not the first one found
+
+When more than one disk or repository has a package's dependency, `pkg install` now takes the copy that satisfies every package needing it, then the one signed by a trusted key, then the newer, then the smaller. It used to take the first disk that had one, so the order the disks were mounted in decided what installed. A dependency shipped beside the package on its own disk still wins, so a self-contained disk installs what it was built with.
+
+Two copies equal on all of that but with different contents are a tie, and a tie is yours: `pkg install` asks which copy to use, showing both paths, `--yes` keeps the earliest, `--dry-run` shows the tie without asking, and the install says which copy went in.
 
 ### verify is quicker
 
