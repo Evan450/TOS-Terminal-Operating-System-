@@ -1,4 +1,8 @@
 -- CLUSTER-3 — installable manifest for the cluster Manager daemon.
+--
+-- 1.4.0 — a task list in a storage pool is read from its second member
+--   when the first refuses or is silent; a Storage Node on this box reports
+--   its free space in the heartbeat (storage spec §10, answer 3).
 -- One Manager per "compute node" — the machine that actually runs
 -- workers. Registers with the Master at startup and accepts
 -- assignments. The Master schedules; the Manager executes.
@@ -15,7 +19,7 @@
 -- surface (printable terminals, easy file I/O).
 return {
   name        = "cluster-manager",
-  version     = "1.3.0",
+  version     = "1.4.0",
   kind        = "service",
   category    = "network",
   description = "Cluster Manager: registers with Master, accepts assignments, dispatches to workers.",

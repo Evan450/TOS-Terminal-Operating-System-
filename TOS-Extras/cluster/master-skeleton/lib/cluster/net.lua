@@ -140,6 +140,7 @@ function netmod.sendAssignment(managerAddr, assignment)
     tasks_inline    = assignment.tasks_inline,
     tasks_ref       = assignment.tasks_ref,
     store_addr      = assignment.store_addr,
+    store_addrs     = assignment.store_addrs,   -- a storage pool's replicas
     inputs_inline   = assignment.inputs_inline,
     inputs_ref      = assignment.inputs_ref,
     result_sink     = assignment.result_sink or "inline",

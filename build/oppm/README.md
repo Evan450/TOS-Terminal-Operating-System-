@@ -6,32 +6,34 @@ OPPM — the package manager most OpenComputers players already have — reads a
 https://raw.githubusercontent.com/<owner>/<repo>/master/programs.cfg
 ```
 
-The branch name is hardcoded in `oppm.lua`. TOS's branches are `main`, `dev` and `optional-utilities`, so `oppm register Evan450/TOS-Terminal-Operating-System-` finds nothing and fails quietly. This directory is the fix: a two-file `master` branch whose only job is to be findable.
+The branch name is hardcoded in `oppm.lua`. TOS's branches are `main`, `dev` and `optional-utilities`, so `oppm register Evan450/TOS-Terminal-Operating-System-` finds nothing and fails quietly. This directory is the fix: a `master` branch whose only job is to be findable.
 
-There is no TOS source on that branch and there should never be. The package installs the **network bootstrap**, which then downloads the real release from `main`.
+There is no TOS source on that branch and there should never be. The package installs the **network bootstrap** of the current release, which then downloads the rest of that release from `main`.
 
 ## Assembling the branch
 
 ```
 git switch --orphan master
 git rm -rf .                                   # nothing from another branch
-mkdir tos
-cp <tos-source>/build/oppm/programs.cfg  programs.cfg
-cp <tos-source>/bootstrap.lua            tos/bootstrap.lua
-git add programs.cfg tos/bootstrap.lua
+cp <tos-source>/build/oppm/programs.cfg      programs.cfg
+cp <tos-source>/build/oppm/branch-README.md  README.md
+cp <tos-source>/LICENSE.txt                  LICENSE.txt
+git add programs.cfg README.md LICENSE.txt
 git commit -m "OPPM index so oppm can find TOS"
 git push -u origin master
 ```
 
-`bootstrap.lua` is **copied, not linked** — git has no cross-branch symlink — so a change to `bootstrap.lua` means refreshing this branch. It changes rarely; `test_oppm_index.lua` pins everything about the index that can be checked without the network.
+Nothing on the branch changes when a release does. `test_oppm_index.lua` pins everything about the index that can be checked without the network.
 
-## Why the keys look like that
+## Why the key names `main`
 
 ```lua
-files = { ["master/tos/bootstrap.lua"] = "/bin" }
+files = { ["main/bootstrap.lua"] = "/bin" }
 ```
 
-The `master/` prefix is the **branch segment of the raw URL**, not a directory called `master` — OPPM fetches `raw.githubusercontent.com/<repo>/<key>`. So the key above resolves to `tos/bootstrap.lua` *on the master branch*.
+The `main/` prefix is the **branch segment of the raw URL**, not a directory called `main` — OPPM fetches `raw.githubusercontent.com/<repo>/<key>` (`oppm.lua`, `installPackage`). So the key resolves to `bootstrap.lua` *on the main branch*: the release build's bootstrap, the same file the README's `wget` one-liner fetches.
+
+Until 2026-11-07 the key was `master/tos/bootstrap.lua`, a copy of the bootstrap kept on this branch, and the copy went stale. It was the source file of 2026-09-07, from before releases were signed, so `oppm install tos` installed TOS without checking the publisher's signature while the `wget` route checked it. A copy on a branch nothing builds is a copy nobody refreshes. Copying today's source file would not do either: only a release build's bootstrap carries the digests of the verifier files it downloads, and a source copy refuses the official release for want of them. So `main`'s file is the only one that can be offered here, and naming it means there is nothing to keep in step.
 
 The value is a destination **directory**, and OPPM's prefix is `/usr`, so `/bin` installs to `/usr/bin` — which is on OpenOS's `PATH`. That is why the OPPM route needs no absolute path, while the `wget` one-liner does.
 

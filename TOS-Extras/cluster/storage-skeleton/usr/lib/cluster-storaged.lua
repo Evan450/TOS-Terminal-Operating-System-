@@ -153,11 +153,13 @@ function storaged._onPut(packet, from)
   end
   local ack, err = store.put(p.key, p.data or "", {
     ttl = tonumber(p.ttl), overwrite = p.overwrite ~= false,
+    version = p.version,     -- a pool's shared/ writes (store.lua, Versions)
   })
   if not ack then return storeError(from, p.key, err) end
   reply(from, protocol.TYPE.STORE_PUT_ACK, {
     key = ack.key, lease_id = ack.lease_id,
     expires_at = ack.expires_at, size_bytes = ack.size_bytes,
+    version = ack.version, unchanged = ack.unchanged,
   })
 end
 
@@ -220,17 +222,20 @@ function storaged._onPubMessage(fromAddr, rawData, viaAddr)
                     req_id = msg.req_id, err = err })
     end
     -- §3.2 carries chunk/total for oversized values. 6 KB keeps the
-    -- reply inside the 8192-byte cap once framing is counted.
+    -- reply inside the 8192-byte cap once framing is counted. A pool's
+    -- shared/ key also says which version this member holds, so a reader
+    -- asking several members can take the newest.
     local CHUNK = 6144
+    local version = store.versionOf and store.versionOf(msg.key) or nil
     if #data <= CHUNK then
       send({ magic = cproto.PUB_MAGIC, op = "RES", key = msg.key,
-             req_id = msg.req_id, data = data, chunk = 1, total = 1 })
+             req_id = msg.req_id, data = data, chunk = 1, total = 1, version = version })
     else
       local total = math.ceil(#data / CHUNK)
       for i = 1, total do
         send({ magic = cproto.PUB_MAGIC, op = "RES", key = msg.key,
                req_id = msg.req_id, data = data:sub((i - 1) * CHUNK + 1, i * CHUNK),
-               chunk = i, total = total })
+               chunk = i, total = total, version = version })
       end
     end
   elseif msg.op == "LIST" then

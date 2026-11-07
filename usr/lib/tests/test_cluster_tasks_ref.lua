@@ -60,6 +60,7 @@ package.loaded["log"] = { info = function() end, warn = function() end, error = 
 package.loaded["kernel.log"] = package.loaded["log"]
 
 local MASTER, NODE = "master-addr-fedcba9876543210", "node-addr-0123456789abcdef00"
+local NODE2 = "node2-addr-0123456789abcdef0"
 package.loaded["kernel.fs"] = {
   exists = function(p) return p == "/etc/cluster-manager.cfg" end,
   readFile = function(p)
@@ -121,7 +122,11 @@ local function fireOneShots()
 end
 local function hear(from, port, reply)
   local data = type(reply) == "string" and reply or serialize.encode(reply)
-  for _, cb in pairs(modemListeners) do cb("modem_message", "modem-1", from, port, 0, data) end
+  -- A snapshot, as an event dispatcher takes: an answer that fails over to
+  -- the next replica registers a new listener from inside this loop.
+  local cbs = {}
+  for _, cb in pairs(modemListeners) do cbs[#cbs + 1] = cb end
+  for _, cb in ipairs(cbs) do cb("modem_message", "modem-1", from, port, 0, data) end
 end
 local function resultsOf(id)
   local out = {}
@@ -262,6 +267,63 @@ do
     #resultsOf(12) == 1 and resultsOf(12)[1].status == "failed")
   package.loaded["cluster.store"] = nil
   myAddr = "modem-1"
+end
+
+print("=== a storage pool's second replica answers when the first does not ===")
+do
+  -- A pool writes job-<id>/ keys to two members (storage-spec §5) so that
+  -- one member being down costs a retry, not the assignment.
+  sent, requests = {}, {}
+  assign(13, { store_addrs = { NODE, NODE2 } })
+  test("the first read goes to store_addr", #requests == 1 and requests[1].addr == NODE,
+    requests[1] and requests[1].addr)
+  hear(NODE, PORT, res(13, { err = "no_such_key" }))
+  test("a refusal from it fails nothing yet", #resultsOf(13) == 0)
+  test("...and the read is asked of the replica", #requests == 2 and requests[2].addr == NODE2,
+    requests[2] and requests[2].addr)
+  hear(NODE2, PORT, res(13, { data = TASKS }))
+  test("the replica's copy runs", #resultsOf(13) == 1 and resultsOf(13)[1].status == "ok",
+    resultsOf(13)[1] and resultsOf(13)[1].status)
+  test("nothing is left listening", next(modemListeners) == nil)
+end
+do
+  sent, requests = {}, {}
+  assign(14, { store_addrs = { NODE, NODE2 } })
+  clock = clock + 20
+  fireOneShots()
+  test("a first member that never answers moves the read on", #requests == 2
+    and requests[2].addr == NODE2, #requests)
+  test("...without failing the assignment", #resultsOf(14) == 0)
+  hear(NODE2, PORT, res(14, { data = TASKS }))
+  test("and the replica completes it", #resultsOf(14) == 1 and resultsOf(14)[1].status == "ok")
+end
+do
+  sent, requests = {}, {}
+  assign(15, { store_addrs = { NODE, NODE2 } })
+  hear(NODE, PORT, res(15, { err = "no_such_key" }))
+  hear(NODE2, PORT, res(15, { err = "out_of_space" }))
+  local r = resultsOf(15)
+  test("when no member has it, it fails", #r == 1 and r[1].status == "failed", r[1] and r[1].status)
+  local why = r[1] and tostring(r[1].errors[1]) or ""
+  test("...naming what each member said", why:find("no_such_key", 1, true) ~= nil
+    and why:find("out_of_space", 1, true) ~= nil, why)
+  test("...and which member said it", why:find(NODE:sub(1, 8), 1, true) ~= nil
+    and why:find(NODE2:sub(1, 8), 1, true) ~= nil, why)
+end
+do
+  sent, requests = {}, {}
+  assign(16, { store_addrs = { NODE, NODE } })
+  hear(NODE, PORT, res(16, { err = "no_such_key" }))
+  test("a member listed twice is asked once", #requests == 1, #requests)
+  test("...and its answer is the answer", #resultsOf(16) == 1 and resultsOf(16)[1].status == "failed")
+end
+do
+  sent = {}
+  deliver("T_CLUSTER_ASSIGN", { assignment_id = 17, job_id = 9, tasks_ref = "public://x",
+    store_addr = NODE, store_addrs = "not a list" })
+  local ok, why = accepted(17)
+  test("a replica list that is not a list is refused at the ACK", ok == false, ok)
+  test("...saying so", tostring(why):find("store_addrs", 1, true) ~= nil, why)
 end
 
 print("=== the shape is checked up front ===")

@@ -20,8 +20,10 @@ SemVer: MAJOR.MINOR.PATCH. Codenames are tracked in `Codenames.txt`.
 
 The details follow, newest first.
 
-Everything since v1.5.0, in 152 rounds of work:
+Everything since v1.5.0, in 154 rounds of work:
 
+- [A cluster can keep its scratch on several Storage Nodes](#a-cluster-can-keep-its-scratch-on-several-storage-nodes)
+- [Installing through oppm checks the signature](#installing-through-oppm-checks-the-signature)
 - [TOS can strip itself](#tos-can-strip-itself)
 - [Below 1 MB, TOS says to add memory](#below-1-mb-tos-says-to-add-memory)
 - [log denied lists every refusal](#log-denied-lists-every-refusal)
@@ -174,6 +176,14 @@ Everything since v1.5.0, in 152 rounds of work:
 - [A crash you can read from across the room](#a-crash-you-can-read-from-across-the-room)
 - [A failed write changes nothing](#a-failed-write-changes-nothing)
 - [Findable](#findable)
+
+### A cluster can keep its scratch on several Storage Nodes
+
+`storage_pool` in `/etc/cluster-master.cfg` lists several Storage Nodes, and the Master spreads the Public tier across them. Where a key goes depends only on the key and that list, so no node is ever asked whether it holds something and a node that is rebooting cannot send a write elsewhere. A task list goes to two nodes and a Manager reads the second when the first refuses or does not answer; if both cannot take it, the list goes inline as before. `shared/` keys go to every node and stand once most have them: each write is numbered, a node refuses an older one, and the Master brings any node that missed one up to date every two minutes. Each node's lease is released on that node, and a listing names any node that did not answer. A Manager running a node on its own box reports its free space. These are the answers drafted in the storage spec and approved on 2026-11-07. `cluster-master` is 1.2.0, `cluster-manager` 1.4.0 and `cluster-storage` 1.1.0, and they reach the published pack with the next signing.
+
+### Installing through oppm checks the signature
+
+`oppm install tos` now installs the current release's own bootstrap, which checks the publisher's signature before it installs anything. It used to install an older copy kept for oppm, from before releases were signed, which skipped that check. The package note gives today's requirements: about 1.9 MB of drive, and OpenComputers 1.8.0 for a Lua 5.4 CPU. Seen on OpenOS with oppm and a live Internet Card, from `oppm register` to the installer. A request to list TOS in `oppm list` is open with OpenPrograms.
 
 ### TOS can strip itself
 

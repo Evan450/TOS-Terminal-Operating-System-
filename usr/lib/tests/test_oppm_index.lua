@@ -102,29 +102,44 @@ test("the note warns that this installs the installer, not the OS",
 test("...and states the hardware it needs",
   entry.note:find("1%.7%.5") ~= nil and entry.note:lower():find("tier 2", 1, true) ~= nil)
 
+--! The note is the only place an oppm user reads what TOS costs, and it sat
+--! at "~1.5 MB" for two months while the release grew to 1.9: nothing tied
+--! it to the README, where the figure is kept. Now the two must agree.
+do
+  local readme = findUp("README.md") or ""
+  local want = readme:match("hard drive with about ([%d%.]+) MB free")
+  local said = entry.note:match("about ([%d%.]+) MB")
+  test("the README states the drive the release needs", want ~= nil)
+  eq("...and the note says the same", want, said)
+  test("the note says Lua 5.4 needs OpenComputers 1.8.0, as the README does",
+    entry.note:find("1%.8%.0") ~= nil)
+end
+
 -- ── 3. The files table, and the branch layout it implies ────────────
 local srcs = {}
 for src, dest in pairs(entry.files) do srcs[#srcs + 1] = { src = src, dest = dest } end
 eq("ships exactly one file", 1, #srcs)
 local one = srcs[1]
 
---! The `master/` prefix is the BRANCH SEGMENT of the raw URL that OPPM
---! builds, not a directory. Get this wrong and oppm 404s on every install.
-test("the source key is rooted at the master branch",
-  one.src:sub(1, 7) == "master/")
-eq("...and points at the bootstrap", "master/tos/bootstrap.lua", one.src)
+--! The prefix is the BRANCH SEGMENT of the raw URL that OPPM builds, not a
+--! directory. Get this wrong and oppm 404s on every install. It names MAIN:
+--! the key used to name a copy on `master`, and that copy went stale -- it
+--! predated the release signature and installed without checking it. Only
+--! the release build's bootstrap can check it (it carries the verifier
+--! pins), and main is where that file lives.
+test("the source key is rooted at the main branch",
+  one.src:sub(1, 5) == "main/")
+eq("...and points at the release's bootstrap", "main/bootstrap.lua", one.src)
 
 --! Destination `/bin` is prefix-relative in OPPM: it lands in /usr/bin,
 --! which IS on OpenOS's PATH. `//bin` would mean the absolute /bin, which
 --! is not on PATH -- the same trap the wget one-liner documents.
 eq("installs to a directory on OpenOS's PATH", "/bin", one.dest)
 
--- The file the index promises must exist in this tree, since the branch is
--- assembled by copying it. An index pointing at a file nobody ships is the
--- exact failure this whole stub exists to avoid.
-local onBranch = one.src:gsub("^master/", "")          -- tos/bootstrap.lua
-local leaf     = onBranch:match("([^/]+)$")
-test("the file it advertises exists in this repo", findUp(leaf) ~= nil)
+-- The file the index promises must be one this repo ships at the release's
+-- root, or the index points at nothing once main is next published.
+local onBranch = one.src:gsub("^main/", "")             -- bootstrap.lua
+test("the file it advertises exists in this repo", findUp(onBranch) ~= nil)
 
 -- ── 4. TOS's OWN OPPM reader accepts it ─────────────────────────────
 --! The seam. TOS reads OPPM repos as one of four manifest formats, so the
@@ -179,7 +194,7 @@ do
       --! segment when the literal one is absent; test_pkg_lifecycle.lua),
       --! so the translation stays exactly as OPPM means it.
       eq("the source keeps the branch segment (the URL path OPPM uses)",
-        "master/tos/bootstrap.lua",
+        "main/bootstrap.lua",
         m.fileMap and m.fileMap["/usr/bin/bootstrap.lua"])
       test("...carrying the description through",
         type(m.description) == "string" and #m.description > 20)

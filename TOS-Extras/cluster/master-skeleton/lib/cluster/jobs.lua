@@ -141,13 +141,17 @@ function jobs.splitIntoAssignments(job_id, jobSpec, stateRef)
     end
     log.info(LOG_TAG, string.format(
       "job %d slice %d: %d bytes -> %s", job_id, idx, #blob, key))
-    return nil, "public://" .. key, ack.lease_id
+    return nil, "public://" .. key, ack
   end
 
   local function mkAssignment(task_slice, idx)
-    local inline, ref, lease = placeTasks(task_slice, idx)
+    local inline, ref, ack = placeTasks(task_slice, idx)
     -- The Manager reads a pointer back from the node, so it needs to be told
-    -- which node. It holds no storage config of its own.
+    -- which node. It holds no storage config of its own. From a storage
+    -- POOL the slice is on two members (cluster.placement), and the
+    -- Manager is told both, in the order to try them: a member that is
+    -- down must cost a retry, not the assignment.
+    local members = ack and ack.members
     return {
       job_id          = job_id,
       priority        = priority,
@@ -157,8 +161,11 @@ function jobs.splitIntoAssignments(job_id, jobSpec, stateRef)
       storage_preference = storage_pref,
       tasks_inline    = inline,         -- nil when the slice went to Public
       tasks_ref       = ref,
-      tasks_lease     = lease,          -- needed to release it at finalize
-      store_addr      = ref and storeRef.address and storeRef.address() or nil,
+      tasks_lease     = ack and ack.lease_id, -- needed to release it at finalize
+      tasks_leases    = ack and ack.leases,   -- a pool's: one lease per member
+      store_addr      = ref and ((members and members[1])
+                          or (storeRef.address and storeRef.address())) or nil,
+      store_addrs     = ref and members or nil,
       inputs_inline   = jobSpec.inputs, -- only safe to copy when small
       inputs_ref      = jobSpec.inputs_ref,
       result_sink     = result_sink,
@@ -562,7 +569,15 @@ local function releasePublicKeys(job_id, job)
   for _, a in pairs(job.assignments or {}) do
     if a.tasks_ref and a.tasks_lease then
       local key = a.tasks_ref:gsub("^public://", "")
-      local ok = pcall(storeRef.release, key, a.tasks_lease)
+      --! A pool write has a lease on EACH member, and a lease is only
+      --! good where it was issued (storage-spec §10, answer 4). Releasing
+      --! the first one alone would leave the replica to its TTL.
+      local ok
+      if type(a.tasks_leases) == "table" and storeRef.releaseAll then
+        ok = pcall(storeRef.releaseAll, key, a.tasks_leases)
+      else
+        ok = pcall(storeRef.release, key, a.tasks_lease, a.store_addr)
+      end
       if ok then released = released + 1 end
     end
   end

@@ -55,6 +55,11 @@ local function freshData()
     domain_id_counter = 1,
 
     storage_node = nil,                -- { address, capacity, used, last_seen } or nil
+    -- A storage POOL's shared/ keys, as this Master last wrote them:
+    -- [key] = { n = version counter, blob = bytes, ttl = seconds }. The
+    -- pool's repair sweep brings every member to these (storage-spec §10,
+    -- answer 2), so they must survive a Master restart.
+    shared_store = {},
 
     jobs = {},                         -- [job_id] = { ... }
     job_id_counter = 1,
@@ -135,6 +140,9 @@ local function validateShape(d)
   if d.storage_node ~= nil and type(d.storage_node) ~= "table" then
     return false, "storage_node not a table"
   end
+  if d.shared_store ~= nil and type(d.shared_store) ~= "table" then
+    return false, "shared_store not a table"
+  end
   return true
 end
 
@@ -194,6 +202,7 @@ function state.load(path)
   state._data.job_id_counter         = decoded.job_id_counter
   state._data.assignment_id_counter  = decoded.assignment_id_counter
   state._data.storage_node           = decoded.storage_node
+  state._data.shared_store           = decoded.shared_store or {}
 
   -- Mark every loaded Manager as "unknown heartbeat" until one arrives.
   -- This prevents the sweep from immediately declaring everyone offline
@@ -353,6 +362,16 @@ function state.updateManagerHeartbeat(address, snapshot)
         { domain_id = m.domain_id, external_type = snapshot.external_type })
       persist()
     end
+  end
+  -- A Manager with a Storage Node on its own box reports what is left of
+  -- it (storage-spec §10, answer 3). Telemetry: kept in memory, not
+  -- persisted on its own -- the number is as old as the last heartbeat
+  -- whatever is done with it, and placement already handles a full member.
+  if snapshot and tonumber(snapshot.external_capacity) then
+    if not m.storage then
+      m.storage = { external_type = "none", external_capacity = 0 }
+    end
+    m.storage.external_capacity = tonumber(snapshot.external_capacity)
   end
   return true
 end
@@ -538,6 +557,22 @@ function state.setStorageNode(info)
   state._data.storage_node = info
   persist()
   state.pushEvent("storage_configured", { address = info and info.address })
+end
+
+--- A pool's shared/ record (see freshData), or nil.
+function state.sharedRecord(key)
+  local t = state._data.shared_store
+  return t and t[key] or nil
+end
+
+function state.setSharedRecord(key, rec)
+  state._data.shared_store = state._data.shared_store or {}
+  state._data.shared_store[key] = rec
+  persist()
+end
+
+function state.sharedRecords()
+  return state._data.shared_store or {}
 end
 
 function state.updateStorageUsage(used_bytes)

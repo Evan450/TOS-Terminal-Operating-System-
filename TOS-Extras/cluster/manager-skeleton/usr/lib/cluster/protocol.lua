@@ -159,6 +159,7 @@ function cluster.payload.assign(info)
     tasks_inline  = info.tasks_inline,
     tasks_ref     = info.tasks_ref,
     store_addr    = info.store_addr,
+    store_addrs   = info.store_addrs,   -- every member holding tasks_ref, in order
     inputs_inline = info.inputs_inline,
     inputs_ref    = info.inputs_ref,
     result_sink   = info.result_sink or "inline",

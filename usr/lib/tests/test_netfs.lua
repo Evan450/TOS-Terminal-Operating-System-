@@ -386,7 +386,11 @@ do
     fs = FS, computer = package.loaded["computer"], net = fakeNet,
     protocol = fakeProto,
     trust = { LEVEL = { TRUSTED = 3 },
-              getLevel = function(a) return a == PEER and 3 or 0 end },
+              getLevel = function(a)
+                if a == PEER then return 3 end
+                if a == "known-peer-0001" then return 2 end   -- one below TRUSTED
+                return 0
+              end },
   })
 
   test("starts disarmed", false, netfs.isEnabled())
@@ -404,6 +408,23 @@ do
     STRANGER)
   test("stranger is denied", "denied", sent[2] and sent[2].payload.err)
   test("...and learns nothing else", nil, sent[2] and sent[2].payload.exists)
+
+  --! storage-spec §10, answer 5 (approved 2026-11-07): a READ-ONLY export
+  --! is TRUSTED-only as well. A peer the operator named in one, but holds
+  --! below TRUSTED, is refused like a stranger: "we share a secret" is not
+  --! "you may read my files", and a read-only export still leaks what it
+  --! exports.
+  netfs.setExports((netfs._validateExports({
+    { name = "pub",     path = "/srv/pub", mode = "rw", allow = { PEER } },
+    { name = "rolisted", path = "/srv/pub", mode = "ro", allow = { "known-peer-0001" } },
+  })))
+  local before = #sent
+  netfs.handleRequest({ payload = { op = "stat", share = "rolisted", path = "/hello.txt" } },
+    "known-peer-0001")
+  test("a peer below TRUSTED named in a read-only export is denied", "denied",
+    sent[before + 1] and sent[before + 1].payload.err)
+  test("...and learns nothing about the file", nil,
+    sent[before + 1] and sent[before + 1].payload.exists)
 
   netfs.setEnabled(false)
   test("disarms again", false, netfs.isEnabled())

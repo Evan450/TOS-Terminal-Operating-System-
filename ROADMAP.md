@@ -2,77 +2,22 @@
 
 What is actually open. Generated from our working notes, which are not published — the notes interleave open work with a long done-history and occasional machine-local paths, so this is the extracted, scrubbed view of it. Do not hand-edit; raise an item in an issue or pull request instead.
 
-**39 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
+**35 open items.** This is the honest list, including the things deliberately *not* done and the reasons why — those entries are often the most useful ones to read before proposing a change.
 
 | Status | Count | Meaning |
 |---|---:|---|
 | Open bug | 0 | Known broken. Fixing one of these is the most valuable thing you can do. |
 | In progress | 1 | Started, unfinished. Ask before duplicating the work. |
-| Planned | 20 | Planned or under investigation. Most contributions belong here. |
+| Planned | 16 | Planned or under investigation. Most contributions belong here. |
 | Idea / far future | 18 | Idea, no commitment. Discuss before building. |
 
-**By area:** [Testing in the game](#testing-in-the-game) (6) · [Add-ons](#add-ons) (5) · [Packages](#packages) (7) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (3) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (4) · [Files and storage](#files-and-storage) (2) · [Shell and interface](#shell-and-interface) (5) · [The project](#the-project) (4)
+**By area:** [Testing in the game](#testing-in-the-game) (5) · [Add-ons](#add-ons) (4) · [Packages](#packages) (6) · [Networking](#networking) (3) · [Security and accounts](#security-and-accounts) (2) · [Boot, memory and the kernel](#boot-memory-and-the-kernel) (4) · [Files and storage](#files-and-storage) (1) · [Shell and interface](#shell-and-interface) (5) · [The project](#the-project) (5)
 
 The *Testing in the game* items need a real OpenComputers machine to check — the off-box suite runs on stock Lua and cannot see that class of bug. Many can now be run without Minecraft on the headless machine (`build/headless-session.py`); the rest are good contributions if you play the mod.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
 
 ## Testing in the game
-
-### In-emulator boot smoke test, in CI
-
-*In progress* · from the round *From the OCOS survey (2026-08-10)*
-
-IN-EMULATOR BOOT SMOKE TEST, in CI. The one class of failure our suite structurally cannot see. We have hundreds of tests and every one is off-box pure Lua: nothing in them catches "the kernel does not actually boot on a T1." The EMULATOR CHECK notes scattered through this file are that gap showing — they're manual, so they're done when someone remembers.
-
-- Shape: a boot-time battery loaded ONLY when a marker file is present (so its bytecode never bloats a production boot), running checks, then shutting the machine down with an exit code CI can read. Distinguish pass / fail / STALLED — a hung boot is the failure mode that matters most and it isn't a nonzero exit, it's no exit at all.
-- ocvm or Ocelot as the runner; both already boot us.
-- \[\~\] BUILT 2026-08-21, shape exactly as specified above. kernel/selftest.lua is gated on /etc/selftest.on EXISTING, and the require sits INSIDE the gate, so a production boot never loads it. Checks live on a test disk (TOS-Extras/selftest/checks) and are discovered from any mounted /mnt/&lt;label&gt;/selftest/, so nothing ships in the base image but the dormant runner.
-- STALL detection works as the note demanded. Each check writes `RUN <name>` and flushes BEFORE its body runs, so a wedged machine leaves a file whose last line names the culprit and which has no `SELFTEST END`. Results append line-by-line for that reason -- a buffered report is precisely the report a hang does not give you.
-- No exit code needed: results go to /var/selftest.log, beside kernel.log, which on Ocelot and ocvm is an ordinary host directory. `shutdown=true` in the marker powers the machine off for CI.
-- Each check runs with package.loaded snapshotted and restored, because a check that stubs kernel.fs the way the off-box tests freely do would otherwise break the machine it is running on.
-- REMAINING: wire it to CI. Nine checks now (10 through 90); see the triage note below for what is left of the \~15 "Emulator checklist" items and why most of what remains is not portable into this shape. 2026-10-02: the unattended half is done -- `python tos.py selftest` boots a fresh headless machine (THE HEADLESS BOOT TEST) and exits 0/2/1. What is left is a CI host to run it on, and there is none: the monorepo has no remote, and a hosted runner on the public repo would have to fetch Ocelot's jar each run. Sixteen checks now.
-- First four checks: boot invariants, the GPU colour cache after a scroll (the status-bar-goes-black bug), how big an input this machine can actually hash (the sha256 stack overflow, measured on OC's Lua rather than a desktop's), and a filesystem round trip that audits what our mocks claim list()/writeFileAtomic do.
-- Three more followed: SRM baseline/scan/repair against real files and real crypto (50), the capability sandbox read -- no raw component/computer, no real \_G, fs.read alone does not expose a writer (60) -- and screen truth: does the glass hold what we drew, on a real GPU, including the forwarded-draw and two-proxies-one-screen cases behind the status-bar-goes-black and selection-fragment bugs (70).
-- \[\~\] TRIAGED 2026-08-28: read all 15 "Emulator checklist" items and sorted every bullet into one of four bins -- single-machine-automatable, needs specific hardware (a printer, a live internet card + server, an rbmk block), needs a second machine/seat, or is inherently an eyeball check (timing, layout, "does it look right"). Most of the 15 are the LATTER three, which is exactly why they were still open: they were never a battery's job. Ported the two automatable ones found:
-- SIGNED MANIFESTS round (L957): 80-pkg-signing.lua. Real ed25519 + the real /etc/pkg\_trust.cfg write path through securefs -- the off-box test mocks the disk and never exercises that ACL at all. Hand-edit one byte -&gt; INVALID with no override; pkg.\_signGate's require-signature refusal names the setting and --allow-unsigned still works; trust add/remove round- trips through the real store. Snapshots and restores the operator's real policy either way, including on the throw path -- this must never be the round that leaves a stranger's key trusted.
-- INTERNET CARD round (L1793): 90-internet-absence.lua. The no-card path and the kill switch, both provable without a live card or server: status()/available() agree and get() fails clean (no throw) when absent; config.internet=false is honoured and the reason names the switch, not the card. Never calls config.save(), so the toggle never reaches disk.
-
-Not portable into this shape, for the record so it is not
-
-re-litigated: PRINTER round (needs real OpenPrinter), STOCK
-
-add-on (needs a real transposer/chest world), most of
-
-INTERNET CARD (needs a live card + server), CLUSTER SETUP
-
-and INTERCOM (need a second machine/seat), NOTIFY's cross-
-
-seat delivery (needs two seats). CLI PARITY, SHELL GAPS,
-
-the PICKER rounds, PKG COMPLETENESS and MULTI-DISK are
-
-mostly shell/session state that assumes an interactive
-
-shell already running -- the battery runs BEFORE the TUI
-
-comes up, so there is no shell here to drive, and their
-
-automatable pieces (alias engine, `which` ordering, PATH
-
-security, pkg conflict/upgrade logic) are already covered
-
-off-box against fakes. PKG COMPLETENESS's "real package
-
-installs and runs" and the PICKER rounds' install flags
-
-are deliberately NOT done here either way: 60-sandbox.lua's
-
-own header already draws this line -- a battery that
-
-installs software on the machine it is auditing is a
-
-different and much worse tool.
 
 ### In-world checks the headless runner cannot do
 
@@ -168,14 +113,6 @@ Run a verification round in REAL Minecraft OpenComputers: the Ocelot emulator ha
 
 ## Add-ons
 
-### The distributed storage pool waits on five operator decisions
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-THE DISTRIBUTED STORAGE POOL WAITS ON FIVE OPERATOR DECISIONS. cluster-storage shipped 1.0.0 on 2026-10-23 as ONE node; the pool, inputs\_ref and result\_sink = "public" are not built. TOS-Extras/cluster/storage-spec-draft.md section 10 holds the questions: a coordinator or none; shared/ replication to all members or a quorum; capacity in a contributing Manager's heartbeat; what happens to a lease when its member leaves; and whether netfs read-only exports may go to PAIRED-but-untrusted peers.
-
-DRAFT ANSWERS 2026-11-05, as asked: section 10 of the spec now holds a recommendation for each, with its cost. Nothing is built until they are approved or changed.
-
 ### Optional Utilities candidates from the pack's own components
 
 *Idea / far future* · from the round *What nobody wrote down (2026-10-26)*
@@ -202,21 +139,21 @@ Tape "personal menu" ecosystem polish.
 
 ## Packages
 
+### Get listed in `oppm list`
+
+*In progress* · from the round *Planned (near future)*
+
+Get listed in `oppm list`: a PR adding this repo to OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS show up for people who never heard of it.
+
+PR OPENED 2026-11-07, the operator's yes: https://github.com/OpenPrograms/openprograms.github.io/pull/28 (three lines). WAITS ON OPENPROGRAMS: that repo last merged a pull request in 2019, so it may sit. Close this when it merges, or when it is refused.
+
+FOUND FIRST, AND FIXED: the master branch's bootstrap was a copy of the 2026-09-07 source, from before releases were signed, so `oppm install tos` installed TOS without the signature check the wget one-liner makes. programs.cfg now names main/bootstrap.lua (oppm fetches raw.githubusercontent.com/&lt;repo&gt;/&lt;key&gt;, so the first segment is the branch), the copy is gone from master, and the note's stale figures (\~1.5 MB; Lua 5.4 needing 1.8.0) match the README, which test\_oppm\_index.lua now ties them to. SEEN on OpenOS 1.8.9 with upstream oppm and a live Internet Card: register, info, install, then `bootstrap` from /usr/bin: "checking the publisher's signature... valid", 172 files in 139 s, Setup v1.5.0's language prompt.
+
 ### Sign a release (operator)
 
 *Planned* · from the round *Found by round trips on the runner (2026-11-06)*
 
 SIGN A RELEASE (operator). main is the signed build 07bf795; every fix above reaches a bootstrap install only after `tos.py sign-release` and a main publish. Five of them lose data silently.
-
-### Add-on versioning: decided 2026-09-12, not built
-
-*Planned* · from the round *What nobody wrote down (2026-10-26)*
-
-ADD-ON VERSIONING: DECIDED 2026-09-12, NOT BUILT. The operator's rule: MAJOR.MINOR.PATCH, an optional two-character stage suffix (-a, -b), release notes per package, no codenames. pkg already accepts and orders suffixes (validVersion, compareVersion). Left: build-disk.lua's SKIP (L528) is still a table of NAMES, empty today, so a new 0.x package ships unless someone lists it -- make it compareVersion(v, "1.0.0") &lt; 0, and decide whether a suffixed pre-1.0 package may ship labelled; the picker fits "v" .. version into 8 columns (pkgpicker.lua:584-588), so v1.10.0-b is cut; a `tos.py check` rule that a version bump carries a notes entry; blockfs.lua still says \_VERSION = "1.2.0" against its manifest's 1.2.1. Full write-up on the audit branch.
-
-THREE OF FOUR BUILT 2026-10-26: build-disk holds back any package whose major number is 0 (preRelease), suffix or not, beside the SKIP list; the picker drops the "v" when a version would not fit its 8 cells, so 1.10.0-b shows whole; blockfs's \_VERSION matches (blockfs 1.2.2, pending re-sign), and so do mail's and intercom's, which today's quit-key bumps had made drift too. No package is 0.x today, so the pack's contents do not change. build/ test\_addon\_versions.lua (22; 6 fail on the old files) checks all three and every modules/&lt;pkg&gt;/usr/lib/&lt;pkg&gt;.lua \_VERSION against its manifest. STILL OPEN: the notes rule -- there is no per-package release notes file yet for a `tos.py check` step to look in, so where the notes live comes first; and whether a SUFFIXED pre-1.0 package may ship labelled (operator; held back for now, as every 0.x is).
-
-NOTES RULE BUILT 2026-11-07: notes live in the package's manifest, a comment line starting with the version ("-- 2.3.3 — ..."), as the newest bumps already do. test\_addon\_versions.lua, now a `tos.py check` step, fails when a package's version differs from the SIGNED pack's and has no such line. It applies from each package's next bump: 12 of 18 manifests carry no note for their current version, and adding them now would cost 12 re-signs for comments. Removing tape 2.3.3's note fails it ("tape 2.3.2 -&gt; 2.3.3"). LEFT, the operator's: may a SUFFIXED pre-1.0 package ship labelled? Every 0.x is held back until then.
 
 ### Slice 3: resolution
 
@@ -237,12 +174,6 @@ Still not built: known repos for upgrades, private copies, mirror consensus, upg
 FOUND ON THE WAY, the operator's call: a fresh machine does not trust the Optional Utilities key, so everything fetched from the official repo says "valid, but the key was not trusted at install time". Shipping it trusted would make that read "trusted", and would make the key the one that decides what installs without asking.
 
 ANSWERED 2026-11-05: the installer asks whether to trust the Optional Utilities key, showing its fingerprint, and the operator decides (8bda89c). Seen through real GitHub on 2026-11-06: a signed install answered yes lists discover at 335F F7B2 43C5 1D97.
-
-### Get listed in `oppm list`
-
-*Planned* · from the round *Planned (near future)*
-
-Get listed in `oppm list`: a PR adding this repo to OpenPrograms/openprograms.github.io's repos.cfg. The `master` branch (build/oppm/) makes `oppm register` work; repos.cfg is what makes TOS show up for people who never heard of it.
 
 ### Slice 4: discovery and revocation
 
@@ -285,16 +216,6 @@ THE CANONICAL NUMBER FORMAT IS STILL ARCHITECTURE-DEPENDENT. The fix above remov
 Later: per-group mesh sealing (today a group send is N sealed unicasts, which is correct but O(N) floods); and letting `intercom cue add` write catalog lines from the shell instead of hand-editing /etc/intercom.cues.
 
 ## Security and accounts
-
-### Who may manage accounts, read the log, use scp
-
-*Planned* · from the round *Second pass: the compat number (2026-09-20)*
-
-WHO MAY MANAGE ACCOUNTS, READ THE LOG, USE SCP. Found 2026-10-03 walking the README's new "first ten minutes" on the headless machine: five commands' REGISTRY tier disagreed with the gate their own body runs. useradd/userdel/usermod were registered ADMIN (and documented admin in MANUAL 3.3 and ch.14) but call rootOnly; log and scp were registered USER ("log: filtered by tier") but call adminOnly. So `help` offered admins (users) a command that then refused them. Fixed the safe way: the registry and MANUAL now follow the code (no change in who can do what), and test\_command\_gate\_tiers.lua fails on any future mismatch.
-
-DECISION NEEDED, if any should be LOOSER: kernel users.create already accepts an ADMIN creator (effective tier &gt;= ADMIN), so admin account management is a one-word change in admin.lua -- but usermod's admin/root promotions and userdel need checking against users.setTier/delete's own guards first. `log` "filtered by tier" implies a user-visible log that the body has never allowed.
-
-ACCOUNTS DECIDED 2026-11-05, the operator's answer: "up to the Operator with Root being the default". The installer asks, root changes it with `users manage root|admins`, and with admins allowed an admin manages ordinary accounts only and never makes an admin (test\_accounts\_policy). SEEN on the runner both ways. `log` and `scp` are still as found.
 
 ### Run-this-once confinement
 
@@ -370,12 +291,6 @@ SUPERSEDED (marked \[\*\] 2026-10-26) by SELF-STRIPPING, NOT BUILD-TIME CONFIG a
 NOT a gap, recorded so it isn't re-investigated: their "fastest VT100 in OC" is write batching (accumulate a run, one gpu.set per colour run) plus hardware gpu.copy for scroll and insert-char. No cell diffing, no shadow, no off-screen buffer. Different workload from ours — see the LOG WALL item below — and we already use gpu.copy for scrolling (display.lua \~585).
 
 ## Files and storage
-
-### Still \~8 sector writes per tiny file
-
-*Planned* · from the round *TBFS: the cost was writes, and a second handle (2026-09-06)*
-
-STILL \~8 SECTOR WRITES PER TINY FILE (inode alloc, directory append + its inode, data block, bitmap, file inode, super). Half of those are per-operation metadata that a "close-time flush" could merge across a create-write-close sequence, at the cost of "written" meaning "on close" -- an operator decision, and not one to make for a filesystem on hardware that vanishes when someone breaks the block.
 
 ### A read-only foreign-volume reader
 
@@ -457,6 +372,12 @@ Translate TOS to other languages by the following priority table:
 THE LOOT DISK IS WHATEVER TOS-Release WAS WHEN THE MOD LAST BUILT. AUDIT 1 found Irradiated Circuits (radbridge 0.4.0) bundling TOS 1.4.0. Its newest jar, radbridge-0.5.0 (built 2026-10-09, unreleased), carries that day's release: its kernel/init.lua differs from today's, and kernel/x25519.lua and curve25519field.lua are absent. The fix is in the mod's repo: rebuild, and bump the mod version, because LootDiskInstaller stamps the extracted disk with it and an unchanged version never reaches an existing world. Nothing on this side notices the drift. Wanted: a `tos.py check` step that, when it can find a radbridge jar, compares its bundled system\_manifest.lua with TOS-Release's.
 
 THE CHECK IS BUILT, 2026-10-26: build/check\_lootdisk.py, a step of `tos.py check`. It finds the newest radbridge-X.Y.Z.jar (or --jar / $TOS\_LOOTDISK\_JAR), compares assets/radbridge/loot/tos/ with TOS-Release file by file, and names what differs. Advisory (exit 0; --strict fails): the mod is its own repo, and a stale disk is no reason to hold a TOS publish. build/test\_check\_lootdisk.py (6). Today it says radbridge-0.5.0.jar's disk is build 1448305: 143 files differ and 6 are missing (x25519, curve25519field, pkgops, diskmount, open + its man page). STILL OPEN, in the mod's repo and so not done here: rebuild radbridge against this release and bump its version.
+
+### Public storage's other two pointers are still dead
+
+*Planned* · from the round *What nobody wrote down (2026-10-26)*
+
+PUBLIC STORAGE'S OTHER TWO POINTERS ARE STILL DEAD: inputs\_ref and result\_sink = "public" (storage-spec section 9 step 5). Inputs are job-wide rather than per-slice, so they want a different key and a lifetime that outlasts any one assignment; the public result sink needs the MANAGER to write its result and send back a ref, which means a store client on the Manager and the Master granting it job\_assignee for that job (cluster-storaged's writerFor says why it does not today). Both are design work the spec names but does not settle. The same Manager-side store client would let a Manager write its own domain-&lt;id&gt;/ scratch, which the nodes already accept from a declared Manager and cluster.placement already knows where to put.
 
 ### GitHub, now that CI has run
 

@@ -248,14 +248,68 @@ end
 -- Operations (§4.5)
 -- ============================================================
 
+-- ── Versions (storage-spec §10, answer 2) ─────────────────────────
+-- A key written to a POOL's shared/ namespace goes to every member and
+-- stands once a majority have it, so two members can briefly hold
+-- different copies. Each such write carries { n = counter, writer = addr }
+-- and the higher pair wins: last-writer-wins, which is right for the
+-- configuration-sized data shared/ holds and wrong for anything that must
+-- merge. Without this a repair sweep, or a member coming back with its
+-- old copy, could put an older value over a newer one.
+--! math.tointeger, not math.type: a counter that crossed the wire may
+--! come back as 3.0 from a decoder, and 3.0 is the same version as 3.
+local function validVersion(v)
+  if type(v) ~= "table" then return nil end
+  local n = math.tointeger(v.n)
+  if not n or n < 1 or type(v.writer) ~= "string" or v.writer == "" then return nil end
+  return { n = n, writer = v.writer }
+end
+
+--- Compare two versions: 1 if a is newer, -1 if older, 0 if the same.
+function store.compareVersions(a, b)
+  if not b then return a and 1 or 0 end
+  if not a then return -1 end
+  if a.n ~= b.n then return a.n > b.n and 1 or -1 end
+  if a.writer == b.writer then return 0 end
+  return a.writer > b.writer and 1 or -1
+end
+
+--- The version a key was written with, or nil (unversioned, or absent).
+function store.versionOf(key)
+  local rec = _index[key]
+  return rec and rec.version or nil
+end
+
 --- STORE_PUT. Returns { lease_id, expires_at, size } | nil, err
+--- opts.version: see Versions above. An older version is refused with
+--- `stale_version`; the SAME version is a repeat (a repair resent after a
+--- lost ACK) and is acknowledged without rewriting anything.
 function store.put(key, data, opts)
   opts = opts or {}
   local path, err = store.pathFor(key)
   if not path then return nil, err end
   if type(data) ~= "string" then return nil, "invalid_data: not a string" end
+  local version
+  if opts.version ~= nil then
+    version = validVersion(opts.version)
+    if not version then
+      return nil, "invalid_version: needs an integer n >= 1 and a writer"
+    end
+  end
 
   local existing = _index[key]
+  if existing and version and existing.version then
+    local cmp = store.compareVersions(version, existing.version)
+    if cmp < 0 then
+      return nil, string.format("stale_version: have %d from %s",
+        existing.version.n, tostring(existing.version.writer):sub(1, 8))
+    elseif cmp == 0 then
+      return {
+        key = key, lease_id = existing.lease_id, expires_at = existing.expires_at,
+        size_bytes = existing.size, version = existing.version, unchanged = true,
+      }
+    end
+  end
   if existing and opts.overwrite == false then
     return nil, "exists: " .. key
   end
@@ -297,12 +351,14 @@ function store.put(key, data, opts)
     size        = size,
     created     = (existing and existing.created) or t,
     last_access = t,
+    version     = version,
   }
   _used = _used + delta
   store.saveIndex()
   return {
     key = key, lease_id = lease,
     expires_at = _index[key].expires_at, size_bytes = size,
+    version = _index[key].version,
   }
 end
 
@@ -339,7 +395,8 @@ function store.list(prefix, limit)
   local out = {}
   for key, rec in pairs(_index) do
     if key:sub(1, #prefix) == prefix then
-      out[#out + 1] = { key = key, size = rec.size, expires_at = rec.expires_at }
+      out[#out + 1] = { key = key, size = rec.size, expires_at = rec.expires_at,
+                        version = rec.version }
     end
   end
   table.sort(out, function(a, b) return a.key < b.key end)

@@ -1,4 +1,9 @@
 -- CLUSTER-2 — installable manifest for the cluster Master daemon.
+--
+-- 1.2.0 — storage_pool: several Storage Nodes as one Public tier (storage
+--   spec §5). job- keys go to two members or stay inline, shared/ stands
+--   at a majority with versions and a repair sweep, each member's lease is
+--   released there, and a LIST names any member that did not answer.
 -- Run `pkg install cluster-master` after copying this directory tree
 -- to a TOS repo location. The Master is the control-plane node; each
 -- network should have exactly one. Multiple Masters would each accept
@@ -13,7 +18,7 @@
 --     advertising itself.
 return {
   name        = "cluster-master",
-  version     = "1.1.0",
+  version     = "1.2.0",
   kind        = "service",
   category    = "network",
   description = "Cluster control-plane Master: registers Managers, schedules jobs, owns persistent state.",
@@ -31,6 +36,10 @@ return {
     -- others in the source tree; it broke the INSTALLED package, whose
     -- daemon died on `require("cluster.store_client")`.
     "/usr/lib/cluster/store_client.lua",
+    -- store_client places a storage POOL's keys with this, and runs as
+    -- one node without it, so a missing copy would quietly ignore
+    -- storage_pool. Listed for the reason store_client is.
+    "/usr/lib/cluster/placement.lua",
     "/usr/bin/cluster.lua",
     "/etc/rc.d/clusterd.lua",
     "/etc/cluster-master.cfg",

@@ -266,6 +266,21 @@ end
 -- Heartbeat
 -- ============================================================
 
+-- A Storage Node on this box (cluster-storage installed beside the
+-- Manager) is storage this Manager contributes, and the Master should see
+-- how much is left (storage-spec §10, answer 3). Read from the running
+-- daemon, never required here: requiring the store would hand back a
+-- fresh, empty module rather than the one serving the disk.
+local CAPACITY_EVERY = 6          -- heartbeats between unchanged reports
+local _capSent, _capBeats = nil, 0
+local function localStoreFree()
+  local d = package.loaded["cluster-storaged"]
+  if type(d) ~= "table" or not (d.isRunning and d.isRunning()) or not d.stats then return nil end
+  local ok, st = pcall(d.stats)
+  return ok and type(st) == "table" and tonumber(st.free_bytes) or nil
+end
+mgr._localStoreFree = localStoreFree
+
 local function sendHeartbeat()
   if not _state.registered or not _state.master_addr then return end
   -- Build a status snapshot. Counters get reset by the operator-side
@@ -284,6 +299,18 @@ local function sendHeartbeat()
   -- pool, etc.), advertise its type so the scheduler can match jobs.
   if _cfg.storage_type then
     snap.external_type = _cfg.storage_type
+  end
+  --! Sent when it changes, and every CAPACITY_EVERY heartbeats otherwise,
+  --! not on every one: the number is advisory (a member can fill between
+  --! heartbeats, and placement already handles a full one), so it is not
+  --! worth a field in every packet.
+  local free = localStoreFree()
+  if free then
+    _capBeats = _capBeats + 1
+    if free ~= _capSent or _capBeats >= CAPACITY_EVERY then
+      snap.external_capacity = free
+      _capSent, _capBeats = free, 0
+    end
   end
   local pkt = protocol.makePacket(protocol.TYPE.CLUSTER_HEARTBEAT, snap,
     { to = _state.master_addr })
@@ -310,6 +337,14 @@ local function validateAssignment(p)
   end
   if p.tasks_ref ~= nil and (type(p.tasks_ref) ~= "string" or type(p.store_addr) ~= "string") then
     return false, "tasks_ref needs a store_addr"
+  end
+  if p.store_addrs ~= nil then
+    if type(p.store_addrs) ~= "table" or #p.store_addrs > 8 then
+      return false, "store_addrs not a short list"
+    end
+    for _, a in ipairs(p.store_addrs) do
+      if type(a) ~= "string" then return false, "store_addrs holds a non-address" end
+    end
   end
   return true
 end
@@ -533,7 +568,8 @@ end
 --! that cannot be followed has to be a failure.
 local FETCH_TIMEOUT = 15
 
-local function fetchTasks(p, done)
+-- One member. `done(tasks)` or `done(nil, why)`.
+local function fetchTasksFrom(p, storeAddr, done)
   local cproto = firstRequire("cluster.protocol")
   local serialize = firstRequire("kernel.serialize")
   local component = firstRequire("component")
@@ -548,7 +584,7 @@ local function fetchTasks(p, done)
   -- cluster-storage pulls a Manager onto the node's own box, and a modem
   -- cannot send to itself, so a node on this machine is read directly.
   for a in component.list("modem") do
-    if a == p.store_addr then
+    if a == storeAddr then
       local store = firstRequire("cluster.store")
       if not store then return done(nil, "no local store") end
       local data, err = store.get(key)
@@ -569,7 +605,7 @@ local function fetchTasks(p, done)
     done(tasks, err)
   end
   listener = event.on("modem_message", function(_, _, from, msgPort, _, data)
-    if msgPort ~= port or from ~= p.store_addr then return end
+    if msgPort ~= port or from ~= storeAddr then return end
     local ok, msg = pcall(serialize.decode, data, { maxBytes = 8192 })
     if not ok or type(msg) ~= "table" or msg.magic ~= cproto.PUB_MAGIC
        or msg.op ~= "RES" or msg.req_id ~= reqId then
@@ -585,8 +621,35 @@ local function fetchTasks(p, done)
     finish(nil, "tasks did not decode")
   end, "cluster-mgr.tasks")
   timer = event.timer(FETCH_TIMEOUT, function() timer = nil; finish(nil, "timed out") end)
-  local okS, errS = pcall(modem.send, p.store_addr, port, serialize.encode(cproto.pubGet(key, reqId)))
+  local okS, errS = pcall(modem.send, storeAddr, port, serialize.encode(cproto.pubGet(key, reqId)))
   if not okS then finish(nil, tostring(errS)) end
+end
+
+--- Every member that holds the slice, in the Master's order. A storage
+--- POOL writes job-<id>/ keys to two members (storage-spec §5), and that
+--- replica exists so a member that is down costs a retry here instead of
+--- the assignment. One node is a list of one.
+local function fetchTasks(p, done)
+  local addrs, seen = {}, {}
+  local function add(a)
+    if type(a) == "string" and not seen[a] then seen[a] = true; addrs[#addrs + 1] = a end
+  end
+  add(p.store_addr)
+  for _, a in ipairs(type(p.store_addrs) == "table" and p.store_addrs or {}) do add(a) end
+  local whys = {}
+  local function try(i)
+    if i > #addrs then
+      return done(nil, #addrs == 1 and whys[1]
+        or ("no member had it: " .. table.concat(whys, "; ")))
+    end
+    fetchTasksFrom(p, addrs[i], function(tasks, why)
+      if tasks then return done(tasks) end
+      whys[#whys + 1] = (#addrs == 1) and tostring(why)
+        or (addrs[i]:sub(1, 8) .. " " .. tostring(why))
+      try(i + 1)
+    end)
+  end
+  try(1)
 end
 
 local function dispatchAssignment(p)

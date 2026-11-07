@@ -7,12 +7,13 @@ the Manager a pointer, and releases the key when the job finishes. The design
 is [storage-spec-draft.md](../storage-spec-draft.md); the wire format is
 §4.5 of [cluster-protocol-spec-draft.md](../cluster-protocol-spec-draft.md).
 
-**What 1.0.0 is:** one node over its own disk (the spec's §9 step 3, which it
-calls "shippable alone"). **What it is not:** the distributed pool (steps 4+),
-`inputs_ref`, or `result_sink = "public"`. Nothing in the Master needs a node —
-with none configured, or one that is full or unreachable, jobs fall back to
-inline payloads, so a missing scratch tier costs a bigger packet, never a
-failed job.
+**What it is:** one node over its own disk (the spec's §9 step 3), or one member of a
+**storage pool** (§9 step 4, built 2026-11-07, 1.1.0 here and cluster-master 1.2.0). In a
+pool the Master places every key itself, so a node never knows it is in one; see
+[A pool](#a-pool) below. **What it is not:** `inputs_ref` or `result_sink = "public"`,
+which are still dead. Nothing in the Master needs a node — with none configured, or one
+that is full or unreachable, jobs fall back to inline payloads, so a missing scratch tier
+costs a bigger packet, never a failed job.
 
 ## What's here
 
@@ -26,6 +27,7 @@ failed job.
 | `test_store.lua` | the key store (67) |
 | `test_storaged.lua` | the daemon's handlers against the real protocol modules (36) |
 | `test_storage_wire.lua` | the Master's real client talking to the real daemon over a modelled radio (34) |
+| `test_storage_pool.lua` | a pool of three on the same radio: placement, two replicas, majority, versions, repair, LIST (74) |
 
 Run from the `TOS-Extras` root: `lua cluster/storage-skeleton/test_storage_wire.lua`, and so on.
 `TOS-Dev/usr/lib/tests/test_cluster_storaged_shim.lua` runs the shim under the real `rc.lua`.
@@ -49,6 +51,38 @@ Run from the `TOS-Extras` root: `lua cluster/storage-skeleton/test_storage_wire.
    the node shows that address. The Master and the node must trust each other (`net trust`
    on both), because writes are TOS traffic at TRUSTED.
 
+## A pool
+
+Several nodes can share the Public tier. Set each one up as above, then on the Master list
+them instead of naming one node:
+
+```lua
+-- /etc/cluster-master.cfg
+storage_pool = { "<node-a address>", "<node-b address>", "<node-c address>" },
+```
+
+Where a key lives is a function of the key and that list (`cluster/placement.lua` on the
+Master), the answers the operator approved in the spec's §10:
+
+| Key | Goes to | Stands when |
+|---|---|---|
+| `job-<id>/...` (task lists) | the top two members by rendezvous hash | **both** have it. One copy is less safe than the inline payload it would replace, so a short write is released and the job stays inline. |
+| `shared/...` | every member | a majority have it. Each write is versioned (counter, Master's address); a node refuses an older version, and the Master's repair sweep (`storage_repair_interval`, 120 s) brings the rest up. |
+| anything else | the top member by hash | it has it |
+
+There is no coordinator: no member is ever asked "do you have it?", so a member that is
+rebooting cannot steer a write somewhere else (the spec's §0). A Manager is told both of a
+task list's members and reads the second when the first refuses or is silent. Each member
+issues its own lease and the Master releases each one where it was issued. A LIST asks
+every member and names any that did not answer rather than returning a short list as if it
+were whole. Adding a member changes where new keys go, and only the ones it now ranks
+for. Nothing is migrated: a key already written stays where it is, the assignment names
+its members, and job keys end with their job.
+
+Each member's `/etc/cluster-storage.cfg` names the same Master, and the Master trusts each
+member, as for one node. A Manager running a node on its own box reports that node's free
+space in its heartbeat.
+
 ## Things worth knowing before you change anything here
 
 - **A modem delivers only to a port the destination holds open.** The daemon opens 2101 and
@@ -68,5 +102,6 @@ Run from the `TOS-Extras` root: `lua cluster/storage-skeleton/test_storage_wire.
   request is dropped in silence so the port is no error oracle.
 - **Eviction tier 2 needs the Master.** A node cannot know a job finished; the signal is the
   Master's `STORE_RELEASE` at finalize. Guessing by age here would delete live task lists.
-- **`STORE_LIST_RES.keys` carries rows** (`{ key, size, expires_at }`), not bare names. Nothing
-  consumes it yet; mind that if something starts to.
+- **`STORE_LIST_RES.keys` carries rows** (`{ key, size, expires_at, version }`), not bare
+  names. The Master's pool LIST and repair sweep read them, so a change here is a change to
+  both.

@@ -78,6 +78,7 @@ local clusterd = {}
 local _running = false
 local _timer_heartbeat_sweep  -- timer id: scan for stale Managers
 local _timer_state_snapshot   -- timer id: write /var/cluster/status.dat
+local _timer_store_repair     -- timer id: a storage pool's shared/ repair
 local _timer_scheduler_tick   -- timer id: run scheduler pass
 local _net_listeners = {}     -- net.on() ids to tear down on stop
 
@@ -99,6 +100,8 @@ local DEFAULT_CFG = {
   heartbeat_sweep_interval = 5,
   encryption               = { plaintext_types = {} },
   storage_node_address     = nil,
+  storage_pool             = nil,   -- { addr, ... }: a pool instead of one node
+  storage_repair_interval  = 120,   -- seconds between a pool's shared/ repairs; 0 = off
   cluster_protocol         = "1.0",
   min_supported_protocol   = "1.0",
 }
@@ -197,9 +200,12 @@ function clusterd.start()
     -- (it speaks to the Storage Node on port 2101), not cluster.net,
     -- which exists to talk to Managers and would source-route through a
     -- relay path that has nothing to do with storage.
-    storecli.init({ state = state, serialize = okSer and ser or nil, log = log })
+    storecli.init({ state = state, serialize = okSer and ser or nil, log = log,
+                    pool = cfg.storage_pool })
     jobs.setStore(storecli, okSer and ser or nil)
-    if storecli.available() then
+    if storecli.isPool() then
+      log.info(LOG_TAG, "public storage: a pool of " .. #storecli.members() .. " member(s)")
+    elseif storecli.available() then
       log.info(LOG_TAG, "public storage: " .. tostring(storecli.address()):sub(1, 8))
     else
       log.info(LOG_TAG, "public storage: none configured (assignments stay inline)")
@@ -240,6 +246,14 @@ function clusterd.start()
     cfg.status_snapshot_interval,
     function() clusterd._onStatusSnapshot() end,
     "clusterd.status")
+  -- A pool's shared/ keys stand at a majority; this is how the rest catch
+  -- up (storage-spec §10, answer 2). One node has nothing to repair.
+  if storecli.isPool() and (tonumber(cfg.storage_repair_interval) or 0) > 0 then
+    _timer_store_repair = event.interval(
+      cfg.storage_repair_interval,
+      function() pcall(storecli.repair) end,
+      "clusterd.storerepair")
+  end
 
   -- 4. Expose the in-process API for the CLI.
   api.bind(state, scheduler, jobs, clusterd)
@@ -256,6 +270,7 @@ function clusterd.stop()
   if _timer_heartbeat_sweep then event.cancelTimer(_timer_heartbeat_sweep); _timer_heartbeat_sweep = nil end
   if _timer_scheduler_tick  then event.cancelTimer(_timer_scheduler_tick);  _timer_scheduler_tick  = nil end
   if _timer_state_snapshot  then event.cancelTimer(_timer_state_snapshot);  _timer_state_snapshot  = nil end
+  if _timer_store_repair    then event.cancelTimer(_timer_store_repair);    _timer_store_repair    = nil end
 
   netmod.unregister(_net_listeners)
   _net_listeners = {}

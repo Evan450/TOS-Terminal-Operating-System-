@@ -503,6 +503,9 @@ do
       -- warhead 1.0.3 and write 1.1.2 are what programs.cfg serves. Name a
       -- package here when a fix to it lands ahead of the next signing.
       ["tape"] = "2.3.3: a file `tape store` cannot read is named, not stored empty",
+      ["cluster-master"] = "1.2.0: storage_pool, the distributed Public tier",
+      ["cluster-manager"] = "1.4.0: reads a pool's second replica; reports local free space",
+      ["cluster-storage"] = "1.1.0: versioned shared/ writes for a pool",
     }
 
     if nShipped == 0 then
