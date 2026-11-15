@@ -2,7 +2,7 @@
 
 Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage pool, on the answers the operator approved"), done 2026-11-15 in two passes. No source file was changed; this file is the only output.
 
-**Second pass.** The first pass was off-box only. The second ran the findings on a real OpenComputers machine: Ocelot Desktop 1.14.2's jar driven by the project's own `build/headless-selftest.py` and `build/headless-session.py`. It confirmed seven findings on the real system, corrected two of my first-pass claims (B2 and B3, marked below), and added C2, D6, D7 and B7. Setup is in the appendix.
+**Second pass.** The first pass was off-box only. The second ran the findings on a real OpenComputers machine: Ocelot Desktop 1.14.2's jar driven by the project's own `build/headless-selftest.py` and `build/headless-session.py`. It confirmed seven findings on the real system, corrected two of my first-pass claims (B2 and B3, marked below), and added B7, C2, C3, C4, D6 and D7. Setup is in the appendix.
 
 **Why this file is in `docs/`.** The first pass put it at the repo root. That broke `test_release_excludes.lua` ("every top-level entry ships or is excluded by BOTH build scripts") and the release build copied it onto the install disk. `docs/` is excluded from the release, and the suite is green with it here.
 
@@ -47,10 +47,12 @@ The suite is green, so everything below is behaviour the tests do not cover.
 | B7 | Low | The bootstrap warns it will run out of space, then carries on | Confirmed in Ocelot |
 | C1 | Low | `cron add` with a fractional interval errors after saving the job | Confirmed in Ocelot |
 | C2 | Low | `log 2.5` crashes with a raw Lua error | Confirmed in Ocelot |
+| C3 | Medium | `passwd <user>` ignores the user and changes your own password | Confirmed in Ocelot |
+| C4 | Low | `lua <code>` opens the REPL without running the code | Confirmed in Ocelot |
 | D1–D7 | Low | Test and build tooling gaps on the published layout | Reproduced |
-| E1–E7 | Nit | Docs, comments and repo hygiene | Mixed |
+| E1–E8 | Nit | Docs, comments and repo hygiene | Mixed |
 
-Suggested order: A1 and A2 together, then A3 (same new API), then B1, then B2 with B3 and B7, then the rest.
+Suggested order: A1 and A2 together, then A3 (same new API), then C3 and B1, then B2 with B3 and B7, then the rest.
 
 ---
 
@@ -95,6 +97,8 @@ end
 1. The marker's own text is the only place that explains how to turn it off again ("recreate this marker (touch /etc/rc.d/20-rshd.disabled)"), and `service start` has just deleted that file.
 2. `service` has only `list | start <name> | stop <name>`. There is no `disable`.
 3. `MANUAL.md` mentions `rshd` once (line 1933) and never mentions `.disabled`. README's "The remote shell is off by default" does not say that starting it is permanent.
+
+4. The step the marker describes does not work as written. On the real machine, after `service start 20-rshd`, root's `touch /etc/rc.d/20-rshd.disabled` was refused: "Refused: writing to /etc is a protected system path … `protect off` stands the guard down for THIS SESSION ONLY … [E-402 ERR_PATH_PROTECTED]". The marker's text never mentions `protect off`.
 
 So an operator who tries the remote shell once has it listening on every boot from then on, and `service stop` (see A1) does not even hold for the current boot.
 
@@ -311,6 +315,28 @@ The scheduler ticks every 10 seconds (`cron.lua:89`), so an interval under 10 me
 
 **Also tried on the real machine and fine:** `watch 1.5 df`, `tree / 1.5`, `date tz 2.5` (half-hour offsets are legitimate), `kill 1.5`, `menu remove 1.5`, `screen 1.5`. I did not trace every numeric argument to its last use.
 
+### C3. `passwd <user>` changes your own password — Medium — Confirmed in Ocelot
+
+**Where.** `tos/shell/panels/commands/core.lua:2844-2868` (`C.passwd`), against `MANUAL.md:2981-2983`.
+
+**What happens.** `C.passwd` never reads `args`. It always prompts "Current password:", "New password:", "Confirm new password:" and calls `U.changePassword(w2, w2, old, new)` for the caller. The manual's command reference says: "**passwd** — `passwd [user]` (other users: admin). Change your password (or another user's, as admin)." `MANUAL.md:460` and the `help` text say "change your own", so the manual disagrees with itself.
+
+**On the real machine**, as root: `useradd alice`, then `passwd alice`. The prompts name no account. I gave root's current password and a new one; it answered "Password changed." Logging in as alice with the new password then failed. `passwd nobody`, for an account that does not exist, also ends in "Password changed."
+
+**Why it matters.** An admin resetting a locked-out user's password by the book changes their own password to the one they meant for the user, and nothing on screen says so. There is also no shell command that resets another account's password, although the kernel supports it: `users.changePassword` (`tos/kernel/users.lua:782`) lets an admin change any account that does not outrank them, without the old password.
+
+**Recommended fix.** Implement the documented form. With `args[1]` naming another account: skip the current-password prompt, prompt "New password for <user>:" and its confirmation, and call `U.changePassword(self, args[1], nil, new)`; the kernel already enforces tier and rank and returns "User not found". Name the account in every prompt in both forms ("New password for root:"). Pass on the keychain note `changePassword` returns, since an admin reset cannot re-key the user's keychain. Then make `MANUAL.md:460`, the reference entry and `help` agree. Add a test beside `test_keychain_rekey.lua`.
+
+### C4. `lua <code>` opens the REPL without running the code — Low — Confirmed in Ocelot
+
+**Where.** `tos/shell/panels/commands/admin.lua:2486` (`C.lua`), against `MANUAL.md:2324-2335` (§13.1 "One-liners with `lua`") and `MANUAL.md:2810-2813`.
+
+**What happens.** The manual documents `lua <expression-or-statement>` with three examples (`lua 2^16`, `lua print(("hello"):upper())`, `lua for i=1,3 do print(i) end`). `C.lua` never reads `args`. On the real machine `lua print(math.pi)` opened the REPL at an empty `>` prompt and printed nothing. `help` and the command registry describe only the REPL.
+
+§13.1 also says two different things about the environment: "The REPL has full `_ENV` access" and, two paragraphs later, "It runs in the sandbox of your session — you get a safe `_G`".
+
+**Recommended fix.** Either implement one-liners (join the arguments, try `return <code>` first and then the statement form, print the results; mind that the shell's tokenizer has already split and unquoted the line, so use the raw command text if the executor can supply it), or remove §13.1's one-liner form and the example in the reference. Settle the environment sentence either way.
+
 ---
 
 ## D. Test and build tooling on the published layout
@@ -376,6 +402,12 @@ Lines 372-399. With `Reference/` absent, every skip is printed as `SKIP(needs Re
 - "A TOS BIOS was found on the install disk." appears during a network install, where there is no disk.
 - README step 6 reads "`theme list`, then `theme set midnight`". `theme list` (like `help`) opens a viewer tab, and what is typed next goes to the viewer until it is closed with Ctrl+Q. The footer says so, but a first-time user following the README literally will type into the viewer. "`theme list` (Ctrl+Q closes it)" would cover it.
 
+**E8. Small things from a sweep of about 120 commands with missing or wrong arguments on the real machine.** No raw Lua error apart from C1 and C2; refusals were worded and coded throughout.
+
+- `userdel nobody` shows the red "Delete the account 'nobody'?" confirmation before finding out the account does not exist (`admin.lua:3200-3225`). Check first.
+- `log filter net 9` is accepted ("Source 'net' now logs at 9+"). Levels run 0 to 4, so this silences the source with no hint.
+- `verify` takes over the screen for about half a minute on a 4 MB install; keys typed meanwhile are lost.
+
 ---
 
 ## Checked and found fine
@@ -402,7 +434,7 @@ This was two passes over a repository of about 250,000 lines. No finding in an a
 - **Add-ons**: only `cluster-worker-setup.lua` was read. The rest were covered by their own tests and lint only.
 - **MANUAL.md** was checked for specific claims, not proofread.
 - **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. B4 and B6 were not run on a machine: the session tool has no way to put the CPU in Lua 5.2 mode. `tos.py floorcheck` was not run.
-- **Emulator coverage is narrow.** I drove the findings above, the network install, and the README's first ten minutes. The editor, file browser, Desktop tiles, mesh pairing, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
+- **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, and a sweep of about 120 commands with missing or wrong arguments. The editor, file browser, Desktop tiles, mesh pairing, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
 - `test_component_api.lua` could not run without `Reference/`, so component calls were not checked against the API table.
 
 ---
@@ -585,6 +617,42 @@ type clear\n
 type log 2.5\n
 sleep 2
 snap log
+```
+
+**C3 and C4** — no options
+
+```
+firstboot
+type lua print(math.pi)\n
+sleep 3
+snap lua-oneliner
+type exit\n
+sleep 1
+type clear\n
+type useradd alice\n
+sleep 2
+type alicepass1\n
+sleep 1
+type alicepass1\n
+sleep 2
+type clear\n
+type passwd alice\n
+sleep 2
+snap passwd-alice-prompt
+type headless1\n
+sleep 1
+type resetpass1\n
+sleep 1
+type resetpass1\n
+sleep 2
+snap passwd-alice-result
+type logout\n
+wait 30 Username:
+type alice\n
+sleep 1
+type resetpass1\n
+sleep 4
+snap alice-with-new-password
 ```
 
 ### Off-box scripts
