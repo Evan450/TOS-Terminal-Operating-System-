@@ -1,11 +1,16 @@
 # TOS audit notes — for a fixing session
 
-Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage pool, on the answers the operator approved"), done 2026-11-15. Nothing in the repository was changed; this file is the only output.
+Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage pool, on the answers the operator approved"), done 2026-11-15 in two passes. No source file was changed; this file is the only output.
+
+**Second pass.** The first pass was off-box only. The second ran the findings on a real OpenComputers machine: Ocelot Desktop 1.14.2's jar driven by the project's own `build/headless-selftest.py` and `build/headless-session.py`. It confirmed seven findings on the real system, corrected two of my first-pass claims (B2 and B3, marked below), and added C2, D6, D7 and B7. Setup is in the appendix.
+
+**Why this file is in `docs/`.** The first pass put it at the repo root. That broke `test_release_excludes.lua` ("every top-level entry ships or is excluded by BOTH build scripts") and the release build copied it onto the install disk. `docs/` is excluded from the release, and the suite is green with it here.
 
 **Paths.** Everything below is relative to the published repo root, which is `TOS-Dev/` in the local monorepo. `TOS-Extras/` is nested inside the published repo and a sibling of `TOS-Dev/` locally. Line numbers are from `1183c69` and will have drifted in a newer local copy, so each finding also names the function or quotes the text to search for.
 
 **How to read the evidence labels.**
 
+- **Confirmed in Ocelot**: seen on a booted machine (Ocelot Brain, the same `machine.lua` and component code as the mod) through a scripted headless session. The session scripts are in the appendix.
 - **Reproduced**: I ran the real module off-box and saw the wrong behaviour. The script is in the appendix.
 - **Confirmed against OpenComputers source**: I read the code path here and checked the platform behaviour it depends on in `MightyPirates/OpenComputers` (branch `master-MC1.12`, 1.8.10, and tag `v1.7.5` where noted). Not run in the game.
 - **Confirmed by reading**: the code path is unambiguous, but I did not execute it.
@@ -20,6 +25,9 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 | `python tos.py build` | Builds; `test_manifest_digests` and `test_release_budget` pass once `../TOS-Release` exists |
 | `luac -p` on every `.lua`, 5.3 and 5.4 | Clean |
 | `luacheck` on `tos/`, `etc/`, boot files | No undefined globals beyond the sandbox-injected ones |
+| `python tos.py selftest` on Ocelot 1.14.2 | 117 of 117 boot checks pass |
+| README one-liner against published `main`, in Ocelot | Signature valid, 171 files, install, BIOS flash, reboot, First Boot Setup: all work |
+| README "first ten minutes" on a booted machine | `useradd`, `usermod`, `logout`, login, `why`, `theme set` all behave |
 
 The suite is green, so everything below is behaviour the tests do not cover.
 
@@ -27,32 +35,36 @@ The suite is green, so everything below is behaviour the tests do not cover.
 
 | ID | Severity | What | Evidence |
 |---|---|---|---|
-| A1 | High | `service stop` is undone by the supervisor within 30 s | Reproduced |
-| A2 | High | Once started, `rshd` cannot be switched off again across reboots | Reproduced |
-| A3 | Medium | `pkg disable` does not stop the package's service or keep it off | Confirmed by reading |
-| B1 | Medium | Ctrl+C at any installer y/n prompt means **yes** | Confirmed against OC source |
-| B2 | Medium | `bootstrap.lua` counts a failed staging write as a download | Confirmed against OC source |
-| B3 | Low | `bootstrap.lua`'s space estimate is about 47 KB too low | Measured on a build of this tree |
+| A1 | High | `service stop` is undone by the supervisor within 30 s | Confirmed in Ocelot |
+| A2 | High | Once started, `rshd` cannot be switched off again across reboots | Confirmed in Ocelot |
+| A3 | Medium | `pkg disable` does not stop the package's service or keep it off | Confirmed in Ocelot |
+| B1 | Medium | Ctrl+C at any installer y/n prompt means **yes** | Confirmed in Ocelot |
+| B2 | Low–Medium | `bootstrap.lua` counts a failed staging write as a download (revised) | Confirmed in Ocelot |
+| B3 | Low | `bootstrap.lua`'s space estimate is about to be too low (corrected) | Measured |
 | B4 | Low | `bootstrap.lua` does not parse on a Lua 5.2 CPU | Reproduced with `luac5.2 -p` |
-| B5 | Low | `bootstrap.lua` never removes itself: OpenOS has no `arg` | Confirmed against OC source |
+| B5 | Low | `bootstrap.lua` never removes itself: OpenOS has no `arg` | Confirmed in Ocelot |
 | B6 | Low | The Lua 5.2 screen tells the user to do something that does not work | Confirmed against OC source |
-| C1 | Low | `cron add` with a fractional interval errors after saving the job | Reproduced |
-| D1–D5 | Low | Test tooling gaps on the published layout | Reproduced |
-| E1–E6 | Nit | Docs, comments and repo hygiene | Mixed |
+| B7 | Low | The bootstrap warns it will run out of space, then carries on | Confirmed in Ocelot |
+| C1 | Low | `cron add` with a fractional interval errors after saving the job | Confirmed in Ocelot |
+| C2 | Low | `log 2.5` crashes with a raw Lua error | Confirmed in Ocelot |
+| D1–D7 | Low | Test and build tooling gaps on the published layout | Reproduced |
+| E1–E7 | Nit | Docs, comments and repo hygiene | Mixed |
 
-Suggested order: A1 and A2 together, then A3 (same new API), then B1, B2 with B3, then the rest.
+Suggested order: A1 and A2 together, then A3 (same new API), then B1, then B2 with B3 and B7, then the rest.
 
 ---
 
 ## A. Services
 
-### A1. `service stop` does not stick — High — Reproduced
+### A1. `service stop` does not stick — High — Confirmed in Ocelot
 
 **Where.** `tos/kernel/rc.lua`: `rc.stop` (line 601), `rc.supervise` (line 668), `rc.tryRestart` (line 637). The timer is `event.interval(30, …, "kernel:rc_supervise")` in `tos/kernel/init.lua:945`.
 
 **What happens.** `rc.stop` sets `svc.running = false` and nothing else. `rc.supervise` restarts every service where `svc.restart and not svc.running and not svc.disabledAtBoot`. Nothing distinguishes "the operator stopped it" from "it crashed", so the next 30-second tick starts it again. Every shipped service declares `restart = true`: `10-discoveryd`, `20-chatrelay`, `20-fileshare`, `20-netfsd`, `20-rshd`, and `cluster-storaged` in TOS-Extras.
 
 **What the user sees.** `service stop 20-rshd` prints `Stopped: 20-rshd`, the log says "exec requests now refused", and up to 30 seconds later the remote shell is armed again with only a log line (`Restarting service: 20-rshd (attempt 1)`). The same applies to file sharing and netfs. It only stays down after `maxRestart` restarts are used up, and that budget resets after `RESTART_DECAY` (600 s).
+
+**On the real machine** (two networked machines): `service stop 20-fileshare` showed `stopped`, and about 25 seconds later the kernel log had `[39.5][INF][rc] Restarting service: 20-fileshare (attempt 1)`.
 
 **Why the suite misses it.** `test_rc_disabled.lua` covers "the supervisor must not resurrect a disabled service" and "a crash of an operator-enabled service is restarted", but never stop followed by supervise.
 
@@ -74,7 +86,7 @@ end
 
 **Test to add** (in `test_rc_disabled.lua`): start a `restart = true` service, `rc.stop` it, call `rc.supervise()`, assert it is still stopped and `start` ran once. Then `rc.start` it, simulate a crash (`check` returning false), `rc.supervise()`, assert it restarted.
 
-### A2. `rshd` cannot be turned off again persistently — High — Reproduced
+### A2. `rshd` cannot be turned off again persistently — High — Confirmed in Ocelot
 
 **Where.** `tos/kernel/rc.lua:590-593` (inside `rc.start`), `etc/rc.d/20-rshd.disabled`, `tos/shell/panels/commands/admin.lua:3909-3956` (`C.service`).
 
@@ -86,6 +98,8 @@ end
 
 So an operator who tries the remote shell once has it listening on every boot from then on, and `service stop` (see A1) does not even hold for the current boot.
 
+**On the real machine:** after `service start 20-rshd` and `service stop 20-rshd`, `service list` showed `stopped`, then `running` 40 seconds later. After a power cycle `/etc/rc.d` held five scripts and no `20-rshd.disabled`.
+
 Note that `rc.disable(name)` already exists (line 697) and **deletes the script**. Do not reuse that name for this.
 
 **Recommended fix.**
@@ -95,7 +109,7 @@ Note that `rc.disable(name)` already exists (line 697) and **deletes the script*
 - After `service stop` on a service that will start again at boot, print one line: "Off until the next boot. `service disable <name>` keeps it off."
 - Rewrite the tail of `20-rshd.disabled` to say `service disable 20-rshd`, and add the same to README "Known limitations" and the MANUAL's remote-shell section.
 
-### A3. `pkg disable` leaves the package's service running — Medium — Confirmed by reading
+### A3. `pkg disable` leaves the package's service running — Medium — Confirmed in Ocelot
 
 **Where.** `tos/kernel/pkg.lua:792-798` (`pkg.setEnabled`), `tos/shell/panels/commands/admin.lua:1383-1391`, against `usr/man/pkg.man:76-77` and `MANUAL.md:1048-1050`.
 
@@ -103,7 +117,9 @@ Note that `rc.disable(name)` already exists (line 697) and **deletes the script*
 
 **What the docs promise.** `man pkg`: "Switch it off without removing it (its commands and its service stop; its files stay)". MANUAL: "a disabled package's commands and service stay dormant".
 
-**Result.** After `pkg disable mail` the mail service keeps receiving, and it starts again at the next boot, while `pkg list` shows the package as disabled. This affects every service package: mail, intercom, the cluster packages, rbmk-controld.
+**Result.** After `pkg disable mail` the mail service keeps receiving, and it starts again at the next boot. This affects every service package: mail, intercom, the cluster packages, rbmk-controld.
+
+**On the real machine:** `pkg install mail` from an add-on floppy, `service start mail`, `pkg disable mail`. `service list` showed `mail  running` straight away, 35 seconds later, and again after a power cycle. `pkg list` after the reboot showed `mail 1.0.1 service` with nothing to say it was disabled, which is worth fixing in the same change.
 
 **Recommended fix.** In the `pkg disable` path, for each `/etc/rc.d/*.lua` the package owns: `rc.stop` it and call the new `rc.setBootEnabled(name, false)` from A2. `tos/kernel/pkgops.lua:895-934` already collects a package's rc.d stems and their markers for upgrades and can be reused. Decide what `pkg enable` does for the service (leave it off and say "`service start <svc>` to run it" is the conservative choice, matching `defaultState = "disabled"`), then make the man page and MANUAL say exactly that. Extend `test_pkg_service_enable.lua`.
 
@@ -111,11 +127,13 @@ Note that `rc.disable(name)` already exists (line 697) and **deletes the script*
 
 ## B. Installing (`bootstrap.lua`, `install.lua`, `init.lua`)
 
-### B1. Ctrl+C at a y/n prompt answers yes — Medium — Confirmed against OC source
+### B1. Ctrl+C at a y/n prompt answers yes — Medium — Confirmed in Ocelot
 
 **Where.** `ask()` and `confirm()` in `bootstrap.lua:70-100` and `install.lua:87-118`.
 
 **What happens.** OpenOS's `term.read()` returns `false` when the user presses Ctrl+C and `nil` on Ctrl+D (`lib/core/cursor.lua`: `elseif name == "interrupted" then self:echo("^C\n") return false, name`). `ask` then runs `if not answer or answer == "" then return default end`, and `confirm` passes `"y"` as the default. So the universal "get me out of here" key accepts the prompt.
+
+**On real OpenOS** (1.8.9, with a TOS install disk): at `Continue? [y/n] (default: y):` I sent Ctrl+C. The screen showed `^C` and the installer went straight on: "Kept the previous /init.lua as /init.lua.pre-tos", "Creating directories", "Copying system files".
 
 **Prompts affected.**
 
@@ -138,7 +156,9 @@ The two typed confirmations (`FORCE-WIPE`, `flash`) use `io.read() or ""` and ar
 
 **Test.** `ask` is not `TEST-EXTRACT`ed today. Mark it, or split the "what does this raw read result mean" decision into a small pure function and test `false`, `nil`, `""` and `"y\n"`.
 
-### B2. A failed staging write is counted as a download — Medium — Confirmed against OC source
+### B2. A failed staging write is counted as a download — Low–Medium — Confirmed in Ocelot
+
+*Revised in the second pass. The first pass said this leaves an empty file in the installed system. With today's file order it does not; it produces a misleading failure. The mechanism is as first described.*
 
 **Where.** `bootstrap.lua:793-796`:
 
@@ -149,11 +169,29 @@ if f then
   copied = copied + 1
 ```
 
-**What happens.** On OpenComputers a write is all-or-nothing: `Capacity.scala`'s `CountingOutputHandle.write` throws "not enough space" when the whole chunk does not fit, and opening a new file only needs the 512-byte `fileCost`. OpenOS turns that into `nil, "not enough space"`, and `buffer:close()` discards the result of its own flush. So when a file does not fit, `io.open` succeeds, `f:write` fails silently, a 0-byte file is left behind and `copied` goes up. The existing out-of-space handling only triggers when `io.open` itself fails, which needs less than 512 bytes free. Smaller files after the one that failed still fit, so the loop finishes with `failed == 0` and "Downloaded N files".
+**What happens.** On OpenComputers a write is all-or-nothing: `Capacity.scala`'s `CountingOutputHandle.write` throws "not enough space" when the whole chunk does not fit, and opening a new file only needs the 512-byte `fileCost`. OpenOS passes the whole body to the component in one call and turns the failure into `nil, "not enough space"`; `buffer:close()` discards the result of its own flush. So when a file does not fit, `io.open` succeeds, `f:write` fails silently, a 0-byte file is left behind and `copied` goes up. The existing out-of-space handling only triggers when `io.open` itself fails.
 
-**What follows.** `install.lua`'s `verifyCopy` (line 448) compares the size of each installed file with the staged one, 0 against 0, reports "All N files verified", and offers the BIOS flash. `init.lua`'s critical-file check is `exists()` only. The machine is left with an empty file somewhere in the system, found later by `verify` or by a panic.
+**On real OpenOS** (2 MB boot drive, padded to leave 1370 KB free, about 15 KB short): the bootstrap printed "Downloading 172 files", reported no failure and handed off to the installer. The staged `tos/system_manifest.lua` was 0 bytes (checked on the kept disk). The installer then printed:
 
-`install.lua`'s own `copyFileChunked` (line 410) was already fixed for exactly this and its comment explains it ("OpenOS answers a full disk with nil, 'not enough space' rather than raising … AUDIT 5"). The bootstrap is the twin that was missed.
+```
+  + Kept the previous /init.lua as /init.lua.pre-tos
+  X Cannot load install manifest: manifest did not return a table
+  X Install file copy/verify did NOT fully succeed.
+  ! You can retry installation; the partial files won't conflict.
+```
+
+with 6 KB free on the drive. Disk space is never mentioned, a retry cannot work, and the bootstrap's own OUT OF SPACE exit, which explains the remedy well, is never reached.
+
+**How wide the window is.** I simulated the download loop against a release built from this tree for every amount of free space:
+
+| Free space | Outcome |
+|---|---|
+| 1412 KB or more | Clean |
+| 1408–1412 KB | Only `/bios.lua` is empty; the installer says "Empty bios.lua" and carries on (harmless) |
+| 1379–1408 KB | The manifest (and below 1385, `ru.lang`) is empty; hand-off, then the manifest error above |
+| Under 1379 KB | The proper OUT OF SPACE exit |
+
+It is not a silent bad install today only because the last sizeable file in download order is the manifest itself, which the installer cannot do without. If a future manifest ends with a different large file, that file would be installed empty and `verifyCopy` (0 bytes against 0 bytes) would call it verified. `install.lua`'s `copyFileChunked` (line 410) was already fixed for this class ("AUDIT 5"); the bootstrap is the twin that was missed.
 
 **Recommended fix.**
 
@@ -170,19 +208,26 @@ if f then
 end
 ```
 
-On failure, remove the partial file, and treat `freeSpace(stagingDir) < #body + 512` as the out-of-space case (the current `freeNow < 4096` test is too narrow for a 100 KB file). As a second line of defence, have `install.lua` refuse a 0-byte source for any manifest entry, or hash the installed files against the manifest: it already loads `/tos/kernel/sha256.lua` for `biosDigest`.
+On failure, remove the partial file and treat `freeSpace(stagingDir) < #body + 512` as the out-of-space case (the current `freeNow < 4096` test is too narrow for a 100 KB file). As a second line of defence, have `install.lua` refuse a 0-byte source for any manifest entry.
 
 **Test.** `test_install_bootstrap.lua` with a fake file handle whose `write` returns `nil, "not enough space"`.
 
-### B3. The bootstrap's space estimate is stale — Low — Measured
+### B3. The bootstrap's space estimate is about to be too low — Low — Measured
+
+*Corrected in the second pass. The first pass said 1447 KB; that double-counted `/install.lua`, which is already a manifest entry.*
 
 **Where.** `bootstrap.lua:710`: `local NEED_BYTES = 1400 * 1024`.
 
-**Measured** on a release built from this tree with `python tos.py build`: 175 staged files and 13 directories, 1,384,463 bytes; with OpenComputers' 512 bytes per file and directory, **1,481,231 bytes (1447 KB)**. The threshold is 1,433,600. A staging drive with between 1400 and 1447 KB free gets no warning and then runs short. Combined with B2 that is a silent partial install, not a failed one.
+**Measured.**
 
-The surrounding text is stale as well: comments at lines 646, 680 and 1025 say "~1.2 MB across 152 files"; `printHelp` (line 333) and `MANUAL.md:228` say "about 1.4 MB".
+- A release built from this tree stages 174 files in 13 directories: 1,349,765 bytes, or **1,446,021 bytes (1412 KB)** with OpenComputers' 512 bytes per file and directory. That is 12 KB over the threshold.
+- The published `main` release today (171 files) used about 1385 KB of staging in Ocelot, so the threshold still holds for it, by about 15 KB.
 
-**Recommended fix.** Raise it to 1536 KB and correct the three texts. `MAX_FILE_BYTES` already has a test that measures the real release (`test_install_bootstrap.lua`); give `NEED_BYTES` the same treatment, summing sizes plus 512 per entry, so it cannot drift again.
+So the warning is correct today and stops being correct at the next release from this tree. In the gap, a drive gets no warning and lands in B2's window.
+
+The surrounding text is stale: comments at lines 646, 680 and 1025 say "~1.2 MB across 152 files".
+
+**Recommended fix.** Raise it to 1536 KB, update `printHelp` (line 333) and `MANUAL.md:228` from "about 1.4 MB" to "about 1.5 MB", and correct the comments. `MAX_FILE_BYTES` already has a test that measures the real release (`test_install_bootstrap.lua`); give `NEED_BYTES` the same, summing sizes plus 512 per entry, so it cannot drift again.
 
 ### B4. `bootstrap.lua` does not parse on Lua 5.2 — Low — Reproduced
 
@@ -196,11 +241,13 @@ The surrounding text is stale as well: comments at lines 646, 680 and 1025 say "
 
 **Recommended fix.** Keep `bootstrap.lua` 5.2-parseable the way `init.lua` is. Probe with `load("return 1<<1")` right after the helpers and stop with the fix; compile the 5.3-only code from a long string with `load`. `sha256hex` and `verifyRelease` carry `--[[TEST-EXTRACT]]` markers, so `test_install_bootstrap.lua` needs to follow whatever shape is chosen. Add the same probe as a warning in `install.lua`'s `printHardwareReport`. `test_bios.lua` pins the probe in the two boot files; extend it to these two, and add a syntax scan for 5.3 operators outside the loaded string since CI has no Lua 5.2.
 
-### B5. The bootstrap never removes itself — Low — Confirmed against OC source
+### B5. The bootstrap never removes itself — Low — Confirmed in Ocelot
 
 **Where.** `bootstrap.lua:1004`: `local self = selfPathToReclaim((arg and arg[0]) or nil)`.
 
 **What happens.** OpenOS does not define a global `arg`. `lib/process.lua`'s `process.load` passes arguments as `...` and records the script with `os.setenv("_", program)`. So `arg` is nil, `selfPathToReclaim(nil)` returns nil, and `/bootstrap.lua` stays on the disk after every network install. The "Removed /bootstrap.lua" line can never print. `install.lua:200` already uses `os.getenv("_")` for the same purpose, and the bootstrap's own comment at line 949 mentions the convention.
+
+**On real OpenOS:** after a complete network install of the published release (declining the reboot so the disk could be listed), `ls /` still showed `bootstrap.lua`. The installer's own "Removed the download at /home/tos-netinstall" worked.
 
 **Why the suite misses it.** The tests call `selfPathToReclaim` with strings directly. Stock Lua defines `arg`, OpenOS does not. `test_install_bootstrap.lua:287` even asserts the source contains `arg and arg[0]`.
 
@@ -228,25 +275,45 @@ Press any key to power off.
 
 Consider the same wording in README line 81 and `MANUAL.md:204`.
 
+### B7. The bootstrap warns it will run out of space, then carries on — Low — Confirmed in Ocelot
+
+**Where.** `bootstrap.lua:731-738`.
+
+**What happens.** With less than `NEED_BYTES` free it prints "That is under the ~1400 KB the release needs. The download will likely run out of space partway through. Free some room, or install from a disk instead. Continuing." and starts a two-minute download it has just predicted will fail. In the B2 run that is exactly what happened.
+
+**Recommended fix.** Ask instead of continuing: "Download anyway? [y/N]", defaulting to no. The comment says the figure is "a floor for WARNING only, never a refusal" so that an unusual layout is not blocked; a question keeps that door open without wasting the download.
+
 ---
 
 ## C. Commands
 
-### C1. `cron add` with a fractional interval — Low — Reproduced
+### C1. `cron add` with a fractional interval — Low — Confirmed in Ocelot
 
 **Where.** `tos/kernel/cron.lua:117-119` (`cron.add`'s validation), `216-226` (store and save), `229` (log line); `tos/shell/panels/commands/admin.lua:4002`.
 
 **What happens.** `cron.add` accepts any positive number. It stores and saves the job and then logs with `string.format("… (every %ds, …)", intervalSec)`. For `1.5` that raises "number has no integer representation". The command reports an error, but the job exists and runs. A user who retries with a whole number ends up with two jobs.
 
+**On the real machine:** `cron add job 1.5 print(1)` printed `Error: /tos/kernel/cron.lua:50: bad argument #3 to 'format' (number has no integer representation)` (the line number is the minified build's), and `cron list` then showed `1  job  1.5s  yes`.
+
 The scheduler ticks every 10 seconds (`cron.lua:89`), so an interval under 10 means "every tick" in any case.
 
 **Recommended fix.** Validate before storing: a whole number of seconds, at least 1, and say in the usage text that jobs are checked every 10 seconds. Add a case to `test_cron_add_report.lua`.
 
-I checked the other commands that parse a number (`redstone set`, `pulse`, `date tz`, `watch`, `menu remove`, `log`, `drive read`). `redstone set` validates properly; I found no second instance, but I did not trace every one of them to its last use.
+### C2. `log <n>` with a fractional count crashes — Low — Confirmed in Ocelot
+
+**Where.** `tos/shell/panels/commands/admin.lua:2252` and `2283-2291` (`C.log`).
+
+**What happens.** `local first = (n and n > 0 and #lines - n + 1) or 1` is fractional when `n` is, so `lines[i]` is nil for every `i` in the loop and `line:find` raises. On the real machine `log 2.5` printed `Error: /tos/shell/panels/commands/admin.lua:992: attempt to index a nil value (local 'aM')`.
+
+`log ring 2.5` does not crash but answers "(no log entries in ring)" when the ring is not empty. `log denied 1.5` is harmless.
+
+**Recommended fix.** One small helper for "a whole number from the command line" (reject or floor, with a range), used by `log`, `log ring`, `log denied` and `cron add`. `redstone set` (`extras.lua:106-111`) already validates this way and is the pattern to copy.
+
+**Also tried on the real machine and fine:** `watch 1.5 df`, `tree / 1.5`, `date tz 2.5` (half-hour offsets are legitimate), `kill 1.5`, `menu remove 1.5`, `screen 1.5`. I did not trace every numeric argument to its last use.
 
 ---
 
-## D. Test tooling on the published layout
+## D. Test and build tooling on the published layout
 
 ### D1. `run_tests.sh` is red on a fresh clone and skips every add-on test — Reproduced
 
@@ -275,6 +342,14 @@ Lines 372-399. With `Reference/` absent, every skip is printed as `SKIP(needs Re
 
 `usr/lib/tests/test_untrusted_index_budget.lua:71` and `:122` print "SKIP: TOS-Extras is not beside TOS-Dev" when what is missing is the built pack (`TOS-Extras/dist/optional-utilities/programs.cfg`). TOS-Extras is present.
 
+### D6. `tos.py pack` fails at its second step — Reproduced
+
+`python tos.py pack` builds the two add-on disks and then stops with `error: cannot load kernel.serialize from the sibling TOS-Dev tree`. `TOS-Extras/build/make-repo-index.lua:51` only adds `EXTRAS/../TOS-Dev/tos/?.lua` to `package.path`. `build-disk.lua` and `sign-package.lua` beside it already try both layouts (`../TOS-Dev/tos/` and `../tos/`). So on a clone of `dev` the repo index cannot be built, and `test_repo_index.lua`'s skip message ("run: lua build/build-disk.lua && lua build/make-repo-index.lua") names a command that fails. Add the nested path.
+
+### D7. The add-on pack's output is not ignored
+
+`.gitignore` lists `TOS-Release/` but not `TOS-Extras/dist/`. After `tos.py pack` or `build-disk.lua` on the published layout, `git status` shows `TOS-Extras/dist/` as untracked. Add it.
+
 ---
 
 ## E. Docs, comments, hygiene
@@ -295,6 +370,12 @@ Lines 372-399. With `Reference/` absent, every skip is printed as `SKIP(needs Re
 - Lines 360-363, `ctx.writeFile`: `h:write(data)` is unchecked, the same class as B2. On a full disk an empty temp file is renamed over the worker's config, which the "temp + rename" comment says cannot happen.
 - Line 335, `if not (...)`: any command-line argument, including `--help`, makes the script do nothing and print nothing.
 
+**E7. Small things seen during the real network install.**
+
+- After the installer prints "Removed the download at /home/tos-netinstall", the bootstrap prints "Removed the staging copy (2218 KB free now)" for the same directory when the user declines the reboot. `removeTree` returns true for a path that is already gone.
+- "A TOS BIOS was found on the install disk." appears during a network install, where there is no disk.
+- README step 6 reads "`theme list`, then `theme set midnight`". `theme list` (like `help`) opens a viewer tab, and what is typed next goes to the viewer until it is closed with Ctrl+Q. The footer says so, but a first-time user following the README literally will type into the viewer. "`theme list` (Ctrl+Q closes it)" would cover it.
+
 ---
 
 ## Checked and found fine
@@ -314,18 +395,199 @@ So the next session does not repeat it:
 
 ## Not covered
 
-This was one pass over a repository of about 250,000 lines. No finding in an area below means I did not look closely, not that it is clean.
+This was two passes over a repository of about 250,000 lines. No finding in an area below means I did not look closely, not that it is clean.
 
 - **Not read line by line**: `kernel/sandbox.lua`, `securefs.lua`, `pkgops.lua`, `pkgremote.lua`, the whole `kernel/net/` tree, `crypto` and the Ed25519 code, `process.lua`, `screen.lua` and `display.lua`.
 - **Shell**: the panels interface, editor and file browser were not reviewed. Only `service`, `cron`, `pkg enable/disable`, `touch` and the numeric-argument commands were read.
 - **Add-ons**: only `cluster-worker-setup.lua` was read. The rest were covered by their own tests and lint only.
 - **MANUAL.md** was checked for specific claims, not proofread.
-- **Nothing was run in the game or in Ocelot.** There is no Ocelot jar in this environment, so `tos.py selftest`, `floorcheck` and the headless sessions were not run. B1, B2, B5 and B6 rest on reading OpenComputers' source, which I am confident in but did not observe.
+- **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. B4 and B6 were not run on a machine: the session tool has no way to put the CPU in Lua 5.2 mode. `tos.py floorcheck` was not run.
+- **Emulator coverage is narrow.** I drove the findings above, the network install, and the README's first ten minutes. The editor, file browser, Desktop tiles, mesh pairing, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
 - `test_component_api.lua` could not run without `Reference/`, so component calls were not checked against the API table.
 
 ---
 
-## Appendix: reproduction scripts
+## Appendix: reproduction
+
+### The emulator
+
+What the second pass used, in a cloud container with 4 cores and a JDK 21 already present:
+
+```bash
+mkdir -p ~/Ocelot
+curl -sSL -o ~/Ocelot/ocelot-desktop-v1.14.2.jar \
+  https://gitlab.com/api/v4/projects/9941848/packages/generic/ocelot-desktop/v1.14.2/ocelot-desktop-v1.14.2.jar
+echo "6675c509c9bf6f88572d4acbed0666458c04164b0a908188f330ea7d707eba17  $HOME/Ocelot/ocelot-desktop-v1.14.2.jar" | sha256sum -c -
+python tos.py selftest          # builds ../TOS-Release, boots it, runs the 117 boot checks
+```
+
+`build/headless-selftest.py` finds the jar in any folder named `*Ocelot*` under the home directory, so no option is needed. A boot takes 10 to 20 seconds and the runner asks for a 1 GB heap; there is no window and no Minecraft, so modest hardware is enough.
+
+Each session below is `python build/headless-session.py SCRIPT [options]`. Run `python tos.py build` first: the sessions boot `../TOS-Release`.
+
+**A1** — options `--machines 2`
+
+```
+firstboot
+type service stop 20-fileshare\n
+sleep 1
+type service list\n
+sleep 1
+snap after-stop
+sleep 40
+type clear\n
+type service list\n
+sleep 1
+type log ring 6\n
+sleep 1
+snap after-40s
+```
+
+**A2** — options `--machines 2`
+
+```
+firstboot
+type service start 20-rshd\n
+sleep 2
+type service stop 20-rshd\n
+sleep 1
+type clear\n
+type service list\n
+sleep 1
+snap rshd-just-stopped
+sleep 40
+type clear\n
+type service list\n
+sleep 1
+snap rshd-40s-later
+powercycle
+login root headless1
+type clear\n
+type ls /etc/rc.d\n
+sleep 1
+snap rshd-after-reboot
+```
+
+**A3** — first `python tos.py pack` (its first step is enough; see D6), then options `--machines 2 --floppy utils=TOS-Extras/dist/optional-utilities/disk1 --floppy-in utils`. Delete `TOS-Extras/dist/` afterwards (D7).
+
+```
+firstboot
+type pkg install mail\n
+wait 30 Installed: mail
+type service start mail\n
+sleep 2
+type clear\n
+type pkg disable mail\n
+sleep 2
+type service list\n
+sleep 2
+snap right-after-disable
+sleep 35
+type clear\n
+type service list\n
+sleep 2
+snap 35s-after-disable
+powercycle
+login root headless1
+type clear\n
+type service list\n
+sleep 2
+snap after-reboot-services
+```
+
+**B1** — options `--os openos --install-disk`
+
+```
+wait 90 /home\s*#
+type /mnt/d15/install.lua\n
+wait 60 Language
+type \n
+wait 60 Continue\?
+key ctrl+c
+sleep 8
+snap after-ctrl-c
+```
+
+**B5 and the published install** — options `--os openos --internet --timeout 900`. Needs the machine to reach `raw.githubusercontent.com`.
+
+```
+wait 90 /home\s*#
+type wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua && /bootstrap.lua\n
+wait 60 Download TOS from the internet
+type \n
+wait 400 Language|Continue\?|REFUSED|Refusing|failed to download|Cannot
+maybe 2 Language
+type \n
+wait 60 Continue\?
+type \n
+wait 240 Leave them where they are
+type 1\n
+wait 30 What type of device
+type \n
+wait 30 Hostname
+type \n
+wait 30 Security level
+type \n
+wait 30 Who may add
+type \n
+wait 30 Trust the Optional
+type \n
+wait 30 Verbose boot
+type n\n
+wait 30 Apply these settings
+type \n
+wait 60 confirm BIOS reflash
+type no\n
+wait 60 Reboot now
+type n\n
+wait 30 #\s*$
+type ls /\n
+sleep 2
+snap final-ls
+```
+
+**B2 and B7** — options `--os openos --internet --boot-tier 2 --timeout 900 --keep`. The filler leaves 1370 KB free; afterwards look for 0-byte files under `boot/home/tos-netinstall` in the kept run directory.
+
+```
+wait 90 /home\s*#
+type wget -f https://raw.githubusercontent.com/Evan450/TOS-Terminal-Operating-System-/main/bootstrap.lua /bootstrap.lua\n
+wait 40 Saved data
+type echo 'local fs=require("filesystem") local p=fs.get("/") local free=p.spaceTotal()-p.spaceUsed() local f=io.open("/filler","w") f:write(string.rep("x",free-1370*1024-512)) f:close() print("free now",p.spaceTotal()-p.spaceUsed())' > /home/f.lua\n
+type /home/f.lua\n
+wait 30 free now
+type /bootstrap.lua\n
+wait 60 Download TOS from the internet
+type \n
+wait 60 Staging in
+sleep 2
+snap staging-msg
+wait 500 Language|Continue\?|REFUSED|Refusing|failed to download|Cannot|did not download|Ran out of space
+maybe 2 Language
+type \n
+wait 60 Continue\?
+type \n
+wait 300 verified|FAILED|Cannot load|WRONG SIZE|MISSING|Not enough space
+sleep 4
+snap copy-result
+```
+
+**C1 and C2** — no options
+
+```
+firstboot
+type cron add job 1.5 print(1)\n
+sleep 2
+snap cron-add
+type cron list\n
+sleep 2
+snap cron-list
+type clear\n
+type log 2.5\n
+sleep 2
+snap log
+```
+
+### Off-box scripts
 
 Both run from the repo root with `lua <file>`.
 
