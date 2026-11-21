@@ -6,6 +6,8 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 
 **Third pass.** Lua 5.2 and 5.4. A five-line patch to a private copy of the headless runner (appendix) lets it pick the CPU's architecture, which Ocelot Brain supports. That put B4 and B6 on a real Lua 5.2 machine, added F1 and F2, and checked the README's Lua 5.4 claim on a booted machine. It also ran `build/floorcheck.py`, which boots each memory size the README names, and found D8 and E9, and paired two machines to show A1's effect on the remote shell end to end (and C5 on the way).
 
+**Fourth pass.** `backup` and `srm`, driven on a booted machine. The backup round trip is sound; the headline is G1, an admin writing arbitrary content into `/tos/kernel` through `srm restore`, past the guard the manual says stops exactly that.
+
 **Why this file is in `docs/`.** The first pass put it at the repo root. That broke `test_release_excludes.lua` ("every top-level entry ships or is excluded by BOTH build scripts") and the release build copied it onto the install disk. `docs/` is excluded from the release, and the suite is green with it here.
 
 **Paths.** Everything below is relative to the published repo root, which is `TOS-Dev/` in the local monorepo. `TOS-Extras/` is nested inside the published repo and a sibling of `TOS-Dev/` locally. Line numbers are from `1183c69` and will have drifted in a newer local copy, so each finding also names the function or quotes the text to search for.
@@ -59,8 +61,10 @@ The suite is green, so everything below is behaviour the tests do not cover.
 | E1–E9 | Nit | Docs, comments and repo hygiene | Mixed |
 | F1 | Low–Medium | The OpenOS cluster worker cannot load on a Lua 5.2 CPU | Confirmed in Ocelot |
 | F2 | Low | The rc-pilot robot EEPROM cannot load on a Lua 5.2 CPU | Reproduced with `luac5.2 -p` |
+| G1 | Medium | An admin overwrites kernel files via `srm restore`, past the protected-core guard | Confirmed in Ocelot |
+| G2 | Low | `backup` OOMs on trees far smaller than its design and docs imply | Confirmed in Ocelot |
 
-Suggested order: A1 and A2 together, then A3 (same new API), then C3 and B1, then B2 with B3 and B7, then the rest.
+Suggested order: G1 first (it defeats a stated security control), then A1 and A2 together, then A3 (same new API), then C3 and B1, then B2 with B3 and B7, then the rest.
 
 ---
 
@@ -507,6 +511,51 @@ The other scripts that run outside TOS parse on 5.2: `cluster-worker-setup.lua`,
 
 ---
 
+## G. Backup and SRM
+
+### G1. An admin overwrites kernel files via `srm restore`, past the protected core — Medium — Confirmed in Ocelot
+
+**Where.** `tos/kernel/srm.lua`: `srm.restore` (line 634), `writeSafely` (line 377), `srm.deps` (line 103, `fs = TOS.fs`). `_G._TOS.fs` is the raw `kernel.fs` (`tos/kernel/init.lua:1061`), which has no permission model and no protected-path guard — those live only in `securefs`. The command is `tos/shell/panels/commands/admin.lua:1663` (`srm restore`), gated `adminOnly`.
+
+**The claim it breaks.** The protected-core guard is described in `MANUAL.md:832-837` as "defence-in-depth against a *tampered admin session*, not an ACL — it sits above the permission model and refuses regardless of tier," and on screen as "stops even an admin overwriting the kernel or its libraries. Only root can lift it, with `protect off`." The README lists among its security properties a capability sandbox "that user programs cannot escape" and a kernel no one but root can write.
+
+**What happens.** `srm restore <path> --source <dir> --unverified`, as an ADMIN (not root):
+- takes any `<path>` the caller names (the parser puts every non-flag word after the verb into `paths`, and restore uses them directly — it is not limited to baselined files);
+- with `--unverified` and no baseline, skips the "must match the baseline hash" check;
+- reads `<dir><path>` and writes it to `<path>` through `writeSafely` → `kernel.fs.writeFileAtomic`, which never consults securefs.
+
+So the guard is never reached. `srm repair --restore --source <dir> --unverified` is the same, since `repair` calls `restore` with those options.
+
+**On the real machine**, logged in as an admin named bob:
+- `touch /tos/kernel/proof.lua` → refused: "writing to /tos is a protected system path ... stops even an admin ... Only root can lift it. [E-402]".
+- `cp /tos/kernel/display.lua /home/bob/ec/tos/kernel/clipboard.lua`, then `srm restore /tos/kernel/clipboard.lua --source /home/bob/ec --unverified` → "restored /tos/kernel/clipboard.lua from /home/bob/ec (UNVERIFIED), 1 fixed". `head -1 /tos/kernel/clipboard.lua` afterward showed `display.lua`'s first line: the kernel module held attacker-chosen bytes.
+- For contrast, `backup restore` of the same payload into `/tos` was refused for every file — "could not be written: Refused: writing to /tos is a protected system path" — because `backup` writes through `securefs` (`tos/kernel/backup.lua`: `securefs.writeFile`). Same tier, same target, opposite outcome: the guard works when the write goes through securefs, and SRM is the one writer that goes around it.
+
+**Why it matters.** `/tos/kernel/init.lua` and every module it loads run as the kernel, before login. An admin who can put arbitrary bytes there runs code as the kernel on the next boot — the escalation the protected core exists to stop. Admin is already a high-trust tier, and the README's "boot files are not signed" limitation already concedes a lot to admins, which is why this is Medium rather than High; but the control is advertised specifically as holding against a tampered admin, and here it does not.
+
+**Recommended fix.** SRM legitimately must write `/tos` for its core job (putting a drifted critical file back), so the fix is not "route everything through securefs" — that would block the repair SRM exists to do. Options, roughly in order:
+- Make the dangerous combination need root: a `restore`/`repair --restore` that would write a path under the protected core (`/tos`, and the protected parts of `/etc`, `/usr`, `/var`) requires either ROOT or an active `protect off` in the session, the same bar a direct write faces. A baseline-verified restore of a critical file by an admin could stay allowed, since its content is pinned to the baseline hash; it is `--unverified` and caller-named paths that need the higher bar.
+- At minimum, refuse `--unverified` writes to protected paths unless root, and refuse caller-named `paths` that are not in the baseline.
+- Have `srm.restore`/`writeSafely` go through `securefs` with the session when one is present, and fall back to raw `kernel.fs` only on the pre-kernel recovery path (`recovery.lua` already builds its own raw fs over the proxy, so the boot path is unaffected).
+- Whatever the choice, reword the protected-core text if admins are meant to have any kernel-write path at all.
+
+A test belongs beside `test_srm_*`: an admin session (a securefs stub that refuses `/tos` writes) must not be able to land a file under `/tos` through `srm.restore`.
+
+### G2. `backup` runs out of memory on trees far smaller than it implies — Low — Confirmed in Ocelot
+
+**Where.** `tos/kernel/backup.lua`: `encodeSnapshot` (line 146) and `backup.restore` (line 314); the caps `MAX_ENTRY_BYTES = 1 MB` and `MAX_TOTAL_ENTRIES = 4096` (lines 44-45).
+
+**What happens.** The module header says the binary format exists so it "doesn't depend on the OPPM/serialize size for big trees" and does not OOM "on T1.5 boxes for trees more than a few MB." In fact `encodeSnapshot` reads every file whole into `data`, accumulates all of them in `bodyParts`, `table.concat`s that into `body`, then builds `parts` and concats again — several copies of the whole tree in RAM at once — and `restore` reads the entire backup file into one string. Measured on booted machines, a folder snapshot (free RAM at the time in parentheses):
+
+| Machine | Largest tree that snapshotted + restored | Next size up |
+|---|---|---|
+| 1.5 MB (two T3 sticks) | 50 KB (88 KB free) | 100 KB → `Error: not enough memory` |
+| 2 MB (two T3.5 sticks) | 200 KB (742 KB free) | 400 KB → `Error: not enough memory` |
+
+So the practical ceiling is a fraction of free RAM and nowhere near "a few MB"; the 1 MB-per-file and 4096-entry caps describe trees that cannot be built on any real machine. It fails safe — nothing is written, and the snapshot is refused — but the error on the 1.5 MB box is a raw `Error: /tos/kernel/backup.lua:34: not enough memory for buffer allocation`, a file and line rather than "this tree is too large for free memory."
+
+**Recommended fix.** Lower expectations or raise the ceiling. The honest-cheap option: document a realistic limit (roughly "a tree up to about a quarter of free memory") and catch the OOM so the command says that instead of a Lua line number. The real fix is to stream — write entries to the destination file as they are read instead of building the whole blob, and verify the restore as it reads rather than slurping the file — which is what the header already claims the format was designed for. Either way, correct the module header and `man backup`.
+
 ## Checked and found fine
 
 So the next session does not repeat it:
@@ -531,7 +580,7 @@ This was two passes over a repository of about 250,000 lines. No finding in an a
 - **Add-ons**: only `cluster-worker-setup.lua` was read. The rest were covered by their own tests and lint only.
 - **MANUAL.md** was checked for specific claims, not proofread.
 - **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. `tos.py floorcheck` was run (all claims hold); see E9 for its numbers.
-- **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, a sweep of about 120 commands with missing or wrong arguments, mutual trust and `rsh` between two machines, and the memory floors. The editor, file browser, Desktop tiles, `net pair` codes, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
+- **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, a sweep of about 120 commands with missing or wrong arguments, mutual trust and `rsh` between two machines, and the memory floors. `backup` and `srm` were exercised this pass (G). The editor, file browser, Desktop tiles, `net pair` codes, chat, netfs and `deploy` were not; SRM's online repair (`--online`) and the boot recovery menu were read but not run.
 - `test_component_api.lua` could not run without `Reference/`, so component calls were not checked against the API table.
 
 ---
