@@ -4,7 +4,7 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 
 **Second pass.** The first pass was off-box only. The second ran the findings on a real OpenComputers machine: Ocelot Desktop 1.14.2's jar driven by the project's own `build/headless-selftest.py` and `build/headless-session.py`. It confirmed seven findings on the real system, corrected two of my first-pass claims (B2 and B3, marked below), and added B7, C2, C3, C4, D6 and D7. Setup is in the appendix.
 
-**Third pass.** Lua 5.2 and 5.4. A five-line patch to a private copy of the headless runner (appendix) lets it pick the CPU's architecture, which Ocelot Brain supports. That put B4 and B6 on a real Lua 5.2 machine, added F1 and F2, and checked the README's Lua 5.4 claim on a booted machine. It also ran `build/floorcheck.py`, which boots each memory size the README names, and found D8 and E9.
+**Third pass.** Lua 5.2 and 5.4. A five-line patch to a private copy of the headless runner (appendix) lets it pick the CPU's architecture, which Ocelot Brain supports. That put B4 and B6 on a real Lua 5.2 machine, added F1 and F2, and checked the README's Lua 5.4 claim on a booted machine. It also ran `build/floorcheck.py`, which boots each memory size the README names, and found D8 and E9, and paired two machines to show A1's effect on the remote shell end to end (and C5 on the way).
 
 **Why this file is in `docs/`.** The first pass put it at the repo root. That broke `test_release_excludes.lua` ("every top-level entry ships or is excluded by BOTH build scripts") and the release build copied it onto the install disk. `docs/` is excluded from the release, and the suite is green with it here.
 
@@ -54,6 +54,7 @@ The suite is green, so everything below is behaviour the tests do not cover.
 | C2 | Low | `log 2.5` crashes with a raw Lua error | Confirmed in Ocelot |
 | C3 | Medium | `passwd <user>` ignores the user and changes your own password | Confirmed in Ocelot |
 | C4 | Low | `lua <code>` opens the REPL without running the code | Confirmed in Ocelot |
+| C5 | Low | `rsh` code loses its quotes, and the manual calls it step-budgeted | Confirmed in Ocelot |
 | D1–D8 | Low | Test and build tooling gaps on the published layout | Reproduced |
 | E1–E9 | Nit | Docs, comments and repo hygiene | Mixed |
 | F1 | Low–Medium | The OpenOS cluster worker cannot load on a Lua 5.2 CPU | Confirmed in Ocelot |
@@ -74,6 +75,18 @@ Suggested order: A1 and A2 together, then A3 (same new API), then C3 and B1, the
 **What the user sees.** `service stop 20-rshd` prints `Stopped: 20-rshd`, the log says "exec requests now refused", and up to 30 seconds later the remote shell is armed again with only a log line (`Restarting service: 20-rshd (attempt 1)`). The same applies to file sharing and netfs. It only stays down after `maxRestart` restarts are used up, and that budget resets after `RESTART_DECAY` (600 s).
 
 **On the real machine** (two networked machines): `service stop 20-fileshare` showed `stopped`, and about 25 seconds later the kernel log had `[39.5][INF][rc] Restarting service: 20-fileshare (attempt 1)`.
+
+**End to end, with the remote shell** (two machines, mutually TRUSTED with `net trust 1 full`, machine 1 running `rsh 1 print(7000+777)` and waiting for each result):
+
+| Machine 2 (target) | Machine 1 (`rsh`) |
+|---|---|
+| boot: `Service registered (disabled): 20-rshd` | `Error: Timeout waiting for response` (correct: off by default) |
+| `service start 20-rshd` | `7777` |
+| 78.2 s: `service stop 20-rshd` → "Stopped: 20-rshd"; log: "Remote shell daemon stopped (exec requests now refused)"; `service list`: `stopped` | at 81 s: `Error: Timeout waiting for response` (correct) |
+| 99.5 s: log "Restarting service: 20-rshd (attempt 1)", "Remote shell daemon active"; `service list`: `running` | |
+| 115.2 s: log "Executing remote command from ebbed854...", "Command finished (exit=0)" | `7777` |
+
+Twenty-one seconds after the operator stopped it, with no further action on that machine, a peer was running code on it again.
 
 **Why the suite misses it.** `test_rc_disabled.lua` covers "the supervisor must not resurrect a disabled service" and "a crash of an operator-enabled service is restarted", but never stop followed by supervise.
 
@@ -370,6 +383,14 @@ The scheduler ticks every 10 seconds (`cron.lua:89`), so an interval under 10 me
 
 **Recommended fix.** Either implement one-liners (join the arguments, try `return <code>` first and then the statement form, print the results; mind that the shell's tokenizer has already split and unquoted the line, so use the raw command text if the executor can supply it), or remove §13.1's one-liner form and the example in the reference. Settle the environment sentence either way.
 
+### C5. `rsh` code loses its quotes, and the manual calls it step-budgeted — Low — Confirmed in Ocelot
+
+**Where.** `tos/shell/panels/commands/extras.lua:1819-1832` (`C.rsh`, `C.ssh`), `tos/shell/panels/executor.lua:89` (`tokenize`), `MANUAL.md:3060-3064` and `1931`.
+
+**Quotes.** `C.rsh` rebuilds the Lua chunk with `table.concat(args, " ", 2)`, after the shell's tokenizer has already treated `"` and `'` as shell quotes and removed them. `rsh 1 print("RESULT-"..(1+2))` reached the peer as `print(RESULT-..(1+2))` and failed with `Load error: remote:1: unexpected symbol near '..'`. Wrapping the whole chunk in single quotes works (`rsh two 'print("hi")'`), but nothing says so: the manual's only example, `rsh two print(1+2)`, has no string in it, and the usage line is the same. Either pass the unparsed remainder of the line to `rsh` (the executor would need to provide it; C4's `lua <code>` needs the same thing), or document the single quotes in the usage line and the manual.
+
+**"Step-budgeted".** The manual twice describes `rsh` as running "in a step-budgeted sandbox" (`MANUAL.md:1931` and `3061`). On the real machine the target logs, for every command: "debug.sethook is unavailable here (OpenComputers does not expose it): remote commands run with NO step or memory budget." `service start 20-rshd` already warns about this, and README "Known limitations" says TOS cannot stop a runaway program. Make the two manual sentences say the same.
+
 ---
 
 ## D. Test and build tooling on the published layout
@@ -510,7 +531,7 @@ This was two passes over a repository of about 250,000 lines. No finding in an a
 - **Add-ons**: only `cluster-worker-setup.lua` was read. The rest were covered by their own tests and lint only.
 - **MANUAL.md** was checked for specific claims, not proofread.
 - **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. `tos.py floorcheck` was run (all claims hold); see E9 for its numbers.
-- **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, and a sweep of about 120 commands with missing or wrong arguments. The editor, file browser, Desktop tiles, mesh pairing, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
+- **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, a sweep of about 120 commands with missing or wrong arguments, mutual trust and `rsh` between two machines, and the memory floors. The editor, file browser, Desktop tiles, `net pair` codes, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
 - `test_component_api.lua` could not run without `Reference/`, so component calls were not checked against the API table.
 
 ---
@@ -752,6 +773,72 @@ sleep 1
 type resetpass1\n
 sleep 4
 snap alice-with-new-password
+```
+
+**A1 end to end, with `rsh`** — options `--machines 2`. `net trust` takes the index `net scan` prints, not the one from `net peers`. Each `rsh` is waited out, because a disabled target ignores the request and the caller only gives up after 30 seconds.
+
+```
+firstboot
+machine 2
+firstboot
+sleep 3
+type net scan\n
+wait 20 peer\(s\) responded
+type clear\n
+type net trust 1 full\n
+wait 10 Trust updated
+machine 1
+type net scan\n
+wait 20 peer\(s\) responded
+type clear\n
+type net trust 1 full\n
+wait 10 Trust updated
+sleep 6
+type clear\n
+mark rsh1
+type rsh 1 print(7000+777)\n
+wait 45 7777|Timeout waiting|Error
+snap 1-default-off
+machine 2
+type clear\n
+type service start 20-rshd\n
+wait 10 Started: 20-rshd
+machine 1
+type clear\n
+mark rsh2
+type rsh 1 print(7000+777)\n
+wait 45 7777|Timeout waiting|Error
+snap 2-after-start
+machine 2
+type clear\n
+type service stop 20-rshd\n
+wait 10 Stopped: 20-rshd
+type clear\n
+type service list\n
+sleep 1
+snap 3-m2-after-stop
+machine 1
+type clear\n
+mark rsh3
+type rsh 1 print(7000+777)\n
+wait 45 7777|Timeout waiting|Error
+snap 4-right-after-stop
+machine 2
+type clear\n
+type service list\n
+sleep 1
+snap 5-m2-list
+machine 1
+type clear\n
+mark rsh4
+type rsh 1 print(7000+777)\n
+wait 45 7777|Timeout waiting|Error
+snap 6-later
+machine 2
+type clear\n
+type log ring 8\n
+sleep 2
+snap 7-m2-log
 ```
 
 ### Choosing the CPU's Lua architecture
