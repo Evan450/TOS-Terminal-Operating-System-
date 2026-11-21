@@ -4,6 +4,8 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 
 **Second pass.** The first pass was off-box only. The second ran the findings on a real OpenComputers machine: Ocelot Desktop 1.14.2's jar driven by the project's own `build/headless-selftest.py` and `build/headless-session.py`. It confirmed seven findings on the real system, corrected two of my first-pass claims (B2 and B3, marked below), and added B7, C2, C3, C4, D6 and D7. Setup is in the appendix.
 
+**Third pass.** Lua 5.2 and 5.4. A five-line patch to a private copy of the headless runner (appendix) lets it pick the CPU's architecture, which Ocelot Brain supports. That put B4 and B6 on a real Lua 5.2 machine, added F1 and F2, and checked the README's Lua 5.4 claim on a booted machine.
+
 **Why this file is in `docs/`.** The first pass put it at the repo root. That broke `test_release_excludes.lua` ("every top-level entry ships or is excluded by BOTH build scripts") and the release build copied it onto the install disk. `docs/` is excluded from the release, and the suite is green with it here.
 
 **Paths.** Everything below is relative to the published repo root, which is `TOS-Dev/` in the local monorepo. `TOS-Extras/` is nested inside the published repo and a sibling of `TOS-Dev/` locally. Line numbers are from `1183c69` and will have drifted in a newer local copy, so each finding also names the function or quotes the text to search for.
@@ -28,6 +30,8 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 | `python tos.py selftest` on Ocelot 1.14.2 | 117 of 117 boot checks pass |
 | README one-liner against published `main`, in Ocelot | Signature valid, 171 files, install, BIOS flash, reboot, First Boot Setup: all work |
 | README "first ten minutes" on a booted machine | `useradd`, `usermod`, `logout`, login, `why`, `theme set` all behave |
+| Boot battery on a **Lua 5.4** CPU in Ocelot | 117 of 117; the REPL reports `Lua 5.4`, and `about`, `useradd`, `df`, `cron` and `verify` work |
+| TOS BIOS on a **Lua 5.2** CPU in Ocelot | Stops as designed: "SRM C1 - POST FAILED", the hint, one long and one short beep |
 
 The suite is green, so everything below is behaviour the tests do not cover.
 
@@ -41,9 +45,9 @@ The suite is green, so everything below is behaviour the tests do not cover.
 | B1 | Medium | Ctrl+C at any installer y/n prompt means **yes** | Confirmed in Ocelot |
 | B2 | Low–Medium | `bootstrap.lua` counts a failed staging write as a download (revised) | Confirmed in Ocelot |
 | B3 | Low | `bootstrap.lua`'s space estimate is about to be too low (corrected) | Measured |
-| B4 | Low | `bootstrap.lua` does not parse on a Lua 5.2 CPU | Reproduced with `luac5.2 -p` |
+| B4 | Low–Medium | On a Lua 5.2 CPU the bootstrap dies with a traceback and the installer installs anyway | Confirmed in Ocelot |
 | B5 | Low | `bootstrap.lua` never removes itself: OpenOS has no `arg` | Confirmed in Ocelot |
-| B6 | Low | The Lua 5.2 screen tells the user to do something that does not work | Confirmed against OC source |
+| B6 | Low | The Lua 5.2 screen gives an instruction that does not work, and is cut off on Tier 1 | Confirmed in Ocelot |
 | B7 | Low | The bootstrap warns it will run out of space, then carries on | Confirmed in Ocelot |
 | C1 | Low | `cron add` with a fractional interval errors after saving the job | Confirmed in Ocelot |
 | C2 | Low | `log 2.5` crashes with a raw Lua error | Confirmed in Ocelot |
@@ -51,6 +55,8 @@ The suite is green, so everything below is behaviour the tests do not cover.
 | C4 | Low | `lua <code>` opens the REPL without running the code | Confirmed in Ocelot |
 | D1–D7 | Low | Test and build tooling gaps on the published layout | Reproduced |
 | E1–E8 | Nit | Docs, comments and repo hygiene | Mixed |
+| F1 | Low–Medium | The OpenOS cluster worker cannot load on a Lua 5.2 CPU | Confirmed in Ocelot |
+| F2 | Low | The rc-pilot robot EEPROM cannot load on a Lua 5.2 CPU | Reproduced with `luac5.2 -p` |
 
 Suggested order: A1 and A2 together, then A3 (same new API), then C3 and B1, then B2 with B3 and B7, then the rest.
 
@@ -233,17 +239,33 @@ The surrounding text is stale: comments at lines 646, 680 and 1025 say "~1.2 MB 
 
 **Recommended fix.** Raise it to 1536 KB, update `printHelp` (line 333) and `MANUAL.md:228` from "about 1.4 MB" to "about 1.5 MB", and correct the comments. `MAX_FILE_BYTES` already has a test that measures the real release (`test_install_bootstrap.lua`); give `NEED_BYTES` the same, summing sizes plus 512 per entry, so it cannot drift again.
 
-### B4. `bootstrap.lua` does not parse on Lua 5.2 — Low — Reproduced
+### B4. A Lua 5.2 CPU: the bootstrap dies with a traceback, the installer installs anyway — Low–Medium — Confirmed in Ocelot
 
-**Where.** `bootstrap.lua:505-540` (`sha256hex` uses `>>`, `~`, `&`, `|`).
+**Where.** `bootstrap.lua:505-540` (`sha256hex` uses `>>`, `~`, `&`, `|`); `install.lua`'s `printHardwareReport` (line 287).
 
-**Reproduce.** `luac5.2 -p bootstrap.lua` gives `bootstrap.lua:517: unexpected symbol near '>'`. `init.lua`, `bios.lua` and `install.lua` all parse under 5.2, in source and in the release build.
+**Reproduce off-box.** `luac5.2 -p bootstrap.lua` gives `bootstrap.lua:517: unexpected symbol near '>'`. `init.lua`, `bios.lua` and `install.lua` all parse under 5.2, in source and in the release build.
 
-**What the user sees.** On a CPU set to Lua 5.2 the documented one-liner ends in a raw syntax error with no hint that the CPU is the problem. `bios.lua` and `init.lua` both go out of their way to avoid precisely that ("stop HERE with the fix instead of booting into a raw syntax-error panic"). OpenComputers defaults to 5.3 (`defaultLua53: true`, checked in 1.7.5 and 1.8.10), so this only hits switched CPUs and servers with an older config.
+**On a real Lua 5.2 machine** (OpenOS 1.8.9, whose `lua` prompt confirmed "Lua 5.2"):
 
-`install.lua` parses on 5.2 but says nothing: it installs, offers the flash, and the machine then halts at the BIOS's C1.
+1. `bootstrap.lua` ends in a raw error and a nine-line traceback:
 
-**Recommended fix.** Keep `bootstrap.lua` 5.2-parseable the way `init.lua` is. Probe with `load("return 1<<1")` right after the helpers and stop with the fix; compile the 5.3-only code from a long string with `load`. `sha256hex` and `verifyRelease` carry `--[[TEST-EXTRACT]]` markers, so `test_install_bootstrap.lua` needs to follow whatever shape is chosen. Add the same probe as a warning in `install.lua`'s `printHardwareReport`. `test_bios.lua` pins the probe in the two boot files; extend it to these two, and add a syntax scan for 5.3 operators outside the loaded string since CI has no Lua 5.2.
+   ```
+   /lib/process.lua:52: /mnt/d15/bootstrap.lua:127: unexpected symbol near '>':
+   stack traceback:
+           machine:823: in function 'errorCapture'
+           ...
+   ```
+
+2. `install.lua` runs. Its hardware report lists RAM, GPU, disk, network and crypto and says nothing about the CPU. The install completes with "TOS is installed! Reboot to start." and, on the default answer, moves OpenOS's 178 files into `/openos`.
+3. After the reboot the machine stops: at the BIOS's C1 if the TOS BIOS was flashed, or at `init.lua`'s screen (B6) if it was not.
+
+So the one place the problem could be named before anything is changed, the installer, is the one place that is silent. `bios.lua` and `init.lua` both go out of their way to say it ("stop HERE with the fix instead of booting into a raw syntax-error panic"). OpenComputers defaults to 5.3 (`defaultLua53: true`, checked in 1.7.5 and 1.8.10), so this hits switched CPUs and servers with an older config.
+
+**Recommended fix.**
+
+- `install.lua`: probe with `load("return 1<<1")` in `printHardwareReport` and refuse to copy on 5.2, with the fix from B6. This is the cheap half and the one that protects the user's existing system.
+- `bootstrap.lua`: keep it 5.2-parseable the way `init.lua` is. Probe right after the helpers and stop with the same message; compile the 5.3-only code from a long string with `load`. `sha256hex` and `verifyRelease` carry `--[[TEST-EXTRACT]]` markers, so `test_install_bootstrap.lua` has to follow whatever shape is chosen.
+- `test_bios.lua` pins the probe in the two boot files; extend it to these two, and add a scan for 5.3 operators outside the loaded string, since CI has no Lua 5.2. The runner patch in the appendix makes all of this testable on a machine.
 
 ### B5. The bootstrap never removes itself — Low — Confirmed in Ocelot
 
@@ -257,7 +279,7 @@ The surrounding text is stale: comments at lines 646, 680 and 1025 say "~1.2 MB 
 
 **Recommended fix.** `selfPathToReclaim((os.getenv and os.getenv("_")) or (arg and arg[0]) or nil)`. `os.getenv("_")` is the resolved absolute path, so the root-only guard still protects the OPPM copy in `/usr/bin`. Update the assertion at line 287.
 
-### B6. The Lua 5.2 screen gives an instruction that does not work — Low — Confirmed against OC source
+### B6. The Lua 5.2 screen gives an instruction that does not work — Low — Confirmed in Ocelot
 
 **Where.** `init.lua:49-53`.
 
@@ -265,7 +287,17 @@ The surrounding text is stale: comments at lines 646, 680 and 1025 say "~1.2 MB 
 
 **What is true.** OpenComputers changes the architecture in `CPULike.onItemRightClick` when `player.isSneaking`: the CPU has to be **held in the hand** and used while sneaking. Shift-clicking it in the case's slot just moves it to the inventory. The README, MANUAL and BIOS say "sneak-click the CPU", which is vague but not wrong.
 
-Two of those lines are also 54 and 55 characters, drawn from column 2, so a Tier 1 screen (50 columns) cuts them off.
+Two of those lines are also 54 and 55 characters, drawn from column 2, so a Tier 1 screen (50 columns) cuts them off. On a real Lua 5.2 machine with a Tier 1 GPU and screen it reads:
+
+```
+ TOS requires the Lua 5.3 or 5.4 CPU architecture.
+ This CPU is running an older one (Lua 5.2).
+ Fix: sneak-click (crouch + right-click) the CPU i
+ computer-case slot to cycle architectures, then r
+ Press any key to power off.
+```
+
+(The screen itself was seen in Ocelot; that the instruction is wrong comes from OpenComputers' source, since the emulator has no player to sneak.)
 
 **Recommended text** (each line under 48 characters):
 
@@ -410,6 +442,31 @@ Lines 372-399. With `Reference/` absent, every skip is printed as `SKIP(needs Re
 
 ---
 
+## F. Add-ons that run outside TOS
+
+### F1. The OpenOS cluster worker cannot load on Lua 5.2 — Low–Medium — Confirmed in Ocelot
+
+**Where.** `TOS-Extras/cluster/openos/cluster-worker.lua:59` (`rrot`) and 20 more lines of bitwise-operator syntax in its SHA-256 and HMAC.
+
+**What happens.** The worker is the part of the cluster meant for "cheap OpenOS worker" machines, and its own code plans for Lua 5.2 ones. The comment at lines 444-452 reads: "OpenComputers offers both architectures and OpenOS runs on either, so a worker and a Manager on different CPUs canonicalize the same frame differently", and the ping handler floors a number for that reason. But the file cannot be parsed on 5.2 at all. On real OpenOS:
+
+| CPU | `cluster-worker.lua` |
+|---|---|
+| Lua 5.2 | `/lib/process.lua:52: /mnt/e7a/cluster-worker.lua:59: unexpected symbol near '>':` and a traceback |
+| Lua 5.3 | starts (here: "cluster-worker: no modem component available") |
+
+`cluster-worker-setup.lua`, the wizard that installs it, does parse on 5.2, so setup succeeds and the worker then fails to start. Neither `TOS-Extras/cluster/README.md` nor the installer's README states a Lua requirement.
+
+**Recommended fix.** Decide which is true. If workers must be 5.3 or later: say so in the README, have `cluster-worker-setup.lua` refuse on 5.2 with the same probe and message as B4, and delete the 5.2 reasoning from the ping comment. If 5.2 workers are wanted: OpenOS on 5.2 has `bit32`, so the SHA-256 can pick `bit32` or the operators at load time, with the operator form compiled from a string.
+
+### F2. The rc-pilot robot EEPROM cannot load on Lua 5.2 — Low — Reproduced with `luac5.2 -p`
+
+`TOS-Extras/robot/eeprom-rc-pilot.lua:42` uses the same operators (`unexpected symbol near '>'`). A robot's CPU can be on 5.2 like any other, and an EEPROM that does not parse gives no screen and no beep code of its own. `TOS-Extras/robot/README.md` does not mention the requirement. State it there, and consider a one-line 5.2-safe prologue that beeps a recognisable pattern before the 5.3 code is loaded from a string. Not run on a machine: the session tool's `--chip` robot was not combined with the architecture patch.
+
+The other scripts that run outside TOS parse on 5.2: `cluster-worker-setup.lua`, `rbmk/openos/rbmk-display.lua`, `cluster-install.lua`, `cluster-make-floppy.lua`.
+
+---
+
 ## Checked and found fine
 
 So the next session does not repeat it:
@@ -433,7 +490,7 @@ This was two passes over a repository of about 250,000 lines. No finding in an a
 - **Shell**: the panels interface, editor and file browser were not reviewed. Only `service`, `cron`, `pkg enable/disable`, `touch` and the numeric-argument commands were read.
 - **Add-ons**: only `cluster-worker-setup.lua` was read. The rest were covered by their own tests and lint only.
 - **MANUAL.md** was checked for specific claims, not proofread.
-- **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. B4 and B6 were not run on a machine: the session tool has no way to put the CPU in Lua 5.2 mode. `tos.py floorcheck` was not run.
+- **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. `tos.py floorcheck` was not run.
 - **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, and a sweep of about 120 commands with missing or wrong arguments. The editor, file browser, Desktop tiles, mesh pairing, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
 - `test_component_api.lua` could not run without `Reference/`, so component calls were not checked against the API table.
 
@@ -454,6 +511,29 @@ python tos.py selftest          # builds ../TOS-Release, boots it, runs the 117 
 ```
 
 `build/headless-selftest.py` finds the jar in any folder named `*Ocelot*` under the home directory, so no option is needed. A boot takes 10 to 20 seconds and the runner asks for a 1 GB heap; there is no window and no Minecraft, so modest hardware is enough.
+
+**Saving it as a cloud environment.** In the session's environment settings (Edit, then Setup script), this script installs everything the three passes used, each time a fresh container starts. It never fails a session start; a jar that does not match the checksum is deleted, so the headless tests skip rather than run against something else. The network needs `gitlab.com`; the package registries are allowed by default.
+
+```bash
+#!/bin/bash
+# TOS dev tools: Lua for the test suite, pytest for the build tests, and
+# Ocelot Desktop's jar so `python tos.py selftest` can boot a real machine.
+# Nothing here is allowed to stop a session from starting.
+apt-get update -qq || true
+apt-get install -y -qq lua5.2 lua5.3 lua5.4 lua-check || true
+pip install -q pytest pyyaml || true
+# build/headless-selftest.py finds the jar in a folder named *Ocelot* under $HOME.
+mkdir -p /root/Ocelot
+JAR=/root/Ocelot/ocelot-desktop-v1.14.2.jar
+URL=https://gitlab.com/api/v4/projects/9941848/packages/generic/ocelot-desktop/v1.14.2/ocelot-desktop-v1.14.2.jar
+SUM=6675c509c9bf6f88572d4acbed0666458c04164b0a908188f330ea7d707eba17
+[ -f "$JAR" ] || curl -sSL -m 300 -o "$JAR" "$URL" || true
+if ! echo "$SUM  $JAR" | sha256sum -c - >/dev/null 2>&1; then
+  echo "setup: Ocelot jar missing or wrong checksum; headless tests will not run"
+  rm -f "$JAR"
+fi
+exit 0
+```
 
 Each session below is `python build/headless-session.py SCRIPT [options]`. Run `python tos.py build` first: the sessions boot `../TOS-Release`.
 
@@ -653,6 +733,119 @@ sleep 1
 type resetpass1\n
 sleep 4
 snap alice-with-new-password
+```
+
+### Choosing the CPU's Lua architecture
+
+The repo's `build/HeadlessTOS.java` always builds a Lua 5.3 machine. Ocelot Brain's `CPU` and `APU` have `setArchitecture`, and the jar carries native Lua 5.2, 5.3 and 5.4, so this patch adds a `TOS_HEADLESS_ARCH` environment variable. The third pass applied it to a private copy (the three `build/headless-*` files plus links to `TOS-Release` and `TOS-Extras`), leaving the repo's runner untouched. It is small and self-contained enough to adopt as is.
+
+```diff
+--- build/HeadlessTOS.java
++++ build/HeadlessTOS.java
+@@ -583,6 +583,21 @@
+     }
+   }
+ 
++  /** Audit patch: TOS_HEADLESS_ARCH=5.2|5.3|5.4 picks the CPU's Lua architecture. */
++  static void applyArch(Object cpu) {
++    String want = System.getenv("TOS_HEADLESS_ARCH");
++    if (want == null || want.isEmpty()) return;
++    try {
++      Class<?> arch = Class.forName("totoro.ocelot.brain.entity.machine.luac.NativeLua"
++          + want.replace(".", "") + "Architecture");
++      cpu.getClass().getMethod("setArchitecture", Class.class).invoke(cpu, arch);
++      System.out.println("[headless] CPU architecture: Lua " + want);
++    } catch (Exception e) {
++      throw new RuntimeException("cannot set CPU architecture " + want, e);
++    }
++  }
++
++
+   static void build(String profile, Path bootDir, Path diskDir, byte[] bios, boolean internet, String ram,
+                     String bootTier, String diskAddress, List<String> floppySpecs, String floppyIn,
+                     int seats, List<String> peerBoots) {
+@@ -637,9 +652,13 @@
+     }
+     if (t1) {
+       pc.inventory().apply(1).put(new GraphicsCard(Tier.One()));
+-      pc.inventory().apply(8).put(new CPU(Tier.One()));
++      CPU cpu1 = new CPU(Tier.One());
++      applyArch(cpu1);
++      pc.inventory().apply(8).put(cpu1);
+     } else {
+-      pc.inventory().apply(8).put(new APU(Tier.Two()));
++      APU apu1 = new APU(Tier.Two());
++      applyArch(apu1);
++      pc.inventory().apply(8).put(apu1);
+     }
+     pc.inventory().apply(9).put(eeprom);
+     mainEeprom = eeprom;
+```
+
+`TOS_HEADLESS_ARCH=5.4 python build/headless-selftest.py` ran the battery on Lua 5.4 (117 of 117). The sessions below were run with `TOS_HEADLESS_ARCH=5.2`.
+
+**B4, B6** — options `--os openos --install-disk`. The installer's answers are the defaults; the last snap is the stock BIOS booting the installed `init.lua`.
+
+```
+wait 90 /home\s*#
+type lua\n
+sleep 2
+snap openos-lua-version
+type os.exit()\n
+sleep 1
+type clear\n
+type /mnt/d15/bootstrap.lua\n
+sleep 4
+snap bootstrap-on-52
+type clear\n
+type /mnt/d15/install.lua\n
+wait 60 Language
+snap install-hardware-report
+type \n
+wait 60 Continue\?
+type \n
+wait 240 Leave them where they are
+type \n
+wait 30 What type of device
+type \n
+wait 30 Hostname
+type \n
+wait 30 Security level
+type \n
+wait 30 Who may add
+type \n
+wait 30 Trust the Optional
+type \n
+wait 30 Verbose boot
+type n\n
+wait 30 Apply these settings
+type \n
+wait 60 confirm BIOS reflash
+type no\n
+wait 60 Reboot now
+snap before-reboot
+type \n
+sleep 15
+snap after-reboot-stock-bios
+```
+
+**B6 on a Tier 1 screen** — options `--os openos --install-disk --profile t1 --ram 1024,1024`. `bootaddr` makes the stock BIOS boot the TOS disk.
+
+```
+wait 120 /home\s*#
+bootaddr d15c0000-0000-4000-8000-000000000000
+powercycle
+sleep 12
+snap t1-guard-screen
+```
+
+**F1** — options `--os openos --extra-disk TOS-Extras/cluster/openos`; also run without the variable for the Lua 5.3 row.
+
+```
+wait 90 /home\s*#
+type /mnt/e7a/cluster-worker.lua\n
+sleep 4
+snap worker
 ```
 
 ### Off-box scripts
