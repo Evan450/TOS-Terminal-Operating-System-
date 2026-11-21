@@ -4,7 +4,7 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 
 **Second pass.** The first pass was off-box only. The second ran the findings on a real OpenComputers machine: Ocelot Desktop 1.14.2's jar driven by the project's own `build/headless-selftest.py` and `build/headless-session.py`. It confirmed seven findings on the real system, corrected two of my first-pass claims (B2 and B3, marked below), and added B7, C2, C3, C4, D6 and D7. Setup is in the appendix.
 
-**Third pass.** Lua 5.2 and 5.4. A five-line patch to a private copy of the headless runner (appendix) lets it pick the CPU's architecture, which Ocelot Brain supports. That put B4 and B6 on a real Lua 5.2 machine, added F1 and F2, and checked the README's Lua 5.4 claim on a booted machine.
+**Third pass.** Lua 5.2 and 5.4. A five-line patch to a private copy of the headless runner (appendix) lets it pick the CPU's architecture, which Ocelot Brain supports. That put B4 and B6 on a real Lua 5.2 machine, added F1 and F2, and checked the README's Lua 5.4 claim on a booted machine. It also ran `build/floorcheck.py`, which boots each memory size the README names, and found D8 and E9.
 
 **Why this file is in `docs/`.** The first pass put it at the repo root. That broke `test_release_excludes.lua` ("every top-level entry ships or is excluded by BOTH build scripts") and the release build copied it onto the install disk. `docs/` is excluded from the release, and the suite is green with it here.
 
@@ -32,6 +32,7 @@ Audit of the published `dev` branch at commit `1183c69` ("Cluster: a storage poo
 | README "first ten minutes" on a booted machine | `useradd`, `usermod`, `logout`, login, `why`, `theme set` all behave |
 | Boot battery on a **Lua 5.4** CPU in Ocelot | 117 of 117; the REPL reports `Lua 5.4`, and `about`, `useradd`, `df`, `cron` and `verify` work |
 | TOS BIOS on a **Lua 5.2** CPU in Ocelot | Stops as designed: "SRM C1 - POST FAILED", the hint, one long and one short beep |
+| `build/floorcheck.py` (every README memory size, T1 CPU) | Every claim about what works at each size holds; the free-memory figures are off (E9) |
 
 The suite is green, so everything below is behaviour the tests do not cover.
 
@@ -53,8 +54,8 @@ The suite is green, so everything below is behaviour the tests do not cover.
 | C2 | Low | `log 2.5` crashes with a raw Lua error | Confirmed in Ocelot |
 | C3 | Medium | `passwd <user>` ignores the user and changes your own password | Confirmed in Ocelot |
 | C4 | Low | `lua <code>` opens the REPL without running the code | Confirmed in Ocelot |
-| D1–D7 | Low | Test and build tooling gaps on the published layout | Reproduced |
-| E1–E8 | Nit | Docs, comments and repo hygiene | Mixed |
+| D1–D8 | Low | Test and build tooling gaps on the published layout | Reproduced |
+| E1–E9 | Nit | Docs, comments and repo hygiene | Mixed |
 | F1 | Low–Medium | The OpenOS cluster worker cannot load on a Lua 5.2 CPU | Confirmed in Ocelot |
 | F2 | Low | The rc-pilot robot EEPROM cannot load on a Lua 5.2 CPU | Reproduced with `luac5.2 -p` |
 
@@ -408,6 +409,13 @@ Lines 372-399. With `Reference/` absent, every skip is printed as `SKIP(needs Re
 
 `.gitignore` lists `TOS-Release/` but not `TOS-Extras/dist/`. After `tos.py pack` or `build-disk.lua` on the published layout, `git status` shows `TOS-Extras/dist/` as untracked. Add it.
 
+### D8. `floorcheck.py` never checks the panels' free-memory figures — Confirmed in Ocelot
+
+`build/floorcheck.py` compares each case's free memory with the README by reading `mem`'s output for `used, NNNK` (`free_kb`, line 153). Its machines use the T1 profile, whose 50-column screen leaves the panels' output area one line tall: only `=== Memory ===` is visible, the regex finds nothing, and the three panels cases (1.5 MB, 1.5 MB with a network card, 2 MB) print a blank "free" column every run. So the README's "about 330 KB", "about 175 KB" and "about 800 KB" are never compared with anything. The command-line cases read fine.
+
+The panels' status bar shows the same number (`draw.lua:368`, `computer.freeMemory()`), and it is on the snapped screen: `Memory:401K`. Fall back to `Memory:(\d+)K` when `used, NNNK` is not found.
+
+
 ---
 
 ## E. Docs, comments, hygiene
@@ -439,6 +447,17 @@ Lines 372-399. With `Reference/` absent, every skip is printed as `SKIP(needs Re
 - `userdel nobody` shows the red "Delete the account 'nobody'?" confirmation before finding out the account does not exist (`admin.lua:3200-3225`). Check first.
 - `log filter net 9` is accepted ("Source 'net' now logs at 9+"). Levels run 0 to 4, so this silences the source with no hint.
 - `verify` takes over the screen for about half a minute on a 4 MB install; keys typed meanwhile are lost.
+
+**E9. The README's free-memory figures.** Measured on Tier 1 machines in Ocelot, a fresh install, logged in, after one command, as the README describes:
+
+| README | Says | Measured | Runs |
+|---|---|---|---|
+| 1 MB | "About 65 KB stays free" | 4, 32, 41, 46, 3 KB | 5 |
+| 1.5 MB | "about 330 KB free after you log in" | 401, 403, 403 KB | 3 |
+| 1.5 MB with a network card | "with about 175 KB free" | 219, 220, 220 KB | 3 |
+| 2 MB | "about 800 KB free after you log in" | 915, 913, 915 KB | 3 |
+
+The panel figures are conservative by 45 to 115 KB and steady. The 1 MB figure is the one that matters: it is optimistic, and two of five runs left under 5 KB, which is on the edge of not working. "Very little stays free (often under 50 KB)" would be honest. `floorcheck.py` flags the 1 MB reading as "differs" but cannot see the other three (D8).
 
 ---
 
@@ -490,7 +509,7 @@ This was two passes over a repository of about 250,000 lines. No finding in an a
 - **Shell**: the panels interface, editor and file browser were not reviewed. Only `service`, `cron`, `pkg enable/disable`, `touch` and the numeric-argument commands were read.
 - **Add-ons**: only `cluster-worker-setup.lua` was read. The rest were covered by their own tests and lint only.
 - **MANUAL.md** was checked for specific claims, not proofread.
-- **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. `tos.py floorcheck` was not run.
+- **Nothing was run in Minecraft itself.** The second pass used Ocelot, which runs OpenComputers' own machine and component code but is not the mod inside the game. `tos.py floorcheck` was run (all claims hold); see E9 for its numbers.
 - **Emulator coverage is narrow.** I drove the findings above, the network install, the README's first ten minutes, and a sweep of about 120 commands with missing or wrong arguments. The editor, file browser, Desktop tiles, mesh pairing, chat, netfs, `deploy`, `backup` and `srm` were not exercised.
 - `test_component_api.lua` could not run without `Reference/`, so component calls were not checked against the API table.
 
